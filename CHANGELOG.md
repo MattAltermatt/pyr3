@@ -7,6 +7,69 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.10 — 2026-05-27 — Phase 3 cycle 2: regular-xform alpha-scaling ([PYR3-015] shipped)
+
+**Outcome:** Replaced the v0.9-era probabilistic splat-skip in `chaos.wgsl`
+with deterministic per-xform alpha-scaling — flam3's actual
+`adjust_percentage` semantic. **19/19 parity fixtures pass with all deltas
+|ΔR| < 0.01 vs v0.9 baselines** — statistically equivalent to splat-skip
+across the buffer, but deterministic (no RNG draw, no skip-vs-deposit
+branching) and cleaner gradients at low SPP. No baseline recalibration
+needed. Closes the regular-xform half of the v1.x-C-opacity port that
+PYR3-009 started.
+
+**The change** (`src/shaders/chaos.wgsl`):
+
+Inside the `if (i >= u.fuse)` splat block, removed the `if (opacity < 1.0)`
+→ `if (rand01() >= opacity) continue;` stochastic skip and replaced it with
+a deterministic `weight = opacity * 255.0` that scales BOTH the rgb and
+count (alpha) channels of the histogram deposit. opacity=0 → zero deposit
+(rgb=0, count=0, no contribution); opacity=1 → full deposit (matches the
+old fast-path); intermediate values deposit proportionally. Trajectory
+update is unaffected — only the histogram contribution is gated, matching
+v0.9 splat-skip's chaos-game-state contract.
+
+**Mid-cycle bug-and-fix (worth surfacing):**
+
+First impl (`cd3e6f5`) scaled only the rgb channels per the BACKLOG
+recipe — and regressed `coverage.248.33248` R 4.92 → 8.57. Root cause:
+that fixture has an `opacity="0"` xform; depositing count=255 with rgb=0
+creates a "ghost density" region the tonemap reads as legitimate dark
+pixels. Fix (`f99868e`): scale the count channel by opacity too, making
+the full deposit weight linear in opacity. With count-scaling, all 19
+fixtures returned to within |ΔR| < 0.01 of v0.9 baselines. The BACKLOG
+recipe was incomplete on this point; updated PYR3-015's archived rationale
+in this entry instead.
+
+**Per-fixture R (representative sample — full 19/19 in
+`.remember/tmp/v0.10-parity-post-fix.log`):**
+
+| Fixture | v0.9 baseline | v0.10 R | Δ | Note |
+|---|---|---|---|---|
+| `coverage.248.33248` | 4.9229 | 4.9250 | +0.002 | `opacity="0"` xform — caught the count-scaling bug |
+| `coverage.248.24236` | 2.7065 | 2.6988 | −0.008 | BACKLOG-flagged regression-risk #2; held |
+| `coverage.248.11405` | 1.3610 | 1.3582 | −0.003 | PYR3-009 win held |
+| `coverage.248.25196` | 2.1809 | 2.1844 | +0.004 | PYR3-009 win held |
+| `coverage.248.02226` | 32.6200 | 32.6267 | +0.007 | biggest R outlier; mystery unchanged |
+| other 14 | (baseline) | (~same, <0.01) | flat | within run noise |
+
+**Documentation sync:** Updated `src/genome.ts:34-41` `Xform.opacity` field
+comment to describe the alpha-scaling contract (was still describing v0.9
+splat-skip). Surfaced by code-review subagent.
+
+**Follow-up backlog:**
+
+- **`[PYR3-016]`** (new): opacity-clamp hardening in `genome.ts:277`
+  serialization layer. `flame-import.ts:350` validates finiteness but not
+  range. A malformed `.flame` with `opacity` outside [0, 1] would reach the
+  shader and cause WGSL-implementation-defined `u32()` of negative values
+  or histogram-bucket overflow on `opacity > 1`. Defensive hardening; no
+  effect on valid flames. Surfaced by code-review subagent.
+
+**Perf note:** Replaces a stochastic branch + RNG draw per iter with a
+deterministic multiply on the hot path. Net should be neutral-to-faster;
+no formal perf gate at this stage.
+
 ## v0.9 — 2026-05-27 — Phase 3 cycle 1: finalxform-opacity gate ([PYR3-009] shipped — half-port)
 
 **Outcome:** Ported kotlin's finalxform-only opacity gate to `chaos.wgsl`'s

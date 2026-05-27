@@ -31,10 +31,14 @@ export interface Xform {
   // Variation chain — applied as weighted sum after the affine pre-transform.
   // Order doesn't matter (sum is commutative). Up to MAX_VARIATIONS_PER_XFORM.
   variations: Variation[];
-  // Phase 9d: per-xform render-only weighting (0..1). When undefined, treated
-  // as 1.0 (always splat). Matches flam3's `<xform opacity="N">` (variations.c:2034)
-  // — at splat time the chaos pass probabilistically skips the atomicAdd; the
-  // trajectory continues regardless.
+  // PYR3-015: per-xform render-only weighting (0..1). When undefined, treated
+  // as 1.0 (full deposit). Matches flam3's `<xform opacity="N">` (variations.c:2044,
+  // 2167) — at splat time the chaos pass scales BOTH the rgb and count (alpha)
+  // channels of the deposit by this value, making deposit weight linear in
+  // opacity. opacity=0 → no deposit (rgb=0, count=0); opacity=1 → full deposit;
+  // intermediate values deposit proportionally. The trajectory continues from
+  // the post-lens point regardless of opacity (matches v0.9 splat-skip — only
+  // the histogram contribution is gated, not the chaos game state).
   opacity?: number;
   // Phase 9d: per-source weight multipliers for next-xform pick. Indexed by
   // destination xform; trailing missing entries default to 1.0. Matches flam3's

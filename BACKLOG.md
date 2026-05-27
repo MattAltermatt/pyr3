@@ -6,40 +6,37 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-016** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-017** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-015] gpu · M · 🪨 · queued · v1.x — Regular-xform opacity → alpha-scaling (replace splat-skip stand-in)
+## [PYR3-016] gpu · XS · 🪶 · queued · v1.x — Opacity-clamp hardening at serialization boundary
 
-After v0.9 shipped the finalxform-only opacity gate (`[PYR3-009]`), regular-
-xform opacity in `chaos.wgsl:1727-1738` is still handled by the legacy
-"Phase 9d probabilistic splat skip" — gate the splat at the chaos-game
-level instead of alpha-scaling the deposited color in the tonemap path.
+`flame-import.ts:350` validates that `Xform.opacity` is a finite number
+but does NOT clamp it to the flam3-spec'd [0, 1] range. A malformed
+`.flame` with `opacity="-0.3"` or `opacity="1.5"` would pass the import
+gate and reach the WGSL shader, where:
+- `opacity < 0` → `weight < 0` → `u32(weight)` is implementation-defined
+  in WGSL (in practice returns 0 on all current backends, but spec-UB).
+- `opacity > 1` → `weight > 255` → histogram bucket accumulates more than
+  255 per hit, overflowing the saturation budget faster than intended.
 
-The flam3-faithful semantic is **per-xform alpha-scaling** via
-`adjust_percentage(opacity)` through `variations.c:2044` + `:2167`
-(kotlin tracks this as PYR3-035). Splat-skip is statistically equivalent at
-the median pixel (opacity=0.5 → half samples = half accumulated color) but
-**noisier at low SPP** than proper alpha-scaling (which deposits at full
-sample density with scaled color).
+Valid flames (flam3-spec'd opacity ∈ [0, 1]) are unaffected. This is
+defensive hardening against malformed input, not a correctness bug.
 
-**Why:** Phase 3 quality gating may surface fixtures whose splat-skip
-behavior diverges visibly from flam3 at low render-quality bands. Alpha-
-scaling is also a cleaner gradient.
+**Why:** External user input (`.flame` files from untrusted sources, or
+hand-edited corpora) crosses the system boundary at `flame-import.ts`.
+Per CLAUDE.md "Only validate at system boundaries" — this is one.
 
-**How to apply:**
-1. Remove the `if (rand01 >= opacity) continue;` block at `chaos.wgsl:1727-
-   1738` (the current splat-skip).
-2. In the splat-color path (after the palette lookup, before the `atomicAdd`
-   calls — chaos.wgsl ~1771-1777), multiply the `pal` rgb components by
-   `xf.color_params.z` (= regular-xform opacity).
-3. Verify against the 19 fixture set: regressions on coverage.248.24236 +
-   coverage.248.33248 should NOT reappear (the new path achieves the same
-   "deposit-less when opacity-low" effect, just without the random skip).
-4. Recalibrate baselines on any fixtures that move > 0.1.
+**How to apply:** Clamp in `genome.ts:277` (the GPU serialization step,
+where opacity gets packed into the f32 buffer):
+```ts
+buf[o + 10] = Math.max(0, Math.min(1, x.opacity ?? 1.0));
+```
+Zero perf cost (two comparisons per xform per frame). Optionally also
+warn at import time if out-of-range, but that's diagnostic-level — the
+clamp is the safety floor.
 
-**Reference:** flam3 `variations.c:2044, 2167`; kotlin equivalent is
-`PYR3-035` in pyr3-kotlin's BACKLOG.
+Surfaced by code-review subagent on the PYR3-015 branch (2026-05-27).
 
 ## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
 

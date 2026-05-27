@@ -1744,26 +1744,21 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     p = vec3f(p_pre_final.x + jx, p_pre_final.y + jy, p_pre_final.z);
 
     if (i >= u.fuse) {
-      // Phase 9d: probabilistic splat skip per opacity. Trajectory has already
-      // been updated above; only the visual contribution is gated. Nested if
-      // guarantees rand01 isn't called when opacity == 1.0 (WGSL `&&` is not
-      // spec-guaranteed short-circuit, so a single-line guard could leak RNG
-      // state advance into the opaque case).
-      //
-      // v1.x-C-opacity (PYR3-009 note): this gates on the REGULAR xform's
-      // opacity. flam3's spec'd path is per-xform alpha-scaling via
-      // adjust_percentage (variations.c:2044) — a separate, larger fix that
-      // belongs to its own PYR3-NNN. Splat-skip is a sample-noisier but
-      // statistically-equivalent stand-in (opacity=0 → no splat = no color;
-      // opacity=0.5 → ½ samples = ½ accumulated color). The FINALXFORM half
-      // of v1.x-C-opacity (kotlin PYR3-001) is correctly handled in the
-      // finalxform block above — gates the lens, not the splat.
+      // PYR3-015: regular-xform alpha-scaling (replaces v0.9-era splat-skip).
+      // flam3's per-xform opacity scales the deposit at the histogram bucket
+      // — variations.c:2044, 2167 (adjust_percentage). Kotlin tracks the
+      // equivalent port as PYR3-035. Splat-skip (the prior stand-in) was
+      // sample-noisier but statistically equivalent across the buffer
+      // (opacity=0 → no deposit; opacity=0.5 → ½ samples kept). Alpha-scaling
+      // matches that by scaling BOTH the rgb channels AND the count (alpha)
+      // by `opacity` — making the deposit weight linear in opacity instead
+      // of stochastic. opacity=0 → zero deposit (matches splat-skip continue);
+      // opacity=1 → full deposit; intermediate values deposit proportionally.
+      // Scaling count too is load-bearing: scaling only rgb leaves a
+      // "ghost density" at low-opacity samples, contaminating tonemap.
+      // The FINALXFORM half of v1.x-C-opacity is handled separately in the
+      // finalxform block above (PYR3-009, gates the lens — not the splat).
       let opacity = xf.color_params.z;
-      if (opacity < 1.0) {
-        if (rand01(walker_id) >= opacity) {
-          continue;
-        }
-      }
       // Phase 9-rotate: apply CCW rotation around (cx, cy) before scale + canvas-center.
       // Matches flam3 rect.c:818-823 matrix [cos, -sin; sin, cos]. cos_r / sin_r are
       // hoisted from u.rotation_rad above the iter loop. rotation_rad=0 → cos=1, sin=0
@@ -1796,21 +1791,25 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
           let pal_idx = min(u32(cx_f), PALETTE_LAST_U);
           pal = palette[pal_idx];
         }
-        let r_add = u32(pal.x * 255.0);
-        let g_add = u32(pal.y * 255.0);
-        let b_add = u32(pal.z * 255.0);
+        // PYR3-015 alpha-scaling: rgb AND count (alpha) channels scaled by
+        // xform opacity. Scaling count too is load-bearing — at opacity=0,
+        // depositing count=255 with rgb=0 creates a "ghost density" region
+        // that the tonemap reads as legitimate dark pixels (regressed
+        // coverage.248.33248 R 4.92 → 8.57 before this fix). Scaling both
+        // makes the deposit weight linear in opacity, matching the
+        // statistical effect of the v0.9 splat-skip but deterministic.
+        // Base unit is 255 per hit (Phase 9-supersample-real / count-units
+        // fix matching flam3 rect.c:460-461 `bump_no_overflow(b[0][3], 255.0)`).
+        let weight = opacity * 255.0;
+        let r_add = u32(pal.x * weight);
+        let g_add = u32(pal.y * weight);
+        let b_add = u32(pal.z * weight);
+        let count_add = u32(weight);
         let base = (u32(yi) * u.width + u32(xi)) * 4u;
         atomicAdd(&hist[base + 0u], r_add);
         atomicAdd(&hist[base + 1u], g_add);
         atomicAdd(&hist[base + 2u], b_add);
-        // Phase 9-supersample-real (count-units fix): bump count by 255 per hit
-        // to match flam3 rect.c:460-461 (`bump_no_overflow(b[0][3], 255.0)`).
-        // pyr3 previously bumped by 1, putting tmp = count/255 deep in the
-        // alpha-curve linrange branch on hot pixels where flam3 lands in the
-        // pure-gamma branch with alpha clamped to 1.0. The ×255 alignment
-        // shifts the alpha-curve regime to match flam3's, fixing the
-        // grey-cyan vs vivid-teal saturation gap on imported flames.
-        atomicAdd(&hist[base + 3u], 255u);
+        atomicAdd(&hist[base + 3u], count_add);
       }
     }
   }
