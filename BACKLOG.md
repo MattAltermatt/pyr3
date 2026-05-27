@@ -9,26 +9,41 @@ current cycle lives in [ROADMAP.md](ROADMAP.md).
 > **Next ID: PYR3-017** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
-
-## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
+## [PYR3-014] infra · S · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
 
 `npm run test:parity` (19 fixtures, ~89 s total) emits an "Unhandled Error:
-`[vitest-worker]: Timeout calling 'onTaskUpdate'`" at the end. All 19 tests
-pass — the error is vitest's internal RPC heartbeat firing because the suite
-runtime exceeds the default `onTaskUpdate` timeout. Doesn't affect correctness,
-just produces scary log noise.
+`[vitest-worker]: Timeout calling 'onTaskUpdate'`" at the end and exits 1.
+All 19 tests pass — the error fires from vitest's internal worker→main RPC
+heartbeat (`birpc`), which has a hardcoded ack timeout that's NOT
+configurable via `testTimeout` / `hookTimeout` / `teardownTimeout` /
+`poolOptions`.
 
 **Why:** As Phase 3 adds more fixtures or higher-quality renders, the suite
-will only get slower; the noise will be persistent.
+will only get slower; the noise will be persistent. The exit-1 makes CI
+treat the run as failed despite green tests.
 
-**How to apply:** Either bump vitest's worker timeout via `vitest.config.ts`
-(`test.testTimeout` already 180s — this is a *different* RPC timeout — likely
-`poolOptions.threads.singleThread` or `chaiConfig.includeStack`), or split the
-parity suite into per-fixture vitest invocations. Easiest: try
-`test.teardownTimeout: 120_000` + `test.hookTimeout: 120_000` in config.
+**Investigation log (2026-05-27, on `vitest@3.2.4`):**
+- ❌ `test.teardownTimeout: 120_000` + `test.hookTimeout: 120_000` in
+  `vitest.config.ts` — no effect (these gate test-runner phases, not RPC).
+- ❌ Switching `test.pool: 'forks'` + `poolOptions.forks.singleFork: true`
+  — same error reproduces. Forks vs threads doesn't change RPC behavior.
+- 🔍 Root cause confirmed: vitest 3.x bundles `birpc` with a hardcoded
+  per-call timeout in `node_modules/vitest/dist/chunks/rpc.-pEldfrD.js:53`.
+  Long-running GPU-driven tests block the event loop enough that the
+  RPC ack window expires.
 
-Surfaced 2026-05-27 during v0.8 (19-fixture expansion).
+**Candidate fixes (none XS):**
+- 🅰 **Upgrade to `vitest@4.x`** — major-version bump (current dep `^3.0.0`).
+  May or may not include RPC-timeout config; needs migration testing.
+- 🅱 **Per-fixture vitest invocations** — replace `vitest run
+  src/parity.test.ts` with a shell loop that runs one fixture at a time
+  (each <30s, well under RPC threshold). Bigger restructure of the test
+  harness.
+- 🅲 **Stderr-filter wrapper** — `scripts/run-parity.sh` runs vitest,
+  filters the known noise, exits 0 iff all tests pass. Pragmatic hack.
+
+Surfaced 2026-05-27 during v0.8 (19-fixture expansion); investigation
+deepened 2026-05-27 during PYR3-014 attempt.
 
 ## [PYR3-013] feat · L · 🪨 · queued · post-v1 — Showcase gallery (mirror pyr3-kotlin's v1.1)
 
