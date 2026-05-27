@@ -6,8 +6,46 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-009** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-011** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-009] gpu · M · 🪨 · investigation · v1.x — Opacity-gate semantics (finalxform-only vs per-xform-splat)
+
+pyr3 currently gates regular xforms' splats by `rand01 < opacity` at
+`chaos.wgsl:1727-1738` ("Phase 9d probabilistic splat skip"). pyr3-kotlin's
+v1.x-C-opacity ships a different gate: finalxform-only, via `rand01 < opacity`
+matching `flam3.c:336-337`'s `opacity-=1` RNG short-circuit. Kotlin's
+PYR3-035 separately tracks regular-xform opacity as alpha-scaling (the
+flam3 `adjust_percentage(opacity)` path through `variations.c:2044, 2167`),
+not splat-skip.
+
+**Why:** Two implementations of "opacity" exist in flam3 — finalxform skip
+vs regular-xform alpha-scale. peek's current code is closer to neither
+canonically. Need empirical investigation against fixtures with non-1
+opacity (kotlin uses `coverage.248.11405` op=0.73, `coverage.248.25196`
+op=0.39).
+
+**How to apply:** Fetch a fixture with `finalxform opacity < 1` from the
+ESF corpus. Render with peek's current code. Render with a port of
+kotlin's finalxform-only gate. Compare visually + R-metric vs flam3-C
+golden. Pick the more flam3-faithful approach.
+
+## [PYR3-010] gpu · L · 🪨 · queued · v1.x — Variation-arm bit-parity audit (98 arms)
+
+Sweep all 98 variation arms in `variations.ts` + `chaos.wgsl` against
+pyr3-kotlin's `Variations.kt` port. For each arm, bilateral-probe (peek
+output vs kotlin output for a synthetic 1-xform genome). Kotlin has
+documented its variation-arm porting in CHANGELOG v0.10-v0.18 with
+flam3-C source citations.
+
+**Why:** Audit work is cheaper now (engine is in shape, fixtures correct,
+test harness ready) than after we accumulate fixtures that depend on
+specific arms.
+
+**How to apply:** Spawn an Agent per variation cluster (8-15 arms each).
+Each agent diffs peek's TS impl + WGSL impl against kotlin's Kotlin impl,
+reports per-arm verdicts (identical / bit-divergent / algorithmically
+divergent). Bundle findings into a per-arm follow-up BACKLOG.
 
 ## [PYR3-008] gpu · S · 🪨 · queued · v1.x — Decouple chaos.ts oversample from genome
 

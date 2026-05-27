@@ -8,35 +8,24 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
-| **v0.2** | 2026-05-27 | _(this commit)_ | **Camera-zoom bug fix (the one pyr3-peek couldn't crack).** Browser quick-mode renders of any flame declaring `supersample > 1` over-zoomed by that factor — `chaos.ts:173` reads `g.scale × g.oversample` from the genome, but `main.ts` was rescaling `g.scale` for canvas fit without resetting `g.oversample`. One-line fix: `renderGenome.oversample = targetOversample`. Welcome flame `247.19679` now matches kotlin v1.1 4K reference composition. |
+| **v0.3** | 2026-05-27 | _(this commit)_ | **Phase 1: kotlin audit-port (no-op outcome).** Documented audit of 12 enumerated kotlin GPU / parser / variation fixes v0.10 → v1.x-E. 11 already in peek or structurally N/A in WGSL/TS (incl. both signedness fixes v0.28b + v0.32 — `IntArray.toLong()` sign-extend bug class cannot manifest in WGSL `array<u32>` + `f32(hist[i])`). 1 differing-semantics item (v1.x-C-opacity: finalxform-only vs per-xform-splat) filed as `[PYR3-009]` for empirical investigation. 98 variation arms in `chaos.wgsl` match kotlin's 98/99 (gdoffs gap shared). |
+| **v0.2** | 2026-05-27 | `0139076` | **Camera-zoom bug fix (the one pyr3-peek couldn't crack).** Browser quick-mode renders of any flame declaring `supersample > 1` over-zoomed by that factor — `chaos.ts:173` reads `g.scale × g.oversample` from the genome, but `main.ts` was rescaling `g.scale` for canvas fit without resetting `g.oversample`. One-line fix: `renderGenome.oversample = targetOversample`. Welcome flame `247.19679` now matches kotlin v1.1 4K reference composition. |
 | **v0.1** | 2026-05-27 | `aae6d5b` | **Phase 0: TS+WGPU engine basis.** Copied pyr3-peek wholesale (`src/` + `bin/` + `scripts/` + `tests/` + `fixtures/` + `index.html` + Vite/tsconfig/package). Renamed `pyr3-peek` → `pyr3`. Stripped peek identifiers across 7 files. Verified: `npm test` 4471/4471 green, `npm run render` produces PNG in 5.22 s, `npm run dev` + Chrome verify renders welcome flame. |
 | **v0.0** | 2026-05-27 | `bbc3b5a` | **Project genesis.** 6-doc structure + design spec + LICENSE seeded. No engine code yet. |
 
 ## 🎯 Next phases
 
-### Phase 1 — Audit-port pyr3-kotlin's GPU/parser/variation fixes (target: v0.5)
+### Phase 1 — Audit-port pyr3-kotlin's GPU/parser/variation fixes ✅ SHIPPED v0.3 2026-05-27
 
-Enumerate every pyr3-kotlin commit (v0.10 → v1.x-E) that touches `:gpu` (WGSL), `:flam3`
-(parser), `:core` (variations / calibration / tonemap / palette). For each: evaluate whether
-peek's TS/WGSL has the same bug; if so, port. Each port is its own commit with a `Port:
-pyr3-kotlin <ref>` body trailer citing the kotlin source.
+11 of 12 enumerated fixes were already in peek or structurally N/A in
+WGSL/TS (both signedness items v0.28b + v0.32 cannot manifest in WGSL
+`array<u32>`). 1 differing-semantics item (v1.x-C-opacity) moved to
+`[PYR3-009]` for empirical investigation against fixtures with non-1
+opacity. See CHANGELOG v0.3 for the full audit table.
 
-Known-load-bearing ports queued:
-
-| kotlin ref | What | WGSL file |
-|---|---|---|
-| v0.36-A | EDISC EPS-clamp (near-unit-circle precision crater) | `chaos.wgsl` |
-| v0.36-H | sub-ulp walker jitter (fractalapple tight-orbit recovery) | `chaos.wgsl` |
-| v1.x-C | finalxform opacity gate (`opacity-=1` short-circuit) | `chaos.wgsl` |
-| v1.x-E | post-process pipeline ordering (DE + spatial on readback) | render-orchestrator |
-| v0.32 | TonemapPass u32 signedness fix | `visualize_u32.wgsl` |
-| v0.28b | DE u32 signedness fix | `density.wgsl` |
-| v0.21 | `pre_blur` variation | `variations.ts` + `chaos.wgsl` |
-
-Full enumeration happens during phase execution by scanning kotlin's CHANGELOG.
-
-**Acceptance:** all known kotlin GPU/shader/variation/parser fixes accounted for (ported, or
-marked non-applicable with one-line reason in commit body). `npm test` green.
+Follow-up scoped to BACKLOG:
+- `[PYR3-009]` Opacity-gate semantics investigation
+- `[PYR3-010]` Variation-arm bit-parity audit (98 arms)
 
 ### Phase 2 — Flam3-vs-pyr3 test rig + golden fixture set (target: v0.7)
 

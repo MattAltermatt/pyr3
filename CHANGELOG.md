@@ -7,6 +7,62 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.3 — 2026-05-27 — Phase 1: kotlin-fix audit-port pass (no code changes — pyr3-peek was already aligned)
+
+**Outcome:** 11 of 12 enumerated kotlin GPU / parser / variation fixes from
+v0.10 → v1.x-E are either already present in pyr3-peek's source or
+structurally non-applicable. The "audit-port" phase reduces to a
+documented audit + 1 follow-up investigation.
+
+**Audit table:**
+
+| kotlin ref | what | status in pyr3 |
+|---|---|---|
+| v0.28b | DE u32 signedness (`DensityEstimator.kt`) | **N/A** — WGSL `array<u32>` + `f32(hist[i])` is structurally unsigned; the kotlin/JVM `IntArray[i].toLong()` sign-extension bug class cannot manifest in WGSL |
+| v0.32 | `TonemapPass` u32 signedness | **N/A** — same reason as v0.28b |
+| v0.36-A | EDISC `acos` / `sqrt` precision-crater clamp | **ALREADY PORTED** (`chaos.wgsl:957-960`, attributed to "Batch F wgsl-shader-reviewer fix") |
+| v0.36-H | sub-ulp ±5e-7 walker jitter (fractalapple class) | **ALREADY PORTED** (`chaos.wgsl:1714-1725`, explicit `Port: pyr3 chaos.comp:2580-2599` reference) |
+| v1.x-E | DE + spatial filter on GPU readback path | **ARCHITECTURALLY EQUIVALENT** — peek's `visualize_u32.wgsl` + `visualize_f32.wgsl` both bake Gaussian spatial-collapse into the fragment shader (lines 139-160); no separate `TonemapPass` vs `PostProcessPipeline` split exists, the equivalent of v1.x-E's fix is the design |
+| v0.27 | k2 supersample² fix in calibration | **ALREADY PORTED** (`calibration.ts:16-17, 41` — `oversampleSq` in k2 numerator per `rect.c:936-937`) |
+| v0.21 | `pre_blur` variation (V=97) | **ALREADY PORTED** (`chaos.wgsl:1362-1363` "V=97 pre_blur handled pre-switch in 2-pass loop") |
+| v0.19 | xaos transition matrix + background color | **ALREADY PORTED** (`genome.ts:43` xaos field + `chaos.wgsl:55,124` xaos_buffer pack) |
+| v0.5 | per-xform post-affine | **ALREADY PORTED** (`genome.ts:44` "Phase 9c" + `chaos.wgsl:92-95` post0 vec4f slot) |
+| v0.14a | parser: palette-by-index, hue, multi-value color, float-rgb | **ALREADY PORTED** (`palette.ts:20,28,34-40,75-77` hue rotation; `flame-import.ts:445` hue attr) |
+| v0.14b | HSV highlight-power desaturation | **ALREADY PORTED** (`visualize_u32.wgsl:79-104` calc_newrgb with rgb2hsv branch) |
+| v0.29.1 | PaletteEntry Int → Double widening | **N/A** — JS `number` is always f64; no Int/Double mismatch class exists in TS |
+| v0.29.3 | NaN-propagation defense (Xform init guard) | **ALREADY PORTED** (`flame-import.ts` 5+ `Number.isFinite` guards at parse sites) |
+| v1.x-C-opacity | finalxform opacity gate | ⚠️ **DIFFERENT SEMANTICS** — peek implements per-xform splat-skip opacity gating (`chaos.wgsl:1727-1738`, "Phase 9d probabilistic splat skip"); kotlin implements finalxform-only flam3-faithful gating with `rand01 < opacity`. Both have merit. Filed as `[PYR3-009]` for empirical investigation against fixtures with `finalxform opacity < 1` (kotlin's reference: `coverage.248.11405` op=0.73, `coverage.248.25196` op=0.39 — neither in our current fixture set). |
+
+**Variation count:** 98 `var_*` functions in `chaos.wgsl`, matching kotlin's
+"98/99 shipped, `gdoffs` is the JWildfire/Apophysis-only gap" claim from
+pyr3-kotlin VISION.
+
+**Skipped (JVM-specific, not portable):**
+- v0.31, v0.33, v0.34, v0.34.1, v0.35 — `Math.fma`, Pair allocation,
+  `StrictMath` vs `Math`, JVM inlining flags
+- v0.36-B...G, v0.36-I, v0.37-A/B, v0.38 — AutoRoute, kotlin showcase
+  harness, bench infra
+- v1.x-D-pivot, v1.x-D, v1.x-A, v1.x-B-revival, v1.x-C-cpu-progress —
+  docs / strategy / CPU-path work
+
+**Follow-up BACKLOG opened:**
+- `[PYR3-009]` Opacity-gate semantics investigation (finalxform-only vs
+  per-xform-splat) — empirical comparison against kotlin's
+  `coverage.248.11405` reference flame.
+- `[PYR3-010]` Variation-arm bit-parity audit — sweep all 98 arms in
+  `variations.ts` + `chaos.wgsl` against kotlin's port for any
+  algorithmic divergence (kotlin has known bilateral-probe data for
+  many).
+
+**Why the audit lands as a doc-only ship rather than a stream of ports:**
+Per CLAUDE.md "Audit backlog items before bundling — pulling N backlog
+entries into a polish phase → verify each is actually unshipped against
+current code first." Audit before code. The user named "different maths
+involved, signed/unsigned" as a specific concern; both signedness fixes
+turn out N/A in TS+WGSL by language semantics, which is itself
+load-bearing context worth pinning. This is exactly the surface the
+audit was designed to surface.
+
 ## v0.2 — 2026-05-27 — Camera-zoom bug fix (the one pyr3-peek couldn't crack)
 
 **One-line fix in `src/main.ts` closes the long-standing "camera looks zoomed
