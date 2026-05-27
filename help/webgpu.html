@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E" />
+    <title>pyr3-peek — WebGPU help</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0c;
+        --text: #ddd;
+        --text-dim: #888;
+        --accent: #ff8c1a;
+        --ok: #9aff7a;
+        --err: #ff7a7a;
+        --card-bg: #15151a;
+        --card-border: #2a2a30;
+      }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg); color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.55;
+      }
+      .page { max-width: 720px; margin: 0 auto; padding: 32px 22px 80px; }
+      .back {
+        display: inline-block; color: var(--accent); text-decoration: none;
+        font-size: 13px; margin-bottom: 22px;
+      }
+      .back:hover { text-decoration: underline; }
+      h1 { font-size: 28px; margin: 0 0 8px; color: var(--text); font-weight: 600; }
+      .subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 30px; }
+      h2 {
+        font-size: 18px; margin: 36px 0 10px; color: var(--text);
+        font-weight: 600; scroll-margin-top: 20px;
+      }
+      h2 .anchor { color: var(--text-dim); opacity: 0; margin-left: 6px; text-decoration: none; }
+      h2:hover .anchor { opacity: 1; }
+      p { margin: 10px 0; font-size: 14px; }
+      .browsers li { margin: 4px 0; }
+      strong { color: var(--text); }
+      code {
+        background: var(--card-bg); padding: 1px 6px; border-radius: 3px;
+        font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      .card {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 6px; padding: 16px 18px; margin: 14px 0;
+      }
+      .card.err { border-color: rgba(255, 122, 122, 0.4); }
+      .card.err h2 { color: var(--err); }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <a class="back" href="/">← Back to pyr3-peek</a>
+
+      <h1>WebGPU &amp; pyr3-peek</h1>
+      <p class="subtitle">
+        Why this viewer needs WebGPU, and what to do if your browser doesn't have it yet.
+      </p>
+
+      <h2 id="what-is-webgpu">
+        What is WebGPU?
+        <a class="anchor" href="#what-is-webgpu">#</a>
+      </h2>
+      <p>
+        <strong>WebGPU</strong> is a web standard that lets a page talk to your
+        graphics card directly. It's the modern successor to WebGL, designed
+        around how GPUs actually work today rather than around the OpenGL ES
+        2.0 API of 2007.
+      </p>
+      <p>
+        Fractal flames are computed by running millions of chaos-game
+        iterations per render. That's brutal on a CPU and trivial on a GPU.
+        pyr3-peek uses five WebGPU compute shaders (chaos · density ·
+        spatial filter · two visualize passes) to run those iterations
+        directly on your machine's graphics hardware. No JavaScript loops
+        with that kind of workload would feel acceptable.
+      </p>
+      <p>
+        If you opened pyr3-peek and saw a flame rendering, your browser
+        already supports WebGPU. The green <code>WebGPU ✓</code> chip in
+        the top bar links here just in case you wanted to know what it
+        meant.
+      </p>
+
+      <div class="card err">
+        <h2 id="why-not-working">
+          Why isn't pyr3-peek working?
+          <a class="anchor" href="#why-not-working">#</a>
+        </h2>
+        <p>
+          You're on this section because the chip in pyr3-peek is red and
+          the canvas didn't load a flame. Your browser isn't exposing
+          <code>navigator.gpu</code>, so pyr3-peek has no engine to render with.
+        </p>
+        <p><strong>Browsers that work today:</strong></p>
+        <ul class="browsers">
+          <li>Chrome / Edge <strong>113+</strong> on Windows, macOS, ChromeOS, Android.</li>
+          <li>Safari <strong>18+</strong> on macOS Sequoia (14.5+).</li>
+          <li>Firefox <strong>Nightly</strong> (behind the
+            <code>dom.webgpu.enabled</code> flag in <code>about:config</code>).</li>
+        </ul>
+        <p>
+          If you're already on one of those, the next likely culprit is a
+          GPU driver that's too old or a hardware-acceleration flag
+          turned off. Chrome's <code>chrome://gpu</code> page will tell
+          you whether WebGPU is enabled and, if not, why.
+        </p>
+      </div>
+
+      <h2>Is this the only way?</h2>
+      <p>
+        For the browser, yes — and that's deliberate. pyr3-peek is meant
+        to be the lowest-friction way to share a fractal flame: a URL
+        someone opens in a browser, no install, no native app, no JVM.
+        WebGPU is the only path that lets a browser do this with
+        anything approaching reasonable performance.
+      </p>
+      <p>
+        For the desktop, the sibling project
+        <a href="https://github.com/MattAltermatt/pyr3" style="color: var(--accent);">pyr3</a>
+        ships a Kotlin/JVM renderer + editor that doesn't need WebGPU.
+        If you can't get a working browser, that's the canonical way
+        to view (and edit) flames.
+      </p>
+    </div>
+  </body>
+</html>

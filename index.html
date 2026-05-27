@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E" />
+    <title>pyr3 — fractal flame viewer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0c;
+        --bar-bg-1: #15151a;
+        --bar-bg-2: #1a1a20;
+        --bar-bg-3: #0f0f13;
+        --bar-border: #2a2a30;
+        --accent: #ff8c1a;
+        --accent-soft: rgba(255, 140, 26, 0.18);
+        --accent-border: #884a1a;
+        --text: #ddd;
+        --text-dim: #888;
+        --text-muted: #aaa;
+        --ok: #9aff7a;
+        --err: #ff7a7a;
+      }
+
+      /* Hide the canvas while the WebGPU fallback panel is mounted. */
+      body.webgpu-unavailable #pyr3-canvas { display: none; }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        overflow: hidden;
+      }
+
+      #pyr3-app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+      }
+
+      #pyr3-bar {
+        flex: 0 0 auto;
+      }
+
+      #pyr3-canvas-zone {
+        flex: 1 1 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 0;
+        background: var(--bg);
+        position: relative;
+      }
+
+      #pyr3-canvas {
+        display: block;
+        /* Fit-and-preserve-aspect: canvas fills the available zone in BOTH
+           dimensions, with `object-fit: contain` enforcing the canvas's
+           intrinsic aspect (from canvas.width/height set by main.ts). On
+           wide viewports the canvas grows until height is binding (letterbox
+           left/right); on tall viewports until width is binding (letterbox
+           top/bottom). Always as big as possible, never stretched. */
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      #pyr3-fallback {
+        display: none;
+        max-width: 560px;
+        padding: 28px 30px;
+        margin: 24px;
+        background: var(--bar-bg-1);
+        border: 1px solid rgba(255, 122, 122, 0.4);
+        border-radius: 8px;
+        color: var(--text);
+      }
+      #pyr3-fallback[hidden] { display: none; }
+      #pyr3-fallback:not([hidden]) { display: block; }
+      #pyr3-fallback h2 {
+        color: var(--err);
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 12px;
+      }
+      #pyr3-fallback p {
+        font-size: 13px;
+        line-height: 1.55;
+        margin: 8px 0;
+      }
+      #pyr3-fallback p.fix { color: var(--text-muted); margin-top: 14px; }
+      #pyr3-fallback ul {
+        margin: 8px 0 14px;
+        padding-left: 20px;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      #pyr3-fallback ul li { margin: 3px 0; }
+      #pyr3-fallback strong { color: var(--text); }
+      #pyr3-fallback a.cta {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 6px 14px;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-border);
+        border-radius: 4px;
+        color: #ffb56e;
+        font-size: 13px;
+        text-decoration: none;
+      }
+      #pyr3-fallback a.cta:hover { background: rgba(255, 140, 26, 0.28); }
+
+      #pyr3-error {
+        display: none;
+        position: fixed;
+        inset: 0;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        background: #1a0a0a;
+        color: #ff8a8a;
+        font-family: ui-monospace, monospace;
+        white-space: pre-wrap;
+        text-align: center;
+      }
+
+      #pyr3-error.visible {
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="pyr3-app">
+      <header id="pyr3-bar"></header>
+      <main id="pyr3-canvas-zone">
+        <canvas id="pyr3-canvas"></canvas>
+        <div id="pyr3-fallback" hidden></div>
+      </main>
+    </div>
+    <div id="pyr3-error" role="alert"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

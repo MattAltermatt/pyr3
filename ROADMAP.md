@@ -8,19 +8,10 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
-| **v0.0** | 2026-05-27 | _(this commit)_ | **Project genesis.** 6-doc structure + design spec + LICENSE seeded. No engine code yet. |
+| **v0.1** | 2026-05-27 | _(this commit)_ | **Phase 0: TS+WGPU engine basis.** Copied pyr3-peek wholesale (`src/` + `bin/` + `scripts/` + `tests/` + `fixtures/` + `index.html` + Vite/tsconfig/package). Renamed `pyr3-peek` → `pyr3`. Stripped peek identifiers across 7 files. Verified: `npm test` 4471/4471 green, `npm run render` produces PNG in 5.22 s, `npm run dev` + Chrome verify renders welcome flame. |
+| **v0.0** | 2026-05-27 | `bbc3b5a` | **Project genesis.** 6-doc structure + design spec + LICENSE seeded. No engine code yet. |
 
 ## 🎯 Next phases
-
-### Phase 0 — Copy pyr3-peek wholesale, lay groundwork (target: v0.1)
-
-Mechanical. Copy `pyr3-peek/{src,bin,scripts,tests,public,index.html,vite.config.ts,
-vitest.config.ts,tsconfig.json,package.json}` into this repo. Update `package.json` (name,
-description); strip peek-specific scope guards. Verify `npm install && npm test &&
-npm run dev` all work, plus `npm run render` produces a PNG from a known flame.
-
-**Acceptance:** browser viewer renders the welcome flame in Chrome; CLI produces a PNG of the
-same flame. Both run end-to-end without errors.
 
 ### Phase 1 — Audit-port pyr3-kotlin's GPU/parser/variation fixes (target: v0.5)
 

@@ -1,0 +1,624 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { type Genome, SPIRAL_GALAXY } from './genome';
+import { genomeToJson, genomeFromJson, PYR3_JSON_VERSION } from './serialize';
+import { DEFAULT_DENSITY } from './density';
+import { V } from './variations';
+
+describe('genomeToJson', () => {
+  it('produces version 1', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.version).toBe(PYR3_JSON_VERSION);
+    expect(json.version).toBe(1);
+  });
+
+  it('serializes name, viewport, palette, xforms shape', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.name).toBe('Spiral Galaxy');
+    expect(json.viewport).toEqual({ scale: 220, cx: 0, cy: 0 });
+    expect(json.palette.name).toBe('pyre');
+    expect(json.palette.stops.length).toBe(6);
+    expect(json.xforms.length).toBe(3);
+  });
+
+  it('serializes a parameterless variation without a params field', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const v = json.xforms[1]!.variations[0]!;
+    expect(v.name).toBe('spherical');
+    expect(v.weight).toBe(1);
+    expect(v.params).toBeUndefined();
+  });
+
+  it('serializes julian with named params (power, dist)', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const v = json.xforms[0]!.variations[0]!;
+    expect(v.name).toBe('julian');
+    expect(v.weight).toBe(1);
+    expect(v.params).toEqual({ power: 2, dist: 1 });
+  });
+
+  it('serializes affine fields nested under the affine key', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.xforms[0]!.affine).toEqual({
+      a: 0.85, b: 0, c: 0, d: 0, e: 0.85, f: 0,
+    });
+  });
+
+  it('omits palette.hue and palette.mode when undefined', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.palette.hue).toBeUndefined();
+    expect(json.palette.mode).toBeUndefined();
+  });
+});
+
+describe('genomeFromJson', () => {
+  it('round-trips SPIRAL_GALAXY losslessly', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const reparsed = genomeFromJson(json);
+    expect(reparsed).toEqual(SPIRAL_GALAXY);
+  });
+
+  it('throws on version mismatch', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, version: 2 };
+    expect(() => genomeFromJson(bad)).toThrow(/version/);
+  });
+
+  it('throws on unknown variation name', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = JSON.parse(JSON.stringify(json));
+    bad.xforms[0].variations[0].name = 'made_up_variation';
+    expect(() => genomeFromJson(bad)).toThrow(/made_up_variation/);
+  });
+
+  it('round-trips palette.hue when set', () => {
+    const json = genomeToJson({
+      ...SPIRAL_GALAXY,
+      palette: { ...SPIRAL_GALAXY.palette, hue: 60 },
+    });
+    expect(json.palette.hue).toBe(60);
+    const reparsed = genomeFromJson(json);
+    expect(reparsed.palette.hue).toBe(60);
+  });
+
+  it("round-trips palette.mode='step' when set", () => {
+    const json = genomeToJson({
+      ...SPIRAL_GALAXY,
+      palette: { ...SPIRAL_GALAXY.palette, mode: 'step' },
+    });
+    expect(json.palette.mode).toBe('step');
+    const reparsed = genomeFromJson(json);
+    expect(reparsed.palette.mode).toBe('step');
+  });
+
+  it('throws on missing required field (name)', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, name: undefined };
+    expect(() => genomeFromJson(bad)).toThrow(/name/);
+  });
+
+  it('ignores unknown params on a known variation (forward-compat)', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const tweaked = JSON.parse(JSON.stringify(json));
+    tweaked.xforms[1].variations[0].params = { future_field: 99 };
+    expect(() => genomeFromJson(tweaked)).not.toThrow();
+  });
+});
+
+describe('finalxform round-trip', () => {
+  // Helper: build a Spiral-Galaxy-with-julia-final genome.
+  function withJuliaFinal(): Genome {
+    return {
+      ...SPIRAL_GALAXY,
+      finalxform: {
+        a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+        weight: 0, // meaningless on finalxform; placeholder
+        color: 0.7,
+        colorSpeed: 0.3,
+        variations: [{ index: V.julia, weight: 1 }],
+      },
+    };
+  }
+
+  it('round-trips a genome with finalxform present', () => {
+    const g = withJuliaFinal();
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.finalxform).toBeDefined();
+    expect(back.finalxform).toEqual(g.finalxform);
+  });
+
+  it('round-trips a genome WITHOUT finalxform (regression)', () => {
+    const back = genomeFromJson(genomeToJson(SPIRAL_GALAXY));
+    expect(back.finalxform).toBeUndefined();
+    expect(back).toEqual(SPIRAL_GALAXY);
+  });
+
+  it('emits no `weight` field on the serialized finalxform', () => {
+    const json = genomeToJson(withJuliaFinal());
+    expect(json.finalxform).toBeDefined();
+    const keys = Object.keys(json.finalxform!);
+    expect(keys).not.toContain('weight');
+    // Regular xforms still have weight (sanity).
+    expect(Object.keys(json.xforms[0]!)).toContain('weight');
+  });
+
+  it('builds finalxform with weight: 0 when loaded', () => {
+    const json = genomeToJson(withJuliaFinal());
+    const loaded = genomeFromJson(json);
+    expect(loaded.finalxform!.weight).toBe(0);
+  });
+
+  it('throws with a path-anchored message on malformed finalxform', () => {
+    const bad = {
+      ...genomeToJson(SPIRAL_GALAXY),
+      finalxform: {
+        color: 0.7,
+        colorSpeed: 0.3,
+        // missing affine
+        variations: [{ name: 'julia', weight: 1 }],
+      },
+    };
+    expect(() => genomeFromJson(bad)).toThrow(/finalxform\.affine/);
+  });
+
+  // skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
+  it.skip('matches the committed examples/spiral-galaxy-julia-final.pyr3.json fixture', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', 'examples', 'spiral-galaxy-julia-final.pyr3.json');
+    const raw = readFileSync(path, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    const loaded = genomeFromJson(parsed);
+    expect(loaded.finalxform).toBeDefined();
+    expect(loaded.finalxform!.variations[0]!.index).toBe(V.julia);
+    expect(loaded.finalxform!.color).toBe(0.7);
+    expect(loaded.finalxform!.colorSpeed).toBe(0.3);
+    expect(loaded.finalxform!.a).toBe(1);
+    expect(loaded.finalxform!.e).toBe(1);
+    expect(loaded.finalxform!.b).toBe(0);
+    expect(loaded.finalxform!.d).toBe(0);
+    // Stronger: round-trip through genomeToJson should produce the same on-disk text.
+    const expected = JSON.stringify(genomeToJson(loaded), null, 2);
+    expect(raw.trimEnd()).toBe(expected);
+  });
+});
+
+describe('symmetry round-trip', () => {
+  it('round-trips a genome with rotational symmetry', () => {
+    const g: Genome = { ...SPIRAL_GALAXY, symmetry: { kind: 'rotational', n: 5 } };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.symmetry).toEqual({ kind: 'rotational', n: 5 });
+  });
+
+  it('round-trips a genome with dihedral symmetry', () => {
+    const g: Genome = { ...SPIRAL_GALAXY, symmetry: { kind: 'dihedral', n: 8 } };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.symmetry).toEqual({ kind: 'dihedral', n: 8 });
+  });
+
+  it('round-trips a genome WITHOUT symmetry (regression)', () => {
+    const back = genomeFromJson(genomeToJson(SPIRAL_GALAXY));
+    expect(back.symmetry).toBeUndefined();
+  });
+
+  it('throws on invalid symmetry.kind', () => {
+    const bad = { ...genomeToJson(SPIRAL_GALAXY), symmetry: { kind: 'invalid', n: 5 } };
+    expect(() => genomeFromJson(bad)).toThrow(/symmetry\.kind/);
+  });
+
+  it('throws on n=0 or non-positive n', () => {
+    const bad = { ...genomeToJson(SPIRAL_GALAXY), symmetry: { kind: 'rotational', n: 0 } };
+    expect(() => genomeFromJson(bad)).toThrow(/symmetry\.n/);
+  });
+
+  it('throws on non-integer n', () => {
+    const bad = { ...genomeToJson(SPIRAL_GALAXY), symmetry: { kind: 'rotational', n: 2.5 } };
+    expect(() => genomeFromJson(bad)).toThrow(/symmetry\.n/);
+  });
+
+  // skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
+  it.skip('matches the committed examples/spiral-galaxy-d5.pyr3.json fixture', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', 'examples', 'spiral-galaxy-d5.pyr3.json');
+    const raw = readFileSync(path, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    const loaded = genomeFromJson(parsed);
+    expect(loaded.symmetry).toEqual({ kind: 'dihedral', n: 5 });
+    expect(loaded.xforms).toHaveLength(3);
+    // Round-trip should match the file byte-for-byte.
+    const expected = JSON.stringify(genomeToJson(loaded), null, 2);
+    expect(raw.trimEnd()).toBe(expected);
+  });
+});
+
+// skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
+describe.skip('examples/spiral-galaxy.pyr3.json fixture', () => {
+  it('matches genomeToJson(SPIRAL_GALAXY) byte-for-byte (modulo trailing newline)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', 'examples', 'spiral-galaxy.pyr3.json');
+    const raw = readFileSync(path, 'utf8').trimEnd();
+    const expected = JSON.stringify(genomeToJson(SPIRAL_GALAXY), null, 2);
+    expect(raw).toBe(expected);
+  });
+
+  it('parses to a Genome that deep-equals SPIRAL_GALAXY', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', 'examples', 'spiral-galaxy.pyr3.json');
+    const raw = readFileSync(path, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    const genome = genomeFromJson(parsed);
+    expect(genome).toEqual(SPIRAL_GALAXY);
+  });
+});
+
+describe('density round-trip', () => {
+  it('omits density from JSON when undefined', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.density).toBeUndefined();
+  });
+
+  it('parses to undefined when density absent in JSON', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const back = genomeFromJson(json);
+    expect(back.density).toBeUndefined();
+  });
+
+  it('round-trips DEFAULT_DENSITY losslessly', () => {
+    const g: Genome = { ...SPIRAL_GALAXY, density: { ...DEFAULT_DENSITY } };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.density).toEqual(DEFAULT_DENSITY);
+  });
+
+  it('rejects negative maxRad', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, density: { maxRad: -1, minRad: 0, curve: 0.4 } };
+    expect(() => genomeFromJson(bad)).toThrow(/maxRad/);
+  });
+
+  it('rejects curve = 0', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, density: { maxRad: 9, minRad: 0, curve: 0 } };
+    expect(() => genomeFromJson(bad)).toThrow(/curve/);
+  });
+
+  it('rejects missing field', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, density: { maxRad: 9, minRad: 0 } };
+    expect(() => genomeFromJson(bad)).toThrow();
+  });
+
+  it('rejects minRad > maxRad', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, density: { maxRad: 5, minRad: 10, curve: 0.4 } };
+    expect(() => genomeFromJson(bad)).toThrow(/minRad/);
+  });
+
+  it('rejects maxRad above 30 cap', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, density: { maxRad: 50, minRad: 0, curve: 0.4 } };
+    expect(() => genomeFromJson(bad)).toThrow(/maxRad/);
+  });
+});
+
+describe('tonemap round-trip (Phase 9a)', () => {
+  it('serializes a genome with tonemap and reads it back identically', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      tonemap: { gamma: 4, vibrancy: 0.7, highlightPower: 1, brightness: 20, gammaThreshold: 0.01 },
+    };
+    const json = genomeToJson(g);
+    const back = genomeFromJson(json);
+    expect(back.tonemap).toEqual(g.tonemap);
+  });
+
+  it('omits tonemap from JSON when undefined on genome', () => {
+    // SPIRAL_GALAXY now inlines its own tonemap (Phase 9-cal); strip it for this test.
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    expect(json.tonemap).toBeUndefined();
+  });
+
+  it('partial tonemap in JSON fills missing fields from DEFAULT_TONEMAP on load (flam3-canonical)', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    const augmented: unknown = { ...json, tonemap: { gamma: 2.2 } };
+    const back = genomeFromJson(augmented);
+    expect(back.tonemap?.gamma).toBe(2.2);
+    expect(back.tonemap?.vibrancy).toBe(0.0);
+    expect(back.tonemap?.brightness).toBe(1.0);
+    expect(back.tonemap?.highlightPower).toBe(1.0);
+    expect(back.tonemap?.gammaThreshold).toBe(0.01);
+  });
+});
+
+describe('xform opacity + xaos round-trip (Phase 9d)', () => {
+  it('serializes a xform with opacity + xaos and reads back identically', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const baseXform = stripped.xforms[0]!;
+    const g: Genome = {
+      ...stripped,
+      xforms: [{ ...baseXform, opacity: 0.6, xaos: [1, 0.3, 0] }, ...stripped.xforms.slice(1)],
+    };
+    const json = genomeToJson(g);
+    expect(json.xforms[0]!.opacity).toBe(0.6);
+    expect(json.xforms[0]!.xaos).toEqual([1, 0.3, 0]);
+    const back = genomeFromJson(json);
+    expect(back.xforms[0]!.opacity).toBe(0.6);
+    expect(back.xforms[0]!.xaos).toEqual([1, 0.3, 0]);
+  });
+
+  it('omits opacity from JSON when 1.0 or undefined on xform', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    for (const x of json.xforms) {
+      expect(x.opacity).toBeUndefined();
+    }
+  });
+
+  it('omits xaos from JSON when undefined on xform', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    for (const x of json.xforms) {
+      expect(x.xaos).toBeUndefined();
+    }
+  });
+
+  it('opacity=1.0 in JSON loads as undefined on xform', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    const augmented = { ...json, xforms: [{ ...json.xforms[0]!, opacity: 1.0 }, ...json.xforms.slice(1)] };
+    const back = genomeFromJson(augmented);
+    expect(back.xforms[0]!.opacity).toBeUndefined();
+  });
+});
+
+describe('rotate round-trip (Phase 9-rotate)', () => {
+  it('serializes a genome with rotate and reads it back identically', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const g: Genome = { ...stripped, rotate: 90.25 };
+    const json = genomeToJson(g);
+    expect(json.rotate).toBe(90.25);
+    const back = genomeFromJson(json);
+    expect(back.rotate).toBe(90.25);
+  });
+
+  it('omits rotate from JSON when undefined on genome', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    expect(json.rotate).toBeUndefined();
+  });
+
+  it('omits rotate from JSON when 0 on genome (no-op rotation)', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined, rotate: 0 };
+    const json = genomeToJson(stripped);
+    expect(json.rotate).toBeUndefined();
+  });
+
+  it('rotate=0 in JSON loads as undefined on genome', () => {
+    const stripped: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+    const json = genomeToJson(stripped);
+    const augmented: unknown = { ...json, rotate: 0 };
+    const back = genomeFromJson(augmented);
+    expect(back.rotate).toBeUndefined();
+  });
+});
+
+describe('oversample round-trip (Phase 9-supersample-real)', () => {
+  it('round-trips genome.oversample when > 1', () => {
+    const g: Genome = { ...SPIRAL_GALAXY, oversample: 4 };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.oversample).toBe(4);
+  });
+
+  it('omits oversample from JSON when undefined or 1', () => {
+    expect(genomeToJson(SPIRAL_GALAXY).oversample).toBeUndefined();
+    expect(genomeToJson({ ...SPIRAL_GALAXY, oversample: 1 }).oversample).toBeUndefined();
+    const back = genomeFromJson(genomeToJson(SPIRAL_GALAXY));
+    expect(back.oversample).toBeUndefined();
+  });
+
+  it('rejects JSON with non-positive-integer oversample', () => {
+    const json = { ...genomeToJson(SPIRAL_GALAXY), oversample: 0 };
+    expect(() => genomeFromJson(json)).toThrow(/positive integer/);
+    const json2 = { ...genomeToJson(SPIRAL_GALAXY), oversample: 2.5 };
+    expect(() => genomeFromJson(json2)).toThrow(/positive integer/);
+  });
+
+  it('treats oversample=1 in JSON as undefined on load', () => {
+    const json = { ...genomeToJson(SPIRAL_GALAXY), oversample: 1 };
+    const back = genomeFromJson(json);
+    expect(back.oversample).toBeUndefined();
+  });
+});
+
+describe('size round-trip (Phase 9-size)', () => {
+  it('round-trips genome.size when set', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      size: { width: 800, height: 592 },
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.size).toEqual({ width: 800, height: 592 });
+  });
+
+  it('omits size from JSON when undefined', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.size).toBeUndefined();
+    const back = genomeFromJson(json);
+    expect(back.size).toBeUndefined();
+  });
+
+  it('rejects JSON with non-positive size', () => {
+    const json = { ...genomeToJson(SPIRAL_GALAXY), size: { width: 0, height: 100 } };
+    expect(() => genomeFromJson(json)).toThrow(/positive integers/);
+  });
+
+  it('rejects JSON with non-integer size', () => {
+    const json = { ...genomeToJson(SPIRAL_GALAXY), size: { width: 100.5, height: 100 } };
+    expect(() => genomeFromJson(json)).toThrow(/positive integers/);
+  });
+});
+
+describe('spatialFilter round-trip (Phase 9-filter)', () => {
+  it('round-trips genome.spatialFilter when set', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      spatialFilter: { radius: 1.5, shape: 'gaussian' },
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.spatialFilter).toEqual({ radius: 1.5, shape: 'gaussian' });
+  });
+
+  it('omits spatialFilter from JSON when undefined', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.spatialFilter).toBeUndefined();
+    const back = genomeFromJson(json);
+    expect(back.spatialFilter).toBeUndefined();
+  });
+
+  it('rejects JSON with unsupported filter shape', () => {
+    // Phase 9-filter-shapes shipped all 14 of flam3's canonical shapes
+    // (gaussian/hermite/box/triangle/bell/bspline/mitchell/blackman/catrom/
+    // hanning/hamming/lanczos3/lanczos2/quadratic). Truly unknown shape
+    // strings still throw — pin against an obviously-invalid name.
+    const json = {
+      ...genomeToJson(SPIRAL_GALAXY),
+      spatialFilter: { radius: 1, shape: 'nonexistent' },
+    };
+    expect(() => genomeFromJson(json)).toThrow(/unsupported/);
+  });
+
+  it('round-trips all 14 supported filter shapes', () => {
+    const shapes = [
+      'gaussian', 'hermite', 'box', 'triangle', 'bell', 'bspline',
+      'mitchell', 'blackman', 'catrom', 'hanning', 'hamming',
+      'lanczos3', 'lanczos2', 'quadratic',
+    ] as const;
+    for (const shape of shapes) {
+      const json = { ...genomeToJson(SPIRAL_GALAXY), spatialFilter: { radius: 1.25, shape } };
+      const back = genomeFromJson(json);
+      expect(back.spatialFilter, `shape=${shape}`).toEqual({ radius: 1.25, shape });
+    }
+  });
+
+  it('rejects JSON with non-positive filter radius', () => {
+    const json = {
+      ...genomeToJson(SPIRAL_GALAXY),
+      spatialFilter: { radius: 0, shape: 'gaussian' },
+    };
+    expect(() => genomeFromJson(json)).toThrow(/positive/);
+  });
+});
+
+describe('Phase 9c xform.post round-trip', () => {
+  it('round-trips post on a regular xform', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      xforms: [
+        {
+          ...SPIRAL_GALAXY.xforms[0]!,
+          post: { a: 0.9, b: 0.1, c: 0.05, d: -0.1, e: 0.9, f: -0.05 },
+        },
+        ...SPIRAL_GALAXY.xforms.slice(1),
+      ],
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.xforms[0]!.post).toEqual({ a: 0.9, b: 0.1, c: 0.05, d: -0.1, e: 0.9, f: -0.05 });
+  });
+
+  it('omits post from JSON when undefined', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.xforms[0]!.post).toBeUndefined();
+  });
+
+  it('omits identity post from JSON (symmetric with rotate=0 / oversample=1)', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      xforms: [
+        {
+          ...SPIRAL_GALAXY.xforms[0]!,
+          post: { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 },
+        },
+        ...SPIRAL_GALAXY.xforms.slice(1),
+      ],
+    };
+    const json = genomeToJson(g);
+    expect(json.xforms[0]!.post).toBeUndefined();
+  });
+
+  it('round-trips post on finalxform', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      finalxform: {
+        weight: 0,
+        color: 0.5,
+        colorSpeed: 0,
+        a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+        variations: [{ index: 0, weight: 1 }],
+        post: { a: 1, b: 0, c: 0.1, d: 0, e: 1, f: -0.1 },
+      },
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.finalxform!.post).toEqual({ a: 1, b: 0, c: 0.1, d: 0, e: 1, f: -0.1 });
+  });
+});
+
+describe('Phase 9-bg-palmode round-trip', () => {
+  it('round-trips background', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      background: [0.1, 0.2, 0.3],
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.background).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it('round-trips paletteMode', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      paletteMode: 'linear',
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.paletteMode).toBe('linear');
+  });
+
+  it('omits both fields from JSON when undefined', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json.background).toBeUndefined();
+    expect(json.paletteMode).toBeUndefined();
+  });
+
+  it('rejects invalid paletteMode in JSON', () => {
+    const valid = genomeToJson({ ...SPIRAL_GALAXY, paletteMode: 'linear' });
+    const invalid = { ...valid, paletteMode: 'wobble' };
+    expect(() => genomeFromJson(invalid)).toThrow(/paletteMode/);
+  });
+
+  it('round-trips background + paletteMode together (typical Apophysis case)', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      background: [0.05, 0.1, 0.2],
+      paletteMode: 'linear',
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.background).toEqual([0.05, 0.1, 0.2]);
+    expect(back.paletteMode).toBe('linear');
+  });
+});
+
+// skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
+describe.skip('examples/spiral-galaxy-de.pyr3.json fixture', () => {
+  it('parses and contains DEFAULT_DENSITY', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', 'examples', 'spiral-galaxy-de.pyr3.json');
+    const raw = readFileSync(path, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    const loaded = genomeFromJson(parsed);
+    expect(loaded.name).toBe('Spiral Galaxy (DE)');
+    expect(loaded.density).toEqual(DEFAULT_DENSITY);
+    // Round-trip should match the file byte-for-byte.
+    const expected = JSON.stringify(genomeToJson(loaded), null, 2);
+    expect(raw.trimEnd()).toBe(expected);
+  });
+});

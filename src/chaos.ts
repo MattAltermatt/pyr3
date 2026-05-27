@@ -1,0 +1,198 @@
+// Chaos compute pass — dispatch a wave of walkers, each scattering hits
+// into a 4-channel u32 atomic histogram (R, G, B, count). Each hit
+// samples the palette at the iterated color coord and atomically accumulates.
+
+import shaderCode from './shaders/chaos.wgsl?raw';
+import {
+  type Genome,
+  MAX_XFORMS,
+  packXforms,
+  packXaos,
+  totalWeight,
+  XAOS_BYTES,
+  XFORM_BYTES,
+} from './genome';
+import { type Palette, packPalette, PALETTE_BYTES } from './palette';
+import { expandGenomeForGPU } from './symmetry';
+import { ISAAC_STATE_U32, packIsaacStates } from './isaac';
+
+// Per-walker ISAAC state (matches `IsaacState` in `chaos.wgsl`):
+//   u32 randcnt + u32 randa + u32 randb + u32 randc + u32[16] randmem + u32[16] randrsl
+// = 36 u32 = 144 bytes per walker. WGSL struct alignment: u32-fields are
+// 4-aligned, array<u32, 16> is also 4-aligned, struct total = 144 bytes (mul of 16).
+const ISAAC_STATE_BYTES = ISAAC_STATE_U32 * 4;
+
+export interface ChaosConfig {
+  width: number;
+  height: number;
+  walkers: number;
+  itersPerWalker: number;
+  fuse: number;
+}
+
+export interface DispatchOpts {
+  /** Override walker count (Phase 9-cal-B; defaults to config.walkers). */
+  walkers?: number;
+  /** Override iters-per-walker (Phase 9-cal-B; defaults to config.itersPerWalker). */
+  itersPerWalker?: number;
+}
+
+export interface ChaosPass {
+  config: ChaosConfig;
+  histogram: GPUBuffer;
+  setPalette(palette: Palette): void;
+  reset(): void;
+  dispatch(genome: Genome, seed: number, opts?: DispatchOpts): void;
+  /** Phase 9-size: release owned GPU buffers. Caller is responsible for not
+   *  using the pass after destroy(). */
+  destroy(): void;
+}
+
+const WORKGROUP_SIZE = 64;
+const UNIFORMS_BYTES = 64;
+
+// 4 channels (R, G, B, count) of u32 per pixel.
+export const HIST_CHANNELS = 4;
+
+export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPass {
+  const histogramBytes = config.width * config.height * HIST_CHANNELS * 4;
+  const histogram = device.createBuffer({
+    label: 'pyr3.chaos.histogram',
+    size: histogramBytes,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+  });
+
+  const uniforms = device.createBuffer({
+    label: 'pyr3.chaos.uniforms',
+    size: UNIFORMS_BYTES,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const xforms = device.createBuffer({
+    label: 'pyr3.chaos.xforms',
+    size: (MAX_XFORMS + 1) * XFORM_BYTES, // +1 reserved slot for finalxform
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  const paletteBuffer = device.createBuffer({
+    label: 'pyr3.chaos.palette',
+    size: PALETTE_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  const xaosBuffer = device.createBuffer({
+    label: 'pyr3.chaos.xaos',
+    size: XAOS_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  // ISAAC state buffer: one ISAAC stream per walker, sized for the configured
+  // walker pool. Re-uploaded on every dispatch with fresh seeds. 36 u32 per
+  // walker × MAX_WALKERS budget — at 1024 walkers × 144 bytes = 144 KB.
+  const isaacBuffer = device.createBuffer({
+    label: 'pyr3.chaos.isaac',
+    size: config.walkers * ISAAC_STATE_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  const module = device.createShaderModule({ label: 'pyr3.chaos', code: shaderCode });
+  const pipeline = device.createComputePipeline({
+    label: 'pyr3.chaos.pipeline',
+    layout: 'auto',
+    compute: { module, entryPoint: 'chaos_main' },
+  });
+
+  const bindGroup = device.createBindGroup({
+    label: 'pyr3.chaos.bindgroup',
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uniforms } },
+      { binding: 1, resource: { buffer: xforms } },
+      { binding: 2, resource: { buffer: histogram } },
+      { binding: 3, resource: { buffer: paletteBuffer } },
+      { binding: 4, resource: { buffer: xaosBuffer } },
+      { binding: 5, resource: { buffer: isaacBuffer } },
+    ],
+  });
+
+  return {
+    config,
+    histogram,
+
+    setPalette(p: Palette): void {
+      device.queue.writeBuffer(paletteBuffer, 0, packPalette(p));
+    },
+
+    reset(): void {
+      const zero = new Uint8Array(histogramBytes);
+      device.queue.writeBuffer(histogram, 0, zero);
+    },
+
+    destroy(): void {
+      histogram.destroy();
+      uniforms.destroy();
+      xforms.destroy();
+      paletteBuffer.destroy();
+      xaosBuffer.destroy();
+      isaacBuffer.destroy();
+    },
+
+    dispatch(genome: Genome, seed: number, opts?: DispatchOpts): void {
+      // Phase 5c: pre-pack expansion of symmetry into rotation/reflection xforms.
+      // Returns same reference when no symmetry; otherwise a non-mutating clone.
+      const g = expandGenomeForGPU(genome);
+      device.queue.writeBuffer(xforms, 0, packXforms(g));
+      device.queue.writeBuffer(xaosBuffer, 0, packXaos(g)); // Phase 9d
+
+      // Phase 9-cal-B: dispatch walker count + iters-per-walker can be
+      // overridden per-frame to scale with Genome.quality. Defaults match
+      // the pass-creation config (16 spp on 1024² = 16M total samples).
+      const walkers = opts?.walkers ?? config.walkers;
+      const itersPerWalker = opts?.itersPerWalker ?? config.itersPerWalker;
+
+      // Re-seed ISAAC streams from `seed`. Each walker gets its own independent
+      // stream; flam3 does this per-thread (rect.c:858-865) by filling randrsl
+      // with values from a global RNG and then calling irandinit. We mirror by
+      // bootstrapping each walker's randrsl from a small PCG32 stream seeded
+      // from `seed XOR walker_id_hash`, then running irandinit to scramble mm.
+      const isaacBytes = packIsaacStates(walkers, seed);
+      device.queue.writeBuffer(isaacBuffer, 0, isaacBytes);
+
+      const u = new ArrayBuffer(UNIFORMS_BYTES);
+      const u32 = new Uint32Array(u);
+      const f32 = new Float32Array(u);
+      const i32 = new Int32Array(u);
+      u32[0] = config.width;
+      u32[1] = config.height;
+      u32[2] = itersPerWalker;
+      u32[3] = config.fuse;
+      // Phase 9-supersample-real: when chaos runs at super-resolution, the
+      // splat scale must be multiplied by oversample so the IFS structure
+      // fills the full super-canvas (matches flam3 rect.c — its `ppux/ppuy`
+      // are the super-pixel pitch). Output → super-pixel ratio.
+      const oversample = Math.max(1, Math.floor(g.oversample ?? 1));
+      f32[4] = g.scale * oversample;
+      f32[5] = g.cx;
+      f32[6] = g.cy;
+      u32[7] = g.xforms.length;
+      f32[8] = totalWeight(g);
+      u32[9] = seed >>> 0;
+      i32[10] = g.finalxform ? g.xforms.length : -1;
+      f32[11] = ((g.rotate ?? 0) * Math.PI) / 180.0; // rotation_rad — Phase 9-rotate
+      // Phase 9-bg-palmode: 0 = step (flam3 default), 1 = linear. Default
+      // applied at this consumer boundary so the genome stays a faithful
+      // echo of source XML. Slots 13-15 stay zero.
+      u32[12] = (g.paletteMode ?? 'step') === 'linear' ? 1 : 0;
+      device.queue.writeBuffer(uniforms, 0, u);
+
+      const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });
+      const pass = encoder.beginComputePass({ label: 'pyr3.chaos.pass' });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      const workgroups = Math.ceil(walkers / WORKGROUP_SIZE);
+      pass.dispatchWorkgroups(workgroups);
+      pass.end();
+      device.queue.submit([encoder.finish()]);
+    },
+  };
+}

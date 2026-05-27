@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E" />
+    <title>pyr3-peek — why does this take so long?</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0c;
+        --text: #ddd;
+        --text-dim: #888;
+        --accent: #ff8c1a;
+        --card-bg: #15151a;
+        --card-border: #2a2a30;
+      }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg); color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.55;
+      }
+      .page { max-width: 720px; margin: 0 auto; padding: 32px 22px 80px; }
+      .back {
+        display: inline-block; color: var(--accent); text-decoration: none;
+        font-size: 13px; margin-bottom: 22px;
+      }
+      .back:hover { text-decoration: underline; }
+      h1 { font-size: 28px; margin: 0 0 8px; color: var(--text); font-weight: 600; }
+      .subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 30px; }
+      h2 { font-size: 18px; margin: 30px 0 10px; color: var(--text); font-weight: 600; }
+      p { margin: 10px 0; font-size: 14px; }
+      ol, ul { margin: 10px 0; padding-left: 24px; font-size: 14px; }
+      li { margin: 4px 0; }
+      a { color: var(--accent); }
+      strong { color: var(--text); }
+      em { color: var(--text); font-style: italic; }
+      code {
+        background: var(--card-bg); padding: 1px 6px; border-radius: 3px;
+        font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      pre {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 6px; padding: 12px 16px; margin: 14px 0;
+        overflow-x: auto; font-size: 12px; line-height: 1.45;
+      }
+      pre code {
+        background: transparent; padding: 0; border-radius: 0;
+        font-size: 12px;
+      }
+      hr {
+        border: 0; border-top: 1px solid var(--card-border); margin: 32px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <a class="back" href="/">← Back to pyr3-peek</a>
+
+      <h1>Why does this take so long?</h1>
+      <p class="subtitle">
+        The “Why so long? ↗” link in the 4K render progress bar lands here.
+        Short version: fractal flames are made of <em>millions</em> of tiny
+        dot placements, and 4K means many more dots per pixel than the quick
+        preview can afford.
+      </p>
+
+      <h2>What's actually happening</h2>
+      <p>
+        A <strong>fractal flame</strong> is an <em>iterated function system</em>
+        (IFS). Roughly:
+      </p>
+      <ol>
+        <li>Start with a random point in the plane.</li>
+        <li>Pick one of the flame's “xforms” at random (each xform has a weight).</li>
+        <li>Apply that xform — it's a math function that warps the point's
+            position and assigns it a color.</li>
+        <li>Splat a colored dot at the new position.</li>
+        <li>Go back to step 2. Forever. (Or until enough dots have been splatted.)</li>
+      </ol>
+      <p>
+        This is called the <strong>chaos game</strong>. After enough iterations,
+        the dots form a recognizable image — the fractal flame — even though
+        each individual dot is “random.”
+      </p>
+
+<pre><code>          ┌────────┐
+          │  pick  │ ──► xform 1 ──┐
+          │ xform  │ ──► xform 2 ──┤
+          │ (rand) │ ──► xform 3 ──┤
+          └────────┘     ...       │
+                                   ▼
+                            ┌──────────────┐
+                            │ apply, splat │ ──► one colored dot
+                            │ a dot, then  │
+                            │ loop forever │
+                            └──────────────┘</code></pre>
+
+      <h2>Why “many dots per pixel” matters</h2>
+      <p>
+        Each pixel of the final image is the <em>accumulation</em> of all the
+        dots that landed inside it, color-blended and tone-mapped. Few dots
+        per pixel → noisy result (you see speckles where dots happened to
+        land vs not). Many dots per pixel → smooth result (the chaos game
+        settles into the true density of the flame).
+      </p>
+      <p>
+        The metric here is <strong>samples per pixel (SPP)</strong>:
+      </p>
+      <ul>
+        <li>SPP = 4 → speckled, unrecognizable as a finished render</li>
+        <li>SPP = 16 → noticeably noisy but the shape is clear
+            (what pyr3-peek's quick preview uses by default)</li>
+        <li>SPP = 100 → smooth, gallery-ready</li>
+        <li>SPP = 1000+ → flam3's offline-render preset; effectively settled</li>
+      </ul>
+
+      <h2>Why 4K is much more than 4× the work of 1K</h2>
+      <p>A 1024×1024 quick preview at SPP=16 needs:</p>
+<pre><code>1024 × 1024 × 16 = ~16,000,000 dots</code></pre>
+      <p>A 4K render (4096×4096) at the SAME SPP needs:</p>
+<pre><code>4096 × 4096 × 16 = ~268,000,000 dots</code></pre>
+      <p>
+        That's <strong>16× more dots</strong> just for the resolution jump —
+        because the pixel grid grew by 4× horizontally AND 4× vertically
+        (4² = 16).
+      </p>
+      <p>
+        And SPP=16 is the quick-preview floor. A nice 4K render typically
+        wants SPP=50 or higher to hide the noise that's now spread across
+        many more pixels — pushing the dot count past a billion.
+      </p>
+      <p>
+        Plus the spatial filter (anti-aliasing) and density estimator passes
+        work on a buffer 16× larger, so those steps slow down too.
+      </p>
+
+      <h2>Why pyr3-peek chunks the dispatch</h2>
+      <p>
+        Submitting a billion-dot compute pass to the GPU as a single dispatch
+        would lock the browser for the full duration. macOS Metal forcibly
+        restarts the GPU process if anything takes longer than ~2 seconds
+        (“TDR” — timeout detection and recovery).
+      </p>
+      <p>
+        pyr3-peek's renderer breaks the work into chunks (~1 million dots
+        each). Between chunks, the browser gets a frame to composite, the
+        progress bar updates, and the cancel button stays responsive. The
+        total work is identical — it just doesn't lock you out while it runs.
+      </p>
+
+      <h2>Cancel is safe</h2>
+      <p>
+        Hit ✕ Cancel mid-render and the in-flight chunk's GPU work still
+        completes (the browser doesn't expose a way to abort GPU dispatches
+        mid-flight), but no further chunks get queued. The progress bar
+        disappears, the canvas keeps whatever partial result the last
+        chunk produced, and the bar's buttons re-enable. Nothing leaks.
+      </p>
+
+      <h2>TL;DR</h2>
+<pre><code>Quick (1024², SPP=16):  ~16M dots,   ~half a second
+4K     (4096², SPP=50): ~800M dots,  many seconds (browser stays alive)</code></pre>
+      <p>Same algorithm, same GPU, just more dots.</p>
+
+      <hr />
+
+      <p style="color: var(--text-dim); font-size: 13px;">
+        For the curious: the algorithmic details (palette interpolation,
+        log-density tone map, ~Gaussian spatial filter, density estimator)
+        all live in the source tree. Start with
+        <code>src/shaders/chaos.wgsl</code>.
+      </p>
+    </div>
+  </body>
+</html>

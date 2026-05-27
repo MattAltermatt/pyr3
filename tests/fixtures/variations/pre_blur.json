@@ -1,0 +1,517 @@
+{
+  "variation": "pre_blur",
+  "fixtures": [
+    {
+      "tx": 1.0008892603337323,
+      "ty": 0.45561943116354703,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.44638147438723624,
+      "ty": 0.9605715481109207,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.416781663748825,
+      "ty": 0.6616836556781568,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 1.0799462960741029,
+      "ty": 0.5145310130627334,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.6850020108837853,
+      "ty": 0.18886186036158162,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.16314501652219768,
+      "ty": 0.6069872263038771,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.14001169727634522,
+      "ty": 0.27215825300700514,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.18195844211068377,
+      "ty": 0.18137205914938753,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.02627152492177408,
+      "ty": 0.2471737580774055,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.027850021230586365,
+      "ty": 0.09357674542563335,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.10122863461487597,
+      "ty": 0.13194044958869558,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.20834580998915744,
+      "ty": 0.044118776671289925,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.44175658990210487,
+      "ty": 0.21128738383960552,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.29861038789370953,
+      "ty": 0.14417122300863436,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.33103230526518584,
+      "ty": 0.6133696340201922,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.24362113007355687,
+      "ty": 0.46339133889357825,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.5780780968300053,
+      "ty": 0.5243495988168064,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.36349294372008745,
+      "ty": 1.0419888773460635,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.5441147611021108,
+      "ty": 0.8115115561859191,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.167183273114838,
+      "ty": 0.4774991865102939,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.6073606146887153,
+      "ty": 1.3803601647926818,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.13269309148882147,
+      "ty": 1.51598263455417,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.8693324550358488,
+      "ty": 1.248217757674091,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.2326736675902057,
+      "ty": 1.0132372269919616,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.42957999854531514,
+      "ty": -0.21042258268830244,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.3394932727675684,
+      "ty": -0.5121009138034232,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.26846827962815395,
+      "ty": -0.014479620713121762,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.5480474066344895,
+      "ty": -0.05645488585617808,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.8962708095415785,
+      "ty": -0.48501066150705385,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.5433645430295174,
+      "ty": -0.6210161312966446,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.27709454369754843,
+      "ty": -0.6998224579707579,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.1321785403015479,
+      "ty": -0.2132605117129299,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.08888756211361126,
+      "ty": 0.025485803154619038,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.14434645307294322,
+      "ty": 0.044855874553220286,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.12249733624469705,
+      "ty": 0.07600585127180723,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.0613253808705099,
+      "ty": 0.2126428594133076,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.6574060493399764,
+      "ty": -0.19253152509087879,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.4354545368782363,
+      "ty": -0.46896289035875055,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.44480755230737484,
+      "ty": -0.007336404409015816,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.6323911156362587,
+      "ty": -0.29922781721815994,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.05263169643361852,
+      "ty": -0.058211911874336025,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.045178080995430275,
+      "ty": -0.23355025052597306,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.06066331905916382,
+      "ty": -0.20222761774850195,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -0.006157869324611807,
+      "ty": -0.20021868072428273,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 1.7433652777215016,
+      "ty": 1.1352340081217969,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 1.8511837464206662,
+      "ty": 0.35007534038822974,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.7046839151344244,
+      "ty": 1.4511246896663967,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.07204914702557719,
+      "ty": 1.6480580544688412,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.05063098992697349,
+      "ty": -0.04646745306433982,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.1613374223142964,
+      "ty": -0.08824461502516533,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.03728591038225319,
+      "ty": -0.18329214586835088,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.12093410109035532,
+      "ty": -0.11924856066284793,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.5104748243449754,
+      "ty": -0.6599718528669081,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.7417391347027517,
+      "ty": -0.6082387919087882,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.4306531819198957,
+      "ty": -0.766675790344301,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.7149710351378319,
+      "ty": -0.904907556603625,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 1.5700345245384846,
+      "ty": -0.24558320591747956,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 0.15662735633247166,
+      "ty": -1.5003905435533944,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 1.6199583082750062,
+      "ty": -0.05316935657884277,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": 1.4181111722320994,
+      "ty": -0.5146493739956295,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.0048118119111062,
+      "ty": -1.1864950416446602,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.5982711556918818,
+      "ty": -0.09481981188376737,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.5279603788146012,
+      "ty": -0.6474469014634159,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    },
+    {
+      "tx": -1.2528991836121135,
+      "ty": -1.1352505876726025,
+      "weight": 1,
+      "params": {},
+      "expected_x": 0,
+      "expected_y": 0
+    }
+  ]
+}

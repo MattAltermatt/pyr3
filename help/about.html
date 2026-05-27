@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E" />
+    <title>pyr3-peek — about</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0c;
+        --text: #ddd;
+        --text-dim: #888;
+        --accent: #ff8c1a;
+        --card-bg: #15151a;
+        --card-border: #2a2a30;
+      }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg); color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.55;
+      }
+      .page { max-width: 720px; margin: 0 auto; padding: 32px 22px 80px; }
+      .back {
+        display: inline-block; color: var(--accent); text-decoration: none;
+        font-size: 13px; margin-bottom: 22px;
+      }
+      .back:hover { text-decoration: underline; }
+      h1 { font-size: 28px; margin: 0 0 8px; color: var(--text); font-weight: 600; }
+      .subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 30px; }
+      h2 { font-size: 18px; margin: 30px 0 10px; color: var(--text); font-weight: 600; }
+      p { margin: 10px 0; font-size: 14px; }
+      a { color: var(--accent); }
+      strong { color: var(--text); }
+      code {
+        background: var(--card-bg); padding: 1px 6px; border-radius: 3px;
+        font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      .family li { margin: 8px 0; font-size: 14px; }
+      .family strong { display: inline-block; min-width: 72px; }
+      .colophon {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 6px; padding: 14px 18px; margin-top: 28px;
+        font-size: 13px; color: var(--text-dim);
+      }
+      .colophon strong { color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <a class="back" href="/">← Back to pyr3-peek</a>
+
+      <h1>🔥 pyr3-peek</h1>
+      <p class="subtitle">A browser-only viewer for fractal flames.</p>
+
+      <p>
+        Open a <code>.flame</code> XML file in a WebGPU-capable browser
+        and watch the chaos-game iteration render directly on your GPU.
+        Share the URL with anyone — the flame travels inside the link.
+        No install, no JVM, no native app.
+      </p>
+
+      <p>
+        pyr3-peek is intentionally narrow: <strong>view a flame,
+        share a link, save your own files</strong>. The editor,
+        Forge, Explore, and everything creative-workflow-shaped live
+        in pyr3 (the desktop renderer).
+      </p>
+
+      <h2>The pyr3 family</h2>
+      <ul class="family">
+        <li>
+          <strong><a href="https://github.com/MattAltermatt/pyr3">pyr3</a></strong>
+          The canonical Kotlin/JVM renderer + editor for desktop.
+          Has the sliders, the mutators, the palette mixer, the everything.
+        </li>
+        <li>
+          <strong><a href="https://github.com/MattAltermatt/electric-sheep-fold">ESF</a></strong>
+          The Electric Sheep Fold — a corpus of every Electric Sheep
+          flame, archived and re-collated.
+        </li>
+        <li>
+          <strong>pyr3-peek</strong> (this site)
+          The browser-only viewer companion. WebGPU, TypeScript, Vite.
+          Read-only by design.
+        </li>
+        <li>
+          <strong>flam3</strong>
+          The algorithmic ancestor — Scott Draves's original fractal
+          flame renderer, started in 1992. The chaos-game inner loop +
+          variation library every flam3-family renderer inherits.
+        </li>
+      </ul>
+
+      <h2>Render contract</h2>
+      <p>
+        pyr3-peek is a <strong>single-precision (f32) WebGPU renderer.</strong>
+        Like every f32 flame renderer in the family, its output is
+        similar but not pixel-identical to the canonical f64 reference
+        in flam3 / pyr3 CPU. Where a genome trips f32-divergent
+        behavior, pyr3-peek renders its f32 result and moves on; the
+        canonical f64 anchor stays in pyr3.
+      </p>
+
+      <h2>Source code</h2>
+      <p>
+        <a href="https://github.com/MattAltermatt/pyr3-peek">github.com/MattAltermatt/pyr3-peek</a>
+        — issues, pull requests, design specs all live there.
+      </p>
+
+      <div class="colophon">
+        <strong>License:</strong> GPL-3.0-or-later, inherited from the
+        flam3 lineage. <br />
+        <strong>Built with:</strong> TypeScript, WebGPU (5 WGSL compute
+        shaders), Vite, Vitest. Zero Rust, zero WASM.
+      </div>
+    </div>
+  </body>
+</html>

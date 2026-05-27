@@ -1,0 +1,23 @@
+import { readFileSync } from 'node:fs';
+import { Window } from 'happy-dom';
+const win = new Window();
+globalThis.DOMParser = win.DOMParser;
+const { parseFlame } = await import('../src/flame-import.ts');
+const txt = readFileSync(process.argv[2], 'utf8');
+const { genome, report } = parseFlame(txt);
+console.log('SIZE:', genome.size);
+console.log('CENTER:', { cx: genome.cx, cy: genome.cy });
+console.log('SCALE:', genome.scale);
+console.log('ROTATE:', genome.rotate);
+console.log('OVERSAMPLE:', genome.oversample);
+console.log('QUALITY:', genome.quality);
+console.log('TONEMAP:', genome.tonemap);
+console.log('DENSITY:', genome.density);
+console.log('SPATIAL_FILTER:', genome.spatialFilter);
+console.log('XFORMS:', genome.xforms.length);
+genome.xforms.forEach((x, i) => {
+  const vNames = x.variations.filter(v => v.weight !== 0).map(v => `V${v.index}=${v.weight}`).join(',');
+  console.log(`  xform[${i}] weight=${x.weight} color=${x.color} colorSpeed=${x.colorSpeed} vars=[${vNames}] xaos=${JSON.stringify(x.xaos)} opacity=${x.opacity}`);
+});
+console.log('IGNORED:', report.ignoredFields);
+console.log('DROPPED:', report.droppedVariations);

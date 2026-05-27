@@ -1,0 +1,360 @@
+// pyr3 — viewer entry point.
+//
+// Boot WebGPU, mount the top bar, paint the default genome, then
+// accept .flame files via the bar's Open button. Per the v1 design
+// spec (docs/superpowers/specs/2026-05-26-pyr3-direction-design.md):
+// no drag-drop, no `L` hotkey, no overlays on the rendered flame.
+
+import { initDevice, showError } from './device';
+import { SPIRAL_GALAXY, type Genome } from './genome';
+import { parseLoadIntent, type LoadIntent } from './load-intent';
+import { load as loadFileFromUser, type LoadResult } from './loader';
+import { startChunkedRender, type RunHandle } from './render-orchestrator';
+import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
+import { mountBar, type BarHandle } from './ui-bar';
+import { decodeFlame, encodeFlame } from './url-codec';
+import { checkWebGPU } from './webgpu-check';
+
+// The "welcome flame" — what `/` paints when there are no URL params.
+// Hardcoded path keeps the URL surface to a single share mechanism
+// (?flame=<inline>); no bundled-fixture slug exposed. The specific
+// flame was hand-picked from the Electric Sheep Fold (ESF) corpus.
+const WELCOME_FLAME_URL = '/fixtures/electricsheep.247.19679.flam3';
+
+const RENDER_SIZE = 1024;
+
+// Quick-preview render caps. Many .flam3 files (especially Electric
+// Sheep / JWildfire pieces) ship with offline-rendering presets:
+// `size="4096 4096"`, `quality="1000"`, `oversample="4"` are common.
+// Those settings combine to ~256× more GPU work than the quick view
+// needs — heavy enough to lock the browser. Quick caps:
+//   · max(width, height) ≤ QUICK_MAX_DIM, aspect preserved
+//   · quality clamped to QUICK_MAX_SPP
+//   · oversample forced to QUICK_OVERSAMPLE
+// The 4K download path (Phase 4) uses the genome's declared values.
+// Quick preview caps (in-canvas, low-noise but fast).
+const QUICK_MAX_DIM = 1024;
+const QUICK_MAX_SPP = 16;
+const QUICK_OVERSAMPLE = 1;
+
+// 4K render caps (manual click via 🎯 Render 4K). Bigger surface,
+// higher SPP, but still bounded so heavy genome presets don't burn
+// down the GPU. Tuneable in this file as the verify lap settles.
+const FULL_MAX_DIM = 4096;
+const FULL_MAX_SPP = 200;
+const FULL_MAX_OVERSAMPLE = 1;
+
+type RenderMode = 'quick' | '4k';
+
+async function main(): Promise<void> {
+  const webgpu = await checkWebGPU();
+
+  let openFilePicker: () => void = () => {
+    console.warn('pyr3: file picker invoked before canvas init');
+  };
+  // Cached raw text of the currently-loaded flame. Updated in
+  // applyLoadResult; read by onShareLink to encode the share URL.
+  let lastLoadedText: string | null = null;
+
+  const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
+    webgpu,
+    onOpenFile: () => openFilePicker(),
+    onRender4K: () => {
+      void renderInMode('4k');
+    },
+    onShareLink: () => {
+      void shareCurrentFlame(lastLoadedText, bar);
+    },
+    onWordmark: () => {
+      window.location.href = '/help/about.html';
+    },
+  });
+
+  if (!webgpu.available) {
+    const detail = webgpu.detail ? `, ${webgpu.detail}` : '';
+    console.warn(`pyr3: WebGPU unavailable (reason=${webgpu.reason}${detail})`);
+    mountWebGPUFallback();
+    bar.setBusy(true);
+    return;
+  }
+
+  const { device, context, format, canvas } = await initDevice('pyr3-canvas');
+  canvas.width = RENDER_SIZE;
+  canvas.height = RENDER_SIZE;
+
+  const renderer: Renderer = createRenderer(device, format, {
+    width: RENDER_SIZE,
+    height: RENDER_SIZE,
+    oversample: QUICK_OVERSAMPLE,
+    filterRadius: DEFAULT_FILTER_RADIUS,
+  });
+
+  const seed = (Math.random() * 0xffffffff) >>> 0;
+  let activeGenome: Genome = SPIRAL_GALAXY;
+
+  let runHandle: RunHandle | null = null;
+
+  const renderInMode = async (mode: RenderMode): Promise<void> => {
+    // Cancel any in-flight orchestrator before starting a new one. The
+    // promise still settles cleanly (either 'cancelled' or 'completed')
+    // so awaiting it serializes the JS side.
+    if (runHandle) {
+      runHandle.cancel();
+      await runHandle.promise;
+      runHandle = null;
+      // Drain pending GPU before we potentially resize.
+      await device.queue.onSubmittedWorkDone();
+    }
+
+    // Compute mode-appropriate dims, quality, oversample.
+    //
+    // 4K mode: always target FULL_MAX_DIM long-edge — upscale below-cap
+    // genomes (e.g. 1280×720 → 4096×2304 at 3.2× linear), downscale above-cap.
+    // Matches pyr3's `--size-scale` convention: both canvas dims AND the
+    // genome's `scale` (pixels-per-world-unit) multiply by the same factor,
+    // so the world view stays identical and the render gains pixel detail.
+    //
+    // Quick mode: cap-only (no upscale of small genomes — preview snappy).
+    const declW = activeGenome.size?.width ?? RENDER_SIZE;
+    const declH = activeGenome.size?.height ?? RENDER_SIZE;
+    const maxDimCap = mode === '4k' ? FULL_MAX_DIM : QUICK_MAX_DIM;
+    const maxDecl = Math.max(declW, declH);
+    const sizeScale = mode === '4k'
+      ? maxDimCap / maxDecl
+      : (maxDecl > maxDimCap ? maxDimCap / maxDecl : 1);
+    const targetW = Math.max(1, Math.round(declW * sizeScale));
+    const targetH = Math.max(1, Math.round(declH * sizeScale));
+    const targetOversample = mode === '4k' ? FULL_MAX_OVERSAMPLE : QUICK_OVERSAMPLE;
+    const targetFilter = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+
+    if (
+      targetW !== renderer.width
+      || targetH !== renderer.height
+      || targetOversample !== renderer.oversample
+      || targetFilter !== renderer.filterRadius
+    ) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      renderer.resize({ width: targetW, height: targetH, oversample: targetOversample, filterRadius: targetFilter });
+    }
+
+    const sppCap = mode === '4k' ? FULL_MAX_SPP : QUICK_MAX_SPP;
+    const renderGenome: Genome = {
+      ...activeGenome,
+      scale: activeGenome.scale * sizeScale,
+      quality: Math.min(activeGenome.quality ?? sppCap, sppCap),
+    };
+    const targetSamples = (renderGenome.quality ?? sppCap) * renderer.width * renderer.height;
+    const label = mode === '4k' ? 'Rendering 4K' : 'Rendering';
+
+    // Tier 3 mounts immediately on render start — visitor always sees
+    // "this is working" + "N% / chunk M of K". Hides on completion.
+    bar.showProgress({
+      label,
+      percent: 0,
+      etaSeconds: 0,
+      samples: 0,
+      onCancel: () => runHandle?.cancel(),
+    });
+
+    const handle = startChunkedRender({
+      renderer,
+      genome: renderGenome,
+      outputViewProvider: () => context.getCurrentTexture().createView(),
+      targetSamples,
+      seedBase: seed,
+      onProgress: (info) => {
+        bar.showProgress({
+          label,
+          percent: info.percent,
+          etaSeconds: info.etaSeconds,
+          samples: info.samples,
+          onCancel: () => runHandle?.cancel(),
+        });
+      },
+    });
+    runHandle = handle;
+
+    try {
+      await handle.promise;
+    } finally {
+      bar.hideProgress();
+      if (runHandle === handle) runHandle = null;
+    }
+  };
+
+  // The quick auto-render after a file load.
+  const rerender = (): Promise<void> => renderInMode('quick');
+
+  const applyLoadResult = async (result: LoadResult, sourceLabel: string): Promise<void> => {
+    // Resize logic now lives in renderInMode (it depends on mode);
+    // applyLoadResult just updates activeGenome + meta then kicks
+    // the quick render path, which resizes if needed.
+    activeGenome = result.genome;
+    if (result.kind === 'flame' && result.report) {
+      const dropCount = result.report.droppedVariations.length;
+      const ignoredCount = result.report.ignoredFields.length;
+      if (dropCount > 0 || ignoredCount > 0) {
+        console.log(
+          `pyr3: import report — ${dropCount} unsupported variations · ${ignoredCount} ignored fields`,
+        );
+      }
+    }
+    console.log(`pyr3: loaded "${result.genome.name}" from ${sourceLabel}`);
+    bar.setMeta({
+      flameName: result.genome.name || 'Untitled',
+      authorNick: result.genome.nick,
+      sourceFilename: sourceLabel,
+    });
+    lastLoadedText = result.sourceText;
+    await rerender();
+  };
+
+  let loadInFlight = false;
+  const loadFromFile = async (file: File): Promise<void> => {
+    console.log(`pyr3: loadFromFile("${file.name}") · loadInFlight=${loadInFlight}`);
+    if (loadInFlight) {
+      console.warn(`pyr3: load already in flight; ignoring ${file.name}`);
+      return;
+    }
+    loadInFlight = true;
+    bar.setBusy(true);
+    try {
+      const result = await loadFileFromUser(file);
+      await applyLoadResult(result, file.name);
+      // Wait for the GPU to drain the queued work before releasing the
+      // loadInFlight guard. The orchestrator's promise resolves when
+      // JS-side iterate calls finish; GPU may still be processing.
+      // Without this drain, the NEXT load's renderer.resize() can
+      // destroyPipelines() while previous commands still reference
+      // those buffers (Phase 2 verify, 2026-05-26).
+      await device.queue.onSubmittedWorkDone();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`pyr3: failed to load ${file.name}: ${msg}`);
+    } finally {
+      bar.setBusy(false);
+      loadInFlight = false;
+    }
+  };
+
+  openFilePicker = (): void => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.flame,.flam3';
+    input.style.display = 'none';
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (file) await loadFromFile(file);
+      input.remove();
+    });
+    // Chrome 113+ fires `cancel` when the OS dialog is dismissed without a
+    // selection — without this listener, hidden inputs accumulate on cancel.
+    input.addEventListener('cancel', () => input.remove());
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  // Resolve initial load: URL params (?flame= / ?fixture=) decide what
+  // paints first; fallback chain is welcome fixture → hardcoded
+  // SPIRAL_GALAXY (safety net if fetch fails — better than black canvas).
+  const intent = parseLoadIntent(window.location.search);
+  const initialFile = await resolveLoadIntent(intent);
+  if (initialFile) {
+    await loadFromFile(initialFile);
+  } else {
+    console.warn('pyr3: no initial load resolved; painting SPIRAL_GALAXY default');
+    bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+    await rerender();
+  }
+
+  console.log(
+    `pyr3: ${renderer.width}×${renderer.height} (oversample ${renderer.oversample}), seed=0x${seed.toString(16).padStart(8, '0')} — click 📂 Open .flame in the bar to load a different flame.`,
+  );
+}
+
+function mountWebGPUFallback(): void {
+  const fallback = document.getElementById('pyr3-fallback');
+  if (!fallback) return;
+  document.body.classList.add('webgpu-unavailable');
+  // DOM-build the explainer (createElement + textContent so no
+  // innerHTML XSS surface).
+  fallback.replaceChildren();
+  const h2 = document.createElement('h2');
+  h2.textContent = '⚠️ This browser can\'t run WebGPU';
+  const p1 = document.createElement('p');
+  p1.textContent = "pyr3 renders fractal flames using your GPU through the WebGPU web standard. Your current browser doesn't expose it — so there's no engine here to draw with.";
+  const fixP = document.createElement('p');
+  fixP.className = 'fix';
+  const fixStrong = document.createElement('strong');
+  fixStrong.textContent = 'Likely fix: ';
+  fixP.append(fixStrong, document.createTextNode('Chrome 113+, Edge 113+, Safari 18+ on macOS Sequoia, or Firefox Nightly. Sometimes a flag toggle, sometimes a GPU-driver update.'));
+  const ul = document.createElement('ul');
+  for (const item of [
+    'Chrome / Edge 113+ (auto-enabled)',
+    'Safari 18+ on macOS Sequoia',
+    'Firefox Nightly (behind dom.webgpu.enabled in about:config)',
+  ]) {
+    const li = document.createElement('li');
+    li.textContent = item;
+    ul.append(li);
+  }
+  const cta = document.createElement('a');
+  cta.className = 'cta';
+  cta.href = '/help/webgpu.html#why-not-working';
+  cta.textContent = 'Read the full WebGPU help page ↗';
+  fallback.append(h2, p1, ul, fixP, cta);
+  fallback.hidden = false;
+}
+
+async function shareCurrentFlame(text: string | null, bar: BarHandle): Promise<void> {
+  if (!text) {
+    bar.showToast('Nothing to share yet.');
+    return;
+  }
+  try {
+    const encoded = await encodeFlame(text);
+    const url = new URL(window.location.href);
+    url.search = `?flame=${encoded}`;
+    await navigator.clipboard.writeText(url.toString());
+    bar.showToast('Link copied — paste anywhere.');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`pyr3: share failed — ${msg}`);
+    bar.showToast('Share failed — see console.');
+  }
+}
+
+async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
+  if (intent.kind === 'flame') {
+    try {
+      const xml = await decodeFlame(intent.payload);
+      return new File([xml], 'from-link.flame', { type: 'text/xml' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`pyr3: failed to decode ?flame= share link — ${msg}; falling back to welcome`);
+      return fetchAsFile(WELCOME_FLAME_URL);
+    }
+  }
+  return fetchAsFile(WELCOME_FLAME_URL);
+}
+
+async function fetchAsFile(path: string): Promise<File | null> {
+  try {
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const filename = path.split('/').pop() ?? 'flame';
+    return new File([blob], filename, { type: 'text/xml' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`pyr3: failed to fetch ${path} — ${msg}`);
+    return null;
+  }
+}
+
+main().catch((err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error('pyr3 init failed:', err);
+  showError(`pyr3: init failed — ${msg}`);
+});
