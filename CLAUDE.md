@@ -76,9 +76,20 @@ Per the global workflow:
 - ✅ Type-check + tests pass before commit
 - ✅ Chrome verify (via `chrome-devtools-mcp`) for any change touching the render path or
   canvas wiring. **Built-in Claude preview is forbidden.**
-- ✅ Hand the user a clickable `http://localhost:5173/?mute=1` URL when a verify is needed
-  (no audio in pyr3, but `?mute=1` per global default)
+- ✅ Hand the user a clickable `http://localhost:5173/` URL when a verify is needed
+  (pyr3 has no audio — global `?mute=1` default doesn't apply)
 - ✅ Backend renders verified by `npm run render` + R-comparison to flam3-C golden
+- ✅ **Eyeball-verify gates default to HTML pages.** Any moment the user
+  needs to visually compare images (FF-merge gate, parity gallery, before/
+  after, diff PNG vs golden vs render) → build a self-contained HTML page
+  at `.remember/verify/<phase-or-fixture>-<purpose>.html` with absolute-
+  path `<img src="file:///Users/matt/dev/MattAltermatt/pyr3/...">`. Surface
+  as `open <abs-path>` on its own line in chat. Canonical layout: 3-column
+  `golden / pyr3-render / diff` per fixture, dark theme, mono labels,
+  inline pills for R + per-channel + per-region. **Don't hand a list of
+  `open <path>` commands and expect the user to alt-tab between
+  individual files** — they've flagged this preference explicitly.
+  `.remember/verify/` is already gitignored.
 
 ## Determinism & R tolerance contract
 

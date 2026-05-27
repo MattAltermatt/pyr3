@@ -6,8 +6,42 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-015** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-016** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-015] gpu · M · 🪨 · queued · v1.x — Regular-xform opacity → alpha-scaling (replace splat-skip stand-in)
+
+After v0.9 shipped the finalxform-only opacity gate (`[PYR3-009]`), regular-
+xform opacity in `chaos.wgsl:1727-1738` is still handled by the legacy
+"Phase 9d probabilistic splat skip" — gate the splat at the chaos-game
+level instead of alpha-scaling the deposited color in the tonemap path.
+
+The flam3-faithful semantic is **per-xform alpha-scaling** via
+`adjust_percentage(opacity)` through `variations.c:2044` + `:2167`
+(kotlin tracks this as PYR3-035). Splat-skip is statistically equivalent at
+the median pixel (opacity=0.5 → half samples = half accumulated color) but
+**noisier at low SPP** than proper alpha-scaling (which deposits at full
+sample density with scaled color).
+
+**Why:** Phase 3 quality gating may surface fixtures whose splat-skip
+behavior diverges visibly from flam3 at low render-quality bands. Alpha-
+scaling is also a cleaner gradient.
+
+**How to apply:**
+1. Remove the `if (rand01 >= opacity) continue;` block at `chaos.wgsl:1727-
+   1738` (the current splat-skip).
+2. In the splat-color path (after the palette lookup, before the `atomicAdd`
+   calls — chaos.wgsl ~1771-1777), multiply the `pal` rgb components by
+   `xf.color_params.z` (= regular-xform opacity).
+3. Verify against the 19 fixture set: regressions on coverage.248.24236 +
+   coverage.248.33248 should NOT reappear (the new path achieves the same
+   "deposit-less when opacity-low" effect, just without the random skip).
+4. Recalibrate baselines on any fixtures that move > 0.1.
+
+**Reference:** flam3 `variations.c:2044, 2167`; kotlin equivalent is
+`PYR3-035` in pyr3-kotlin's BACKLOG.
+
+## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
 
 ## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
 
@@ -79,27 +113,6 @@ to the user before tightening — the current shape is intentional per Phase 2
 (parity in CI deferred to post-v1.0), so this is purely a DX tweak.
 
 Surfaced by Phase 2 code review (2026-05-27).
-
-## [PYR3-009] gpu · M · 🪨 · investigation · v1.x — Opacity-gate semantics (finalxform-only vs per-xform-splat)
-
-pyr3 currently gates regular xforms' splats by `rand01 < opacity` at
-`chaos.wgsl:1727-1738` ("Phase 9d probabilistic splat skip"). pyr3-kotlin's
-v1.x-C-opacity ships a different gate: finalxform-only, via `rand01 < opacity`
-matching `flam3.c:336-337`'s `opacity-=1` RNG short-circuit. Kotlin's
-PYR3-035 separately tracks regular-xform opacity as alpha-scaling (the
-flam3 `adjust_percentage(opacity)` path through `variations.c:2044, 2167`),
-not splat-skip.
-
-**Why:** Two implementations of "opacity" exist in flam3 — finalxform skip
-vs regular-xform alpha-scale. peek's current code is closer to neither
-canonically. Need empirical investigation against fixtures with non-1
-opacity (kotlin uses `coverage.248.11405` op=0.73, `coverage.248.25196`
-op=0.39).
-
-**How to apply:** Fetch a fixture with `finalxform opacity < 1` from the
-ESF corpus. Render with peek's current code. Render with a port of
-kotlin's finalxform-only gate. Compare visually + R-metric vs flam3-C
-golden. Pick the more flam3-faithful approach.
 
 ## [PYR3-010] gpu · L · 🪨 · queued · v1.x — Variation-arm bit-parity audit (98 arms)
 

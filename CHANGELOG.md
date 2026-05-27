@@ -7,6 +7,60 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.9 — 2026-05-27 — Phase 3 cycle 1: finalxform-opacity gate ([PYR3-009] shipped — half-port)
+
+**Outcome:** Ported kotlin's finalxform-only opacity gate to `chaos.wgsl`'s
+finalxform block. **R dropped ~81% on both [PYR3-009] reference fixtures**
+without regressing any of the other 17. First Phase-3 "iterate-toward-v1.0"
+cycle: hypothesis → implementation → measurement → ship.
+
+**Per-fixture R deltas (post-PYR3-009 vs v0.8 baseline):**
+
+| Fixture | Pre R | Post R | Delta | Note |
+|---|---|---|---|---|
+| **coverage.248.11405** | 7.5131 | **1.3610** | **−6.15 (−81.9%)** | finalxform op=0.73 — `[PYR3-009]` ref |
+| **coverage.248.25196** | 11.3177 | **2.1809** | **−9.14 (−80.7%)** | finalxform op=0.39 — `[PYR3-009]` ref |
+| all other 17 | (baseline) | (~same, < 0.02) | flat | within run noise |
+
+Both [PYR3-009] reference fixtures' thresholds tightened: 248.11405 8.51 →
+2.50, 248.25196 12.32 → 3.50. Other 17 fixtures' thresholds unchanged.
+
+**The change** (`src/shaders/chaos.wgsl`):
+
+Inside the finalxform block (`if (u.final_xform_idx >= 0)`), gate the lens
+application by `fxf.color_params.z` (= opacity). RNG draw is short-circuited
+when `opacity == 1.0` per `flam3.c:336-337` — preserves RNG-determinism for
+the common opaque-finalxform case. When the gate fails, `splat_p` stays at
+`p_pre_final` (the pre-lens default), so the deposit lands at the pre-
+finalxform position — mirrors flam3's behavior of leaving `q[]` unchanged
+when the opacity gate fails (`flam3.c:335-341`). WGSL `||` isn't spec-
+guaranteed short-circuit; nested-if keeps `rand01` unconsumed when
+`opacity == 1.0`. Port: `pyr3-kotlin core/src/main/kotlin/pyr3/core/CpuF64Backend.kt:566-585`.
+
+**Mid-cycle discovery (worth noting):**
+
+A first pass also removed the existing per-regular-xform splat-skip block
+(treating it as redundant with the new finalxform gate). That regressed two
+fixtures (coverage.248.24236, coverage.248.33248) with regular xforms at
+opacity < 1 — they rely on the splat-skip as a coarse stand-in for flam3's
+actual regular-xform behavior (alpha-scaling via `adjust_percentage`,
+`variations.c:2044`, kotlin's PYR3-035 equivalent). Restored the splat-skip;
+ship is the finalxform-half port only. Splat-skip is sample-noisier but
+statistically equivalent to alpha-scaling (opacity=0 → no splat = no color;
+opacity=0.5 → ½ samples = ½ accumulated color); the destination port lives
+in a separate, larger fix.
+
+**Follow-up backlog:**
+
+- **`[PYR3-015]`** (new): regular-xform opacity → alpha-scaling per
+  `flam3`'s `adjust_percentage` path (kotlin's PYR3-035 equivalent). Current
+  splat-skip stand-in is correct on average but noisier at low SPP than
+  proper alpha-scaling would be. Larger fix — touches tonemap path, not just
+  the chaos-game shader.
+
+**Closes:** `[PYR3-009]` (the finalxform half — the spec was specifically
+finalxform-only gating; the per-regular-xform path is a separate entry now).
+
 ## v0.8 — 2026-05-27 — Parity fixture set expanded 3 → 19 ([PYR3-011] shipped)
 
 **Outcome:** 16 more flam3-C goldens lifted from `pyr3-kotlin/parity/goldens/`

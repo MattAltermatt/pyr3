@@ -2,8 +2,8 @@
   "id": "coverage.248.25196",
   "width": 800,
   "height": 592,
-  "baselineR": 11.3177,
-  "thresholdR": 12.32,
+  "baselineR": 2.1809,
+  "thresholdR": 3.50,
   "source": "pyr3-kotlin/parity/goldens/coverage.248.25196/flame.png",
-  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3)."
+  "calibration": "Re-calibrated 2026-05-27 after v0.9 PYR3-009 finalxform-only opacity-gate port (R dropped 11.32 -> 2.18, -80.7%). thresholdR = baselineR + ~1.32."
 }

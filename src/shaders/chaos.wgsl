@@ -1646,65 +1646,84 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
 
     if (u.final_xform_idx >= 0) {
       let fxf = xforms[u.final_xform_idx];
-      let fa0 = fxf.affine0;
-      let fa1 = fxf.affine1;
 
-      // Affine pre-transform on the pre-lens position.
-      let fpa = vec2f(
-        fa0.x * pv.x + fa0.y * pv.y + fa0.z,
-        fa1.x * pv.x + fa1.y * pv.y + fa1.z,
-      );
-
-      // Variation chain — same pre_blur (V=97) 2-pass pattern as the main loop.
-      // Defensive clamp on f_num_vars per the same Phase 9b post-mortem
-      // hardening as the regular xform path above.
-      let f_num_vars = min(u32(fa1.w), MAX_VARS_PER_XFORM);
-      var fpa_mut = fpa;
-      for (var k = 0u; k < f_num_vars; k = k + 1u) {
-        let v = xforms[u.final_xform_idx].vars[k];
-        if (u32(v.x) == 97u) {
-          let r0 = rand01(walker_id);
-          let r1 = rand01(walker_id);
-          let r2 = rand01(walker_id);
-          let r3 = rand01(walker_id);
-          let rndG = v.y * (r0 + r1 + r2 + r3 - 2.0);
-          let r4 = rand01(walker_id);
-          let rndA = r4 * TAU;
-          // Note: v.y (weight) is already folded into rndG; do NOT multiply again here.
-          fpa_mut = fpa_mut + vec2f(cos(rndA) * rndG, sin(rndA) * rndG);
-        }
-      }
-      var fpv = vec2f(0.0, 0.0);
-      for (var k = 0u; k < f_num_vars; k = k + 1u) {
-        let v = xforms[u.final_xform_idx].vars[k];
-        let ve = xforms[u.final_xform_idx].vars_extra[k];
-        let ve2 = xforms[u.final_xform_idx].vars_extra2[k];
-        let var_idx = u32(v.x);
-        if (var_idx != 97u) {
-          fpv = fpv + apply_variation(var_idx, fpa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, fa0, fa1, walker_id);
-        }
-      }
-
-      // Phase 9c — finalxform may also have a post-affine.
-      if (fxf.post0.w != 0.0) {
-        let pp = fxf.post0;
-        let pq = fxf.post1;
-        fpv = vec2f(
-          pp.x * fpv.x + pp.y * fpv.y + pp.z,
-          pq.x * fpv.x + pq.y * fpv.y + pq.z,
-        );
-      }
-
-      // Color contraction (finalxform's color/colorSpeed apply to the splat).
-      let f_new_z = mix(new_z, fxf.color_params.x, fxf.color_params.y);
-
-      // NaN / extreme guard — fall back to pre-lens splat on bad lens output.
-      // Threshold `1e10` matches the main bad-value check above and flam3
-      // `private.h:22` `badvalue(x)`.
-      if (any(fpv != fpv) || any(abs(fpv) > vec2f(1e10))) {
-        splat_p = p_pre_final;
+      // v1.x-C-opacity finalxform gate.
+      // Port: pyr3-kotlin core/src/main/kotlin/pyr3/core/CpuF64Backend.kt:566-585.
+      // flam3.c:336-337 short-circuits the RNG draw when opacity == 1.0
+      // (preserves RNG-determinism on the common opaque case). When the gate
+      // fails, splat_p stays at p_pre_final (default at line 1645), so we
+      // deposit at the pre-finalxform position — flam3 leaves q[] unchanged
+      // when its opacity gate fails (flam3.c:335-341). WGSL `||` is not
+      // spec-guaranteed short-circuit; nested-if keeps the rand01 unconsumed
+      // when opacity == 1.0.
+      var apply_fx: bool;
+      if (fxf.color_params.z == 1.0) {
+        apply_fx = true;
       } else {
-        splat_p = vec3f(fpv, f_new_z);
+        apply_fx = rand01(walker_id) < fxf.color_params.z;
+      }
+
+      if (apply_fx) {
+        let fa0 = fxf.affine0;
+        let fa1 = fxf.affine1;
+
+        // Affine pre-transform on the pre-lens position.
+        let fpa = vec2f(
+          fa0.x * pv.x + fa0.y * pv.y + fa0.z,
+          fa1.x * pv.x + fa1.y * pv.y + fa1.z,
+        );
+
+        // Variation chain — same pre_blur (V=97) 2-pass pattern as the main loop.
+        // Defensive clamp on f_num_vars per the same Phase 9b post-mortem
+        // hardening as the regular xform path above.
+        let f_num_vars = min(u32(fa1.w), MAX_VARS_PER_XFORM);
+        var fpa_mut = fpa;
+        for (var k = 0u; k < f_num_vars; k = k + 1u) {
+          let v = xforms[u.final_xform_idx].vars[k];
+          if (u32(v.x) == 97u) {
+            let r0 = rand01(walker_id);
+            let r1 = rand01(walker_id);
+            let r2 = rand01(walker_id);
+            let r3 = rand01(walker_id);
+            let rndG = v.y * (r0 + r1 + r2 + r3 - 2.0);
+            let r4 = rand01(walker_id);
+            let rndA = r4 * TAU;
+            // Note: v.y (weight) is already folded into rndG; do NOT multiply again here.
+            fpa_mut = fpa_mut + vec2f(cos(rndA) * rndG, sin(rndA) * rndG);
+          }
+        }
+        var fpv = vec2f(0.0, 0.0);
+        for (var k = 0u; k < f_num_vars; k = k + 1u) {
+          let v = xforms[u.final_xform_idx].vars[k];
+          let ve = xforms[u.final_xform_idx].vars_extra[k];
+          let ve2 = xforms[u.final_xform_idx].vars_extra2[k];
+          let var_idx = u32(v.x);
+          if (var_idx != 97u) {
+            fpv = fpv + apply_variation(var_idx, fpa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, fa0, fa1, walker_id);
+          }
+        }
+
+        // Phase 9c — finalxform may also have a post-affine.
+        if (fxf.post0.w != 0.0) {
+          let pp = fxf.post0;
+          let pq = fxf.post1;
+          fpv = vec2f(
+            pp.x * fpv.x + pp.y * fpv.y + pp.z,
+            pq.x * fpv.x + pq.y * fpv.y + pq.z,
+          );
+        }
+
+        // Color contraction (finalxform's color/colorSpeed apply to the splat).
+        let f_new_z = mix(new_z, fxf.color_params.x, fxf.color_params.y);
+
+        // NaN / extreme guard — fall back to pre-lens splat on bad lens output.
+        // Threshold `1e10` matches the main bad-value check above and flam3
+        // `private.h:22` `badvalue(x)`.
+        if (any(fpv != fpv) || any(abs(fpv) > vec2f(1e10))) {
+          splat_p = p_pre_final;
+        } else {
+          splat_p = vec3f(fpv, f_new_z);
+        }
       }
     }
 
@@ -1730,6 +1749,15 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       // guarantees rand01 isn't called when opacity == 1.0 (WGSL `&&` is not
       // spec-guaranteed short-circuit, so a single-line guard could leak RNG
       // state advance into the opaque case).
+      //
+      // v1.x-C-opacity (PYR3-009 note): this gates on the REGULAR xform's
+      // opacity. flam3's spec'd path is per-xform alpha-scaling via
+      // adjust_percentage (variations.c:2044) — a separate, larger fix that
+      // belongs to its own PYR3-NNN. Splat-skip is a sample-noisier but
+      // statistically-equivalent stand-in (opacity=0 → no splat = no color;
+      // opacity=0.5 → ½ samples = ½ accumulated color). The FINALXFORM half
+      // of v1.x-C-opacity (kotlin PYR3-001) is correctly handled in the
+      // finalxform block above — gates the lens, not the splat.
       let opacity = xf.color_params.z;
       if (opacity < 1.0) {
         if (rand01(walker_id) >= opacity) {
