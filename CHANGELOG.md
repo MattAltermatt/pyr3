@@ -7,6 +7,68 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.7 — 2026-05-27 — Phase 2: parity test rig + flam3-C goldens
+
+**Outcome:** Phase 2 acceptance met. The harness produces R scores for
+3 fixtures via the BE (Node CLI) path, gated by per-fixture thresholds in
+Vitest; the FE (chrome-devtools-mcp + browser) path is lead-driven via
+`scripts/fe-parity.ts`. Phase 3 (iterate to v1.0 ship gate) now has the
+objective parity signal it needs.
+
+**Shipped pieces:**
+
+- 🧮 **R-metric ported verbatim from kotlin** — `src/compare.ts` exports
+  `meanAbsDiffRgba` (scalar gate), `perChannelDrift`, `perRegionDrift`,
+  `meanAbsDiffAccumulator`. 19 unit tests. Same validation messages, same
+  empty-array semantics, same RGB-alpha-ignored semantics, same load-bearing
+  `/ 3.0` in `perRegionDrift`.
+  *Port: pyr3-kotlin `parity/src/main/kotlin/pyr3/parity/Compare.kt`.*
+
+- 🖼️ **3 flam3-C goldens lifted from pyr3-kotlin** — `247.29388`, `248.04487`,
+  `248.11268` (all 800×592 RGBA). Each fixture: `golden.png` + source `.flam3`
+  + `meta.json` carrying `baselineR` + `thresholdR`. Lives under
+  `fixtures/flam3-goldens/<id>/`. Building flam3-C locally to add more
+  fixtures is deferred to `[PYR3-011]`.
+
+- 🪲 **Two-layer parity output: scalar gate + visual diagnostic** — every
+  parity run computes R + per-channel + per-region drift AND writes a
+  visibility-scaled `diff.png` to `fixtures/flam3-goldens/<id>/diff.png` so
+  the lead can `open` the divergence map in 2 seconds when a fixture fails.
+  R alone is spatially blind; the diff PNG closes that gap. New helper at
+  `src/diff-image.ts`.
+
+- ⚙️ **BE harness in CI** — `src/parity.test.ts` discovers fixtures, spawns
+  `bin/pyr3-render.ts` per fixture via `child_process`, decodes both PNGs,
+  computes all four metrics, writes the diff PNG, asserts
+  `R ≤ thresholdR` when calibrated. `npm run test:parity` added to scripts.
+
+- 🌐 **FE harness lead-driven (not Vitest)** — `scripts/fe-parity.ts`
+  prints a `?flame=v1:<base64>` share URL + step-by-step
+  `chrome-devtools-mcp` instructions; reads captured canvas RGBA on stdin
+  in `compare` mode and prints FE-R + drift breakdown. Pairs with a
+  dev-only `window.__pyr3LastHandle` hook in `src/main.ts` so the MCP
+  session can `await` the render before capturing.
+
+- 📐 **Per-fixture R baselines + thresholds calibrated** (mean over 3
+  deterministic-within-machine runs on M-series + Dawn-node):
+
+  | Fixture | baselineR | thresholdR | per-channel skew (r/g/b) |
+  |---|---|---|---|
+  | `247.29388` | 3.0030 | 4.00 | 5.79 / 3.68 / 2.53 |
+  | `248.04487` | 2.3248 | 3.32 | 2.87 / 3.12 / 3.31 |
+  | `248.11268` | 1.9951 | 3.00 | 2.74 / 2.88 / 2.35 |
+
+  Gate verified live by flipping `248.11268.thresholdR` to `1.50` (below
+  baseline) and confirming the expected FAIL; reverted to 3.00.
+
+**Out of scope (deferred):**
+
+- Building flam3-C locally to add more fixtures → `[PYR3-011]`.
+- Tightening R thresholds aggressively → Phase 3 iteration.
+- `TwoSeedGate` / two-seed noise-floor logic → post-v1.0 if needed.
+- FE parity in CI (needs a headless-browser-with-WebGPU CI runner) → out
+  of scope for v1.0.
+
 ## v0.3 — 2026-05-27 — Phase 1: kotlin-fix audit-port pass (no code changes — pyr3-peek was already aligned)
 
 **Outcome:** 11 of 12 enumerated kotlin GPU / parser / variation fixes from

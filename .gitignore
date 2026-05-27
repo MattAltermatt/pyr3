@@ -12,6 +12,7 @@ coverage/
 .claude/worktrees/
 .claude/*.png
 .phase*.png
+.diag*.png
 
 # Superpowers brainstorm scratch
 .superpowers/
@@ -22,3 +23,8 @@ coverage/
 # Remember / session state
 .remember/tmp/
 .remember/logs/
+
+# Phase 2 parity test artifacts (regenerated each run)
+fixtures/flam3-goldens/*/diff.png
+fixtures/flam3-goldens/*/pyr3-render.png
+.remember/verify/

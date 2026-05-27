@@ -6,8 +6,50 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-011** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-013** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-012] infra · XS · 🪶 · queued · v1.x — Separate `npm test` from `npm run test:parity`
+
+`vitest run` auto-discovers `src/parity.test.ts` alongside the unit tests, so
+`npm test` quietly invokes the WebGPU CLI per fixture. On any host without a
+Dawn-capable GPU (CI, Docker, contributor laptops without WebGPU support) the
+parity tests fail non-cleanly with a spawn exit=1 + buried stderr.
+
+**Why:** README's "full unit + parity suite" framing sets expectation that
+`npm test` is the everyday dev command. Pure-unit work should not require a
+GPU; parity work has its own `npm run test:parity` entry.
+
+**How to apply:** Add a `vitest.config.ts` with `test.exclude:
+['**/parity.test.ts']` (or move `parity.test.ts` to a folder vitest doesn't
+auto-discover). Keep `test:parity` as the explicit parity entrypoint. Surface
+to the user before tightening — the current shape is intentional per Phase 2
+(parity in CI deferred to post-v1.0), so this is purely a DX tweak.
+
+Surfaced by Phase 2 code review (2026-05-27).
+
+## [PYR3-011] parity · M · 🎚️ · queued · v1.x — Expand parity fixture set to 5-7 flames (requires building flam3-C locally)
+
+v0.7 shipped Phase 2 with 3 fixtures lifted from `pyr3-kotlin/parity/goldens/`
+(247.29388, 248.04487, 248.11268 — the ones with existing `flam3-ref.png`
+goldens). The spec calls for 3-5 fixtures balanced across variation usage +
+visual character. Currently the set is biased toward whatever `pyr3-kotlin`
+happened to have golden'd; we want 2-4 more representing different variation
+clusters (e.g. `pre_blur`-heavy, `julia`-heavy, finalxform-with-opacity, xaos-
+heavy).
+
+**Why:** Phase 3 R-threshold tightening only generalizes if the fixture set
+covers the variation surface. Three goldens is the floor, not the target.
+
+**How to apply:** Build flam3-C locally (`pyr3-kotlin/parity/flam3/` has the
+source + build scripts; or apt/brew if available). For each chosen
+Electric Sheep flame: `flam3-render` it at the same canvas size as the
+existing 3 fixtures (800×592 keeps the harness simple), commit the golden +
+source .flam3 + meta.json under `fixtures/flam3-goldens/<id>/`. Re-run
+calibration (3 runs, populate baselineR + thresholdR).
+
+**Dependency:** [PYR3-009] resolution informs which opacity-bearing fixtures
+make sense to add.
 
 ## [PYR3-009] gpu · M · 🪨 · investigation · v1.x — Opacity-gate semantics (finalxform-only vs per-xform-splat)
 

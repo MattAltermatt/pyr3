@@ -11,8 +11,8 @@
 
 ## Status
 
-🚧 **v0.0 — project genesis.** No working code yet. See [ROADMAP.md](ROADMAP.md) for the
-path to v1.0.
+🚧 **v0.7 — Phase 2 shipped.** Engine in place (browser + CLI both render); parity test
+rig live against 3 flam3-C goldens. Iterating toward v1.0. See [ROADMAP.md](ROADMAP.md).
 
 ## The contract
 
@@ -34,12 +34,27 @@ See [NOTICE.md](NOTICE.md) for third-party attribution and the full lineage trai
 ## Quick start
 
 ```sh
-# (not working yet — Phase 0 begins next session, see ROADMAP.md)
 npm install
-npm test
-npm run dev    # browser viewer at http://localhost:5173/
-npm run render fixtures/welcome.flame out.png    # CLI
+npm test                  # full unit + parity suite
+npm run dev               # browser viewer at http://localhost:5173/
+npm run render fixtures/electricsheep.247.19679.flam3 out.png    # CLI
 ```
+
+## Verifying parity
+
+The Phase 2 rig compares pyr3 renders against flam3-C goldens via an R-metric
+(mean absolute diff, RGB-only) plus per-channel / per-region drift and a
+visibility-scaled `diff.png` per fixture.
+
+```sh
+npm run test:parity                              # BE path: vitest gates R per fixture
+node scripts/fe-parity.ts 247.29388              # FE path: prints chrome-devtools-mcp steps
+open fixtures/flam3-goldens/247.29388/diff.png   # eyeball the divergence map
+```
+
+Fixtures live at `fixtures/flam3-goldens/<id>/` — each has `golden.png` (flam3-C
+output), `<id>.flam3` (source), and `meta.json` carrying calibrated `baselineR`
++ `thresholdR`.
 
 ## Docs
 

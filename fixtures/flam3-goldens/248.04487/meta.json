@@ -1,0 +1,9 @@
+{
+  "id": "248.04487",
+  "width": 800,
+  "height": 592,
+  "baselineR": 2.3248,
+  "thresholdR": 3.32,
+  "source": "pyr3-kotlin/parity/goldens/248.04487/flam3-ref.png",
+  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3)."
+}

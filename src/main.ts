@@ -182,6 +182,9 @@ async function main(): Promise<void> {
       },
     });
     runHandle = handle;
+    if (import.meta.env.DEV) {
+      (window as unknown as { __pyr3LastHandle?: RunHandle }).__pyr3LastHandle = handle;
+    }
 
     try {
       await handle.promise;
