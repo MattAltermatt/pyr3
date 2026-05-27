@@ -1,0 +1,9 @@
+{
+  "id": "coverage.248.11405",
+  "width": 800,
+  "height": 592,
+  "baselineR": 7.5131,
+  "thresholdR": 8.51,
+  "source": "pyr3-kotlin/parity/goldens/coverage.248.11405/flame.png",
+  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3)."
+}

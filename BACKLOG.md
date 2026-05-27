@@ -6,8 +6,60 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-013** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-015** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
+
+`npm run test:parity` (19 fixtures, ~89 s total) emits an "Unhandled Error:
+`[vitest-worker]: Timeout calling 'onTaskUpdate'`" at the end. All 19 tests
+pass — the error is vitest's internal RPC heartbeat firing because the suite
+runtime exceeds the default `onTaskUpdate` timeout. Doesn't affect correctness,
+just produces scary log noise.
+
+**Why:** As Phase 3 adds more fixtures or higher-quality renders, the suite
+will only get slower; the noise will be persistent.
+
+**How to apply:** Either bump vitest's worker timeout via `vitest.config.ts`
+(`test.testTimeout` already 180s — this is a *different* RPC timeout — likely
+`poolOptions.threads.singleThread` or `chaiConfig.includeStack`), or split the
+parity suite into per-fixture vitest invocations. Easiest: try
+`test.teardownTimeout: 120_000` + `test.hookTimeout: 120_000` in config.
+
+Surfaced 2026-05-27 during v0.8 (19-fixture expansion).
+
+## [PYR3-013] feat · L · 🪨 · queued · post-v1 — Showcase gallery (mirror pyr3-kotlin's v1.1)
+
+User-facing reference: <https://mattaltermatt.github.io/pyr3/v1.1/>. A curated
+multi-flame HTML gallery (3-column layout: flam3-C ref / pyr3 BE / pyr3 FE)
+that visitors land on to see what pyr3 actually renders. ~50-150 flames, pulled
+from the Electric Sheep Fold corpus + pyr3-kotlin's `parity/src/test/resources/`
++ the existing `fixtures/flam3-goldens/` parity set.
+
+**Why post-v1.0:** the showcase IS the public-facing story for pyr3; needs the
+ship gate met before it's worth building. Premature showcase risks shipping
+"here are some flame renders" before they actually match flam3-C.
+
+**Distinct from the parity rig:** Phase 2's `fixtures/flam3-goldens/` is the
+**regression-gate** infrastructure (small focused set, R-gate, automated).
+Showcase is the **presentation** surface (large curated set, HTML gallery,
+visual review). The parity-set fixtures are a *subset* of showcase candidates
+but the tooling and structure are different.
+
+**Build prerequisites:**
+1. Build flam3-C locally (pyr3-kotlin's `parity/flam3/` has source + build
+   scripts) so we can golden whatever fixture lands in the showcase. Without
+   this we're capped at the 16 fixtures kotlin already golden'd.
+2. Curate fixture list — likely lift kotlin's `v1.0-showcase.txt` shape as a
+   starting point. Some fixtures live in ESF corpus
+   (`/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/`), some in
+   kotlin's `parity/src/test/resources/`. Path-resolution layer needed.
+3. Decide hosting: GitHub Pages branch `gh-pages` (mirror kotlin's pattern via
+   adapted `render-showcase.sh`), or shipped as `dist/showcase/`.
+4. Render harness — batch invoke `bin/pyr3-render.ts` per fixture; FE side
+   needs a chrome-devtools-mcp orchestration script (or pre-rendered PNG only).
+
+**Dependency:** v1.0 ship-gate pass.
 
 ## [PYR3-012] infra · XS · 🪶 · queued · v1.x — Separate `npm test` from `npm run test:parity`
 
@@ -27,29 +79,6 @@ to the user before tightening — the current shape is intentional per Phase 2
 (parity in CI deferred to post-v1.0), so this is purely a DX tweak.
 
 Surfaced by Phase 2 code review (2026-05-27).
-
-## [PYR3-011] parity · M · 🎚️ · queued · v1.x — Expand parity fixture set to 5-7 flames (requires building flam3-C locally)
-
-v0.7 shipped Phase 2 with 3 fixtures lifted from `pyr3-kotlin/parity/goldens/`
-(247.29388, 248.04487, 248.11268 — the ones with existing `flam3-ref.png`
-goldens). The spec calls for 3-5 fixtures balanced across variation usage +
-visual character. Currently the set is biased toward whatever `pyr3-kotlin`
-happened to have golden'd; we want 2-4 more representing different variation
-clusters (e.g. `pre_blur`-heavy, `julia`-heavy, finalxform-with-opacity, xaos-
-heavy).
-
-**Why:** Phase 3 R-threshold tightening only generalizes if the fixture set
-covers the variation surface. Three goldens is the floor, not the target.
-
-**How to apply:** Build flam3-C locally (`pyr3-kotlin/parity/flam3/` has the
-source + build scripts; or apt/brew if available). For each chosen
-Electric Sheep flame: `flam3-render` it at the same canvas size as the
-existing 3 fixtures (800×592 keeps the harness simple), commit the golden +
-source .flam3 + meta.json under `fixtures/flam3-goldens/<id>/`. Re-run
-calibration (3 runs, populate baselineR + thresholdR).
-
-**Dependency:** [PYR3-009] resolution informs which opacity-bearing fixtures
-make sense to add.
 
 ## [PYR3-009] gpu · M · 🪨 · investigation · v1.x — Opacity-gate semantics (finalxform-only vs per-xform-splat)
 

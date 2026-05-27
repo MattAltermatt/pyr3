@@ -7,6 +7,71 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.8 — 2026-05-27 — Parity fixture set expanded 3 → 19 ([PYR3-011] shipped)
+
+**Outcome:** 16 more flam3-C goldens lifted from `pyr3-kotlin/parity/goldens/`
+without needing to build flam3-C locally — kotlin already had `flame.png` (the
+flam3-C-binary golden, per its `bakeOrLoad` cache contract) for 16 fixtures we
+hadn't pulled yet. Parity rig now covers 19 fixtures spanning a much wider R
+distribution (0.45 → 32.62), which gives Phase 3 fixes proper triangulation.
+
+**Fixtures added (16):**
+
+| ID | Dims | baselineR | thresholdR | Notes |
+|---|---|---|---|---|
+| 244.00016 | 800×592 | 3.98 | 5.00 | low-quality fixture (q=5), fast render |
+| 244.57686 | 800×592 | **0.45** | 1.45 | best parity in the set |
+| 244.82270 | 800×592 | 3.32 | 4.32 | |
+| 244.82986 | 800×592 | 9.90 | 10.90 | |
+| coverage.243.04616 | 800×592 | 11.55 | 12.55 | |
+| coverage.245.00381 | 800×592 | 4.42 | 5.42 | |
+| coverage.245.06687 | 1280×720 | 14.58 | 15.58 | quadrant skew (br=43.90) |
+| coverage.247.20817 | 800×592 | 3.11 | 4.11 | |
+| coverage.247.28068 | 800×592 | 5.17 | 6.17 | |
+| coverage.247.31007 | 800×592 | 1.52 | 2.52 | |
+| coverage.248.02226 | 1280×720 | **32.62** | 33.62 | highest divergence — Phase 3 priority |
+| coverage.248.11405 | 800×592 | 7.51 | 8.51 | **finalxform op=0.73 — `[PYR3-009]` ref** |
+| coverage.248.19873 | 800×592 | 1.58 | 2.58 | |
+| coverage.248.24236 | 1280×720 | 2.71 | 3.71 | |
+| coverage.248.25196 | 800×592 | 11.32 | 12.32 | **finalxform op=0.39 — `[PYR3-009]` ref** |
+| coverage.248.33248 | 800×592 | 4.92 | 5.92 | |
+
+All baselines = mean over 3 deterministic-within-machine runs on M-series +
+Dawn-node 2026-05-27; variance < 0.02 per fixture. Thresholds = baseline +
+~1.0 (start permissive; tighten in Phase 3).
+
+**Mixed dimensions:** 16 fixtures at 800×592 + 3 at 1280×720. `parity.test.ts`
+reads dims from the PNG; no harness changes needed.
+
+**Phase 3 unblocking:**
+
+- `[PYR3-009]` (opacity-gate semantics: finalxform-only vs per-xform-splat)
+  now has its reference fixtures (`coverage.248.11405` op=0.73,
+  `coverage.248.25196` op=0.39) and both show meaningful R divergence (7.5
+  and 11.3 respectively) — the rig will measure whether the kotlin
+  finalxform-only port reduces R.
+- `coverage.248.02226` at R=32.6 is the biggest signal in the set — worth
+  eyeballing its `diff.png` early in Phase 3 to identify the divergence
+  shape (likely a tonemap, gamma, or finalxform issue given the cross-
+  quadrant variance: bl=71.4 vs br=31.6).
+
+**Closes:** `[PYR3-011]` (was: "expand to 5-7 flames; requires building
+flam3-C locally" — turned out neither prereq was needed; lifting from kotlin
+covered it).
+
+**Files (16 new fixture dirs):**
+
+`fixtures/flam3-goldens/{244.00016, 244.57686, 244.82270, 244.82986,
+coverage.243.04616, coverage.245.00381, coverage.245.06687, coverage.247.20817,
+coverage.247.28068, coverage.247.31007, coverage.248.02226, coverage.248.11405,
+coverage.248.19873, coverage.248.24236, coverage.248.25196, coverage.248.33248}/`
+— each with `golden.png` + `<id>.flam3` + `meta.json`.
+
+**New backlog (surfaced this phase):**
+
+- `[PYR3-014]` Vitest worker RPC timeout on 89s parity suite (cosmetic — all
+  tests pass, just emits an "Unhandled Error" log line at the end).
+
 ## v0.7 — 2026-05-27 — Phase 2: parity test rig + flam3-C goldens
 
 **Outcome:** Phase 2 acceptance met. The harness produces R scores for
