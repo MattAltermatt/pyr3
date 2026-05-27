@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { type Genome, SPIRAL_GALAXY } from './genome';
+import { type Genome, SPIRAL_GALAXY, packXforms, XFORM_FLOATS } from './genome';
 import { genomeToJson, genomeFromJson, PYR3_JSON_VERSION } from './serialize';
 import { DEFAULT_DENSITY } from './density';
 import { V } from './variations';
@@ -370,6 +370,35 @@ describe('xform opacity + xaos round-trip (Phase 9d)', () => {
     const augmented = { ...json, xforms: [{ ...json.xforms[0]!, opacity: 1.0 }, ...json.xforms.slice(1)] };
     const back = genomeFromJson(augmented);
     expect(back.xforms[0]!.opacity).toBeUndefined();
+  });
+});
+
+describe('packXforms opacity clamp ([PYR3-016])', () => {
+  function opacityAt(genome: Genome, slot: number): number {
+    const buf = new Float32Array(packXforms(genome));
+    return buf[slot * XFORM_FLOATS + 10]!;
+  }
+  const base: Genome = { ...SPIRAL_GALAXY, tonemap: undefined };
+  const x0 = base.xforms[0]!;
+
+  it('passes through a valid in-range opacity unchanged', () => {
+    const g: Genome = { ...base, xforms: [{ ...x0, opacity: 0.6 }, ...base.xforms.slice(1)] };
+    expect(opacityAt(g, 0)).toBeCloseTo(0.6);
+  });
+
+  it('clamps negative opacity to 0', () => {
+    const g: Genome = { ...base, xforms: [{ ...x0, opacity: -0.3 }, ...base.xforms.slice(1)] };
+    expect(opacityAt(g, 0)).toBe(0);
+  });
+
+  it('clamps opacity > 1 down to 1', () => {
+    const g: Genome = { ...base, xforms: [{ ...x0, opacity: 1.5 }, ...base.xforms.slice(1)] };
+    expect(opacityAt(g, 0)).toBe(1);
+  });
+
+  it('defaults undefined opacity to 1', () => {
+    const g: Genome = { ...base, xforms: [{ ...x0, opacity: undefined }, ...base.xforms.slice(1)] };
+    expect(opacityAt(g, 0)).toBe(1);
   });
 });
 

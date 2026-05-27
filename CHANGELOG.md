@@ -7,6 +7,29 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.11 — 2026-05-27 — Opacity-clamp serialization hardening ([PYR3-016] shipped)
+
+**Outcome:** Clamp `Xform.opacity` to flam3-spec'd [0, 1] at the GPU
+serialization boundary (`genome.ts:packXformInto`). Defensive hardening
+against malformed `.flame` input that passes `flame-import.ts` finiteness
+validation but carries out-of-range values. Valid flames are unaffected
+(all 19 parity fixtures use opacity ∈ {0, 0.39, 0.61904, 0.73, 1.0}).
+
+**The change** (`src/genome.ts:281`):
+```ts
+buf[o + 10] = Math.max(0, Math.min(1, x.opacity ?? 1.0));
+```
+Zero perf cost. Prevents WGSL-implementation-defined `u32()` of negative
+weights at `opacity < 0`, and histogram-bucket-overflow at `opacity > 1`
+(post-PYR3-015, `weight = opacity * 255.0` so the count channel would
+accumulate > 255 per hit if unclamped).
+
+**Tests:** 4 new tests in `serialize.test.ts` cover the clamp at the
+public `packXforms` boundary (in-range, negative-clamped, >1-clamped,
+undefined→1 default). 4494/4499 tests pass.
+
+Surfaced by code-review subagent on the PYR3-015 branch.
+
 ## v0.10 — 2026-05-27 — Phase 3 cycle 2: regular-xform alpha-scaling ([PYR3-015] shipped)
 
 **Outcome:** Replaced the v0.9-era probabilistic splat-skip in `chaos.wgsl`

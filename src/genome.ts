@@ -278,7 +278,10 @@ function packXformInto(buf: Float32Array, slotIndex: number, x: Xform): void {
 
   buf[o + 8] = x.color;
   buf[o + 9] = x.colorSpeed;
-  buf[o + 10] = x.opacity ?? 1.0; // Phase 9d
+  // PYR3-016: clamp to flam3-spec'd [0, 1] at the serialization boundary.
+  // Malformed `.flame` input may pass finiteness validation in flame-import
+  // but still carry out-of-range opacity; valid flames are unaffected.
+  buf[o + 10] = Math.max(0, Math.min(1, x.opacity ?? 1.0));
   // 11 is pad (already zero from ArrayBuffer init)
 
   // Phase 9c — post-affine slots. has_post flag (slot 15) gates application

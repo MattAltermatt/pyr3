@@ -9,35 +9,6 @@ current cycle lives in [ROADMAP.md](ROADMAP.md).
 > **Next ID: PYR3-017** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-016] gpu · XS · 🪶 · queued · v1.x — Opacity-clamp hardening at serialization boundary
-
-`flame-import.ts:350` validates that `Xform.opacity` is a finite number
-but does NOT clamp it to the flam3-spec'd [0, 1] range. A malformed
-`.flame` with `opacity="-0.3"` or `opacity="1.5"` would pass the import
-gate and reach the WGSL shader, where:
-- `opacity < 0` → `weight < 0` → `u32(weight)` is implementation-defined
-  in WGSL (in practice returns 0 on all current backends, but spec-UB).
-- `opacity > 1` → `weight > 255` → histogram bucket accumulates more than
-  255 per hit, overflowing the saturation budget faster than intended.
-
-Valid flames (flam3-spec'd opacity ∈ [0, 1]) are unaffected. This is
-defensive hardening against malformed input, not a correctness bug.
-
-**Why:** External user input (`.flame` files from untrusted sources, or
-hand-edited corpora) crosses the system boundary at `flame-import.ts`.
-Per CLAUDE.md "Only validate at system boundaries" — this is one.
-
-**How to apply:** Clamp in `genome.ts:277` (the GPU serialization step,
-where opacity gets packed into the f32 buffer):
-```ts
-buf[o + 10] = Math.max(0, Math.min(1, x.opacity ?? 1.0));
-```
-Zero perf cost (two comparisons per xform per frame). Optionally also
-warn at import time if out-of-range, but that's diagnostic-level — the
-clamp is the safety floor.
-
-Surfaced by code-review subagent on the PYR3-015 branch (2026-05-27).
-
 ## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
 
 ## [PYR3-014] infra · XS · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
