@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vite/
+coverage/
+.env.local
+.idea/
+.vscode/
+
+# Claude worktrees + transient screenshots
+.claude/worktrees/
+.claude/*.png
+.phase*.png
+
+# Superpowers brainstorm scratch
+.superpowers/
+
+# Parity investigation scratch (uncommitted PNGs, captured JSON buffers)
+.parity-investigation/
+
+# Remember / session state
+.remember/tmp/
+.remember/logs/
