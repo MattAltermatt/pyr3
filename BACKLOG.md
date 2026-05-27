@@ -6,8 +6,27 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-008** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-009** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-008] gpu · S · 🪨 · queued · v1.x — Decouple chaos.ts oversample from genome
+
+`chaos.ts:173` reads `g.oversample` from the genome to compute the WGSL
+`scale` uniform (`g.scale × g.oversample`). The pipeline's *actual*
+oversample is already known to the renderer (`pipelines.oversample`); the
+genome value is a vestigial parallel input that allowed v0.2's camera-zoom
+bug to creep in (host setup forgot to keep them in sync).
+
+**Why:** Defensive — eliminate the divergence class entirely so future host
+setup bugs of the same shape cannot recur. The pipeline oversample is the
+authority; the chaos pass should accept it as a dispatch parameter, not
+re-read from the genome.
+
+**How to apply:** Change `chaos.ts:dispatch` signature to take `oversample`
+as an explicit arg (or derive from pipeline state). Update both call sites
+(`renderer.iterate` + any other). Add a regression test that varies
+`genome.oversample` and asserts WGSL `scale` matches `pipelineOversample × g.scale`,
+not `genomeOversample × g.scale`.
 
 **Flag vocabularies:**
 - **category:** feat · perf · bug · parity · docs · cli · gpu · cpu · infra

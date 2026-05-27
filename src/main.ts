@@ -142,6 +142,14 @@ async function main(): Promise<void> {
     const renderGenome: Genome = {
       ...activeGenome,
       scale: activeGenome.scale * sizeScale,
+      // CRITICAL: keep `genome.oversample` aligned with the pipeline's
+      // configured oversample. chaos.ts computes the WGSL scale uniform as
+      // `g.scale * g.oversample` — if the pipeline is built at oversample=1
+      // (quick mode) but g.oversample stays at the genome's declared
+      // supersample (often 4 for ES flames), the projection over-zooms by
+      // that factor, producing the "camera stuck at the middle point"
+      // symptom that pyr3-peek couldn't crack.
+      oversample: targetOversample,
       quality: Math.min(activeGenome.quality ?? sppCap, sppCap),
     };
     const targetSamples = (renderGenome.quality ?? sppCap) * renderer.width * renderer.height;
