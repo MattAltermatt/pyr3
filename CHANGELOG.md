@@ -4,8 +4,139 @@ Authoritative ship history. Backward-looking only — forward plans live in
 [ROADMAP.md](ROADMAP.md), open tasks in [BACKLOG.md](BACKLOG.md).
 
 Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffolding;
-**v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
-WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
+**v1.0** marks the ship gate: pyr3 backend (Node CLI WebGPU) renders matching kotlin v1.1's
+4K showcase references within R tolerance for the curated fixture set; pyr3 frontend
+(browser WebGPU) renders matching the backend at quick-mode dims within R tolerance.
+
+## v0.14 — 2026-05-27 — PYR3-023 probe + FE 4K removal pivot (BE-only 4K)
+
+**Outcome:** Probed pyr3's `🎯 Render 4K` button against 5 kotlin v1.1
+showcase fixtures via chrome-devtools-mcp + a fresh BE 4K wrapper. The
+empirical finding pivoted the v1.0 strategy: **FE no longer supports
+4K**; BE is the v1.0 4K renderer + ship-gate vehicle.
+
+**Probe results — 5 showcase fixtures, FE + BE @ 4096 long-edge:**
+
+```text
+fixture     FE wall    BE wall    FE/BE ratio    category
+----------  --------   --------   -----------    ---------------
+247.19679    163.6 s    12.39 s     13.2×        OK
+248.31324    159.0 s    11.75 s     13.5×        OK
+243.09081     78.9 s    13.73 s      5.7×        OK
+244.36880    CRASH      14.06 s      —           FE_CRASH_BE_OK
+248.22289    CRASH      19.08 s      —           FE_CRASH_BE_OK + visual divergence
+```
+
+**The three load-bearing findings:**
+
+1. **5/5 BE renders complete in 12-19s.** Engine is healthy at 4K.
+2. **2/5 fixtures (244.36880, 248.22289) reproducibly crash the Chrome
+   renderer tab** within ~30-45s of clicking `🎯 Render 4K` (page
+   resets to `about:blank`, no preserved console messages). Same
+   fixtures render fine on BE at identical 4096 dims → failure is
+   Chrome-WebGPU-host-environment-specific, not an engine bug.
+3. **FE/BE wall-clock gap = 13×** on the 3 fixtures that don't crash
+   (79-164s FE vs 12-19s BE). Per-chunk rAF yields in
+   `render-orchestrator.ts:107` + Chrome WebGPU overhead. Bad
+   showcase UX even on the working fixtures.
+
+**The pivot (user directive 2026-05-27):**
+
+> "Should the front end support 4k, or should it support 'high' quality?
+> ... I am not going to wait around 3 minutes for something I know takes
+> 12 seconds. For now, remove the 'render 4K' button."
+
+Following kotlin's v1.1 showcase pattern (pre-rendered static JPGs
+served via gh-pages — the browser never renders 4K live), pyr3 FE is now
+**interactive at quick-mode dims only** (1024 long-edge, 16 SPP).
+4K renders happen via BE CLI (`bin/pyr3-render.ts` +
+`scripts/pyr3-023-be-render-4k.mjs` wrapper). PYR3-007 showcase becomes
+a curated static gallery of BE-rendered 4K assets, mirroring kotlin's
+gh-pages layout.
+
+**FE changes shipped:**
+
+- `src/ui-bar.ts` — removed `onRender4K` from `BarOpts`, removed
+  `renderBtn` from `Tier2` + creation site + busy/loading toggles + the
+  row.append list.
+- `src/main.ts` — removed `FULL_MAX_DIM/SPP/OVERSAMPLE` constants,
+  removed `RenderMode` type, collapsed `renderInMode(mode)` →
+  `rerender()` (only quick-mode logic remains; the `mode === '4k'`
+  branches deleted as dead code). The `__pyr3CapturePixels` +
+  `__pyr3LastHandle` dev hooks remain (still used by PYR3-018-style FE
+  parity probing).
+
+**Apples-to-apples baseline pinned to kotlin (for the BE 4K parity
+rig — PYR3-023 next phase):**
+
+```text
+kotlin SHOWCASE_4K preset (pyr3-kotlin/cli/.../Preset.kt:39-49):
+  TARGET_4K_LONG_EDGE   3840 px
+  sizeScale             3840 / max(W, H)
+  gpuQualityScale       1.0          (no per-pixel SPP compensation)
+  --quality (showcase)  200          (overrides genome.quality)
+
+pyr3 BE current (scripts/pyr3-023-be-render-4k.mjs):
+  long-edge             4096 px      ← misaligns by 256 px (6.67% per edge)
+  sizeScale             4096 / max(W, H)
+  oversample            1
+  SPP cap               200          (matches kotlin)
+```
+
+The 4096 → 3840 alignment is the first concrete fix in PYR3-023's
+next-phase scope.
+
+**BACKLOG re-scoped (3 new entries, 1 narrowed):**
+
+- `[PYR3-023]` narrowed from "4K rendering failures + 4K-parity gate"
+  to **"BE 4K parity gate vs kotlin v1.1 (V1.0 SHIP GATE)"** — the
+  FE 4K work is gone; only the BE-vs-kotlin work remains.
+- `[PYR3-024]` (new) — `248.22289` BE 4K visual divergence (folds
+  into PYR3-021's upstream-stage hunt).
+- `[PYR3-025]` (new, post-v1) — Chrome FE 4K renderer-tab-kill class
+  insurance investigation. No longer v1.0-blocking; the failure
+  surface is real and might surface elsewhere.
+- `[PYR3-026]` (new, v1.0) — FE↔BE parity invariant at quick-mode
+  dims. The FE-side half of the v1.0 ship gate now that FE no longer
+  does 4K.
+
+**Files touched:**
+
+- `src/ui-bar.ts` — FE button removal (4 small surgical edits)
+- `src/main.ts` — caps + RenderMode + renderInMode collapsed
+- `BACKLOG.md` — PYR3-023 narrowed; PYR3-024/025/026 filed; next-ID
+  bumped 024 → 027
+- `README.md` — `## Status` block refreshed v0.11 → v0.14
+- `ROADMAP.md` — v0.14 added to shipped table
+- `.gitignore` — `fixtures/pyr3-4k-renders/` +
+  `fixtures/showcase-probe-sources/` excluded (large derived /
+  verbatim-copy)
+- `scripts/pyr3-023-be-render-4k.mjs` (new) — BE 4K wrapper mirroring
+  FE's `renderInMode('4k')` math; will graduate to a first-class CLI
+  flag in PYR3-023's next phase
+- `scripts/pyr3-023-build-html.mjs` (new) — 4-column eyeball-verify
+  builder (meta+category / kotlin v1.1 JPG / pyr3 FE / pyr3 BE)
+- `fixtures/kotlin-4k-refs/` (new tracked) — 5 kotlin v1.1 4K JPGs
+  (244.36880, 243.09081, 248.22289 + symlink-style copies of
+  247.19679 + 248.31324 from kotlin-goldens/) — reference fixtures
+  for the upcoming BE 4K parity rig
+
+**Tests:** `npm test` 4494/4499 (no regression vs v0.13). `npm run
+typecheck` clean.
+
+**Verification:** Chrome at http://localhost:5173/?mute=1 shows the bar
+with only `📂 Open .flame` + `🔗 Share link` buttons; welcome flame
+paints cleanly; zero console errors. Probe gallery at
+`.remember/verify/pyr3-023-4k-probe.html` (gitignored) for the
+eyeball-verify record.
+
+**Out of scope (folded into BACKLOG):**
+
+- The BE 4K parity rig itself — PYR3-023 next phase.
+- The 4096 → 3840 alignment — first item in PYR3-023's next phase.
+- The Chrome FE crash root cause — PYR3-025 (post-v1).
+- The 13× FE/BE wall-clock gap — moot now that FE doesn't do 4K, but
+  filed implicitly inside PYR3-025 as adjacent context.
 
 ## v0.13 — 2026-05-27 — Phase 3 cycle 5: 98-arm audit + 3 parity-completeness fixes ([PYR3-010] complete, +3 ships)
 

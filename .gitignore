@@ -31,3 +31,7 @@ fixtures/flam3-goldens/*/pyr3-render.png
 fixtures/flam3-goldens/*/pyr3-fe-render.png
 fixtures/flam3-goldens/*/pyr3-fe-diff.png
 .remember/verify/
+
+# PYR3-023 probe artifacts (regenerated; large derived PNGs + verbatim ESF copies)
+fixtures/pyr3-4k-renders/
+fixtures/showcase-probe-sources/

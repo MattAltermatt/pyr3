@@ -21,7 +21,6 @@ export interface BarMeta {
 export interface BarOpts {
   webgpu: WebGPUStatus;
   onOpenFile: () => void;
-  onRender4K: () => void;
   onShareLink: () => void;
   onWordmark: () => void;
 }
@@ -68,12 +67,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       tier2.metaFilename.style.display = meta.sourceFilename ? '' : 'none';
     },
     setBusy(busy) {
-      for (const btn of [tier2.openBtn, tier2.renderBtn, tier2.shareBtn]) {
+      for (const btn of [tier2.openBtn, tier2.shareBtn]) {
         btn.disabled = busy;
       }
     },
     setLoading(loading) {
-      for (const btn of [tier2.openBtn, tier2.renderBtn, tier2.shareBtn]) {
+      for (const btn of [tier2.openBtn, tier2.shareBtn]) {
         btn.disabled = loading;
       }
       tier2.status.textContent = loading ? 'rendering…' : '';
@@ -166,7 +165,6 @@ interface Tier2 {
   metaName: HTMLElement;
   metaFilename: HTMLElement;
   openBtn: HTMLButtonElement;
-  renderBtn: HTMLButtonElement;
   shareBtn: HTMLButtonElement;
   toast: HTMLElement;
   status: HTMLElement;
@@ -186,11 +184,10 @@ function buildTier2(opts: BarOpts): Tier2 {
   spacer.style.flex = '1';
 
   const openBtn = button('📂 Open .flame', 'pyr3-bar-btn', opts.onOpenFile);
-  const renderBtn = button('🎯 Render 4K', 'pyr3-bar-btn pyr3-bar-btn-accent', opts.onRender4K);
   const shareBtn = button('🔗 Share link', 'pyr3-bar-btn', opts.onShareLink);
 
-  row.append(meta, status, toast, spacer, openBtn, renderBtn, shareBtn);
-  return { row, metaName, metaFilename, openBtn, renderBtn, shareBtn, toast, status };
+  row.append(meta, status, toast, spacer, openBtn, shareBtn);
+  return { row, metaName, metaFilename, openBtn, shareBtn, toast, status };
 }
 
 interface Tier3 {

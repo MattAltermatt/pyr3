@@ -6,58 +6,290 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-024** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-028** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-023] gpu · L · 🪨 · queued · v1.x — 4K rendering failures + 4K-parity gate (V1.0-BLOCKING)
+## [PYR3-027] perf · M · 🪶 · investigation · post-v1 — Why is FE 13× slower than BE for the same render?
 
-**Symptom (observed 2026-05-27, end of v0.13 session):** Some flames
-fail to render properly via the browser's `🎯 Render 4K` button.
-Specific failure mode unknown — user reported "some 4K images" don't
-render correctly; no console-error capture yet.
+**Frame (observed 2026-05-27, PYR3-023 probe):** On the 3 fixtures
+where FE 4K completed (before the button was removed), the FE took
+79-164s to render what the BE produced in 12-19s — a **5.7× to 13.5×
+wall-clock gap for the same engine, same fixture, same 4096-long-edge
+dims**. Now that FE doesn't do 4K, this gap is academic for the v1.0
+ship gate, but the underlying ratio probably persists at quick-mode
+dims (just hidden by the small absolute wall-clock — quick mode is
+~1s on FE so 13× is still only ~13s; not painful enough to notice).
+**Worth understanding before any FE-perf improvement work** —
+otherwise we'd chase the wrong knob.
 
-**Hypothesis (unverified):** likely one of:
-1. **Iteration-count overflow at high quality × 4K dims.** `renderer.ts:render()`
-   caps `dispatchIters = MAX_ITERS_PER_WALKER = 2^20` and grows walkers to
-   `MAX_WALKERS`. At 4096×2304 × `FULL_MAX_SPP=200`, targetSamples = ~1.88B —
-   may cap badly and undersample.
-2. **Genome rescale at 4K landing outside attractor.** `main.ts:121`
-   multiplies `genome.scale * sizeScale` where sizeScale = 4096/maxDecl. For
-   genomes declaring `scale=181.045` etc., 4× rescale may zoom past visible
-   content.
-3. **Canvas swap-chain reconfigure failure at 4K.** Less likely (Dawn handles
-   reconfigure cleanly on M-series), but possible.
-4. **NOT a WebGPU buffer limit** — `device.ts:33` requests adapter-max
-   `maxStorageBufferBindingSize`; `main.ts:50 FULL_MAX_OVERSAMPLE = 1` caps
-   the histogram to W×H (not W×O × H×O), keeping memory well under hardware
-   caps. So buffer-size ruled out as primary cause.
+**Hypotheses (unverified, ranked by probable contribution):**
 
-**v1.0-blocking because:** user clarified 2026-05-27 that the v1.0
-showcase (PYR3-007) is **4K-on-click**, not quick-mode-on-click. The
-showcase is the user-facing landing experience; 4K renders matching
-kotlin's v1.1 references is the load-bearing v1.0 acceptance criterion
-(extends the design spec §3 "curated fixture set" definition to
-include 4K dimensions).
+1. **Per-chunk `requestAnimationFrame` yield in
+   `render-orchestrator.ts:107`.** At 1887 chunks × 16ms compositor
+   tick = ~30s of pure rAF overhead per 4K render (~15-20% of FE's
+   163s on 247.19679). BE has no rAF — runs all chunks back-to-back.
+   The yield is necessary for UI responsiveness (cancel button,
+   progress bar updates) — but might be over-frequent. Could batch:
+   yield every K chunks instead of every chunk.
+2. **Chrome WebGPU implementation overhead vs Dawn-direct.** Chrome's
+   WebGPU sits behind a `--use-mock-keychain` style IPC boundary
+   between the renderer process and the GPU process; every
+   `device.queue.submit` is an IPC round-trip. Dawn-node skips this
+   entirely. Hard to measure without a Chromium-internal trace.
+3. **Per-chunk `present()` call (`render-orchestrator.ts:88`).** FE
+   defaults `presentAfterEachChunk=true` so the canvas refreshes
+   mid-render (the visitor sees the flame refine live). That's an
+   extra DE + visualize pass + canvas swap-chain submit per chunk.
+   At 1887 chunks: 1887 extra DE+visualize passes. BE sets
+   `presentAfterEachChunk=false` (one final present at the end). Easy
+   to A/B: render an FE fixture with `presentAfterEachChunk: false`
+   and measure.
+4. **`SAMPLES_PER_CHUNK = 1_000_000` too small for FE.** Bumping it
+   to 5M-10M would reduce chunks from 1887 → 188 (10×), proportionally
+   reducing rAF + present overhead. Tradeoff: less responsive cancel
+   button + worse progress granularity. Trivial knob to try.
 
-**Next phase:**
-1. **Probe the failure surface.** Drive Chrome to `🎯 Render 4K` on a
-   sample of fixtures via chrome-devtools-mcp; capture console.error +
-   any WebGPU validation errors; identify which flames fail vs succeed.
-2. **Build a 4K parity rig.** Mirror the 19-fixture rig at 4K
-   dimensions against kotlin's v1.1 .jpg references (path in
-   `reference-kotlin-v11-renders.md` memory). 4K-R thresholds need
-   calibration against the JPG-decompressed RGB (lossier than PNG
-   goldens; larger noise floor).
-3. **Fix root causes** identified by step 1; iterate ship cycles
-   v0.14, v0.15 until 4K parity passes.
+**Next phase:** Hypothesis 3 is the easiest A/B test. Render the same
+fixture FE-side with `presentAfterEachChunk: true` vs `false`,
+measure the delta. If it's most of the gap, the fix is making it
+configurable (or only presenting every K chunks). The other
+hypotheses can be measured incrementally from there. **Not v1.0
+work** — interactive FE quick-mode renders are ~1s so the user
+doesn't feel the gap; investigation can wait.
 
 **Files of interest:**
-- `src/main.ts:38-50` — `FULL_MAX_DIM`, `FULL_MAX_SPP`, `FULL_MAX_OVERSAMPLE` (the 4K-mode caps)
-- `src/main.ts:115-160` — `renderInMode('4k')` orchestrator
-- `src/renderer.ts:165-185` — chunked dispatch math (iter overflow class)
-- pyr3-kotlin v1.1 4K JPGs — per `reference-kotlin-v11-renders.md`
+- `src/render-orchestrator.ts:25` — `SAMPLES_PER_CHUNK`
+- `src/render-orchestrator.ts:69,87` — `presentEach` toggle
+- `src/render-orchestrator.ts:107` — the `requestAnimationFrame` yield
+- `bin/pyr3-render.ts` — BE call site (single `renderer.render()`,
+  no orchestrator)
+- `scripts/pyr3-023-be-render-4k.mjs` — BE 4K wrapper (canonical
+  apples-to-apples reference)
 
-Filed 2026-05-27 (v0.13 stop). Critical-path v1.0 work for the next session.
+Filed 2026-05-27 post-PYR3-023 probe + FE-4K-removal pivot.
+
+## [PYR3-026] feat · S · 🪨 · queued · v1.x — FE↔BE parity invariant at quick-mode dims
+
+**Frame:** Per user directive 2026-05-27 (post-PYR3-023 probe), FE is the
+interactive viewer at quick-mode dims (1024 long-edge); BE is the 4K
+renderer. **For v1.0, FE and BE must produce ≈ identical output for the
+same fixture at FE's supported dims** — the "similar but not the same"
+contract per CLAUDE.md determinism section, within R-tolerance.
+
+Existing infrastructure:
+- 19-fixture parity rig (`src/parity.test.ts`) — BE vs flam3-C golden,
+  per-fixture R thresholds. Does NOT test FE.
+- PYR3-018 FE sweep (v0.12) — one-shot chrome-devtools-mcp orchestration,
+  not a CI gate.
+- `window.__pyr3CapturePixels` dev hook (`src/main.ts:97-165`) — the
+  readback path.
+
+**Next phase:** automate a FE↔BE compare for the 19 parity fixtures at
+quick-mode dims. Per-fixture: render BE via existing rig, render FE via
+chrome-devtools-mcp orchestration (or headless Puppeteer/Playwright with
+WebGPU enabled), R-compare the two outputs. Threshold = some tolerance
+above the BE/BE deterministic noise floor (the engine is non-bit-stable
+across FE/BE per spec §3 determinism contract). Gate is "do they look
+visually equivalent within R tolerance?", not bit-exact.
+
+Filed 2026-05-27 post-PYR3-023 probe pivot.
+
+## [PYR3-025] gpu · M · 🪨 · investigation · post-v1 — Chrome WebGPU 4K renderer-tab-kill class (insurance investigation)
+
+**Frame:** During PYR3-023 probe, 2/5 sampled showcase fixtures
+(244.36880 + 248.22289) reproducibly crashed the Chrome renderer tab
+within ~30-45s of clicking the (now-removed) 🎯 Render 4K button. Same
+fixtures rendered fine on BE in 14-19s at the same 4096-long-edge dims.
+**No longer v1.0-blocking** since the FE 4K button is gone (PYR3-023
+pivot), but the failure class is interesting engine-health signal —
+might surface at lower dims too if the visualize-pass budget grows.
+
+Distinguishing trait on 244.36880: `brightness="24.7609"` (3-5× typical),
+`estimator_radius="11"` (typical 1-3), `scale="355.352"` (large).
+248.22289 not yet inspected — start with comparing those three fields
+across all 5 probe fixtures.
+
+**Next phase:** repro 244.36880 4K crash via chrome-devtools-mcp, capture
+`chrome://gpu` state + tracing during crash, identify if it's a Chrome
+WebGPU implementation issue (file Chromium bug) or a budget pressure
+that pyr3 could detect + skip (e.g., clamp `estimator_radius` against
+canvas dims). The probe gallery
+(`.remember/verify/pyr3-023-4k-probe.html`) is the artifact this
+investigation extends.
+
+Filed 2026-05-27 post-PYR3-023 probe pivot.
+
+## [PYR3-024] parity · S · 🪨 · investigation · v1.x — `248.22289` BE 4K visual divergence vs kotlin v1.1
+
+**Symptom (observed 2026-05-27, PYR3-023 probe):** Pyr3 BE 4K render of
+`electricsheep.248.22289` (showcase fixture, ESF gen 248 freakiebeat,
+1280×720 → 4096×2304 at oversample=1 q=200) **completed cleanly in
+19.08s but is visually OFF vs the kotlin v1.1 4K JPG reference**
+(user-flagged from probe gallery row 5). Composition / colors diverge —
+specifics TBD via the eyeball pass.
+
+**Hypothesis (unverified):** likely shares root cause with
+`coverage.248.02226` upstream divergence (PYR3-021 — palette / tonemap /
+density / spatial-filter). The fixture pattern (high-gen showcase sheep
+with non-trivial xform mix) overlaps with the PYR3-017 / PYR3-021
+investigation class.
+
+**Next phase:** fold into PYR3-021's upstream-stage probe (palette dump
+diff via local flam3-C, tonemap k1/k2 diff, DE divergence) using the
+same instrumentation channels documented in `docs/flam3-local-build.md`.
+If the divergence shape is distinct from `coverage.248.02226`, split
+into a standalone investigation; otherwise PYR3-024 closes as the
+PYR3-021 fix lands.
+
+Surfaced from `.remember/verify/pyr3-023-4k-probe.html` row 5. The
+kotlin v1.1 JPG reference at
+`fixtures/kotlin-4k-refs/electricsheep.248.22289.gpu.4k.jpg` is the
+comparison target.
+
+Filed 2026-05-27 post-PYR3-023 probe pivot.
+
+## [PYR3-023] gpu · M · 🪨 · queued · v1.x — BE 4K parity gate vs kotlin v1.1 (V1.0 SHIP GATE)
+
+**Pivot 2026-05-27** — user directive after the probe found FE 4K
+crashes Chrome ~40% of the time + runs 13× slower than BE: **FE no
+longer supports 4K**; the 🎯 Render 4K button was removed in this
+session's follow-on edit. **BE is the v1.0 4K renderer.** The crash
+class moved to PYR3-025 (post-v1 investigation); the 248.22289 BE
+visual divergence moved to PYR3-024 (folds into PYR3-021); the FE↔BE
+parity invariant became PYR3-026 (its own v1.0 entry). PYR3-023 now
+focuses narrowly on the BE-vs-kotlin 4K ship gate.
+
+**Original probe findings** (preserved as load-bearing context for
+the BE 4K parity work this entry now drives) — see
+`.remember/verify/pyr3-023-4k-probe.html` for the gallery and
+`.remember/tmp/pyr3-023-results.jsonl` for raw metrics.
+
+**Empirical findings — 5 showcase fixtures, FE + BE @ 4096 long-edge:**
+
+```text
+fixture     FE wall    BE wall    FE/BE ratio    category
+----------  --------   --------   -----------    ---------------
+247.19679    163.6 s    12.39 s     13.2×        OK
+248.31324    159.0 s    11.75 s     13.5×        OK
+243.09081     78.9 s    13.73 s      5.7×        OK
+244.36880    CRASH      14.06 s      —           FE_CRASH_BE_OK
+248.22289    CRASH      19.08 s      —           FE_CRASH_BE_OK_VISUAL_WRONG ⚠️
+```
+
+**⚠️ 248.22289 BE render is visually OFF vs kotlin v1.1 reference**
+(user-flagged 2026-05-27 from probe gallery). Render completed cleanly
+in 19s, dims correct, but composition/colors diverge from the kotlin
+4K JPG. **This is a SEPARATE bug from the FE crash.** Filed for own
+investigation as part of the post-probe fix scope — fold into PYR3-021
+upstream-stage hunt (already open for `coverage.248.02226` upstream
+divergence; similar shape, may share root cause) OR file a fresh entry
+once the divergence shape is bisected. See
+`.remember/verify/pyr3-023-4k-probe.html` row 5 for the side-by-side.
+
+**Headline:** 5/5 succeed on the BE (Dawn-node CLI) in 12-19s.
+**3/5 succeed on the FE** (Chrome/Vite WebGPU) in 79-164s — **13× slower
+than BE for the same engine, same fixture, same 4096-long-edge config.**
+**2/5 fixtures (244.36880, 248.22289) crash the Chrome renderer tab**
+within ~30-45s of clicking 🎯 Render 4K (page silently resets to
+about:blank, no preserved console messages, no WebGPU validation error
+captured). Both crashes are reproducible. **Same fixtures render fine on
+BE in 14-19s at the same 4096 dims, ruling out genome-level pathology.**
+
+**Hypotheses (re-ranked from filed):**
+
+- 🔴 **NEW PRIMARY: Chrome WebGPU process budget / OOM / watchdog.** The
+  FE_CRASH_BE_OK category isolates the failure to Chrome's WebGPU
+  hosting (renderer process memory limit, GPU process watchdog timeout,
+  or browser-side accumulated state) rather than the engine itself. BE
+  succeeds at identical settings → engine is healthy. Both crashing
+  fixtures share outlier traits: **244.36880** declares
+  `brightness="24.7609"` (3-5× typical 4-8), `estimator_radius="11"`
+  (typical 1-3), and `scale="355.352"` (large). The huge brightness +
+  estimator-radius combination likely stresses the visualize pass's
+  spatial filter or density-estimator allocations beyond what Chrome's
+  per-tab limits accept. **248.22289 not yet inspected for the same
+  outlier traits** but expected to share a similar profile (separate
+  follow-up bisection probe needed).
+- 🟡 **Apples-to-oranges with kotlin: 4096 vs 3840 long-edge.** Kotlin's
+  `SHOWCASE_4K` preset (`pyr3-kotlin/cli/.../Preset.kt:39-49`) uses
+  `TARGET_4K_LONG_EDGE = 3840`. Pyr3's `FULL_MAX_DIM = 4096` renders
+  13.78% more pixels per fixture. This delta is not the crash cause (BE
+  at 4096 succeeds for all 5), but it IS a real v1.0 parity-rig
+  blocker: pixel-level R-compare against kotlin JPGs at 3840 is
+  impossible without aligning. **Aligning pyr3 to 3840 is a one-line
+  prerequisite for any 4K parity rig** and may also partially reduce
+  the Chrome budget pressure (smaller buffer footprint).
+- ❌ **Iteration-count overflow** — RULED OUT. BE uses the same
+  `renderer.render` code path at the same 4096-long-edge dims and
+  produces correct output in 12-19s. The math holds.
+- ❌ **Genome rescale at 4K** — RULED OUT. Same reason: BE applies the
+  identical sizeScale + scale multiply via
+  `scripts/pyr3-023-be-render-4k.mjs`'s pre-processing (a faithful
+  mirror of `src/main.ts:renderInMode('4k')`) and produces valid
+  renders.
+- ❌ **Canvas swap-chain reconfigure failure** — RULED OUT. The
+  successful FE renders for 247.19679 / 248.31324 / 243.09081
+  reconfigure to 4096×2304 (and 4096×3031) and complete cleanly.
+
+**v1.0-blocking because:** user clarified 2026-05-27 that the v1.0
+showcase (PYR3-007) is **4K-on-click**, not quick-mode-on-click. With
+2/5 sampled showcase fixtures crashing on the user-facing FE button,
+the showcase landing experience is broken for ~40% of the curated set
+until the FE crash class is fixed.
+
+**FE/BE 13× wall-clock gap (orthogonal finding):**
+On successful renders, FE takes 79-164s vs BE's 12-19s for the same
+work. BE does all chunks in one go (no per-chunk rAF yield); FE's
+`render-orchestrator.ts:107` `requestAnimationFrame` yield adds ~16ms
+of compositor-loop overhead per chunk and at 1887 chunks for a 4K
+16:9 fixture, that's ~30s of pure rAF overhead. Plus Chrome's WebGPU
+implementation is slower than Dawn-direct. **The 13× gap will hurt the
+showcase UX even on fixtures that don't crash** — landing on a 2-3
+minute render with no perceptual progress is bad. Likely needs a
+larger `SAMPLES_PER_CHUNK` (currently 1M; could go to 5-10M) and/or
+fewer rAF yields.
+
+**Next-phase scope (BE 4K parity gate — V1.0 SHIP GATE):**
+
+1. **Align BE 4K long-edge to kotlin's 3840.** Change
+   `scripts/pyr3-023-be-render-4k.mjs`'s `FULL_MAX_DIM = 4096 → 3840`
+   so pyr3 BE renders match kotlin's `SHOWCASE_4K` preset
+   pixel-for-pixel in dimensions. Probably promote the wrapper into a
+   first-class CLI flag (`--preset showcase-4k` or `--size-scale auto-4k`)
+   instead of leaving it as a one-off script. (Mirrors kotlin's
+   `Preset.SHOWCASE_4K` enum at `pyr3-kotlin/cli/.../Preset.kt:39-49`.)
+2. **Build the BE 4K parity rig.** Mirror the 19-fixture parity rig but
+   at 4K dims, comparing pyr3 BE PNG output vs kotlin v1.1 JPG
+   references (`fixtures/kotlin-4k-refs/`). R-thresholds need separate
+   calibration against the JPG noise floor (lossier than the existing
+   PNG-vs-PNG rig). Showcase fixtures (54 in kotlin's v1.1 set)
+   become candidates; start with the 5 already probed.
+3. **Fix any divergences surfaced** by the rig. Resolve PYR3-024
+   (248.22289 visual off) + roll PYR3-021 fixes into the cycle.
+4. **Ship as a regression-gated `npm run test:parity-4k`** target,
+   sibling of `test:parity`. CI doesn't run it (no headless GPU); local
+   developers run it before any engine-touching PR.
+
+**Files of interest:**
+- `scripts/pyr3-023-be-render-4k.mjs` — BE 4K wrapper (graduate to CLI
+  flag or first-class `bin/` script)
+- pyr3-kotlin's `Preset.SHOWCASE_4K` — `cli/.../Preset.kt:39-49`
+- `src/parity.test.ts` — existing parity rig shape to clone
+- `fixtures/kotlin-4k-refs/` — 5 kotlin v1.1 JPG references already
+  fetched; expand as needed
+- `.remember/verify/pyr3-023-4k-probe.html` — the eyeball-verify
+  gallery from the probe phase
+
+**Closed (moved to follow-on entries):**
+- ~~FE 4K crash class~~ → **PYR3-025** (no longer v1.0-blocking).
+- ~~248.22289 BE visual divergence~~ → **PYR3-024** (folds into
+  PYR3-021).
+- ~~FE↔BE parity at quick-mode dims~~ → **PYR3-026** (separate v1.0
+  invariant).
+
+Filed 2026-05-27 (v0.13 stop); probed 2026-05-27 (post-v0.13);
+re-scoped post-pivot 2026-05-27 (FE 4K button removed). Critical-path
+v1.0 work for the next ship cycle.
 
 ## [PYR3-022] parser · S · 🪨 · queued · v1.x — Default-palette fallback when `<palette>` is missing
 

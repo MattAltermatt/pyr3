@@ -11,10 +11,15 @@
 
 ## Status
 
-🚧 **v0.11 — Phase 3 mid-flight.** Engine in place (browser + CLI both render); 19-fixture
-flam3-C parity rig green. Phase 3 has shipped three cycles: finalxform-opacity gate (v0.9),
-regular-xform alpha-scaling (v0.10), opacity-clamp serialization hardening (v0.11). Iterating
-toward v1.0. See [ROADMAP.md](ROADMAP.md).
+🚧 **v0.14 — Phase 3 mid-flight, BE-anchored 4K path.** Engine in place (browser + CLI
+both render); 19-fixture flam3-C parity rig green (4494/4499 unit + 19/19 BE parity).
+Phase 3 has shipped six cycles: finalxform-opacity gate (v0.9), regular-xform alpha-scaling
+(v0.10), opacity-clamp hardening (v0.11), test-split + README refresh (v0.11.1), FE parity
+sweep + `__pyr3CapturePixels` capture hook (v0.12), 98-arm WGSL audit + parity-completeness
+fixes (v0.13), **FE 4K removal pivot to BE-only 4K** (v0.14 — FE is interactive at quick
+quality; BE is the 4K renderer + the v1.0 ship-gate vehicle). Iterating toward v1.0;
+PYR3-023 next phase is the BE 4K parity rig vs kotlin v1.1 references. See
+[ROADMAP.md](ROADMAP.md).
 
 ## The contract
 

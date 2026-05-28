@@ -31,20 +31,15 @@ const RENDER_SIZE = 1024;
 //   · max(width, height) ≤ QUICK_MAX_DIM, aspect preserved
 //   · quality clamped to QUICK_MAX_SPP
 //   · oversample forced to QUICK_OVERSAMPLE
-// The 4K download path (Phase 4) uses the genome's declared values.
-// Quick preview caps (in-canvas, low-noise but fast).
+// The 4K render path is BE-only (see bin/pyr3-render.ts +
+// scripts/pyr3-023-be-render-4k.mjs) — FE viewer is interactive at
+// quick quality only. PYR3-023 probe found that FE 4K crashes Chrome
+// for ~40% of showcase fixtures + runs 13× slower than BE when it
+// doesn't crash; the showcase ships as static pre-rendered 4K JPGs
+// per the kotlin v1.1 pattern.
 const QUICK_MAX_DIM = 1024;
 const QUICK_MAX_SPP = 16;
 const QUICK_OVERSAMPLE = 1;
-
-// 4K render caps (manual click via 🎯 Render 4K). Bigger surface,
-// higher SPP, but still bounded so heavy genome presets don't burn
-// down the GPU. Tuneable in this file as the verify lap settles.
-const FULL_MAX_DIM = 4096;
-const FULL_MAX_SPP = 200;
-const FULL_MAX_OVERSAMPLE = 1;
-
-type RenderMode = 'quick' | '4k';
 
 async function main(): Promise<void> {
   const webgpu = await checkWebGPU();
@@ -59,9 +54,6 @@ async function main(): Promise<void> {
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     onOpenFile: () => openFilePicker(),
-    onRender4K: () => {
-      void renderInMode('4k');
-    },
     onShareLink: () => {
       void shareCurrentFlame(lastLoadedText, bar);
     },
@@ -164,7 +156,7 @@ async function main(): Promise<void> {
     };
   }
 
-  const renderInMode = async (mode: RenderMode): Promise<void> => {
+  const rerender = async (): Promise<void> => {
     // Cancel any in-flight orchestrator before starting a new one. The
     // promise still settles cleanly (either 'cancelled' or 'completed')
     // so awaiting it serializes the JS side.
@@ -176,59 +168,48 @@ async function main(): Promise<void> {
       await device.queue.onSubmittedWorkDone();
     }
 
-    // Compute mode-appropriate dims, quality, oversample.
-    //
-    // 4K mode: always target FULL_MAX_DIM long-edge — upscale below-cap
-    // genomes (e.g. 1280×720 → 4096×2304 at 3.2× linear), downscale above-cap.
-    // Matches pyr3's `--size-scale` convention: both canvas dims AND the
-    // genome's `scale` (pixels-per-world-unit) multiply by the same factor,
-    // so the world view stays identical and the render gains pixel detail.
-    //
-    // Quick mode: cap-only (no upscale of small genomes — preview snappy).
+    // Quick-preview sizing: cap at QUICK_MAX_DIM long-edge (no upscale
+    // of small genomes — preview snappy). The 4K render path lives in
+    // the BE CLI (bin/pyr3-render.ts) per PYR3-023 — FE viewer is
+    // interactive at quick quality only.
     const declW = activeGenome.size?.width ?? RENDER_SIZE;
     const declH = activeGenome.size?.height ?? RENDER_SIZE;
-    const maxDimCap = mode === '4k' ? FULL_MAX_DIM : QUICK_MAX_DIM;
     const maxDecl = Math.max(declW, declH);
-    const sizeScale = mode === '4k'
-      ? maxDimCap / maxDecl
-      : (maxDecl > maxDimCap ? maxDimCap / maxDecl : 1);
+    const sizeScale = maxDecl > QUICK_MAX_DIM ? QUICK_MAX_DIM / maxDecl : 1;
     const targetW = Math.max(1, Math.round(declW * sizeScale));
     const targetH = Math.max(1, Math.round(declH * sizeScale));
-    const targetOversample = mode === '4k' ? FULL_MAX_OVERSAMPLE : QUICK_OVERSAMPLE;
     const targetFilter = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
 
     if (
       targetW !== renderer.width
       || targetH !== renderer.height
-      || targetOversample !== renderer.oversample
+      || QUICK_OVERSAMPLE !== renderer.oversample
       || targetFilter !== renderer.filterRadius
     ) {
       canvas.width = targetW;
       canvas.height = targetH;
-      renderer.resize({ width: targetW, height: targetH, oversample: targetOversample, filterRadius: targetFilter });
+      renderer.resize({ width: targetW, height: targetH, oversample: QUICK_OVERSAMPLE, filterRadius: targetFilter });
     }
 
-    const sppCap = mode === '4k' ? FULL_MAX_SPP : QUICK_MAX_SPP;
     const renderGenome: Genome = {
       ...activeGenome,
       scale: activeGenome.scale * sizeScale,
       // CRITICAL: keep `genome.oversample` aligned with the pipeline's
       // configured oversample. chaos.ts computes the WGSL scale uniform as
       // `g.scale * g.oversample` — if the pipeline is built at oversample=1
-      // (quick mode) but g.oversample stays at the genome's declared
-      // supersample (often 4 for ES flames), the projection over-zooms by
-      // that factor, producing the "camera stuck at the middle point"
-      // symptom that pyr3-peek couldn't crack.
-      oversample: targetOversample,
-      quality: Math.min(activeGenome.quality ?? sppCap, sppCap),
+      // but g.oversample stays at the genome's declared supersample
+      // (often 4 for ES flames), the projection over-zooms by that factor,
+      // producing the "camera stuck at the middle point" symptom that
+      // pyr3-peek couldn't crack.
+      oversample: QUICK_OVERSAMPLE,
+      quality: Math.min(activeGenome.quality ?? QUICK_MAX_SPP, QUICK_MAX_SPP),
     };
-    const targetSamples = (renderGenome.quality ?? sppCap) * renderer.width * renderer.height;
-    const label = mode === '4k' ? 'Rendering 4K' : 'Rendering';
+    const targetSamples = (renderGenome.quality ?? QUICK_MAX_SPP) * renderer.width * renderer.height;
 
     // Tier 3 mounts immediately on render start — visitor always sees
     // "this is working" + "N% / chunk M of K". Hides on completion.
     bar.showProgress({
-      label,
+      label: 'Rendering',
       percent: 0,
       etaSeconds: 0,
       samples: 0,
@@ -243,7 +224,7 @@ async function main(): Promise<void> {
       seedBase: seed,
       onProgress: (info) => {
         bar.showProgress({
-          label,
+          label: 'Rendering',
           percent: info.percent,
           etaSeconds: info.etaSeconds,
           samples: info.samples,
@@ -268,13 +249,10 @@ async function main(): Promise<void> {
     }
   };
 
-  // The quick auto-render after a file load.
-  const rerender = (): Promise<void> => renderInMode('quick');
-
   const applyLoadResult = async (result: LoadResult, sourceLabel: string): Promise<void> => {
-    // Resize logic now lives in renderInMode (it depends on mode);
-    // applyLoadResult just updates activeGenome + meta then kicks
-    // the quick render path, which resizes if needed.
+    // Resize logic lives in rerender (it depends on the loaded genome's
+    // dims); applyLoadResult just updates activeGenome + meta then kicks
+    // the render path, which resizes if needed.
     activeGenome = result.genome;
     if (result.kind === 'flame' && result.report) {
       const dropCount = result.report.droppedVariations.length;
