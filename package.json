@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:parity": "vitest run src/parity.test.ts",
+    "test:parity": "VITEST_INCLUDE_PARITY=1 vitest run src/parity.test.ts",
+    "test:all": "VITEST_INCLUDE_PARITY=1 vitest run",
     "typecheck": "tsc --noEmit",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts"

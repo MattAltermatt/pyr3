@@ -210,25 +210,6 @@ but the tooling and structure are different.
 
 **Dependency:** v1.0 ship-gate pass.
 
-## [PYR3-012] infra · XS · 🪶 · queued · v1.x — Separate `npm test` from `npm run test:parity`
-
-`vitest run` auto-discovers `src/parity.test.ts` alongside the unit tests, so
-`npm test` quietly invokes the WebGPU CLI per fixture. On any host without a
-Dawn-capable GPU (CI, Docker, contributor laptops without WebGPU support) the
-parity tests fail non-cleanly with a spawn exit=1 + buried stderr.
-
-**Why:** README's "full unit + parity suite" framing sets expectation that
-`npm test` is the everyday dev command. Pure-unit work should not require a
-GPU; parity work has its own `npm run test:parity` entry.
-
-**How to apply:** Add a `vitest.config.ts` with `test.exclude:
-['**/parity.test.ts']` (or move `parity.test.ts` to a folder vitest doesn't
-auto-discover). Keep `test:parity` as the explicit parity entrypoint. Surface
-to the user before tightening — the current shape is intentional per Phase 2
-(parity in CI deferred to post-v1.0), so this is purely a DX tweak.
-
-Surfaced by Phase 2 code review (2026-05-27).
-
 ## [PYR3-010] gpu · L · 🪨 · queued · v1.x — Variation-arm bit-parity audit (98 arms)
 
 Sweep all 98 variation arms in `variations.ts` + `chaos.wgsl` against

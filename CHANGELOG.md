@@ -7,6 +7,47 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.11.1 — 2026-05-27 — Test-split + README v0.11 refresh ([PYR3-012] shipped)
+
+**Outcome:** `npm test` now runs the unit suite only (~1s wall, 4494/4499
+green); the 19-fixture flam3-C parity suite moves behind
+`npm run test:parity` (~91s wall, 19/19 green). `npm run test:all` runs
+both. README's `## Status` block refreshed from stale "v0.7 — Phase 2
+shipped" to "v0.11 — Phase 3 mid-flight" with the three Phase 3 cycles
+named.
+
+**The mechanism** (new `vitest.config.ts`):
+```ts
+const includeParity = process.env.VITEST_INCLUDE_PARITY === '1';
+export default defineConfig({
+  test: {
+    exclude: [
+      'node_modules/**',
+      'dist/**',
+      ...(includeParity ? [] : ['src/parity.test.ts']),
+    ],
+  },
+});
+```
+
+`package.json` scripts:
+- `test`         → `vitest run` (parity excluded)
+- `test:parity`  → `VITEST_INCLUDE_PARITY=1 vitest run src/parity.test.ts`
+- `test:all`     → `VITEST_INCLUDE_PARITY=1 vitest run`
+
+**Why:** Pre-split `npm test` quietly invoked the 91s WebGPU parity
+harness, making casual inner-loop test runs cost a full coffee break.
+On any host without a Dawn-capable GPU (CI, Docker, contributor laptops
+without WebGPU support) the parity tests would also fail non-cleanly.
+PYR3-012 was filed by Phase 2 code review for exactly this DX hit.
+
+**Bonus:** README Quick Start now names the three test entrypoints with
+realistic wall-clock expectations instead of "full unit + parity suite"
+(which was always misleading and grew more so).
+
+**Verification:** `npm test` runs in 1.1s wall (was 89s+); `npm run
+test:parity` 19/19 green in 91s; `npm run test:all` produces the union.
+
 ## v0.11 — 2026-05-27 — Opacity-clamp serialization hardening ([PYR3-016] shipped)
 
 **Outcome:** Clamp `Xform.opacity` to flam3-spec'd [0, 1] at the GPU

@@ -11,8 +11,10 @@
 
 ## Status
 
-🚧 **v0.7 — Phase 2 shipped.** Engine in place (browser + CLI both render); parity test
-rig live against 3 flam3-C goldens. Iterating toward v1.0. See [ROADMAP.md](ROADMAP.md).
+🚧 **v0.11 — Phase 3 mid-flight.** Engine in place (browser + CLI both render); 19-fixture
+flam3-C parity rig green. Phase 3 has shipped three cycles: finalxform-opacity gate (v0.9),
+regular-xform alpha-scaling (v0.10), opacity-clamp serialization hardening (v0.11). Iterating
+toward v1.0. See [ROADMAP.md](ROADMAP.md).
 
 ## The contract
 
@@ -35,7 +37,9 @@ See [NOTICE.md](NOTICE.md) for third-party attribution and the full lineage trai
 
 ```sh
 npm install
-npm test                  # full unit + parity suite
+npm test                  # unit suite only (~1s)
+npm run test:parity       # 19-fixture flam3-C parity suite (~90s, needs Dawn WebGPU)
+npm run test:all          # unit + parity
 npm run dev               # browser viewer at http://localhost:5173/
 npm run render fixtures/electricsheep.247.19679.flam3 out.png    # CLI
 ```
