@@ -217,8 +217,28 @@ fn isaac_irand(wi: u32) -> u32 {
   return isaac_states[wi].randrsl[new_cnt];
 }
 
+// PYR3-029 Phase 5 fix (2026-05-28): match flam3-canonical rand transforms
+// bit-precisely. flam3.c:2625-2631 masks off the top 4 bits of the ISAAC u32
+// before scaling, then divides by 28-bit ranges. The prior pyr3 implementation
+// used the full 32-bit ISAAC output, which advanced the RNG state identically
+// to flam3 but produced different transformed values from the same u32 —
+// causing exponential trajectory divergence after a handful of iters. Root
+// cause of the coverage.248.02226 / coverage.245.06687 spatial-coverage gap
+// (see BACKLOG `[PYR3-029]` Phase 5).
+//
+// Matches flam3 `flam3_random_isaac_01`: `((int)irand & 0xfffffff) / (double)0xfffffff`.
 fn rand01(wi: u32) -> f32 {
-  return f32(isaac_irand(wi)) * (1.0 / 4294967296.0);
+  let raw = isaac_irand(wi);
+  let masked = raw & 0x0fffffffu;
+  return f32(masked) * (1.0 / 268435455.0);
+}
+
+// Matches flam3 `flam3_random_isaac_11`:
+// `(((int)irand & 0xfffffff) - 0x7ffffff) / (double)0x7ffffff` — symmetric [-1, 1].
+fn rand_11(wi: u32) -> f32 {
+  let raw = isaac_irand(wi);
+  let masked = i32(raw & 0x0fffffffu);
+  return f32(masked - 0x07ffffff) * (1.0 / 134217727.0);
 }
 
 // ---------------------------------------------------------------------
@@ -1495,9 +1515,11 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   // legacy PCG32 per-walker `var rng: u32` warm-up is gone.
 
   // Walker state = (x, y, color). Initial pos uniform in [-1, 1]^2; color in [0, 1].
+  // Matches flam3 rect.c:449-450 — uses flam3_random_isaac_11 (symmetric) for
+  // x/y and flam3_random_isaac_01 for color. PYR3-029 Phase 5 RNG-transform fix.
   var p = vec3f(
-    rand01(walker_id) * 2.0 - 1.0,
-    rand01(walker_id) * 2.0 - 1.0,
+    rand_11(walker_id),
+    rand_11(walker_id),
     rand01(walker_id),
   );
 
@@ -1610,7 +1632,9 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     // `private.h:22` `badvalue(x)`.
     let is_bad = any(pv != pv) || any(abs(pv) > vec2f(1e10));
     if (is_bad) {
-      pv = vec2f(rand01(walker_id) * 2.0 - 1.0, rand01(walker_id) * 2.0 - 1.0);
+      // Matches flam3 variations.c:2455-2456 — uses flam3_random_isaac_11
+      // (symmetric [-1, 1]). PYR3-029 Phase 5 RNG-transform fix.
+      pv = vec2f(rand_11(walker_id), rand_11(walker_id));
       consec_bad = consec_bad + 1u;
     } else {
       consec_bad = 0u;
