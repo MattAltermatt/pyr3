@@ -1,0 +1,286 @@
+{
+  "generatedAt": "2026-05-28T18:11:57.586Z",
+  "count": 55,
+  "rendered": 55,
+  "skipped": 0,
+  "failed": 0,
+  "totalSec": 546.7,
+  "failures": [],
+  "fixtures": [
+    {
+      "id": "electricsheep.243.09081",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/243/00000/electricsheep.243.09081.flam3",
+      "renderSec": 12.7
+    },
+    {
+      "id": "electricsheep.248.22289",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/248/20000/electricsheep.248.22289.flam3",
+      "renderSec": 17.9
+    },
+    {
+      "id": "electricsheep.247.08620",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/247/00000/electricsheep.247.08620.flam3",
+      "renderSec": 13.7
+    },
+    {
+      "id": "electricsheep.244.36880",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/30000/electricsheep.244.36880.flam3",
+      "renderSec": 12.7
+    },
+    {
+      "id": "electricsheep.245.07670",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/245/00000/electricsheep.245.07670.flam3",
+      "renderSec": 5
+    },
+    {
+      "id": "electricsheep.243.10218",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/243/10000/electricsheep.243.10218.flam3",
+      "renderSec": 13.4
+    },
+    {
+      "id": "electricsheep.247.13919",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/247/10000/electricsheep.247.13919.flam3",
+      "renderSec": 9.6
+    },
+    {
+      "id": "electricsheep.248.31324",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/248/30000/electricsheep.248.31324.flam3",
+      "renderSec": 8
+    },
+    {
+      "id": "electricsheep.247.19679",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/247/10000/electricsheep.247.19679.flam3",
+      "renderSec": 11.1
+    },
+    {
+      "id": "electricsheep.244.59334",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/50000/electricsheep.244.59334.flam3",
+      "renderSec": 17
+    },
+    {
+      "id": "electricsheep.248.13972",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/248/10000/electricsheep.248.13972.flam3",
+      "renderSec": 14.4
+    },
+    {
+      "id": "electricsheep.247.44220",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/247/40000/electricsheep.247.44220.flam3",
+      "renderSec": 7.7
+    },
+    {
+      "id": "electricsheep.245.08647",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.245.08647.flam3",
+      "renderSec": 11.6
+    },
+    {
+      "id": "electricsheep.244.84478",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/80000/electricsheep.244.84478.flam3",
+      "renderSec": 10
+    },
+    {
+      "id": "electricsheep.245.04339",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/245/00000/electricsheep.245.04339.flam3",
+      "renderSec": 5.4
+    },
+    {
+      "id": "electricsheep.242.01408",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/242/00000/electricsheep.242.01408.flam3",
+      "renderSec": 11.9
+    },
+    {
+      "id": "electricsheep.247.47804",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/247/40000/electricsheep.247.47804.flam3",
+      "renderSec": 11
+    },
+    {
+      "id": "electricsheep.244.63632",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/60000/electricsheep.244.63632.flam3",
+      "renderSec": 16.2
+    },
+    {
+      "id": "electricsheep.243.09636",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/243/00000/electricsheep.243.09636.flam3",
+      "renderSec": 5.9
+    },
+    {
+      "id": "electricsheep.245.09487",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/245/00000/electricsheep.245.09487.flam3",
+      "renderSec": 5.9
+    },
+    {
+      "id": "electricsheep.244.77465",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/70000/electricsheep.244.77465.flam3",
+      "renderSec": 20.7
+    },
+    {
+      "id": "electricsheep.245.10387",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/245/10000/electricsheep.245.10387.flam3",
+      "renderSec": 7.5
+    },
+    {
+      "id": "electricsheep.243.08188",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/243/00000/electricsheep.243.08188.flam3",
+      "renderSec": 12.7
+    },
+    {
+      "id": "electricsheep.243.07011",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/243/00000/electricsheep.243.07011.flam3",
+      "renderSec": 4.8
+    },
+    {
+      "id": "electricsheep.244.32849",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/30000/electricsheep.244.32849.flam3",
+      "renderSec": 10.5
+    },
+    {
+      "id": "electricsheep.248.34612",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/248/30000/electricsheep.248.34612.flam3",
+      "renderSec": 12.2
+    },
+    {
+      "id": "electricsheep.248.01220",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.248.01220.flam3",
+      "renderSec": 16.7
+    },
+    {
+      "id": "electricsheep.247.47811",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/247/40000/electricsheep.247.47811.flam3",
+      "renderSec": 4.6
+    },
+    {
+      "id": "electricsheep.244.31235",
+      "source": "/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/244/30000/electricsheep.244.31235.flam3",
+      "renderSec": 12.8
+    },
+    {
+      "id": "electricsheep.242.00866",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.242.00866.flam3",
+      "renderSec": 9.7
+    },
+    {
+      "id": "electricsheep.242.01373",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.242.01373.flam3",
+      "renderSec": 5.4
+    },
+    {
+      "id": "electricsheep.243.00171",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.243.00171.flam3",
+      "renderSec": 3.5
+    },
+    {
+      "id": "electricsheep.243.06888",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.243.06888.flam3",
+      "renderSec": 21.7
+    },
+    {
+      "id": "electricsheep.243.12778",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.243.12778.flam3",
+      "renderSec": 16.8
+    },
+    {
+      "id": "electricsheep.243.15453",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.243.15453.flam3",
+      "renderSec": 12.1
+    },
+    {
+      "id": "electricsheep.243.17397",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.243.17397.flam3",
+      "renderSec": 9.3
+    },
+    {
+      "id": "electricsheep.244.00950",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.00950.flam3",
+      "renderSec": 8.4
+    },
+    {
+      "id": "electricsheep.244.01330",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.01330.flam3",
+      "renderSec": 13
+    },
+    {
+      "id": "electricsheep.244.12056",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.12056.flam3",
+      "renderSec": 4.1
+    },
+    {
+      "id": "electricsheep.244.33255",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.33255.flam3",
+      "renderSec": 6.2
+    },
+    {
+      "id": "electricsheep.244.61819",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.61819.flam3",
+      "renderSec": 7.3
+    },
+    {
+      "id": "electricsheep.244.74503",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.74503.flam3",
+      "renderSec": 10.5
+    },
+    {
+      "id": "electricsheep.244.75636",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.244.75636.flam3",
+      "renderSec": 10.9
+    },
+    {
+      "id": "electricsheep.247.02750",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.02750.flam3",
+      "renderSec": 5.2
+    },
+    {
+      "id": "electricsheep.247.03758",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.03758.flam3",
+      "renderSec": 10.5
+    },
+    {
+      "id": "electricsheep.247.08786",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.08786.flam3",
+      "renderSec": 13.3
+    },
+    {
+      "id": "electricsheep.247.18541",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.18541.flam3",
+      "renderSec": 3.8
+    },
+    {
+      "id": "electricsheep.247.19367",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.19367.flam3",
+      "renderSec": 12.2
+    },
+    {
+      "id": "electricsheep.247.19457",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.19457.flam3",
+      "renderSec": 5.1
+    },
+    {
+      "id": "electricsheep.247.19774",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.19774.flam3",
+      "renderSec": 3.4
+    },
+    {
+      "id": "electricsheep.247.20460",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.20460.flam3",
+      "renderSec": 4.2
+    },
+    {
+      "id": "electricsheep.247.22065",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.22065.flam3",
+      "renderSec": 9.8
+    },
+    {
+      "id": "electricsheep.247.22240",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.22240.flam3",
+      "renderSec": 7.6
+    },
+    {
+      "id": "electricsheep.247.22510",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.247.22510.flam3",
+      "renderSec": 4.8
+    },
+    {
+      "id": "electricsheep.248.04300",
+      "source": "/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/test/resources/electricsheep.248.04300.flam3",
+      "renderSec": 4.3
+    }
+  ]
+}

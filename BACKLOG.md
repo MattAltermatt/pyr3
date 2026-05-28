@@ -1041,16 +1041,75 @@ must not change — `Phase 0` proves this seam works.
 Build, typecheck, test on push to any branch. Auto-deploy frontend to `gh-pages` on tag push.
 Cache `node_modules` for fast turnaround.
 
-## [PYR3-007] feat · M · 🪨 · queued · v1.x — Showcase flame gallery on homepage (4K-on-click)
+## [PYR3-007] feat · L · 🪨 · queued · v1.0 — Public showcase gallery (bundled with PYR3-031 FE cleanup)
 
-The browser entry-point shows a curated gallery of share-link buttons so visitors land on
-something visual, not an empty viewer. Pulls from `fixtures/showcase/`.
+The browser entry-point shows a curated gallery of pyr3-rendered
+showcase flames so visitors land on something visual, not an empty
+viewer.
 
-**Clarified 2026-05-27:** the showcase is **4K-on-click** — each
-thumbnail click triggers a 4K render (`🎯 Render 4K` mode), and the
-expectation is that pyr3's 4K render matches pyr3-kotlin's v1.1 4K
-reference renders. This means **the v1.0 ship gate includes 4K
-parity**, not just the 19-fixture quick-mode parity rig.
+**Bundled-with directive 2026-05-28:** Ships together with
+`[PYR3-031]` (FE cleanup pass) in the v1.0 session because they share
+the same FE surface area. Brainstorm pass required at session start —
+do NOT random-guess UX details; resolve them properly via the
+brainstorming skill. See [[project-showcase-design-recs]] in auto
+memory for pre-discussed design notes.
 
-Scope upgrade: XS → M, sigil 🎨 → 🪨 (load-bearing). Depends on
-`[PYR3-023]` (4K rendering failures + 4K-parity gate) shipping first.
+**Pre-discussed design directions (locked or near-locked 2026-05-28):**
+
+- **Unversioned URL.** `mattaltermatt.github.io/pyr3/` shows the
+  latest showcase — no `/v1.0/`, `/v1.1/` like kotlin (museum
+  approach). Live site. Manifest JSON carries the date + pyr3 commit
+  for traceability.
+- **Render time, no comparison.** Per-fixture pill shows pyr3 BE 4K
+  wall-clock (e.g. `~10s`). Don't compare against kotlin or flam3-C —
+  comparison framing makes pyr3 read as "the second one" when it's
+  the primary renderer.
+- **Click-to-load is the differentiator.** Clicking a showcase thumb
+  loads the flame into pyr3 FE viewer at quick-mode (1024 long-edge —
+  4K crashes Chrome per PYR3-025). Static 4K PNG download offered
+  separately. "The renderer IS the showcase" — kotlin's gallery is
+  static, pyr3's is interactive.
+- **About / what-is-this** — required. 50-word lede explaining
+  pyr3's lineage (flam3 → flam3-kotlin → pyr3) + link to GitHub.
+- **Permalink per fixture** — `#electricsheep.247.19679` anchors so
+  specific fixtures are shareable.
+- **Source `.flame` download per fixture** — cheap differentiator;
+  visitors can render in any flam3-compatible viewer.
+- **Hardware + version banner** at top — pyr3 version + render date
+  + hardware + total render time.
+- **Mobile responsive** — single column below 768px.
+
+**Brainstorm gaps to resolve next session:**
+
+1. Click-to-load UX details — current tab vs new tab vs overlay?
+   Pre-loaded vs lazy? Loading state UX?
+2. Aggregate banner copy / tone — what's the voice?
+3. Thumbnail strategy — load 4K PNG lazy? Pre-resize to a thumb
+   variant? Click-to-zoom modal?
+4. Layout — grid (responsive columns) vs single-column scroll?
+5. Whether `[PYR3-020]` (share-link decode bug, >6KB URL fails)
+   blocks click-to-load — likely yes; folded into this scope.
+
+**Out of scope for v1.0:**
+- Per-fixture genome metadata (brightness/gamma/xform list) — defer.
+- Search / filter — 55 fixtures fit on one scrollable page.
+- Versioned URLs — explicit anti-decision.
+
+**Render artifacts already produced this session (2026-05-28):**
+
+- All 55 fixtures rendered at `--preset 4k` via
+  `scripts/render-showcase-v1.0.mjs`. Wall-clock ~10s/fixture, 9 min
+  total. Output: `fixtures/showcase-v1.0/<id>.pyr3-4k.png` (gitignored
+  due to ~110MB total size).
+- Manifest at `fixtures/showcase-v1.0/_manifest.json` carrying source
+  paths + render times per fixture (committed — lookup table for the
+  gallery builder).
+- Verify gallery script at
+  `scripts/build-showcase-v1.0-gallery.mjs` — current shape is
+  2-column (kotlin JPG ref vs pyr3 render) for "are they rendered?"
+  validation; will be SUPERSEDED by the brainstorm-locked gallery
+  shape (no kotlin column, render-time pills, click-to-load) in the
+  v1.0 session.
+
+**Depends on:** `[PYR3-031]` FE cleanup pass (bundled — they share
+the FE surface area; ship together).
