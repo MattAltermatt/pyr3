@@ -7,6 +7,106 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.13 — 2026-05-27 — Phase 3 cycle 5: 98-arm audit + 3 parity-completeness fixes ([PYR3-010] complete, +3 ships)
+
+**Outcome:** Three load-bearing parity-completeness fixes shipped in
+one bundle, driven by the v0.12 fan-out audit + two follow-up audits:
+
+1. **`var_fan` WGSL `floor → trunc`** — fixes the one confirmed bug
+   across 98 arms (FE/BE Euclidean-mod-vs-fmod divergence on negative
+   `phi+dy`).
+2. **`VARIATION_DEFAULTS` table** (port from
+   `pyr3-kotlin/flam3/.../Flam3Parser.kt:348-390`) — closes a regression
+   in pyr3's v0.1 peek-copy: 17 of 38 parameterized arms had non-zero
+   canonical defaults (`julian_power=1`, `pie_slices=6`,
+   `ngon_sides=5`, `oscope_frequency=π`, etc.) that pyr3 was silently
+   zeroing whenever `.flame` XML omitted the attribute.
+3. **Alias normalization** in `flame-import.ts` — adds `mobius`
+   shorthand (`Re_A`..`Im_D`) and `oscope_*` prefix-alias coverage,
+   matching flam3-C's parser at `parser.c:1136-1152` + `:1228-1243`.
+
+**The 8-cluster A.2 audit (run via parallel `wgsl-parity-reviewer`
+subagents):**
+
+98 arms split across 8 clusters of ~12. Aggregate result:
+
+```text
+cluster   match  minor-diff  bisection  bug   total
+--------  -----  ----------  ---------  ----  -----
+C1         8       5          0         0      13
+C2         9       3          0         0      12
+C3         8       3          0         1      12   ← var_fan
+C4        10       2          0         0      12
+C5        12       0          0         0      12
+C6         9       3          0         0      12
+C7        11       1          0         0      12
+C8        12       1          0         0      13
+--------  -----  ----------  ---------  ----  -----
+TOTAL     79      18          0         1      98
+```
+
+The 18 minor-diffs are all documented intentional deviations (FMA
+contractions in kotlin vs plain mul+add, single-biased `r = sqrt+EPS`
+modernizations in spiral/hyperbolic/diamond family, WGSL f32 clamps in
+edisc/elliptic, `cpow` `|power|` signed-floor, etc.) — none require
+porting. **The arm-engine is effectively clean.**
+
+**Follow-up audits A + B (default-value + flame-import coverage):**
+
+Audit A (default-value parity) found 17 of 38 parameterized arms with
+non-zero kotlin/flam3-C defaults that pyr3 was zeroing. Audit B
+(`flame-import.ts` XML attribute coverage) found 39 of 41 arms
+complete; 2 partial (mobius `Re_A` shorthand + oscilloscope `oscope_*`
+prefix). Both fixed in this ship.
+
+**Per-fixture BE parity R deltas:**
+
+```text
+fixture                    pre     post    Δ
+-------------------------- ------- ------- -------
+coverage.248.02226         32.62   29.96   -2.66 🟢
+244.82270                   3.32    3.33   +0.02
+all other 17 fixtures      <same>  <same>  |Δ|≤0.02
+```
+
+The PYR3-017 fixture (the worst outlier in the parity suite, mystery
+across investigations from v0.7 → v0.12) dropped 8% on the new defaults
+alone. Residual R=29.96 still ~10× the suite average — fold into
+`[PYR3-021]` (upstream-stage investigation pivot — palette / tonemap /
+density / spatial-filter; the variation-arm hypothesis is fully ruled
+out by the audit).
+
+The other 18 fixtures all showed Δ within run noise (|Δ| ≤ 0.02),
+because their `.flame` XMLs already supplied explicit values for every
+parameterized arm's params. The defaults fix is silent for these but
+will matter for any future fixture that elides params (Apophysis
+exports, JWildfire variants, hand-authored .flame files).
+
+**Files touched:**
+
+- `src/serialize.ts:152` — new `VARIATION_DEFAULTS` table (port from kotlin)
+- `src/flame-import.ts` — `ATTR_NAME_ALIASES` + `VAR_PREFIX_ALIASES` +
+  `normalizeAttrName()` helper; refactored `parseXformElement` walker
+  to consume a normalized `Map<string,string>`; `readVariationParams`
+  now applies defaults for unspecified params
+- `src/shaders/chaos.wgsl:535` — `var_fan` `floor → trunc`
+
+**Tests:** `npm test` 4494/4499 (no regression). `npm run test:parity`
+19/19 (all within thresholds, mostly unchanged within noise + the one
+PYR3-017 drop).
+
+**Follow-up backlog filed:**
+
+- `[PYR3-021]` — PYR3-017 upstream-stage investigation pivot (palette /
+  tonemap / density / spatial-filter probes via the local flam3 binary's
+  `PYR3_DUMP_*` dump channels).
+- `[PYR3-022]` — Default-palette fallback when `<flame>` lacks any
+  palette block. Pyr3's parser throws; flam3-C falls back to its
+  700-palette library. Low priority but a v1.0 parser-completeness gap.
+
+**Closed:** `[PYR3-010]` 98-arm audit (completed via the v0.12 8-cluster
+fan-out; only bug shipped here).
+
 ## v0.12 — 2026-05-27 — Phase 3 cycle 4: FE parity sweep + capture-hook engine API ([PYR3-018] shipped)
 
 **Outcome:** First end-to-end FE-vs-flam3-C-golden parity measurement

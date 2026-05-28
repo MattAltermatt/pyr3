@@ -6,8 +6,71 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-021** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-023** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-022] parser · S · 🪨 · queued · v1.x — Default-palette fallback when `<palette>` is missing
+
+**Symptom (observed 2026-05-27, v0.13 doc-refresh):** `flame-import.ts:250`
+throws if a `<flame>` lacks `<color>`, `<colors>`, AND `<palette>`. flam3-C
+has a `flam3_palettes.xml` library of 700 numbered palettes that the
+parser falls back to when no palette block is present (parser sets
+`cp->palette_index` and `flam3_get_palette()` loads from the library).
+
+**Hypothesis (unverified):** pyr3's 5-preset library (`PYRE`, `DEEPSEA`,
+`BONE`, `VIRIDIS`, `MAGMA`) is wired for the dev-only "cycle palette"
+button, NOT for parser fallback. A .flame without a palette block fails
+to parse cleanly. ESF corpus is curated to always include palettes so
+the gap hasn't surfaced in fixtures yet — but it's a v1.0 parser-
+completeness gap.
+
+**Next phase:** decide on fallback policy (port flam3's 700-palette
+library to pyr3? OR use PYRE_PALETTE as the unconditional fallback? OR
+keep the throw and require palette blocks?). Default-recommend: port
+flam3-palettes once, treat as canonical reference; fall back to PYRE
+only if the indexed palette lookup also fails.
+
+Filed 2026-05-27 (v0.13). Low real-world risk until pyr3 ingests
+non-ESF .flame files.
+
+## [PYR3-021] parity · M · 🪨 · investigation · v1.x — PYR3-017 upstream-stage investigation pivot (palette / tonemap / density / spatial-filter)
+
+PYR3-017 (`coverage.248.02226` R=32.6 systematic-brightness divergence)
+was previously hypothesized to be a variation-arm bisection problem,
+deferred to fold into the PYR3-010 98-arm audit. **PYR3-010 audit ran
+v0.12 and ruled this out conclusively:** clusters C7+C8 explicitly
+report that all six arms used by 248.02226 (`scry`/`cell`/`wedge_sph`/
+`wedge_julia`/`oscope`/`flower`) audit clean. The audit cluster note:
+*"any 248.02226 brightness divergence on this cluster is NOT a porting
+bug at the arm level; it is either (a) accumulated f32 vs f64 precision,
+(b) a non-cluster arm in the fixture, or (c) an upstream stage (palette
+/ spatial-filter / density / log-tonemap)."*
+
+v0.13 default-value fix dropped R from 32.62 → 29.96 (-2.66) — but
+R=29.96 is still ~10× the suite average, so the residual is upstream
+of the chaos game.
+
+**Next phase candidates (decide via probe):**
+- 🅰 **Palette baking diff** — `PYR3_DUMP_PALETTE=<path>` env var on the
+  local flam3 binary at `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac`
+  (see `docs/flam3-local-build.md` channel #3). Diff pyr3's
+  post-interpolation 256-RGB palette vs flam3's. Most likely culprit
+  given the green-channel skew documented in original PYR3-017
+  investigation (perChannel.g=51.40 vs r=39.68, b=39.44).
+- 🅱 **Tonemap k1/k2 diff** — `PYR3_DUMP_TONEMAP=<path>` env var (channel
+  #4). PYR3-017's original investigation analytically ruled out
+  calibration math but the empirical re-test now becomes cheap.
+- 🅲 **Density estimator divergence** — flam3-C's DE applies per-bucket
+  ls during scatter (rect.c:140) at f64; pyr3's WGSL DE pass at f32.
+  May explain residual brightness for high-quality dense fixtures.
+
+**How to apply:** dispatch a `flame-fixture-investigator` subagent
+with PYR3-017's fixture name + the upstream-stage shape, pointing at
+the four instrumentation channels in `docs/flam3-local-build.md`.
+
+Filed 2026-05-27 (v0.13). Replaces the previous PYR3-017 BACKLOG entry's
+"folds into PYR3-010" plan now that PYR3-010 has run and the variation
+hypothesis is ruled out.
 
 ## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
 
@@ -172,11 +235,18 @@ Remaining candidates:
 - 🅴 **ISAAC RNG xform-selection drift** vs flam3's RNG, biasing which
   xforms are picked. Would systematically shift sample density.
 
-**Concrete next step:** Folds into `[PYR3-010]` 98-arm bit-parity audit
-which is the right vehicle for per-arm comparison. Aggregate bisection
-exhausted in this session — further isolation needs synthetic 1-xform
-probes against flam3-C / kotlin per-arm references, not the 248.02226
-fixture itself.
+**Status update (2026-05-27, v0.13):** PYR3-010 audit ran in v0.12 and
+**ruled out** the variation-arm hypothesis (all six arms used by
+248.02226 audit clean — see `[PYR3-021]`). v0.13's default-value fix
+dropped R from 32.62 → 29.96 (-2.66) but the residual is upstream of
+the chaos game. Next-step investigation is now `[PYR3-021]`
+(palette/tonemap/density/spatial-filter upstream-stage probes).
+
+**Concrete next step (HISTORICAL — superseded by PYR3-021):** Folds
+into `[PYR3-010]` 98-arm bit-parity audit which is the right vehicle
+for per-arm comparison. Aggregate bisection exhausted in this session
+— further isolation needs synthetic 1-xform probes against flam3-C /
+kotlin per-arm references, not the 248.02226 fixture itself.
 
 **Why M (not L):** Investigation narrowed 6 hypotheses → 1 area
 (non-dominant xform / non-variation paths) in this session. Folded into
@@ -259,44 +329,6 @@ but the tooling and structure are different.
    needs a chrome-devtools-mcp orchestration script (or pre-rendered PNG only).
 
 **Dependency:** v1.0 ship-gate pass.
-
-## [PYR3-010] gpu · L · 🪨 · queued · v1.x — Variation-arm bit-parity audit (98 arms)
-
-Sweep all 98 variation arms in `variations.ts` + `chaos.wgsl` against
-pyr3-kotlin's `Variations.kt` port. For each arm, bilateral-probe (peek
-output vs kotlin output for a synthetic 1-xform genome). Kotlin has
-documented its variation-arm porting in CHANGELOG v0.10-v0.18 with
-flam3-C source citations.
-
-**Why:** Audit work is cheaper now (engine is in shape, fixtures correct,
-test harness ready) than after we accumulate fixtures that depend on
-specific arms.
-
-**How to apply:** Spawn an Agent per variation cluster (8-15 arms each).
-Each agent diffs peek's TS impl + WGSL impl against kotlin's Kotlin impl,
-reports per-arm verdicts (identical / bit-divergent / algorithmically
-divergent). Bundle findings into a per-arm follow-up BACKLOG.
-
-**Priority bisection candidates (from PYR3-018 v0.12 FE sweep):**
-Six fixtures show Δ FE−BE > +5 above the inherent quick-mode noise
-floor — anomalously divergent relative to the other 13. After clusters
-report verdicts, route the `flame-fixture-investigator` subagent at
-these fixtures in this order:
-
-| fixture                  | FE-R   | BE-base | Δ      |
-|--------------------------|--------|---------|--------|
-| `coverage.247.28068`     | 15.04  |  5.17   | +9.87  |
-| `coverage.248.33248`     | 12.94  |  4.92   | +8.02  |
-| `coverage.245.00381`     | 11.96  |  4.42   | +7.54  |
-| `coverage.243.04616`     | 18.70  | 11.55   | +7.15  |
-| `coverage.248.25196`     |  8.02  |  2.18   | +5.84  |
-| `244.82986`              | 15.37  |  9.90   | +5.47  |
-
-Bisection rig: each fixture's active variation arms × the local flam3
-binary at `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac` with
-`FLAM3_DUMP_VARS=<path>` for per-variation contribution diffs (see
-`docs/flam3-local-build.md`). PYR3-017 (`coverage.248.02226`) folds in
-once the divergence class for these six is known.
 
 ## [PYR3-008] gpu · S · 🪨 · queued · v1.x — Decouple chaos.ts oversample from genome
 

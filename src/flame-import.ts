@@ -16,7 +16,48 @@ import {
   linear as linearVar,
 } from './variations';
 import { type ColorStop, type PaletteMode } from './palette';
-import { VARIATION_PARAMS, PARAM_KEYS, MAX_VARIATION_PARAMS, type ParamKey } from './serialize';
+import { VARIATION_PARAMS, VARIATION_DEFAULTS, PARAM_KEYS, MAX_VARIATION_PARAMS, type ParamKey } from './serialize';
+
+// v0.13 — flam3-C accepts legacy alias attribute names emitted by older
+// Apophysis exports. The canonical-name parser (head=variation, tail=param)
+// doesn't recognize these on its own; normalize at attribute-walk time so
+// the rest of the pipeline only sees canonical names.
+//
+// Surfaced by the v0.12 audit B (flame-import.ts XML attribute coverage).
+// Without normalization, `Re_A=…` on a mobius xform falls through the
+// "not in V" branch and is recorded as a dropped variation, silently losing
+// the mobius coefficient. Same shape for `oscope_*` short-form.
+
+// Bare-name attribute aliases (no underscore prefix): map directly to a
+// canonical `<variation>_<param>` form. flam3-C parses these at parser.c:1228-1243.
+const ATTR_NAME_ALIASES: Record<string, string> = {
+  Re_A: 'mobius_re_a',
+  Im_A: 'mobius_im_a',
+  Re_B: 'mobius_re_b',
+  Im_B: 'mobius_im_b',
+  Re_C: 'mobius_re_c',
+  Im_C: 'mobius_im_c',
+  Re_D: 'mobius_re_d',
+  Im_D: 'mobius_im_d',
+};
+
+// Prefix aliases for `<head>_<param>` attribute names: rewrite the head
+// to the canonical variation name. flam3-C parses these at parser.c:1136-1152.
+const VAR_PREFIX_ALIASES: Record<string, string> = {
+  oscope: 'oscilloscope',
+};
+
+function normalizeAttrName(name: string): string {
+  const exact = ATTR_NAME_ALIASES[name];
+  if (exact !== undefined) return exact;
+  const idx = name.indexOf('_');
+  if (idx > 0) {
+    const head = name.slice(0, idx);
+    const canonHead = VAR_PREFIX_ALIASES[head];
+    if (canonHead !== undefined) return `${canonHead}${name.slice(idx)}`;
+  }
+  return name;
+}
 
 export interface DroppedVariation {
   name: string;
@@ -228,19 +269,26 @@ function expectFiniteNumber(s: string, field: string): number {
 type VariationParams = Partial<Record<ParamKey, number>>;
 
 function readVariationParams(
-  attrs: NamedNodeMap,
+  attrs: ReadonlyMap<string, string>,
   varName: string,
 ): VariationParams {
   const paramNames = VARIATION_PARAMS[varName];
   if (!paramNames) return {};
+  const defaults = VARIATION_DEFAULTS[varName];
   const out: VariationParams = {};
   const n = Math.min(paramNames.length, MAX_VARIATION_PARAMS);
   for (let i = 0; i < n; i++) {
     const pn = paramNames[i];
     const pk = PARAM_KEYS[i];
     if (pn === undefined || pk === undefined) continue;
-    const a = attrs.getNamedItem(`${varName}_${pn}`);
-    if (a) out[pk] = expectFiniteNumber(a.value, `${varName}_${pn}`);
+    const key = `${varName}_${pn}`;
+    const raw = attrs.get(key);
+    if (raw !== undefined) {
+      out[pk] = expectFiniteNumber(raw, key);
+    } else if (defaults !== undefined && defaults[i] !== undefined) {
+      // v0.13: apply per-variation canonical default for unspecified params.
+      out[pk] = defaults[i];
+    }
   }
   return out;
 }
@@ -281,14 +329,20 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
   }
   const aff = parseCoefs(coefsAttr);
 
+  // v0.13: normalize attribute names first (mobius `Re_A` shorthand,
+  // `oscope_*` prefix alias). Walker + readVariationParams both read from
+  // this normalized Map instead of touching the DOM directly.
+  const normAttrs = new Map<string, string>();
+  for (let i = 0; i < el.attributes.length; i++) {
+    const a = el.attributes.item(i);
+    if (a) normAttrs.set(normalizeAttrName(a.name), a.value);
+  }
+
   // Walk attributes; for each that names a known pyr3 variation, record its
   // weight + params; for each unknown name (and not reserved or a known
   // variation's param), record as dropped.
   const variations: Variation[] = [];
-  for (let i = 0; i < el.attributes.length; i++) {
-    const attr = el.attributes.item(i);
-    if (!attr) continue;
-    const name = attr.name;
+  for (const [name, value] of normAttrs) {
     if (XFORM_RESERVED.has(name)) continue;
     if (name.includes('_')) {
       // Could be a per-variation param of a known variation (julian_power etc).
@@ -302,17 +356,17 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
     }
     if (!(name in V)) {
       // Long-tail or unknown variation name. Record + skip.
-      const w = expectFiniteNumber(attr.value, name);
+      const w = expectFiniteNumber(value, name);
       const drop: DroppedVariation = { name, weight: w, xformIndex };
       if (isFinal) drop.isFinal = true;
       dropped.push(drop);
       continue;
     }
-    const w = expectFiniteNumber(attr.value, name);
+    const w = expectFiniteNumber(value, name);
     if (w === 0) continue; // explicit-zero acts like absent
     const idx = V[name as keyof typeof V] as VariationIndex;
     const variation: Variation = { index: idx, weight: w };
-    const params = readVariationParams(el.attributes, name);
+    const params = readVariationParams(normAttrs, name);
     for (const pk of PARAM_KEYS) {
       const v = params[pk];
       if (v !== undefined) variation[pk] = v;

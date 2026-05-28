@@ -149,6 +149,43 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   mobius: ['re_a', 'im_a', 're_b', 'im_b', 're_c', 'im_c', 're_d', 'im_d'],
 };
 
+// v0.13 — per-variation default values for params that a .flame may omit.
+// Port: pyr3-kotlin Flam3Parser.kt:348-390 (canonical match against flam3-C
+// `initialize_xforms()` at `/Users/matt/dev/sheep/flam3/variations.c:2468-2630`).
+// Each list MUST be the same length + order as VARIATION_PARAMS[arm].
+// Missing entries → all-0 fallback at the call site (legacy pre-v0.13 behavior;
+// only correct for arms whose canonical default is genuinely zero, which is
+// most of the 38 parameterized arms).
+//
+// Surfaced by the A.2 audit (2026-05-27 default-value parity sweep). 17 of
+// 38 parameterized arms had non-zero canonical defaults that pyr3 was
+// silently zeroing, producing degenerate renders for .flame files that
+// elided those attrs (e.g. `julian="0.5"` with no `julian_power` → power=0
+// in pyr3 vs power=1 in flam3-C/kotlin).
+export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
+  curl: [1, 0],                              // c1=1, c2=0
+  julian: [1, 1],                            // power=1, dist=1
+  rectangles: [1, 1],                        // x=1, y=1
+  juliascope: [1, 1],                        // power=1, dist=1
+  blob: [0, 1, 1],                           // low, high=1, waves=1
+  pie: [6, 0, 0.5],                          // slices=6, rotation, thickness=0.5
+  ngon: [5, 3, 1, 2],                        // sides=5, power=3, circle=1, corners=2
+  conic: [1, 0],                             // eccentricity=1, holes
+  // pyr3 slot order: [frequency, amplitude, damping, separation]
+  // — NOT flam3-C's parser attr ordering (separation-first).
+  oscilloscope: [Math.PI, 1, 0, 1],          // frequency=π, amplitude=1, damping, separation=1
+  curve: [0, 0, 1, 1],                       // xamp, yamp, xlength=1, ylength=1
+  cell: [1],                                 // size=1
+  // pyr3 slot order: [freq, weight, scale, sym]
+  auger: [1, 0.5, 1, 0],                     // freq=1, weight=0.5, scale=1, sym
+  super_shape: [0, 0, 1, 1, 1, 0],           // rnd, m, n1=1, n2=1, n3=1, holes
+  bent2: [1, 1],                             // x=1, y=1
+  wedge: [0, 0, 1, 0],                       // angle, hole, count=1, swirl
+  wedge_julia: [0, 1, 1, 0],                 // angle, count=1, power=1, dist
+  wedge_sph: [0, 0, 1, 0],                   // angle, hole, count=1, swirl
+  cpow: [1, 0, 1],                           // r=1, i, power=1
+};
+
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
  *  Used by serialize / importer to map between the positional in-memory
  *  shape and the named-params on-disk shape. Max 6 slots — see

@@ -527,11 +527,12 @@ fn var_rings(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
 // var_fan — flam3 var22_fan (variations.c:528). Reads affine c[2][0] / c[2][1]
 // (= pyr3 affine `c` / `f` = a0.z / a1.z). Uses precalc_atan_xy (swapped atan2).
 // `(phi+dy)/dx` can be negative — WGSL `trunc()` truncates toward zero,
-// Mod semantics match pyr3 chaos.comp:819 — GLSL `mod()` is Euclidean
-// (`a - b * floor(a/b)`), NOT C's truncate-toward-zero `fmod`. For negative
-// `(phi + dy)` the two diverge in sign, sending walkers to different folded
-// angles. pyr3 GLSL's documented divergence from C-fmod is what produced the
-// v1.0 reference renders; mirror it here per parity-default rule.
+// v0.13: mod semantics match C99 fmod (truncate-toward-zero). The prior
+// `floor((phi+dy)/dx)` Euclidean mod (inherited from the old GLSL renderer)
+// produced different folded angles than TS+kotlin+flam3-C for negative
+// `(phi+dy)`, breaking the FE↔BE same-machine parity contract. PYR3-010
+// audit (v0.12 cluster C3) flagged this as the one confirmed `bug` across
+// 98 arms. `trunc((phi+dy)/dx) * dx` is the WGSL equivalent of C fmod.
 fn var_fan(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
   let c = a0.z;
   let f = a1.z;
@@ -540,7 +541,7 @@ fn var_fan(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
   let dx2 = 0.5 * dx;
   let phi = atan2(p.x, p.y);
   let r = w * length(p);
-  let t = (phi + dy) - dx * floor((phi + dy) / dx);
+  let t = (phi + dy) - dx * trunc((phi + dy) / dx);
   let a = select(phi + dx2, phi - dx2, t > dx2);
   return vec2f(r * cos(a), r * sin(a));
 }
