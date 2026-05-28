@@ -104,29 +104,62 @@ IS spatially-wider; this IS the dominant lever for the named outliers.
 
 Verify gallery: `.remember/verify/pyr3-029-phase3-pixel-diff.html`.
 
-### Phase 4 — candidate fix directions
+### Phase 4 finding (2026-05-28): walker count is NOT the lever
 
-The 1024-walker pool needs wider initial dispersion across the attractor
-before fuse converges. Three candidates (none implemented yet):
+`scripts/pyr3-029-walker-sweep.mjs` re-ran 02226 at four walker counts
+with total iter budget held constant (`--walkers=<N>` override on
+`bin/pyr3-pixel-dump.ts`):
 
-1. **🎯 Widen walker init spread.** Walkers start at independent random
-   points in `[-1, 1]²`. The attractor's basin may be small relative to
-   the unit square; many walkers converge to the same dense cluster. Try
-   seeding walker init points from a Sobol/Halton sequence OR running a
-   longer pre-splat per-walker fuse so each walker reaches the full
-   attractor before counting hits. Cheapest probe: bump `FUSE` 200 → 2000
-   and re-measure both outliers' coverage stats.
-2. **🎯 Reduce parallelism, lengthen per-walker iters.** Move toward
-   flam3's single-chain pattern: fewer walkers (e.g., 64) × longer iters
-   per walker. Trades GPU occupancy for wider attractor coverage.
-3. **🎯 Mid-trajectory walker re-randomization.** Periodically re-seed
-   walker positions during the dispatch so trajectories explore disjoint
-   attractor regions. Least invasive but adds dispatch complexity.
+```text
+walkers   bothHit   pyr3Only   flam3Only   driftMean   elapsed
+  1024     20.6%      5.1%      26.5%      0.5340      7.3s
+   256     20.6%      5.1%      26.5%      0.5342     27.5s
+    64     20.6%      5.1%      26.5%      0.5343    107.1s
+    16     20.9%      5.3%      26.2%      0.5475    385.0s
+```
 
-Full Phase 1 + 2 + 3 data: `.remember/tmp/pyr3-029-ratio-table.md` +
-`.remember/tmp/pyr3-029-pixel/` (both gitignored).
-Diagnostic tools: `bin/pyr3-hist.ts`, `bin/pyr3-pixel-dump.ts`,
-`scripts/pyr3-029-bucket-diff.mjs`, `scripts/pyr3-029-pixel-diff.mjs`,
+Coverage stats are **invariant** across a 64× walker reduction. The
+walker-pool clustering theory (Phase 3 hypothesis) is **falsified**.
+pyr3's chaos chain IS ergodic — even at 16 parallel chains × 28.8M
+iters each (matching flam3's per-thread budget more closely), the same
+spatial regions remain uncovered. The 4-walker run would push individual
+threads past macOS Metal TDR limits and was killed at ~25 min wall.
+
+### Phase 5 — what's left
+
+The missing regions have **clear flame structure** in the heatmap
+(`.remember/verify/pyr3-029-phase3-pixel-diff.html`): the bottom-right
+of 02226 shows a major flame arm pyr3 doesn't reach. Walker dispersion
+doesn't fix it, so the trajectories themselves are biased away from
+those world-coordinate regions. Remaining suspects:
+
+1. **🎯 Per-iter trajectory divergence (bilateral RNG-aligned trace).**
+   Use flam3's `-rngtrace` binary with `isaac_seed_hex=<128hex>` matching
+   pyr3's ISAAC state, dump per-iter (x, y) from both engines, find the
+   first iter where pyr3's trajectory diverges from flam3's. This is
+   THE definitive test — it reveals exactly which iter, which xform
+   pick, which variation produces divergence. (`docs/flam3-local-build.md`
+   §1 documents the protocol; pyr3-side per-iter trace emit is the
+   "PYR3-019+ scaffold task" still pending.)
+2. **🎯 Variation-arm bisection.** 02226 uses ~18 distinct variations
+   across 8 xforms; 245.06687 uses 10 across 5; overlap is only
+   {bubble, bent}. If a single variation has a precision/formula bug
+   that biases output toward the center of the canvas, that would
+   explain regions-missed-near-edges. Probe: ablate one xform at a time
+   from 02226's genome, render, see which removal SHRINKS the missing
+   region.
+3. **🎯 Coord-mapping audit.** flam3's `ws0/wb0s0` formula includes the
+   gutter offset; pyr3's `px = (x - cx) * scale + W/2` doesn't. After
+   gutter-trim of flam3's buffer the gutter pixels are excluded — so
+   this is unlikely to explain missing in-canvas pixels — but worth a
+   careful re-derive against `rect.c:844-859`.
+
+Full Phase 1-4 data: `.remember/tmp/pyr3-029-ratio-table.md` +
+`.remember/tmp/pyr3-029-pixel/` + `.remember/tmp/pyr3-029-walker-sweep/`
+(all gitignored).
+Diagnostic tools: `bin/pyr3-hist.ts`, `bin/pyr3-pixel-dump.ts`
+(`--walkers=N`), `scripts/pyr3-029-bucket-diff.mjs`,
+`scripts/pyr3-029-pixel-diff.mjs`, `scripts/pyr3-029-walker-sweep.mjs`,
 `bin/pyr3-render.ts --sample-inflate=N`.
 
 ### Original Phase-C smoking-gun evidence (now partly superseded)

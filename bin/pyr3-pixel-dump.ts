@@ -47,11 +47,17 @@ async function main(): Promise<void> {
   const args: string[] = [];
   let quick = false;
   let maxDim: number | null = null;
+  let walkersOverride: number | null = null;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--quick') quick = true;
     else if (a === '--max-dim') {
       maxDim = Math.max(1, Math.floor(Number(rawArgs[++i])));
+    } else if (a.startsWith('--walkers=')) {
+      // PYR3-029 Phase 4 probe: override the parallel walker count.
+      // Total iter budget is preserved (iters-per-walker grows
+      // proportionally), so this isolates the parallelism dimension.
+      walkersOverride = Math.max(1, Math.floor(Number(a.slice('--walkers='.length))));
     } else args.push(a);
   }
   if (args.length < 2) {
@@ -109,15 +115,22 @@ async function main(): Promise<void> {
 
   const targetSpp = genome.quality ?? DEFAULT_SPP;
   const targetSamples = Math.round(targetSpp * width * height);
-  let dispatchWalkers = TARGET_WALKERS;
+  let dispatchWalkers = walkersOverride ?? TARGET_WALKERS;
   let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
-  if (dispatchIters < MIN_ITERS_PER_WALKER) {
-    dispatchIters = MIN_ITERS_PER_WALKER;
-    dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
-  } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
-    dispatchIters = MAX_ITERS_PER_WALKER;
-    dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
+  if (walkersOverride === null) {
+    // Default sizing — respect MIN/MAX bounds.
+    if (dispatchIters < MIN_ITERS_PER_WALKER) {
+      dispatchIters = MIN_ITERS_PER_WALKER;
+      dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
+    } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
+      dispatchIters = MAX_ITERS_PER_WALKER;
+      dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
+    }
   }
+  // With override, the user owns the walker count; iters-per-walker scales to keep total
+  // budget constant. The override may push iters past MAX_ITERS_PER_WALKER (potential
+  // macOS Metal TDR risk at very small walker counts × very high quality) — the probe
+  // accepts that risk explicitly.
   console.error(`[pyr3-pixel-dump] dispatch walkers=${dispatchWalkers} iters=${dispatchIters}`);
 
   const chaos = createChaosPass(device, {
