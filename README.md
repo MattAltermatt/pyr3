@@ -11,15 +11,18 @@
 
 ## Status
 
-🚧 **v0.14 — Phase 3 mid-flight, BE-anchored 4K path.** Engine in place (browser + CLI
-both render); 19-fixture flam3-C parity rig green (4494/4499 unit + 19/19 BE parity).
-Phase 3 has shipped six cycles: finalxform-opacity gate (v0.9), regular-xform alpha-scaling
-(v0.10), opacity-clamp hardening (v0.11), test-split + README refresh (v0.11.1), FE parity
-sweep + `__pyr3CapturePixels` capture hook (v0.12), 98-arm WGSL audit + parity-completeness
-fixes (v0.13), **FE 4K removal pivot to BE-only 4K** (v0.14 — FE is interactive at quick
-quality; BE is the 4K renderer + the v1.0 ship-gate vehicle). Iterating toward v1.0;
-PYR3-023 next phase is the BE 4K parity rig vs kotlin v1.1 references. See
-[ROADMAP.md](ROADMAP.md).
+🚧 **v0.17 — Phase 3, both v1.0 ship-gate infrastructure wired.** Engine in place
+(browser + CLI both render); three parity rigs green: 19-fixture BE-vs-flam3-C
+(`npm run test:parity`), 19-fixture FE↔BE quick-mode (`npm run test:parity-fe-be`,
+v0.15), and 5-fixture BE-vs-kotlin-v1.1 SHOWCASE_4K (`npm run test:parity-4k`,
+v0.17). **The README hero `electricsheep.247.19679` renders at R=2.78 vs kotlin
+v1.1 4K** — well inside the noise floor. 4/5 of the showcase set ship cleanly;
+one outlier (248.22289 at R=44.96) is blocked on `[PYR3-029]` chaos-walker-
+coverage parity audit, which is also the resolution path for the long-standing
+PYR3-017/021/024 cluster (Phase C investigator ruled out palette/tonemap/density
+empirically; root cause located in the chaos game itself). v1.0 ships when
+PYR3-029 lands and the showcase set expands to ~20-50 fixtures. See
+[ROADMAP.md](ROADMAP.md) and [BACKLOG.md](BACKLOG.md#pyr3-029).
 
 ## The contract
 
