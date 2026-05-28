@@ -71,31 +71,63 @@ Full data: `.remember/tmp/pyr3-029-ratio-table.md` (gitignored).
   corrupting `baselineR`; pyr3's divergence from flam3-C is real engine
   drift faithfully captured by `baselineR`.
 
-### Phase 3 next directions (filed 2026-05-28)
+### 🚨 Phase 3 finding (2026-05-28): walker-pool spatial coverage IS the lever
 
-The dominant lever for 02226's R=30 is **not** in the chaos-game histogram,
-**not** in the sample budget calibration, and **not** in the kotlin reference.
-Remaining suspects (priority order):
+`bin/pyr3-pixel-dump.ts` + `scripts/pyr3-029-pixel-diff.mjs` ran per-pixel
+chromatic-histogram diffs on both outlier fixtures + a healthy control.
+Pattern is conclusive:
 
-1. **🎯 Per-pixel chromatic drift amplified by tonemap k1.** Aggregate
-   channel sums match within 3% across the corpus, but per-pixel color
-   ratios may differ much more, and the visualize pass's `k1 = brightness
-   × PREFILTER × 268/256` (= 5873 for 02226) magnifies small input drifts
-   into visible output. Top-3 high-R fixtures all have aggressive
-   brightness/gamma combos (02226: br=22 ga=3.2, 245.06687: br=30 ga=3.8,
-   243.04616: br=10 ga=5.0). Probe: per-pixel chromatic-ratio dump.
-2. **🎯 Visualize-pass tonemap math precision.** `calc_alpha` /
-   `calc_newrgb` are line-for-line ports but run on GPU f32 vs flam3's
-   CPU f64. At brightness=22 small precision errors compound. Probe:
-   feed both pipelines the same bucket and diff.
-3. **🎯 Per-walker spatial dispersion.** pyr3's 1024 parallel walkers vs
-   flam3's single chain may converge to subtly different attractor
-   density profiles. Even with matched chromatic totals, per-pixel hits
-   could differ. Probe: per-pixel count-channel histogram diff.
+```text
+fixture                  R       bothHit   pyr3Only   flam3Only   drift mean
+-----------------------  ------  --------  ---------  ----------  ----------
+coverage.248.02226       29.92      20.6%   47,465      243,951      0.43
+coverage.245.06687       14.59       3.4%    2,427      119,941      0.19
+coverage.248.11405        1.36      90.9%   14,656       14,611      0.016    ← healthy control
+```
 
-Full Phase 1 + 2 data: `.remember/tmp/pyr3-029-ratio-table.md` (gitignored).
-Diagnostic tools: `bin/pyr3-hist.ts`, `scripts/pyr3-029-bucket-diff.mjs`,
-`bin/pyr3-render.ts --sample-inflate=N` (kept as a permanent diagnostic flag).
+**Smoking gun:** On the broken fixtures, flam3-C hits 1.83×–4.48× more
+pixels than pyr3. pyr3's 1024 parallel walkers cluster into a tight
+subset of the attractor; flam3-C's single chain wanders broadly. pyr3
+then over-deposits on the pixels it does hit (sum_count matches or
+exceeds flam3 despite covering far fewer pixels) — concentrated mass
+over a smaller spatial set.
+
+The aggregate Phase 1 "chromatic match within 3%" was a spatial-averaging
+artifact: per-pixel drift on the broken fixtures is 12–27× the healthy
+baseline. High-brightness/low-gamma tonemap (k1=5873 for 02226, 8009 for
+245.06687) amplifies the per-pixel divergence into visible R.
+
+This **resurrects sub-hypothesis #1** (walker-pool seed dispersion at
+iter=0) which was deprioritized in Phase 1 based on incorrect aggregate
+evidence. The 1024 walkers ARE clustering; the single-chain flam3 pattern
+IS spatially-wider; this IS the dominant lever for the named outliers.
+
+Verify gallery: `.remember/verify/pyr3-029-phase3-pixel-diff.html`.
+
+### Phase 4 — candidate fix directions
+
+The 1024-walker pool needs wider initial dispersion across the attractor
+before fuse converges. Three candidates (none implemented yet):
+
+1. **🎯 Widen walker init spread.** Walkers start at independent random
+   points in `[-1, 1]²`. The attractor's basin may be small relative to
+   the unit square; many walkers converge to the same dense cluster. Try
+   seeding walker init points from a Sobol/Halton sequence OR running a
+   longer pre-splat per-walker fuse so each walker reaches the full
+   attractor before counting hits. Cheapest probe: bump `FUSE` 200 → 2000
+   and re-measure both outliers' coverage stats.
+2. **🎯 Reduce parallelism, lengthen per-walker iters.** Move toward
+   flam3's single-chain pattern: fewer walkers (e.g., 64) × longer iters
+   per walker. Trades GPU occupancy for wider attractor coverage.
+3. **🎯 Mid-trajectory walker re-randomization.** Periodically re-seed
+   walker positions during the dispatch so trajectories explore disjoint
+   attractor regions. Least invasive but adds dispatch complexity.
+
+Full Phase 1 + 2 + 3 data: `.remember/tmp/pyr3-029-ratio-table.md` +
+`.remember/tmp/pyr3-029-pixel/` (both gitignored).
+Diagnostic tools: `bin/pyr3-hist.ts`, `bin/pyr3-pixel-dump.ts`,
+`scripts/pyr3-029-bucket-diff.mjs`, `scripts/pyr3-029-pixel-diff.mjs`,
+`bin/pyr3-render.ts --sample-inflate=N`.
 
 ### Original Phase-C smoking-gun evidence (now partly superseded)
 
