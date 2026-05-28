@@ -57,8 +57,13 @@ const declQuality = Number(getAttr('quality') ?? '100');
 
 const maxDecl = Math.max(declW, declH);
 const sizeScale = FULL_MAX_DIM / maxDecl;
-const targetW = Math.max(1, Math.round(declW * sizeScale));
-const targetH = Math.max(1, Math.round(declH * sizeScale));
+// Long-edge exact = FULL_MAX_DIM; short-edge scaled by integer
+// division (matches kotlin's `Math.floorDiv(short * MAX, long)` in
+// Preset.kt:39-49). Using Math.round() like pyr3 v0.14-v0.15 produced
+// a +1px short-edge mismatch on some fixtures (e.g. 243.09081 went
+// 2842 vs kotlin's 2841) since 800×592 @ scale 4.8 → 2841.6 rounds up.
+const targetW = declW === maxDecl ? FULL_MAX_DIM : Math.max(1, Math.floor((FULL_MAX_DIM * declW) / declH));
+const targetH = declH === maxDecl ? FULL_MAX_DIM : Math.max(1, Math.floor((FULL_MAX_DIM * declH) / declW));
 const newScale = declScale * sizeScale;
 const newQuality = Math.min(declQuality, FULL_MAX_SPP);
 

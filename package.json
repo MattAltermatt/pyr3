@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "test:parity": "VITEST_INCLUDE_PARITY=1 vitest run src/parity.test.ts",
     "test:parity-fe-be": "VITEST_INCLUDE_PARITY_FE_BE=1 vitest run src/parity-fe-be.test.ts",
-    "test:all": "VITEST_INCLUDE_PARITY=1 VITEST_INCLUDE_PARITY_FE_BE=1 vitest run",
+    "test:parity-4k": "VITEST_INCLUDE_PARITY_4K=1 vitest run src/parity-4k.test.ts",
+    "test:all": "VITEST_INCLUDE_PARITY=1 VITEST_INCLUDE_PARITY_FE_BE=1 VITEST_INCLUDE_PARITY_4K=1 vitest run",
     "typecheck": "tsc --noEmit",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts"
