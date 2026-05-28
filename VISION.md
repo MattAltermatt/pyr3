@@ -32,10 +32,21 @@ not the default.
 
 ## 🎯 The v1.0 ship gate
 
-**Both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI WebGPU) produce renders that
-match flam3-C reference renders within R tolerance**, for a curated fixture set of Electric
-Sheep flames. FE and BE don't need to match each other byte-for-byte — they each independently
-pass R-vs-flam3. That's the trigger to replace MattAltermatt/pyr3 (the kotlin one) and
+**Two gates, both green, on a curated fixture set of Electric Sheep flames:**
+
+1. **BE 4K parity vs kotlin v1.1.** The headless CLI renders match
+   kotlin's `SHOWCASE_4K` 4K references (3840 long-edge × 200 SPP)
+   within R tolerance. This is the v1.0 showcase pipeline — kotlin's
+   pre-rendered-gallery pattern, served via gh-pages from BE-rendered
+   PNGs.
+2. **FE↔BE parity at quick-mode dims.** The browser viewer renders
+   match the BE CLI for the same fixture at FE's supported dims
+   (1024 long-edge, 16 SPP) within R tolerance. FE is interactive only
+   — 4K is BE-exclusive per the v0.14 pivot.
+
+FE and BE don't need to match byte-for-byte; the "similar but not the
+same" contract holds across engines too. Both gates green = trigger
+pulled for replacing MattAltermatt/pyr3 (the kotlin one) and
 MattAltermatt/pyr3-peek on GitHub.
 
 ## 🔥 Keep (the soul)
@@ -74,9 +85,9 @@ MattAltermatt/pyr3-peek on GitHub.
 ## Lineage
 
 - **pyr3-kotlin** — the JVM/Vulkan predecessor (v1.x-E shipped 2026-05-27). Source of truth
-  for GPU shader fixes, variation arms, parser edge-cases. Phase 1 audit-ports its shipped
-  improvements into the TS/WGSL world.
-- **pyr3-peek** — the TS+WebGPU browser viewer. Phase 0 copies its source tree as the new
-  pyr3's basis.
+  for GPU shader fixes, variation arms, parser edge-cases. Phase 1 (v0.3) audit-ported its
+  shipped improvements into the TS/WGSL world.
+- **pyr3-peek** — the TS+WebGPU browser viewer. Phase 0 (v0.1) copied its source tree as the
+  new pyr3's basis.
 - **pyr3-rust** — private archive (Rust core + WASM + React experiment). Source of TS-era
   engine code that pre-dated the Rust pivot; `git log -- '*.ts'` is the entry point.
