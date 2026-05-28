@@ -6,8 +6,58 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-023** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-024** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-023] gpu · L · 🪨 · queued · v1.x — 4K rendering failures + 4K-parity gate (V1.0-BLOCKING)
+
+**Symptom (observed 2026-05-27, end of v0.13 session):** Some flames
+fail to render properly via the browser's `🎯 Render 4K` button.
+Specific failure mode unknown — user reported "some 4K images" don't
+render correctly; no console-error capture yet.
+
+**Hypothesis (unverified):** likely one of:
+1. **Iteration-count overflow at high quality × 4K dims.** `renderer.ts:render()`
+   caps `dispatchIters = MAX_ITERS_PER_WALKER = 2^20` and grows walkers to
+   `MAX_WALKERS`. At 4096×2304 × `FULL_MAX_SPP=200`, targetSamples = ~1.88B —
+   may cap badly and undersample.
+2. **Genome rescale at 4K landing outside attractor.** `main.ts:121`
+   multiplies `genome.scale * sizeScale` where sizeScale = 4096/maxDecl. For
+   genomes declaring `scale=181.045` etc., 4× rescale may zoom past visible
+   content.
+3. **Canvas swap-chain reconfigure failure at 4K.** Less likely (Dawn handles
+   reconfigure cleanly on M-series), but possible.
+4. **NOT a WebGPU buffer limit** — `device.ts:33` requests adapter-max
+   `maxStorageBufferBindingSize`; `main.ts:50 FULL_MAX_OVERSAMPLE = 1` caps
+   the histogram to W×H (not W×O × H×O), keeping memory well under hardware
+   caps. So buffer-size ruled out as primary cause.
+
+**v1.0-blocking because:** user clarified 2026-05-27 that the v1.0
+showcase (PYR3-007) is **4K-on-click**, not quick-mode-on-click. The
+showcase is the user-facing landing experience; 4K renders matching
+kotlin's v1.1 references is the load-bearing v1.0 acceptance criterion
+(extends the design spec §3 "curated fixture set" definition to
+include 4K dimensions).
+
+**Next phase:**
+1. **Probe the failure surface.** Drive Chrome to `🎯 Render 4K` on a
+   sample of fixtures via chrome-devtools-mcp; capture console.error +
+   any WebGPU validation errors; identify which flames fail vs succeed.
+2. **Build a 4K parity rig.** Mirror the 19-fixture rig at 4K
+   dimensions against kotlin's v1.1 .jpg references (path in
+   `reference-kotlin-v11-renders.md` memory). 4K-R thresholds need
+   calibration against the JPG-decompressed RGB (lossier than PNG
+   goldens; larger noise floor).
+3. **Fix root causes** identified by step 1; iterate ship cycles
+   v0.14, v0.15 until 4K parity passes.
+
+**Files of interest:**
+- `src/main.ts:38-50` — `FULL_MAX_DIM`, `FULL_MAX_SPP`, `FULL_MAX_OVERSAMPLE` (the 4K-mode caps)
+- `src/main.ts:115-160` — `renderInMode('4k')` orchestrator
+- `src/renderer.ts:165-185` — chunked dispatch math (iter overflow class)
+- pyr3-kotlin v1.1 4K JPGs — per `reference-kotlin-v11-renders.md`
+
+Filed 2026-05-27 (v0.13 stop). Critical-path v1.0 work for the next session.
 
 ## [PYR3-022] parser · S · 🪨 · queued · v1.x — Default-palette fallback when `<palette>` is missing
 
@@ -400,7 +450,16 @@ must not change — `Phase 0` proves this seam works.
 Build, typecheck, test on push to any branch. Auto-deploy frontend to `gh-pages` on tag push.
 Cache `node_modules` for fast turnaround.
 
-## [PYR3-007] feat · XS · 🎨 · queued · v1.x — Showcase flame gallery on homepage
+## [PYR3-007] feat · M · 🪨 · queued · v1.x — Showcase flame gallery on homepage (4K-on-click)
 
 The browser entry-point shows a curated gallery of share-link buttons so visitors land on
 something visual, not an empty viewer. Pulls from `fixtures/showcase/`.
+
+**Clarified 2026-05-27:** the showcase is **4K-on-click** — each
+thumbnail click triggers a 4K render (`🎯 Render 4K` mode), and the
+expectation is that pyr3's 4K render matches pyr3-kotlin's v1.1 4K
+reference renders. This means **the v1.0 ship gate includes 4K
+parity**, not just the 19-fixture quick-mode parity rig.
+
+Scope upgrade: XS → M, sigil 🎨 → 🪨 (load-bearing). Depends on
+`[PYR3-023]` (4K rendering failures + 4K-parity gate) shipping first.
