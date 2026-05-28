@@ -16,6 +16,7 @@
     "test:parity-4k": "VITEST_INCLUDE_PARITY_4K=1 vitest run src/parity-4k.test.ts",
     "test:all": "VITEST_INCLUDE_PARITY=1 VITEST_INCLUDE_PARITY_FE_BE=1 VITEST_INCLUDE_PARITY_4K=1 vitest run",
     "typecheck": "tsc --noEmit",
+    "build:showcase": "node scripts/build-showcase.mjs",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
     "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts"

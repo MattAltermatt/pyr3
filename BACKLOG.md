@@ -6,8 +6,103 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-032** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-035** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-034] bug · M · 🪨 · queued · v1.x — pyr3 crushes low-density regions to black (`243.00171` + likely a class)
+
+**Symptom (observed 2026-05-28):** pyr3's `--preset 4k` render of
+`electricsheep.243.00171` shows ONLY the bright filament skeleton (thin orange/
+blue/green lines) on pure black (mean lum 0.68, ~2% non-black). The reference
+render — `https://mattaltermatt.github.io/pyr3/v1.0/electricsheep.243.00171.gpu.4k.jpg`
+— shows a **rich soft blue halo / nebula filling the whole frame**, with the bright
+orange feather nested inside it. pyr3 is dropping the entire low-density glow; only
+the high-density structure survives.
+
+**Hypothesis (unverified):** Low-density bins are being crushed to black —
+candidates: (a) log-density / gamma tonemap clipping the low end (gamma_threshold,
+vibrancy, or highlight-power crushing dim bins); (b) density-estimation (DE) filter
+not spreading sparse low-count samples; (c) the chaos-game depositing too few
+samples in low-density basins (PYR3-029 coverage family). The soft halo is exactly
+the kind of low-count, wide-area structure DE + log-gamma are supposed to lift.
+
+**Likely a CLASS, not one fixture:** if pyr3 crushes low-density everywhere, many
+showcase flames will read darker/sparser than the reference, and `[PYR3-033]`
+(`242.01373` pure black) is plausibly the extreme case of the SAME root cause (an
+all-low-density flame → fully crushed). Cross-link both + `[PYR3-029]`.
+
+**Next phase:** A/B pyr3 vs the reference URL for `243.00171`; isolate which stage
+crushes the low end — dump the raw histogram (`npm run hist`) and check whether the
+low-density glow exists pre-tonemap (→ tonemap/gamma bug) or is absent in the
+histogram (→ chaos-game/DE coverage bug). Compare `gamma`, `gamma_threshold`,
+`vibrancy`, `highlight_power`, `background` handling vs flam3-C. Resolve before the
+v1.0 public showcase if it's a broad class — under-rendered flames undercut the
+showcase's whole purpose.
+
+## [PYR3-033] bug · S · 🐛 · queued · v1.x — `electricsheep.242.01373` renders pure black at `--preset 4k`
+
+**Symptom (observed 2026-05-28):** `electricsheep.242.01373.pyr3-4k.png` is a
+completely black 3840×2841 image (mean luminance 0.00, 0% non-black pixels, 46KB
+on disk) despite the render running 5.4s without error. Surfaced during the v0.21
+showcase build; auto-excluded from the gallery by the new mean-luminance gate in
+`scripts/build-showcase.mjs` (so this is cosmetic-for-now, not gallery-blocking).
+
+**Hypothesis (unverified):** Either (a) the fixture genome projects entirely
+outside the camera at the `--preset 4k` framing (3840 long-edge, q=200,
+oversample=1) — a camera/scale issue, not engine; or (b) a chaos-game/tonemap
+degenerate case for this specific genome (zero-weight xforms, all-NaN trajectory,
+or a brightness/gamma collapse). It is the ONLY pure-black render of the 55.
+
+**Next phase:** render it through the FE viewer at quick-mode + via `npm run
+render` at native dims and compare — does it produce output at other dims? Check
+the source `.flam3` xform weights. Compare against flam3-C output for the same
+fixture (does flam3-C also render it black?). If flam3-C renders it fine, it's a
+pyr3 bug; if flam3-C is also black, the fixture is simply a bad showcase pick —
+drop it from the curated set.
+
+## [PYR3-032] chore · M · 🪨 · queued (next session) · v1.0 — Purge predecessor-repo references from the codebase
+
+**Filed 2026-05-28 (user-directive).** Remove all references to the dead
+predecessor repos — **`flam3-kotlin` (not a real project name), `pyr3-kotlin`,
+`pyr3-peek`, `pyr3-rust`** — so public pyr3 stands on its own (lineage to
+**flam3**, the original C engine, is legitimate and STAYS). The showcase was
+already cleaned in v0.21 (`scripts/build-showcase.mjs` lede); this entry is the
+rest of the codebase, scoped "everything" next session.
+
+**~165 references across ~30 tracked files, by layer (survey 2026-05-28):**
+1. **Public-facing — do first.** `help/about.html`, `help/webgpu.html`,
+   `help/ifs-and-render-cost.html` are still titled/branded **"pyr3-peek"**
+   (wholesale-copy leftover from Phase 0 — egregious for a public ship);
+   `README.md`, `VISION.md`.
+2. **Manifest source paths (FUNCTIONAL).** `fixtures/showcase-v1.0/_manifest.json`
+   `source:` fields point at `…/pyr3-kotlin/parity/.../*.flam3` (28 hits). The
+   same sheep live in `electric-sheep-fold/corpus/<minor>/<bucket>/` — re-point
+   there (see [[reference-kotlin-v11-renders]] for the path pattern) and re-verify
+   `scripts/render-showcase-v1.0.mjs` + `build-showcase.mjs` still resolve them.
+3. **Source provenance comments.** `Port: pyr3-kotlin …` in `src/compare.ts:3`,
+   `src/serialize.ts:153`, `src/shaders/chaos.wgsl:1720`; "pyr3-peek couldn't
+   crack" in `src/main.ts:204`.
+4. **Internal dev docs.** `CLAUDE.md` Lineage section + the `Port:` commit
+   convention (decide what replaces it), `ROADMAP.md`, `BACKLOG.md`, `NOTICE.md`
+   (⚠️ keep legally-required flam3/GPL attribution), `docs/superpowers/specs/*`,
+   `docs/flam3-local-build.md`.
+5. **Parity infra (FUNCTIONAL).** `fixtures/kotlin-goldens/`,
+   `fixtures/kotlin-4k-refs/`, `.claude/agents/{wgsl-parity-reviewer,flame-fixture-investigator}.md`
+   reference pyr3-kotlin as the parity source. Renaming touches the ship-gate
+   tooling — rename + rewire + re-run `npm run test:parity*` to confirm green.
+
+**⚠️ Conflicts to resolve at the top of the sweep (don't silently blow past):**
+- `CHANGELOG.md` is documented append-only ship history with `Port:` citations —
+  decide whether to rewrite history or leave it as the factual record (recommend:
+  leave history; stop *new* citations).
+- The `Port: pyr3-kotlin <ref>` commit-message convention in CLAUDE.md needs a
+  replacement or removal decision.
+- Ground truth already pivoted kotlin→flam3-C (v0.18), so the `kotlin-*` fixture
+  names are arguably already misnomers — good moment to rename to `flam3c-*` or similar.
+
+**Acceptance:** `git grep -i -E 'flam3-kotlin|pyr3-kotlin|pyr3-peek|pyr3-rust'`
+returns only deliberate, documented exceptions (if any); parity rig still green;
+help pages branded "pyr3"; no broken fixture/agent wiring.
 
 ## [PYR3-031] feat · M · 🪨 · queued · v1.0 — FE cleanup pass before public ship
 
@@ -1041,18 +1136,29 @@ must not change — `Phase 0` proves this seam works.
 Build, typecheck, test on push to any branch. Auto-deploy frontend to `gh-pages` on tag push.
 Cache `node_modules` for fast turnaround.
 
-## [PYR3-007] feat · L · 🪨 · queued · v1.0 — Public showcase gallery (bundled with PYR3-031 FE cleanup)
+## [PYR3-007] feat · L · 🪨 · ✅ gallery shipped v0.21 (Chunk 1) · v1.0 — Public showcase gallery
 
-The browser entry-point shows a curated gallery of pyr3-rendered
-showcase flames so visitors land on something visual, not an empty
-viewer.
+A curated gallery of pyr3-rendered showcase flames so visitors have
+something visual to land on. Lives at **`/showcase`** (NOT the root —
+root `/` is the FE viewer).
 
-**Bundled-with directive 2026-05-28:** Ships together with
-`[PYR3-031]` (FE cleanup pass) in the v1.0 session because they share
-the same FE surface area. Brainstorm pass required at session start —
-do NOT random-guess UX details; resolve them properly via the
-brainstorming skill. See [[project-showcase-design-recs]] in auto
-memory for pre-discussed design notes.
+**✅ Chunk 1 shipped (v0.21, 2026-05-28):** Static masonry gallery built
+by `scripts/build-showcase.mjs` into `public/showcase/` (gitignored,
+gh-pages-only). Brainstormed properly (visual companion) — design spec at
+`docs/superpowers/specs/2026-05-28-v1.0-showcase-gallery-design.md`. The
+remaining gallery-adjacent work (click-to-load) is **Chunk 2**, deferred
+post-v1 with `[PYR3-020]`.
+
+**De-bundled from `[PYR3-031]` (2026-05-28):** The original "ships
+together with the FE cleanup pass" directive was split — the gallery is a
+new static page (`/showcase`), the FE cleanup is the root viewer's own
+chunk (`[PYR3-031]`, Chunk 3). They no longer share enough surface to
+warrant one pass.
+
+**Landing reversal (2026-05-28):** The "Unversioned URL" note below
+originally meant the *root* would BE the showcase. Reversed — root `/` =
+viewer, `/showcase` = gallery. The unversioned principle still holds for
+`/showcase` (no kotlin-style `/v1.0/` dirs).
 
 **Pre-discussed design directions (locked or near-locked 2026-05-28):**
 

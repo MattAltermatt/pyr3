@@ -10,6 +10,46 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.21 — 2026-05-28 — Public `/showcase` gallery (v1.0 Chunk 1)
+
+**Outcome:** A static public showcase gallery is generated into
+`public/showcase/` by the new `scripts/build-showcase.mjs`. It presents the
+pre-rendered 4K flames (54 of 55 — one degenerate pure-black render auto-skipped,
+see `[PYR3-033]`) as a masonry grid (true aspect, no cropping) over
+the pyr3 dark theme: hero + lineage lede (flam3 → pyr3), version/hardware/date
+banner, and per-card: thumbnail (click → full 4K in a new tab) with an explicit
+**⤢ Open 4K** button on the id line, monospace id + permalink anchor, artist
+attribution (`nick=` from the source `.flam3`, "artist unknown" fallback), and a
+"Rendered at `<W>×<H>` by pyr3 GPU in `<N.N>s`" line (time only, no comparison).
+Mobile collapses to a single column below 760px. (`.flame` download +
+"from electric-sheep-fold" attribution deferred for now.)
+
+**Why:** This is the first of four chunks decomposing the v1.0 public surface.
+The renderer was finished but nothing presented its output. Design locked via a
+visual brainstorm this session.
+
+**How:** The script derives two JPEG tiers (`~q90`) per fixture from the
+gitignored 4K PNGs — full-res (`<id>.4k.jpg`, ~2–4MB) + a 600px thumbnail
+(`~150KB`) — copies each source `.flame`, reads render dims from the PNG IHDR,
+and emits a self-contained `index.html` with relative asset paths (gh-pages
+base-path agnostic). A mean-luminance gate (computed off the thumb via
+`jpeg-js`) auto-skips effectively-black renders so the gallery never shows an
+empty card. Each thumbnail carries a persistent "⤢ View 4K" badge (mobile-safe
+click affordance) and a permalink `#` before its id. Output lands in `public/showcase/`, which Vite serves at
+`/showcase/` in dev and copies to `dist/showcase/` on build — so the heavy
+images ride to gh-pages via the build artifact and **never touch `main`**
+(`public/showcase/` is gitignored), mirroring how pyr3-kotlin shipped its
+showcase. JPEG over WebP for universality; format `~q90` per the kotlin precedent.
+
+**Scope pivots locked this session (supersede earlier `[PYR3-007]` notes):**
+root `/` stays the FE viewer (front door); `/showcase` is the gallery (reverses
+the original "root = showcase" decision once the viewer's root presence was
+recalled); unversioned URL (no kotlin-style `/v1.0/` dirs); **no** gallery→viewer
+click-to-load in v1.0 (deferred with `[PYR3-020]` to the post-v1 sharing chunk);
+`[PYR3-031]` FE cleanup split out as its own chunk. Verified in Chrome
+(masonry/attribution/pill/download/permalink/mobile, console clean) + `npm run
+build` dist proof + 4510 tests green. Deploy + Vite `base` wiring is Chunk 4.
+
 ## v0.20 — 2026-05-28 — Corpus expansion 19→25 + `--preset {quick,4k}` CLI flag family
 
 **Outcome:** Parity regression gate expands from 19 → 25 fixtures with
