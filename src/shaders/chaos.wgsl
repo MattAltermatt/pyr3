@@ -72,7 +72,11 @@ struct Uniforms {
   // entries by fractional part). flam3 default is step (flam3.c:1316).
   // Branch is uniform across walkers in a workgroup (no divergence cost).
   palette_mode: u32,    // slot 12 (byte 48)
-  _pad13: u32,
+  // PYR3-029 Phase 5b: per-iter trace gate. When trace_mode==1, walker 0
+  // writes (pick, pax, pay, pvx_pre, pvy_pre, pvx, pvy, isBad, color, draw)
+  // to trace_buffer for the first 1000 post-fuse iters. Normal renders
+  // pass trace_mode=0 and the trace_buffer is a tiny stub (no perf impact).
+  trace_mode: u32,      // slot 13 (byte 52)
   _pad14: u32,
   _pad15: u32,
 };
@@ -119,13 +123,27 @@ struct IsaacState {
 @group(0) @binding(1) var<storage, read> xforms: array<Xform>;
 @group(0) @binding(2) var<storage, read_write> hist: array<atomic<u32>>;
 @group(0) @binding(3) var<storage, read> palette: array<vec4f>;
-// Phase 9d: row-major MAX_XFORMS × MAX_XFORMS multiplier matrix. Entry
-// [from * MAX_XFORMS + to] multiplies xforms[to].weight when previous xform
-// pick was `from`. Default 1.0 everywhere when no genome xaos is present.
-@group(0) @binding(4) var<storage, read> xaos_buffer: array<f32>;
+// PYR3-029 Phase 5c: xaos is now baked into `xform_distrib` host-side via
+// `packXformDistrib(genome)`. The shader no longer needs the raw xaos
+// matrix. Binding slot 4 retired; isaac_states stays at 5 for stability.
 // ISAAC state, one per walker. Initialized host-side via `packIsaacStates`
 // (src/isaac.ts → src/chaos.ts).
 @group(0) @binding(5) var<storage, read_write> isaac_states: array<IsaacState>;
+// PYR3-029 Phase 5b: per-iter trace buffer (walker 0 only, first 1000
+// post-fuse iters). Layout: 16 × f32 per iter = 64 bytes. Field order:
+//   [0]=iter (post-fuse 0-indexed)  [1]=pick (xform idx as f32)
+//   [2]=pax  [3]=pay  [4]=pvx_pre  [5]=pvy_pre
+//   [6]=pvx  [7]=pvy  [8]=isBad  [9]=color  [10..15]=reserved
+// Normal renders bind a 64-byte stub buffer (trace_mode=0 → no writes).
+@group(0) @binding(6) var<storage, read_write> trace_buffer: array<f32>;
+// PYR3-029 Phase 5c: flam3-canonical xform-pick distribution table.
+// (MAX_XFORMS_U + 1) rows × CHOOSE_XFORM_GRAIN entries × u32. Row `i` is the
+// pick distribution conditional on previous-xform == i. Row MAX_XFORMS_U is
+// the no-prior-xform fallback (used at iter 0 / after the give-up bad-iter
+// branch). Mirrors flam3.c:200-256 (`flam3_create_chaos_distrib`).
+@group(0) @binding(7) var<storage, read> xform_distrib: array<u32>;
+const CHOOSE_XFORM_GRAIN: u32 = 16384u;
+const CHOOSE_XFORM_GRAIN_M1: u32 = 16383u;
 
 const TAU: f32 = 6.28318530717958647692;
 const PI: f32 = 3.14159265358979323846;
@@ -1514,13 +1532,18 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   // host-side via `packIsaacStates()` (src/isaac.ts → src/chaos.ts). The
   // legacy PCG32 per-walker `var rng: u32` warm-up is gone.
 
-  // Walker state = (x, y, color). Initial pos uniform in [-1, 1]^2; color in [0, 1].
-  // Matches flam3 rect.c:449-450 — uses flam3_random_isaac_11 (symmetric) for
-  // x/y and flam3_random_isaac_01 for color. PYR3-029 Phase 5 RNG-transform fix.
+  // Walker state = (x, y, color). flam3 rect.c:449-451 init: x and y from
+  // flam3_random_isaac_11; sub_batch[2] = 0 (NO RNG draw — color seeded
+  // from 0 and contracts during fuse). PYR3-029 Phase 5 RNG-alignment fix:
+  // the prior pyr3 code drew rand01 for color, consuming 1 extra ISAAC u32
+  // per walker init vs flam3. That 1-draw shift propagated forever — at
+  // iter 0 pyr3's pick draw was already 1 u32 ahead of flam3's, causing
+  // the entire trajectory chain to diverge from flam3 even at bit-exact
+  // ISAAC seed alignment.
   var p = vec3f(
     rand_11(walker_id),
     rand_11(walker_id),
-    rand01(walker_id),
+    0.0,
   );
 
   // Phase 9-rotate: hoist cos/sin outside the iter loop. rotation_rad is uniform —
@@ -1542,29 +1565,21 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
 
   let total_iters = u.iters_per_walker + u.fuse;
   for (var i = 0u; i < total_iters; i = i + 1u) {
-    // Phase 9d: pick xform by cumulative `weight × xaos[prev][curr]`. When
-    // prev_xform < 0 (first iter), use_xaos is false → multiplier 1.0 → reduces
-    // to plain weighted pick. Cache the multipliers in a function-local array
-    // so the pick-scan doesn't re-read xaos_buffer (halves storage traffic).
-    let use_xaos = prev_xform >= 0;
-    let xaos_row_base = u32(max(prev_xform, 0i)) * MAX_XFORMS_U;
-    var mults: array<f32, 32>;
-    var pick_total: f32 = 0.0;
-    for (var j = 0u; j < u.num_xforms; j = j + 1u) {
-      let mult = select(1.0, xaos_buffer[xaos_row_base + j], use_xaos);
-      mults[j] = mult;
-      pick_total = pick_total + xforms[j].affine0.w * mult;
-    }
-    let r = rand01(walker_id) * pick_total;
-    var fn_idx: u32 = u.num_xforms - 1u;
-    var acc: f32 = 0.0;
-    for (var j = 0u; j < u.num_xforms; j = j + 1u) {
-      acc = acc + xforms[j].affine0.w * mults[j];
-      if (r < acc) {
-        fn_idx = j;
-        break;
-      }
-    }
+    // PYR3-029 Phase 5c: flam3-canonical xform-pick via precomputed
+    // distribution table. Mirrors flam3.c:291-293:
+    //   fn = xform_distrib[lastxf*GRAIN + (irand & GRAIN_M1)]
+    // Row index: prev_xform if >= 0, else the fallback row (MAX_XFORMS_U).
+    // The table encodes (weight × xaos[prev][curr]) cumulative distribution
+    // per row at host-build time, so the runtime pick is a single masked
+    // lookup — 1 RNG draw, 1 storage fetch, 1 multiply-add for the index.
+    // This replaces the prior weighted-scan algorithm which was statistically
+    // equivalent but used 28-bit precision of irand (vs flam3's 14-bit
+    // table-index), so given the same RNG state the two engines produced
+    // wholly different xform-pick sequences. Trajectory divergence was the
+    // dominant lever for coverage.248.02226 / .245.06687.
+    let pick_row = select(MAX_XFORMS_U, u32(prev_xform), prev_xform >= 0);
+    let pick_table_idx = pick_row * CHOOSE_XFORM_GRAIN + (isaac_irand(walker_id) & CHOOSE_XFORM_GRAIN_M1);
+    let fn_idx: u32 = xform_distrib[pick_table_idx];
     let xf = xforms[fn_idx];
     let a0 = xf.affine0;
     let a1 = xf.affine1;
@@ -1607,6 +1622,10 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       }
     }
 
+    // PYR3-029 Phase 5b: pv_pre = variation-chain output BEFORE post-affine.
+    // Matches flam3's `pyr3_pvx_pre_for_trace` (variations.c:2433-2434).
+    let pv_pre = pv;
+
     // Phase 9c — per-xform post-affine. flam3 variations.c:2412-2418 applies
     // post AFTER the variation chain, before bad-value check. has_post flag
     // (xf.post0.w) gates: 0 = identity / skip, 1 = apply.
@@ -1638,6 +1657,31 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       consec_bad = consec_bad + 1u;
     } else {
       consec_bad = 0u;
+    }
+
+    // PYR3-029 Phase 5b: per-iter trace emission. Walker 0, first 1000
+    // post-fuse iters only. Schema mirrors flam3 -rngtrace stderr format.
+    // Note: bad iters that get rolled back still emit a trace entry; the
+    // next loop turn re-tries the same `i` with a fresh xform pick. Both
+    // engines do this — bad-iter traces are valuable for diagnosing where
+    // sequences first diverge.
+    if (u.trace_mode == 1u && walker_id == 0u && i >= u.fuse) {
+      let post_fuse = i - u.fuse;
+      if (post_fuse < 1000u) {
+        let base = post_fuse * 16u;
+        trace_buffer[base + 0u] = f32(post_fuse);
+        trace_buffer[base + 1u] = f32(fn_idx);
+        trace_buffer[base + 2u] = pa.x;
+        trace_buffer[base + 3u] = pa.y;
+        trace_buffer[base + 4u] = pv_pre.x;
+        trace_buffer[base + 5u] = pv_pre.y;
+        trace_buffer[base + 6u] = pv.x;
+        trace_buffer[base + 7u] = pv.y;
+        trace_buffer[base + 8u] = select(0.0, 1.0, is_bad);
+        trace_buffer[base + 9u] = new_z;
+        // Slots 10-15 reserved (could carry color contraction inputs, RNG
+        // draw counts, etc. in follow-on iterations).
+      }
     }
 
     // Trajectory continues from pv regardless of bad/good — flam3 sets `p = q`

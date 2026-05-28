@@ -8,9 +8,11 @@ import {
   MAX_XFORMS,
   packXforms,
   packXaos,
+  packXformDistrib,
   totalWeight,
   XAOS_BYTES,
   XFORM_BYTES,
+  XFORM_DISTRIB_BYTES,
 } from './genome';
 import { type Palette, packPalette, PALETTE_BYTES } from './palette';
 import { expandGenomeForGPU } from './symmetry';
@@ -35,11 +37,16 @@ export interface DispatchOpts {
   walkers?: number;
   /** Override iters-per-walker (Phase 9-cal-B; defaults to config.itersPerWalker). */
   itersPerWalker?: number;
+  /** PYR3-029 Phase 5b — enable per-iter trace emission for walker 0, first
+   *  1000 post-fuse iters. Caller reads `pass.traceBuffer` to retrieve. */
+  traceMode?: boolean;
 }
 
 export interface ChaosPass {
   config: ChaosConfig;
   histogram: GPUBuffer;
+  /** PYR3-029 Phase 5b — per-iter trace storage, 1000 entries × 16 f32. */
+  traceBuffer: GPUBuffer;
   setPalette(palette: Palette): void;
   reset(): void;
   dispatch(genome: Genome, seed: number, opts?: DispatchOpts): void;
@@ -95,6 +102,28 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
+  // PYR3-029 Phase 5b — per-iter trace buffer for the bilateral RNG-aligned
+  // diff probe. Walker 0 writes 16 f32 per iter for the first 1000 post-fuse
+  // iters when uniforms.trace_mode == 1. Always bound (chaos_main references
+  // it unconditionally) but zero-sized writes when trace_mode == 0 — perf
+  // impact on normal renders is one extra branch per iter (negligible vs the
+  // 1500-line variation chain).
+  const TRACE_ENTRIES = 1000;
+  const TRACE_FLOATS_PER_ENTRY = 16;
+  const traceBuffer = device.createBuffer({
+    label: 'pyr3.chaos.trace',
+    size: TRACE_ENTRIES * TRACE_FLOATS_PER_ENTRY * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+  });
+
+  // PYR3-029 Phase 5c: flam3-canonical xform-pick distribution table.
+  // (MAX_XFORMS + 1) rows × 16384 entries × u32 = 528 KB worst case.
+  const xformDistribBuffer = device.createBuffer({
+    label: 'pyr3.chaos.xform_distrib',
+    size: XFORM_DISTRIB_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
   const module = device.createShaderModule({ label: 'pyr3.chaos', code: shaderCode });
   const pipeline = device.createComputePipeline({
     label: 'pyr3.chaos.pipeline',
@@ -110,14 +139,18 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       { binding: 1, resource: { buffer: xforms } },
       { binding: 2, resource: { buffer: histogram } },
       { binding: 3, resource: { buffer: paletteBuffer } },
-      { binding: 4, resource: { buffer: xaosBuffer } },
+      // Phase 5c: binding 4 (xaos_buffer) retired — xaos now baked into
+      // xform_distrib host-side.
       { binding: 5, resource: { buffer: isaacBuffer } },
+      { binding: 6, resource: { buffer: traceBuffer } },
+      { binding: 7, resource: { buffer: xformDistribBuffer } },
     ],
   });
 
   return {
     config,
     histogram,
+    traceBuffer,
 
     setPalette(p: Palette): void {
       device.queue.writeBuffer(paletteBuffer, 0, packPalette(p));
@@ -126,6 +159,11 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
     reset(): void {
       const zero = new Uint8Array(histogramBytes);
       device.queue.writeBuffer(histogram, 0, zero);
+      device.queue.writeBuffer(
+        traceBuffer,
+        0,
+        new Uint8Array(TRACE_ENTRIES * TRACE_FLOATS_PER_ENTRY * 4),
+      );
     },
 
     destroy(): void {
@@ -135,6 +173,8 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       paletteBuffer.destroy();
       xaosBuffer.destroy();
       isaacBuffer.destroy();
+      traceBuffer.destroy();
+      xformDistribBuffer.destroy();
     },
 
     dispatch(genome: Genome, seed: number, opts?: DispatchOpts): void {
@@ -143,6 +183,7 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       const g = expandGenomeForGPU(genome);
       device.queue.writeBuffer(xforms, 0, packXforms(g));
       device.queue.writeBuffer(xaosBuffer, 0, packXaos(g)); // Phase 9d
+      device.queue.writeBuffer(xformDistribBuffer, 0, packXformDistrib(g)); // Phase 5c
 
       // Phase 9-cal-B: dispatch walker count + iters-per-walker can be
       // overridden per-frame to scale with Genome.quality. Defaults match
@@ -183,6 +224,8 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // applied at this consumer boundary so the genome stays a faithful
       // echo of source XML. Slots 13-15 stay zero.
       u32[12] = (g.paletteMode ?? 'step') === 'linear' ? 1 : 0;
+      // PYR3-029 Phase 5b trace gate. Default 0 = no trace emission.
+      u32[13] = opts?.traceMode ? 1 : 0;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

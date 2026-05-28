@@ -364,3 +364,64 @@ export function packXaos(genome: Genome): ArrayBuffer {
   }
   return ab;
 }
+
+// PYR3-029 Phase 5c — flam3-canonical xform-pick distribution table.
+// flam3 (flam3.c:200-256) precomputes a 16384-entry table per "previous
+// xform" row so chain runtime is a single masked-index lookup.
+// For each row, weights are scanned cumulatively; each table slot stores
+// the xform index whose weight bucket spans that slot's interval. With
+// no xaos, all rows are identical (the unconditional weight distribution).
+// With xaos, row i applies `weights[j] * xaos[i][j]` for the cumulative
+// scan, so the table per-row encodes the Markov-chain pick distribution
+// conditional on the previous xform.
+//
+// Matches flam3 `CHOOSE_XFORM_GRAIN`. 14 bits = 16384, fits in u16. We
+// store as u32 for WGSL ergonomics (no native u16). At 8 xforms × 16384 ×
+// 4 bytes = 512 KB worst case — well under WebGPU storage limits.
+export const CHOOSE_XFORM_GRAIN = 16384;
+export const CHOOSE_XFORM_GRAIN_M1 = CHOOSE_XFORM_GRAIN - 1;
+export const XFORM_DISTRIB_BYTES = (MAX_XFORMS + 1) * CHOOSE_XFORM_GRAIN * 4;
+
+export function packXformDistrib(genome: Genome): ArrayBuffer {
+  const ab = new ArrayBuffer(XFORM_DISTRIB_BYTES);
+  const u32 = new Uint32Array(ab);
+  const numStd = genome.xforms.length; // excludes finalxform — pyr3 stores it at +1
+  // Row layout: rows 0..numStd-1 are the "previous xform = i" rows. We also
+  // populate row numStd as the no-xaos fallback (used when prev_xform == -1
+  // sentinel; matches flam3 lastxf=0 init since it indexes into row 0 of a
+  // never-xaos build, but pyr3 treats first-iter as "no xaos multiplier").
+  const buildRow = (rowIdx: number, xi: number): void => {
+    // Sum weights for this row (xaos-multiplied if xi >= 0).
+    let drSum = 0;
+    for (let i = 0; i < numStd; i++) {
+      const w = genome.xforms[i]!.weight;
+      const m = xi >= 0 ? (genome.xforms[xi]?.xaos?.[i] ?? 1.0) : 1.0;
+      const d = w * m;
+      if (!Number.isFinite(d) || d < 0) throw new Error(`xform weight must be non-negative finite: got ${d}`);
+      drSum += d;
+    }
+    if (drSum === 0) {
+      // Empty distribution; all slots = 0. flam3 errors at iteration time.
+      return;
+    }
+    const dr = drSum / CHOOSE_XFORM_GRAIN;
+    let j = 0;
+    let t = genome.xforms[0]!.weight * (xi >= 0 ? (genome.xforms[xi]?.xaos?.[0] ?? 1.0) : 1.0);
+    let r = 0;
+    const rowBase = rowIdx * CHOOSE_XFORM_GRAIN;
+    for (let i = 0; i < CHOOSE_XFORM_GRAIN; i++) {
+      while (r >= t) {
+        j++;
+        const m = xi >= 0 ? (genome.xforms[xi]?.xaos?.[j] ?? 1.0) : 1.0;
+        t += (genome.xforms[j]?.weight ?? 0) * m;
+      }
+      u32[rowBase + i] = j;
+      r += dr;
+    }
+  };
+  for (let i = 0; i < numStd; i++) buildRow(i, i);
+  // Row MAX_XFORMS-1 (or +1) is the "first iter / no prior xform" fallback row.
+  // Use the no-xaos distribution.
+  buildRow(MAX_XFORMS, -1);
+  return ab;
+}
