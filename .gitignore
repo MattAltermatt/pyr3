@@ -28,4 +28,6 @@ coverage/
 # Phase 2 parity test artifacts (regenerated each run)
 fixtures/flam3-goldens/*/diff.png
 fixtures/flam3-goldens/*/pyr3-render.png
+fixtures/flam3-goldens/*/pyr3-fe-render.png
+fixtures/flam3-goldens/*/pyr3-fe-diff.png
 .remember/verify/

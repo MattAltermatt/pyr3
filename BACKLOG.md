@@ -6,58 +6,58 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-019** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-021** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-018] parity · M · 🪨 · queued · v1.x — FE parity sweep (all 19 fixtures via chrome-devtools-mcp)
+## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
 
-v0.7's CHANGELOG describes the FE path as "lead-driven via
-`scripts/fe-parity.ts` + chrome-devtools-mcp", but only the original 3
-fixtures (`247.29388`, `248.04487`, `248.11268`) were actually
-lead-driven at that point. The 16-fixture expansion in v0.8 added
-BE-only goldens. The v1.0 ship gate requires **both FE and BE pass R
-tolerance for the chosen fixture set** — so the FE sweep across all 19
-fixtures is literal v1.0-gating work.
+**Symptom (observed 2026-05-27):** Loading the FE viewer via a share
+link encoded from any multi-genome `.flame` (e.g. `247.29388.flam3`,
+~6.6KB URL) silently fails. Console shows
+`pyr3: failed to decode ?flame= share link — Failed to fetch; falling
+back to welcome`. The viewer then renders the welcome flame instead.
 
-**Why M (not L):** Mechanism exists (`scripts/fe-parity.ts` +
-`window.__pyr3LastHandle` debug hook + chrome-devtools-mcp orchestration).
-Per-fixture run is ~30-60s wall. 19 fixtures × ~45s + diagnostic
-overhead → half-day session if everything is green; longer if Chrome-vs-
-Node Dawn divergence surfaces FE-specific bugs.
+**Hypothesis (unverified):** `streamDecompress` in `src/url-codec.ts`
+uses `new Response(stream).arrayBuffer()` — the `Failed to fetch`
+error likely originates from the Response wrapper around the
+DecompressionStream pipeline. Specific failure cause unknown; possible
+that Vite dev-server's overall payload handling truncates or the
+DecompressionStream barfs on the specific binary contents at this size.
 
-**Expected surface area for new bugs:**
-- Browser vs Node `webgpu` npm: different Dawn versions may produce
-  different trig / `pow` / mix precision on long-running iter loops.
-- Canvas vs offscreen buffer: FE composites through Chrome's compositor
-  (sRGB conversion, color-managed swap chain) while BE writes PNG
-  directly. PNG color profile + canvas color space could diverge.
-- Memory pressure: 1280×720 quality=500 fixtures push ~460M samples
-  per render; Chrome's GC + WebGPU buffer recycle may behave differently
-  than Node's.
+**Next phase:** verify hypothesis against current code first — repro
+with a smaller payload, add try/catch around each pipe stage, dump the
+base64-decoded bytes pre-decompress, narrow the failure point.
 
-**How to apply:**
-1. Boot dev server (`npm run dev`) in background — confirm port (Vite
-   may bump :5173 → :5174).
-2. For each fixture in `fixtures/flam3-goldens/`, drive Chrome via
-   chrome-devtools-mcp: load the share-link URL or drop the `.flame`,
-   wait for `window.__pyr3LastHandle.done`, read back the canvas
-   pixels via `evaluate_script` → ImageData → PNG.
-3. Run the same R-metric used by `src/parity.test.ts` (`meanAbsDiffRgba`
-   from `src/compare.ts`) against the fixture's `golden.png` and the
-   FE-captured PNG.
-4. Build an eyeball-verify HTML at `.remember/verify/pyr3-018-fe-sweep.html`
-   (3-column golden / FE-render / diff per fixture, dark theme, R pills)
-   per CLAUDE.md "Eyeball-verify HTML default" convention.
-5. Compare FE R per fixture to BE R baselines from `meta.json`. Flag
-   any fixture where FE-R is materially worse than BE-R (suggests
-   FE-specific bug); flag any where FE-R and BE-R diverge by > 1.0
-   (suggests Dawn / compositor / colorspace difference).
+Surfaced 2026-05-27 (v0.12) during PYR3-018 FE sweep — driven around by
+loading via the 📂 Open button file picker instead. Sweep proceeded to
+completion; this remains a real share-link regression to close before
+v1.0.
 
-**Acceptance:** Per-fixture FE-R within calibrated thresholds OR
-divergence categorized + filed as follow-up BACKLOG entries before
-flipping to v1.0.
+## [PYR3-019] parity · L · 🪨 · queued · v1.x — 3-way verify: FE + BE + golden side-by-side
 
-Filed 2026-05-27 (v0.11.1) as the v1.0-gating FE verification work.
+PYR3-018's sweep gates on FE-vs-flam3-C-golden (per spec §3, the v1.0
+ship gate). User-requested 2026-05-27: future verify HTMLs should
+surface all three pairings — FE-vs-golden (current), BE-vs-golden (from
+`meta.json`), and FE-vs-BE direct — so the geometry of any divergence
+is immediately visible (which engine is closer to flam3, where the two
+pyr3 engines disagree regardless of golden alignment).
+
+**Why L:** The current `pyr3-018-fe-collect.ts` produces FE-R + meta-
+stashed BE-R. Adding FE-vs-BE direct requires a per-fixture BE render
+on the fly (`npm run render` per fixture) OR reading from cached
+`fixtures/flam3-goldens/<fix>/pyr3-render.png` (committed gitignored).
+Then the diff PNG would expand to a 6-column grid (golden / FE / BE /
+FE-vs-golden-diff / BE-vs-golden-diff / FE-vs-BE-diff) or a tabbed
+layout. Affects both the collector and the HTML builder.
+
+**How to apply:** Likely extend `scripts/pyr3-018-fe-collect.ts` to
+optionally take a `--include-be-render` flag that loads pyr3-render.png
+(BE), computes the 3 pairings, and emits all three diff PNGs. Update
+`scripts/pyr3-018-build-html.mjs` to a wider grid. Generalize beyond
+PYR3-018 — this is the right shape for any post-v1.x parity verify.
+
+Filed 2026-05-27 (v0.12) as a follow-up to PYR3-018's first FE sweep.
+
 
 ## [PYR3-017] parity · M · 🪨 · investigation · v1.x — `coverage.248.02226` R=32.62 systematic-brightness divergence
 
@@ -276,6 +276,27 @@ specific arms.
 Each agent diffs peek's TS impl + WGSL impl against kotlin's Kotlin impl,
 reports per-arm verdicts (identical / bit-divergent / algorithmically
 divergent). Bundle findings into a per-arm follow-up BACKLOG.
+
+**Priority bisection candidates (from PYR3-018 v0.12 FE sweep):**
+Six fixtures show Δ FE−BE > +5 above the inherent quick-mode noise
+floor — anomalously divergent relative to the other 13. After clusters
+report verdicts, route the `flame-fixture-investigator` subagent at
+these fixtures in this order:
+
+| fixture                  | FE-R   | BE-base | Δ      |
+|--------------------------|--------|---------|--------|
+| `coverage.247.28068`     | 15.04  |  5.17   | +9.87  |
+| `coverage.248.33248`     | 12.94  |  4.92   | +8.02  |
+| `coverage.245.00381`     | 11.96  |  4.42   | +7.54  |
+| `coverage.243.04616`     | 18.70  | 11.55   | +7.15  |
+| `coverage.248.25196`     |  8.02  |  2.18   | +5.84  |
+| `244.82986`              | 15.37  |  9.90   | +5.47  |
+
+Bisection rig: each fixture's active variation arms × the local flam3
+binary at `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac` with
+`FLAM3_DUMP_VARS=<path>` for per-variation contribution diffs (see
+`docs/flam3-local-build.md`). PYR3-017 (`coverage.248.02226`) folds in
+once the divergence class for these six is known.
 
 ## [PYR3-008] gpu · S · 🪨 · queued · v1.x — Decouple chaos.ts oversample from genome
 

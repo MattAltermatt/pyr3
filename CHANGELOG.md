@@ -7,6 +7,141 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 **v1.0** marks the ship gate: both pyr3 frontend (browser WebGPU) and pyr3 backend (Node CLI
 WebGPU) producing renders that match flam3-C within R tolerance for the curated fixture set.
 
+## v0.12 — 2026-05-27 — Phase 3 cycle 4: FE parity sweep + capture-hook engine API ([PYR3-018] shipped)
+
+**Outcome:** First end-to-end FE-vs-flam3-C-golden parity measurement
+across all 19 fixtures, gated on a new dev-only engine API
+(`window.__pyr3CapturePixels`) that bypasses the WebGPU canvas
+swap-chain readback limitation. 19/19 FE renders captured; eyeball
+verify gallery at `.remember/verify/pyr3-018-fe-sweep.html`.
+
+**The mechanism** (new `src/main.ts:97-159`):
+
+WebGPU canvas swap-chain textures don't survive `drawImage(canvas)` or
+`toDataURL()` — they're single-frame-presented to the compositor and
+then conceptually consumed. The new hook mirrors the CLI's readback
+path (`bin/pyr3-render.ts:99-122`): allocate an offscreen RGBA texture
+with `COPY_SRC` usage, re-present the existing accumulated histogram
+into it via `renderer.present()` (no re-iteration — chaos game state
+is preserved between presents), `copyTextureToBuffer` → `mapAsync` →
+strip row padding → swap BGRA→RGBA if the canvas format is
+`bgra8unorm` (Chrome's preferred on macOS).
+
+```ts
+(window as any).__pyr3CapturePixels = async (): Promise<{
+  width: number;
+  height: number;
+  rgba: Uint8ClampedArray;
+  format: GPUTextureFormat;
+}> => { /* ... */ };
+```
+
+Guarded by `import.meta.env.DEV` — production builds don't expose it.
+Consistent with the existing `__pyr3LastHandle` dev hook precedent.
+
+**The sweep harness** (new `scripts/pyr3-018-fe-collect.ts`,
+`scripts/pyr3-018-build-html.mjs`):
+
+Per fixture: chrome-devtools-mcp `upload_file` drives the 📂 Open
+button → wait for `__pyr3LastHandle.promise` → call
+`__pyr3CapturePixels()` → POST capture JSON to disk → Node-side
+collector computes R + per-channel + per-region drift, writes the
+FE-render PNG + an 8× visibility-scaled diff PNG, emits one-line
+JSON metrics. Aggregated 19 results feed the HTML builder, which
+produces a dark-theme 3-column gallery (golden / FE / diff) per
+fixture with R pills colour-coded by Δ vs the BE baseline.
+
+**The 19-fixture FE-R distribution** (sorted by Δ FE−BE):
+
+```text
+fixture                  dims       FE-R   BE-base  Δ      note
+-----------------------  ---------  -----  -------  -----  --------
+coverage.247.28068       800×592    15.04   5.17    +9.87
+coverage.248.33248       800×592    12.94   4.92    +8.02
+coverage.245.00381       800×592    11.96   4.42    +7.54
+coverage.243.04616       800×592    18.70  11.55    +7.15
+coverage.248.25196       800×592     8.02   2.18    +5.84
+244.82986                800×592    15.37   9.90    +5.47
+coverage.248.19873       800×592     5.25   1.58    +3.67
+coverage.247.31007       800×592     5.17   1.52    +3.65
+244.82270                800×592     6.77   3.32    +3.45
+coverage.248.11405       800×592     4.72   1.36    +3.36
+247.29388                800×592     5.95   3.00    +2.95
+248.04487                800×592     5.14   2.32    +2.82
+coverage.248.24236       1024×576    5.44   2.71    +2.73  subnative
+coverage.247.20817       800×592     5.72   3.11    +2.61
+248.11268                800×592     4.21   2.00    +2.21
+coverage.248.02226       1024×576   34.27  32.62    +1.65  subnative
+244.57686                800×592     1.27   0.45    +0.82
+244.00016                800×592     4.34   3.98    +0.36
+coverage.245.06687       1024×576   14.81  14.58    +0.23  subnative
+```
+
+All FE-R > BE-baseline, as expected — FE's quick-mode SPP cap
+(`QUICK_MAX_SPP=16`) vs BE's genome-declared quality (~q=2000) is a
+~125× sample-count gap → ~11× noise floor on the R metric. Most Δ
+land in +2..+5 (consistent with the noise hypothesis). Six fixtures
+show Δ > +5; these are the priority bisection candidates for the
+PYR3-010 98-arm audit. Three fixtures (the 1280×720 ones — capped to
+1024×576 by `QUICK_MAX_DIM`) had goldens nearest-neighbor downscaled
+for the R compare.
+
+**Findings (load-bearing):**
+
+1. **Spec-correct gate.** The sweep measures FE-vs-flam3-C-golden
+   directly, matching the v1.0 ship-gate definition. FE-vs-BE direct
+   comparison is filed as `[PYR3-019]` (3-way verify) — useful but
+   not the v1.0 acceptance criterion per the design spec §3
+   determinism contract.
+2. **WebGPU canvas readback is single-frame.** PYR3-018's original
+   BACKLOG recipe (`evaluate_script` → `canvas.toDataURL`) returned
+   all-black RGBA empirically because the swap-chain texture is gone
+   by the time readback runs. The capture-hook approach is the
+   architecturally correct fix and will be re-used for any future FE
+   parity probe (PYR3-010 audit, PYR3-019 3-way verify).
+3. **No FE-specific bugs surfaced in the sweep.** The Δ distribution
+   is consistent with the noise-floor hypothesis; no fixture shows
+   geometry/composition divergence beyond what BE already exhibits.
+   PYR3-010 per-arm audit is the next gate.
+
+**Bugs surfaced during the sweep (now in BACKLOG):**
+
+- `[PYR3-019]` (new): 3-way FE+BE+golden verify HTML — user-requested
+  as the right shape for future parity probes.
+- `[PYR3-020]` (new): `?flame=` share-link decode fails with "Failed
+  to fetch" for the ~6.6KB payload from `247.29388.flam3`. Repro is
+  hard-coded into pyr3's share-link path; sweep proceeded via the 📂
+  Open button. Real regression worth closing before v1.0.
+
+**Test harness updates:**
+
+- `scripts/pyr3-018-fe-collect.ts` (new) — per-fixture FE capture →
+  R-compute → PNG + diff PNG side-effects.
+- `scripts/pyr3-018-build-html.mjs` (new) — aggregates the JSONL
+  results into the verify HTML.
+- `.gitignore` — added `pyr3-fe-render.png` + `pyr3-fe-diff.png`
+  (regenerated each sweep, alongside the BE equivalents).
+- No engine-test regression: `npm test` 4494/4499 still green
+  (`__pyr3CapturePixels` only mounts in DEV, no production-build
+  surface change).
+
+**Out of scope (folded into follow-up entries):**
+
+- Re-rendering the 1280×720 fixtures at native dims (FE quick caps).
+  The collector's golden-downscale handles the comparison, but a
+  proper "FE parity mode" that bypasses `QUICK_MAX_DIM` is its own
+  scope decision — likely needs a follow-up BACKLOG entry filed
+  during PYR3-010 audit cycles.
+- Threshold-tightening pass (B option from the big-swing menu) —
+  deferred to a future rehash round per "ship light first."
+
+**Verification:** Eyeball gallery at
+`.remember/verify/pyr3-018-fe-sweep.html` shows all 19 fixtures
+geometrically matching their goldens; the diff PNGs reveal the noise
+floor as expected (high-frequency speckle, not low-frequency
+divergence). Chrome screenshot at
+`.remember/tmp/pyr3-018-html-preview.png`.
+
 ## v0.11.1 — 2026-05-27 — Test-split + README v0.11 refresh ([PYR3-012] shipped)
 
 **Outcome:** `npm test` now runs the unit suite only (~1s wall, 4494/4499

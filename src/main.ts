@@ -94,6 +94,76 @@ async function main(): Promise<void> {
 
   let runHandle: RunHandle | null = null;
 
+  // PYR3-018 FE parity sweep: pixel-readback hook (dev-only).
+  // The canvas swap-chain texture is single-frame-presented and not
+  // readable via drawImage / toDataURL post-render. This hook mirrors
+  // the CLI readback (bin/pyr3-render.ts §5): allocate an offscreen
+  // texture with COPY_SRC, re-present the existing accumulated
+  // histogram into it (renderer.present is cheap; iteration state is
+  // preserved), copyTextureToBuffer → mapAsync → return RGBA bytes.
+  let lastRenderInfo: { genome: Genome; totalSamples: number } | null = null;
+  if (import.meta.env.DEV) {
+    (window as unknown as {
+      __pyr3CapturePixels?: () => Promise<{ width: number; height: number; rgba: Uint8ClampedArray; format: GPUTextureFormat }>;
+    }).__pyr3CapturePixels = async () => {
+      if (!lastRenderInfo) {
+        throw new Error('__pyr3CapturePixels: no render to capture (load a flame first)');
+      }
+      const { genome, totalSamples } = lastRenderInfo;
+      const W = renderer.width;
+      const H = renderer.height;
+      const tex = device.createTexture({
+        label: 'pyr3.capture.output',
+        size: { width: W, height: H },
+        format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      renderer.present({ genome, outputView: tex.createView(), totalSamples, forceDeOff: false });
+      const bytesPerPixel = 4;
+      const unpaddedBytesPerRow = W * bytesPerPixel;
+      const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
+      const readBuf = device.createBuffer({
+        label: 'pyr3.capture.readback',
+        size: bytesPerRow * H,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = device.createCommandEncoder({ label: 'pyr3.capture.encoder' });
+      encoder.copyTextureToBuffer(
+        { texture: tex },
+        { buffer: readBuf, bytesPerRow, rowsPerImage: H },
+        { width: W, height: H },
+      );
+      device.queue.submit([encoder.finish()]);
+      await readBuf.mapAsync(GPUMapMode.READ);
+      const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
+      readBuf.unmap();
+      tex.destroy();
+      readBuf.destroy();
+      // Strip row padding to tight RGBA, swap channels if needed (Chrome's
+      // preferred canvas format is bgra8unorm on macOS — our pipeline target
+      // matches, but parity comparison + PNG encoding expects RGBA).
+      const tight = new Uint8ClampedArray(W * H * 4);
+      const swapBR = format === 'bgra8unorm';
+      for (let y = 0; y < H; y++) {
+        const srcOff = y * bytesPerRow;
+        const dstOff = y * unpaddedBytesPerRow;
+        if (swapBR) {
+          for (let x = 0; x < W; x++) {
+            const s = srcOff + x * 4;
+            const d = dstOff + x * 4;
+            tight[d] = padded[s + 2]!;   // R ← B
+            tight[d + 1] = padded[s + 1]!; // G
+            tight[d + 2] = padded[s]!;     // B ← R
+            tight[d + 3] = padded[s + 3]!; // A
+          }
+        } else {
+          tight.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
+        }
+      }
+      return { width: W, height: H, rgba: tight, format };
+    };
+  }
+
   const renderInMode = async (mode: RenderMode): Promise<void> => {
     // Cancel any in-flight orchestrator before starting a new one. The
     // promise still settles cleanly (either 'cancelled' or 'completed')
@@ -185,6 +255,10 @@ async function main(): Promise<void> {
     if (import.meta.env.DEV) {
       (window as unknown as { __pyr3LastHandle?: RunHandle }).__pyr3LastHandle = handle;
     }
+    // PYR3-018 capture hook reads from the post-render histogram via
+    // renderer.present(). Stash genome + sample count so the hook can
+    // re-present into an offscreen texture without re-iterating.
+    lastRenderInfo = { genome: renderGenome, totalSamples: targetSamples };
 
     try {
       await handle.promise;
