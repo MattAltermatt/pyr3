@@ -35,6 +35,7 @@ async function main(): Promise<void> {
   let forceDeOff = false;
   let quick = false;
   let maxDim: number | null = null;
+  let sampleInflate = 1;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -49,6 +50,17 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       maxDim = Math.max(1, Math.floor(n));
+    } else if (a.startsWith('--sample-inflate=')) {
+      // PYR3-029 probe: multiplies the `totalSamples` passed to
+      // deriveCalibration, shrinking k2 by the same factor. Use to
+      // compensate when pyr3 produces more in-bounds splats per nominal
+      // iter than flam3.
+      const n = Number(a.slice('--sample-inflate='.length));
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error('--sample-inflate=N requires a positive number');
+        process.exit(1);
+      }
+      sampleInflate = n;
     } else {
       args.push(a);
     }
@@ -151,7 +163,41 @@ async function main(): Promise<void> {
 
   // 4. Render.
   const t0 = Date.now();
-  renderer.render({ genome, outputView: texture.createView(), forceDeOff });
+  if (sampleInflate === 1) {
+    renderer.render({ genome, outputView: texture.createView(), forceDeOff });
+  } else {
+    // PYR3-029 probe path: reset + iterate (using the same walker-sizing
+    // formula as renderer.render) + present with INFLATED totalSamples so
+    // deriveCalibration shrinks k2 proportionally. Mirrors renderer.ts
+    // lines 162-186.
+    const TARGET_WALKERS = 1024;
+    const MIN_ITERS_PER_WALKER = 4096;
+    const MAX_ITERS_PER_WALKER = 1048576;
+    const MAX_WALKERS = 65535 * 64;
+    const DEFAULT_SPP = 16;
+    const seed = (Math.random() * 0xffffffff) >>> 0;
+    const targetSpp = genome.quality ?? DEFAULT_SPP;
+    const targetSamples = Math.round(targetSpp * width * height);
+    let dispatchWalkers = TARGET_WALKERS;
+    let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
+    if (dispatchIters < MIN_ITERS_PER_WALKER) {
+      dispatchIters = MIN_ITERS_PER_WALKER;
+      dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
+    } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
+      dispatchIters = MAX_ITERS_PER_WALKER;
+      dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
+    }
+    const actualSamples = dispatchWalkers * dispatchIters;
+    console.log(`[pyr3-render] probe: sample-inflate=${sampleInflate} → totalSamples ${actualSamples} → ${actualSamples * sampleInflate}`);
+    renderer.reset(genome);
+    renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters });
+    renderer.present({
+      genome,
+      outputView: texture.createView(),
+      totalSamples: actualSamples * sampleInflate,
+      forceDeOff,
+    });
+  }
 
   // 5. Copy texture → buffer. Bytes-per-row must be 256-aligned.
   const bytesPerPixel = 4;

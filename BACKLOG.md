@@ -51,17 +51,51 @@ Full data: `.remember/tmp/pyr3-029-ratio-table.md` (gitignored).
 
 - ❌ **Walker-init / bad-iter rollback / finalxform RNG / color-contraction**
   (the four sub-hypotheses below) are all deprioritized — they predict
-  chaos-game chromatic drift that the diagnostic does NOT see.
-- 🎯 **New primary suspect: sample-budget mismatch.** Pyr3 generates ~27%
-  more samples than flam3 at qs=1 on 02226 (pyr3 sum_count = 78.66B vs
-  flam3 62.07B). The chaos-stage chromatic distribution is near-identical,
-  but post-chaos density / tonemap / visualize operate on different
-  per-pixel densities, which could produce the R-magnitude divergence
-  without touching chromatic ratios.
-- 🎯 **Phase 2 (next):** measure `R(pyr3, flam3)` correlation against
-  `|pyr3.sum_count - flam3.sum_count| / flam3.sum_count` per fixture.
-  Strong correlation → root cause is sample budgeting. Weak → keep
-  digging in DE / tonemap / visualize.
+  chaos-game chromatic drift that the diagnostic does NOT see. Phase 1
+  also confirmed flam3's `i -= 4 + i += 4` nets `i` unchanged on bad iter,
+  matching pyr3's `i -= 1 + i += 1` — the BACKLOG sub-hyp #2 comment was a
+  misread of flam3.c:287/320.
+- ⚠️ **Sample-budget mismatch is a moderate contributor (Pearson 0.488)
+  but not the dominant lever.** pyr3 has 27% more in-bounds splats than
+  flam3 on 02226 (because 1024 parallel walkers vs flam3's single chain
+  produces tighter attractor coverage). Counter-examples — 247.20817 has
+  sampleRatio +34% but R=3.11; 243.04616 has sampleRatio +3% but R=11.55
+  — so sample-budget alone can't explain the corpus.
+- ❌ **Calibration k2 compensation does NOT fix R.** Sweeping
+  `--sample-inflate=0.789..3.0` on 02226 moves R only ~1.3 across the
+  4× range; deep in the low-density regime (count × k2 ≈ 0.01) the
+  log curve is approximately linear, so k2 changes are not the lever.
+- ✅ **Kotlin golden is reasonably faithful to flam3-C.** 3-way R cross-
+  check (`pyr3<>flam3`, `golden<>flam3`, `golden<>pyr3`) shows
+  `golden<>pyr3 ≈ pyr3<>flam3` always — the kotlin golden is not
+  corrupting `baselineR`; pyr3's divergence from flam3-C is real engine
+  drift faithfully captured by `baselineR`.
+
+### Phase 3 next directions (filed 2026-05-28)
+
+The dominant lever for 02226's R=30 is **not** in the chaos-game histogram,
+**not** in the sample budget calibration, and **not** in the kotlin reference.
+Remaining suspects (priority order):
+
+1. **🎯 Per-pixel chromatic drift amplified by tonemap k1.** Aggregate
+   channel sums match within 3% across the corpus, but per-pixel color
+   ratios may differ much more, and the visualize pass's `k1 = brightness
+   × PREFILTER × 268/256` (= 5873 for 02226) magnifies small input drifts
+   into visible output. Top-3 high-R fixtures all have aggressive
+   brightness/gamma combos (02226: br=22 ga=3.2, 245.06687: br=30 ga=3.8,
+   243.04616: br=10 ga=5.0). Probe: per-pixel chromatic-ratio dump.
+2. **🎯 Visualize-pass tonemap math precision.** `calc_alpha` /
+   `calc_newrgb` are line-for-line ports but run on GPU f32 vs flam3's
+   CPU f64. At brightness=22 small precision errors compound. Probe:
+   feed both pipelines the same bucket and diff.
+3. **🎯 Per-walker spatial dispersion.** pyr3's 1024 parallel walkers vs
+   flam3's single chain may converge to subtly different attractor
+   density profiles. Even with matched chromatic totals, per-pixel hits
+   could differ. Probe: per-pixel count-channel histogram diff.
+
+Full Phase 1 + 2 data: `.remember/tmp/pyr3-029-ratio-table.md` (gitignored).
+Diagnostic tools: `bin/pyr3-hist.ts`, `scripts/pyr3-029-bucket-diff.mjs`,
+`bin/pyr3-render.ts --sample-inflate=N` (kept as a permanent diagnostic flag).
 
 ### Original Phase-C smoking-gun evidence (now partly superseded)
 

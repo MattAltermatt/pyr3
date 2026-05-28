@@ -168,6 +168,7 @@ async function main() {
     console.error(
       `R/G/B ratios ${ratioR.toFixed(3)}/${ratioG.toFixed(3)}/${ratioB.toFixed(3)}  maxDrift=${(maxDrift * 100).toFixed(1)}%  (${elapsed}s)`,
     );
+    const sampleRatio = Number(pyr3.sum_count) / Number(flam3.sum_count);
     rows.push({
       id,
       status: 'ok',
@@ -176,6 +177,7 @@ async function main() {
       ratioG,
       ratioB,
       maxDrift,
+      sampleRatio,
       pyr3Sum: pyr3.sum_count,
       flam3Sum: flam3.sum_count,
     });
@@ -193,19 +195,23 @@ async function main() {
   lines.push('total sample budget. 1.000 = identical distribution; deviation = chaos-game drift.');
   lines.push('');
   lines.push('```text');
-  lines.push('fixture                       baselineR   ratio_r   ratio_g   ratio_b   maxDrift%');
-  lines.push('----------------------------  ---------   -------   -------   -------   ---------');
+  lines.push('fixture                       baselineR   ratio_r   ratio_g   ratio_b   maxDrift%   sampleRatio   pyr3/flam3 sum_count');
+  lines.push('----------------------------  ---------   -------   -------   -------   ---------   -----------   --------------------');
   for (const r of rows) {
     if (r.status !== 'ok') {
       lines.push(`${r.id.padEnd(28)}  ${String(r.baselineR ?? '—').padEnd(9)}   FAILED`);
       continue;
     }
+    const pyr3GB = (Number(r.pyr3Sum) / 1e9).toFixed(1) + 'B';
+    const flam3GB = (Number(r.flam3Sum) / 1e9).toFixed(1) + 'B';
     lines.push(
       `${r.id.padEnd(28)}  ${String(r.baselineR ?? '—').padEnd(9)}   ` +
         `${r.ratioR.toFixed(3).padStart(7)}   ` +
         `${r.ratioG.toFixed(3).padStart(7)}   ` +
         `${r.ratioB.toFixed(3).padStart(7)}   ` +
-        `${(r.maxDrift * 100).toFixed(1).padStart(8)}%`,
+        `${(r.maxDrift * 100).toFixed(1).padStart(8)}%   ` +
+        `${r.sampleRatio.toFixed(3).padStart(11)}   ` +
+        `${pyr3GB}/${flam3GB}`.padStart(20),
     );
   }
   lines.push('```');
@@ -224,12 +230,24 @@ async function main() {
       dy += (ys[i] - my) ** 2;
     }
     const pearson = num / Math.sqrt(dx * dy);
-    lines.push(`**Pearson correlation (maxDrift% vs baselineR, n=${okRows.length}):** ${pearson.toFixed(3)}`);
+    lines.push(`**Pearson(maxDrift% vs baselineR, n=${okRows.length}):** ${pearson.toFixed(3)}  (chaos-game chromatic-distribution drift hypothesis)`);
+
+    // Second correlation: |sampleRatio - 1| vs baselineR. Tests the
+    // sample-budget-mismatch hypothesis.
+    const xs2 = okRows.map((r) => Math.abs(r.sampleRatio - 1) * 100);
+    const mx2 = mean(xs2);
+    let num2 = 0, dx2 = 0;
+    for (let i = 0; i < xs2.length; i++) {
+      num2 += (xs2[i] - mx2) * (ys[i] - my);
+      dx2 += (xs2[i] - mx2) ** 2;
+    }
+    const pearson2 = num2 / Math.sqrt(dx2 * dy);
+    lines.push(`**Pearson(|sampleRatio-1|% vs baselineR, n=${okRows.length}):** ${pearson2.toFixed(3)}  (sample-budget-mismatch hypothesis)`);
     lines.push('');
     lines.push('Interpretation:');
-    lines.push('- `> 0.7` → strong positive correlation: chaos-game ratio drift IS the dominant R driver. Sub-hypothesis bisection unlocked.');
-    lines.push('- `0.3–0.7` → moderate: chaos-game contributes but other factors matter.');
-    lines.push('- `< 0.3` → weak: divergence likely elsewhere; pivot investigation.');
+    lines.push('- `> 0.7` → strong positive correlation → the named hypothesis IS the dominant R driver.');
+    lines.push('- `0.3–0.7` → moderate contributor.');
+    lines.push('- `< 0.3` → weak/uncorrelated → not the driver; pivot.');
   }
   writeFileSync(OUT, lines.join('\n') + '\n');
   console.error(`[pyr3-029] wrote ${OUT}`);
