@@ -31,13 +31,34 @@ Object.assign(globalThis, globals);
 
 async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
-  const flags = new Set(rawArgs.filter((a) => a.startsWith('--')));
-  const args = rawArgs.filter((a) => !a.startsWith('--'));
+  const args: string[] = [];
+  let forceDeOff = false;
+  let quick = false;
+  let maxDim: number | null = null;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const a = rawArgs[i]!;
+    if (a === '--no-de') {
+      forceDeOff = true;
+    } else if (a === '--quick') {
+      quick = true;
+    } else if (a === '--max-dim') {
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 1) {
+        console.error('--max-dim requires a positive integer argument');
+        process.exit(1);
+      }
+      maxDim = Math.max(1, Math.floor(n));
+    } else {
+      args.push(a);
+    }
+  }
   if (args.length < 1) {
-    console.error('usage: npm run render [--no-de] <input.flam3 | input.pyr3.json> [output.png]');
+    console.error(
+      'usage: npm run render [--no-de] [--quick] [--max-dim N] <input.flam3 | input.pyr3.json> [output.png]',
+    );
     process.exit(1);
   }
-  const forceDeOff = flags.has('--no-de');
   const inputPath = resolve(args[0]!);
   const outPath = args[1]
     ? resolve(args[1])
@@ -56,6 +77,41 @@ async function main(): Promise<void> {
   } else {
     genome = genomeFromJson(JSON.parse(text));
   }
+
+  // Quick-mode / size-cap pre-processing. Mirrors src/main.ts rerender()
+  // (QUICK_MAX_DIM / QUICK_MAX_SPP / QUICK_OVERSAMPLE) so BE output matches
+  // the FE viewer's quick-mode pixel-for-pixel — the load-bearing invariant
+  // for the FE↔BE parity gate (PYR3-026). `--max-dim N` caps long-edge
+  // without touching quality/oversample; `--quick` applies the full FE
+  // preset (1024 cap + 16 SPP cap + oversample=1).
+  const QUICK_FE_MAX_DIM = 1024;
+  const QUICK_FE_MAX_SPP = 16;
+  const QUICK_FE_OVERSAMPLE = 1;
+  const longEdgeCap = maxDim ?? (quick ? QUICK_FE_MAX_DIM : null);
+  if (longEdgeCap !== null) {
+    const declW = genome.size?.width ?? 1024;
+    const declH = genome.size?.height ?? 1024;
+    const maxDecl = Math.max(declW, declH);
+    if (maxDecl > longEdgeCap) {
+      const sizeScale = longEdgeCap / maxDecl;
+      genome = {
+        ...genome,
+        size: {
+          width: Math.max(1, Math.round(declW * sizeScale)),
+          height: Math.max(1, Math.round(declH * sizeScale)),
+        },
+        scale: genome.scale * sizeScale,
+      };
+    }
+  }
+  if (quick) {
+    genome = {
+      ...genome,
+      oversample: QUICK_FE_OVERSAMPLE,
+      quality: Math.min(genome.quality ?? QUICK_FE_MAX_SPP, QUICK_FE_MAX_SPP),
+    };
+  }
+
   const width = genome.size?.width ?? 1024;
   const height = genome.size?.height ?? 1024;
   const oversample = Math.max(1, Math.floor(genome.oversample ?? 1));

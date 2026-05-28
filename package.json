@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:parity": "VITEST_INCLUDE_PARITY=1 vitest run src/parity.test.ts",
-    "test:all": "VITEST_INCLUDE_PARITY=1 vitest run",
+    "test:parity-fe-be": "VITEST_INCLUDE_PARITY_FE_BE=1 vitest run src/parity-fe-be.test.ts",
+    "test:all": "VITEST_INCLUDE_PARITY=1 VITEST_INCLUDE_PARITY_FE_BE=1 vitest run",
     "typecheck": "tsc --noEmit",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts"
@@ -22,6 +23,7 @@
     "@types/pngjs": "^6.0.5",
     "@webgpu/types": "^0.1.50",
     "happy-dom": "^20.9.0",
+    "playwright": "^1.60.0",
     "pngjs": "^7.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",

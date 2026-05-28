@@ -8,6 +8,72 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 4K showcase references within R tolerance for the curated fixture set; pyr3 frontend
 (browser WebGPU) renders matching the backend at quick-mode dims within R tolerance.
 
+## v0.15 — 2026-05-27 — PYR3-026 FE↔BE quick-mode parity gate
+
+**Outcome:** First of two v1.0 ship gates closed. Browser viewer (FE) and
+Node CLI (BE) now have a regression-gated R-compare at quick-mode dims
+(1024 long-edge, quality=16 SPP, oversample=1). Both engines render the
+same 19 parity fixtures; the gate asserts `R(FE, BE) ≤ feBeThresholdR`
+per fixture. Trigger: `npm run test:parity-fe-be` (toggled via
+`VITEST_INCLUDE_PARITY_FE_BE=1`).
+
+**Mechanism:**
+
+1. **BE side:** new `--quick` and `--max-dim N` flags on
+   `bin/pyr3-render.ts` mirror `src/main.ts` `rerender()`'s quick-mode
+   math (size-cap + quality clamp + oversample=1 + scale rescale). Lets
+   the CLI produce pixel-matched outputs vs FE.
+2. **FE side:** new `window.__pyr3LoadFlame(text)` dev hook (mirrors
+   the existing `__pyr3CapturePixels` hook in `src/main.ts`). Serializes
+   loads behind an internal queue so the test rig's
+   `__pyr3LoadFlame(A); __pyr3LoadFlame(B)` sequence doesn't hit
+   `loadFromFile`'s in-flight rejection.
+3. **Test rig:** `src/parity-fe-be.test.ts` clones `src/parity.test.ts`
+   shape — discovers fixtures by directory scan, per-fixture spawns BE
+   via `spawnSync`, drives FE via Playwright (Node API, not
+   `@playwright/test`) + headless Chromium WebGPU (swiftshader software
+   adapter, deterministic, ~3-5× slower than hardware but stable in
+   CI/local). Writes per-fixture FE+BE PNGs + a diff PNG for the
+   eyeball gallery.
+4. **Calibration:** 2-run baseline measurement → variance < 1% across
+   FE↔BE → thresholds set as `max(R) × 1.5 + 2.0` (generous; future
+   tightening filed as follow-up). Per-fixture `feBeBaselineR` +
+   `feBeThresholdR` stored in `meta.json`.
+
+**R distribution (post-calibration, 19 fixtures):**
+
+```text
+best:   244.57686 + coverage.245.06687     R ≈ 0.46    thr 2.7
+median:                                    R ≈ 6
+worst:  coverage.247.28068                 R ≈ 19.40   thr 31.1
+        coverage.243.04616                 R ≈ 19.28   thr 30.9
+        coverage.248.33248                 R ≈ 15.78   thr 25.7
+```
+
+The high-R outliers (coverage.243.04616, coverage.247.28068, coverage.
+248.33248) overlap with PYR3-018's FE-vs-flam3 sweep highs — these are
+FE-side engine drift that exists in both FE↔flam3 and FE↔BE
+comparisons. **Folds into the post-v1.0 deterministic-seed FE↔BE
+calibration follow-up** (filed in BACKLOG).
+
+**Wall-clock:** ~10 min for the full 19-fixture suite under swiftshader.
+Local-only gate (no CI), runnable before merging any engine-touching PR.
+
+**Files:**
+
+- `bin/pyr3-render.ts` — `--quick`, `--max-dim N` flags
+- `src/main.ts` — `__pyr3LoadFlame` dev hook, queue-serialized
+- `src/parity-fe-be.test.ts` — new Vitest gate (19 tests, Playwright)
+- `src/compare.ts` — R metric reused unchanged
+- `scripts/pyr3-026-calibrate.mjs` — multi-run R aggregator →
+  per-fixture `feBeThresholdR` in `meta.json`
+- `scripts/pyr3-026-build-html.mjs` — eyeball gallery at
+  `.remember/verify/pyr3-026-fe-be.html`
+- `vitest.config.ts` — `VITEST_INCLUDE_PARITY_FE_BE` toggle
+- `package.json` — `test:parity-fe-be` script + Playwright dep
+- `fixtures/flam3-goldens/*/meta.json` — `feBeBaselineR` +
+  `feBeThresholdR` per fixture
+
 ## v0.14 — 2026-05-27 — PYR3-023 probe + FE 4K removal pivot (BE-only 4K)
 
 **Outcome:** Probed pyr3's `🎯 Render 4K` button against 5 kotlin v1.1

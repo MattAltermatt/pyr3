@@ -2,8 +2,10 @@
   "id": "coverage.245.06687",
   "width": 1280,
   "height": 720,
-  "baselineR": 14.5820,
+  "baselineR": 14.582,
   "thresholdR": 15.58,
   "source": "pyr3-kotlin/parity/goldens/coverage.245.06687/flame.png",
-  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3)."
+  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3).",
+  "feBeBaselineR": 0.4738,
+  "feBeThresholdR": 2.71
 }

@@ -5,5 +5,7 @@
   "baselineR": 2.7065,
   "thresholdR": 3.71,
   "source": "pyr3-kotlin/parity/goldens/coverage.248.24236/flame.png",
-  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3)."
+  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3).",
+  "feBeBaselineR": 5.5435,
+  "feBeThresholdR": 10.32
 }

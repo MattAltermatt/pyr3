@@ -6,8 +6,33 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-028** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-029** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-028] parity · S · 🪶 · queued · post-v1 — Deterministic-seed FE↔BE calibration
+
+**Frame (filed 2026-05-27, post v0.15 PYR3-026 ship):** The FE↔BE parity
+gate shipped in v0.15 measures R(FE, BE) with both engines using
+`Math.random()` seeds (`renderer.ts:164` defaults; `main.ts:84` browser
+side; `bin/pyr3-render.ts` CLI side). Empirically observed run-to-run
+variance was tiny (< 1%), so R is dominated by systematic engine drift
+not RNG noise — but the calibration leaves a small unmeasured noise
+margin folded into `feBeThresholdR`'s 50%+2.0 headroom. A cleaner
+mid-term move: thread a deterministic seed through both engines (e.g.,
+hash of fixture-id) so R(FE, BE) is purely-engine-drift, then re-
+calibrate with much tighter thresholds (probably mul=1.1 + add=1.0).
+
+**Why post-v1.0:** The current thresholds work — gate passes, drift
+levels are documented, high-R outliers are already on PYR3-017/021's
+investigation list. Tighter thresholds would catch smaller regressions
+but the v0.15 gate already catches anything visible.
+
+**Next phase:** Add `--seed N` flag to `bin/pyr3-render.ts`; add a
+`__pyr3CapturePixels({ seed })` hook variant OR a `__pyr3SetSeed(N)`
+dev hook so the test rig can pin both sides to the same seed. Re-run
+calibration; tighten thresholds.
+
+
 
 ## [PYR3-027] perf · M · 🪶 · investigation · post-v1 — Why is FE 13× slower than BE for the same render?
 
@@ -67,32 +92,6 @@ doesn't feel the gap; investigation can wait.
   apples-to-apples reference)
 
 Filed 2026-05-27 post-PYR3-023 probe + FE-4K-removal pivot.
-
-## [PYR3-026] feat · S · 🪨 · queued · v1.x — FE↔BE parity invariant at quick-mode dims
-
-**Frame:** Per user directive 2026-05-27 (post-PYR3-023 probe), FE is the
-interactive viewer at quick-mode dims (1024 long-edge); BE is the 4K
-renderer. **For v1.0, FE and BE must produce ≈ identical output for the
-same fixture at FE's supported dims** — the "similar but not the same"
-contract per CLAUDE.md determinism section, within R-tolerance.
-
-Existing infrastructure:
-- 19-fixture parity rig (`src/parity.test.ts`) — BE vs flam3-C golden,
-  per-fixture R thresholds. Does NOT test FE.
-- PYR3-018 FE sweep (v0.12) — one-shot chrome-devtools-mcp orchestration,
-  not a CI gate.
-- `window.__pyr3CapturePixels` dev hook (`src/main.ts:97-165`) — the
-  readback path.
-
-**Next phase:** automate a FE↔BE compare for the 19 parity fixtures at
-quick-mode dims. Per-fixture: render BE via existing rig, render FE via
-chrome-devtools-mcp orchestration (or headless Puppeteer/Playwright with
-WebGPU enabled), R-compare the two outputs. Threshold = some tolerance
-above the BE/BE deterministic noise floor (the engine is non-bit-stable
-across FE/BE per spec §3 determinism contract). Gate is "do they look
-visually equivalent within R tolerance?", not bit-exact.
-
-Filed 2026-05-27 post-PYR3-023 probe pivot.
 
 ## [PYR3-025] gpu · M · 🪨 · investigation · post-v1 — Chrome WebGPU 4K renderer-tab-kill class (insurance investigation)
 

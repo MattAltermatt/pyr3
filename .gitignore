@@ -30,6 +30,10 @@ fixtures/flam3-goldens/*/diff.png
 fixtures/flam3-goldens/*/pyr3-render.png
 fixtures/flam3-goldens/*/pyr3-fe-render.png
 fixtures/flam3-goldens/*/pyr3-fe-diff.png
+# PYR3-026 FE↔BE parity rig artifacts (regenerated each run)
+fixtures/flam3-goldens/*/pyr3-fe-be-be.png
+fixtures/flam3-goldens/*/pyr3-fe-be-fe.png
+fixtures/flam3-goldens/*/fe-be-diff.png
 .remember/verify/
 
 # PYR3-023 probe artifacts (regenerated; large derived PNGs + verbatim ESF copies)

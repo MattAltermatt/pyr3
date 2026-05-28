@@ -301,6 +301,34 @@ async function main(): Promise<void> {
     }
   };
 
+  // PYR3-026 FE↔BE parity rig: programmatic flame-load hook (dev-only).
+  // Mirrors the file-picker path (loadFromFile → applyLoadResult →
+  // rerender) but takes raw text so Playwright can inject each fixture
+  // without touching the OS file dialog. Serialized via an internal
+  // queue so the test rig's `__pyr3LoadFlame(A); __pyr3LoadFlame(B)`
+  // sequence does NOT hit loadFromFile's in-flight rejection — and
+  // waits for the initial welcome-flame load to settle before its
+  // first call. Awaiting resolves once the render completes (rerender
+  // awaits the orchestrator promise).
+  let loadHookQueue: Promise<void> = Promise.resolve();
+  if (import.meta.env.DEV) {
+    (window as unknown as {
+      __pyr3LoadFlame?: (text: string, label?: string) => Promise<void>;
+    }).__pyr3LoadFlame = (text: string, label = 'test.flame') => {
+      const next = loadHookQueue.then(async () => {
+        // If a non-hook caller (welcome flame, file picker) is still
+        // in flight, wait it out — loadFromFile would otherwise reject.
+        while (loadInFlight) {
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        const file = new File([text], label, { type: 'text/xml' });
+        await loadFromFile(file);
+      });
+      loadHookQueue = next.catch(() => {});
+      return next;
+    };
+  }
+
   openFilePicker = (): void => {
     const input = document.createElement('input');
     input.type = 'file';

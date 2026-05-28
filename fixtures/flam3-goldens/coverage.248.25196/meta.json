@@ -3,7 +3,9 @@
   "width": 800,
   "height": 592,
   "baselineR": 2.1809,
-  "thresholdR": 3.50,
+  "thresholdR": 3.5,
   "source": "pyr3-kotlin/parity/goldens/coverage.248.25196/flame.png",
-  "calibration": "Re-calibrated 2026-05-27 after v0.9 PYR3-009 finalxform-only opacity-gate port (R dropped 11.32 -> 2.18, -80.7%). thresholdR = baselineR + ~1.32."
+  "calibration": "Re-calibrated 2026-05-27 after v0.9 PYR3-009 finalxform-only opacity-gate port (R dropped 11.32 -> 2.18, -80.7%). thresholdR = baselineR + ~1.32.",
+  "feBeBaselineR": 9.2506,
+  "feBeThresholdR": 15.88
 }
