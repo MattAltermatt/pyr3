@@ -8,7 +8,7 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
-| **v0.14** | 2026-05-27 | _(this commit)_ | **PYR3-023 probe + FE 4K removal pivot (BE-only 4K).** Probed pyr3's `🎯 Render 4K` on 5 kotlin v1.1 showcase fixtures — 2/5 reproducibly crashed Chrome's tab; 3/5 succeeded but at 13× BE's wall-clock. User pivot: FE no longer supports 4K; BE is the v1.0 4K renderer + ship-gate vehicle. FE button removed; `RenderMode` + `FULL_MAX_*` constants collapsed; `renderInMode(mode)` → `rerender()`. BACKLOG re-scoped: `[PYR3-023]` narrowed to "BE 4K parity gate vs kotlin v1.1"; `[PYR3-024]` (248.22289 BE divergence), `[PYR3-025]` (Chrome crash investigation, post-v1), `[PYR3-026]` (FE↔BE quick-mode parity invariant), `[PYR3-027]` (FE/BE perf-gap investigation) filed. New apples-to-apples baseline pinned to kotlin's `SHOWCASE_4K` preset (3840 long-edge × 200 SPP × oversample=1). `npm test` 4494/4499 green. |
+| **v0.14** | 2026-05-27 | `2ce5837` | **PYR3-023 probe + FE 4K removal pivot (BE-only 4K).** Probed pyr3's `🎯 Render 4K` on 5 kotlin v1.1 showcase fixtures — 2/5 reproducibly crashed Chrome's tab; 3/5 succeeded but at 13× BE's wall-clock. User pivot: FE no longer supports 4K; BE is the v1.0 4K renderer + ship-gate vehicle. FE button removed; `RenderMode` + `FULL_MAX_*` constants collapsed; `renderInMode(mode)` → `rerender()`. BACKLOG re-scoped: `[PYR3-023]` narrowed to "BE 4K parity gate vs kotlin v1.1"; `[PYR3-024]` (248.22289 BE divergence), `[PYR3-025]` (Chrome crash investigation, post-v1), `[PYR3-026]` (FE↔BE quick-mode parity invariant), `[PYR3-027]` (FE/BE perf-gap investigation) filed. New apples-to-apples baseline pinned to kotlin's `SHOWCASE_4K` preset (3840 long-edge × 200 SPP × oversample=1). `npm test` 4494/4499 green. |
 | **v0.13** | 2026-05-27 | `55a2f36` | **Phase 3 cycle 5: 98-arm audit closes + 3 parity-completeness fixes (`[PYR3-010]` complete + var_fan + VARIATION_DEFAULTS + alias normalization).** 8-cluster `wgsl-parity-reviewer` fan-out found 79 match, 18 documented minor-diff, 1 bug (var_fan WGSL Euclidean-mod-vs-fmod). Two follow-up audits found 17/38 arms missing canonical non-zero defaults + 2 partial XML-attribute alias coverage. All three fixes bundled. Per-fixture BE parity: `coverage.248.02226` dropped R 32.62 → 29.96 (-2.66, PYR3-017 partial closure); other 18 fixtures noise-floor unchanged. Filed `[PYR3-021]` (PYR3-017 upstream-stage investigation pivot) + `[PYR3-022]` (default-palette fallback). |
 | **v0.12** | 2026-05-27 | `3bb903e` | **Phase 3 cycle 4: FE parity sweep + capture-hook engine API (`[PYR3-018]` shipped).** First FE-vs-flam3-C-golden measurement across all 19 fixtures, gated on new dev-only `window.__pyr3CapturePixels` engine hook that mirrors the CLI readback path (offscreen RGBA texture + `copyTextureToBuffer` — bypasses the WebGPU canvas swap-chain readback limitation). Eyeball gallery at `.remember/verify/pyr3-018-fe-sweep.html`. All Δ FE−BE in +0.23..+9.87 range, consistent with the FE quick-mode SPP cap (16) vs BE native quality (~2000) noise floor; no FE-specific bugs surfaced. Surfaced `[PYR3-019]` (3-way verify) + `[PYR3-020]` (share-link decode regression). |
 | **v0.11.1** | 2026-05-27 | `1fced80` | **Test-split + README v0.11 refresh (`[PYR3-012]` shipped).** `npm test` now unit-only (~1s wall, 4494/4499 green); the 19-fixture parity suite moves behind `npm run test:parity` (~91s wall, 19/19 green); `npm run test:all` runs both. New `vitest.config.ts` toggles parity inclusion via `VITEST_INCLUDE_PARITY=1` env var. README's `## Status` block refreshed from stale v0.7 → v0.11 with the three Phase 3 cycles named. |
@@ -24,42 +24,34 @@ in [BACKLOG.md](BACKLOG.md).
 
 ## 🎯 Next phases
 
-### Phase 1 — Audit-port pyr3-kotlin's GPU/parser/variation fixes ✅ SHIPPED v0.3 2026-05-27
+### Phase 3 — Iterate to v1.0 ship gate (active, target v0.14 → v1.0)
 
-11 of 12 enumerated fixes were already in peek or structurally N/A in
-WGSL/TS (both signedness items v0.28b + v0.32 cannot manifest in WGSL
-`array<u32>`). 1 differing-semantics item (v1.x-C-opacity) moved to
-`[PYR3-009]` for empirical investigation against fixtures with non-1
-opacity. See CHANGELOG v0.3 for the full audit table.
+Drive the parity rigs to passing. v1.0 = both ship gates green for the
+curated fixture set. Each iteration is a discrete versioned ship.
 
-Follow-up scoped to BACKLOG:
-- `[PYR3-009]` Opacity-gate semantics investigation
-- `[PYR3-010]` Variation-arm bit-parity audit (98 arms)
+**v1.0 ship gates (re-scoped post-v0.14 pivot):**
+- **BE 4K parity vs kotlin v1.1** — BE renders match kotlin's
+  `SHOWCASE_4K` references within R tolerance at 3840 long-edge. Owned by
+  `[PYR3-023]`.
+- **FE↔BE parity at quick-mode dims** — browser viewer renders within R
+  tolerance of the BE CLI for the same fixture at FE's supported dims
+  (1024 long-edge). Owned by `[PYR3-026]`.
 
-### Phase 2 — Flam3-vs-pyr3 test rig + golden fixture set ✅ SHIPPED v0.7 2026-05-27
-
-Acceptance met: 3 fixtures (247.29388, 248.04487, 248.11268) produce R
-scores via the BE Vitest harness; the FE path is lead-driven via
-`scripts/fe-parity.ts` + chrome-devtools-mcp. Per-fixture R thresholds
-calibrated (baseline ≈ 2.0-3.0, threshold ≈ baseline + 1.0). Diff PNGs
-auto-generated per run for lead diagnostics. See CHANGELOG v0.7.
-
-Follow-up scoped to BACKLOG:
-- `[PYR3-011]` Expand parity fixture set to 5-7 flames (requires building
-  flam3-C locally).
-
-### Phase 3 — Iterate to v1.0 ship gate (target: v0.7 → v1.0)
-
-Use the test rig to drive bug-fixing, shader improvements, parameter tuning until **both FE
-and BE pass R tolerance for the chosen fixture set**. Each iteration is a discrete versioned
-ship (v0.7, v0.8, ...). v1.0 = the version where the ship gate passes.
-
-**Acceptance:** v1.0 ship gate met. Trigger pulled for replacing MattAltermatt/pyr3 +
-pyr3-peek on GitHub.
+**Acceptance:** both gates green. Trigger pulled for replacing
+MattAltermatt/pyr3 (kotlin) + pyr3-peek on GitHub.
 
 ## 🚧 Current todos
 
-_None yet — todos populated when Phase 0 begins._
+- **`[PYR3-023]`** — align BE 4K long-edge to kotlin's 3840; promote
+  `scripts/pyr3-023-be-render-4k.mjs` to a first-class CLI flag; build
+  the BE 4K parity rig vs `fixtures/kotlin-4k-refs/`; calibrate
+  R-thresholds against JPG noise floor.
+- **`[PYR3-024]`** — bisect 248.22289 BE 4K visual divergence (folds
+  into PYR3-021 upstream-stage probe — palette / tonemap / density).
+- **`[PYR3-026]`** — automate the FE↔BE parity gate at quick-mode dims
+  (chrome-devtools-mcp or Playwright with WebGPU enabled).
+- **`[PYR3-021]`** — `coverage.248.02226` residual R=29.96 upstream-stage
+  hunt (palette dump diff via local flam3-C the leading hypothesis).
 
 ## 🔮 Future (post-v1.0, sketch only)
 
