@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in */fixtures/flam3-goldens/*/golden.png|*/fixtures/*.flam3) printf 'BLOCKED: %s is a load-bearing parity reference. Document the intentional change in BACKLOG + ROADMAP first, then disable this hook for one edit.\\n' \"$f\" >&2; exit 2 ;; esac"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ \"$(basename \"$PWD\")\" != \"pyr3\" ] && [ -d \"$PWD/pyr3\" ]; then printf '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"\\u26a0\\ufe0f CWD is %s but pyr3/ exists as a subdir. Suggest cd-ing into pyr3 to keep memory and .remember/ aligned (parent-dir CWDs sprout a parallel project-memory store that has to be migrated later).\"}}' \"$(basename \"$PWD\")\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

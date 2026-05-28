@@ -8,9 +8,10 @@ coverage/
 .idea/
 .vscode/
 
-# Claude worktrees + transient screenshots
+# Claude worktrees + transient screenshots + per-machine local settings
 .claude/worktrees/
 .claude/*.png
+.claude/settings.local.json
 .phase*.png
 .diag*.png
 
