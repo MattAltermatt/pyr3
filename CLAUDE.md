@@ -48,8 +48,16 @@ Short form:
    Bun. Decided via parallel-dispatched dueling agents 2026-05-27.
 3. Vitest + tsx
 4. GPU only; no CPU path
-5. v1.0 ship gate = both FE and BE renders match flam3-C within R tolerance for a curated
-   fixture set
+5. v1.0 ship gate (two gates, both must pass on the curated fixture set):
+   - **BE 4K parity vs kotlin v1.1** (BE CLI renders match kotlin's
+     `SHOWCASE_4K` references at 3840 long-edge within R tolerance) —
+     `[PYR3-023]`
+   - **FE↔BE parity at quick-mode dims** (browser viewer renders match
+     BE CLI for the same fixture at 1024 long-edge within R tolerance) —
+     `[PYR3-026]`
+   - The original "both FE and BE match flam3-C" framing was retired in
+     v0.14 when FE 4K was removed; FE is now interactive at quick-mode
+     only and BE owns the 4K parity vehicle.
 6. Frontend = pyr3-peek layout for v1.0; editor is much-later post-v1
 7. Repo replacement on GitHub is gated on ship-gate proof (do not push to
    `github.com/MattAltermatt/pyr3` until v1.0 passes)
@@ -61,12 +69,17 @@ contain ZERO environment branching. No `if (typeof window === 'undefined')`. No 
 checks. The CLI host stamps WebGPU globals onto `globalThis` and the same `createRenderer()`
 runs unmodified.
 
-Reference implementation of the seam (from pyr3-peek, will be copied in Phase 0):
+Reference implementation of the seam (in pyr3 itself, since Phase 0
+v0.1):
 - Browser side: `src/main.ts` calls `createRenderer(device, format, opts)` after acquiring
   the GPU adapter from `navigator.gpu`.
 - CLI side: `bin/pyr3-render.ts` stamps `webgpu`'s `globals` onto `globalThis`, sets up a
   `happy-dom` `DOMParser` shim (for `.flame` XML parsing), then calls the same
   `createRenderer()`.
+- BE 4K wrapper: `scripts/pyr3-023-be-render-4k.mjs` pre-processes the
+  `.flame` (size / scale / oversample / quality rewrite) then invokes
+  the same CLI — keeps the seam clean. Graduating to a first-class
+  CLI flag is the first item in `[PYR3-023]`'s next phase.
 
 Any code that breaks this seam should be loudly questioned before landing.
 
@@ -100,9 +113,14 @@ GPU determinism cross-vendor is not guaranteed. The contract:
   other too
 - **Across machines / GPU vendors:** divergence allowed, both must still pass R tolerance
 
-R tolerance threshold for the fixture set: TBD during Phase 2 calibration. Kotlin's baseline
-R formula lives at
-`/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/main/kotlin/pyr3/parity/Compare.kt`.
+R tolerance thresholds calibrated per-fixture during Phase 2 (v0.7) and
+tightened through Phase 3 cycles. Live thresholds in each
+`fixtures/flam3-goldens/<id>/meta.json`. R-metric implementation at
+`src/compare.ts` (ported verbatim from kotlin's
+`/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/main/kotlin/pyr3/parity/Compare.kt`).
+4K parity thresholds (BE vs kotlin v1.1 JPGs) still need separate
+calibration — first item in `[PYR3-023]`'s next phase, since JPG noise
+floor differs from the existing PNG-vs-PNG rig.
 
 ## Useful pointers
 
