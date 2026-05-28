@@ -17,7 +17,16 @@ You investigate parity failures in pyr3. The flow is stereotyped — past invest
 - Fixture .flam3: `/Users/matt/dev/MattAltermatt/pyr3/fixtures/<name>.flam3` (or kotlin's ESF corpus — see project memory entry `reference-kotlin-v11-renders.md`)
 - Golden: `fixtures/flam3-goldens/<name>/golden.png` (DO NOT MODIFY — PreToolUse hook will block anyway)
 - pyr3 render output: write to `fixtures/flam3-goldens/<name>/pyr3-render.png`
-- Probe binaries: `/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/flam3/probes/`
+- **Primary probe binary:** `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac`
+  (no rngtrace; has 5 instrumentation channels)
+- **Bit-exact RNG-aligned probe binary:** `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac-rngtrace`
+  (adds per-iter 11-field trace + `isaac_seed_hex` runtime arg)
+- **Reference doc for both binaries:** `docs/flam3-local-build.md` —
+  invocation, env vars, instrumentation channels, probe recipes.
+- **Legacy probe binaries (deprecated):** `/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/flam3/probes/` —
+  pre-baked outputs from prior pyr3-kotlin parity work. Prefer the
+  active `/Users/matt/dev/sheep/flam3/` binaries since they let you
+  re-probe with arbitrary inputs.
 - Bisection script template: `/Users/matt/dev/MattAltermatt/pyr3/scripts/pyr3-017-probe.ts`
 - TS arms: `src/variations.ts`
 - WGSL: `src/shaders/chaos.wgsl`
@@ -35,8 +44,14 @@ You investigate parity failures in pyr3. The flow is stereotyped — past invest
    - **Single bad arm.** Per-active-arm probe (next step).
 5. **Per-arm bisection.** For each active arm:
    - Build a single-arm test flame (use `scripts/pyr3-017-probe.ts` as template).
-   - Render via pyr3 and via the matching kotlin probe binary at `pyr3-kotlin/parity/flam3/probes/`.
-   - Compute R against the kotlin output (not against flam3-C — this isolates the arm from systemic effects).
+   - Render via pyr3 (`bin/pyr3-render.ts`) and via
+     `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac` (see
+     `docs/flam3-local-build.md` for invocation). Use
+     `FLAM3_DUMP_VARS=<path>` to capture per-variation JSONL — the
+     ideal probe granularity for arm-specific divergence.
+   - Compute R against the flam3-C output. If the divergence is too
+     systemic to isolate via R alone, escalate to the `-rngtrace`
+     binary + `isaac_seed_hex` for bit-exact per-iter diff.
 6. **Narrow** to: single buggy arm, OR a systematic class (palette / tonemap / density / opacity), OR a structural issue (xform weight, affine matrix, post-affine).
 
 ## Report format
