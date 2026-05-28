@@ -1,5 +1,21 @@
 # pyr3 — project notes for Claude
 
+## Quick commands
+
+```bash
+npm install                     # one-time
+npm run dev                     # Vite dev server on :5173 (Chrome verify target)
+npm test                        # unit suite, ~1s wall, 4494/4499 green
+npm run test:parity             # 19-fixture BE-vs-flam3-C parity rig, ~91s wall
+npm run test:all                # union of the above
+npm run typecheck               # tsc --noEmit
+npm run render <in.flam3> <out.png>            # BE CLI render at genome-native dims
+node scripts/pyr3-023-be-render-4k.mjs <in> <out>   # BE 4K render (4096-long-edge wrapper; future first-class CLI flag per PYR3-023)
+```
+
+Before commit: `npm run typecheck && npm test` (parity rig optional —
+skip unless the render path was touched).
+
 ## Scope guardrail
 
 **pyr3 is a TypeScript + WebGPU fractal-flame renderer with two consumers: a browser viewer
