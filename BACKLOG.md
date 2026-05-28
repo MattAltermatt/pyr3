@@ -6,8 +6,58 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-018** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-019** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-018] parity · M · 🪨 · queued · v1.x — FE parity sweep (all 19 fixtures via chrome-devtools-mcp)
+
+v0.7's CHANGELOG describes the FE path as "lead-driven via
+`scripts/fe-parity.ts` + chrome-devtools-mcp", but only the original 3
+fixtures (`247.29388`, `248.04487`, `248.11268`) were actually
+lead-driven at that point. The 16-fixture expansion in v0.8 added
+BE-only goldens. The v1.0 ship gate requires **both FE and BE pass R
+tolerance for the chosen fixture set** — so the FE sweep across all 19
+fixtures is literal v1.0-gating work.
+
+**Why M (not L):** Mechanism exists (`scripts/fe-parity.ts` +
+`window.__pyr3LastHandle` debug hook + chrome-devtools-mcp orchestration).
+Per-fixture run is ~30-60s wall. 19 fixtures × ~45s + diagnostic
+overhead → half-day session if everything is green; longer if Chrome-vs-
+Node Dawn divergence surfaces FE-specific bugs.
+
+**Expected surface area for new bugs:**
+- Browser vs Node `webgpu` npm: different Dawn versions may produce
+  different trig / `pow` / mix precision on long-running iter loops.
+- Canvas vs offscreen buffer: FE composites through Chrome's compositor
+  (sRGB conversion, color-managed swap chain) while BE writes PNG
+  directly. PNG color profile + canvas color space could diverge.
+- Memory pressure: 1280×720 quality=500 fixtures push ~460M samples
+  per render; Chrome's GC + WebGPU buffer recycle may behave differently
+  than Node's.
+
+**How to apply:**
+1. Boot dev server (`npm run dev`) in background — confirm port (Vite
+   may bump :5173 → :5174).
+2. For each fixture in `fixtures/flam3-goldens/`, drive Chrome via
+   chrome-devtools-mcp: load the share-link URL or drop the `.flame`,
+   wait for `window.__pyr3LastHandle.done`, read back the canvas
+   pixels via `evaluate_script` → ImageData → PNG.
+3. Run the same R-metric used by `src/parity.test.ts` (`meanAbsDiffRgba`
+   from `src/compare.ts`) against the fixture's `golden.png` and the
+   FE-captured PNG.
+4. Build an eyeball-verify HTML at `.remember/verify/pyr3-018-fe-sweep.html`
+   (3-column golden / FE-render / diff per fixture, dark theme, R pills)
+   per CLAUDE.md "Eyeball-verify HTML default" convention.
+5. Compare FE R per fixture to BE R baselines from `meta.json`. Flag
+   any fixture where FE-R is materially worse than BE-R (suggests
+   FE-specific bug); flag any where FE-R and BE-R diverge by > 1.0
+   (suggests Dawn / compositor / colorspace difference).
+
+**Acceptance:** Per-fixture FE-R within calibrated thresholds OR
+divergence categorized + filed as follow-up BACKLOG entries before
+flipping to v1.0.
+
+Filed 2026-05-27 (v0.11.1) as the v1.0-gating FE verification work.
 
 ## [PYR3-017] parity · M · 🪨 · investigation · v1.x — `coverage.248.02226` R=32.62 systematic-brightness divergence
 
