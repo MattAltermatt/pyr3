@@ -17,8 +17,10 @@ interface FixtureMeta {
   id: string;
   width: number;
   height: number;
-  baselineR: number | null;
+  expectedR: number | null;
   thresholdR: number | null;
+  tier: 1 | 2 | null;
+  notes?: string;
   source: string;
 }
 
@@ -129,10 +131,17 @@ describe('BE parity — pyr3 render vs flam3-C golden', () => {
         expect(R).toBeDefined();
         expect(R).toBeGreaterThanOrEqual(0);
 
-        // Active gate (post-Task-5 calibration). Threshold null = record-only.
+        // Active gate. Threshold null = record-only. Tier-2 fixtures (engine-precision-drift,
+        // R≥5 on the v0.19 corpus) get a tier-2 surface in the failure message so a regression
+        // there reads as "f32-floor moved" vs a tier-1 "real bug".
         if (fixture.meta.thresholdR !== null) {
-          expect(R, `${fixture.id} R=${f(R)} exceeded thresholdR=${fixture.meta.thresholdR}`)
-            .toBeLessThanOrEqual(fixture.meta.thresholdR);
+          const tierLabel = fixture.meta.tier === 2
+            ? `Tier-2 (engine-precision-drift floor)`
+            : `Tier-1`;
+          expect(
+            R,
+            `${tierLabel} fixture ${fixture.id} R=${f(R)} exceeded thresholdR=${fixture.meta.thresholdR}`,
+          ).toBeLessThanOrEqual(fixture.meta.thresholdR);
         }
       },
     );

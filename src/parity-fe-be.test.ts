@@ -37,9 +37,11 @@ interface FixtureMeta {
   id: string;
   width: number;
   height: number;
-  baselineR: number | null;
+  expectedR: number | null;
   thresholdR: number | null;
-  feBeBaselineR?: number | null;
+  tier: 1 | 2 | null;
+  notes?: string;
+  feBeExpectedR?: number | null;
   feBeThresholdR?: number | null;
   source: string;
 }
@@ -272,10 +274,15 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
         expect(R).toBeGreaterThanOrEqual(0);
 
         // Active gate (post-calibration). Threshold null/undefined = record-only.
+        // FE↔BE drift is dominated by quick-mode SPP noise, not f32 precision;
+        // tier label is informational rather than semantically gated here.
         const t = fixture.meta.feBeThresholdR;
         if (t !== null && t !== undefined) {
-          expect(R, `${fixture.id} R(FE,BE)=${f(R)} exceeded feBeThresholdR=${t}`)
-            .toBeLessThanOrEqual(t);
+          const tierLabel = fixture.meta.tier === 2 ? `Tier-2` : `Tier-1`;
+          expect(
+            R,
+            `${tierLabel} fixture ${fixture.id} R(FE,BE)=${f(R)} exceeded feBeThresholdR=${t}`,
+          ).toBeLessThanOrEqual(t);
         }
       },
     );

@@ -2,10 +2,11 @@
   "id": "244.57686",
   "width": 800,
   "height": 592,
-  "baselineR": 0.4196,
+  "expectedR": 0.4196,
   "thresholdR": 1.4196,
+  "tier": 1,
   "source": "flam3-render-32bit-isaac qs=1 isaac_seed=244.57686",
-  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = baselineR + 1.0 headroom.",
-  "feBeBaselineR": 0.4551,
+  "calibration": "v0.19 (2026-05-28): tier-aware schema. expectedR = mean of 3 pyr3 runs vs flam3-C golden. thresholdR = expectedR + 1.0 headroom. tier 2 if expectedR ≥ 5.0.",
+  "feBeExpectedR": 0.4551,
   "feBeThresholdR": 2.68
 }

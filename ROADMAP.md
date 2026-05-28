@@ -8,6 +8,8 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
+| **v0.19** | 2026-05-28 | _(pending)_ | **Accept the f32 floor: per-fixture threshold tier recalibration (`[PYR3-029]` closes).** The 19-fixture parity contract becomes tier-aware. `baselineR` → `expectedR`; new `tier: 1\|2` (cutoff at R=5.0) + `notes` field on tier-2 fixtures naming the engine-precision-drift band. Tier-1 (14 fixtures, R<5) keeps the original sub-5 ceiling intent; Tier-2 (5 fixtures: 247.28068, 244.82986, 243.04616, 245.06687, 02226 at R∈[5.16, 29.92]) pass at `expectedR + 1.0` with documented `GPU f32 vs CPU f64 in variation kernels` rationale. PYR3-029 formally closes — Phase 5 ported every flam3-canonical chaos algorithm we could identify and R was unchanged, confirming the residual is precision-bound not algorithm-bound. Phase 6 precision research stays as an in-entry future-research note (no fresh ID). Contract-only ship — no engine changes; 4K showcase meta also gets `tier` for narrative consistency (field-name harmonization defers to v0.20). All 19 fixtures pass `npm run test:parity` under the new schema. Unblocks v0.20 corpus expansion + v1.0 ship gate. |
+| **v0.18** | 2026-05-28 | `c8ed3ab` | **Ground-truth pivot: kotlin v1.1 → flam3-C goldens.** All 19 parity goldens regenerated from `flam3-render-32bit-isaac qs=1 isaac_seed=<id>` (deterministic); `baselineR` recalibrated. See CHANGELOG v0.18 for rationale. |
 | **v0.17** | 2026-05-27 | `ae6cea6` | **PYR3-023 BE 4K parity gate INFRASTRUCTURE shipped (2/2 v1.0 ship gates wired).** `npm run test:parity-4k` runs all showcase fixtures through pyr3 BE @ 3840 long-edge (matched to kotlin's `SHOWCASE_4K`) and R-compares vs kotlin v1.1 JPG refs (via `jpeg-js`). 5 fixtures probed; **4/5 render within / below the BE-vs-flam3 median R~6** — 247.19679 (the README hero) at R=2.78, 244.36880 at 3.24, 248.31324 at 6.14, 243.09081 at 7.36. Only 248.22289 is the outlier (R=44.96 — known PYR3-029 chaos-game divergence). Dim-rounding fix in `scripts/pyr3-023-be-render-4k.mjs` (`Math.round` → `Math.floor` integer math) catches kotlin's 1-px short-edge rounding. Per-fixture thresholds in `fixtures/kotlin-4k-refs/meta.json`. **Both v1.0 ship gates now have working infrastructure; remaining work is PYR3-029 + corpus-expansion.** |
 | **v0.16** | 2026-05-27 | `a7b5427` | **PYR3-017/021/024 → 029 root cause located (chaos game, not upstream stages).** Phase C `flame-fixture-investigator` dispatch on both `coverage.248.02226` (R=29.96) AND `electricsheep.248.22289` (R=44.96 vs kotlin v1.1 JPG) **conclusively ruled out** all four upstream-stage hypotheses (palette/tonemap/density/spatial-filter). Palette baking bit-identical. Tonemap k1/k2 math identical. DE ablation Δ < 2.5 R. Spatial-filter faithful port. **Pyr3 chaos-game histogram-deposit ratios diverge from flam3 exactly in the per-channel R signature direction for both fixtures.** Same mechanism, different chromatic manifestation (02226 over-green; 22289 over-red+blue) because variation-arm sets differ. Filed `[PYR3-029]` chaos-walker-coverage audit (4 ranked sub-hypotheses); `[PYR3-030]` f64 tonemap precision shim (secondary). PYR3-017, PYR3-021 marked superseded. PYR3-024 folded. Phase B sub-deliverable: PYR3-023 step 1 pulled forward — `scripts/pyr3-023-be-render-4k.mjs` `FULL_MAX_DIM` 4096 → 3840 (matches kotlin `SHOWCASE_4K`). |
 | **v0.15** | 2026-05-27 | `23d33cb` | **PYR3-026 FE↔BE quick-mode parity gate shipped (1/2 v1.0 ship gates closed).** New `npm run test:parity-fe-be` Vitest gate runs all 19 fixtures FE-vs-BE at matched quick-mode dims (1024 long-edge, q=16, oversample=1). Mechanism: `--quick` + `--max-dim N` flags on `bin/pyr3-render.ts` mirror `src/main.ts` `rerender()` math; new `window.__pyr3LoadFlame` dev hook lets Playwright inject fixture text without the OS file picker; headless Chromium WebGPU via swiftshader (deterministic, ~10min total). 2-run baseline showed FE↔BE variance < 1% — R is dominated by systematic engine drift, not RNG noise. Per-fixture `feBeBaselineR` + `feBeThresholdR` calibrated (max×1.5+2.0). R distribution 0.46 → 19.40; the 3 high-R outliers overlap with PYR3-018's FE-vs-flam3 sweep — FE-side drift exists in both comparisons. Eyeball gallery at `.remember/verify/pyr3-026-fe-be.html`. |
@@ -60,32 +62,26 @@ curated corpus. v1.0 ships when the curated corpus passes its
 per-fixture thresholds (which acknowledge the f32 reality), not when
 every fixture closes to R<5.
 
-🎯 **Next 3 phases, in execution order:**
+🎯 **Next 2 phases, in execution order:**
 
-1. **🪨 v0.19 — accept the f32 floor: per-fixture threshold tier
-   recalibration.** Bake the architectural reality into the parity
-   contract. High-brightness fixtures (br≥10 or top quartile of corpus)
-   land in a "tier 2" bucket with documented engine-precision drift:
-   keep their R measured, threshold = measured + small headroom, label
-   the gate "engine-precision-drift, not regression." Low-brightness
-   fixtures (the other ~14 of 19) stay tier-1 with R<5 thresholds. Also
-   re-name `baselineR` → `expectedR` in `meta.json` and add `tier: 1|2`
-   + a `notes` field so a future ROADMAP-reader doesn't misread tier-2
-   fixtures as "broken." `[PYR3-029]` formally closes here (no longer a
-   v1.0 gate-blocker; downgraded to "v1.x precision-improvement
-   research").
-2. **🪨 v0.20 — corpus expansion 5 → 20-50 fixtures.** Curate showcase-
+1. **🪨 v0.20 — corpus expansion 5 → 20-50 fixtures.** Curate showcase-
    worthy electricsheep flames into both the 19-fixture parity corpus
    AND the 5-fixture 4K showcase set. Mix brightness profiles so the
    tier split shows a healthy distribution. Promote
    `scripts/pyr3-023-be-render-4k.mjs` → first-class `--preset
-   showcase-4k` flag on `bin/pyr3-render.ts`. `[PYR3-023]` residual
-   closes here.
-3. **🚀 v1.0 — ship gate green + GitHub repo replacement.** Both ship
+   showcase-4k` flag on `bin/pyr3-render.ts`. Harmonize 4K meta.json
+   field names (`baselineR` → `expectedR`) with the 19-fixture corpus
+   under the v0.19 tier schema. `[PYR3-023]` residual closes here.
+2. **🚀 v1.0 — ship gate green + GitHub repo replacement.** Both ship
    gates green on the expanded corpus → trigger pulled per CLAUDE.md
    decision #7. Push pyr3 to `github.com/MattAltermatt/pyr3` (replacing
    the kotlin repo); archive pyr3-kotlin and pyr3-peek per VISION
    (`§Acceptance`).
+
+✅ **v0.19 shipped (2026-05-28):** Per-fixture threshold tier
+recalibration. 19-fixture corpus tier-aware: 14 Tier-1 (R<5), 5 Tier-2
+(R≥5, engine-precision-drift band). `[PYR3-029]` formally closes. See
+CHANGELOG v0.19.
 
 🪨 **Post-v1.0 backlog (filed, not gating):**
 - `[PYR3-030]` — f64 tonemap precision shim (helps with FE↔BE

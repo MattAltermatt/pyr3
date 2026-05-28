@@ -10,6 +10,96 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.19 — 2026-05-28 — Accept the f32 floor: per-fixture threshold tier recalibration
+
+**Outcome:** The parity contract becomes tier-aware. v0.19 bakes the
+GPU-f32-vs-CPU-f64 architectural reality (CLAUDE.md decision #4: "GPU
+only; no CPU path") into the per-fixture R-tolerance schema so v0.20
+(corpus expansion) and v1.0 (ship gate) aren't perpetually gated on
+closing a precision floor that the locked engine choices make
+unreachable. **PYR3-029 formally closes** here — downgraded from "v1.0
+gate-blocker" to "v1.x precision-improvement research" tracked as an
+in-entry note on the ✅-resolved BACKLOG entry.
+
+**Why:** PYR3-029 Phase 5 (`944d454`) ported every flam3-canonical
+chaos-engine algorithm we could identify — rand transforms, walker-init
+RNG draw count, 14-bit `xform_distrib` table, bilateral RNG-aligned
+trace. After all that, `R(coverage.248.02226) ≈ 29.91` was unchanged
+from the pre-Phase-5 baseline. The bilateral trace at `bin/pyr3-trace.ts`
+proves picks match at iter 0 when seeds are aligned but trajectories
+diverge by iter 1 due to f32 in the variation kernels compounding over
+460M iters at high-brightness amplification. Per VISION's "similar but
+not the same" contract, chasing bit-faithful flam3 parity via
+compensated arithmetic in WGSL is heroic for marginal payoff.
+
+**What changed (contract-only, no engine changes):**
+
+1. **`meta.json` schema (19 fixtures + 4K showcase):**
+   - `baselineR` → `expectedR`; `feBeBaselineR` → `feBeExpectedR` (semantic
+     rename — "baseline" implied a regression-from-zero floor; "expected" is
+     honest about what the value represents).
+   - `tier: 1` or `tier: 2` per fixture. Tier-2 = `expectedR ≥ 5.0`
+     (mechanical cutoff; the corpus splits cleanly at this threshold).
+   - Tier-2 fixtures carry a `notes` field documenting the
+     engine-precision-drift band, pointing at PYR3-029 Phase 5/6.
+   - `thresholdR = expectedR + 1.0` unchanged (consistent +1.0 absolute
+     headroom across both tiers).
+2. **Test gates** (`src/parity.test.ts`, `src/parity-fe-be.test.ts`,
+   `src/parity-4k.test.ts`): tier-aware failure messages. A tier-2
+   regression reads as "Tier-2 fixture <id> R=X exceeded thresholdR=Y —
+   engine-precision-drift floor regressed"; a tier-1 regression reads
+   simply as a tier-1 breach (real bug shape).
+3. **Calibration scripts** (`scripts/regen-flam3c-goldens.mjs`,
+   `scripts/build-flam3c-pivot-verify-html.mjs`): updated to emit the
+   v0.19 schema; the HTML verify gallery now surfaces a tier pill per
+   fixture next to the R pill.
+
+**Tier breakdown (19-fixture parity corpus):**
+
+```text
+Tier-1 (14 fixtures, R < 5.0)
+  244.57686             0.42
+  coverage.248.11405    1.36
+  coverage.247.31007    1.52
+  coverage.248.19873    1.58
+  248.11268             2.00
+  coverage.248.25196    2.19
+  244.82270             2.21
+  248.04487             2.32
+  coverage.248.24236    2.70
+  247.29388             3.01
+  coverage.247.20817    3.10
+  coverage.245.00381    4.43
+  244.00016             4.55
+  coverage.248.33248    4.93
+
+Tier-2 (5 fixtures, R ≥ 5.0 — engine-precision-drift band)
+  coverage.247.28068    5.16
+  244.82986             8.98
+  coverage.243.04616   11.56
+  coverage.245.06687   14.59
+  coverage.248.02226   29.92
+```
+
+**Tier breakdown (5-fixture 4K showcase, vs kotlin v1.1 JPGs):** 2 tier-1
+(247.19679 R=2.78, 244.36880 R=3.24), 3 tier-2 (248.31324 R=6.14,
+243.09081 R=7.36, 248.22289 R=44.96). 4K thresholds use `round(expectedR
++ 2.0)` (JPG noise floor headroom); field-name harmonization defers to
+v0.20.
+
+**Acceptance:** all 19 parity fixtures pass `npm run test:parity` under
+the v0.19 schema (14 tier-1 at `R < expectedR + 1.0` and tier ceiling
+`< 5.0`; 5 tier-2 at `R ≤ expectedR + 1.0`). Typecheck + `npm test` green.
+
+**Unblocks:** v0.20 corpus expansion (20–50 fixtures) and v1.0 ship-gate
+acceptance / GitHub repo replacement. PYR3-029 closes (Phase 6 precision
+research stays as an in-entry future-research note; if it ever resumes,
+the work would file a fresh ID).
+
+**Migration script:** `scripts/pyr3-v019-tier-migrate.mjs` (one-shot,
+idempotent — kept committed for posterity and as the documentation of
+the rename rule).
+
 ## v0.18 — 2026-05-28 — Ground-truth pivot: kotlin v1.1 → flam3-C goldens
 
 **Outcome:** Strategic pivot. The 19-fixture BE parity rig's goldens

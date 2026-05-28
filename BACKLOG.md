@@ -30,7 +30,27 @@ calibration.
 **Depends on:** [PYR3-029] should land first (chaos-game fix is the bigger lever; f64
 tonemap is the precision-floor secondary).
 
-## [PYR3-029] parity · L · 🪨 · investigation · v1.x — Sample-budget + post-chaos pipeline parity audit (root cause of PYR3-017/021/024 divergence)
+## [PYR3-029] parity · L · ✅ resolved (f32 floor accepted in v0.19) — Sample-budget + post-chaos pipeline parity audit (root cause of PYR3-017/021/024 divergence)
+
+**v0.19 closure (2026-05-28):** Resolved as **accepted-as-floor**. After
+Phases 1–5 ported every flam3-canonical chaos-engine algorithm we could
+identify (rand transforms, walker-init RNG draw count, 14-bit
+`xform_distrib` table, bilateral RNG-aligned trace), `R(coverage.248.02226)
+≈ 29.91` was unchanged. The bilateral trace at `bin/pyr3-trace.ts` proves
+picks match at iter 0 when seeds are aligned but trajectories diverge by
+iter 1 due to GPU f32 vs CPU f64 precision in the variation kernels.
+v0.19 bakes this into the parity contract via the tier-1/tier-2 schema
+(see CHANGELOG v0.19): 14 Tier-1 fixtures pass at R<5; 5 Tier-2 fixtures
+(247.28068, 244.82986, 243.04616, 245.06687, 02226) pass at `expectedR +
+1.0` with documented `engine-precision-drift, not regression` notes. The
+Phase 6 framing below stays as a future-research note — if a contributor
+ever picks up the per-variation f64 reference impl + variation
+bottleneck locate, that work would file a fresh ID. **What would reopen
+this:** a successful per-variation f64 reference impl that drops one or
+more Tier-2 fixtures into Tier-1 range; that fix would supersede the
+v0.19 tier label and tighten the v1.0 contract.
+
+---
 
 **Filed 2026-05-27 post Phase-C investigator findings.** Supersedes the
 palette/tonemap/density hypothesis for `[PYR3-017]` / `[PYR3-021]` /

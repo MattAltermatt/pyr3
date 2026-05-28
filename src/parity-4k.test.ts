@@ -44,6 +44,8 @@ const RESULTS_PATH = join(REPO_ROOT, '.remember', 'tmp', 'pyr3-023-4k-results.js
 interface FixtureMeta {
   baselineR?: number | null;
   thresholdR?: number | null;
+  tier?: 1 | 2 | null;
+  notes?: string;
 }
 
 interface Metadata {
@@ -177,8 +179,11 @@ describe('BE 4K parity — pyr3 BE @ 3840 vs kotlin v1.1 SHOWCASE_4K', () => {
         expect(R).toBeGreaterThanOrEqual(0);
         const t = fixture.meta.thresholdR;
         if (t !== null && t !== undefined) {
-          expect(R, `${fixture.id} R=${f(R)} exceeded kotlin4kThresholdR=${t}`)
-            .toBeLessThanOrEqual(t);
+          const tierLabel = fixture.meta.tier === 2 ? `Tier-2` : `Tier-1`;
+          expect(
+            R,
+            `${tierLabel} fixture ${fixture.id} R=${f(R)} exceeded kotlin4kThresholdR=${t}`,
+          ).toBeLessThanOrEqual(t);
         }
       },
     );

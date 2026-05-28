@@ -144,6 +144,19 @@ tightened through Phase 3 cycles. Live thresholds in each
 calibration — first item in `[PYR3-023]`'s next phase, since JPG noise
 floor differs from the existing PNG-vs-PNG rig.
 
+**Tier contract (v0.19):** Per-fixture `meta.json` carries `expectedR`
+(measured R vs flam3-C, replacing the prior `baselineR` label),
+`thresholdR = expectedR + 1.0`, and `tier: 1 | 2`. **Tier-1** fixtures
+have `expectedR < 5.0` and represent the healthy parity band where pyr3
+matches flam3-C within visual tolerance. **Tier-2** fixtures have
+`expectedR ≥ 5.0` and carry a `notes` field naming the band as
+`engine-precision-drift, not regression — GPU f32 vs CPU f64 in
+variation kernels`. Both gates are equally load-bearing for the v1.0
+ship contract: a tier-2 regression that exceeds `thresholdR` means the
+f32 floor moved (real ship-blocker); tier-1 regressions read as engine
+bugs. The tier contract is the deliberate v0.19 closure of `[PYR3-029]`
+— see CHANGELOG v0.19 + the BACKLOG entry for the f32-floor rationale.
+
 ## Useful pointers
 
 - Design spec: [`docs/superpowers/specs/2026-05-27-pyr3-design.md`](docs/superpowers/specs/2026-05-27-pyr3-design.md)

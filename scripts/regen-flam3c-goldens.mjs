@@ -5,11 +5,14 @@
 // at qs=1 (full quality), with a fixed `isaac_seed` per fixture so
 // goldens are deterministic across regen runs.
 //
-// After regen, baselineR for each fixture is re-measured (3-run mean
-// of pyr3 vs the new golden) and meta.json is rewritten:
-//   - baselineR  → mean R across 3 pyr3 renders
-//   - thresholdR → baselineR + ~1.0 headroom (current convention)
+// After regen, expectedR for each fixture is re-measured (3-run mean
+// of pyr3 vs the new golden) and meta.json is rewritten (v0.19 schema):
+//   - expectedR  → mean R across 3 pyr3 renders
+//   - thresholdR → expectedR + 1.0 headroom
+//   - tier       → 2 if expectedR ≥ 5.0 else 1 (engine-precision-drift band)
+//   - notes      → boilerplate present on tier-2 fixtures only
 //   - source     → "flam3-render-32bit-isaac qs=1 isaac_seed=<id>"
+//   - feBeExpectedR / feBeThresholdR preserved from previous meta if present
 //
 // Usage:
 //   node scripts/regen-flam3c-goldens.mjs            # all 19 fixtures
@@ -140,27 +143,37 @@ async function main() {
       `flam3=${flam3Elapsed}s pyr3=${pyr3Elapsed}s  R={${rs.map((r) => r.toFixed(2)).join(',')}}  mean=${mean.toFixed(3)}  range=${range.toFixed(3)}\n`,
     );
 
-    const baselineR = Number(mean.toFixed(4));
-    const thresholdR = Number((baselineR + 1.0).toFixed(4));
+    const expectedR = Number(mean.toFixed(4));
+    const thresholdR = Number((expectedR + 1.0).toFixed(4));
+    const tier = expectedR >= 5.0 ? 2 : 1;
 
     summary.push({
       id,
-      prevBaselineR: metaPrev.baselineR,
-      newBaselineR: baselineR,
+      prevExpectedR: metaPrev.expectedR ?? metaPrev.baselineR,
+      newExpectedR: expectedR,
       newThresholdR: thresholdR,
+      tier,
       runs: rs,
       range,
     });
 
     if (!dryRun) {
-      // Replace golden.png + update meta.json.
+      // Replace golden.png + update meta.json with v0.19 schema.
       copyFileSync(flam3Rendered, goldenPath);
+      const TIER2_NOTES =
+        'engine-precision-drift, not regression — GPU f32 vs CPU f64 in variation kernels; see PYR3-029 Phase 5/6 closure.';
       const meta = {
-        ...metaPrev,
-        baselineR,
+        id: metaPrev.id,
+        width: metaPrev.width,
+        height: metaPrev.height,
+        expectedR,
         thresholdR,
+        tier,
+        ...(tier === 2 ? { notes: TIER2_NOTES } : {}),
         source: `flam3-render-32bit-isaac qs=1 isaac_seed=${id}`,
-        calibration: `Mean of ${runs} pyr3 runs vs flam3-C golden, ${new Date().toISOString().slice(0, 10)}. thresholdR = baselineR + 1.0 headroom.`,
+        calibration: `Mean of ${runs} pyr3 runs vs flam3-C golden, ${new Date().toISOString().slice(0, 10)}. thresholdR = expectedR + 1.0 headroom. tier 2 if expectedR ≥ 5.0.`,
+        feBeExpectedR: metaPrev.feBeExpectedR ?? metaPrev.feBeBaselineR,
+        feBeThresholdR: metaPrev.feBeThresholdR,
       };
       writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
     }
@@ -169,13 +182,13 @@ async function main() {
   // Summary table.
   console.error('');
   console.error('Summary:');
-  console.error('fixture                       prev R     new R     ΔR       run range');
-  console.error('----------------------------  --------   -------   ------   ---------');
+  console.error('fixture                       prev R     new R     ΔR       tier   run range');
+  console.error('----------------------------  --------   -------   ------   ----   ---------');
   for (const s of summary) {
-    const delta = s.newBaselineR - (s.prevBaselineR ?? 0);
+    const delta = s.newExpectedR - (s.prevExpectedR ?? 0);
     const sign = delta >= 0 ? '+' : '';
     console.error(
-      `${s.id.padEnd(28)}  ${String(s.prevBaselineR ?? '—').padStart(8)}   ${s.newBaselineR.toFixed(3).padStart(7)}   ${sign}${delta.toFixed(3).padStart(6)}   ±${(s.range / 2).toFixed(3)}`,
+      `${s.id.padEnd(28)}  ${String(s.prevExpectedR ?? '—').padStart(8)}   ${s.newExpectedR.toFixed(3).padStart(7)}   ${sign}${delta.toFixed(3).padStart(6)}    ${s.tier}     ±${(s.range / 2).toFixed(3)}`,
     );
   }
   if (dryRun) console.error('\n[regen] DRY-RUN — no files written.');

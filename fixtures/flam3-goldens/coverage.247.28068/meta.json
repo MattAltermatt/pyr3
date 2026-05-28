@@ -2,10 +2,12 @@
   "id": "coverage.247.28068",
   "width": 800,
   "height": 592,
-  "baselineR": 5.1633,
+  "expectedR": 5.1633,
   "thresholdR": 6.1633,
+  "tier": 2,
+  "notes": "engine-precision-drift, not regression — GPU f32 vs CPU f64 in variation kernels; see PYR3-029 Phase 5/6 closure.",
   "source": "flam3-render-32bit-isaac qs=1 isaac_seed=coverage.247.28068",
-  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = baselineR + 1.0 headroom.",
-  "feBeBaselineR": 19.3998,
+  "calibration": "v0.19 (2026-05-28): tier-aware schema. expectedR = mean of 3 pyr3 runs vs flam3-C golden. thresholdR = expectedR + 1.0 headroom. tier 2 if expectedR ≥ 5.0.",
+  "feBeExpectedR": 19.3998,
   "feBeThresholdR": 31.1
 }

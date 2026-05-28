@@ -1,25 +1,31 @@
 {
-  "_comment": "PYR3-023 BE 4K parity gate per-fixture thresholds (vs kotlin v1.1 SHOWCASE_4K JPGs). Calibrated 2026-05-27 from one v0.17 run; variance is sub-0.01 R at 3B-sample-class quality. Thresholds = round(measured + 2.0); the 248.22289 entry is loose pending PYR3-029 chaos-game fix (it will tighten alongside PYR3-017/021/024 closure).",
+  "_comment": "PYR3-023 BE 4K parity gate per-fixture thresholds (vs kotlin v1.1 SHOWCASE_4K JPGs). Calibrated 2026-05-27 from one v0.17 run; variance is sub-0.01 R at 3B-sample-class quality. v0.19 (2026-05-28): added `tier` field for narrative consistency with the 19-fixture corpus (tier 2 if measured R ≥ 5.0). 4K thresholds use round(measured + 2.0) (JPG noise floor headroom). v0.20 corpus-expansion will harmonize field names (baselineR → expectedR) across both meta files.",
   "fixtures": {
     "243.09081": {
       "baselineR": 7.3649,
-      "thresholdR": 10.0
+      "thresholdR": 10.0,
+      "tier": 2
     },
     "244.36880": {
       "baselineR": 3.2372,
-      "thresholdR": 6.0
+      "thresholdR": 6.0,
+      "tier": 1
     },
     "247.19679": {
       "baselineR": 2.7836,
-      "thresholdR": 5.0
+      "thresholdR": 5.0,
+      "tier": 1
     },
     "248.22289": {
       "baselineR": 44.9638,
-      "thresholdR": 47.0
+      "thresholdR": 47.0,
+      "tier": 2,
+      "notes": "engine-precision-drift, not regression — GPU f32 vs CPU f64 in variation kernels; see PYR3-029 Phase 5/6 closure."
     },
     "248.31324": {
       "baselineR": 6.1410,
-      "thresholdR": 9.0
+      "thresholdR": 9.0,
+      "tier": 2
     }
   }
 }

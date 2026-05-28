@@ -30,15 +30,17 @@ function pillColor(R, threshold) {
 
 const cells = rows
   .map(({ id, meta, dir }) => {
-    const R = meta.baselineR;
+    const R = meta.expectedR;
     const T = meta.thresholdR;
+    const tier = meta.tier ?? (R >= 5 ? 2 : 1);
     const color = pillColor(R, T);
+    const tierBadgeColor = tier === 2 ? '#5a4a14' : '#2c4a5a';
     const golden = `file://${dir}/golden.png`;
     const pyr3 = `file://${dir}/pyr3-render.png`;
     const diff = `file://${dir}/diff.png`;
     return `
 <section class="fx">
-  <h2><span class="fxname">${id}</span> <span class="pill" style="background:${color}">R = ${R.toFixed(3)} / threshold ${T.toFixed(3)}</span></h2>
+  <h2><span class="fxname">${id}</span> <span class="pill" style="background:${color}">R = ${R.toFixed(3)} / threshold ${T.toFixed(3)}</span> <span class="pill" style="background:${tierBadgeColor}">Tier-${tier}</span></h2>
   <div class="grid">
     <figure><img src="${golden}" loading="lazy" /><figcaption>flam3-C golden (qs=1, isaac_seed=${id})</figcaption></figure>
     <figure><img src="${pyr3}"   loading="lazy" /><figcaption>pyr3 BE render</figcaption></figure>
@@ -48,11 +50,13 @@ const cells = rows
   })
   .join('\n');
 
-const sortedR = [...rows].sort((a, b) => b.meta.baselineR - a.meta.baselineR);
+const sortedR = [...rows].sort((a, b) => b.meta.expectedR - a.meta.expectedR);
 const summaryRows = sortedR
   .map(
-    ({ id, meta }) =>
-      `<tr><td>${id}</td><td style="text-align:right">${meta.baselineR.toFixed(3)}</td><td style="text-align:right">${meta.thresholdR.toFixed(3)}</td></tr>`,
+    ({ id, meta }) => {
+      const tier = meta.tier ?? (meta.expectedR >= 5 ? 2 : 1);
+      return `<tr><td>${id}</td><td style="text-align:right">${meta.expectedR.toFixed(3)}</td><td style="text-align:right">${meta.thresholdR.toFixed(3)}</td><td style="text-align:center">${tier}</td></tr>`;
+    },
   )
   .join('\n');
 
@@ -90,9 +94,9 @@ const html = `<!doctype html>
   <p>Top-line effect: <code>coverage.248.02226</code> baseline R dropped 32.62 → 29.92 (the 2.7 R was kotlin port drift, not pyr3 engine drift). Most other fixtures shifted &lt; 0.05 R.</p>
 </div>
 
-<h3>Baselines (sorted by R descending)</h3>
+<h3>Expected R per fixture (sorted descending; v0.19 tier-aware)</h3>
 <table>
-  <thead><tr><th>fixture</th><th style="text-align:right">baselineR</th><th style="text-align:right">thresholdR</th></tr></thead>
+  <thead><tr><th>fixture</th><th style="text-align:right">expectedR</th><th style="text-align:right">thresholdR</th><th style="text-align:center">tier</th></tr></thead>
   <tbody>${summaryRows}</tbody>
 </table>
 
