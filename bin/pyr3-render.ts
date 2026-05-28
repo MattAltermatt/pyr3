@@ -19,6 +19,7 @@ import { parseFlame } from '../src/flame-import';
 import { genomeFromJson } from '../src/serialize';
 import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
 import { type Genome } from '../src/genome';
+import { PRESETS, applyPreset, isPresetName, type PresetName } from '../src/presets';
 
 // happy-dom shim — pyr3's flame-import.ts uses DOMParser which is
 // browser-only. Borrow happy-dom's instance and stamp it onto globalThis.
@@ -33,15 +34,20 @@ async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
   const args: string[] = [];
   let forceDeOff = false;
-  let quick = false;
+  let preset: PresetName | null = null;
   let maxDim: number | null = null;
   let sampleInflate = 1;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
       forceDeOff = true;
-    } else if (a === '--quick') {
-      quick = true;
+    } else if (a === '--preset') {
+      const v = rawArgs[++i];
+      if (v === undefined || !isPresetName(v)) {
+        console.error(`--preset requires one of: ${Object.keys(PRESETS).join(', ')}`);
+        process.exit(1);
+      }
+      preset = v;
     } else if (a === '--max-dim') {
       const v = rawArgs[++i];
       const n = v === undefined ? NaN : Number(v);
@@ -65,9 +71,13 @@ async function main(): Promise<void> {
       args.push(a);
     }
   }
+  if (preset !== null && maxDim !== null) {
+    console.error('--preset and --max-dim are mutually exclusive');
+    process.exit(1);
+  }
   if (args.length < 1) {
     console.error(
-      'usage: npm run render [--no-de] [--quick] [--max-dim N] <input.flam3 | input.pyr3.json> [output.png]',
+      'usage: npm run render [--no-de] [--preset {quick,4k}] [--max-dim N] [--sample-inflate=F] <input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);
   }
@@ -90,22 +100,20 @@ async function main(): Promise<void> {
     genome = genomeFromJson(JSON.parse(text));
   }
 
-  // Quick-mode / size-cap pre-processing. Mirrors src/main.ts rerender()
-  // (QUICK_MAX_DIM / QUICK_MAX_SPP / QUICK_OVERSAMPLE) so BE output matches
-  // the FE viewer's quick-mode pixel-for-pixel — the load-bearing invariant
-  // for the FE↔BE parity gate (PYR3-026). `--max-dim N` caps long-edge
-  // without touching quality/oversample; `--quick` applies the full FE
-  // preset (1024 cap + 16 SPP cap + oversample=1).
-  const QUICK_FE_MAX_DIM = 1024;
-  const QUICK_FE_MAX_SPP = 16;
-  const QUICK_FE_OVERSAMPLE = 1;
-  const longEdgeCap = maxDim ?? (quick ? QUICK_FE_MAX_DIM : null);
-  if (longEdgeCap !== null) {
+  // Preset application (v0.20+). `--preset quick` mirrors src/main.ts
+  // rerender() (FE QUICK_MAX_DIM / QUICK_MAX_SPP / QUICK_OVERSAMPLE) for
+  // the FE↔BE parity gate (PYR3-026). `--preset 4k` mirrors kotlin's
+  // Preset.SHOWCASE_4K for BE 4K showcase rendering. `--max-dim N` is a
+  // standalone cap (rejected alongside --preset above).
+  if (preset !== null) {
+    genome = applyPreset(genome, PRESETS[preset]);
+  }
+  if (maxDim !== null) {
     const declW = genome.size?.width ?? 1024;
     const declH = genome.size?.height ?? 1024;
     const maxDecl = Math.max(declW, declH);
-    if (maxDecl > longEdgeCap) {
-      const sizeScale = longEdgeCap / maxDecl;
+    if (maxDecl > maxDim) {
+      const sizeScale = maxDim / maxDecl;
       genome = {
         ...genome,
         size: {
@@ -115,13 +123,6 @@ async function main(): Promise<void> {
         scale: genome.scale * sizeScale,
       };
     }
-  }
-  if (quick) {
-    genome = {
-      ...genome,
-      oversample: QUICK_FE_OVERSAMPLE,
-      quality: Math.min(genome.quality ?? QUICK_FE_MAX_SPP, QUICK_FE_MAX_SPP),
-    };
   }
 
   const width = genome.size?.width ?? 1024;

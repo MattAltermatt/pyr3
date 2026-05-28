@@ -6,8 +6,40 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-031** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-032** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-031] feat · M · 🪨 · queued · v1.0 — FE cleanup pass before public ship
+
+**Filed 2026-05-28 (user-directive during v0.20 impl):** Before pyr3
+goes public via the GitHub repo replacement (CLAUDE.md decision #7) and
+the showcase gallery ships at `mattaltermatt.github.io/pyr3/v1.0/`,
+sweep the browser viewer (`src/main.ts`, `src/ui-bar.ts`,
+`src/render-orchestrator.ts`, `index.html`, surrounding modules) for:
+
+- **Dead code** accumulated through v0.x experiments (probe wiring,
+  debug panes, removed-feature shims like the deleted 4K button's
+  vestiges).
+- **Stale comments / TODOs** that reference work now closed (PYR3-017,
+  PYR3-021, PYR3-024 — all superseded; PYR3-029 — closed in v0.19).
+- **UI affordances** that exist but don't serve v1.0's curated story
+  (cycle-palette dev button? overlay panes? hotkeys that aren't
+  surfaced anywhere?).
+- **CSS / `index.html`** for layout polish before a public eyeball lands.
+
+**Why M:** Scope is "audit + targeted cleanup" not "redesign". One
+focused pass through the FE files; identify a punch list; apply each
+fix; verify renders still match BE quick-mode at parity-gate
+thresholds (must not regress PYR3-026).
+
+**Acceptance:** No regression in `npm run test:parity-fe-be` (25/25
+green at v0.19 thresholds); subjective FE QA pass (chrome-devtools-mcp
+through 3-5 fixtures including the welcome flame; mute audio; check
+console for warnings); deletable code deleted.
+
+**Why v1.0-gating:** Public ship is irreversible reputation-wise. The
+cleanup pass is cheap (likely 2-4 hours session) and high-leverage —
+shipping with vestigial UI / dead code reads as unfinished.
 
 ## [PYR3-030] parity · M · 🪨 · queued · v1.x — f64 tonemap precision shim for visualize pass
 
@@ -467,7 +499,20 @@ will close when PYR3-029's bisection lands and the fixture R drops below
 Filed 2026-05-27 post-PYR3-023 probe pivot; scoped Phase B 2026-05-27;
 folded into PYR3-029 Phase C 2026-05-27.
 
-## [PYR3-023] gpu · M · 🪨 · queued · v1.x — BE 4K parity gate vs kotlin v1.1 (V1.0 SHIP GATE)
+## [PYR3-023] gpu · M · ✅ resolved (corpus expansion + --preset 4k landed in v0.20) — BE 4K parity gate vs kotlin v1.1
+
+**v0.20 closure (2026-05-28):** Resolved. v0.20 graduates the BE 4K
+parity rig to first-class infrastructure: `scripts/pyr3-023-be-render-4k.mjs`
+deleted; `bin/pyr3-render.ts --preset 4k` is the canonical 4K render
+path (`src/presets.ts` owns the spec). `fixtures/kotlin-4k-refs/meta.json`
+harmonized to the v0.19 tier-aware schema (`baselineR` → `expectedR`).
+The 5-fixture 4K showcase regression gate runs green via
+`npm run test:parity-4k`. The remaining v1.0 4K-related work — the
+**public showcase gallery** at `mattaltermatt.github.io/pyr3/v1.0/` —
+is `[PYR3-007]`, a distinct artifact (separate v1.0 ship-gate entry,
+not a residual of this one).
+
+---
 
 **Pivot 2026-05-27** — user directive after the probe found FE 4K
 crashes Chrome ~40% of the time + runs 13× slower than BE: **FE no

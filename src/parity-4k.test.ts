@@ -4,9 +4,11 @@
 //
 // For each .flame in `fixtures/showcase-probe-sources/` that has a
 // matching JPG reference in `fixtures/kotlin-4k-refs/`:
-//   1. Render BE 4K via `scripts/pyr3-023-be-render-4k.mjs` (3840
+//   1. Render BE 4K via `bin/pyr3-render.ts --preset 4k` (3840
 //      long-edge, q=200, oversample=1 — matches kotlin's
-//      `SHOWCASE_4K` preset Preset.kt:39-49)
+//      `SHOWCASE_4K` preset Preset.kt:39-49). v0.20 graduated the
+//      original pyr3-023-be-render-4k.mjs wrapper into the --preset
+//      flag family in src/presets.ts.
 //   2. Decode kotlin v1.1 JPG (3840×2160) via `jpeg-js`
 //   3. R-compare pyr3 PNG vs kotlin JPG (apples-to-apples post-3840
 //      alignment in v0.16; no downscale required)
@@ -42,7 +44,7 @@ const META_PATH = join(REFS_DIR, 'meta.json');
 const RESULTS_PATH = join(REPO_ROOT, '.remember', 'tmp', 'pyr3-023-4k-results.jsonl');
 
 interface FixtureMeta {
-  baselineR?: number | null;
+  expectedR?: number | null;
   thresholdR?: number | null;
   tier?: 1 | 2 | null;
   notes?: string;
@@ -117,7 +119,14 @@ describe('BE 4K parity — pyr3 BE @ 3840 vs kotlin v1.1 SHOWCASE_4K', () => {
 
         const result = spawnSync(
           'node',
-          ['scripts/pyr3-023-be-render-4k.mjs', fixture.flam3Path, outPath],
+          [
+            '--import', 'tsx/esm',
+            '--import', './bin/wgsl-loader-register.mjs',
+            'bin/pyr3-render.ts',
+            '--preset', '4k',
+            fixture.flam3Path,
+            outPath,
+          ],
           {
             cwd: REPO_ROOT,
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -127,7 +136,7 @@ describe('BE 4K parity — pyr3 BE @ 3840 vs kotlin v1.1 SHOWCASE_4K', () => {
         );
         if (result.status !== 0) {
           throw new Error(
-            `pyr3-023-be-render-4k failed for ${fixture.id} (exit=${result.status}):\n` +
+            `pyr3-render --preset 4k failed for ${fixture.id} (exit=${result.status}):\n` +
               `stderr:\n${result.stderr ?? ''}\n` +
               `stdout:\n${result.stdout ?? ''}`,
           );

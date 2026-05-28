@@ -1,0 +1,11 @@
+{
+  "id": "244.00617",
+  "width": 800,
+  "height": 592,
+  "expectedR": 0.7172,
+  "thresholdR": 1.7172,
+  "tier": 1,
+  "source": "flam3-render-32bit-isaac qs=1 isaac_seed=244.00617",
+  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = expectedR + 1.0 headroom. tier 2 if expectedR ≥ 5.0.",
+  "feBeThresholdR": null
+}

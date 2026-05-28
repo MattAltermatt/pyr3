@@ -9,8 +9,9 @@ npm test                        # unit suite, ~1s wall, 4494/4499 green
 npm run test:parity             # 19-fixture BE-vs-flam3-C parity rig, ~91s wall
 npm run test:all                # union of the above
 npm run typecheck               # tsc --noEmit
-npm run render <in.flam3> <out.png>            # BE CLI render at genome-native dims
-node scripts/pyr3-023-be-render-4k.mjs <in> <out>   # BE 4K render (4096-long-edge wrapper; future first-class CLI flag per PYR3-023)
+npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims
+npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
+npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (kotlin SHOWCASE_4K)
 ```
 
 Before commit: `npm run typecheck && npm test` (parity rig optional —
@@ -98,10 +99,10 @@ v0.1):
 - CLI side: `bin/pyr3-render.ts` stamps `webgpu`'s `globals` onto `globalThis`, sets up a
   `happy-dom` `DOMParser` shim (for `.flame` XML parsing), then calls the same
   `createRenderer()`.
-- BE 4K wrapper: `scripts/pyr3-023-be-render-4k.mjs` pre-processes the
-  `.flame` (size / scale / oversample / quality rewrite) then invokes
-  the same CLI — keeps the seam clean. Graduating to a first-class
-  CLI flag is the first item in `[PYR3-023]`'s next phase.
+- BE 4K (v0.20+): `bin/pyr3-render.ts --preset 4k` uses `src/presets.ts`
+  to bundle dim/quality/oversample (kotlin SHOWCASE_4K-matched). The
+  pre-v0.20 `scripts/pyr3-023-be-render-4k.mjs` wrapper was graduated
+  into the `--preset` flag family in v0.20.
 
 Any code that breaks this seam should be loudly questioned before landing.
 

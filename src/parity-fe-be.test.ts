@@ -160,7 +160,7 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
             '--import',
             './bin/wgsl-loader-register.mjs',
             'bin/pyr3-render.ts',
-            '--quick',
+            '--preset', 'quick',
             fixture.flam3Path,
             bePath,
           ],

@@ -31,8 +31,9 @@ const RENDER_SIZE = 1024;
 //   · max(width, height) ≤ QUICK_MAX_DIM, aspect preserved
 //   · quality clamped to QUICK_MAX_SPP
 //   · oversample forced to QUICK_OVERSAMPLE
-// The 4K render path is BE-only (see bin/pyr3-render.ts +
-// scripts/pyr3-023-be-render-4k.mjs) — FE viewer is interactive at
+// The 4K render path is BE-only (see bin/pyr3-render.ts --preset 4k;
+// the pre-v0.20 wrapper script scripts/pyr3-023-be-render-4k.mjs was
+// graduated into src/presets.ts) — FE viewer is interactive at
 // quick quality only. PYR3-023 probe found that FE 4K crashes Chrome
 // for ~40% of showcase fixtures + runs 13× slower than BE when it
 // doesn't crash; the showcase ships as static pre-rendered 4K JPGs

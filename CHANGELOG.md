@@ -10,6 +10,82 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.20 — 2026-05-28 — Corpus expansion 19→25 + `--preset {quick,4k}` CLI flag family
+
+**Outcome:** Parity regression gate expands from 19 → 25 fixtures with
+a clean **18:7 tier ratio**. The BE 4K parity rig is now first-class
+infrastructure via `bin/pyr3-render.ts --preset 4k` (no more wrapper
+script). `[PYR3-023]` closes. v0.20 is the final infrastructure ship
+before v1.0 (ship-gate green + showcase + FE cleanup + GitHub repo
+replacement).
+
+**Why:** Three drivers landed together in one ship:
+
+1. **Corpus diversity** — 19 fixtures was the kotlin parity set's
+   mid-cycle coverage. v0.20 adds the 3 untapped kotlin goldens
+   (`244.00617`, `244.42746`, `248.23554`) for parity-set completeness,
+   plus 3 ESF picks from kotlin's `v1.0-showcase.txt`
+   (`electricsheep.247.08620`, `.245.07670`, `.244.59334`) so the
+   parity gate watches fixtures users will actually see in the v1.0
+   showcase (cross-purpose with `[PYR3-007]`).
+2. **CLI flag family** — pre-v0.20, `--quick` was a top-level flag and
+   the 4K render path lived in a wrapper script
+   (`scripts/pyr3-023-be-render-4k.mjs`). v0.20 consolidates both into
+   the `--preset NAME` extension seam so future batch scripts can
+   compose presets uniformly. Per CLAUDE.md "no stop-gaps": legacy
+   `--quick` is REMOVED, not preserved as a compat shim.
+3. **4K meta harmonization** — `fixtures/kotlin-4k-refs/meta.json`
+   `baselineR` → `expectedR` to match the v0.19 schema across both
+   parity corpora.
+
+**What changed:**
+
+1. **Parity corpus 19 → 25** (`fixtures/flam3-goldens/`):
+   ```text
+   New Tier-1 (4 fixtures, R<5):
+     244.00617              R=0.72  (kotlin lift)
+     electricsheep.244.59334 R=1.60  (ESF)
+     electricsheep.245.07670 R=2.34  (ESF)
+     electricsheep.247.08620 R=3.26  (ESF)
+
+   New Tier-2 (2 fixtures, R≥5, engine-precision-drift band):
+     244.42746              R=5.50  (kotlin lift, boundary case)
+     248.23554              R=24.12 (kotlin lift, heaviest of the six)
+
+   Final corpus tier ratio: 18:7 (was 14:5 in v0.19).
+   ```
+2. **`src/presets.ts`** — new module owning preset specs.
+   `PresetSpec` carries `mode: 'cap' | 'force'` distinguishing quick
+   (cap, no upscale) from 4k (force, always-rescale long-edge to
+   3840). `shortEdgeRound: 'round' | 'floor'` preserves per-preset
+   rounding (quick uses `Math.round` matching pre-v0.20 FE behavior;
+   4k uses `Math.floor` matching kotlin's `Math.floorDiv` in
+   `Preset.SHOWCASE_4K`). 16 unit tests.
+3. **`bin/pyr3-render.ts`** — argv parsing migrated. `--quick`
+   removed. `--preset {quick,4k}` added (mutually exclusive with
+   `--max-dim`). Calls `applyPreset()` from the new module.
+4. **Test callers migrated:**
+   - `src/parity-fe-be.test.ts` — `'--quick'` → `'--preset', 'quick'`.
+   - `src/parity-4k.test.ts` — invokes `bin/pyr3-render.ts --preset
+     4k` directly (was the wrapper script). 5/5 green at v0.19
+     thresholds.
+5. **4K meta** (`fixtures/kotlin-4k-refs/meta.json`): `baselineR` →
+   `expectedR` per fixture (5 entries). 4K thresholds
+   (round(expectedR+2.0)) unchanged.
+6. **Deleted:** `scripts/pyr3-023-be-render-4k.mjs` (replaced by
+   `--preset 4k`).
+7. **Filed:** `[PYR3-031]` (FE cleanup pass for v1.0 ship gate).
+
+**Acceptance:** all 25 parity fixtures pass `npm run test:parity` in
+~123s. 5/5 4K showcase fixtures pass `npm run test:parity-4k` via
+`--preset 4k`. `npm run test:parity-fe-be` green via `--preset quick`
+(swiftshader headless Chromium, ~10 min). `npm run typecheck` + `npm
+test` green (4510 + 5 skipped).
+
+**Unblocks v1.0:** ship-gate green check + public showcase
+(`[PYR3-007]`) + FE cleanup (`[PYR3-031]`) + GitHub repo replacement
+(CLAUDE.md decision #7). v1.0 ships these together.
+
 ## v0.19 — 2026-05-28 — Accept the f32 floor: per-fixture threshold tier recalibration
 
 **Outcome:** The parity contract becomes tier-aware. v0.19 bakes the
