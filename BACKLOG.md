@@ -30,10 +30,40 @@ calibration.
 **Depends on:** [PYR3-029] should land first (chaos-game fix is the bigger lever; f64
 tonemap is the precision-floor secondary).
 
-## [PYR3-029] parity · L · 🪨 · investigation · v1.x — Chaos-game walker-coverage parity audit (root cause of PYR3-017/021/024 divergence)
+## [PYR3-029] parity · L · 🪨 · investigation · v1.x — Sample-budget + post-chaos pipeline parity audit (root cause of PYR3-017/021/024 divergence)
 
 **Filed 2026-05-27 post Phase-C investigator findings.** Supersedes the
-palette/tonemap/density hypothesis for `[PYR3-017]` / `[PYR3-021]` / `[PYR3-024]`.
+palette/tonemap/density hypothesis for `[PYR3-017]` / `[PYR3-021]` /
+`[PYR3-024]`.
+
+### 🚨 Phase 1 finding (2026-05-28): chaos-game hypothesis falsified
+
+`bin/pyr3-hist.ts` + `scripts/pyr3-029-bucket-diff.mjs` cross-fixture diff
+across the 19-fixture parity corpus shows **Pearson 0.030** between
+chaos-game chromatic-distribution drift and `baselineR`. 17/19 fixtures
+have maxDrift < 3%; the high-R outlier (02226, R=32.62) has only 2.9%
+drift; no correlation with R at all. Phase C's claimed `1.442` ratio on
+02226 was a raw-sum miscompute — the actual normalized ratio is `1.029`.
+
+Full data: `.remember/tmp/pyr3-029-ratio-table.md` (gitignored).
+
+### Re-framed investigation arc
+
+- ❌ **Walker-init / bad-iter rollback / finalxform RNG / color-contraction**
+  (the four sub-hypotheses below) are all deprioritized — they predict
+  chaos-game chromatic drift that the diagnostic does NOT see.
+- 🎯 **New primary suspect: sample-budget mismatch.** Pyr3 generates ~27%
+  more samples than flam3 at qs=1 on 02226 (pyr3 sum_count = 78.66B vs
+  flam3 62.07B). The chaos-stage chromatic distribution is near-identical,
+  but post-chaos density / tonemap / visualize operate on different
+  per-pixel densities, which could produce the R-magnitude divergence
+  without touching chromatic ratios.
+- 🎯 **Phase 2 (next):** measure `R(pyr3, flam3)` correlation against
+  `|pyr3.sum_count - flam3.sum_count| / flam3.sum_count` per fixture.
+  Strong correlation → root cause is sample budgeting. Weak → keep
+  digging in DE / tonemap / visualize.
+
+### Original Phase-C smoking-gun evidence (now partly superseded)
 
 **Smoking-gun evidence from Phase C investigator:**
 

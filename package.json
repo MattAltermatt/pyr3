@@ -17,7 +17,8 @@
     "test:all": "VITEST_INCLUDE_PARITY=1 VITEST_INCLUDE_PARITY_FE_BE=1 VITEST_INCLUDE_PARITY_4K=1 vitest run",
     "typecheck": "tsc --noEmit",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
-    "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts"
+    "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
+    "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
