@@ -8,6 +8,66 @@ Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffold
 4K showcase references within R tolerance for the curated fixture set; pyr3 frontend
 (browser WebGPU) renders matching the backend at quick-mode dims within R tolerance.
 
+## v0.16 — 2026-05-27 — PYR3-021/017/024 → 029 root cause located (chaos game, not upstream stages)
+
+**Outcome:** Major research finding from the Phase C
+`flame-fixture-investigator` dispatch. The cluster of long-standing
+parity divergences on `coverage.248.02226` (PYR3-017 since v0.11, R=29.96
+post-v0.13) and `electricsheep.248.22289` (PYR3-024, R=44.96 BE-vs-kotlin
+v1.1) **was hypothesized to live in palette baking / tonemap / density /
+spatial-filter** (PYR3-021). All four upstream-stage hypotheses ruled
+out empirically with bit-identical / line-for-line evidence. Root cause
+located one stage upstream: **the chaos game itself** (`chaos.wgsl`)
+produces sample-deposit ratios that diverge from flam3 in exactly the
+per-channel R signature direction for both fixtures. Same mechanism,
+fixture-specific chromatic manifestation (over-green on 02226; over-
+red+blue on 22289). Filed as `[PYR3-029]` — chaos-walker-coverage parity
+audit. PYR3-017, PYR3-021 closed (superseded). PYR3-024 folded into
+PYR3-029. Filed `[PYR3-030]` (f64 tonemap precision shim) as a secondary
+post-029 precision-floor item.
+
+**Empirical evidence (Phase C, both fixtures):**
+
+```text
+test                          02226                       22289
+----------------------------  --------------------------  --------------------------
+palette baking diff           MAD=0.000 (bit-identical)   MAD=0.000 (bit-identical)
+tonemap k1/k2 math            identical to flam3          identical to flam3
+DE ablation (--no-de)         Δ +0.09 R (radius=0)        Δ +2.33 R (radius=11)
+spatial-filter inspection     faithful port               faithful port
+🚨 chaos histogram ratio       g=1.442 (vs flam3 1.376)    r+b dominate (g half)
+🚨 per-channel R signature     g=51.4 (matches over-G)    r=73.2 b=65.8 (matches r+b)
+```
+
+**Sub-hypotheses to bisect under PYR3-029 (ranked):**
+
+1. Walker-pool seed dispersion at iter=0 (1024 ISAAC walkers may start
+   too clustered, biasing initial exploration)
+2. Bad-iter rollback semantic (flam3 `i -= 4; continue` nets `i -= 3`;
+   pyr3 `i -= 1; continue` nets `i += 0` — different wall-iter
+   consumption profiles)
+3. Per-iter xform-pick RNG draw order (finalxform opacity-gated RNG
+   draw at `chaos.wgsl:1660-1665` may consume in different order than
+   flam3 `flam3.c:336-337`)
+4. Color-contraction `new_z` propagation across bad iters
+
+**Phase B sub-deliverable** (commit `1168656`): PYR3-023 step 1 pulled
+forward — `scripts/pyr3-023-be-render-4k.mjs` aligned `FULL_MAX_DIM`
+4096 → 3840 to match kotlin v1.1 `SHOWCASE_4K` preset. New
+`scripts/pyr3-024-probe.mjs` measures pyr3-BE vs kotlin v1.1 JPG
+directly (jpeg-js dep added). Eyeball gallery at
+`.remember/verify/pyr3-024-divergence.html`.
+
+**Files:**
+
+- `BACKLOG.md` — PYR3-029 (chaos audit) + PYR3-030 (f64 tonemap shim)
+  filed; PYR3-017 + PYR3-021 marked superseded; PYR3-024 folded into
+  PYR3-029.
+- `scripts/pyr3-023-be-render-4k.mjs` — `FULL_MAX_DIM` 4096 → 3840.
+- `scripts/pyr3-024-probe.mjs` — pyr3 BE vs kotlin JPG R-compare rig.
+- `scripts/pyr3-024-build-html.mjs` — eyeball gallery builder.
+- `package.json` — `jpeg-js` dep added.
+
 ## v0.15 — 2026-05-27 — PYR3-026 FE↔BE quick-mode parity gate
 
 **Outcome:** First of two v1.0 ship gates closed. Browser viewer (FE) and

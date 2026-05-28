@@ -6,8 +6,111 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-029** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-031** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-030] parity · M · 🪨 · queued · v1.x — f64 tonemap precision shim for visualize pass
+
+**Filed 2026-05-27 post Phase-C investigator findings.** Pyr3's `visualize_u32.wgsl`
+`calc_alpha` + `calc_newrgb` run in GPU f32. Kotlin v1.1 (the BE 4K parity reference)
+runs tonemap in CPU f64. For high-`brightness` / high-`gamma` fixtures (the 248.22289
+class) the f32 precision at the HSV-highpow desaturation roundtrip is a non-trivial
+contributor to BE-vs-kotlin divergence.
+
+**Why M:** mechanism is clear — promote the per-pixel post-chaos tonemap to a CPU f64
+pass between GPU histogram readback and PNG encode. The chaos game still runs in GPU
+f32 (massive parallelism win), but the final per-pixel arithmetic is single-threaded
++ tiny + reasonable to do at f64. Estimated 50-100 LOC port from
+`/Users/matt/dev/MattAltermatt/pyr3-kotlin/core/src/main/kotlin/pyr3/core/CpuF64Backend.kt`.
+
+**Acceptance:** 248.22289 BE-vs-kotlin R drops measurably (target: -5 to -10 R-units
+on its own). The FE↔BE quick-mode gate (PYR3-026) thresholds can be tightened post-
+calibration.
+
+**Depends on:** [PYR3-029] should land first (chaos-game fix is the bigger lever; f64
+tonemap is the precision-floor secondary).
+
+## [PYR3-029] parity · L · 🪨 · investigation · v1.x — Chaos-game walker-coverage parity audit (root cause of PYR3-017/021/024 divergence)
+
+**Filed 2026-05-27 post Phase-C investigator findings.** Supersedes the
+palette/tonemap/density hypothesis for `[PYR3-017]` / `[PYR3-021]` / `[PYR3-024]`.
+
+**Smoking-gun evidence from Phase C investigator:**
+
+- ✅ Palette baking: **bit-identical** (MAD per channel = 0.000 across 256 bins) between
+  flam3-C `PYR3_DUMP_PALETTE` dump and pyr3's `bakeLUT(...)` for BOTH 02226 and 22289.
+- ✅ Tonemap math: **identical** k1/k2 (5872.96875 / 4.05e-7 for 02226 at qs=10);
+  `calc_alpha` + `calc_newrgb` are line-for-line ports of flam3 `palettes.c:274-349`
+  and `rect.c:1221`.
+- ❌ DE ablation (`--no-de`): minor contributor — Δ +0.09 R for 02226 (estimator_radius=0
+  in genome), Δ +2.33 R for 22289 (estimator_radius=11 outlier). Doesn't explain
+  R=29.96 / R=44.96.
+- ❌ Spatial-filter: ruled out by inspection (faithful port of `filters.c:217-269`).
+- 🚨 **Pyr3 chaos-game histogram-deposit ratios diverge from flam3's exactly in the
+  per-channel R signature direction** for BOTH fixtures.
+
+**Specific measurements:**
+
+```text
+fixture     channel     pyr3 sum    flam3 sum    pyr3/flam3 ratio   R per-channel
+----------  ---------   ---------   ----------   ----------------   ----------------
+02226       sumG        46.06B      351.5B       1.442 (over)       g=51.40 (heavy)
+02226       sumR        31.94B      255.6B       0.910 (under)      r=39.68
+02226       sumB        35.09B      272.8B       0.937 (under)      b=39.44
+22289       sumR        287.77B     pending      —                  r=73.20 (heavy)
+22289       sumG        139.72B     pending      —                  g=40.85
+22289       sumB        295.75B     pending      —                  b=65.81 (heavy)
+```
+
+The chromatic signature is fixture-specific (over-green for 02226 vs over-red+blue for
+22289) because each fixture's variation arms steer the chaos game through different
+color-speed-weighted palette regions. But the MECHANISM is shared.
+
+**Sub-hypotheses to bisect (ranked by probable contribution):**
+
+1. **Walker-pool seed dispersion at iter=0** — the 1024 ISAAC walker states may start
+   too close together, cluster-biasing initial exploration. Check pyr3's walker-state
+   init in `src/chaos.ts` vs flam3's lone-walker init in `flam3.c`. (flam3 has 1
+   walker that fuse-iters from a single random seed; pyr3 has 1024 walkers in
+   parallel, all starting at independent random points. The parallelism itself
+   shouldn't bias — but bad walker dispersion could.)
+2. **Bad-iter rollback semantic** — flam3 `i -= 4; continue` nets `i -= 3` (rollback
+   3 iter slots); pyr3 `i -= 1; continue` nets `i += 0` (no rollback). Different
+   wall-iter consumption profiles. See `src/shaders/chaos.wgsl:1611-1636` vs
+   flam3 `flam3.c:262`. Magnitude likely modest (~10% deposit loss for high-bad-rate
+   fixtures) — not the dominant factor but contributes.
+3. **Per-iter xform-pick RNG draw order** — PYR3-010's 98-arm audit covered the regular
+   xform RNG draws (cluster C7/C8 reported clean) but the finalxform opacity-gated
+   RNG draw at `chaos.wgsl:1660-1665` was added per `[PYR3-009]` half-port and may
+   consume RNG state in a different order than flam3 `flam3.c:336-337`.
+4. **Color-contraction `new_z` propagation across bad iters** — `chaos.wgsl:1601`
+   computes `new_z = mix(p.z, xform.color, xform.color_speed)` BEFORE the bad-value
+   check, so even on bad iters `new_z` reflects the bad xform's color. flam3
+   `variations.c:2421-2424` may not propagate xform_color through bad iters.
+
+**Investigation plan:**
+
+1. **Wire pyr3-side `[PYR3-DEBUG] BUCKETS` equivalent** — extend
+   `.remember/tmp/dump-hist.mjs` (created by investigator) into a first-class
+   `bin/pyr3-hist.ts` that emits `sum_r/g/b/count nonzero/total max_cnt mean_nonzero`
+   in the EXACT flam3 stderr line format for direct diff.
+2. **Cross-fixture pyr3-vs-flam3 ratio table** — run on all 19 corpus fixtures
+   (~5s/fixture). Correlate per-fixture ratio-drift magnitude with per-fixture R.
+   Strong correlation → conclusive proof root cause is chaos-game.
+3. **Sub-hypothesis bisection** — once smoking gun is confirmed, ablate each sub-
+   hypothesis with surgical WGSL changes + re-measure. Each landed ablation = a
+   landed parity fix.
+
+**Closes (or substantially reduces R):** `[PYR3-017]`, `[PYR3-021]`, `[PYR3-024]`
+once the bisection completes.
+
+**Acceptance:** `coverage.248.02226` R drops below ~5.0 AND 248.22289 R drops below
+~10.0 (or both within ~5 of the parity-rig median ~6). No other fixture regresses.
+
+**Phase C scoping evidence at `.remember/tmp/` (gitignored, regen via investigator
+re-dispatch):** `probeC-02226-{baseline,no-de}.png`, `probeC-22289-{native,no-de-native}.png`,
+`flam3-02226-{palette,tm}.json`, `flam3-02226-stderr.log`,
+`flam3-22289-palette.json`, `measure-r.mjs`, `palette-diff.mjs`, `dump-hist.mjs`.
 
 ## [PYR3-028] parity · S · 🪶 · queued · post-v1 — Deterministic-seed FE↔BE calibration
 
@@ -148,15 +251,20 @@ baking divergence shape, but both look like upstream-stage divergences
 - `palette_interpolation=hsv_circular` (common; 5 other fixtures use it
   and pass parity at low R, so not the cause on its own)
 
-**Next phase (Phase C — PYR3-021):** dispatch `flame-fixture-investigator`
-with BOTH 248.02226 AND 248.22289 as evidence targets. Investigator runs
-the same hypothesis-class probes (palette dump diff via channel #3,
-tonemap diff via #4, density flatten, spatial-filter ablation) for both
-fixtures and returns stereotyped reports. If they share an upstream-
-stage cause with different per-channel manifestations, the same fix
-lands both. If they diverge per probe, file 248.22289 as its own track.
+**Phase C investigator landed 2026-05-27:** all four hypothesis-class
+probes (palette / tonemap / density / spatial-filter) **RULED OUT** for
+both 248.22289 AND 248.02226. Root cause located in the chaos-game
+histogram-deposit divergence — see `[PYR3-029]`. Per-channel signatures
+differ (r+b vs g) because variation-arm sets differ, but mechanism is
+shared.
 
-Filed 2026-05-27 post-PYR3-023 probe pivot; scoped 2026-05-27 Phase B.
+**Resolution path:** folds into `[PYR3-029]` chaos-walker-coverage
+audit. This entry stays open as a tracking ID for 248.22289 specifically;
+will close when PYR3-029's bisection lands and the fixture R drops below
+~10.
+
+Filed 2026-05-27 post-PYR3-023 probe pivot; scoped Phase B 2026-05-27;
+folded into PYR3-029 Phase C 2026-05-27.
 
 ## [PYR3-023] gpu · M · 🪨 · queued · v1.x — BE 4K parity gate vs kotlin v1.1 (V1.0 SHIP GATE)
 
@@ -325,44 +433,27 @@ only if the indexed palette lookup also fails.
 Filed 2026-05-27 (v0.13). Low real-world risk until pyr3 ingests
 non-ESF .flame files.
 
-## [PYR3-021] parity · M · 🪨 · investigation · v1.x — PYR3-017 upstream-stage investigation pivot (palette / tonemap / density / spatial-filter)
+## [PYR3-021] parity · M · ✅ resolved (superseded by PYR3-029) — Upstream-stage investigation pivot — RULED OUT
 
-PYR3-017 (`coverage.248.02226` R=32.6 systematic-brightness divergence)
-was previously hypothesized to be a variation-arm bisection problem,
-deferred to fold into the PYR3-010 98-arm audit. **PYR3-010 audit ran
-v0.12 and ruled this out conclusively:** clusters C7+C8 explicitly
-report that all six arms used by 248.02226 (`scry`/`cell`/`wedge_sph`/
-`wedge_julia`/`oscope`/`flower`) audit clean. The audit cluster note:
-*"any 248.02226 brightness divergence on this cluster is NOT a porting
-bug at the arm level; it is either (a) accumulated f32 vs f64 precision,
-(b) a non-cluster arm in the fixture, or (c) an upstream stage (palette
-/ spatial-filter / density / log-tonemap)."*
+**SUPERSEDED 2026-05-27 by `[PYR3-029]`.** Phase C investigator ran the
+4 hypothesis-class probes (palette / tonemap / density / spatial-filter)
+on both 248.02226 AND 248.22289 and **conclusively ruled out** all four
+upstream stages:
 
-v0.13 default-value fix dropped R from 32.62 → 29.96 (-2.66) — but
-R=29.96 is still ~10× the suite average, so the residual is upstream
-of the chaos game.
+- Palette baking: **bit-identical** (MAD per channel = 0.000 across 256
+  bins) between flam3-C `PYR3_DUMP_PALETTE` and pyr3's `bakeLUT(...)`.
+- Tonemap: identical k1/k2 (5872.96875 / 4.05e-7); calc_alpha + calc_newrgb
+  are line-for-line ports of flam3 `palettes.c:274-349` and `rect.c:1221`.
+- Density: --no-de ablation Δ +0.09 R for 02226 (estimator_radius=0),
+  Δ +2.33 for 22289 — minor contributor.
+- Spatial-filter: ruled out by inspection (faithful port of `filters.c`).
 
-**Next phase candidates (decide via probe):**
-- 🅰 **Palette baking diff** — `PYR3_DUMP_PALETTE=<path>` env var on the
-  local flam3 binary at `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac`
-  (see `docs/flam3-local-build.md` channel #3). Diff pyr3's
-  post-interpolation 256-RGB palette vs flam3's. Most likely culprit
-  given the green-channel skew documented in original PYR3-017
-  investigation (perChannel.g=51.40 vs r=39.68, b=39.44).
-- 🅱 **Tonemap k1/k2 diff** — `PYR3_DUMP_TONEMAP=<path>` env var (channel
-  #4). PYR3-017's original investigation analytically ruled out
-  calibration math but the empirical re-test now becomes cheap.
-- 🅲 **Density estimator divergence** — flam3-C's DE applies per-bucket
-  ls during scatter (rect.c:140) at f64; pyr3's WGSL DE pass at f32.
-  May explain residual brightness for high-quality dense fixtures.
+**Actual root cause: chaos-game histogram-deposit divergence** — see
+`[PYR3-029]` for the full evidence + investigation plan. Pyr3 chaos-game
+sample-deposit ratios diverge from flam3 in EXACTLY the per-channel R
+signature direction for both fixtures.
 
-**How to apply:** dispatch a `flame-fixture-investigator` subagent
-with PYR3-017's fixture name + the upstream-stage shape, pointing at
-the four instrumentation channels in `docs/flam3-local-build.md`.
-
-Filed 2026-05-27 (v0.13). Replaces the previous PYR3-017 BACKLOG entry's
-"folds into PYR3-010" plan now that PYR3-010 has run and the variation
-hypothesis is ruled out.
+Originally filed 2026-05-27 (v0.13). Closed 2026-05-27 post-Phase-C.
 
 ## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
 
@@ -414,10 +505,22 @@ PYR3-018 — this is the right shape for any post-v1.x parity verify.
 Filed 2026-05-27 (v0.12) as a follow-up to PYR3-018's first FE sweep.
 
 
-## [PYR3-017] parity · M · 🪨 · investigation · v1.x — `coverage.248.02226` R=32.62 systematic-brightness divergence
+## [PYR3-017] parity · M · ✅ resolved (superseded by PYR3-029) — `coverage.248.02226` systematic-brightness divergence
 
-**Symptom (observed 2026-05-27, v0.11):** `coverage.248.02226` is the
-worst R outlier in the 19-fixture parity set (R=32.62; next-worst is
+**SUPERSEDED 2026-05-27 by `[PYR3-029]`.** Phase C investigator located
+the root cause in the **chaos-game histogram-deposit ratios** (not
+palette/tonemap/density/spatial-filter as PYR3-021 hypothesized).
+Pyr3's per-channel deposit sums diverge from flam3 exactly in the
+direction of this fixture's green-skewed R signature (g=46.06B vs
+flam3's 351.5B; pyr3/flam3 G ratio 1.442 vs R ratio 0.910).
+See `[PYR3-029]` for full investigation plan + sub-hypothesis bisection.
+The historical investigation below is preserved for context — many of
+its ruled-out hypotheses informed the Phase C probe targeting.
+
+---
+
+**Symptom (observed 2026-05-27, v0.11):** `coverage.248.02226` was the
+worst R outlier in the 19-fixture parity set (R=32.62; next-worst was
 `coverage.245.06687` at R=14.58 — more than 2× the gap). R has been
 stable across v0.7 → v0.11 (no shift from PYR3-009 finalxform-opacity
 gate or PYR3-015 alpha-scaling). All five tonemap/opacity-related
