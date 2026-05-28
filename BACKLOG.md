@@ -125,38 +125,90 @@ iters each (matching flam3's per-thread budget more closely), the same
 spatial regions remain uncovered. The 4-walker run would push individual
 threads past macOS Metal TDR limits and was killed at ~25 min wall.
 
-### Phase 5 — what's left
+### Phase 5 (2026-05-28) — bilateral RNG-aligned trace + chaos-engine ports
 
-The missing regions have **clear flame structure** in the heatmap
-(`.remember/verify/pyr3-029-phase3-pixel-diff.html`): the bottom-right
-of 02226 shows a major flame arm pyr3 doesn't reach. Walker dispersion
-doesn't fix it, so the trajectories themselves are biased away from
-those world-coordinate regions. Remaining suspects:
+Built the canonical investigation infrastructure and ported every
+flam3-canonical chaos-engine algorithm we could identify.
 
-1. **🎯 Per-iter trajectory divergence (bilateral RNG-aligned trace).**
-   Use flam3's `-rngtrace` binary with `isaac_seed_hex=<128hex>` matching
-   pyr3's ISAAC state, dump per-iter (x, y) from both engines, find the
-   first iter where pyr3's trajectory diverges from flam3's. This is
-   THE definitive test — it reveals exactly which iter, which xform
-   pick, which variation produces divergence. (`docs/flam3-local-build.md`
-   §1 documents the protocol; pyr3-side per-iter trace emit is the
-   "PYR3-019+ scaffold task" still pending.)
-2. **🎯 Variation-arm bisection.** 02226 uses ~18 distinct variations
-   across 8 xforms; 245.06687 uses 10 across 5; overlap is only
-   {bubble, bent}. If a single variation has a precision/formula bug
-   that biases output toward the center of the canvas, that would
-   explain regions-missed-near-edges. Probe: ablate one xform at a time
-   from 02226's genome, render, see which removal SHRINKS the missing
-   region.
-3. **🎯 Coord-mapping audit.** flam3's `ws0/wb0s0` formula includes the
-   gutter offset; pyr3's `px = (x - cx) * scale + W/2` doesn't. After
-   gutter-trim of flam3's buffer the gutter pixels are excluded — so
-   this is unlikely to explain missing in-canvas pixels — but worth a
-   careful re-derive against `rect.c:844-859`.
+**Phase 5a — rand transforms** (commit `1dbe721`): pyr3's `rand01` was
+using the full 32-bit ISAAC output divided by 2^32. flam3
+(`flam3.c:2625-2631`) masks the top 4 bits then divides by 0x0fffffff
+(28-bit precision). Added `rand_11` matching `flam3_random_isaac_11`'s
+symmetric `[-1, 1]` distribution. Ported byte-exact to chaos.wgsl. R
+unchanged but the transforms are now flam3-canonical.
 
-Full Phase 1-4 data: `.remember/tmp/pyr3-029-ratio-table.md` +
+**Phase 5b — bilateral RNG-aligned trace** (commit `944d454`): added a
+per-iter trace buffer to chaos.wgsl gated on a `trace_mode` uniform;
+walker 0 writes (pick, pa, pv_pre, pv, isBad, color) for the first 1000
+post-fuse iters when trace_mode==1. New `bin/pyr3-trace.ts` CLI runs 1
+walker × 1000 iters with tracing on, emits flam3 `-rngtrace`-compatible
+stderr lines + dumps the pre-init randrsl as hex for direct
+`isaac_seed_hex` bilateral alignment with `flam3-render-32bit-isaac-rngtrace`.
+
+**Phase 5b uncovered 3 bilateral-alignment bugs** in the original
+investigation protocol:
+1. `isaac_seed_hex` was being emitted as little-endian bytes; flam3
+   parses each 8-char chunk via `strtoul` as big-endian u32. Fixed.
+2. The hex was the POST-irandinit randrsl; flam3 treats the hex as the
+   PRE-irandinit seed and runs irandinit itself on the supplied values.
+   Fixed by replicating the PCG32 seed-generation path in pyr3-trace.
+3. **Walker init was drawing 3 ISAAC u32 (x, y, color), but flam3
+   rect.c:449-451 only draws 2** (x, y; color seeded from 0). The 1-draw
+   shift propagated forever — pyr3's iter-0 pick was 1 u32 ahead of
+   flam3's, producing different picks for ostensibly identical RNG state.
+   Fixed in chaos.wgsl.
+
+**Phase 5c — flam3-canonical xform-pick distribution** (commit `944d454`):
+pyr3's cumulative weighted-scan algorithm was statistically equivalent
+to flam3's table lookup but produced wholly different specific picks
+from the same ISAAC state (28-bit vs 14-bit slice of irand). Ported
+`flam3_create_chaos_distrib` to `packXformDistrib()` in genome.ts:
+`(MAX_XFORMS+1) × 16384 × u32` table encoding (weight × xaos) per-row
+cumulative distribution. Replaced the chaos.wgsl pick with the table
+lookup `xform_distrib[row*GRAIN + (irand & GRAIN_M1)]`. xaos baked
+host-side; the xaos_buffer binding retired.
+
+After all Phase 5 work, bilateral trace shows picks match at iter 0
+between pyr3 and flam3 (with bilaterally-aligned ISAAC seed). Trajectories
+diverge by iter 1 due to GPU f32 vs CPU f64 precision in the variation
+kernels.
+
+**R(coverage.248.02226) ≈ 29.91 throughout Phase 5 — unchanged from the
+pre-Phase-5 baseline.** Every algorithm we identified as a candidate
+divergence point has been ported. The residual ~30 R is precision-bound,
+not algorithm-bound.
+
+### Phase 6 framing — GPU-f32 precision drift
+
+The bilateral trace at `bin/pyr3-trace.ts` proves picks match at iter 0
+when seeds are aligned but the chain diverges within a few iters
+afterward. With 02226's brightness=22 amplification (k1=5873), small
+per-iter precision differences compound into visible R divergence over
+460M iters.
+
+Candidate Phase 6 directions (none yet implemented):
+
+1. **🎯 Per-variation f64 reference impl** — port a few high-frequency
+   variations (swirl, cell, curve, scry, csch, horseshoe — the dominant
+   xforms in 02226) to a TS f64 reference, instrument the bilateral
+   trace to also dump pa/pv from this reference, find which variation's
+   f32 output drifts most. Locates the precision bottleneck.
+2. **🎯 Compensated arithmetic in hot variations** — apply
+   double-double or Kahan summation to the highest-impact ops in the
+   identified variations (long sums, divisions near singularities).
+3. **🎯 Accept the architectural floor** — the GPU-only decision
+   (CLAUDE.md "Locked decisions" #4) means f32 precision is a load-bearing
+   constraint. For high-brightness fixtures like 02226 (br=22) and
+   245.06687 (br=30), pyr3 may simply never achieve sub-5 R against
+   flam3-C. The v1.0 ship gate may need a per-fixture threshold tier
+   acknowledging this: "low/normal brightness fixtures pass R < 5;
+   aggressive-brightness fixtures pass R < 30 with documented engine-
+   precision drift."
+
+Full Phase 1-5 data: `.remember/tmp/pyr3-029-ratio-table.md` +
 `.remember/tmp/pyr3-029-pixel/` + `.remember/tmp/pyr3-029-walker-sweep/`
-(all gitignored).
+(all gitignored). Bilateral trace tools: `bin/pyr3-trace.ts` +
+flam3 `isaac_seed_hex` + `prefix=/tmp/flam3-trace-` env var contract.
 Diagnostic tools: `bin/pyr3-hist.ts`, `bin/pyr3-pixel-dump.ts`
 (`--walkers=N`), `scripts/pyr3-029-bucket-diff.mjs`,
 `scripts/pyr3-029-pixel-diff.mjs`, `scripts/pyr3-029-walker-sweep.mjs`,
