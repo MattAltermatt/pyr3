@@ -6,8 +6,140 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-017** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-018** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-017] parity · M · 🪨 · investigation · v1.x — `coverage.248.02226` R=32.62 systematic-brightness divergence
+
+**Symptom (observed 2026-05-27, v0.11):** `coverage.248.02226` is the
+worst R outlier in the 19-fixture parity set (R=32.62; next-worst is
+`coverage.245.06687` at R=14.58 — more than 2× the gap). R has been
+stable across v0.7 → v0.11 (no shift from PYR3-009 finalxform-opacity
+gate or PYR3-015 alpha-scaling). All five tonemap/opacity-related
+ships have left it unchanged within run noise.
+
+**Visual characterization (eyeballed `diff.png` + side-by-side
+golden/render):** **Structural geometry matches perfectly** — same
+xform skeleton, same swirl positions, same overall composition. The
+divergence is **systematic brightness loss**, NOT geometric. pyr3
+renders at roughly 30-40% of the golden's color intensity across the
+entire canvas. The dense-feature bottom-left region (perRegion
+bl=71.39) is worst-affected because that's where most of the brightness
+lives in the golden; flatter regions diverge less (tr=32.61, br=31.62)
+simply because there's less to dim. Green channel diverges most
+(perChannel g=51.40 vs r=39.68 b=39.44), consistent with the golden's
+dominant green/cyan palette being preferentially dimmed.
+
+**Hypotheses RULED OUT:**
+- ❌ **Geometric / rotation / center offset** — structure matches; only
+  intensity differs.
+- ❌ **Opacity-related** — all 9 xforms (8 regular + finalxform) have
+  `opacity="1"`; PYR3-009 + PYR3-015 changes left R unchanged here.
+- ❌ **Sample-count starvation** — at `quality="500.0"`, `1280×720`,
+  targetSamples = 460,800,000. Renderer math (`renderer.ts:171-182`)
+  produces dispatchWalkers=1024 × dispatchIters≈450,000 ≈ 460.8M,
+  matching target exactly. Not capped by MAX_ITERS_PER_WALKER (2^20).
+- ❌ **Calibration math** (`calibration.ts:37-43`) — k1 = brightness ×
+  PREFILTER_WHITE × 268/256 and k2 = oversample² × scale² / (WHITE_LEVEL ×
+  sampleCount). Confirmed equivalent to flam3 `rect.c:933-937` after
+  algebraic substitution (sampleCount = W×H×quality in pyr3 terms).
+- ❌ **General vibrancy=1 path bug** — 18/19 fixtures have `vibrancy="1"`
+  and pass parity. The HSV / newrgb / per-channel-gamma branching in
+  visualize_u32.wgsl handles vibrancy=1 broadly correctly.
+
+**Hypothesis A — tonemap-parameter interaction — RULED OUT (2026-05-27 probe):**
+
+`scripts/pyr3-017-probe.ts` swept 10 variants (brightness ∈ {11, 22, 44,
+88}, gamma ∈ {2.0, 2.4, 3.2, 5.0}, vibrancy ∈ {0, 1}, highlight_power
+∈ {0.5, 1, 2}). **Baseline R=32.6209 is the LOCAL MINIMUM** — every
+single-axis swap moved R UP (worst: v0 R=34.29, b88 R=34.12). Pyr3's
+tonemap math is self-consistent with the parameters; the divergence is
+upstream of the visualize pass. Full sweep log:
+`.remember/tmp/pyr3-017-sweep.log`.
+
+**Hypothesis (new) — rotation precision — RULED OUT (2026-05-27 probe):**
+
+Fixture has `rotate="-1890.87"` (≈ -33 rad as f32 fed to WGSL `cos()` /
+`sin()`, whose precision is implementation-defined for large arguments).
+Re-rendered with `rotate=-90.87` (mathematically equivalent post-mod):
+R=32.6187 vs baseline 32.6209 — within run noise. GPU trig precision is
+not the source of divergence on this fixture.
+
+**Hypothesis (new) — `palette_interpolation="hsv_circular"` — RULED OUT
+(2026-05-27 cross-fixture comparison):**
+
+Pyr3 doesn't honor `palette_interpolation` (no source matches) — the
+attribute affects authoring-time palette baking, not render-time. Six
+OTHER fixtures use `hsv_circular` and pass parity with R ∈ [1.36, 4.92].
+The attribute can't explain the 13× R gap to 248.02226.
+
+**Hypothesis — dominant-xform variation drift — RULED OUT (2026-05-27
+probe):**
+
+Bisected the dominant xform (weight=6.651: swirl + cell + curve +
+polar2 + scry) by swapping each variation to `linear` in turn and
+re-rendering. **All 5 removals INCREASED R** — none dropped it toward
+golden:
+
+```text
+variant            R       Δ vs baseline
+-----------------  ------  --------------
+baseline           32.61   —
+remove-cell        35.03   +2.42 🔴
+remove-curve       35.93   +3.32 🔴
+remove-swirl       37.62   +5.01 🔴
+remove-scry        39.37   +6.76 🔴
+remove-polar2      39.55   +6.94 🔴
+```
+
+Cell-removal is particularly telling: cell has weight 0.00338 (~0.3%
+of the xform's total variation budget); a buggy impl would have shown
+R DROP on removal (composition barely changes, so any R drop is bug
+signature). Instead R rose +2.42, indicating cell's impl is consistent
+with flam3 on this fixture's input distribution. Same logic applies
+to the other four — none flag as the bug.
+
+**Hypothesis REMAINING — non-dominant-xform / non-variation drift:**
+
+Divergence source is NOT in:
+- Tonemap (10-axis sweep ruled out)
+- Rotation (precision probe ruled out)
+- Palette interpolation (cross-fixture comparison ruled out)
+- Sample-count / calibration math (analytic verification ruled out)
+- Dominant-xform variations (bisection above ruled out)
+
+Remaining candidates:
+- 🅰 **Lower-weight xforms' variations** (8 other xforms total weight ~7,
+  many uncommon arms: flower, loonie, popcorn2, stripes, waves2,
+  flower_petals, modulus, wedge_sph, bubble, wedge_julia, sec, csch,
+  oscilloscope, disc, bent).
+- 🅱 **Color blending** (color_speed=0.5 with color=0 vs color=1 mix in
+  this fixture — could be a mix-order divergence).
+- 🅲 **Pre/post affine application order or precision** in xforms with
+  non-identity `post` (xforms 4, 5, 6, 7 here).
+- 🅳 **Finalxform** with linear(0.547) + bent(0.452) — bent is a sign-flip
+  variation, could have edge cases.
+- 🅴 **ISAAC RNG xform-selection drift** vs flam3's RNG, biasing which
+  xforms are picked. Would systematically shift sample density.
+
+**Concrete next step:** Folds into `[PYR3-010]` 98-arm bit-parity audit
+which is the right vehicle for per-arm comparison. Aggregate bisection
+exhausted in this session — further isolation needs synthetic 1-xform
+probes against flam3-C / kotlin per-arm references, not the 248.02226
+fixture itself.
+
+**Why M (not L):** Investigation narrowed 6 hypotheses → 1 area
+(non-dominant xform / non-variation paths) in this session. Folded into
+existing `[PYR3-010]` audit rather than re-prosecuted standalone.
+
+**Acceptance:** Either R drops below ~5.0 as a side effect of `[PYR3-010]`
+landing variation-arm fixes, OR the residual divergence is conclusively
+attributed to a flam3 feature pyr3 deliberately implements differently
+(e.g., a deferred-rendering decision in the chaos-game core).
+
+Surfaced as a session-handoff mystery 2026-05-27 (v0.7 → v0.11); first
+focused investigation 2026-05-27. Probe script preserved at
+`scripts/pyr3-017-probe.ts` for re-use.
 
 ## [PYR3-014] infra · S · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
 
