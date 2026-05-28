@@ -121,31 +121,42 @@ Filed 2026-05-27 post-PYR3-023 probe pivot.
 ## [PYR3-024] parity · S · 🪨 · investigation · v1.x — `248.22289` BE 4K visual divergence vs kotlin v1.1
 
 **Symptom (observed 2026-05-27, PYR3-023 probe):** Pyr3 BE 4K render of
-`electricsheep.248.22289` (showcase fixture, ESF gen 248 freakiebeat,
-1280×720 → 4096×2304 at oversample=1 q=200) **completed cleanly in
-19.08s but is visually OFF vs the kotlin v1.1 4K JPG reference**
-(user-flagged from probe gallery row 5). Composition / colors diverge —
-specifics TBD via the eyeball pass.
+`electricsheep.248.22289` completes cleanly (~19s wall, no crash, dims
+correct) but diverges substantially from the kotlin v1.1
+`SHOWCASE_4K` JPG reference.
 
-**Hypothesis (unverified):** likely shares root cause with
-`coverage.248.02226` upstream divergence (PYR3-021 — palette / tonemap /
-density / spatial-filter). The fixture pattern (high-gen showcase sheep
-with non-trivial xform mix) overlaps with the PYR3-017 / PYR3-021
-investigation class.
+**Scoping pass measured 2026-05-27 (Phase B):**
 
-**Next phase:** fold into PYR3-021's upstream-stage probe (palette dump
-diff via local flam3-C, tonemap k1/k2 diff, DE divergence) using the
-same instrumentation channels documented in `docs/flam3-local-build.md`.
-If the divergence shape is distinct from `coverage.248.02226`, split
-into a standalone investigation; otherwise PYR3-024 closes as the
-PYR3-021 fix lands.
+- pyr3 BE @ 3840×2160 native (post-alignment to kotlin's SHOWCASE_4K)
+- **R(pyr3-BE, kotlin v1.1) = 44.96** — worst BE divergence in corpus
+  (worse than 248.02226's PYR3-021 residual R=29.96)
+- per-channel: **r=73.20**, g=40.85, **b=65.81** — red+blue heavy
+- per-region: br=77.91, bl=61.28, tr=51.97, tl=48.65 — bottom-right bias
+- Eyeball gallery: `.remember/verify/pyr3-024-divergence.html`
+- Probe script: `scripts/pyr3-024-probe.mjs`
 
-Surfaced from `.remember/verify/pyr3-023-4k-probe.html` row 5. The
-kotlin v1.1 JPG reference at
-`fixtures/kotlin-4k-refs/electricsheep.248.22289.gpu.4k.jpg` is the
-comparison target.
+**Per-channel signature differs from 248.02226 (red+blue vs green).**
+Different palette signatures → likely don't share the EXACT palette-
+baking divergence shape, but both look like upstream-stage divergences
+(palette/tonemap/density) rather than per-arm chaos-game bugs.
 
-Filed 2026-05-27 post-PYR3-023 probe pivot.
+**Genome traits worth probing:**
+- `brightness=29.06` (very high, typical 15–25) — tonemap heavy lifting
+- `gamma=3.575` (high) — palette baking AND tonemap gamma-sensitive
+- `estimator_radius=11` (outlier, typical 1–3) — shared with the FE-crash
+  fixture 244.36880
+- `palette_interpolation=hsv_circular` (common; 5 other fixtures use it
+  and pass parity at low R, so not the cause on its own)
+
+**Next phase (Phase C — PYR3-021):** dispatch `flame-fixture-investigator`
+with BOTH 248.02226 AND 248.22289 as evidence targets. Investigator runs
+the same hypothesis-class probes (palette dump diff via channel #3,
+tonemap diff via #4, density flatten, spatial-filter ablation) for both
+fixtures and returns stereotyped reports. If they share an upstream-
+stage cause with different per-channel manifestations, the same fix
+lands both. If they diverge per probe, file 248.22289 as its own track.
+
+Filed 2026-05-27 post-PYR3-023 probe pivot; scoped 2026-05-27 Phase B.
 
 ## [PYR3-023] gpu · M · 🪨 · queued · v1.x — BE 4K parity gate vs kotlin v1.1 (V1.0 SHIP GATE)
 

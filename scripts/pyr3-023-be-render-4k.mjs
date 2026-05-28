@@ -1,9 +1,15 @@
 #!/usr/bin/env node
-// PYR3-023 BE 4K render — mirrors `src/main.ts:renderInMode('4k')`.
+// PYR3-023 BE 4K render — produces a kotlin-v1.1-`SHOWCASE_4K`-matched
+// render (3840 long-edge, oversample=1, SPP cap 200). Pre-processes the
+// .flame: rewrite size/scale/oversample/quality, then invoke
+// bin/pyr3-render.ts via the standard `npm run render` pipeline.
 //
-// Pre-processes a .flame: rewrite size/scale/oversample/quality so the
-// CLI (bin/pyr3-render.ts) lands at the same target as the FE 4K button
-// (FULL_MAX_DIM=4096 long-edge, oversample=1, SPP cap 200).
+// Long-edge was 4096 pre-v0.16, mismatching kotlin's `SHOWCASE_4K`
+// preset (`pyr3-kotlin/cli/.../Preset.kt:39-49` = 3840). The 3840
+// alignment is a prerequisite for the BE 4K parity rig (PYR3-023) and
+// for the 248.22289 BE divergence probe (PYR3-024) — without it, the
+// pyr3 PNG vs kotlin JPG comparison needs a nearest-neighbor downscale
+// that contributes its own aliasing-induced R.
 //
 // Usage:
 //   node scripts/pyr3-023-be-render-4k.mjs <input.flam3> <output.png>
@@ -14,7 +20,7 @@ import { resolve, basename, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 
-const FULL_MAX_DIM = 4096;
+const FULL_MAX_DIM = 3840;
 const FULL_MAX_SPP = 200;
 const FULL_MAX_OVERSAMPLE = 1;
 
