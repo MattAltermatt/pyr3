@@ -2,10 +2,10 @@
   "id": "coverage.243.04616",
   "width": 800,
   "height": 592,
-  "baselineR": 11.5542,
-  "thresholdR": 12.55,
-  "source": "pyr3-kotlin/parity/goldens/coverage.243.04616/flame.png",
-  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3).",
+  "baselineR": 11.5558,
+  "thresholdR": 12.5558,
+  "source": "flam3-render-32bit-isaac qs=1 isaac_seed=coverage.243.04616",
+  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = baselineR + 1.0 headroom.",
   "feBeBaselineR": 19.2767,
   "feBeThresholdR": 30.92
 }

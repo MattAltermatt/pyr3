@@ -3,9 +3,9 @@
   "width": 800,
   "height": 592,
   "baselineR": 1.361,
-  "thresholdR": 2.5,
-  "source": "pyr3-kotlin/parity/goldens/coverage.248.11405/flame.png",
-  "calibration": "Re-calibrated 2026-05-27 after v0.9 PYR3-009 finalxform-only opacity-gate port (R dropped 7.51 -> 1.36, -81.9%). thresholdR = baselineR + ~1.14.",
+  "thresholdR": 2.361,
+  "source": "flam3-render-32bit-isaac qs=1 isaac_seed=coverage.248.11405",
+  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = baselineR + 1.0 headroom.",
   "feBeBaselineR": 6.094,
   "feBeThresholdR": 11.14
 }

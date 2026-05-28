@@ -4,9 +4,49 @@ Authoritative ship history. Backward-looking only — forward plans live in
 [ROADMAP.md](ROADMAP.md), open tasks in [BACKLOG.md](BACKLOG.md).
 
 Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffolding;
-**v1.0** marks the ship gate: pyr3 backend (Node CLI WebGPU) renders matching kotlin v1.1's
-4K showcase references within R tolerance for the curated fixture set; pyr3 frontend
-(browser WebGPU) renders matching the backend at quick-mode dims within R tolerance.
+**v1.0** marks the ship gate: pyr3 backend (Node CLI WebGPU) renders matching flam3-C's
+output (`flam3-render-32bit-isaac qs=1`) within R tolerance for the curated fixture set;
+pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims within R
+tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
+directly — see v0.18.)
+
+## v0.18 — 2026-05-28 — Ground-truth pivot: kotlin v1.1 → flam3-C goldens
+
+**Outcome:** Strategic pivot. The 19-fixture BE parity rig's goldens
+were originally lifted from `pyr3-kotlin/parity/goldens/` — kotlin's
+own v1.x parity captures. The 2026-05-28 pivot replaced those with
+direct `flam3-render-32bit-isaac qs=1` output, seeded deterministically
+via `isaac_seed=<fixture-id>` so regens are reproducible.
+
+**Why:** PYR3-029 Phase 2 (`v0.17` follow-on, same session) 3-way
+R-comparison surfaced that kotlin goldens were close to flam3-C
+(typically R<5) but carried a port-specific offset. For high-R
+fixtures the offset was small relative to engine drift, but it
+nonetheless conflated kotlin's port choices with pyr3's measured
+parity. flam3-C is the canonical lineage source of truth (the
+project explicitly states "similar but not the same as flam3-C") —
+measuring against kotlin instead introduced a layer of indirection
+that obscured the real question.
+
+**Mechanism:**
+- New script `scripts/regen-flam3c-goldens.mjs`: renders each fixture
+  via `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac` with fixed
+  `isaac_seed=<id>` for determinism; replaces `golden.png`; recomputes
+  `baselineR` as mean over 3 pyr3 runs; rewrites `meta.json` with the
+  new baseline + `thresholdR = baselineR + 1.0` headroom + a `source`
+  field naming the flam3-C invocation.
+- `bin/pyr3-render.ts` gains `--sample-inflate=N` as a permanent PYR3-029
+  diagnostic flag (scales the `totalSamples` passed to `deriveCalibration`).
+- Docs (VISION, ROADMAP, CLAUDE, README) updated: v1.0 ship gate now reads
+  "BE parity vs flam3-C," not "BE 4K parity vs kotlin v1.1."
+
+**Net effect on baselines:** Most fixtures shifted by < 1 R (well within
+the 1.0 headroom on the prior thresholds). A few fixtures with smaller
+kotlin-vs-flam3 offsets saw baselines drop slightly; others rose
+modestly. No new failures introduced.
+
+**Acceptance:** `npm run test:parity` green against the regenerated
+goldens; all 19 fixtures pass their new thresholds.
 
 ## v0.17 — 2026-05-27 — PYR3-023 BE 4K parity gate (2/2 v1.0 ship gates infrastructure shipped)
 

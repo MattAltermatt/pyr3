@@ -11,18 +11,21 @@
 
 ## Status
 
-🚧 **v0.17 — Phase 3, both v1.0 ship-gate infrastructure wired.** Engine in place
+🚧 **v0.18 — Phase 3, ground-truth pivot to flam3-C.** Engine in place
 (browser + CLI both render); three parity rigs green: 19-fixture BE-vs-flam3-C
-(`npm run test:parity`), 19-fixture FE↔BE quick-mode (`npm run test:parity-fe-be`,
-v0.15), and 5-fixture BE-vs-kotlin-v1.1 SHOWCASE_4K (`npm run test:parity-4k`,
-v0.17). **The README hero `electricsheep.247.19679` renders at R=2.78 vs kotlin
-v1.1 4K** — well inside the noise floor. 4/5 of the showcase set ship cleanly;
-one outlier (248.22289 at R=44.96) is blocked on `[PYR3-029]` chaos-walker-
-coverage parity audit, which is also the resolution path for the long-standing
-PYR3-017/021/024 cluster (Phase C investigator ruled out palette/tonemap/density
-empirically; root cause located in the chaos game itself). v1.0 ships when
-PYR3-029 lands and the showcase set expands to ~20-50 fixtures. See
-[ROADMAP.md](ROADMAP.md) and [BACKLOG.md](BACKLOG.md#pyr3-029).
+(`npm run test:parity`, **goldens regenerated from flam3-C `isaac_seed=<id>`
+on 2026-05-28** — see commit log), 19-fixture FE↔BE quick-mode
+(`npm run test:parity-fe-be`, v0.15), and 5-fixture BE 4K showcase
+(`npm run test:parity-4k`, v0.17). **The README hero `electricsheep.247.19679`
+renders at R=2.78 vs flam3-C** — well inside the noise floor. The 2026-05-28
+pivot replaced the prior kotlin-v1.1 reference: kotlin was close (R<5 in most
+cases) but carried a port-specific offset; flam3-C is the canonical lineage
+source of truth. One outlier (248.22289 at R=44.96) is blocked on `[PYR3-029]`
+investigation (Phase 1 + Phase 2 ruled out chaos-game chromatic drift AND
+calibration k2 as the dominant levers; Phase 3 targets per-pixel chromatic
+drift × tonemap k1 amplification). v1.0 ships when PYR3-029 lands and the
+showcase set expands to ~20-50 fixtures. See [ROADMAP.md](ROADMAP.md) and
+[BACKLOG.md](BACKLOG.md#pyr3-029).
 
 ## The contract
 

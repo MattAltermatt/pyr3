@@ -34,11 +34,15 @@ not the default.
 
 **Two gates, both green, on a curated fixture set of Electric Sheep flames:**
 
-1. **BE 4K parity vs kotlin v1.1.** The headless CLI renders match
-   kotlin's `SHOWCASE_4K` 4K references (3840 long-edge × 200 SPP)
-   within R tolerance. This is the v1.0 showcase pipeline — kotlin's
-   pre-rendered-gallery pattern, served via gh-pages from BE-rendered
-   PNGs.
+1. **BE parity vs flam3-C.** The headless CLI renders match
+   `flam3-render-32bit-isaac qs=1` output within R tolerance, both
+   at the 19-fixture parity-corpus dims (native genome size) AND
+   at the 4K showcase set (3840 long-edge). flam3-C is the canonical
+   lineage source of truth; the **2026-05-28 pivot replaced the
+   prior kotlin-v1.1 reference**. Kotlin port was close (R<5 vs flam3
+   in most cases) but carried a port-specific offset that confounded
+   pyr3's measured drift. Goldens regenerated deterministically via
+   `isaac_seed=<fixture-id>`.
 2. **FE↔BE parity at quick-mode dims.** The browser viewer renders
    match the BE CLI for the same fixture at FE's supported dims
    (1024 long-edge, 16 SPP) within R tolerance. FE is interactive only

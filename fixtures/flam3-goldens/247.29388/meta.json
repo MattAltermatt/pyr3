@@ -2,10 +2,10 @@
   "id": "247.29388",
   "width": 800,
   "height": 592,
-  "baselineR": 3.003,
-  "thresholdR": 4,
-  "source": "pyr3-kotlin/parity/goldens/247.29388/flam3-ref.png",
-  "calibration": "Mean over 3 runs on M-series + Dawn-node 2026-05-27. thresholdR = baselineR + ~1.0 (start permissive; tighten in Phase 3).",
+  "baselineR": 3.0098,
+  "thresholdR": 4.0098,
+  "source": "flam3-render-32bit-isaac qs=1 isaac_seed=247.29388",
+  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = baselineR + 1.0 headroom.",
   "feBeBaselineR": 5.1367,
   "feBeThresholdR": 9.71
 }

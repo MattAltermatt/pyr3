@@ -65,15 +65,21 @@ Short form:
 3. Vitest + tsx
 4. GPU only; no CPU path
 5. v1.0 ship gate (two gates, both must pass on the curated fixture set):
-   - **BE 4K parity vs kotlin v1.1** (BE CLI renders match kotlin's
-     `SHOWCASE_4K` references at 3840 long-edge within R tolerance) —
-     `[PYR3-023]`
+   - **BE parity vs flam3-C** (BE CLI renders match flam3-C
+     `flam3-render-32bit-isaac qs=1` output at genome-native dims within
+     R tolerance) — `[PYR3-023]` for the 4K showcase set; `[PYR3-NNN]`
+     parity rig for the 19-fixture corpus
    - **FE↔BE parity at quick-mode dims** (browser viewer renders match
      BE CLI for the same fixture at 1024 long-edge within R tolerance) —
      `[PYR3-026]`
-   - The original "both FE and BE match flam3-C" framing was retired in
-     v0.14 when FE 4K was removed; FE is now interactive at quick-mode
-     only and BE owns the 4K parity vehicle.
+   - **Ground truth = flam3-C, NOT kotlin v1.1.** The 2026-05-28 pivot
+     replaced the kotlin-port goldens with deterministic `flam3-render-32bit-isaac`
+     output (`isaac_seed=<fixture-id>`). Kotlin was sufficiently faithful
+     in most cases (R<5 vs flam3) but carries a small port-specific offset
+     that distorted pyr3's measured parity. flam3-C is the canonical lineage
+     reference. Goldens in `fixtures/flam3-goldens/<id>/golden.png` are now
+     flam3-C renders; baselineR / thresholdR in each `meta.json` reflect
+     pyr3 vs flam3-C.
 6. Frontend = pyr3-peek layout for v1.0; editor is much-later post-v1
 7. Repo replacement on GitHub is gated on ship-gate proof (do not push to
    `github.com/MattAltermatt/pyr3` until v1.0 passes)

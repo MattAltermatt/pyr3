@@ -32,10 +32,12 @@ in [BACKLOG.md](BACKLOG.md).
 Drive the parity rigs to passing. v1.0 = both ship gates green for the
 curated fixture set. Each iteration is a discrete versioned ship.
 
-**v1.0 ship gates (re-scoped post-v0.14 pivot):**
-- ✅ **BE 4K parity vs kotlin v1.1** — infrastructure shipped v0.17.
-  4/5 fixtures clean (incl. the 247.19679 hero at R=2.78); 1 fixture
-  blocked on PYR3-029.
+**v1.0 ship gates (re-scoped post-2026-05-28 pivot to flam3-C ground truth):**
+- ✅ **BE parity vs flam3-C** — infrastructure shipped v0.17; goldens
+  switched from kotlin v1.1 → deterministic flam3-C (`isaac_seed=<id>`)
+  in v0.18. 4K showcase set: 4/5 clean (247.19679 hero R=2.78);
+  19-fixture corpus baselines recalibrated. 1 fixture (248.22289)
+  still blocked on PYR3-029.
 - ✅ **FE↔BE parity at quick-mode dims** — shipped v0.15 (PYR3-026 closed).
 
 **Acceptance:** both gates green. Trigger pulled for replacing
