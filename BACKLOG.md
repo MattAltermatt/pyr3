@@ -1097,7 +1097,16 @@ Filed 2026-05-27 (v0.13 stop); probed 2026-05-27 (post-v0.13);
 re-scoped post-pivot 2026-05-27 (FE 4K button removed). Critical-path
 v1.0 work for the next ship cycle.
 
-## [PYR3-022] parser · S · 🪨 · queued · v1.x — Default-palette fallback when `<palette>` is missing
+## [PYR3-022] parser · S · 🪨 ✅ **RESOLVED (v0.28, 2026-05-29)** — Default-palette fallback when `<palette>` is missing
+
+> **✅ Resolved v0.28 (option B — no stop-gap).** Ported flam3's full 701-palette
+> library: `scripts/gen-flam3-palettes.mjs` bakes `flam3-palettes.xml` into
+> `src/flam3-palettes-data.ts` (RGB bytes, base64, lossless, sync `atob` decode —
+> seam-clean for both consumers). `src/flam3-palettes.ts` `getLibraryStops(index)`
+> decodes on demand. `flame-import.ts` fallback chain: inline block → library
+> palette via `<flame palette="N">` → PYRE; the substitution is surfaced loudly in
+> `report.paletteFallback` (never silent — PYR3-034 lesson), replacing the old
+> throw. Roundtrip-verified (palette 0 → 185,234,235) + 4 parser fallback tests.
 
 **Symptom (observed 2026-05-27, v0.13 doc-refresh):** `flame-import.ts:250`
 throws if a `<flame>` lacks `<color>`, `<colors>`, AND `<palette>`. flam3-C
@@ -1419,7 +1428,14 @@ but the tooling and structure are different.
 
 **Dependency:** v1.0 ship-gate pass.
 
-## [PYR3-008] gpu · S · 🪨 · queued · v1.x — Decouple chaos.ts oversample from genome
+## [PYR3-008] gpu · S · 🪨 ✅ **RESOLVED (v0.28, 2026-05-29)** — Decouple chaos.ts oversample from genome
+
+> **✅ Resolved v0.28.** `oversample` is now a required field on `ChaosConfig`,
+> set from `pipelines.oversample` (the authority) at `createChaosPass` time; the
+> dispatch reads `config.oversample` instead of `genome.oversample`, eliminating
+> the divergence class. Regression test (`src/chaos.test.ts`) drives a mock GPU
+> device, varies `genome.oversample`, and asserts the splat-scale uniform uses the
+> pipeline value. Mirrors how the density pass already takes oversample explicitly.
 
 `chaos.ts:173` reads `g.oversample` from the genome to compute the WGSL
 `scale` uniform (`g.scale × g.oversample`). The pipeline's *actual*

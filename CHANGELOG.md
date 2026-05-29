@@ -10,6 +10,41 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.28 — 2026-05-29 — Engine/GPU S-batch: oversample decouple + flam3 palette library (`[PYR3-008]`, `[PYR3-022]`, `[PYR3-004]`)
+
+**Outcome:** three Engine/GPU backlog items closed in one pass. All 4591 unit
+tests green, typecheck clean.
+
+- **`[PYR3-008]` — chaos oversample decoupled from the genome.** `chaos.ts`
+  dispatch was reading `genome.oversample` to compute the splat-scale uniform, a
+  vestigial parallel input to the pipeline's authoritative `oversample` (the same
+  divergence that let v0.2's camera-zoom bug creep in). `oversample` is now a
+  required `ChaosConfig` field set from `pipelines.oversample` at
+  `createChaosPass` time; dispatch reads `config.oversample`. New
+  `src/chaos.test.ts` drives a minimal mock GPU device, sets a mismatched
+  `genome.oversample`, and asserts the uniform uses the pipeline value — the
+  regression guard the entry asked for. Mirrors the density pass's existing
+  explicit-oversample arg.
+
+- **`[PYR3-022]` — flam3 palette-library fallback (option B, no stop-gap).** A
+  `.flame` with no inline `<palette>`/`<color>`/`<colors>` block used to throw.
+  flam3 instead falls back to its 701-palette library, referenced by
+  `<flame palette="N">`. Ported the whole library:
+  `scripts/gen-flam3-palettes.mjs` bakes `flam3-palettes.xml` into
+  `src/flam3-palettes-data.ts` (701 × 256 RGB triples → contiguous bytes →
+  base64, lossless; ~538KB raw / ~718KB base64, gzips to ~200KB). Decoded once
+  via `atob` (sync, works in both browser + CLI — no engine seam break).
+  `flame-import.ts` fallback chain is **inline → library → PYRE**, with the
+  substitution surfaced in `report.paletteFallback` (loud, never silent — the
+  PYR3-034 lesson) instead of throwing. Lossless roundtrip verified + 4 parser
+  fallback tests.
+
+- **`[PYR3-004]` — variation-set audit closed (no code).** Audit found `V`
+  already holds the complete canonical flam3 set (99 entries, indices 0–98,
+  linear→mobius), reachability-guarded by PYR3-036. The named `gdoffs` "gap" is
+  not a flam3 variation (flam3-C defines no such name) — a predecessor artifact
+  obsoleted by the v0.25 scrub.
+
 ## v0.27 — 2026-05-29 — `/showcase` live via Release asset + history de-bloat (`[PYR3-047]` resolved)
 
 **Outcome:** `https://pyr3.app/showcase/` is live again (it had silently 404'd
