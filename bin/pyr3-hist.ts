@@ -147,6 +147,13 @@ async function main(): Promise<void> {
     dispatchIters = MAX_ITERS_PER_WALKER;
     dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
   }
+  // Diagnostic override (PYR3-034): force a walker count, keep ~same sample
+  // budget by recomputing iters. Lets us sweep walkers vs coverage.
+  const walkersArg = process.argv.indexOf('--walkers');
+  if (walkersArg >= 0 && process.argv[walkersArg + 1]) {
+    dispatchWalkers = parseInt(process.argv[walkersArg + 1]!, 10);
+    dispatchIters = Math.max(1, Math.ceil(targetSamples / dispatchWalkers));
+  }
   const actualSamples = dispatchWalkers * dispatchIters;
   console.error(
     `[pyr3-hist] dispatch walkers=${dispatchWalkers} iters=${dispatchIters} samples=${actualSamples}`,

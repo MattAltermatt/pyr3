@@ -6,10 +6,79 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-035** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-037** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-034] bug · M · 🪨 · queued · v1.x — pyr3 crushes low-density regions to black (`243.00171` + likely a class)
+## [PYR3-036] chore · M · ✅ **RESOLVED (v0.22, 2026-05-28)** — variation-import safeguards (loud parser + reachability + corpus assertion)
+
+**Filed + shipped 2026-05-28** after the PYR3-034 audit showed a known variation could be
+silently dropped at import with nothing going red. Three safeguards in `flame-import.ts` +
+`flame-import.test.ts`:
+1. **Loud parser** — `KNOWN_PARAM_ATTRS` (derived from `VARIATION_PARAMS`) lets the xform scan
+   tell a recognized `<var>_<param>` apart from an attribute it doesn't understand; the latter
+   now surfaces in `report.droppedVariations` instead of being silently swallowed.
+2. **All-99 reachability test** — every variation in `V` is parsed via a minimal flame and
+   asserted recorded with the right index + weight (would have failed loudly on the 6 dropped
+   underscore variations).
+3. **Curated-corpus assertion** — every `fixtures/flam3-goldens/<id>` parity fixture must import
+   with zero dropped/unrecognized attrs (ALLOWLIST documents any genuine unsupported attr).
+
+**Audit findings (read-only sweep over the full electric-sheep-fold corpus, ~166k flames):** the
+drop hit **six** variations (`radial_blur`, `gaussian_blur`, `pre_blur`, `super_shape`,
+`wedge_julia`, `wedge_sph`), not three. Two genuinely-unsupported attrs surfaced and are
+*correctly reported* (not silent): `move` (Apophysis variation pyr3 doesn't implement) and
+`secant` (likely an un-aliased name for `secant2`). **Open sub-item:** decide whether to alias
+`secant`→`secant2` (deferred — no curated fixture uses it).
+
+## [PYR3-035] chore · M · ✅ **RESOLVED (v0.22, 2026-05-28)** — re-rendered the showcase 4K set after the PYR3-034 variation-drop fix
+
+> **✅ Done v0.22.** Re-rendered all **13** affected showcase fixtures (the six underscore
+> variations: gaussian_blur/radial_blur/pre_blur + super_shape on 243.06888 & 243.12778) and
+> rebuilt the gallery (54 cards). `243.06888` (super_shape) now **surpasses the kotlin v1.1
+> reference**, which was too dark. Heavy PNGs stay gitignored/deploy-only.
+
+
+**Filed 2026-05-28 (follows [PYR3-034] fix, v0.22).** The flame-import underscore-variation
+drop bug silently zeroed `radial_blur` / `gaussian_blur` / `pre_blur` corpus-wide, so every
+pre-fix showcase 4K render of a fixture using one of those variations is WRONG (most visibly
+`electricsheep.243.00171`, which lost its entire halo). Re-run
+`scripts/render-showcase-v1.0.mjs` (~9 min) to regenerate
+`fixtures/showcase-v1.0/<id>.pyr3-4k.png`, then rebuild the gallery (`npm run build:showcase`).
+Spot-check affected fixtures against their electricsheep.com references.
+
+**Acceptance:** showcase renders reflect the post-v0.22 engine; no fixture renders as bare
+filaments / black due to a dropped variation. (Scope: `git grep -lE
+'radial_blur|gaussian_blur|pre_blur'` over the 55 source `.flam3` files names the affected set.)
+
+## [PYR3-034] bug · L · ✅ **RESOLVED (v0.22, 2026-05-28)** — flame-import silently dropped underscore-named variations (`radial_blur`); `243.00171` halo restored
+
+> **✅ RESOLVED v0.22.** Root cause: `flame-import.ts` split every xform attribute name on
+> the first `_` (the `<var>_<param>` param convention) BEFORE checking the full name against
+> the variation table — so variation names that themselves contain an underscore
+> (`radial_blur`, `gaussian_blur`, `pre_blur`, `super_shape`, `wedge_julia`, `wedge_sph`) were split to a non-variation head
+> (`radial_blur` → `radial` ∉ V) and **silently dropped**. On 243.00171, xform0 lost its
+> `radial_blur=0.5` and ran `linear=0.05` alone, collapsing the orbit onto the spherical
+> 2-cycle (0.43% coverage). **Fix:** test `name in V` before the underscore split in
+> `parseXformElement`. Coverage 0.43% → 55% (18,501 → 2,346,734 nonzero), matching flam3-C
+> within ~1%; 25/25 parity + 4512 unit green; +2 regression tests in `flame-import.test.ts`.
+>
+> **The precision / df64 framing throughout the rest of this entry was WRONG.** A CPU
+> f64-vs-f32 oracle of the exact map gave identical coverage in both precisions — the map was
+> missing a variation, not losing precision. df64 NOT needed; GPU-only/f32 stance holds. The
+> fma experiments correctly exonerated rounding; the per-iter trace + genome read (radial_blur
+> output ≡ `linear × 0.05`, i.e. contributing zero) pinned it. Follow-up: [PYR3-035].
+
+> **Title corrected 2026-05-28** from "pyr3 crushes low-density regions to black" —
+> investigation showed the halo is *absent from the histogram* (chaos game), not
+> crushed by tonemap. Original symptom framing kept below for the record.
+>
+> **PRIORITY RAISED → v1.0 BLOCKER (user-directive 2026-05-28):** "the entire goal of v1
+> was to get as close to parity with flam3 and pyr3-kotlin, and we have to do that." Target
+> image: `https://electricsheep.com/archives/generation-243/171/0.jpg`. **df64 (double-float)
+> emulation is SANCTIONED** ("if we need to emulate 64 bit, then we do that") — relaxes the
+> "GPU only / accept f32 floor" stance for this fix. Next-session plan: see
+> [[project-pyr3-034-next-session]] (ordered: fma-contraction test → pyr3-f32 vs kotlin-f32
+> trace → port kotlin's `df64.glsl` to WGSL). All diagnosis on branch `feature/pyr3-034-lowdensity`.
 
 **Symptom (observed 2026-05-28):** pyr3's `--preset 4k` render of
 `electricsheep.243.00171` shows ONLY the bright filament skeleton (thin orange/
@@ -19,25 +88,154 @@ render — `https://mattaltermatt.github.io/pyr3/v1.0/electricsheep.243.00171.gp
 orange feather nested inside it. pyr3 is dropping the entire low-density glow; only
 the high-density structure survives.
 
-**Hypothesis (unverified):** Low-density bins are being crushed to black —
-candidates: (a) log-density / gamma tonemap clipping the low end (gamma_threshold,
-vibrancy, or highlight-power crushing dim bins); (b) density-estimation (DE) filter
-not spreading sparse low-count samples; (c) the chaos-game depositing too few
-samples in low-density basins (PYR3-029 coverage family). The soft halo is exactly
-the kind of low-count, wide-area structure DE + log-gamma are supposed to lift.
+**Investigation 2026-05-28 (root cause localized to the chaos game, NOT tonemap):**
 
-**Likely a CLASS, not one fixture:** if pyr3 crushes low-density everywhere, many
-showcase flames will read darker/sparser than the reference, and `[PYR3-033]`
-(`242.01373` pure black) is plausibly the extreme case of the SAME root cause (an
-all-low-density flame → fully crushed). Cross-link both + `[PYR3-029]`.
+Ruled OUT tonemap/DE/gamma and a mis-ported variation:
+- **Histogram dump (`npm run hist`, full quality, native dims w/ supersample=3):**
+  `nonzero=18460 / total_pixels=4262400` → only **0.43% of buckets are nonzero**.
+  `sum_count=24.15e9`, `max_cnt_per_px=1.50e9` (one pixel holds ~6% of ALL samples),
+  `mean_cnt_nonzero=1.3e6`. So 24 billion samples land in just 18,460 pixels — the
+  trajectory iterates fully but is **confined to a tiny invariant set**; the wide
+  halo's low-count pixels are flat ZERO in the histogram.
+- Therefore it is NOT tonemap/gamma/DE: density estimation cannot lift bins that are
+  zero, and gamma=5 / gamma_threshold=0.01 can't recover absent samples. The earlier
+  "low-density crush" framing was wrong — the low-density region is never deposited.
+- The flame has 2 xforms: xform1 `radial_blur=0.5` (the blurred-arc halo), xform2
+  (dominant, weight 2.5) `spherical=2.25` (the 1/r² core). pyr3 keeps the spherical
+  core, loses the radial_blur halo.
+- **Verified faithful ports** (so the bug is not a simple formula error):
+  `var_radial_blur` matches flam3 `var36` (rndG = w·(4·rand−2), spinvar/zoomvar =
+  sin/cos(angle·π/2), RNG draw count + left-to-right order); `var_spherical` matches
+  (`p·w/(r²+EPS)`); bad-value handling matches flam3 (`is_bad = NaN || |p|>1e10` →
+  reseed to random [−1,1], retry ≤4×, skip splat); camera framing correct (the core
+  is positioned as in the reference).
 
-**Next phase:** A/B pyr3 vs the reference URL for `243.00171`; isolate which stage
-crushes the low end — dump the raw histogram (`npm run hist`) and check whether the
-low-density glow exists pre-tonemap (→ tonemap/gamma bug) or is absent in the
-histogram (→ chaos-game/DE coverage bug). Compare `gamma`, `gamma_threshold`,
-`vibrancy`, `highlight_power`, `background` handling vs flam3-C. Resolve before the
-v1.0 public showcase if it's a broad class — under-rendered flames undercut the
-showcase's whole purpose.
+**f32 EXONERATED (2026-05-28):** The reference render is kotlin's `GpuF32Backend`
+— **also f32** — and it paints the full halo. So this is NOT an f32-precision floor;
+pyr3 has a *structural divergence* from a working f32 GPU chaos game. (Supersedes the
+"f32 floor" hypothesis above.)
+
+**Structural divergence found — pyr3 vs kotlin chaos game:**
+- **xform pick:** kotlin uses a cumulative-weight LINEAR SCAN over `pickTable[64]`;
+  pyr3 (post-`[PYR3-029]`) uses flam3's 14-bit `xform_distrib` GRAIN table. Different
+  pick sequences for the same RNG state.
+- **walker color init:** kotlin seeds color with `rand01()`; pyr3 seeds `0.0` with NO
+  rng draw (PYR3-029 Phase-5 change to match flam3's stream). Shifts the whole ISAAC
+  stream by one draw per walker vs kotlin.
+- Net: pyr3 was rewritten to **bit-match flam3-C's RNG stream**; kotlin never was.
+
+**RESOLVED TO DIAGNOSIS (2026-05-28, 4-way render + histogram):**
+`.remember/verify/pyr3-034-243-3way.html`.
+
+```
+                       nonzero      coverage   mean_cnt/nonzero   halo?
+flam3-C (ground truth) 2,373,856    52%        10,133             YES
+kotlin GpuF32Backend   (f32 GPU)    —          —                  YES
+pyr3 current            18,460      0.43%      1.30M              no
+pyr3 pre-PYR3-029       18,524      0.43%      1.30M              no
+```
+
+- **flam3-C HAS the halo (52% coverage).** Since flam3-C is pyr3's ground truth, pyr3
+  is **genuinely broken** here — NOT "correct to ground truth." The kotlin reference is right.
+- **PYR3-029 is NOT the cause.** The pre-PYR3-029 engine (commit `5191ee4`, original
+  peek-era scan + random-color chaos game) renders IDENTICALLY broken (0.43%). Reverting
+  the PYR3-029 work does not help — the bug predates it and lives in the **peek-era chaos game**.
+- **Not f32** (kotlin's GPU is f32 too). **Not tonemap/DE** (halo absent from histogram).
+  **Not a mis-ported variation** (radial_blur/spherical verified).
+
+**Root-cause mechanism (leading, high-confidence):** flam3 and pyr3 distribute the SAME
+total samples completely differently — flam3 spreads over ~128× more pixels (2.37M vs
+18.5K). flam3 renders in many short **sub-batches**, each starting from a FRESH random
+point + short fuse, so it captures the *transient* paths (the halo arcs are transients
+on the way to/from the dense attractor). pyr3's peek-era walkers run **one long
+continuous orbit** (single fuse, then `iters_per_walker` plots) → they settle onto the
+dense attractor and never re-traverse the transient halo. Net: pyr3 paints only the
+attractor core; flam3 paints attractor + transients.
+
+**Walker-structure theory DISPROVEN empirically (2026-05-28):**
+- pyr3 & kotlin share the SAME budget algorithm + constants (TARGET_WALKERS=1024,
+  MIN_ITERS=4096, MAX_ITERS=1048576). For this flame both pick **1024 walkers ×
+  92,500 iters** — neither re-fuses periodically (kotlin's loop is also single-fuse).
+- Forcing more/shorter walkers via `pyr3-hist --walkers {16384,65536,262144}` did NOT
+  raise coverage — it went 18.5K → ~10K nonzero (worse), and the **1.5e9-counts-in-one-
+  pixel spike is invariant to walker count**. So orbit-length / f32-trapping is NOT it.
+- pyr3 **correctly discards** out-of-bounds splats (`chaos.wgsl:1843` bounds-check, no
+  edge-clamp) → the spike is a legitimate in-bounds dense-core pixel. flam3-C's own max
+  is ~1.1e9 — the dense **core is correct in both**. The ONLY difference is halo
+  coverage: flam3 hits 2.37M pixels, pyr3 18K.
+
+**Ruled out so far:** f32 precision (kotlin f32 works), tonemap/DE (halo absent from
+histogram), variation formulas (radial_blur/spherical text-match flam3), xform-pick
+mechanism (pre-PYR3-029 scan logic equally broken), walker count/orbit length (swept),
+out-of-bounds clamp (discards correctly), camera (core positioned right).
+
+**Remaining: the trajectory itself explores less than flam3-C's, same RNG budget.**
+Only a step-by-step diff will pin it.
+
+**Deep-dive 2026-05-28 (full hypothesis space eliminated):** pyr3's f32 iteration
+converges to a ~18K-pixel invariant set; flam3-C AND kotlin (both f32-capable) fill 2.37M
+(52%) — a ~128× attractor-size gap on the SAME 2-xform IFS (xform0 linear+radial_blur,
+xform1 linear+spherical w=2.25). Eliminated, each with evidence:
+- **picks** — pyr3 82% / flam3 84% spherical over 1000 iters: match (pick mechanism fine).
+- **spherical + EPS** — `p·w/(r²+1e-10)` identical in pyr3, kotlin (`chaos.comp:514`),
+  flam3 (`private.h:47`). Verified.
+- **variation summation** — trace confirms `pv = spherical(pa) + 0.001·linear(pa)` to the
+  digit; both vars summed correctly.
+- **bad-value reseed** — `isBad=0` across walker-0's 1000 traced iters; never fires.
+- **camera/scale/rotate** — zooming OUT (scale 21.8→4) gave FEWER pixels (2900), so halo
+  points are in-frame, not clipped. Not a projection bug.
+- **walker count / orbit length** — swept 1024→262144, coverage flat/worse; 1.5e9-in-one-
+  pixel invariant. Neither pyr3 nor kotlin re-fuses (same single-fuse loop).
+- **f32 precision class** — kotlin `GpuF32Backend` (f32) renders the full halo.
+- **out-of-bounds** — pyr3 discards correctly (`chaos.wgsl:1843`), no edge-clamp.
+
+**The gap is emergent f32 dynamics** (pyr3's invariant set ≠ kotlin's, both f32) — the
+only thing not yet bisected, because the decisive tool is BLOCKED:
+
+**BLOCKER — aligned per-iter trace unavailable.** `bin/pyr3-trace.ts` emits the
+`[iter pick pax pay pvx_pre pvy_pre pvx pvy isBad]` schema; the local
+`flam3-render-32bit-isaac-rngtrace` binary is STALE — it emits the OLD
+`[xformPick pvxMag pvyMag isBad drawCount]` format. The current `flam3.c:363` source DOES
+emit the new schema (+ `isaac_seed_hex`, `flam3.c:2594`) but isn't compiled.
+[[reference-flam3-c-local-build]] warns: "Do not rebuild without reviewing the diff first
+— the existing binaries are the canonical reference; the uncommitted .c edits are the spec."
+
+**(A) aligned trace DONE 2026-05-28 — non-diagnostic, here's why:** No rebuild needed —
+`flam3-render-32bit-isaac-rngtrace-v0.9` already emits the `pax/pvx_pre` schema + accepts
+`isaac_seed_hex`. Ran pyr3-f32 vs flam3-v0.9 with aligned ISAAC. They diverge ~1% by the
+first traced (post-200-fuse) iter (pyr3 pax=-2.6016 vs flam3 -2.6262). **But this is f32-vs-
+f64 chaotic divergence, NOT a localizable bug:** the working kotlin-f32 engine would
+diverge from flam3-f64 identically — a walker-0-vs-f64 trace cannot distinguish the good
+f32 engine from the bad one. So the aligned-trace-vs-flam3 approach is a dead end for THIS
+bug (it was the right tool for PYR3-029's RNG-stream-alignment question, wrong tool here).
+
+**Sharpened conclusion:** the 128× attractor-SIZE gap (52% vs 0.43%) is NOT typical f32
+rounding sensitivity — two valid f32 engines yield similar-size attractors with different
+exact pixels, not a 128× size collapse. This implies a **qualitative, likely WGSL-specific
+difference** (fma contraction / op-order / a subtle WGSL-vs-GLSL f32 semantic) that makes
+pyr3's f32 dynamics fall onto a tiny attractor where kotlin's f32 stays ergodic.
+
+**Only remaining isolation path:** trace **pyr3-f32 vs kotlin-f32** (both f32) — requires
+building + instrumenting pyr3-kotlin's JVM+Vulkan `GpuF32Backend` to emit a comparable
+per-iter / histogram trace, then diffing. Substantial cross-repo tooling; realistic chance
+the root cause is WGSL fma/rounding that is hard to fully control. **Next phase decision:**
+- (B) Manual line-by-line pyr3 `chaos.wgsl` vs kotlin `chaos.comp` f32-arithmetic audit of
+  the full iteration (affine coef→a0/a1 mapping, op order, fma, color/post). Large, no tooling.
+- (C) Accept as an f32-attractor casualty: drop `243.00171` + `242.01373` from the curated
+  showcase, ship v1.0 without them, leave PYR3-034 open for a dedicated session.
+
+**Next phase (pick one):**
+- **(confirm)** Run the existing bilateral RNG trace `bin/pyr3-trace.ts` on this flame
+  (pyr3 f32 vs flam3-C f64, seeds aligned) — does the trajectory diverge within a few
+  iters as PYR3-029's 02226 trace showed? If yes → confirmed f32-floor, and per
+  "GPU only / no CPU path" + the v0.19 accepted-floor decision, the pragmatic
+  resolution is **(accept)** drop `243.00171` + `242.01373` from the curated showcase
+  as f32 casualties (the showcase auto-skip already hides 242.01373).
+- **(only if a broad class)** If a sweep shows MANY showcase flames are similarly
+  confined, that's a real v1.0 showcase-quality blocker worth an f64/compensated
+  spherical experiment despite the GPU-only guardrail. Quantify first: re-run the
+  showcase build's luminance scan + spot-check N fixtures vs their reference URLs
+  before committing to engine work.
 
 ## [PYR3-033] bug · S · 🐛 · queued · v1.x — `electricsheep.242.01373` renders pure black at `--preset 4k`
 

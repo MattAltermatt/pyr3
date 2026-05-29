@@ -116,6 +116,16 @@ const XFORM_RESERVED = new Set([
   'motion_frequency', 'motion_function',
 ]);
 
+// PYR3-036: every valid `<variation>_<param>` attribute name, derived from
+// VARIATION_PARAMS. Lets the xform scan tell a recognized per-variation param
+// (read by readVariationParams) apart from an attribute we don't understand —
+// so the latter is surfaced in the report rather than silently swallowed (the
+// failure mode that hid the radial_blur drop, PYR3-034).
+const KNOWN_PARAM_ATTRS = new Set<string>();
+for (const [varName, paramNames] of Object.entries(VARIATION_PARAMS)) {
+  for (const pn of paramNames) KNOWN_PARAM_ATTRS.add(`${varName}_${pn}`);
+}
+
 function parseSymmetryChild(flame: Element): Symmetry | undefined {
   const sym = flame.querySelector(':scope > symmetry');
   if (!sym) return undefined;
@@ -344,34 +354,45 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
   const variations: Variation[] = [];
   for (const [name, value] of normAttrs) {
     if (XFORM_RESERVED.has(name)) continue;
-    if (name.includes('_')) {
-      // Could be a per-variation param of a known variation (julian_power etc).
-      // Skip it here — readVariationParams handles those. If the head is NOT
-      // a known variation, the param is silently dropped (its parent
-      // variation already lands in droppedVariations).
-      const head = name.split('_')[0]!;
-      if (head in V) continue;
-      // Unknown-variation param: skip silently (parent variation is reported).
+    // PYR3-034: test `name in V` BEFORE the underscore split below. Variation
+    // names can THEMSELVES contain underscores (radial_blur, gaussian_blur,
+    // pre_blur). The old code hit the `name.includes('_')` branch first and
+    // split on the first `_` (`radial_blur` → head `radial` ∉ V), silently
+    // dropping the weight attribute — so e.g. radial_blur never deposited and
+    // electricsheep.243.00171 lost its entire halo. Matching the full name
+    // first records the variation; genuine `<var>_<param>` attrs still fall
+    // through to the param branch.
+    if (name in V) {
+      const w = expectFiniteNumber(value, name);
+      if (w === 0) continue; // explicit-zero acts like absent
+      const idx = V[name as keyof typeof V] as VariationIndex;
+      const variation: Variation = { index: idx, weight: w };
+      const params = readVariationParams(normAttrs, name);
+      for (const pk of PARAM_KEYS) {
+        const v = params[pk];
+        if (v !== undefined) variation[pk] = v;
+      }
+      variations.push(variation);
       continue;
     }
-    if (!(name in V)) {
-      // Long-tail or unknown variation name. Record + skip.
-      const w = expectFiniteNumber(value, name);
-      const drop: DroppedVariation = { name, weight: w, xformIndex };
+    if (name.includes('_')) {
+      // Recognized `<var>_<param>` (julian_power, radial_blur_angle, …) → read
+      // by readVariationParams when its parent variation is recorded.
+      if (KNOWN_PARAM_ATTRS.has(name)) continue;
+      // PYR3-036: underscored, not a known variation, not a recognized param →
+      // surface it instead of silently swallowing it (the class of bug that hid
+      // the radial_blur drop). Reuses the droppedVariations channel.
+      const uw = Number(value);
+      const drop: DroppedVariation = { name, weight: Number.isFinite(uw) ? uw : 0, xformIndex };
       if (isFinal) drop.isFinal = true;
       dropped.push(drop);
       continue;
     }
+    // Single-token name that is not a known variation → dropped variation.
     const w = expectFiniteNumber(value, name);
-    if (w === 0) continue; // explicit-zero acts like absent
-    const idx = V[name as keyof typeof V] as VariationIndex;
-    const variation: Variation = { index: idx, weight: w };
-    const params = readVariationParams(normAttrs, name);
-    for (const pk of PARAM_KEYS) {
-      const v = params[pk];
-      if (v !== undefined) variation[pk] = v;
-    }
-    variations.push(variation);
+    const drop: DroppedVariation = { name, weight: w, xformIndex };
+    if (isFinal) drop.isFinal = true;
+    dropped.push(drop);
   }
 
   // Empty-variation fallback: keep xform selectable in the chaos pool. Applies

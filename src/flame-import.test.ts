@@ -3,6 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseFlame, parseCoefs } from './flame-import';
 import { SPIRAL_GALAXY } from './genome';
+import { V } from './variations';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 describe('parseFlame smoke', () => {
   it('throws on malformed XML', () => {
@@ -41,6 +44,32 @@ describe('parseFlame xform translation', () => {
     expect(genome.xforms[0]!.variations).toEqual([
       { index: 14, weight: 1, param0: 3, param1: 0.7 },
     ]);
+  });
+
+  // PYR3-034 regression: variation names that THEMSELVES contain an underscore
+  // (radial_blur, gaussian_blur, pre_blur) must be recognized as variations, not
+  // mistaken for a `<var>_<param>` param and silently dropped. The old parser
+  // split on the first `_` (radial_blur → head "radial" ∉ V), dropping the weight
+  // and zeroing the variation — which erased electricsheep.243.00171's halo.
+  it('parses radial_blur (underscore-named) + its angle param without dropping it', () => {
+    const xml = wrapFlame(
+      '<xform weight="0.5" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" linear="0.05" radial_blur="0.5" radial_blur_angle="0.1"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([
+      { index: 0, weight: 0.05 },
+      { index: 47, weight: 0.5, param0: 0.1 },
+    ]);
+    expect(report.droppedVariations).toEqual([]);
+  });
+
+  it('parses gaussian_blur (underscore-named, 0-param) without dropping it', () => {
+    const xml = wrapFlame(
+      '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" gaussian_blur="0.8"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([{ index: 45, weight: 0.8 }]);
+    expect(report.droppedVariations).toEqual([]);
   });
 
   // Phase 9b shipped all 99 flam3 variations (2026-05-12 v1.0 ship). No
@@ -739,6 +768,54 @@ describe('parseFlame <flame nick="..."> capture', () => {
     const { genome } = parseFlame(wrapWithAttrs('name="test" nick="  Brood  "'));
     expect(genome.nick).toBe('Brood');
   });
+});
+
+// PYR3-036 safeguard #1 — reachability: EVERY variation in V must survive
+// import. A variation defined in the table but silently dropped at parse time
+// (the PYR3-034 radial_blur/super_shape class) fails here loudly. This is the
+// guard that turns "silent wrong render" into a red test for all ~99 arms.
+describe('PYR3-036 — every variation in V survives import (reachability)', () => {
+  it('records each variation with its index + weight 1.0; none dropped', () => {
+    const failures: string[] = [];
+    for (const [name, index] of Object.entries(V)) {
+      const xml = wrapFlame(
+        `<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" ${name}="1.0"/>`,
+      );
+      const { genome, report } = parseFlame(xml);
+      const vars = genome.xforms[0]!.variations;
+      const ok = vars.some((v) => v.index === index && v.weight === 1.0);
+      if (!ok) {
+        failures.push(
+          `${name} (index ${index}): vars=${JSON.stringify(vars)} dropped=${JSON.stringify(report.droppedVariations)}`,
+        );
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+});
+
+// PYR3-036 safeguard #2 — curated-corpus assertion: every parity fixture must
+// import with nothing dropped (post-loud-parser, droppedVariations also carries
+// unrecognized underscored attrs). ALLOWLIST documents any genuinely-unsupported
+// attr. Had this existed, the radial_blur drop would have been red on day one.
+describe('PYR3-036 — curated parity fixtures import cleanly', () => {
+  const dir = join(process.cwd(), 'fixtures', 'flam3-goldens');
+  const ids = existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+    : [];
+  const ALLOWLIST = new Set<string>(); // no genuinely-unsupported attrs expected in the curated set
+  it('found the parity fixtures', () => {
+    expect(ids.length).toBeGreaterThan(0);
+  });
+  for (const id of ids) {
+    const flam3 = join(dir, id, `${id}.flam3`);
+    if (!existsSync(flam3)) continue;
+    it(`${id}: no dropped/unrecognized variations`, () => {
+      const { report } = parseFlame(readFileSync(flam3, 'utf8'));
+      const unexpected = report.droppedVariations.filter((d) => !ALLOWLIST.has(d.name));
+      expect(unexpected).toEqual([]);
+    });
+  }
 });
 
 describe('parseFlame multi-flame file handling', () => {

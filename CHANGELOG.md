@@ -10,6 +10,51 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.22 — 2026-05-28 — PYR3-034 fixed: underscore-named variations were silently dropped (radial_blur halo)
+
+**Outcome:** `electricsheep.243.00171` renders its full soft-blue halo nebula again.
+Chaos-pass coverage jumps **0.43% → 55%** (18,501 → 2,346,734 nonzero buckets),
+matching flam3-C's 52% / mean-count-per-pixel (10,234 vs 10,133) within ~1%. The
+**v1.0 BLOCKER** [PYR3-034] is cleared.
+
+**Root cause:** `flame-import.ts` split every xform attribute name on the first `_`
+to separate variation-from-param (the `<var>_<param>` convention). Variation names
+that *themselves* contain an underscore — `radial_blur`, `gaussian_blur`, `pre_blur`,
+`super_shape`, `wedge_julia`, `wedge_sph` — were split to a non-variation head
+(`radial_blur` → `radial` ∉ V) and **silently
+dropped**. On 243.00171, xform0 lost its `radial_blur=0.5` and ran `linear=0.05`
+alone, collapsing the orbit onto the spherical 2-cycle — a 128× attractor-size gap.
+
+**Fix:** test `name in V` BEFORE the underscore split in `parseXformElement`'s
+attribute walk, so multi-word variation names are recognized as variations; genuine
+`<var>_<param>` attrs still fall through to the param branch. +2 regression tests.
+
+**Not a precision floor.** The prior investigation (and the next-session memory) framed
+this as a GPU-f32-vs-f64 attractor-precision issue with df64 sanctioned as the fix. That
+was wrong: a CPU f64-vs-f32 oracle of the exact map showed *identical* coverage in both
+precisions (18.7% each) — proving the map was missing a variation, not losing precision.
+df64 NOT needed; the GPU-only/f32 stance holds. The fma/op-order experiments correctly
+exonerated rounding; the per-iter trace localized the orbit to a spherical 2-cycle; the
+genome read showed radial_blur output ≡ `linear × 0.05` (radial_blur contributing zero),
+which pinned it.
+
+**Scope — six variations, not three.** A full corpus attribute audit (PYR3-036) found the
+drop hit every underscore-named variation in `V`: `radial_blur`, `gaussian_blur`, `pre_blur`,
+`super_shape`, `wedge_julia`, `wedge_sph`. It also resolved **[PYR3-024]**: 248.22289's 4K
+divergence (R **44.96 → 5.57**) was this bug, not the f32 floor PYR3-024/029 had assumed.
+(coverage.248.02226, the other PYR3-029 outlier, does NOT use a dropped variation and stays.)
+
+**Verified — all three v1.0 ship gates green post-fix:** 25/25 BE-vs-flam3-C parity · 5/5 BE 4K ·
+25/25 FE↔BE · 4539 unit (incl. PYR3-036 safeguards) · typecheck clean. **[PYR3-035] done:** all
+13 affected showcase fixtures re-rendered + gallery rebuilt (54 cards). Notably, pyr3's
+`243.06888` (super_shape) now **surpasses the kotlin v1.1 reference**, which was too dark —
+kotlin has its own super_shape issue, reinforcing the v0.18 flam3-C-ground-truth pivot.
+
+**Safeguards ([PYR3-036]):** the parser no longer silently swallows any attribute (unrecognized
+underscored attrs surface in the report); an all-99 reachability test asserts every variation
+in `V` survives import; a curated-corpus test asserts the parity fixtures drop nothing. Had
+these existed, the drop would have been a red test on day one.
+
 ## v0.21 — 2026-05-28 — Public `/showcase` gallery (v1.0 Chunk 1)
 
 **Outcome:** A static public showcase gallery is generated into
