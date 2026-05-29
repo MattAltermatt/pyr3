@@ -36,8 +36,15 @@
         background: var(--card-bg); padding: 1px 6px; border-radius: 3px;
         font-family: ui-monospace, monospace; font-size: 12px;
       }
-      .family li { margin: 8px 0; font-size: 14px; }
-      .family strong { display: inline-block; min-width: 72px; }
+      .family { list-style: none; padding-left: 4px; }
+      .family li {
+        display: grid;
+        grid-template-columns: 56px 1fr;
+        gap: 0 18px;
+        margin: 10px 0;
+        font-size: 14px;
+      }
+      .family strong { font-weight: 600; }
       .colophon {
         background: var(--card-bg); border: 1px solid var(--card-border);
         border-radius: 6px; padding: 14px 18px; margin-top: 28px;
@@ -71,24 +78,24 @@
       <ul class="family">
         <li>
           <strong><a href="https://github.com/MattAltermatt/pyr3">pyr3</a></strong>
-          The canonical Kotlin/JVM renderer + editor for desktop.
-          Has the sliders, the mutators, the palette mixer, the everything.
+          <span>The canonical Kotlin/JVM renderer + editor for desktop.
+          Has the sliders, the mutators, the palette mixer, the everything.</span>
         </li>
         <li>
           <strong><a href="https://github.com/MattAltermatt/electric-sheep-fold">ESF</a></strong>
-          The Electric Sheep Fold — a corpus of every Electric Sheep
-          flame, archived and re-collated.
+          <span>The Electric Sheep Fold — a corpus of every Electric Sheep
+          flame, archived and re-collated.</span>
         </li>
         <li>
-          <strong>pyr3</strong> (this site)
-          The browser-only viewer companion. WebGPU, TypeScript, Vite.
-          Read-only by design.
+          <strong>pyr3</strong>
+          <span>(this site) The browser-only viewer companion. WebGPU, TypeScript, Vite.
+          Read-only by design.</span>
         </li>
         <li>
           <strong>flam3</strong>
-          The algorithmic ancestor — Scott Draves's original fractal
+          <span>The algorithmic ancestor — Scott Draves's original fractal
           flame renderer, started in 1992. The chaos-game inner loop +
-          variation library every flam3-family renderer inherits.
+          variation library every flam3-family renderer inherits.</span>
         </li>
       </ul>
 
