@@ -37,14 +37,22 @@ session; the url-codec module + inbound `?flame=` link decoding are kept intact.
 **help/*.html rebranded** from "pyr3-peek" (Phase-0 wholesale-copy leftover) to
 "pyr3" across all three pages.
 
+**About page rewritten (`[PYR3-037]`, pulled forward this session).** The
+mechanical rebrand exposed that `about.html` was built around a two-product
+worldview — a separate desktop Kotlin/JVM renderer ("Forge", "pyr3 CPU"). It's
+now rewritten to pyr3's real single-product identity: one TypeScript + WebGPU
+engine, two consumers (browser viewer + headless CLI), in the flam3 lineage. The
+"pyr3 family" list collapses to **pyr3 / ESF / flam3** with outbound links to
+electricsheep.org and the flam3 repo; the two-column layout now aligns.
+
 **Backlog impact:** closes the **FE-cleanup slice of `[PYR3-031]`** (slim-bar
 rebuild swept the dead `setLoading` / status-pulse / `.pyr3-bar-btn-accent` paths;
 Share button removed; no stale TODOs remained) and the **FE-facing slice of
 `[PYR3-032]`** (help-page branding + FE source comments). The **functional
 `[PYR3-032]` purge stays open** — fixture-manifest source paths,
 `fixtures/kotlin-*` renames, agent defs, and engine `Port: pyr3-kotlin`
-provenance comments are explicitly NOT done. Files **`[PYR3-037]`** (About-page
-brainstorm + rebuild).
+provenance comments are explicitly NOT done. **Resolves `[PYR3-037]`** (the
+About-page rewrite above — pulled forward instead of deferred).
 
 ## v0.22 — 2026-05-28 — PYR3-034 fixed: underscore-named variations were silently dropped (radial_blur halo)
 

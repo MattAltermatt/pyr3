@@ -9,7 +9,17 @@ current cycle lives in [ROADMAP.md](ROADMAP.md).
 > **Next ID: PYR3-038** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-037] feat · M · 🪨 · queued · v1.x — Brainstorm + rebuild the About page (`help/about.html`)
+## [PYR3-037] feat · M · ✅ **RESOLVED (v0.23, 2026-05-28)** — About page rewritten to single-product identity
+
+> **✅ Resolved v0.23 — pulled forward into the FE-polish session.** Rather than
+> defer, the user pulled this forward mid-verify. `help/about.html` was rewritten
+> from the inherited two-product framing (browser viewer vs a separate desktop
+> Kotlin/JVM renderer + "Forge"/"pyr3 CPU") into pyr3's real single-product
+> identity: **one TypeScript + WebGPU engine, two consumers** (browser viewer +
+> headless CLI), in the flam3 lineage. The "pyr3 family" list collapsed to
+> **pyr3 / ESF / flam3** (the bogus desktop entry removed), the two-column layout
+> now aligns, and outbound links go to electricsheep.org + the flam3 repo. The
+> editor/mutator is framed as roadmap, not a separate existing product.
 
 **Filed 2026-05-28 (user-directive during the v1.0 FE-polish brainstorm).** The
 v1.0 FE polish pass adds a quiet `about` link to the bar (left zone, between the
