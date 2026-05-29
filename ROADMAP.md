@@ -89,13 +89,14 @@ re-decided once the viewer's continued root presence was recalled.
    load-failure toast, Share button removed, help pages rebranded; swept
    vestigial `setLoading`/status-pulse/`.pyr3-bar-btn-accent`). Companion
    About-page rebuild filed as `[PYR3-037]`. See CHANGELOG v0.23.
-4. 🚧 **Chunk 4 — GitHub repo replacement + gh-pages deploy** (Vite
-   `base: '/pyr3/'`; push to `github.com/MattAltermatt/pyr3` replacing the
-   predecessor repo; archive the predecessor projects per VISION `§Acceptance`).
-   Gated on parity gates green + CLAUDE.md decision #7.
+4. ✅ **Chunk 4 — public GitHub repo + automated deploy** (shipped v0.25–v0.26).
+   `github.com/MattAltermatt/pyr3` is public; the predecessor scrub landed (v0.25);
+   the site serves at the **apex `https://pyr3.app/`** (Vite `base: '/'`) with
+   `mattaltermatt.github.io/pyr3/` 301-redirecting to it. Deploy is now **automated
+   on push to `main`** via GitHub Actions (`[PYR3-038]`, v0.26 — see below).
 
-   Viewer URL: `https://mattaltermatt.github.io/pyr3/` · gallery:
-   `…/pyr3/showcase/` (both unversioned — always latest).
+   Viewer URL: `https://pyr3.app/` · gallery: `https://pyr3.app/showcase/`
+   (both unversioned — always latest).
 
    **Pre-rendered artifacts already in place (2026-05-28):**
    - 55 × 4K renders at `fixtures/showcase-v1.0/<id>.pyr3-4k.png`
@@ -129,7 +130,9 @@ CHANGELOG v0.19.
   of new genome-generation strategies.
 - **Single-binary CLI distribution** (BACKLOG `[PYR3-005]`) — Node SEA / pkg wraps
   `bin/pyr3-render.ts` into a self-contained executable.
-- **GitHub Actions CI** (BACKLOG `[PYR3-006]`) — build + test + gh-pages auto-deploy.
+- **GitHub Actions CI** (BACKLOG `[PYR3-006]`) — build + test on PR/push. (The
+  **auto-deploy** half shipped separately in v0.26 via `[PYR3-038]`; this entry is
+  now just the build+test CI gate.)
 - **Showcase gallery on homepage** (BACKLOG `[PYR3-007]`).
 
 ### 🐑 Corpus share-links — follow-ups (the `/v1/gen/{gen}/id/{id}` feature, shipped v0.24)
@@ -138,8 +141,9 @@ The corpus share-link feature is live (chunked brotli delivery from
 electric-sheep-fold; see CHANGELOG v0.24 + `docs/corpus-share-url.md`). Next
 refinements, filed 2026-05-29:
 
-- **CI deploy automation** (BACKLOG `[PYR3-038]`, *soon*) — automate the manual
-  build+bake+force-push deploy; needs a published ESF chunk Release + a Pages-source pick.
+- ✅ **CI deploy automation** (BACKLOG `[PYR3-038]`, **shipped v0.26**) — push to
+  `main` auto-deploys via `actions/deploy-pages`, baking chunks from the ESF Release
+  (pinned + cached by `CHUNK_RELEASE_TAG`). Followed by `[PYR3-046]` (Node-24 action bump).
 - **Missing sheep: still render the viewer + honest wording** (BACKLOG `[PYR3-039]`) —
   a missing id (e.g. `/v1/gen/248/id/103`) should show the full viewer + a graceful
   "not in the corpus" state; stop saying "never born."
