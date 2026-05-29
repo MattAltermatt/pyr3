@@ -6,8 +6,29 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-037** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-038** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-037] feat · M · 🪨 · queued · v1.x — Brainstorm + rebuild the About page (`help/about.html`)
+
+**Filed 2026-05-28 (user-directive during the v1.0 FE-polish brainstorm).** The
+v1.0 FE polish pass adds a quiet `about` link to the bar (left zone, between the
+🔥 pyr3 wordmark and the flame name) pointing at `help/about.html`. That page is a
+Phase-0 wholesale copy from pyr3-peek — its branding is being corrected to "pyr3"
+in the FE-polish pass, but the **content + design were never reconsidered for
+pyr3's own v1.0 story** (showcase gallery, flam3-C ground truth, the single-engine/
+two-consumers architecture, the Electric Sheep lineage). This entry is a dedicated
+session to brainstorm what the About page should actually *say and look like* as
+pyr3's public front-door explainer — not just a rename.
+
+**Why its own session:** the FE-polish pass only rebrands the page (mechanical);
+the real "what should About communicate, and how should it look" question is a
+fresh design problem deserving its own brainstorm + spec. Surfaced here so the
+"but eventually" thinking isn't lost.
+
+**Acceptance:** About page content + layout designed from pyr3's v1.0 narrative
+(not inherited from pyr3-peek); consistent visual language with the polished
+viewer bar; links to showcase gallery + source repos where natural.
 
 ## [PYR3-036] chore · M · ✅ **RESOLVED (v0.22, 2026-05-28)** — variation-import safeguards (loud parser + reachability + corpus assertion)
 
