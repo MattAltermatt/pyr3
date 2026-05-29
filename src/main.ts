@@ -12,7 +12,7 @@ import { load as loadFileFromUser, type LoadResult } from './loader';
 import { startChunkedRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { mountBar, type BarHandle } from './ui-bar';
-import { decodeFlame, encodeFlame } from './url-codec';
+import { decodeFlame } from './url-codec';
 import { checkWebGPU } from './webgpu-check';
 
 // The "welcome flame" — what `/` paints when there are no URL params.
@@ -48,19 +48,10 @@ async function main(): Promise<void> {
   let openFilePicker: () => void = () => {
     console.warn('pyr3: file picker invoked before canvas init');
   };
-  // Cached raw text of the currently-loaded flame. Updated in
-  // applyLoadResult; read by onShareLink to encode the share URL.
-  let lastLoadedText: string | null = null;
 
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     onOpenFile: () => openFilePicker(),
-    onShareLink: () => {
-      void shareCurrentFlame(lastLoadedText, bar);
-    },
-    onWordmark: () => {
-      window.location.href = '/help/about.html';
-    },
   });
 
   if (!webgpu.available) {
@@ -200,8 +191,7 @@ async function main(): Promise<void> {
       // `g.scale * g.oversample` — if the pipeline is built at oversample=1
       // but g.oversample stays at the genome's declared supersample
       // (often 4 for ES flames), the projection over-zooms by that factor,
-      // producing the "camera stuck at the middle point" symptom that
-      // pyr3-peek couldn't crack.
+      // producing the "camera stuck at the middle point" over-zoom symptom.
       oversample: QUICK_OVERSAMPLE,
       quality: Math.min(activeGenome.quality ?? QUICK_MAX_SPP, QUICK_MAX_SPP),
     };
@@ -270,7 +260,6 @@ async function main(): Promise<void> {
       authorNick: result.genome.nick,
       sourceFilename: sourceLabel,
     });
-    lastLoadedText = result.sourceText;
     await rerender();
   };
 
@@ -397,24 +386,6 @@ function mountWebGPUFallback(): void {
   cta.textContent = 'Read the full WebGPU help page ↗';
   fallback.append(h2, p1, ul, fixP, cta);
   fallback.hidden = false;
-}
-
-async function shareCurrentFlame(text: string | null, bar: BarHandle): Promise<void> {
-  if (!text) {
-    bar.showToast('Nothing to share yet.');
-    return;
-  }
-  try {
-    const encoded = await encodeFlame(text);
-    const url = new URL(window.location.href);
-    url.search = `?flame=${encoded}`;
-    await navigator.clipboard.writeText(url.toString());
-    bar.showToast('Link copied — paste anywhere.');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`pyr3: share failed — ${msg}`);
-    bar.showToast('Share failed — see console.');
-  }
 }
 
 async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
