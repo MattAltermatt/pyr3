@@ -26,6 +26,18 @@ the real "what should About communicate, and how should it look" question is a
 fresh design problem deserving its own brainstorm + spec. Surfaced here so the
 "but eventually" thinking isn't lost.
 
+**Load-bearing finding from the v0.23 rebrand (must fix here):** the mechanical
+pyr3-peek→pyr3 swap exposed that `about.html` was written around a **two-product
+worldview** — "pyr3-peek" = the browser viewer, and a *separate* "pyr3" = a
+desktop Kotlin/JVM renderer + editor ("Forge", "Explore"). After the swap both are
+named "pyr3", so the copy is now self-contradictory: the "pyr3 family" list has two
+entries both labeled pyr3, and sentences like "the canonical f64 anchor stays in
+pyr3 (the desktop renderer)" no longer parse against the single-product reality.
+The rebrand left these grammatically valid but semantically wrong (deliberately —
+collapsing the framing is content work, not a rename). This redesign MUST collapse
+the two-product story into pyr3's actual single-product identity (one TS+WebGPU
+engine, two consumers: browser viewer + headless CLI).
+
 **Acceptance:** About page content + layout designed from pyr3's v1.0 narrative
 (not inherited from pyr3-peek); consistent visual language with the polished
 viewer bar; links to showcase gallery + source repos where natural.
