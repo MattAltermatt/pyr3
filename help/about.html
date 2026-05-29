@@ -103,10 +103,9 @@
       <p>
         pyr3 is a <strong>single-precision (f32) WebGPU renderer.</strong>
         Like every f32 flame renderer in the family, its output is
-        similar but not pixel-identical to the canonical f64 reference
-        in flam3 / pyr3 CPU. Where a genome trips f32-divergent
-        behavior, pyr3 renders its f32 result and moves on; the
-        canonical f64 anchor stays in pyr3.
+        similar but not pixel-identical to flam3, the canonical f64
+        reference. Where a genome trips f32-divergent behavior, pyr3
+        renders its f32 result and moves on.
       </p>
 
       <h2>Source code</h2>
@@ -119,7 +118,7 @@
         <strong>License:</strong> GPL-3.0-or-later, inherited from the
         flam3 lineage. <br />
         <strong>Built with:</strong> TypeScript, WebGPU (5 WGSL compute
-        shaders), Vite, Vitest. Zero Rust, zero WASM.
+        shaders), Vite, Vitest.
       </div>
     </div>
   </body>
