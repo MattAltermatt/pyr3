@@ -1471,11 +1471,19 @@ parameter-space embeddings. Open research, not a feature ship.
 Once v1.0 ships, characterize wall-clock per-fixture on FE (Chrome) and BE (Node). Identify
 hot paths in WGSL. Decide whether perf work is worth the engineering cost.
 
-## [PYR3-004] gpu · S · 🪨 · queued · v1.x — Expand variation set audit
+## [PYR3-004] gpu · S · 🪨 ✅ **RESOLVED (2026-05-29)** — Expand variation set audit
 
-The prior TS+WebGPU viewer's README claims 99 variations; the JVM predecessor shipped 98/99
-with `gdoffs` as the gap. Audit which 99 the prior viewer has, confirm completeness, port any
-missing arms from the JVM predecessor during the Phase 1 audit-port pass.
+> **✅ Resolved by audit (2026-05-29), no code.** pyr3's variation table `V`
+> (`src/variations.ts`) holds **exactly 99 entries, indices 0–98** (linear→mobius)
+> — the complete canonical flam3 set — and PYR3-036's reachability test already
+> asserts every entry survives import. `gdoffs` (named below as the gap) is **not a
+> flam3 variation** (flam3-C's own source defines no such name); it was a
+> predecessor-specific artifact whose framing died with the v0.25 scrub. Audit
+> conclusion: variation set complete + guarded; nothing to port.
+
+**Filed (original framing, now obsolete):** The prior TS+WebGPU viewer's README claims 99
+variations; the JVM predecessor shipped 98/99 with `gdoffs` as the gap. Audit which 99 the
+prior viewer has, confirm completeness, port any missing arms.
 
 ## [PYR3-005] cli · S · 🪨 · queued · v1.x — Single-binary CLI distribution
 
