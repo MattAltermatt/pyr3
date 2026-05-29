@@ -6,8 +6,29 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-047** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-048** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-047] infra · S · 🔧 ✅ **RESOLVED (2026-05-29)** — `/showcase` 404 under Actions deploy + repo de-bloat
+
+> **✅ Resolved 2026-05-29 (same day as discovered), shipped v0.27.** The
+> `/showcase` gallery silently 404'd after the v0.26 CI-deploy switch: it lives
+> under gitignored `public/showcase/` (~221M), which the old local `dist/` push
+> copied into the artifact but the clean-clone Actions build never has. Fix:
+> publish the gallery as a tar Release asset (`showcase-2026-05-29` on
+> `MattAltermatt/pyr3`) and have `deploy.yml` fetch→cache→untar it into
+> `dist/showcase/` — mirrors the corpus-chunk block; bump `SHOWCASE_RELEASE_TAG`
+> to ship a regen. Also de-bloated: `git filter-repo` purged ~402M of orphaned
+> binaries (old showcase `*.jpg` + `*.flam3chunk`) from all history, `.git`
+> 603M→41M; `gh-pages` deleted. Verified live in Chrome. **Standing rule: deploy
+> artifacts ship as Release assets, never committed to git.**
+
+**Discovered 2026-05-29.** Live `pyr3.app/showcase` returned 404 across every path
+variant while `/` was fine. Root cause: the v0.26 switch from manual local-`dist`
+force-push to the GitHub Actions clean-clone build invalidated the v0.21 "heavy
+images gitignored + deploy-only" assumption — gitignored assets never reach the CI
+artifact. Surfaced a second dead-weight problem: ~395M of orphaned showcase JPEGs +
+corpus chunks sitting in git history from superseded approaches.
 
 ## [PYR3-046] infra · XS · 🔧 ✅ **RESOLVED (2026-05-29)** — Bump deploy-workflow actions to Node 24 support
 

@@ -10,6 +10,42 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.27 — 2026-05-29 — `/showcase` live via Release asset + history de-bloat (`[PYR3-047]` resolved)
+
+**Outcome:** `https://pyr3.app/showcase/` is live again (it had silently 404'd
+since v0.26), and the repo's `.git` shrank **603M → 41M**. Verified live in
+Chrome: gallery renders, all 54 thumbnails return 200, the hero 4K
+(`electricsheep.247.19679.4k.jpg`) opens full-res, zero console errors.
+
+**The regression:** the `/showcase` gallery (54×`4k.jpg` + 54×`thumb.jpg` +
+`index.html`, ~221M) lives under the gitignored `public/showcase/`. The old
+manual deploy built `dist/` locally, where Vite copied that local tree into the
+artifact. The v0.26 switch to the GitHub Actions deploy builds from a **clean
+clone** that never has the gitignored files — so the gallery stopped reaching
+`dist/` and `/showcase/` went 404. The v0.21 "heavy images gitignored +
+deploy-only" assumption was silently invalidated by the CI-clone build model.
+
+**The fix — same trick the corpus chunks already use:** publish the gallery as a
+tar **Release asset** on `MattAltermatt/pyr3` (tag `showcase-2026-05-29`), and
+have `deploy.yml` fetch → cache → untar it into `dist/showcase/` at build time —
+a faithful mirror of the existing corpus-chunk block (own-repo target, `-C dist`
+since the tar root is already `showcase/`). New `SHOWCASE_RELEASE_TAG` env line;
+bump it to ship a regenerated gallery. Repo stays lean (zero bytes added to git);
+to the end user the gallery is byte-identical to before. End-to-end is now: code
+in git, heavy artifacts in Releases, CI assembles the full site.
+
+**History de-bloat:** `git filter-repo` purged two orphaned binary sets from all
+history — ~238M of old showcase `*.jpg` (a superseded render generation) and
+~164M of `*.flam3chunk` corpus chunks (committed in early deploy work, since
+superseded by the ESF-Release fetch). Both were 0-tracked in HEAD; the working
+tree was untouched. `main` + `feature/share-url-chunk-delivery` force-pushed;
+the obsolete `gh-pages` rollback branch (last anchor holding the purged blobs
+server-side) deleted. Pre-rewrite backup bundled outside the repo. **All
+pre-rewrite commit SHAs changed** — a one-man repo whose history nobody else
+depends on, so the rewrite is safe. **Rule going forward: deploy artifacts
+(showcase JPEGs, corpus chunks) are never committed — they ship as Release
+assets.**
+
 ## v0.26 — 2026-05-29 — CI deploy automation (`[PYR3-038]` resolved)
 
 **Outcome:** Pushing to `main` now auto-deploys the live site. The previously
