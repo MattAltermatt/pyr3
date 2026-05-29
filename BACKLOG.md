@@ -6,8 +6,17 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-046** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-047** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-046] infra · XS · 🔧 · open · post-v1 — Bump deploy-workflow actions to Node 24 support
+
+**Filed 2026-05-29.** The v0.26 deploy run emitted a non-blocking annotation: the
+pinned `actions/{checkout,setup-node,cache,upload-artifact}@v4` run on Node.js 20,
+which GitHub forces to Node 24 by **2026-06-16** and removes from runners by
+2026-09-16. No breakage today; bump to whatever majors support Node 24 before the
+cutoff (or set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` as an interim). Pure
+maintenance, low urgency.
 
 ## [PYR3-045] feat · S · 🐑 · open · post-v1 — Showcase cards link to the viewer via `/v1/gen/{gen}/id/{id}`
 
@@ -72,7 +81,16 @@ Also fix the wording: **don't claim the sheep was "never born"** — we only kno
 isn't in *our* corpus (it may exist upstream / was never preserved). Say "not in the
 corpus" / "not preserved," not "never born." Pairs with PYR3-040 (nearest-neighbor).
 
-## [PYR3-038] infra · M · 🔧 · open · soon — CI deploy automation for corpus chunks
+## [PYR3-038] infra · M · 🔧 ✅ **RESOLVED (v0.26, 2026-05-29)** — CI deploy automation for corpus chunks
+
+> **✅ Resolved v0.26.** `.github/workflows/deploy.yml` auto-deploys `pyr3.app` on
+> push to `main` via `actions/deploy-pages`: build → download the chunk tar from the
+> public electric-sheep-fold Release (default `github.token`, no PAT) → bake into
+> `dist/chunks` → upload Pages artifact. Pages source flipped branch → "GitHub
+> Actions" (domain + HTTPS survived; `gh-pages` kept as rollback). Both sub-decisions
+> closed: source = `actions/deploy-pages` (settled by dueling agents), and the ESF
+> Release dependency is met (chunk tar published to the `2026-05-23` tag, pinned via
+> `CHUNK_RELEASE_TAG`). Verified live end-to-end. See CHANGELOG v0.26.
 
 **Filed 2026-05-29 (user-directive — "we will do that soon").** Automate the
 currently-manual build → bake-chunks → force-push-`gh-pages` deploy. Needs: (a) a

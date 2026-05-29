@@ -10,6 +10,36 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.26 — 2026-05-29 — CI deploy automation (`[PYR3-038]` resolved)
+
+**Outcome:** Pushing to `main` now auto-deploys the live site. The previously
+manual `vite build` → bake-chunks → force-push-`gh-pages` dance is replaced by a
+GitHub Actions workflow (`.github/workflows/deploy.yml`) on the official Pages
+artifact path. Verified live: the workflow's first run deployed the (until-now
+undeployed) v0.25 scrub, and `pyr3.app/v1/gen/247/id/19679` renders the hero flame
+end-to-end (chunk fetch → brotli decode → import → WebGPU render).
+
+**Scope:**
+- **Workflow** — `on: push to main + workflow_dispatch`; build job (`npm ci` →
+  `npm run build`) → download `corpus-chunks-*.tar` from the **public**
+  electric-sheep-fold Release (default `github.token` suffices cross-repo for public
+  repos — no PAT) → untar into `dist/chunks` → `404.html` SPA fallback + `.nojekyll`
+  → `actions/upload-pages-artifact`; deploy job via `actions/deploy-pages`.
+- **Pages source switched** branch → "GitHub Actions" (`build_type: workflow`). The
+  custom domain (`pyr3.app`) and Enforce-HTTPS survived the flip untouched (they're
+  repo-level Pages settings, source-independent); the `gh-pages` branch is left
+  intact as a one-flip rollback.
+- **Chunk caching** — the downloaded tar is cached on `CHUNK_RELEASE_TAG`, so
+  FE-only deploys skip the re-download; only a tag bump (= shipping a new corpus)
+  misses the cache. Bumping that one env line ships a newer corpus snapshot.
+- **ESF handshake** — the chunk artifact is built + published by electric-sheep-fold
+  (`sheep-fold release-build`); pyr3 only consumes it. Bootstrapped this ship by
+  publishing `corpus-chunks-2026-05-28.tar` (1,135 members) to the ESF `2026-05-23`
+  Release, which pyr3 pins via `CHUNK_RELEASE_TAG`.
+- **Decision** — `actions/deploy-pages` vs keeping the `gh-pages`-branch force-push
+  was settled by three parallel dueling agents + the live-site-idle context; the
+  modern artifact path won (no stop-gap, GitHub's strategic direction).
+
 ## v0.25 — 2026-05-29 — Predecessor-reference scrub (public-ship prep)
 
 **Outcome:** The working tree is clear of all references to the non-public

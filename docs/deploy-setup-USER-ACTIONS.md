@@ -5,6 +5,14 @@
 > serving at `https://pyr3.app/` with `github.io/pyr3/` 301-redirecting to
 > it. The steps below are kept as the reference for how it was set up / how
 > to redo it.
+>
+> ✅ **DONE 2026-05-29 (v0.26) — deploy is automated (`[PYR3-038]`).** Pages
+> Source is now **"GitHub Actions"** (`build_type: workflow`) and
+> `.github/workflows/deploy.yml` auto-deploys on push to `main`. The manual
+> `vite build` + chunk-bake + force-push-`gh-pages` flow is retired (the
+> `gh-pages` branch is kept only as a rollback). Recurring loop is now: ESF
+> publishes a new chunk Release → bump `CHUNK_RELEASE_TAG` in the workflow →
+> push. No Pages/DNS re-config ever again.
 
 Everything else (chunk build, bake-at-deploy, routing, tests) is automated.
 These are the steps that need a human with access to the domain registrar

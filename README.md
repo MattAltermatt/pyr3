@@ -11,17 +11,19 @@
 
 ## Status
 
-🚧 **v0.25 — public-ship prep (atop v0.24).** Engine in place (browser + CLI
+🚧 **v0.26 — CI deploy automation (atop v0.25).** Engine in place (browser + CLI
 render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
 test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
 flam3-C is the canonical lineage source of truth. **The hero
 `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
 floor.
 
-Recent ships: **v0.25** scrubbed the codebase of predecessor-project references
-ahead of the public repo; **v0.24** added the corpus share-URL viewer
-(`pyr3.app/v1/gen/{gen}/id/{id}` loads any Electric Sheep corpus flame
-in-browser); **v0.23** rebuilt the viewer's top bar into a single slim row;
+Recent ships: **v0.26** automated the deploy — pushing to `main` now publishes
+`pyr3.app` via GitHub Actions (`actions/deploy-pages`), baking in the corpus chunks
+from the electric-sheep-fold Release; **v0.25** scrubbed the codebase of
+predecessor-project references ahead of the public repo; **v0.24** added the corpus
+share-URL viewer (`pyr3.app/v1/gen/{gen}/id/{id}` loads any Electric Sheep corpus
+flame in-browser); **v0.23** rebuilt the viewer's top bar into a single slim row;
 **v0.21** shipped the public `/showcase` gallery. Full history in
 [CHANGELOG.md](CHANGELOG.md).
 
