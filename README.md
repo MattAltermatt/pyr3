@@ -11,14 +11,16 @@
 
 ## Status
 
-🚧 **v0.26 — CI deploy automation (atop v0.25).** Engine in place (browser + CLI
+🚧 **v0.27 — `/showcase` gallery live + repo de-bloat (atop v0.26 CI deploy).** Engine in place (browser + CLI
 render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
 test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
 flam3-C is the canonical lineage source of truth. **The hero
 `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
 floor.
 
-Recent ships: **v0.26** automated the deploy — pushing to `main` now publishes
+Recent ships: **v0.27** restored the live `/showcase` gallery (now served as a
+deploy-time Release asset, keeping the ~221M of 4K JPEGs out of git) and de-bloated
+the repo (`.git` 603M→41M via history rewrite); **v0.26** automated the deploy — pushing to `main` now publishes
 `pyr3.app` via GitHub Actions (`actions/deploy-pages`), baking in the corpus chunks
 from the electric-sheep-fold Release; **v0.25** scrubbed the codebase of
 predecessor-project references ahead of the public repo; **v0.24** added the corpus
