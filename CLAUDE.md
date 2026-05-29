@@ -5,8 +5,8 @@
 ```bash
 npm install                     # one-time
 npm run dev                     # Vite dev server on :5173 (Chrome verify target)
-npm test                        # unit suite, ~1s wall, 4494/4499 green
-npm run test:parity             # 19-fixture BE-vs-flam3-C parity rig, ~91s wall
+npm test                        # unit suite, ~1s wall, 4582 passed
+npm run test:parity             # 25-fixture BE-vs-flam3-C parity rig, ~91s wall
 npm run test:all                # union of the above
 npm run typecheck               # tsc --noEmit
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims
@@ -52,8 +52,8 @@ ground truth (see the ship-gate + R-tolerance sections below).
 
 ## Locked decisions (load-bearing)
 
-See [`docs/superpowers/specs/2026-05-27-pyr3-design.md`](docs/superpowers/specs/2026-05-27-pyr3-design.md)
-for the authoritative record.
+The authoritative design record is kept in the local design spec under
+`docs/superpowers/specs/` (internal scaffolding, gitignored — not in the public repo).
 
 Short form:
 1. TS + WebGPU + Vite
@@ -64,8 +64,8 @@ Short form:
 5. v1.0 ship gate (two gates, both must pass on the curated fixture set):
    - **BE parity vs flam3-C** (BE CLI renders match flam3-C
      `flam3-render-32bit-isaac qs=1` output at genome-native dims within
-     R tolerance) — `[PYR3-023]` for the 4K showcase set; `[PYR3-NNN]`
-     parity rig for the 19-fixture corpus
+     R tolerance) — the 25-fixture parity rig (`npm run test:parity`); an
+     optional 4K-resolution gate is deferred (`[PYR3-043]`)
    - **FE↔BE parity at quick-mode dims** (browser viewer renders match
      BE CLI for the same fixture at 1024 long-edge within R tolerance) —
      `[PYR3-026]`
