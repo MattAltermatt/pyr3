@@ -6,8 +6,50 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-038** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-043** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-042] feat · S · 🎨 · open · post-v1 — Showcase reachable from the main viewer
+
+**Filed 2026-05-29 (user-directive).** The `/showcase` gallery (v0.21) is a separate
+URL with no in-app entry point. Add a link/launch from the main viewer (the bar,
+alongside about / fork-it / more-flames, or another sensible spot) so visitors
+discover the gallery from the viewer. "Showcase should be in the main pyre view,
+somewhere."
+
+## [PYR3-041] feat · M · 🐑 · open · post-v1 — Viewer navigation hints (next/nearby available sheep)
+
+**Filed 2026-05-29 (user-directive).** Corpus ids are sparse, so users shouldn't have
+to guess valid ids. Surface in the viewer what the next / previous / nearby *available*
+sheep are (clickable), using the per-gen availability manifest (`avail.flam3idx`; the
+decoder `src/avail.ts` already ships but isn't wired into the viewer yet). Turns
+`/v1/gen/{gen}/id/{id}` into browsable click-through — "no guessing."
+
+## [PYR3-040] feat · M · 🐑 · open · post-v1 — Nearest-neighbor suggestion for missing sheep
+
+**Filed 2026-05-29 (user-directive).** When a `/v1/gen/{gen}/id/{id}` id doesn't exist,
+find the nearest existing id in that gen (via the avail manifest) and offer a one-click
+link to it, instead of a dead end. Pairs with PYR3-039. Example that motivated this:
+`/v1/gen/247/id/123` (missing).
+
+## [PYR3-039] fix · S · 🐑 · open · post-v1 — Missing sheep: still render the viewer + honest wording
+
+**Filed 2026-05-29 (user-directive).** A missing corpus id (e.g.
+`/v1/gen/248/id/103`) must still present the full pyr3 viewer chrome with a graceful
+in-app "not in the corpus" state — not just an error toast over the welcome flame.
+Also fix the wording: **don't claim the sheep was "never born"** — we only know it
+isn't in *our* corpus (it may exist upstream / was never preserved). Say "not in the
+corpus" / "not preserved," not "never born." Pairs with PYR3-040 (nearest-neighbor).
+
+## [PYR3-038] infra · M · 🔧 · open · soon — CI deploy automation for corpus chunks
+
+**Filed 2026-05-29 (user-directive — "we will do that soon").** Automate the
+currently-manual build → bake-chunks → force-push-`gh-pages` deploy. Needs: (a) a
+published `electric-sheep-fold` Release carrying `corpus-chunks-{date}.tar` so CI can
+`gh release download` it (a GitHub write action — user-gated); (b) a Pages-source
+decision — keep the `gh-pages`-branch force-push (e.g. `peaceiris/actions-gh-pages`)
+or switch to `actions/deploy-pages`. Until then the manual command block (in the
+deploy runbook / corpus-share-url notes) is the path.
 
 ## [PYR3-037] feat · M · ✅ **RESOLVED (v0.23, 2026-05-28)** — About page rewritten to single-product identity
 

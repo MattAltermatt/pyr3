@@ -85,6 +85,32 @@ Fixtures live at `fixtures/flam3-goldens/<id>/` — each has `golden.png` (flam3
 output), `<id>.flam3` (source), and `meta.json` carrying calibrated `baselineR`
 + `thresholdR`.
 
+## Corpus share links
+
+A URL of the form `https://pyr3.app/v1/gen/{gen}/id/{id}`
+opens the renderer and loads that exact Electric Sheep corpus flame directly
+in the browser. No file upload needed.
+
+**How it works:** the renderer parses the `/v1` path (`src/load-intent.ts`),
+fetches the matching same-origin brotli chunk (`/chunks/{gen}/{lo:05d}.flam3chunk`
+via `src/chunk-fetch.ts`), and decodes it (`src/brotli.ts`) — natively via
+`DecompressionStream("brotli")` on Safari/Firefox, or via a code-split
+`brotli-dec-wasm` decoder on Chromium (which has no native brotli stream) —
+then hands the extracted flam3 XML to the existing flame-import path. An
+availability manifest client (`src/avail.ts`) enables fast dead-link detection
+for missing sheep. URLs are base-aware (`import.meta.env.BASE_URL`), so the same
+build works at the apex `pyr3.app` and the `mattaltermatt.github.io/pyr3/`
+fallback (which redirects to the apex).
+
+Legacy `?flame=<encoded>` share links continue to work unchanged.
+
+The `/v1/gen` and `/v1/gen/{gen}` browse routes are reserved but show
+placeholder content — the visual gallery is deferred. Custom-flame sharing
+(`/v1/flame/...`) is also deferred.
+
+See [`docs/corpus-share-url.md`](docs/corpus-share-url.md) for the pyr3-side
+summary and a pointer to the canonical cross-repo spec.
+
 ## Docs
 
 - [VISION.md](VISION.md) — what pyr3 is and isn't
@@ -93,6 +119,7 @@ output), `<id>.flam3` (source), and `meta.json` carrying calibrated `baselineR`
 - [CHANGELOG.md](CHANGELOG.md) — ship history
 - [CLAUDE.md](CLAUDE.md) — project notes for the Claude Code agent
 - [`docs/superpowers/specs/2026-05-27-pyr3-design.md`](docs/superpowers/specs/2026-05-27-pyr3-design.md) — v1.0 design spec
+- [`docs/corpus-share-url.md`](docs/corpus-share-url.md) — corpus share-URL + chunk delivery (pyr3-side summary)
 
 ## License
 

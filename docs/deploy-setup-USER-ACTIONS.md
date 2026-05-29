@@ -1,5 +1,11 @@
 # Deploy setup — manual steps only the user can do
 
+> ✅ **DONE 2026-05-29 — `pyr3.app` is live.** Custom domain set (CNAME +
+> Namecheap DNS), Let's Encrypt cert issued, **Enforce HTTPS on**, site
+> serving at `https://pyr3.app/` with `github.io/pyr3/` 301-redirecting to
+> it. The steps below are kept as the reference for how it was set up / how
+> to redo it.
+
 Everything else (chunk build, bake-at-deploy, routing, tests) is automated.
 These are the steps that need a human with access to the domain registrar
 and the GitHub repo settings. Do them when Phase 3 (deploy) is reached —

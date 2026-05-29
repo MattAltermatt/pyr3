@@ -58,10 +58,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   // ---- left zone: wordmark · about · name · by nick ----
   const left = el('div', 'pyr3-zone-left');
   const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
-  wordmark.href = '/'; // home (welcome flame)
+  wordmark.href = import.meta.env.BASE_URL; // home (welcome flame), base-aware
   wordmark.textContent = '🔥 pyr3';
   const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  about.href = '/help/about.html';
+  about.href = `${import.meta.env.BASE_URL}help/about.html`;
   about.textContent = 'about';
   const metaName = el('div', 'pyr3-bar-meta-name');
   left.append(wordmark, sep(), about, sep(), metaName);
@@ -124,11 +124,11 @@ function buildWebGPUChip(status: WebGPUStatus): HTMLAnchorElement {
   const a = el('a', 'pyr3-bar-webgpu') as HTMLAnchorElement;
   if (status.available) {
     a.classList.add('ok');
-    a.href = '/help/webgpu.html#what-is-webgpu';
+    a.href = `${import.meta.env.BASE_URL}help/webgpu.html#what-is-webgpu`;
     a.textContent = 'WebGPU ✓';
   } else {
     a.classList.add('err');
-    a.href = '/help/webgpu.html#why-not-working';
+    a.href = `${import.meta.env.BASE_URL}help/webgpu.html#why-not-working`;
     a.textContent = 'WebGPU ✗ why?';
   }
   return a;
@@ -178,7 +178,7 @@ function buildTier3(): Tier3 {
   const pct = el('span', 'pyr3-tier3-pct');
   const eta = el('span', 'pyr3-tier3-eta');
   const why = el('a', 'pyr3-tier3-why') as HTMLAnchorElement;
-  why.href = '/help/ifs-and-render-cost.html';
+  why.href = `${import.meta.env.BASE_URL}help/ifs-and-render-cost.html`;
   why.target = '_blank';
   why.rel = 'noopener noreferrer';
   why.textContent = 'Why so long? ↗';

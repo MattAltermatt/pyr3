@@ -129,3 +129,21 @@ CHANGELOG v0.19.
   `bin/pyr3-render.ts` into a self-contained executable.
 - **GitHub Actions CI** (BACKLOG `[PYR3-006]`) — build + test + gh-pages auto-deploy.
 - **Showcase gallery on homepage** (BACKLOG `[PYR3-007]`).
+
+### 🐑 Corpus share-links — follow-ups (the `/v1/gen/{gen}/id/{id}` feature, shipped v0.24)
+
+The corpus share-link feature is live (chunked brotli delivery from
+electric-sheep-fold; see CHANGELOG v0.24 + `docs/corpus-share-url.md`). Next
+refinements, filed 2026-05-29:
+
+- **CI deploy automation** (BACKLOG `[PYR3-038]`, *soon*) — automate the manual
+  build+bake+force-push deploy; needs a published ESF chunk Release + a Pages-source pick.
+- **Missing sheep: still render the viewer + honest wording** (BACKLOG `[PYR3-039]`) —
+  a missing id (e.g. `/v1/gen/248/id/103`) should show the full viewer + a graceful
+  "not in the corpus" state; stop saying "never born."
+- **Nearest-neighbor for missing ids** (BACKLOG `[PYR3-040]`) — offer a one-click link
+  to the closest existing sheep instead of a dead end.
+- **Viewer navigation hints** (BACKLOG `[PYR3-041]`) — surface next/nearby available
+  sheep (via the `avail` manifest) for click-through; no id-guessing.
+- **Showcase reachable from the main viewer** (BACKLOG `[PYR3-042]`) — an in-app entry
+  to the `/showcase` gallery.

@@ -10,6 +10,54 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.24 — 2026-05-29 — Corpus share-URL client: brotli chunk fetch/decode + `/v1` router + apex `pyr3.app`
+
+**Outcome:** Opening `https://pyr3.app/v1/gen/{gen}/id/{id}` now loads and
+renders that exact Electric Sheep corpus flame directly in the browser. No
+file upload required. Legacy `?flame=<encoded>` links continue to work
+unchanged. Live + verified end-to-end on `pyr3.app` (apex custom domain,
+Enforce-HTTPS; `github.io/pyr3/` 301-redirects to it).
+
+**How it works (four new modules):**
+
+- **`src/brotli.ts`** — brotli inflate, feature-detected. Native
+  `DecompressionStream("brotli")` on Safari 18.4+/Firefox 147+ (zero
+  download); **Chromium has no native brotli stream (verified Chrome 148),
+  so Chrome/Edge use a code-split `brotli-dec-wasm` decoder (~200 KB, fetched
+  only on that path)**. Both consumers (chunk + avail manifest) share the
+  decode path. gzip is native everywhere, but brotli is kept for its ~5×
+  size win (172 KB vs 832 KB per 256-flame chunk).
+- **`src/chunk-fetch.ts`** — chunk-window fetch + flame extraction.
+  Computes `chunk_lo = (id // 256) * 256`, fetches
+  `/chunks/{gen}/{lo:05d}.flam3chunk` (same-origin, baked into the deploy),
+  brotli-decodes the raw bytes, JSON-parses the chunk envelope, and returns
+  the raw flam3 XML for the flame at the requested `id`.
+- **`src/avail.ts`** — per-gen availability manifest client (byte-conformant
+  to ESF's `encode_avail`). Decodes `/chunks/{gen}/avail.flam3idx` (brotli
+  delta-varint id list) for "sheep not found" dead-link detection. Decoder
+  shipped + tested; viewer wiring deferred (ROADMAP `[PYR3-039..041]`).
+- **`src/load-intent.ts`** — extended with a `/v1` path router. Parses
+  `location.pathname` (stripping the base prefix) into typed `LoadIntent`
+  kinds: `corpus` (`/v1/gen/{gen}/id/{id}`) → chunk-fetch + render;
+  `gen-list` / `gen-browse` (reserved — paint the welcome flame for now);
+  `custom-reserved` (`/v1/flame/...`); `flame` (legacy `?flame=`); `default`.
+
+All in-app URLs are base-aware (`import.meta.env.BASE_URL`), so the single
+codebase serves the **apex `pyr3.app`** (base `/`) and the
+`mattaltermatt.github.io/pyr3/` fallback identically — the `/pyr3/`→`/` flip
+was a one-line `vite.config.ts` change.
+
+**Deferred (not built):** the `/v1/gen` and `/v1/gen/{gen}` visual browse
+gallery (shows the welcome flame for now) and the `/v1/flame/{token}`
+custom-flame share form. See [`docs/corpus-share-url.md`](docs/corpus-share-url.md)
+for the pyr3-side scope summary and the canonical cross-repo spec pointer.
+
+**Chunk data source:** chunks are produced by the sibling
+[electric-sheep-fold](https://github.com/MattAltermatt/electric-sheep-fold)
+repo (`sheep-fold chunk` / `release-build` → `corpus-chunks-{date}.tar`) and
+baked into the deploy at build time. The `/v1` routes are live once the
+bake-at-deploy GH Actions step lands (Phase 3).
+
 ## v0.23 — 2026-05-28 — Browser viewer v1.0 FE-polish pass (slim top bar, on-demand progress, dreaming cue, load toast)
 
 **Outcome:** The browser viewer gets its v1.0 chrome. Engine and parity gates
