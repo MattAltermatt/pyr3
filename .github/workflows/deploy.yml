@@ -39,10 +39,10 @@ jobs:
       CHUNK_RELEASE_TAG: '2026-05-23'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -63,7 +63,7 @@ jobs:
       # (the Pages artifact is a complete site snapshot — see header note).
       - name: Restore cached corpus-chunks tar
         id: chunk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/esf-chunks
           key: esf-chunks-${{ env.CHUNK_RELEASE_TAG }}
@@ -99,7 +99,7 @@ jobs:
           touch dist/.nojekyll
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -112,4 +112,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
