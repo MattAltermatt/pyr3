@@ -37,6 +37,13 @@ jobs:
       # bakes in the same chunks, and a future ESF release can't silently
       # change what pyr3 serves.
       CHUNK_RELEASE_TAG: '2026-05-23'
+      # Pinned pyr3 Release tag carrying showcase-*.tar (the 4K /showcase
+      # gallery: 54 4k.jpg + 54 thumb.jpg + index.html). Bump this ONE line
+      # to ship a regenerated gallery. The bundle is gitignored
+      # (public/showcase/) and lives only here as a Release asset — never in
+      # git — so the repo stays lean. Same reproducibility rationale as the
+      # chunk tag above.
+      SHOWCASE_RELEASE_TAG: 'showcase-2026-05-29'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -90,6 +97,40 @@ jobs:
           tar -xf /tmp/esf-chunks/corpus-chunks-*.tar -C dist/chunks
           echo "Baked chunk tree (top level):"
           ls dist/chunks
+
+      # Cache the showcase tar, keyed on the pinned Release tag. Same logic as
+      # the chunk cache: the gallery changes rarely, so code/FE deploys hit the
+      # cache and skip the 220M download; only the first deploy after a tag bump
+      # misses. The tar is still untarred into the artifact every deploy.
+      - name: Restore cached showcase tar
+        id: showcase-cache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/showcase
+          key: showcase-${{ env.SHOWCASE_RELEASE_TAG }}
+
+      # The /showcase gallery, fetched from pyr3's OWN Releases. The bundle is
+      # gitignored, so the clean CI checkout doesn't have it — same problem and
+      # same solution as the corpus chunks above. The repo-scoped github.token
+      # reads pyr3's own Release assets. Only downloads on a cache miss.
+      - name: Download showcase bundle from pyr3 Releases
+        if: steps.showcase-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/showcase
+          gh release download "$SHOWCASE_RELEASE_TAG" \
+            --repo MattAltermatt/pyr3 \
+            --pattern 'showcase-*.tar' \
+            --dir /tmp/showcase
+
+      # Unpack into the artifact every deploy. The tar root is "showcase/", so
+      # this lands dist/showcase/ → served at https://pyr3.app/showcase/.
+      - name: Bake showcase into dist/
+        run: |
+          tar -xf /tmp/showcase/showcase-*.tar -C dist
+          echo "Baked showcase (file count):"
+          ls dist/showcase | wc -l
 
       # 404.html = SPA deep-link fallback for /v1/gen/... paths.
       # .nojekyll bypasses Jekyll (belt-and-suspenders; Actions source skips it).
