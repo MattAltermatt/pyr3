@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const RESULTS_PATH = '.remember/tmp/pyr3-018-results.jsonl';
 const OUT_PATH = '.remember/verify/pyr3-018-fe-sweep.html';
-const REPO = '/Users/matt/dev/MattAltermatt/pyr3';
+const REPO = process.cwd();
 
 const lines = readFileSync(RESULTS_PATH, 'utf8').split('\n').filter(Boolean);
 const rows = lines.map((l) => JSON.parse(l));

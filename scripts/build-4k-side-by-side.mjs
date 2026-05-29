@@ -12,7 +12,7 @@ import { performance } from 'node:perf_hooks';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
-const FLAM3_BIN = '/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac';
+const FLAM3_BIN = process.env.FLAM3_BIN || 'flam3-render-32bit-isaac';
 const OUT_DIR = join(REPO, '.remember', 'tmp', 'pyr3-vs-flam3c-4k');
 const HTML = join(REPO, '.remember', 'verify', 'v0.18-4k-pyr3-vs-flam3c.html');
 
@@ -171,10 +171,10 @@ async function main() {
 <h1>pyr3 BE 4K vs flam3-C 4K — side-by-side</h1>
 <p class="subtitle">
   Generated ${new Date().toISOString()}.
-  Both engines rendered at 3840 long-edge (kotlin SHOWCASE_4K preset), oversample=1,
+  Both engines rendered at 3840 long-edge (SHOWCASE_4K preset), oversample=1,
   quality min(genome.quality, 200). Click an image to view the full 4K PNG.
 </p>
-<p class="legend">flam3-C: <code>/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac</code> @ qs=1. pyr3 BE: <code>bin/pyr3-render.ts</code> via Dawn-node WebGPU.</p>
+<p class="legend">flam3-C: <code>${FLAM3_BIN}</code> @ qs=1. pyr3 BE: <code>bin/pyr3-render.ts</code> via Dawn-node WebGPU.</p>
 
 ${rows
   .map((r) => {

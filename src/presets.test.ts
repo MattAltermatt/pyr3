@@ -101,7 +101,7 @@ describe('applyPreset(4k) — force mode (always-rescale, upscales when needed)'
     const g = makeGenome({ size: { width: 800, height: 592 }, scale: 220 });
     const out = applyPreset(g, PRESETS['4k']);
     // 3840 / 800 = 4.8; short = floor(3840 * 592 / 800) = floor(2841.6) = 2841
-    // (matches kotlin SHOWCASE_4K + pre-v0.20 wrapper script behavior)
+    // (matches the reference SHOWCASE_4K preset + pre-v0.20 wrapper script behavior)
     expect(out.size).toEqual({ width: 3840, height: 2841 });
     expect(out.scale).toBeCloseTo(220 * 4.8, 3);
     expect(out.oversample).toBe(1);

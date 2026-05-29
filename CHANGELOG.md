@@ -10,6 +10,46 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.25 — 2026-05-29 — Predecessor-reference scrub (public-ship prep)
+
+**Outcome:** The working tree is clear of all references to the non-public
+predecessor projects (`pyr3-kotlin`, `pyr3-peek`, `pyr3-rust`, and the never-real
+`flam3-kotlin`) and of all machine-local absolute paths, so pyr3 stands on its own
+for the public GitHub ship. The public **flam3** (Scott Draves) lineage stays; git
+history and this changelog's own narrative are deliberately preserved as the
+factual record (only the live working tree is scrubbed).
+
+**Scope:**
+- **Docs scrubbed in place** — README / VISION / ROADMAP / BACKLOG / CLAUDE + the
+  `public/help` pages. The WebGPU help page's two-product "desktop Kotlin/JVM
+  renderer" paragraph was removed (pyr3 is single-product, WebGPU-only). `NOTICE.md`
+  keeps the legally-required flam3 / Scott-Draves attribution; the two self-authored
+  predecessor attribution sections were removed. Bare `kotlin` / `peek` mentions were
+  genericized to "the predecessor" / "the prior viewer" while preserving every
+  technical fact, R-value, and `[PYR3-NNN]` ID.
+- **Internal scaffolding excluded from the public repo** (untracked + gitignored,
+  local copies kept): `docs/superpowers/`, `docs/flam3-local-build.md`, and the two
+  predecessor-diffing agent defs (`wgsl-parity-reviewer`, `flame-fixture-investigator`).
+- **Legacy 4K parity gate dropped** — `fixtures/kotlin-4k-refs/` +
+  `fixtures/kotlin-goldens/` + `src/parity-4k.test.ts` + the `test:parity-4k` npm
+  script removed. It compared against the predecessor's non-canonical v1.1 JPGs,
+  superseded by the v0.18 flam3-C ground-truth pivot. Filed `[PYR3-043]` for an
+  optional future 4K-vs-flam3-C gate; the canonical native-dim flam3-C rig is unaffected.
+- **Functional rewiring** — the showcase manifest's `source` paths are now portable
+  relative `electric-sheep-fold/...` paths; `build-showcase.mjs` +
+  `render-showcase-v1.0.mjs` resolve them against an `ESF_ROOT` env (sibling-checkout
+  default), and `render-showcase-v1.0.mjs` is now manifest-driven. Dev-script flam3-C
+  binary paths moved behind a `FLAM3_BIN` env var.
+- Resolves **`[PYR3-032]`** (functional predecessor-purge). A companion hygiene pass
+  closed stale entries `[PYR3-024]` / `[PYR3-013]` / `[PYR3-031]` and the `[PYR3-036]`
+  secant-alias sub-item.
+
+**Verified:** `git grep -iE 'pyr3-kotlin|pyr3-peek|pyr3-rust|flam3-kotlin'` and
+`git grep -in 'kotlin|peek'` return only CHANGELOG-narrative matches; `git grep
+'/Users/matt'` returns zero; `npm run typecheck` clean; unit suite 4582 passed;
+`npm run test:parity` 25/25 (the lone RPC-heartbeat warning is the known `[PYR3-014]`
+cosmetic noise, not a failure).
+
 ## v0.24 — 2026-05-29 — Corpus share-URL client: brotli chunk fetch/decode + `/v1` router + apex `pyr3.app`
 
 **Outcome:** Opening `https://pyr3.app/v1/gen/{gen}/id/{id}` now loads and
@@ -373,7 +413,7 @@ that obscured the real question.
 
 **Mechanism:**
 - New script `scripts/regen-flam3c-goldens.mjs`: renders each fixture
-  via `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac` with fixed
+  via the local flam3-C reference binary with fixed
   `isaac_seed=<id>` for determinism; replaces `golden.png`; recomputes
   `baselineR` as mean over 3 pyr3 runs; rewrites `meta.json` with the
   new baseline + `thresholdR = baselineR + 1.0` headroom + a `source`

@@ -38,7 +38,7 @@ const RENDER_SIZE = 1024;
 // quick quality only. PYR3-023 probe found that FE 4K crashes Chrome
 // for ~40% of showcase fixtures + runs 13× slower than BE when it
 // doesn't crash; the showcase ships as static pre-rendered 4K JPGs
-// per the kotlin v1.1 pattern.
+// per the predecessor renderer's pattern.
 const QUICK_MAX_DIM = 1024;
 const QUICK_MAX_SPP = 16;
 const QUICK_OVERSAMPLE = 1;

@@ -12,13 +12,11 @@
 ## Status
 
 🚧 **v0.23 — v1.0 FE-polish pass in flight (atop v0.22).** Engine in place
-(browser + CLI both render from one codebase); all three parity rigs green —
-BE-vs-flam3-C (`npm run test:parity`), FE↔BE quick-mode (`npm run
-test:parity-fe-be`, 25/25), and the 5-fixture BE 4K showcase
-(`npm run test:parity-4k`). flam3-C is the canonical lineage source of truth
-(the 2026-05-28 pivot replaced the prior kotlin-v1.1 reference). **The README
-hero `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the
-noise floor.
+(browser + CLI both render from one codebase); both parity rigs green —
+BE-vs-flam3-C (`npm run test:parity`) and FE↔BE quick-mode (`npm run
+test:parity-fe-be`, 25/25). flam3-C is the canonical lineage source of truth.
+**The README hero `electricsheep.247.19679` renders at R=2.78 vs flam3-C** —
+well inside the noise floor.
 
 **v0.22** fixed the last v1.0 render blocker (`[PYR3-034]`): `.flame` import
 silently dropped underscore-named variations (`radial_blur`, `gaussian_blur`,
@@ -50,13 +48,12 @@ golden PNGs.**
 
 ## Lineage
 
-| Repo | What | Status |
-|---|---|---|
-| 🦁 [**pyr3-kotlin**](https://github.com/MattAltermatt/pyr3) | JVM/Vulkan predecessor (v1.x-E shipped). The mature source of GPU shader fixes, variation arms, parser edge-cases. | Will be archived after this repo passes its v1.0 ship gate. |
-| 🪟 [**pyr3-peek**](https://github.com/MattAltermatt/pyr3-peek) | TS + WebGPU browser viewer. Phase 0 copies this wholesale as basis. | Will be archived after this repo passes its v1.0 ship gate. |
-| 🦀 **pyr3-rust** | Private archive (Rust core + WASM + React experiment). | Not public. |
+pyr3 is an independent TypeScript + WebGPU reimplementation in the **flam3** lineage — the
+fractal-flame algorithm of Scott Draves & Erik Reckase. It reads the upstream
+[flam3](https://github.com/scottdraves/flam3) C reference renderer (GPL-3.0-or-later) for
+algorithmic clarity; flam3-C is its parity ground truth.
 
-See [NOTICE.md](NOTICE.md) for third-party attribution and the full lineage trail.
+See [NOTICE.md](NOTICE.md) for third-party attribution.
 
 ## Quick start
 

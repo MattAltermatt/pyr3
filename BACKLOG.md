@@ -6,8 +6,39 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-043** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-046** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-045] feat · S · 🐑 · open · post-v1 — Showcase cards link to the viewer via `/v1/gen/{gen}/id/{id}`
+
+**Filed 2026-05-29 (user-directive).** Each `/showcase` gallery card should link to the
+live pyr3 viewer for that exact sheep using the corpus share-URL shipped in v0.24:
+`/v1/gen/{gen}/id/{id}`. The fixture id (`electricsheep.{gen}.{id}`) is already in the
+showcase manifest, so `scripts/build-showcase.mjs` can emit a per-card "open in viewer"
+link (or point the thumb there). Realizes the click-to-load story (`[PYR3-007]` Chunk 2)
+on top of the now-shipped share-URL router. Distinct from `[PYR3-042]` (the reverse link:
+viewer → showcase).
+
+## [PYR3-044] feat · XS · 🎨 · open · post-v1 — Redesign the favicon (orange triangle reads as a warning)
+
+**Filed 2026-05-29 (user-directive).** The current favicon is an orange triangle that reads
+more like a warning/caution sign than a fractal-flame mark. Replace it with something that
+signals pyr3 (a flame / the 🔥 wordmark / an attractor motif). Touch `index.html`'s
+`<link rel="icon">` + the asset under `public/`. Needs a quick design pick before impl.
+
+## [PYR3-043] parity · M · 🪶 · queued · post-v1 — Optional 4K parity gate vs flam3-C
+
+**Filed 2026-05-29.** The legacy 4K parity gate (its reference-fixture dir +
+`src/parity-4k.test.ts`) was dropped during the predecessor-reference scrub — it compared
+pyr3 BE 4K renders against the predecessor's v1.1 JPG outputs, a non-canonical reference that
+the v0.18 flam3-C ground-truth pivot superseded. The native-dim flam3-C rig (`npm run
+test:parity`, 25 fixtures) is the canonical gate and is unaffected.
+
+**Not needed for correctness** — a 4K render is the same chaos game + tonemap at higher
+sample/pixel counts, so native-dim parity implies 4K parity. A dedicated 4K gate would only
+add a narrow regression guard for dim-scaling / oversample / large-buffer bugs. **If wanted:**
+render a handful of fixtures through flam3-C at 4K, calibrate per-fixture thresholds (mirrors
+the native rig), and ship as a sibling `npm run test:parity-4k`.
 
 ## [PYR3-042] feat · S · 🎨 · open · post-v1 — Showcase reachable from the main viewer
 
@@ -56,7 +87,7 @@ deploy runbook / corpus-share-url notes) is the path.
 > **✅ Resolved v0.23 — pulled forward into the FE-polish session.** Rather than
 > defer, the user pulled this forward mid-verify. `help/about.html` was rewritten
 > from the inherited two-product framing (browser viewer vs a separate desktop
-> Kotlin/JVM renderer + "Forge"/"pyr3 CPU") into pyr3's real single-product
+> renderer) into pyr3's real single-product
 > identity: **one TypeScript + WebGPU engine, two consumers** (browser viewer +
 > headless CLI), in the flam3 lineage. The "pyr3 family" list collapsed to
 > **pyr3 / ESF / flam3** (the bogus desktop entry removed), the two-column layout
@@ -66,7 +97,7 @@ deploy runbook / corpus-share-url notes) is the path.
 **Filed 2026-05-28 (user-directive during the v1.0 FE-polish brainstorm).** The
 v1.0 FE polish pass adds a quiet `about` link to the bar (left zone, between the
 🔥 pyr3 wordmark and the flame name) pointing at `help/about.html`. That page is a
-Phase-0 wholesale copy from pyr3-peek — its branding is being corrected to "pyr3"
+Phase-0 wholesale copy from the prior TS+WebGPU viewer — its branding is being corrected to "pyr3"
 in the FE-polish pass, but the **content + design were never reconsidered for
 pyr3's own v1.0 story** (showcase gallery, flam3-C ground truth, the single-engine/
 two-consumers architecture, the Electric Sheep lineage). This entry is a dedicated
@@ -79,9 +110,9 @@ fresh design problem deserving its own brainstorm + spec. Surfaced here so the
 "but eventually" thinking isn't lost.
 
 **Load-bearing finding from the v0.23 rebrand (must fix here):** the mechanical
-pyr3-peek→pyr3 swap exposed that `about.html` was written around a **two-product
-worldview** — "pyr3-peek" = the browser viewer, and a *separate* "pyr3" = a
-desktop Kotlin/JVM renderer + editor ("Forge", "Explore"). After the swap both are
+prior-viewer→pyr3 swap exposed that `about.html` was written around a **two-product
+worldview** — the prior viewer = the browser viewer, and a *separate* "pyr3" = a
+desktop renderer + editor. After the swap both are
 named "pyr3", so the copy is now self-contradictory: the "pyr3 family" list has two
 entries both labeled pyr3, and sentences like "the canonical f64 anchor stays in
 pyr3 (the desktop renderer)" no longer parse against the single-product reality.
@@ -91,7 +122,7 @@ the two-product story into pyr3's actual single-product identity (one TS+WebGPU
 engine, two consumers: browser viewer + headless CLI).
 
 **Acceptance:** About page content + layout designed from pyr3's v1.0 narrative
-(not inherited from pyr3-peek); consistent visual language with the polished
+(not inherited from the prior viewer); consistent visual language with the polished
 viewer bar; links to showcase gallery + source repos where natural.
 
 ## [PYR3-036] chore · M · ✅ **RESOLVED (v0.22, 2026-05-28)** — variation-import safeguards (loud parser + reachability + corpus assertion)
@@ -112,14 +143,16 @@ silently dropped at import with nothing going red. Three safeguards in `flame-im
 drop hit **six** variations (`radial_blur`, `gaussian_blur`, `pre_blur`, `super_shape`,
 `wedge_julia`, `wedge_sph`), not three. Two genuinely-unsupported attrs surfaced and are
 *correctly reported* (not silent): `move` (Apophysis variation pyr3 doesn't implement) and
-`secant` (likely an un-aliased name for `secant2`). **Open sub-item:** decide whether to alias
-`secant`→`secant2` (deferred — no curated fixture uses it).
+`secant` (likely an un-aliased name for `secant2`). **Sub-item decided (2026-05-29):** alias
+`secant`→`secant2` — it's an un-aliased synonym, so a one-line addition to the alias table
+plus a parse-reachability test. Scheduled into the v1.0 cleanup session (bundled with
+PYR3-032); non-urgent since no curated fixture uses it.
 
 ## [PYR3-035] chore · M · ✅ **RESOLVED (v0.22, 2026-05-28)** — re-rendered the showcase 4K set after the PYR3-034 variation-drop fix
 
 > **✅ Done v0.22.** Re-rendered all **13** affected showcase fixtures (the six underscore
 > variations: gaussian_blur/radial_blur/pre_blur + super_shape on 243.06888 & 243.12778) and
-> rebuilt the gallery (54 cards). `243.06888` (super_shape) now **surpasses the kotlin v1.1
+> rebuilt the gallery (54 cards). `243.06888` (super_shape) now **surpasses the predecessor
 > reference**, which was too dark. Heavy PNGs stay gitignored/deploy-only.
 
 
@@ -158,12 +191,12 @@ filaments / black due to a dropped variation. (Scope: `git grep -lE
 > crushed by tonemap. Original symptom framing kept below for the record.
 >
 > **PRIORITY RAISED → v1.0 BLOCKER (user-directive 2026-05-28):** "the entire goal of v1
-> was to get as close to parity with flam3 and pyr3-kotlin, and we have to do that." Target
+> was to get as close to parity with flam3 and the predecessor renderer, and we have to do that." Target
 > image: `https://electricsheep.com/archives/generation-243/171/0.jpg`. **df64 (double-float)
 > emulation is SANCTIONED** ("if we need to emulate 64 bit, then we do that") — relaxes the
 > "GPU only / accept f32 floor" stance for this fix. Next-session plan: see
-> [[project-pyr3-034-next-session]] (ordered: fma-contraction test → pyr3-f32 vs kotlin-f32
-> trace → port kotlin's `df64.glsl` to WGSL). All diagnosis on branch `feature/pyr3-034-lowdensity`.
+> [[project-pyr3-034-next-session]] (ordered: fma-contraction test → pyr3-f32 vs predecessor-f32
+> trace → port the predecessor's `df64.glsl` to WGSL). All diagnosis on branch `feature/pyr3-034-lowdensity`.
 
 **Symptom (observed 2026-05-28):** pyr3's `--preset 4k` render of
 `electricsheep.243.00171` shows ONLY the bright filament skeleton (thin orange/
@@ -195,19 +228,19 @@ Ruled OUT tonemap/DE/gamma and a mis-ported variation:
   reseed to random [−1,1], retry ≤4×, skip splat); camera framing correct (the core
   is positioned as in the reference).
 
-**f32 EXONERATED (2026-05-28):** The reference render is kotlin's `GpuF32Backend`
+**f32 EXONERATED (2026-05-28):** The reference render is the predecessor's `GpuF32Backend`
 — **also f32** — and it paints the full halo. So this is NOT an f32-precision floor;
 pyr3 has a *structural divergence* from a working f32 GPU chaos game. (Supersedes the
 "f32 floor" hypothesis above.)
 
-**Structural divergence found — pyr3 vs kotlin chaos game:**
-- **xform pick:** kotlin uses a cumulative-weight LINEAR SCAN over `pickTable[64]`;
+**Structural divergence found — pyr3 vs the predecessor's chaos game:**
+- **xform pick:** the predecessor uses a cumulative-weight LINEAR SCAN over `pickTable[64]`;
   pyr3 (post-`[PYR3-029]`) uses flam3's 14-bit `xform_distrib` GRAIN table. Different
   pick sequences for the same RNG state.
-- **walker color init:** kotlin seeds color with `rand01()`; pyr3 seeds `0.0` with NO
+- **walker color init:** the predecessor seeds color with `rand01()`; pyr3 seeds `0.0` with NO
   rng draw (PYR3-029 Phase-5 change to match flam3's stream). Shifts the whole ISAAC
-  stream by one draw per walker vs kotlin.
-- Net: pyr3 was rewritten to **bit-match flam3-C's RNG stream**; kotlin never was.
+  stream by one draw per walker vs the predecessor.
+- Net: pyr3 was rewritten to **bit-match flam3-C's RNG stream**; the predecessor never was.
 
 **RESOLVED TO DIAGNOSIS (2026-05-28, 4-way render + histogram):**
 `.remember/verify/pyr3-034-243-3way.html`.
@@ -215,32 +248,32 @@ pyr3 has a *structural divergence* from a working f32 GPU chaos game. (Supersede
 ```
                        nonzero      coverage   mean_cnt/nonzero   halo?
 flam3-C (ground truth) 2,373,856    52%        10,133             YES
-kotlin GpuF32Backend   (f32 GPU)    —          —                  YES
+predecessor GpuF32Backend  (f32 GPU) —          —                  YES
 pyr3 current            18,460      0.43%      1.30M              no
 pyr3 pre-PYR3-029       18,524      0.43%      1.30M              no
 ```
 
 - **flam3-C HAS the halo (52% coverage).** Since flam3-C is pyr3's ground truth, pyr3
-  is **genuinely broken** here — NOT "correct to ground truth." The kotlin reference is right.
+  is **genuinely broken** here — NOT "correct to ground truth." The predecessor reference is right.
 - **PYR3-029 is NOT the cause.** The pre-PYR3-029 engine (commit `5191ee4`, original
-  peek-era scan + random-color chaos game) renders IDENTICALLY broken (0.43%). Reverting
-  the PYR3-029 work does not help — the bug predates it and lives in the **peek-era chaos game**.
-- **Not f32** (kotlin's GPU is f32 too). **Not tonemap/DE** (halo absent from histogram).
+  prior-viewer scan + random-color chaos game) renders IDENTICALLY broken (0.43%). Reverting
+  the PYR3-029 work does not help — the bug predates it and lives in the **prior viewer's chaos game**.
+- **Not f32** (the predecessor's GPU is f32 too). **Not tonemap/DE** (halo absent from histogram).
   **Not a mis-ported variation** (radial_blur/spherical verified).
 
 **Root-cause mechanism (leading, high-confidence):** flam3 and pyr3 distribute the SAME
 total samples completely differently — flam3 spreads over ~128× more pixels (2.37M vs
 18.5K). flam3 renders in many short **sub-batches**, each starting from a FRESH random
 point + short fuse, so it captures the *transient* paths (the halo arcs are transients
-on the way to/from the dense attractor). pyr3's peek-era walkers run **one long
+on the way to/from the dense attractor). pyr3's prior-viewer walkers run **one long
 continuous orbit** (single fuse, then `iters_per_walker` plots) → they settle onto the
 dense attractor and never re-traverse the transient halo. Net: pyr3 paints only the
 attractor core; flam3 paints attractor + transients.
 
 **Walker-structure theory DISPROVEN empirically (2026-05-28):**
-- pyr3 & kotlin share the SAME budget algorithm + constants (TARGET_WALKERS=1024,
+- pyr3 & the predecessor share the SAME budget algorithm + constants (TARGET_WALKERS=1024,
   MIN_ITERS=4096, MAX_ITERS=1048576). For this flame both pick **1024 walkers ×
-  92,500 iters** — neither re-fuses periodically (kotlin's loop is also single-fuse).
+  92,500 iters** — neither re-fuses periodically (the predecessor's loop is also single-fuse).
 - Forcing more/shorter walkers via `pyr3-hist --walkers {16384,65536,262144}` did NOT
   raise coverage — it went 18.5K → ~10K nonzero (worse), and the **1.5e9-counts-in-one-
   pixel spike is invariant to walker count**. So orbit-length / f32-trapping is NOT it.
@@ -249,7 +282,7 @@ attractor core; flam3 paints attractor + transients.
   is ~1.1e9 — the dense **core is correct in both**. The ONLY difference is halo
   coverage: flam3 hits 2.37M pixels, pyr3 18K.
 
-**Ruled out so far:** f32 precision (kotlin f32 works), tonemap/DE (halo absent from
+**Ruled out so far:** f32 precision (predecessor f32 works), tonemap/DE (halo absent from
 histogram), variation formulas (radial_blur/spherical text-match flam3), xform-pick
 mechanism (pre-PYR3-029 scan logic equally broken), walker count/orbit length (swept),
 out-of-bounds clamp (discards correctly), camera (core positioned right).
@@ -258,11 +291,11 @@ out-of-bounds clamp (discards correctly), camera (core positioned right).
 Only a step-by-step diff will pin it.
 
 **Deep-dive 2026-05-28 (full hypothesis space eliminated):** pyr3's f32 iteration
-converges to a ~18K-pixel invariant set; flam3-C AND kotlin (both f32-capable) fill 2.37M
+converges to a ~18K-pixel invariant set; flam3-C AND the predecessor (both f32-capable) fill 2.37M
 (52%) — a ~128× attractor-size gap on the SAME 2-xform IFS (xform0 linear+radial_blur,
 xform1 linear+spherical w=2.25). Eliminated, each with evidence:
 - **picks** — pyr3 82% / flam3 84% spherical over 1000 iters: match (pick mechanism fine).
-- **spherical + EPS** — `p·w/(r²+1e-10)` identical in pyr3, kotlin (`chaos.comp:514`),
+- **spherical + EPS** — `p·w/(r²+1e-10)` identical in pyr3, the predecessor (`chaos.comp:514`),
   flam3 (`private.h:47`). Verified.
 - **variation summation** — trace confirms `pv = spherical(pa) + 0.001·linear(pa)` to the
   digit; both vars summed correctly.
@@ -270,11 +303,11 @@ xform1 linear+spherical w=2.25). Eliminated, each with evidence:
 - **camera/scale/rotate** — zooming OUT (scale 21.8→4) gave FEWER pixels (2900), so halo
   points are in-frame, not clipped. Not a projection bug.
 - **walker count / orbit length** — swept 1024→262144, coverage flat/worse; 1.5e9-in-one-
-  pixel invariant. Neither pyr3 nor kotlin re-fuses (same single-fuse loop).
-- **f32 precision class** — kotlin `GpuF32Backend` (f32) renders the full halo.
+  pixel invariant. Neither pyr3 nor the predecessor re-fuses (same single-fuse loop).
+- **f32 precision class** — the predecessor's `GpuF32Backend` (f32) renders the full halo.
 - **out-of-bounds** — pyr3 discards correctly (`chaos.wgsl:1843`), no edge-clamp.
 
-**The gap is emergent f32 dynamics** (pyr3's invariant set ≠ kotlin's, both f32) — the
+**The gap is emergent f32 dynamics** (pyr3's invariant set ≠ the predecessor's, both f32) — the
 only thing not yet bisected, because the decisive tool is BLOCKED:
 
 **BLOCKER — aligned per-iter trace unavailable.** `bin/pyr3-trace.ts` emits the
@@ -289,7 +322,7 @@ emit the new schema (+ `isaac_seed_hex`, `flam3.c:2594`) but isn't compiled.
 `flam3-render-32bit-isaac-rngtrace-v0.9` already emits the `pax/pvx_pre` schema + accepts
 `isaac_seed_hex`. Ran pyr3-f32 vs flam3-v0.9 with aligned ISAAC. They diverge ~1% by the
 first traced (post-200-fuse) iter (pyr3 pax=-2.6016 vs flam3 -2.6262). **But this is f32-vs-
-f64 chaotic divergence, NOT a localizable bug:** the working kotlin-f32 engine would
+f64 chaotic divergence, NOT a localizable bug:** the working predecessor-f32 engine would
 diverge from flam3-f64 identically — a walker-0-vs-f64 trace cannot distinguish the good
 f32 engine from the bad one. So the aligned-trace-vs-flam3 approach is a dead end for THIS
 bug (it was the right tool for PYR3-029's RNG-stream-alignment question, wrong tool here).
@@ -298,13 +331,13 @@ bug (it was the right tool for PYR3-029's RNG-stream-alignment question, wrong t
 rounding sensitivity — two valid f32 engines yield similar-size attractors with different
 exact pixels, not a 128× size collapse. This implies a **qualitative, likely WGSL-specific
 difference** (fma contraction / op-order / a subtle WGSL-vs-GLSL f32 semantic) that makes
-pyr3's f32 dynamics fall onto a tiny attractor where kotlin's f32 stays ergodic.
+pyr3's f32 dynamics fall onto a tiny attractor where the predecessor's f32 stays ergodic.
 
-**Only remaining isolation path:** trace **pyr3-f32 vs kotlin-f32** (both f32) — requires
-building + instrumenting pyr3-kotlin's JVM+Vulkan `GpuF32Backend` to emit a comparable
+**Only remaining isolation path:** trace **pyr3-f32 vs predecessor-f32** (both f32) — requires
+building + instrumenting the JVM+Vulkan predecessor's `GpuF32Backend` to emit a comparable
 per-iter / histogram trace, then diffing. Substantial cross-repo tooling; realistic chance
 the root cause is WGSL fma/rounding that is hard to fully control. **Next phase decision:**
-- (B) Manual line-by-line pyr3 `chaos.wgsl` vs kotlin `chaos.comp` f32-arithmetic audit of
+- (B) Manual line-by-line pyr3 `chaos.wgsl` vs the predecessor's `chaos.comp` f32-arithmetic audit of
   the full iteration (affine coef→a0/a1 mapping, op order, fma, color/post). Large, no tooling.
 - (C) Accept as an f32-attractor casualty: drop `243.00171` + `242.01373` from the curated
   showcase, ship v1.0 without them, leave PYR3-034 open for a dedicated session.
@@ -323,6 +356,12 @@ the root cause is WGSL fma/rounding that is hard to fully control. **Next phase 
   before committing to engine work.
 
 ## [PYR3-033] bug · S · 🐛 · queued · v1.x — `electricsheep.242.01373` renders pure black at `--preset 4k`
+
+> **⚠️ Re-verify first (note added 2026-05-29):** this was observed v0.21, BEFORE the v0.22
+> PYR3-034 fix that restored 6 silently-dropped underscore variations. If 242.01373's genome
+> used `radial_blur`/`gaussian_blur`/`pre_blur`/`super_shape`/`wedge_julia`/`wedge_sph`, the
+> black render may already be self-fixed. **First step: re-render at `--preset 4k` on the
+> post-v0.22 engine and check mean luminance before any deeper investigation.**
 
 **Symptom (observed 2026-05-28):** `electricsheep.242.01373.pyr3-4k.png` is a
 completely black 3840×2841 image (mean luminance 0.00, 0% non-black pixels, 46KB
@@ -343,67 +382,24 @@ fixture (does flam3-C also render it black?). If flam3-C renders it fine, it's a
 pyr3 bug; if flam3-C is also black, the fixture is simply a bad showcase pick —
 drop it from the curated set.
 
-## [PYR3-032] chore · M · 🪨 · partially done (FE-facing slice in v0.23) · v1.0 — Purge predecessor-repo references from the codebase
+## [PYR3-032] chore · M · ✅ **RESOLVED (2026-05-29)** — Purge predecessor-repo references from the codebase
 
-**✅ FE-facing slice done (v0.23):** Layer 1's public-facing FE surface is
-clean — the three `help/*.html` pages were rebranded "pyr3-peek" → "pyr3", and
-FE source comments referencing the predecessor repos were swept during the
-`[PYR3-031]` slim-bar rebuild. **The functional purge stays open:** fixture
-manifest `source:` paths (Layer 2), `fixtures/kotlin-*` renames + parity-infra
-agent defs (Layer 5), engine `Port: pyr3-kotlin` provenance comments (Layer 3),
-and the internal dev-doc / CLAUDE.md `Port:` convention decision (Layer 4) are
-all still to do.
+**✅ Resolved by a working-tree scrub (2026-05-29).** A pass removed all
+references to the non-public predecessor projects from the working tree —
+docs, source provenance comments, fixture/agent tooling, and manifest source
+paths — and excluded internal scaffolding from the public repo. The public
+**flam3** lineage (the original C engine) stays. Git history + the CHANGELOG
+narrative are left intact as the factual record.
 
-**Filed 2026-05-28 (user-directive).** Remove all references to the dead
-predecessor repos — **`flam3-kotlin` (not a real project name), `pyr3-kotlin`,
-`pyr3-peek`, `pyr3-rust`** — so public pyr3 stands on its own (lineage to
-**flam3**, the original C engine, is legitimate and STAYS). The showcase was
-already cleaned in v0.21 (`scripts/build-showcase.mjs` lede); this entry is the
-rest of the codebase, scoped "everything" next session.
-
-**~165 references across ~30 tracked files, by layer (survey 2026-05-28):**
-1. **Public-facing — do first.** `help/about.html`, `help/webgpu.html`,
-   `help/ifs-and-render-cost.html` are still titled/branded **"pyr3-peek"**
-   (wholesale-copy leftover from Phase 0 — egregious for a public ship);
-   `README.md`, `VISION.md`.
-2. **Manifest source paths (FUNCTIONAL).** `fixtures/showcase-v1.0/_manifest.json`
-   `source:` fields point at `…/pyr3-kotlin/parity/.../*.flam3` (28 hits). The
-   same sheep live in `electric-sheep-fold/corpus/<minor>/<bucket>/` — re-point
-   there (see [[reference-kotlin-v11-renders]] for the path pattern) and re-verify
-   `scripts/render-showcase-v1.0.mjs` + `build-showcase.mjs` still resolve them.
-3. **Source provenance comments.** `Port: pyr3-kotlin …` in `src/compare.ts:3`,
-   `src/serialize.ts:153`, `src/shaders/chaos.wgsl:1720`; "pyr3-peek couldn't
-   crack" in `src/main.ts:204`.
-4. **Internal dev docs.** `CLAUDE.md` Lineage section + the `Port:` commit
-   convention (decide what replaces it), `ROADMAP.md`, `BACKLOG.md`, `NOTICE.md`
-   (⚠️ keep legally-required flam3/GPL attribution), `docs/superpowers/specs/*`,
-   `docs/flam3-local-build.md`.
-5. **Parity infra (FUNCTIONAL).** `fixtures/kotlin-goldens/`,
-   `fixtures/kotlin-4k-refs/`, `.claude/agents/{wgsl-parity-reviewer,flame-fixture-investigator}.md`
-   reference pyr3-kotlin as the parity source. Renaming touches the ship-gate
-   tooling — rename + rewire + re-run `npm run test:parity*` to confirm green.
-
-**⚠️ Conflicts to resolve at the top of the sweep (don't silently blow past):**
-- `CHANGELOG.md` is documented append-only ship history with `Port:` citations —
-  decide whether to rewrite history or leave it as the factual record (recommend:
-  leave history; stop *new* citations).
-- The `Port: pyr3-kotlin <ref>` commit-message convention in CLAUDE.md needs a
-  replacement or removal decision.
-- Ground truth already pivoted kotlin→flam3-C (v0.18), so the `kotlin-*` fixture
-  names are arguably already misnomers — good moment to rename to `flam3c-*` or similar.
-
-**Acceptance:** `git grep -i -E 'flam3-kotlin|pyr3-kotlin|pyr3-peek|pyr3-rust'`
-returns only deliberate, documented exceptions (if any); parity rig still green;
-help pages branded "pyr3"; no broken fixture/agent wiring.
-
-## [PYR3-031] feat · M · 🪨 · ✅ done (FE-cleanup slice, v0.23) · v1.0 — FE cleanup pass before public ship
+## [PYR3-031] feat · M · ✅ **RESOLVED (v0.23)** · v1.0 — FE cleanup pass before public ship
 
 **✅ FE-cleanup slice done (v0.23):** The v1.0 FE-polish pass rebuilt the top
 bar into a single slim row, which swept the vestigial `setLoading` /
 status-pulse wiring and the `.pyr3-bar-btn-accent` CSS. The Share button was
 removed (url-codec + inbound `?flame=` decoding kept intact). No stale TODOs
-remained to clear. The companion brainstorm-and-rebuild of the About page is
-tracked separately as `[PYR3-037]`.
+remained to clear. The companion brainstorm-and-rebuild of the About page was
+tracked separately as `[PYR3-037]` — **also resolved in v0.23**, so this entry is now
+fully closed (no residual).
 
 **Filed 2026-05-28 (user-directive during v0.20 impl):** Before pyr3
 goes public via the GitHub repo replacement (CLAUDE.md decision #7) and
@@ -438,18 +434,18 @@ shipping with vestigial UI / dead code reads as unfinished.
 ## [PYR3-030] parity · M · 🪨 · queued · v1.x — f64 tonemap precision shim for visualize pass
 
 **Filed 2026-05-27 post Phase-C investigator findings.** Pyr3's `visualize_u32.wgsl`
-`calc_alpha` + `calc_newrgb` run in GPU f32. Kotlin v1.1 (the BE 4K parity reference)
+`calc_alpha` + `calc_newrgb` run in GPU f32. The predecessor (the BE 4K parity reference)
 runs tonemap in CPU f64. For high-`brightness` / high-`gamma` fixtures (the 248.22289
 class) the f32 precision at the HSV-highpow desaturation roundtrip is a non-trivial
-contributor to BE-vs-kotlin divergence.
+contributor to BE-vs-predecessor divergence.
 
 **Why M:** mechanism is clear — promote the per-pixel post-chaos tonemap to a CPU f64
 pass between GPU histogram readback and PNG encode. The chaos game still runs in GPU
 f32 (massive parallelism win), but the final per-pixel arithmetic is single-threaded
-+ tiny + reasonable to do at f64. Estimated 50-100 LOC port from
-`/Users/matt/dev/MattAltermatt/pyr3-kotlin/core/src/main/kotlin/pyr3/core/CpuF64Backend.kt`.
++ tiny + reasonable to do at f64. Estimated 50-100 LOC port from a CPU f64
+reference backend.
 
-**Acceptance:** 248.22289 BE-vs-kotlin R drops measurably (target: -5 to -10 R-units
+**Acceptance:** 248.22289 BE-vs-predecessor R drops measurably (target: -5 to -10 R-units
 on its own). The FE↔BE quick-mode gate (PYR3-026) thresholds can be tightened post-
 calibration.
 
@@ -511,9 +507,9 @@ Full data: `.remember/tmp/pyr3-029-ratio-table.md` (gitignored).
   `--sample-inflate=0.789..3.0` on 02226 moves R only ~1.3 across the
   4× range; deep in the low-density regime (count × k2 ≈ 0.01) the
   log curve is approximately linear, so k2 changes are not the lever.
-- ✅ **Kotlin golden is reasonably faithful to flam3-C.** 3-way R cross-
+- ✅ **The predecessor golden is reasonably faithful to flam3-C.** 3-way R cross-
   check (`pyr3<>flam3`, `golden<>flam3`, `golden<>pyr3`) shows
-  `golden<>pyr3 ≈ pyr3<>flam3` always — the kotlin golden is not
+  `golden<>pyr3 ≈ pyr3<>flam3` always — the predecessor golden is not
   corrupting `baselineR`; pyr3's divergence from flam3-C is real engine
   drift faithfully captured by `baselineR`.
 
@@ -848,17 +844,24 @@ investigation extends.
 
 Filed 2026-05-27 post-PYR3-023 probe pivot.
 
-## [PYR3-024] parity · S · 🪨 · investigation · v1.x — `248.22289` BE 4K visual divergence vs kotlin v1.1
+## [PYR3-024] parity · S · ✅ **RESOLVED (v0.22, 2026-05-28)** — `248.22289` BE 4K visual divergence — fixed by the PYR3-034 underscore-variation-drop fix
+
+> **✅ RESOLVED v0.22.** This was the worst BE divergence in the corpus (R=44.96) and was
+> flagged to "fold into PYR3-029" as a precision-floor casualty. It turned out to be a
+> *dropped-variation* bug, not precision: the PYR3-034 fix (`name in V` check before the
+> underscore split in `flame-import.ts`) restored the missing variation and dropped
+> **248.22289 4K R 44.96 → 5.57** (CHANGELOG v0.22). No further work — closed. The historical
+> Phase-B/C scoping below is preserved for context.
 
 **Symptom (observed 2026-05-27, PYR3-023 probe):** Pyr3 BE 4K render of
 `electricsheep.248.22289` completes cleanly (~19s wall, no crash, dims
-correct) but diverges substantially from the kotlin v1.1
+correct) but diverges substantially from the predecessor's
 `SHOWCASE_4K` JPG reference.
 
 **Scoping pass measured 2026-05-27 (Phase B):**
 
-- pyr3 BE @ 3840×2160 native (post-alignment to kotlin's SHOWCASE_4K)
-- **R(pyr3-BE, kotlin v1.1) = 44.96** — worst BE divergence in corpus
+- pyr3 BE @ 3840×2160 native (post-alignment to the predecessor's SHOWCASE_4K)
+- **R(pyr3-BE, predecessor) = 44.96** — worst BE divergence in corpus
   (worse than 248.02226's PYR3-021 residual R=29.96)
 - per-channel: **r=73.20**, g=40.85, **b=65.81** — red+blue heavy
 - per-region: br=77.91, bl=61.28, tr=51.97, tl=48.65 — bottom-right bias
@@ -893,12 +896,12 @@ will close when PYR3-029's bisection lands and the fixture R drops below
 Filed 2026-05-27 post-PYR3-023 probe pivot; scoped Phase B 2026-05-27;
 folded into PYR3-029 Phase C 2026-05-27.
 
-## [PYR3-023] gpu · M · ✅ resolved (corpus expansion + --preset 4k landed in v0.20) — BE 4K parity gate vs kotlin v1.1
+## [PYR3-023] gpu · M · ✅ resolved (corpus expansion + --preset 4k landed in v0.20) — BE 4K parity gate vs the predecessor
 
 **v0.20 closure (2026-05-28):** Resolved. v0.20 graduates the BE 4K
 parity rig to first-class infrastructure: `scripts/pyr3-023-be-render-4k.mjs`
 deleted; `bin/pyr3-render.ts --preset 4k` is the canonical 4K render
-path (`src/presets.ts` owns the spec). `fixtures/kotlin-4k-refs/meta.json`
+path (`src/presets.ts` owns the spec). `fixtures/predecessor-4k-refs/meta.json`
 harmonized to the v0.19 tier-aware schema (`baselineR` → `expectedR`).
 The 5-fixture 4K showcase regression gate runs green via
 `npm run test:parity-4k`. The remaining v1.0 4K-related work — the
@@ -915,7 +918,7 @@ session's follow-on edit. **BE is the v1.0 4K renderer.** The crash
 class moved to PYR3-025 (post-v1 investigation); the 248.22289 BE
 visual divergence moved to PYR3-024 (folds into PYR3-021); the FE↔BE
 parity invariant became PYR3-026 (its own v1.0 entry). PYR3-023 now
-focuses narrowly on the BE-vs-kotlin 4K ship gate.
+focuses narrowly on the BE-vs-predecessor 4K ship gate.
 
 **Original probe findings** (preserved as load-bearing context for
 the BE 4K parity work this entry now drives) — see
@@ -934,9 +937,9 @@ fixture     FE wall    BE wall    FE/BE ratio    category
 248.22289    CRASH      19.08 s      —           FE_CRASH_BE_OK_VISUAL_WRONG ⚠️
 ```
 
-**⚠️ 248.22289 BE render is visually OFF vs kotlin v1.1 reference**
+**⚠️ 248.22289 BE render is visually OFF vs the predecessor reference**
 (user-flagged 2026-05-27 from probe gallery). Render completed cleanly
-in 19s, dims correct, but composition/colors diverge from the kotlin
+in 19s, dims correct, but composition/colors diverge from the predecessor's
 4K JPG. **This is a SEPARATE bug from the FE crash.** Filed for own
 investigation as part of the post-probe fix scope — fold into PYR3-021
 upstream-stage hunt (already open for `coverage.248.02226` upstream
@@ -968,12 +971,12 @@ BE in 14-19s at the same 4096 dims, ruling out genome-level pathology.**
   per-tab limits accept. **248.22289 not yet inspected for the same
   outlier traits** but expected to share a similar profile (separate
   follow-up bisection probe needed).
-- 🟡 **Apples-to-oranges with kotlin: 4096 vs 3840 long-edge.** Kotlin's
-  `SHOWCASE_4K` preset (`pyr3-kotlin/cli/.../Preset.kt:39-49`) uses
+- 🟡 **Apples-to-oranges with the predecessor: 4096 vs 3840 long-edge.** The predecessor's
+  `SHOWCASE_4K` preset uses
   `TARGET_4K_LONG_EDGE = 3840`. Pyr3's `FULL_MAX_DIM = 4096` renders
   13.78% more pixels per fixture. This delta is not the crash cause (BE
   at 4096 succeeds for all 5), but it IS a real v1.0 parity-rig
-  blocker: pixel-level R-compare against kotlin JPGs at 3840 is
+  blocker: pixel-level R-compare against predecessor JPGs at 3840 is
   impossible without aligning. **Aligning pyr3 to 3840 is a one-line
   prerequisite for any 4K parity rig** and may also partially reduce
   the Chrome budget pressure (smaller buffer footprint).
@@ -1009,18 +1012,18 @@ fewer rAF yields.
 
 **Next-phase scope (BE 4K parity gate — V1.0 SHIP GATE):**
 
-1. **Align BE 4K long-edge to kotlin's 3840.** Change
+1. **Align BE 4K long-edge to the predecessor's 3840.** Change
    `scripts/pyr3-023-be-render-4k.mjs`'s `FULL_MAX_DIM = 4096 → 3840`
-   so pyr3 BE renders match kotlin's `SHOWCASE_4K` preset
+   so pyr3 BE renders match the predecessor's `SHOWCASE_4K` preset
    pixel-for-pixel in dimensions. Probably promote the wrapper into a
    first-class CLI flag (`--preset showcase-4k` or `--size-scale auto-4k`)
-   instead of leaving it as a one-off script. (Mirrors kotlin's
-   `Preset.SHOWCASE_4K` enum at `pyr3-kotlin/cli/.../Preset.kt:39-49`.)
+   instead of leaving it as a one-off script. (Mirrors the predecessor's
+   `Preset.SHOWCASE_4K` enum.)
 2. **Build the BE 4K parity rig.** Mirror the 19-fixture parity rig but
-   at 4K dims, comparing pyr3 BE PNG output vs kotlin v1.1 JPG
-   references (`fixtures/kotlin-4k-refs/`). R-thresholds need separate
+   at 4K dims, comparing pyr3 BE PNG output vs predecessor JPG
+   references (`fixtures/predecessor-4k-refs/`). R-thresholds need separate
    calibration against the JPG noise floor (lossier than the existing
-   PNG-vs-PNG rig). Showcase fixtures (54 in kotlin's v1.1 set)
+   PNG-vs-PNG rig). Showcase fixtures (54 in the predecessor's set)
    become candidates; start with the 5 already probed.
 3. **Fix any divergences surfaced** by the rig. Resolve PYR3-024
    (248.22289 visual off) + roll PYR3-021 fixes into the cycle.
@@ -1031,9 +1034,9 @@ fewer rAF yields.
 **Files of interest:**
 - `scripts/pyr3-023-be-render-4k.mjs` — BE 4K wrapper (graduate to CLI
   flag or first-class `bin/` script)
-- pyr3-kotlin's `Preset.SHOWCASE_4K` — `cli/.../Preset.kt:39-49`
+- the predecessor renderer's `Preset.SHOWCASE_4K`
 - `src/parity.test.ts` — existing parity rig shape to clone
-- `fixtures/kotlin-4k-refs/` — 5 kotlin v1.1 JPG references already
+- `fixtures/predecessor-4k-refs/` — 5 predecessor JPG references already
   fetched; expand as needed
 - `.remember/verify/pyr3-023-4k-probe.html` — the eyeball-verify
   gallery from the probe phase
@@ -1281,7 +1284,7 @@ the chaos game. Next-step investigation is now `[PYR3-021]`
 into `[PYR3-010]` 98-arm bit-parity audit which is the right vehicle
 for per-arm comparison. Aggregate bisection exhausted in this session
 — further isolation needs synthetic 1-xform probes against flam3-C /
-kotlin per-arm references, not the 248.02226 fixture itself.
+predecessor per-arm references, not the 248.02226 fixture itself.
 
 **Why M (not L):** Investigation narrowed 6 hypotheses → 1 area
 (non-dominant xform / non-variation paths) in this session. Folded into
@@ -1332,12 +1335,18 @@ treat the run as failed despite green tests.
 Surfaced 2026-05-27 during v0.8 (19-fixture expansion); investigation
 deepened 2026-05-27 during PYR3-014 attempt.
 
-## [PYR3-013] feat · L · 🪨 · queued · post-v1 — Showcase gallery (mirror pyr3-kotlin's v1.1)
+## [PYR3-013] feat · L · ✅ **CLOSED (superseded by PYR3-007, v0.21)** — Showcase gallery (mirror the predecessor's v1.1)
+
+> **✅ CLOSED — superseded.** This was the original (broad) showcase-gallery idea. The public
+> `/showcase` gallery shipped in v0.21 under `[PYR3-007]` (static masonry, 55 fixtures, JPEG
+> tiers, `.flame` downloads, attribution, render-time pills). The remaining gallery-adjacent
+> work — gallery→viewer click-to-load — lives as `[PYR3-007]` Chunk 2 (deferred post-v1 with
+> `[PYR3-020]`). Nothing actionable survives here. Historical scoping preserved below.
 
 User-facing reference: <https://mattaltermatt.github.io/pyr3/v1.1/>. A curated
 multi-flame HTML gallery (3-column layout: flam3-C ref / pyr3 BE / pyr3 FE)
 that visitors land on to see what pyr3 actually renders. ~50-150 flames, pulled
-from the Electric Sheep Fold corpus + pyr3-kotlin's `parity/src/test/resources/`
+from the Electric Sheep Fold corpus + the predecessor's parity test resources
 + the existing `fixtures/flam3-goldens/` parity set.
 
 **Why post-v1.0:** the showcase IS the public-facing story for pyr3; needs the
@@ -1351,15 +1360,15 @@ visual review). The parity-set fixtures are a *subset* of showcase candidates
 but the tooling and structure are different.
 
 **Build prerequisites:**
-1. Build flam3-C locally (pyr3-kotlin's `parity/flam3/` has source + build
-   scripts) so we can golden whatever fixture lands in the showcase. Without
-   this we're capped at the 16 fixtures kotlin already golden'd.
-2. Curate fixture list — likely lift kotlin's `v1.0-showcase.txt` shape as a
-   starting point. Some fixtures live in ESF corpus
-   (`/Users/matt/dev/MattAltermatt/electric-sheep-fold/corpus/`), some in
-   kotlin's `parity/src/test/resources/`. Path-resolution layer needed.
-3. Decide hosting: GitHub Pages branch `gh-pages` (mirror kotlin's pattern via
-   adapted `render-showcase.sh`), or shipped as `dist/showcase/`.
+1. Build flam3-C locally (the predecessor's parity tree carries flam3-C source +
+   build scripts) so we can golden whatever fixture lands in the showcase. Without
+   this we're capped at the 16 fixtures already golden'd.
+2. Curate fixture list — likely lift the predecessor's `v1.0-showcase.txt` shape
+   as a starting point. Some fixtures live in the ESF corpus (`electric-sheep-fold/`
+   `corpus/`), some in the predecessor's parity test resources. Path-resolution
+   layer needed.
+3. Decide hosting: GitHub Pages branch `gh-pages` (mirror the predecessor's pattern
+   via adapted `render-showcase.sh`), or shipped as `dist/showcase/`.
 4. Render harness — batch invoke `bin/pyr3-render.ts` per fixture; FE side
    needs a chrome-devtools-mcp orchestration script (or pre-rendered PNG only).
 
@@ -1396,7 +1405,7 @@ Order convention when flags present: `category · size · sigil · status · mil
 ## [PYR3-001] feat · XL · 🪨 · someday · post-v1 — Visual flame editor
 
 Mutator + vault + recents + undo + landing screen + session persistence — essentially
-pyr3-rust's scope, in pure TS (no WASM). Framework choice (React / Svelte / Solid) is itself
+an earlier prototype's scope, in pure TS (no WASM). Framework choice (React / Svelte / Solid) is itself
 a load-bearing decision worthy of dueling agents when pulled forward.
 
 **Depends on:** v1.0 ship-gate pass.
@@ -1419,9 +1428,9 @@ hot paths in WGSL. Decide whether perf work is worth the engineering cost.
 
 ## [PYR3-004] gpu · S · 🪨 · queued · v1.x — Expand variation set audit
 
-pyr3-peek's README claims 99 variations; pyr3-kotlin shipped 98/99 with `gdoffs` as the gap.
-Audit which 99 peek has, confirm completeness, port any missing arms from kotlin during the
-Phase 1 audit-port pass.
+The prior TS+WebGPU viewer's README claims 99 variations; the JVM predecessor shipped 98/99
+with `gdoffs` as the gap. Audit which 99 the prior viewer has, confirm completeness, port any
+missing arms from the JVM predecessor during the Phase 1 audit-port pass.
 
 ## [PYR3-005] cli · S · 🪨 · queued · v1.x — Single-binary CLI distribution
 
@@ -1457,25 +1466,25 @@ warrant one pass.
 **Landing reversal (2026-05-28):** The "Unversioned URL" note below
 originally meant the *root* would BE the showcase. Reversed — root `/` =
 viewer, `/showcase` = gallery. The unversioned principle still holds for
-`/showcase` (no kotlin-style `/v1.0/` dirs).
+`/showcase` (no predecessor-style `/v1.0/` dirs).
 
 **Pre-discussed design directions (locked or near-locked 2026-05-28):**
 
 - **Unversioned URL.** `mattaltermatt.github.io/pyr3/` shows the
-  latest showcase — no `/v1.0/`, `/v1.1/` like kotlin (museum
+  latest showcase — no `/v1.0/`, `/v1.1/` like the predecessor (museum
   approach). Live site. Manifest JSON carries the date + pyr3 commit
   for traceability.
 - **Render time, no comparison.** Per-fixture pill shows pyr3 BE 4K
-  wall-clock (e.g. `~10s`). Don't compare against kotlin or flam3-C —
+  wall-clock (e.g. `~10s`). Don't compare against the predecessor or flam3-C —
   comparison framing makes pyr3 read as "the second one" when it's
   the primary renderer.
 - **Click-to-load is the differentiator.** Clicking a showcase thumb
   loads the flame into pyr3 FE viewer at quick-mode (1024 long-edge —
   4K crashes Chrome per PYR3-025). Static 4K PNG download offered
-  separately. "The renderer IS the showcase" — kotlin's gallery is
+  separately. "The renderer IS the showcase" — the predecessor's gallery is
   static, pyr3's is interactive.
 - **About / what-is-this** — required. 50-word lede explaining
-  pyr3's lineage (flam3 → flam3-kotlin → pyr3) + link to GitHub.
+  pyr3's lineage (flam3 → pyr3) + link to GitHub.
 - **Permalink per fixture** — `#electricsheep.247.19679` anchors so
   specific fixtures are shareable.
 - **Source `.flame` download per fixture** — cheap differentiator;
@@ -1511,9 +1520,9 @@ viewer, `/showcase` = gallery. The unversioned principle still holds for
   gallery builder).
 - Verify gallery script at
   `scripts/build-showcase-v1.0-gallery.mjs` — current shape is
-  2-column (kotlin JPG ref vs pyr3 render) for "are they rendered?"
+  2-column (predecessor JPG ref vs pyr3 render) for "are they rendered?"
   validation; will be SUPERSEDED by the brainstorm-locked gallery
-  shape (no kotlin column, render-time pills, click-to-load) in the
+  shape (no predecessor column, render-time pills, click-to-load) in the
   v1.0 session.
 
 **Depends on:** `[PYR3-031]` FE cleanup pass (bundled — they share

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Build .remember/verify/v0.20-corpus-expansion.html — eyeball-verify
-// gallery for v0.20's 6 new parity-corpus fixtures (3 untapped kotlin
-// goldens + 3 ESF picks from kotlin's v1.0-showcase.txt). 3-column
+// gallery for v0.20's 6 new parity-corpus fixtures (3 untapped predecessor
+// goldens + 3 ESF picks from the predecessor's v1.0-showcase.txt). 3-column
 // layout per fixture (flam3-C golden / pyr3 BE render / diff), tier
 // + expectedR pills, all-25-fixture summary table on top.
 
@@ -107,9 +107,9 @@ const html = `<!doctype html>
 <p class="subtitle">Eyeball gallery for the 6 new fixtures. All 25 fixtures pass <code>npm run test:parity</code> at the v0.19 tier contract.</p>
 
 <div class="lede">
-  <p><strong>v0.20 corpus expansion:</strong> +3 untapped kotlin goldens + 3 ESF picks from kotlin's <code>v1.0-showcase.txt</code>.</p>
+  <p><strong>v0.20 corpus expansion:</strong> +3 untapped predecessor goldens + 3 ESF picks from the predecessor's <code>v1.0-showcase.txt</code>.</p>
   <p><strong>Tier ratio:</strong> ${tier1Count}:${tier2Count} (Tier-1:Tier-2) — comfortably above the planned 17:8 floor.</p>
-  <p><strong>New picks tier breakdown:</strong> ${newTier1} Tier-1 / ${newTier2} Tier-2. All 3 ESF picks landed Tier-1 (visually balanced showcase-class flames track healthy parity). Both new Tier-2 picks (244.42746 R=5.50, 248.23554 R=24.12) are kotlin lifts.</p>
+  <p><strong>New picks tier breakdown:</strong> ${newTier1} Tier-1 / ${newTier2} Tier-2. All 3 ESF picks landed Tier-1 (visually balanced showcase-class flames track healthy parity). Both new Tier-2 picks (244.42746 R=5.50, 248.23554 R=24.12) are predecessor lifts.</p>
   <p><strong>What to spot-check:</strong> per-fixture R + tier badge match expectation; diff PNG shows no structural divergence (only intensity/color drift in tier-2 cases); fixtures starred ★ in the summary table are the v0.20 additions.</p>
 </div>
 

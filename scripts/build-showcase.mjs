@@ -26,6 +26,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const RENDERS_DIR = join(REPO, 'fixtures', 'showcase-v1.0');
 const MANIFEST = join(RENDERS_DIR, '_manifest.json');
+// Showcase source .flames live in the public electric-sheep-fold corpus, a sibling
+// checkout by default; override with ESF_ROOT. Manifest `source` paths are relative to it.
+const ESF_ROOT = process.env.ESF_ROOT || resolve(REPO, '..');
 const OUT_DIR = join(REPO, 'public', 'showcase');
 
 // --- args ---
@@ -137,7 +140,8 @@ for (const fx of fixtures) {
   const renderedLine = dims
     ? `Rendered at ${dimStr} by pyr3 GPU${secs ? ` in ${secs}` : ''}`
     : `Rendered by pyr3 GPU${secs ? ` in ${secs}` : ''}`;
-  const nick = source && existsSync(source) ? extractNick(source) : null;
+  const srcPath = source ? resolve(ESF_ROOT, source) : null;
+  const nick = srcPath && existsSync(srcPath) ? extractNick(srcPath) : null;
   const byHtml = nick ? `By <b>${htmlEscape(nick)}</b>` : `<span class="anon">artist unknown</span>`;
 
   cards.push(`    <div class="card" id="${id}">

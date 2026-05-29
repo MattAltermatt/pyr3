@@ -31,11 +31,11 @@ Generates a self-contained HTML page in `.remember/verify/` showing a 3-column c
 3. Build `.remember/verify/<purpose-slug>.html` with the canonical layout:
    - Dark theme (`background: #111; color: #eee`).
    - One row per fixture: header with fixture name + R pill, then a 3-column CSS grid `golden | pyr3-render | diff`, with monospace labels under each image.
-   - All `<img src>` MUST be absolute `file:///Users/matt/dev/MattAltermatt/pyr3/...` URLs so the page works when opened directly.
+   - All `<img src>` MUST be absolute `file:///<abs-repo-path>/...` URLs so the page works when opened directly.
    - R pill colour: green if R < fixture threshold, yellow if 1–2× threshold, red if >2×. Per-channel and per-region pills below the row.
 4. Surface ONE line to the user:
    ```
-   open /Users/matt/dev/MattAltermatt/pyr3/.remember/verify/<purpose-slug>.html
+   open <abs-repo-path>/.remember/verify/<purpose-slug>.html
    ```
 
 ## Conventions (do not deviate)

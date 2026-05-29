@@ -11,7 +11,7 @@ npm run test:all                # union of the above
 npm run typecheck               # tsc --noEmit
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims
 npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
-npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (kotlin SHOWCASE_4K)
+npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (reference SHOWCASE_4K)
 ```
 
 Before commit: `npm run typecheck && npm test` (parity rig optional —
@@ -43,16 +43,12 @@ hard "much-later" status.
   of BACKLOG.md).
 - Spec location: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
 
-## Lineage (where ports come from)
+## Lineage
 
-| Repo | Role | Path |
-|---|---|---|
-| **pyr3-kotlin** | MOST mature predecessor; v1.x-E. JVM + LWJGL/Vulkan. Source of truth for GPU shader fixes, variation arms, parser edge-cases, R tolerance metric. | `/Users/matt/dev/MattAltermatt/pyr3-kotlin` |
-| **pyr3-peek** | TS + WebGPU browser viewer. Phase 0 copies this wholesale as basis. WGSL shaders, ISAAC RNG, palette, calibration, 99-variation TS port. | `/Users/matt/dev/MattAltermatt/pyr3-peek` |
-| **pyr3-rust** | Private archive. Rust core + WASM + React. Source of TS-era engine code pre-Rust pivot — `git log -- '*.ts'` is the entry point. | `/Users/matt/dev/muwamath/pyr3-rust` |
-
-When porting from kotlin, every commit body MUST carry a `Port: pyr3-kotlin <ref>` line
-citing the source (e.g. `Port: pyr3-kotlin v0.36-A 7c33994`).
+pyr3 reads the upstream **flam3** C reference renderer (Scott Draves & Erik Reckase,
+GPL-3.0-or-later — <https://github.com/scottdraves/flam3>) for algorithmic clarity; the
+TypeScript + WGSL in this repo is an independent reimplementation. flam3-C is the parity
+ground truth (see the ship-gate + R-tolerance sections below).
 
 ## Locked decisions (load-bearing)
 
@@ -73,15 +69,15 @@ Short form:
    - **FE↔BE parity at quick-mode dims** (browser viewer renders match
      BE CLI for the same fixture at 1024 long-edge within R tolerance) —
      `[PYR3-026]`
-   - **Ground truth = flam3-C, NOT kotlin v1.1.** The 2026-05-28 pivot
-     replaced the kotlin-port goldens with deterministic `flam3-render-32bit-isaac`
-     output (`isaac_seed=<fixture-id>`). Kotlin was sufficiently faithful
+   - **Ground truth = flam3-C, NOT the predecessor.** The 2026-05-28 pivot
+     replaced the predecessor-port goldens with deterministic `flam3-render-32bit-isaac`
+     output (`isaac_seed=<fixture-id>`). The predecessor was sufficiently faithful
      in most cases (R<5 vs flam3) but carries a small port-specific offset
      that distorted pyr3's measured parity. flam3-C is the canonical lineage
      reference. Goldens in `fixtures/flam3-goldens/<id>/golden.png` are now
      flam3-C renders; baselineR / thresholdR in each `meta.json` reflect
      pyr3 vs flam3-C.
-6. Frontend = pyr3-peek layout for v1.0; editor is much-later post-v1
+6. Frontend = the slim browser-viewer layout for v1.0; editor is much-later post-v1
 7. Repo replacement on GitHub is gated on ship-gate proof (do not push to
    `github.com/MattAltermatt/pyr3` until v1.0 passes)
 
@@ -100,7 +96,7 @@ v0.1):
   `happy-dom` `DOMParser` shim (for `.flame` XML parsing), then calls the same
   `createRenderer()`.
 - BE 4K (v0.20+): `bin/pyr3-render.ts --preset 4k` uses `src/presets.ts`
-  to bundle dim/quality/oversample (kotlin SHOWCASE_4K-matched). The
+  to bundle dim/quality/oversample (reference SHOWCASE_4K-matched). The
   pre-v0.20 `scripts/pyr3-023-be-render-4k.mjs` wrapper was graduated
   into the `--preset` flag family in v0.20.
 
@@ -119,7 +115,7 @@ Per the global workflow:
   needs to visually compare images (FF-merge gate, parity gallery, before/
   after, diff PNG vs golden vs render) → build a self-contained HTML page
   at `.remember/verify/<phase-or-fixture>-<purpose>.html` with absolute-
-  path `<img src="file:///Users/matt/dev/MattAltermatt/pyr3/...">`. Surface
+  path `<img src="file:///<abs-repo-path>/...">`. Surface
   as `open <abs-path>` on its own line in chat. Canonical layout: 3-column
   `golden / pyr3-render / diff` per fixture, dark theme, mono labels,
   inline pills for R + per-channel + per-region. **Don't hand a list of
@@ -139,11 +135,7 @@ GPU determinism cross-vendor is not guaranteed. The contract:
 R tolerance thresholds calibrated per-fixture during Phase 2 (v0.7) and
 tightened through Phase 3 cycles. Live thresholds in each
 `fixtures/flam3-goldens/<id>/meta.json`. R-metric implementation at
-`src/compare.ts` (ported verbatim from kotlin's
-`/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/src/main/kotlin/pyr3/parity/Compare.kt`).
-4K parity thresholds (BE vs kotlin v1.1 JPGs) still need separate
-calibration — first item in `[PYR3-023]`'s next phase, since JPG noise
-floor differs from the existing PNG-vs-PNG rig.
+`src/compare.ts`.
 
 **Tier contract (v0.19):** Per-fixture `meta.json` carries `expectedR`
 (measured R vs flam3-C, replacing the prior `baselineR` label),
@@ -164,11 +156,5 @@ bugs. The tier contract is the deliberate v0.19 closure of `[PYR3-029]`
 - Phase plan: [`ROADMAP.md`](ROADMAP.md) → "Next phases"
 - Open tasks: [`BACKLOG.md`](BACKLOG.md)
 - Ship history: [`CHANGELOG.md`](CHANGELOG.md)
-- pyr3-peek's CLI seam (reference for the pattern we'll use):
-  `/Users/matt/dev/MattAltermatt/pyr3-peek/bin/pyr3-render.ts`
-- pyr3-peek's WGSL shaders:
-  `/Users/matt/dev/MattAltermatt/pyr3-peek/src/shaders/{chaos,density,spatial-filter,visualize_u32,visualize_f32}.wgsl`
-- pyr3-kotlin ROADMAP (for Phase 1 audit-port source):
-  `/Users/matt/dev/MattAltermatt/pyr3-kotlin/ROADMAP.md`
-- pyr3-kotlin CHANGELOG (same):
-  `/Users/matt/dev/MattAltermatt/pyr3-kotlin/CHANGELOG.md`
+- The "single engine, two consumers" seam: `src/main.ts` (browser) + `bin/pyr3-render.ts` (CLI)
+- WGSL shaders: `src/shaders/{chaos,density,spatial-filter,visualize_u32,visualize_f32}.wgsl`

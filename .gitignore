@@ -18,6 +18,12 @@ coverage/
 # Superpowers brainstorm scratch
 .superpowers/
 
+# Internal scaffolding — not part of the public repo
+docs/superpowers/
+docs/flam3-local-build.md
+.claude/agents/wgsl-parity-reviewer.md
+.claude/agents/flame-fixture-investigator.md
+
 # Parity investigation scratch (uncommitted PNGs, captured JSON buffers)
 .parity-investigation/
 
@@ -34,11 +40,6 @@ fixtures/flam3-goldens/*/pyr3-fe-diff.png
 fixtures/flam3-goldens/*/pyr3-fe-be-be.png
 fixtures/flam3-goldens/*/pyr3-fe-be-fe.png
 fixtures/flam3-goldens/*/fe-be-diff.png
-# PYR3-023 BE 4K parity rig artifacts (regenerated each run; the kotlin
-# JPG refs themselves are tracked, only the pyr3 BE renders + diffs are
-# regenerated artifacts)
-fixtures/kotlin-4k-refs/*.pyr3-be-4k.png
-fixtures/kotlin-4k-refs/*.fe-be-diff.png
 .remember/verify/
 
 # PYR3-023 probe artifacts (regenerated; large derived PNGs + verbatim ESF copies)

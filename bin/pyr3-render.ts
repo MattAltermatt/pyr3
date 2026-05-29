@@ -102,7 +102,7 @@ async function main(): Promise<void> {
 
   // Preset application (v0.20+). `--preset quick` mirrors src/main.ts
   // rerender() (FE QUICK_MAX_DIM / QUICK_MAX_SPP / QUICK_OVERSAMPLE) for
-  // the FE↔BE parity gate (PYR3-026). `--preset 4k` mirrors kotlin's
+  // the FE↔BE parity gate (PYR3-026). `--preset 4k` mirrors the predecessor's
   // Preset.SHOWCASE_4K for BE 4K showcase rendering. `--max-dim N` is a
   // standalone cap (rejected alongside --preset above).
   if (preset !== null) {

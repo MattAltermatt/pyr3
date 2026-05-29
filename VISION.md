@@ -19,9 +19,8 @@ the [Apophysis](https://sourceforge.net/projects/apophysis/) editor.
 pyr3 is a **TypeScript + WebGPU reimplementation in the flam3 family** with one defining
 promise: **one engine, two consumers.** The same `.ts` modules and the same `.wgsl` shaders
 drive both a browser viewer (deployable to GitHub Pages) and a headless CLI binary (for batch
-processing on your laptop). It joins flam3 (Scott Draves's C reference, CPU-f64), JWildfire
-(Andreas Maschke's Java implementation, CPU-f64), and pyr3-kotlin (the JVM/Vulkan predecessor
-in this lineage) as siblings.
+processing on your laptop). It joins flam3 (Scott Draves's C reference, CPU-f64) and JWildfire
+(Andreas Maschke's Java implementation, CPU-f64) as siblings in this lineage.
 
 **pyr3 is its own thing.** Lineage-respectful, draws heavily on flam3's algorithms, but
 exercises independent judgment where flam3's design choices were shaped by the C / hardware /
@@ -39,7 +38,7 @@ not the default.
    at the 19-fixture parity-corpus dims (native genome size) AND
    at the 4K showcase set (3840 long-edge). flam3-C is the canonical
    lineage source of truth; the **2026-05-28 pivot replaced the
-   prior kotlin-v1.1 reference**. Kotlin port was close (R<5 vs flam3
+   prior reference renderer**. The predecessor port was close (R<5 vs flam3
    in most cases) but carried a port-specific offset that confounded
    pyr3's measured drift. Goldens regenerated deterministically via
    `isaac_seed=<fixture-id>`.
@@ -50,8 +49,7 @@ not the default.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
 same" contract holds across engines too. Both gates green = trigger
-pulled for replacing MattAltermatt/pyr3 (the kotlin one) and
-MattAltermatt/pyr3-peek on GitHub.
+pulled for the public GitHub ship.
 
 ## 🔥 Keep (the soul)
 
@@ -62,14 +60,14 @@ MattAltermatt/pyr3-peek on GitHub.
   interpolation modes.
 - **Affine + nonlinear variation chain** per xform, with optional per-xform post-affine +
   finalxform lens.
-- **The flam3 variation library** — 99 variations ported (basis: pyr3-peek's TS port).
+- **The flam3 variation library** — 99 variations ported.
 - **Genome-level features Electric Sheep relies on** — palette-by-index lookup, `<flame hue>`
   rotation, multi-value `color="V S"` attributes, the HSV-highpow desaturation branch of the
   tone-map, per-xform post-affine.
 
 ## 🛠️ Modernize
 
-- **GPU-only.** No CPU path. pyr3-kotlin learned the hard way: CPU is ~50× slower on the same
+- **GPU-only.** No CPU path. CPU is ~50× slower on the same
   hardware, and "match flam3 C-speed on CPU" is an unwinnable arc. pyr3 ships GPU-first,
   GPU-only, day one.
 - **One engine, two consumers.** Pure TS modules + WGSL shaders, called from a browser (Vite
@@ -88,10 +86,7 @@ MattAltermatt/pyr3-peek on GitHub.
 
 ## Lineage
 
-- **pyr3-kotlin** — the JVM/Vulkan predecessor (v1.x-E shipped 2026-05-27). Source of truth
-  for GPU shader fixes, variation arms, parser edge-cases. Phase 1 (v0.3) audit-ported its
-  shipped improvements into the TS/WGSL world.
-- **pyr3-peek** — the TS+WebGPU browser viewer. Phase 0 (v0.1) copied its source tree as the
-  new pyr3's basis.
-- **pyr3-rust** — private archive (Rust core + WASM + React experiment). Source of TS-era
-  engine code that pre-dated the Rust pivot; `git log -- '*.ts'` is the entry point.
+- **flam3** — Scott Draves & Erik Reckase's C reference renderer (GPL-3.0-or-later), the
+  origin of the fractal-flame algorithm and pyr3's parity ground truth. pyr3 reads it for
+  algorithmic clarity but is an independent TypeScript + WGSL reimplementation.
+- **JWildfire** — Andreas Maschke's Java implementation, a sibling in the same lineage.

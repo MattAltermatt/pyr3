@@ -16,21 +16,6 @@ GPL-3.0-or-later from the upstream
 pyr3 is an *independent reimplementation* — we read the C source for algorithmic clarity but
 the TypeScript and WGSL in this repo is original code.
 
-## TS + WGSL basis: pyr3-peek
-
-The Phase 0 source-tree copy (TS engine, 5 WGSL compute shaders, Vitest harness, CLI
-bootstrap) comes from
-[MattAltermatt/pyr3-peek](https://github.com/MattAltermatt/pyr3-peek) (GPL-3.0-or-later, same
-author). pyr3-peek was itself derived from an earlier sibling repo; see its NOTICE.md.
-Fresh history; pyr3-peek is not a git remote of this one.
-
-## GPU shader / parser / variation ports: pyr3-kotlin
-
-Phase 1 ports load-bearing GPU shader fixes, parser edge-cases, and variation-arm corrections
-from [MattAltermatt/pyr3](https://github.com/MattAltermatt/pyr3) (the Kotlin/JVM predecessor,
-GPL-3.0-or-later, same author). Each ported commit cites the source kotlin ref in its body
-trailer (`Port: pyr3-kotlin <ref>`).
-
 ## Reference fixtures (Electric Sheep `.flame` genomes)
 
 Fixture flames used for Phase 2 parity verification will be drawn from the Electric Sheep

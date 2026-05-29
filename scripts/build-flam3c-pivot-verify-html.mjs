@@ -89,9 +89,9 @@ const html = `<!doctype html>
 <p class="subtitle">3-column eyeball gallery. Goldens regenerated 2026-05-28 from <code>flam3-render-32bit-isaac qs=1 isaac_seed=&lt;fixture-id&gt;</code> (deterministic). All 19 fixtures pass <code>npm run test:parity</code>.</p>
 
 <div class="lede">
-  <p><strong>Pivot summary:</strong> kotlin v1.1 → flam3-C as ground truth.</p>
-  <p>The prior <code>golden.png</code> files were kotlin's parity captures. Kotlin was close (R&lt;5 vs flam3 typically) but carried a port-specific offset. flam3-C is the canonical lineage source of truth ("similar but not the same as flam3-C") — measuring against kotlin obscured pyr3's real engine drift.</p>
-  <p>Top-line effect: <code>coverage.248.02226</code> baseline R dropped 32.62 → 29.92 (the 2.7 R was kotlin port drift, not pyr3 engine drift). Most other fixtures shifted &lt; 0.05 R.</p>
+  <p><strong>Pivot summary:</strong> the predecessor → flam3-C as ground truth.</p>
+  <p>The prior <code>golden.png</code> files were the predecessor's parity captures. The predecessor was close (R&lt;5 vs flam3 typically) but carried a port-specific offset. flam3-C is the canonical lineage source of truth ("similar but not the same as flam3-C") — measuring against the predecessor obscured pyr3's real engine drift.</p>
+  <p>Top-line effect: <code>coverage.248.02226</code> baseline R dropped 32.62 → 29.92 (the 2.7 R was predecessor port drift, not pyr3 engine drift). Most other fixtures shifted &lt; 0.05 R.</p>
 </div>
 
 <h3>Expected R per fixture (sorted descending; v0.19 tier-aware)</h3>

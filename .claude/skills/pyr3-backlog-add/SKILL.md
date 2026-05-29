@@ -27,7 +27,7 @@ User-invocable workflow for adding a new entry to `BACKLOG.md` with project conv
      **Hypothesis (unverified):** <possible cause>
      **Next phase:** verify hypothesis against current code first.
      ```
-   - **`investigation`**: probe-style header — what's being investigated, what artefacts (probe script, fixture, kotlin reference) will be touched, decision rule for when the investigation closes.
+   - **`investigation`**: probe-style header — what's being investigated, what artefacts (probe script, fixture, reference render) will be touched, decision rule for when the investigation closes.
    - **`feature` / `chore`**: lighter scaffold — title + size pill + tag pill + one-line description placeholder.
 5. Insert into the correct section. `BACKLOG.md` is organised by status (`## Active`, `## Backlog`, `## Iceboxed`, etc.) — default new entries to `## Backlog` unless `--type investigation` (then `## Active`).
 6. Increment the "Next ID" counter at the top.

@@ -10,7 +10,7 @@ export interface PresetSpec {
   /** 'cap' shrinks only (no-op when maxDecl ≤ maxDim) — matches pre-v0.20
    *  --quick semantics; FE QUICK_MAX_DIM is a ceiling, not a target.
    *  'force' always rescales long-edge to exactly maxDim (upscales when
-   *  needed) — matches kotlin's SHOWCASE_4K + the pre-v0.20 4K wrapper
+   *  needed) — matches the reference SHOWCASE_4K preset + the pre-v0.20 4K wrapper
    *  script; the 4K showcase is a TARGET dim, not a cap. */
   mode: 'cap' | 'force';
 }

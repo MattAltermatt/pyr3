@@ -24,7 +24,7 @@ import { PNG } from 'pngjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const GOLDENS = join(REPO, 'fixtures', 'flam3-goldens');
-const FLAM3_BIN = '/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac';
+const FLAM3_BIN = process.env.FLAM3_BIN || 'flam3-render-32bit-isaac';
 
 function parseArgs(argv) {
   const out = { fixture: null, outDir: join(REPO, '.remember', 'tmp', 'pyr3-029-pixel') };

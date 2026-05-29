@@ -567,7 +567,7 @@ fn var_rings(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
 // `(phi+dy)/dx` can be negative — WGSL `trunc()` truncates toward zero,
 // v0.13: mod semantics match C99 fmod (truncate-toward-zero). The prior
 // `floor((phi+dy)/dx)` Euclidean mod (inherited from the old GLSL renderer)
-// produced different folded angles than TS+kotlin+flam3-C for negative
+// produced different folded angles than TS + the predecessor + flam3-C for negative
 // `(phi+dy)`, breaking the FE↔BE same-machine parity contract. PYR3-010
 // audit (v0.12 cluster C3) flagged this as the one confirmed `bug` across
 // 98 arms. `trunc((phi+dy)/dx) * dx` is the WGSL equivalent of C fmod.
@@ -1716,8 +1716,7 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     if (u.final_xform_idx >= 0) {
       let fxf = xforms[u.final_xform_idx];
 
-      // v1.x-C-opacity finalxform gate.
-      // Port: pyr3-kotlin core/src/main/kotlin/pyr3/core/CpuF64Backend.kt:566-585.
+      // finalxform opacity gate.
       // flam3.c:336-337 short-circuits the RNG draw when opacity == 1.0
       // (preserves RNG-determinism on the common opaque case). When the gate
       // fails, splat_p stays at p_pre_final (default at line 1645), so we
@@ -1815,7 +1814,7 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     if (i >= u.fuse) {
       // PYR3-015: regular-xform alpha-scaling (replaces v0.9-era splat-skip).
       // flam3's per-xform opacity scales the deposit at the histogram bucket
-      // — variations.c:2044, 2167 (adjust_percentage). Kotlin tracks the
+      // — variations.c:2044, 2167 (adjust_percentage). The predecessor tracks the
       // equivalent port as PYR3-035. Splat-skip (the prior stand-in) was
       // sample-noisier but statistically equivalent across the buffer
       // (opacity=0 → no deposit; opacity=0.5 → ½ samples kept). Alpha-scaling

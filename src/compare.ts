@@ -1,6 +1,5 @@
 /**
  * Mean-absolute-difference metrics for the parity gate (R-metric).
- * Port: pyr3-kotlin parity/src/main/kotlin/pyr3/parity/Compare.kt
  * RGB-only (alpha ignored) for the RGBA variants; accumulator variant
  * compares raw f64 values.
  */

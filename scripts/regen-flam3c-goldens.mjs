@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Regenerate fixture goldens from flam3-C directly (replaces the prior
-// kotlin v1.1 outputs that served as `golden.png`). Each fixture is
-// rendered via `/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac`
+// reference outputs that served as `golden.png`). Each fixture is
+// rendered via the local flam3-C reference binary (FLAM3_BIN)
 // at qs=1 (full quality), with a fixed `isaac_seed` per fixture so
 // goldens are deterministic across regen runs.
 //
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
 const GOLDENS = join(REPO, 'fixtures', 'flam3-goldens');
-const FLAM3_BIN = '/Users/matt/dev/sheep/flam3/flam3-render-32bit-isaac';
+const FLAM3_BIN = process.env.FLAM3_BIN || 'flam3-render-32bit-isaac';
 const MEASURE_R = join(REPO, '.remember', 'tmp', 'measure-r.mjs');
 
 function parseArgs(argv) {

@@ -150,8 +150,7 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
-// Port: pyr3-kotlin Flam3Parser.kt:348-390 (canonical match against flam3-C
-// `initialize_xforms()` at `/Users/matt/dev/sheep/flam3/variations.c:2468-2630`).
+// Canonical match against flam3-C `initialize_xforms()` (variations.c).
 // Each list MUST be the same length + order as VARIATION_PARAMS[arm].
 // Missing entries → all-0 fallback at the call site (legacy pre-v0.13 behavior;
 // only correct for arms whose canonical default is genuinely zero, which is
@@ -161,7 +160,7 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
 // 38 parameterized arms had non-zero canonical defaults that pyr3 was
 // silently zeroing, producing degenerate renders for .flame files that
 // elided those attrs (e.g. `julian="0.5"` with no `julian_power` → power=0
-// in pyr3 vs power=1 in flam3-C/kotlin).
+// in pyr3 vs power=1 in flam3-C / the predecessor).
 export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   curl: [1, 0],                              // c1=1, c2=0
   julian: [1, 1],                            // power=1, dist=1

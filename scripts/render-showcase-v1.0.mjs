@@ -1,52 +1,50 @@
 #!/usr/bin/env node
-// Render the v1.0 showcase set (55 fixtures from kotlin's
-// `pyr3-kotlin/parity/showcase/v1.0-showcase.txt`) via pyr3 BE at
-// --preset 4k. One-shot script; output lands in fixtures/showcase-v1.0/
-// as `<id>.pyr3-4k.png`. Skips renders that already exist (re-run safe).
+// Render the v1.0 showcase set via pyr3 BE at --preset 4k. One-shot script;
+// output lands in fixtures/showcase-v1.0/ as `<id>.pyr3-4k.png`. Skips renders
+// that already exist (re-run safe).
 //
-// Notes on the input list:
-//  • Paths starting `/Users/matt/dev/MattAltermatt/pyr3/parity/...` are
-//    stale (pre-kotlin-rename); rewrite to `pyr3-kotlin/parity/...`.
-//  • Some lines carry a trailing `# comment` (e.g. "⚠ logged divergence").
-//  • Empty lines + `#`-only lines are header comments.
+// Fixture list + source paths come from the committed
+// fixtures/showcase-v1.0/_manifest.json. Each `source` is a path relative to
+// the electric-sheep-fold corpus root (a sibling checkout by default; override
+// with the ESF_ROOT env var).
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
-import { resolve, basename, dirname, join } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, '..');
-const LIST = '/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/showcase/v1.0-showcase.txt';
 const OUT_DIR = join(REPO, 'fixtures', 'showcase-v1.0');
-const STALE_PREFIX = '/Users/matt/dev/MattAltermatt/pyr3/parity/';
-const FIXED_PREFIX = '/Users/matt/dev/MattAltermatt/pyr3-kotlin/parity/';
+const MANIFEST = join(OUT_DIR, '_manifest.json');
+const ESF_ROOT = process.env.ESF_ROOT || resolve(REPO, '..');
 
-if (!existsSync(LIST)) {
-  console.error(`showcase list not found: ${LIST}`);
+if (!existsSync(MANIFEST)) {
+  console.error(`manifest not found: ${MANIFEST}`);
   process.exit(1);
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
 
-const lines = readFileSync(LIST, 'utf8').split('\n');
+const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const fixtures = [];
-for (const raw of lines) {
-  const noComment = raw.split('#')[0].trim();
-  if (!noComment) continue;
-  let path = noComment;
-  if (path.startsWith(STALE_PREFIX)) path = FIXED_PREFIX + path.slice(STALE_PREFIX.length);
-  if (!path.endsWith('.flam3')) continue;
-  if (!existsSync(path)) {
-    console.error(`MISSING: ${path}`);
+for (const fx of manifest.fixtures ?? []) {
+  if (!fx.source) continue;
+  const sourcePath = resolve(ESF_ROOT, fx.source);
+  if (!existsSync(sourcePath)) {
+    console.error(`MISSING: ${fx.source} (resolved: ${sourcePath})`);
     continue;
   }
-  const id = basename(path, '.flam3');
-  fixtures.push({ id, sourcePath: path, outPath: join(OUT_DIR, `${id}.pyr3-4k.png`) });
+  fixtures.push({
+    id: fx.id,
+    source: fx.source,
+    sourcePath,
+    outPath: join(OUT_DIR, `${fx.id}.pyr3-4k.png`),
+  });
 }
 
-console.error(`[showcase-v1.0] ${fixtures.length} fixtures from showcase list`);
+console.error(`[showcase-v1.0] ${fixtures.length} fixtures from manifest`);
 const t0 = performance.now();
 let rendered = 0, skipped = 0, failed = 0;
 const failures = [];
@@ -80,7 +78,7 @@ for (let i = 0; i < fixtures.length; i++) {
   if (r.status !== 0) {
     console.error(`${tag}  FAIL (${elapsed}s, exit=${r.status})`);
     if (r.stderr) console.error('  stderr:', r.stderr.trim().slice(0, 500));
-    failures.push({ id: fx.id, source: fx.sourcePath, stderr: r.stderr });
+    failures.push({ id: fx.id, source: fx.source, stderr: r.stderr });
     failed++;
     continue;
   }
@@ -94,7 +92,7 @@ console.error('');
 console.error(`Done: ${rendered} rendered, ${skipped} skipped, ${failed} failed, ${totalSec}s total`);
 
 writeFileSync(
-  join(OUT_DIR, '_manifest.json'),
+  MANIFEST,
   JSON.stringify(
     {
       generatedAt: new Date().toISOString(),
@@ -104,7 +102,7 @@ writeFileSync(
       failures,
       fixtures: fixtures.map((f) => ({
         id: f.id,
-        source: f.sourcePath,
+        source: f.source,
         renderSec: f.renderSec ?? null,
       })),
     },
@@ -112,4 +110,4 @@ writeFileSync(
     2,
   ) + '\n',
 );
-console.error(`manifest: ${join(OUT_DIR, '_manifest.json')}`);
+console.error(`manifest: ${MANIFEST}`);
