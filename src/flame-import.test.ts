@@ -372,9 +372,41 @@ describe('parseFlame multi-flame wrapper', () => {
 });
 
 describe('parseFlame error paths', () => {
-  it('throws when palette is missing entirely', () => {
+  // PYR3-022: a missing inline palette is no longer fatal — flam3 falls back to
+  // its numbered palette library (via `<flame palette="N">`) or, failing that,
+  // to PYRE. Either substitution is surfaced loudly in report.paletteFallback.
+  it('falls back to PYRE with a loud report when palette is missing entirely', () => {
     const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minXform}</flame>`;
-    expect(() => parseFlame(xml)).toThrow(/no palette/i);
+    const { genome, report } = parseFlame(xml);
+    expect(report.paletteFallback).toEqual({
+      kind: 'pyre-default',
+      reason: expect.stringMatching(/no .*block/i),
+    });
+    expect(genome.palette.stops.length).toBeGreaterThan(0);
+  });
+
+  it('loads a flam3 library palette from <flame palette="N"> when no inline block is present', () => {
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100" palette="0">${minXform}</flame>`;
+    const { genome, report } = parseFlame(xml);
+    expect(report.paletteFallback).toEqual({ kind: 'library', index: 0 });
+    expect(genome.palette.stops).toHaveLength(256);
+    // palette 0 "south-sea-bather" first color 00b9eaeb → (185, 234, 235)
+    expect(genome.palette.stops[0]!.r).toBeCloseTo(185 / 255, 10);
+  });
+
+  it('falls back to PYRE (loud) when the <flame palette="N"> index is out of range', () => {
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100" palette="99999">${minXform}</flame>`;
+    const { report } = parseFlame(xml);
+    expect(report.paletteFallback).toEqual({
+      kind: 'pyre-default',
+      reason: expect.stringMatching(/out of range/i),
+    });
+  });
+
+  it('records no paletteFallback when an inline palette is present', () => {
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}${minXform}</flame>`;
+    const { report } = parseFlame(xml);
+    expect(report.paletteFallback).toBeUndefined();
   });
 
   it('throws on non-finite numeric attribute', () => {

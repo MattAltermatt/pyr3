@@ -15,7 +15,8 @@ import {
   V,
   linear as linearVar,
 } from './variations';
-import { type ColorStop, type PaletteMode } from './palette';
+import { type ColorStop, type PaletteMode, PYRE_PALETTE } from './palette';
+import { getLibraryStops, FLAM3_PALETTE_COUNT } from './flam3-palettes';
 import { VARIATION_PARAMS, VARIATION_DEFAULTS, PARAM_KEYS, MAX_VARIATION_PARAMS, type ParamKey } from './serialize';
 
 // v0.13 — flam3-C accepts legacy alias attribute names emitted by older
@@ -71,12 +72,22 @@ export interface IgnoredField {
   value: string;
 }
 
+/** PYR3-022 — how the palette was resolved when the flame had no inline block.
+ *  `library`: honored a `<flame palette="N">` reference from flam3's library.
+ *  `pyre-default`: no usable palette info, fell back to PYRE (loud, never
+ *  silent — the render won't match the author's intent). */
+export type PaletteFallback =
+  | { kind: 'library'; index: number }
+  | { kind: 'pyre-default'; reason: string };
+
 export interface ImportReport {
   flameCount: number;
   flameIndex: number;
   flameName: string;
   droppedVariations: DroppedVariation[];
   ignoredFields: IgnoredField[];
+  /** Set only when no inline palette was present and a fallback was used. */
+  paletteFallback?: PaletteFallback;
 }
 
 export interface FlameImportResult {
@@ -182,7 +193,7 @@ function parseHexBytes(hex: string): number[] {
   return out;
 }
 
-function parsePalette(flame: Element): ColorStop[] {
+function parsePalette(flame: Element): { stops: ColorStop[]; fallback?: PaletteFallback } {
   // Initialize 256 stops to black.
   const rgb: Array<{ r: number; g: number; b: number }> = [];
   for (let i = 0; i < 256; i++) rgb.push({ r: 0, g: 0, b: 0 });
@@ -255,13 +266,37 @@ function parsePalette(flame: Element): ColorStop[] {
     }
   }
 
-  if (!any) {
-    throw new Error(
-      'pyr3: <flame> has no palette (missing <color>, <colors>, or <palette>)',
-    );
+  if (any) {
+    return { stops: rgb.map((c, i) => ({ t: i / 255, r: c.r, g: c.g, b: c.b })) };
   }
 
-  return rgb.map((c, i) => ({ t: i / 255, r: c.r, g: c.g, b: c.b }));
+  // No inline palette block. flam3 falls back to its numbered palette library
+  // when the flame references one via `<flame palette="N">` (parser.c:380 +
+  // flam3_get_palette). If there's no such reference either, there's no color
+  // information at all and we use PYRE. Both substitutions are surfaced in the
+  // report — loud, never silent (the PYR3-034 lesson).
+  const palAttr = flame.getAttribute('palette');
+  if (palAttr !== null && palAttr.trim() !== '') {
+    const idx = Number(palAttr);
+    const libStops = getLibraryStops(idx);
+    if (libStops) {
+      return { stops: libStops, fallback: { kind: 'library', index: idx } };
+    }
+    return {
+      stops: PYRE_PALETTE.stops,
+      fallback: {
+        kind: 'pyre-default',
+        reason: `<flame palette="${palAttr}"> out of range [0, ${FLAM3_PALETTE_COUNT - 1}]`,
+      },
+    };
+  }
+  return {
+    stops: PYRE_PALETTE.stops,
+    fallback: {
+      kind: 'pyre-default',
+      reason: 'no <color>/<colors>/<palette> block and no <flame palette="N"> index',
+    },
+  };
 }
 
 function expectFiniteNumber(s: string, field: string): number {
@@ -561,7 +596,7 @@ export function parseFlame(xml: string): FlameImportResult {
     }
   }
 
-  const stops = parsePalette(flame);
+  const { stops, fallback: paletteFallback } = parsePalette(flame);
   const flameName = flame.getAttribute('name') ?? 'imported';
   // Author nick (Electric Sheep / Apophysis convention). Stripped of
   // surrounding whitespace; empty string treated as absent so the
@@ -675,6 +710,7 @@ export function parseFlame(xml: string): FlameImportResult {
     flameName,
     droppedVariations,
     ignoredFields,
+    ...(paletteFallback ? { paletteFallback } : {}),
   };
 
   return { genome, report };
