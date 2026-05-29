@@ -58,41 +58,38 @@
       <a class="back" href="/">← Back to pyr3</a>
 
       <h1>🔥 pyr3</h1>
-      <p class="subtitle">A browser-only viewer for fractal flames.</p>
+      <p class="subtitle">A WebGPU fractal-flame renderer — for the browser and the command line.</p>
 
       <p>
         Open a <code>.flame</code> XML file in a WebGPU-capable browser
         and watch the chaos-game iteration render directly on your GPU.
         Share the URL with anyone — the flame travels inside the link.
-        No install, no JVM, no native app.
+        It all runs in the browser; there's nothing to install.
       </p>
 
       <p>
-        pyr3 is intentionally narrow: <strong>view a flame,
-        share a link, save your own files</strong>. The editor,
-        Forge, Explore, and everything creative-workflow-shaped live
-        in pyr3 (the desktop renderer).
+        One engine, two ways in: this <strong>browser viewer</strong> for
+        looking and sharing, and a <strong>headless CLI</strong>
+        (<code>npm&nbsp;run&nbsp;render</code>) that renders any flame to a PNG
+        at full quality. Both run the same TypeScript&nbsp;+&nbsp;WebGPU code.
+        A visual editor and mutator are on the roadmap — not here yet.
       </p>
 
       <h2>The pyr3 family</h2>
       <ul class="family">
         <li>
           <strong><a href="https://github.com/MattAltermatt/pyr3">pyr3</a></strong>
-          <span>The canonical Kotlin/JVM renderer + editor for desktop.
-          Has the sliders, the mutators, the palette mixer, the everything.</span>
+          <span>This renderer — one TypeScript&nbsp;+&nbsp;WebGPU engine with two
+          consumers: the browser viewer (this site) and a headless CLI.</span>
         </li>
         <li>
           <strong><a href="https://github.com/MattAltermatt/electric-sheep-fold">ESF</a></strong>
-          <span>The Electric Sheep Fold — a corpus of every Electric Sheep
+          <span>The Electric Sheep Fold — a corpus of every
+          <a href="https://electricsheep.org">Electric Sheep</a>
           flame, archived and re-collated.</span>
         </li>
         <li>
-          <strong>pyr3</strong>
-          <span>(this site) The browser-only viewer companion. WebGPU, TypeScript, Vite.
-          Read-only by design.</span>
-        </li>
-        <li>
-          <strong>flam3</strong>
+          <strong><a href="https://github.com/scottdraves/flam3">flam3</a></strong>
           <span>The algorithmic ancestor — Scott Draves's original fractal
           flame renderer, started in 1992. The chaos-game inner loop +
           variation library every flam3-family renderer inherits.</span>
