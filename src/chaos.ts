@@ -30,6 +30,12 @@ export interface ChaosConfig {
   walkers: number;
   itersPerWalker: number;
   fuse: number;
+  /** Supersample factor — the AUTHORITY for the splat scale (PYR3-008). The
+   *  super-canvas dims (width/height above) are already built with it, so the
+   *  chaos pass reads oversample from here, NOT from `genome.oversample`. The
+   *  genome value is a vestigial parallel input that let v0.2's camera-zoom bug
+   *  creep in when host setup forgot to keep the two in sync. */
+  oversample: number;
 }
 
 export interface DispatchOpts {
@@ -211,7 +217,10 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // splat scale must be multiplied by oversample so the IFS structure
       // fills the full super-canvas (matches flam3 rect.c — its `ppux/ppuy`
       // are the super-pixel pitch). Output → super-pixel ratio.
-      const oversample = Math.max(1, Math.floor(g.oversample ?? 1));
+      // PYR3-008: oversample comes from the pipeline config (the authority),
+      // NOT g.oversample — the genome value is vestigial and could drift out of
+      // sync with the actual super-canvas the pass was built for.
+      const oversample = Math.max(1, Math.floor(config.oversample));
       f32[4] = g.scale * oversample;
       f32[5] = g.cx;
       f32[6] = g.cy;

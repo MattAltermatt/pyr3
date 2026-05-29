@@ -242,6 +242,7 @@ function buildPipelines(
     walkers: WALKERS,
     itersPerWalker: ITERS_PER_WALKER,
     fuse: FUSE,
+    oversample,
   });
   const density = createDensityPass(device, { width: superW, height: superH }, chaos.histogram);
 
