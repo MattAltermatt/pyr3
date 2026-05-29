@@ -26,6 +26,24 @@
       /* Hide the canvas while the WebGPU fallback panel is mounted. */
       body.webgpu-unavailable #pyr3-canvas { display: none; }
 
+      /* First-paint cue: a quiet "dreaming…" in the canvas zone on cold
+         load, cleared once the first flame paints. Not an overlay on a
+         rendered flame — there is none yet at first paint. */
+      #pyr3-firstpaint {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #7a6a55;
+        font-size: 13px;
+        font-style: italic;
+        letter-spacing: 0.04em;
+        transition: opacity 0.4s ease;
+        pointer-events: none;
+      }
+      #pyr3-firstpaint.hidden { opacity: 0; }
+      body.webgpu-unavailable #pyr3-firstpaint { display: none; }
+
       html,
       body {
         margin: 0;
@@ -140,6 +158,7 @@
       <header id="pyr3-bar"></header>
       <main id="pyr3-canvas-zone">
         <canvas id="pyr3-canvas"></canvas>
+        <div id="pyr3-firstpaint">dreaming…</div>
         <div id="pyr3-fallback" hidden></div>
       </main>
     </div>

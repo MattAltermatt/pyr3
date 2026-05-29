@@ -45,6 +45,19 @@ const QUICK_OVERSAMPLE = 1;
 async function main(): Promise<void> {
   const webgpu = await checkWebGPU();
 
+  // First-paint cue ("dreaming…" in index.html) — cleared once the first
+  // flame paints, so the visitor sees the engine is alive on a cold load.
+  let firstPaintDone = false;
+  const clearFirstPaintCue = (): void => {
+    if (firstPaintDone) return;
+    firstPaintDone = true;
+    const cue = document.getElementById('pyr3-firstpaint');
+    if (cue) {
+      cue.classList.add('hidden');
+      setTimeout(() => cue.remove(), 450);
+    }
+  };
+
   let openFilePicker: () => void = () => {
     console.warn('pyr3: file picker invoked before canvas init');
   };
@@ -236,6 +249,7 @@ async function main(): Promise<void> {
       await handle.promise;
     } finally {
       bar.hideProgress();
+      clearFirstPaintCue();
       if (runHandle === handle) runHandle = null;
     }
   };
@@ -285,6 +299,7 @@ async function main(): Promise<void> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`pyr3: failed to load ${file.name}: ${msg}`);
+      bar.showToast('Couldn’t load that .flame — see console.');
     } finally {
       bar.setBusy(false);
       loadInFlight = false;
