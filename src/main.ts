@@ -301,6 +301,10 @@ async function main(): Promise<void> {
       console.error(`pyr3: failed to load ${file.name}: ${msg}`);
       bar.showToast('Couldn’t load that .flame — see console.');
     } finally {
+      // Clear the first-paint cue even if the (initial) load threw before
+      // rerender() ran — otherwise "dreaming…" would stick on a black canvas.
+      // Idempotent via the firstPaintDone guard.
+      clearFirstPaintCue();
       bar.setBusy(false);
       loadInFlight = false;
     }

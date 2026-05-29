@@ -22,9 +22,10 @@ export interface LoadResult {
   genome: Genome;
   report?: ImportReport;
   /**
-   * The raw file text. The Share-link path (main.ts onShareLink) encodes
-   * this directly into `?flame=v1:<gzip+base64>` so the round-trip
-   * preserves the original XML byte-for-byte.
+   * The raw file text. Retained for the share-link round-trip: `url-codec`
+   * encodes it into `?flame=v1:<gzip+base64>` so the original XML is preserved
+   * byte-for-byte. (The outbound share button was removed in v0.23; the codec
+   * + inbound `?flame=` decode remain for the future share redesign.)
    */
   sourceText: string;
 }
