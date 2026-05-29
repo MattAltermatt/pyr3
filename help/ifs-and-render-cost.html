@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E" />
-    <title>pyr3-peek — why does this take so long?</title>
+    <title>pyr3 — why does this take so long?</title>
     <style>
       :root {
         color-scheme: dark;
@@ -55,7 +55,7 @@
   </head>
   <body>
     <div class="page">
-      <a class="back" href="/">← Back to pyr3-peek</a>
+      <a class="back" href="/">← Back to pyr3</a>
 
       <h1>Why does this take so long?</h1>
       <p class="subtitle">
@@ -110,7 +110,7 @@
       <ul>
         <li>SPP = 4 → speckled, unrecognizable as a finished render</li>
         <li>SPP = 16 → noticeably noisy but the shape is clear
-            (what pyr3-peek's quick preview uses by default)</li>
+            (what pyr3's quick preview uses by default)</li>
         <li>SPP = 100 → smooth, gallery-ready</li>
         <li>SPP = 1000+ → flam3's offline-render preset; effectively settled</li>
       </ul>
@@ -135,7 +135,7 @@
         work on a buffer 16× larger, so those steps slow down too.
       </p>
 
-      <h2>Why pyr3-peek chunks the dispatch</h2>
+      <h2>Why pyr3 chunks the dispatch</h2>
       <p>
         Submitting a billion-dot compute pass to the GPU as a single dispatch
         would lock the browser for the full duration. macOS Metal forcibly
@@ -143,7 +143,7 @@
         (“TDR” — timeout detection and recovery).
       </p>
       <p>
-        pyr3-peek's renderer breaks the work into chunks (~1 million dots
+        pyr3's renderer breaks the work into chunks (~1 million dots
         each). Between chunks, the browser gets a frame to composite, the
         progress bar updates, and the cancel button stays responsive. The
         total work is identical — it just doesn't lock you out while it runs.

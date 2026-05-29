@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E" />
-    <title>pyr3-peek — WebGPU help</title>
+    <title>pyr3 — WebGPU help</title>
     <style>
       :root {
         color-scheme: dark;
@@ -53,9 +53,9 @@
   </head>
   <body>
     <div class="page">
-      <a class="back" href="/">← Back to pyr3-peek</a>
+      <a class="back" href="/">← Back to pyr3</a>
 
-      <h1>WebGPU &amp; pyr3-peek</h1>
+      <h1>WebGPU &amp; pyr3</h1>
       <p class="subtitle">
         Why this viewer needs WebGPU, and what to do if your browser doesn't have it yet.
       </p>
@@ -73,13 +73,13 @@
       <p>
         Fractal flames are computed by running millions of chaos-game
         iterations per render. That's brutal on a CPU and trivial on a GPU.
-        pyr3-peek uses five WebGPU compute shaders (chaos · density ·
+        pyr3 uses five WebGPU compute shaders (chaos · density ·
         spatial filter · two visualize passes) to run those iterations
         directly on your machine's graphics hardware. No JavaScript loops
         with that kind of workload would feel acceptable.
       </p>
       <p>
-        If you opened pyr3-peek and saw a flame rendering, your browser
+        If you opened pyr3 and saw a flame rendering, your browser
         already supports WebGPU. The green <code>WebGPU ✓</code> chip in
         the top bar links here just in case you wanted to know what it
         meant.
@@ -87,13 +87,13 @@
 
       <div class="card err">
         <h2 id="why-not-working">
-          Why isn't pyr3-peek working?
+          Why isn't pyr3 working?
           <a class="anchor" href="#why-not-working">#</a>
         </h2>
         <p>
-          You're on this section because the chip in pyr3-peek is red and
+          You're on this section because the chip in pyr3 is red and
           the canvas didn't load a flame. Your browser isn't exposing
-          <code>navigator.gpu</code>, so pyr3-peek has no engine to render with.
+          <code>navigator.gpu</code>, so pyr3 has no engine to render with.
         </p>
         <p><strong>Browsers that work today:</strong></p>
         <ul class="browsers">
@@ -112,7 +112,7 @@
 
       <h2>Is this the only way?</h2>
       <p>
-        For the browser, yes — and that's deliberate. pyr3-peek is meant
+        For the browser, yes — and that's deliberate. pyr3 is meant
         to be the lowest-friction way to share a fractal flame: a URL
         someone opens in a browser, no install, no native app, no JVM.
         WebGPU is the only path that lets a browser do this with
