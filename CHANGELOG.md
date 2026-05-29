@@ -39,6 +39,10 @@ end-to-end (chunk fetch → brotli decode → import → WebGPU render).
 - **Decision** — `actions/deploy-pages` vs keeping the `gh-pages`-branch force-push
   was settled by three parallel dueling agents + the live-site-idle context; the
   modern artifact path won (no stop-gap, GitHub's strategic direction).
+- **Follow-up (`[PYR3-046]`, same day)** — bumped the workflow actions to their
+  Node-24 majors (`checkout@v6`, `setup-node@v6`, `cache@v5`, `upload-pages-artifact@v5`,
+  `deploy-pages@v5`), clearing the Node-20-runtime deprecation ahead of GitHub's
+  2026-06-16 cutoff. Verified green with zero deprecation annotations.
 
 ## v0.25 — 2026-05-29 — Predecessor-reference scrub (public-ship prep)
 

@@ -9,7 +9,13 @@ current cycle lives in [ROADMAP.md](ROADMAP.md).
 > **Next ID: PYR3-047** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
 
-## [PYR3-046] infra · XS · 🔧 · open · post-v1 — Bump deploy-workflow actions to Node 24 support
+## [PYR3-046] infra · XS · 🔧 ✅ **RESOLVED (2026-05-29)** — Bump deploy-workflow actions to Node 24 support
+
+> **✅ Resolved 2026-05-29 (same day as filing).** Bumped to Node-24 majors:
+> `checkout@v6`, `setup-node@v6`, `cache@v5`, `upload-pages-artifact@v5`,
+> `deploy-pages@v5`. Verified each is `using: node24` (or composite wrapping it) with
+> no breaking input changes for our usage; the post-bump deploy run is green with
+> **zero** Node-20 deprecation annotations.
 
 **Filed 2026-05-29.** The v0.26 deploy run emitted a non-blocking annotation: the
 pinned `actions/{checkout,setup-node,cache,upload-artifact}@v4` run on Node.js 20,
