@@ -1,0 +1,115 @@
+name: Deploy site to GitHub Pages
+
+# Automates the previously-manual build -> bake-chunks -> publish flow
+# (PYR3-038). Replaces the hand-run `vite build` + force-push to the
+# `gh-pages` branch. Requires Settings -> Pages -> Source = "GitHub Actions".
+#
+# The custom domain (pyr3.app) and Enforce-HTTPS are repo-level Pages
+# settings, independent of the publishing source, so they survive the
+# source switch. The old `gh-pages` branch is left intact as a rollback.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least-privilege for the official Pages deploy path:
+# - contents:read   checkout the source
+# - pages:write     publish the Pages artifact
+# - id-token:write  OIDC token actions/deploy-pages exchanges for the deploy
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One live deploy at a time; don't cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned electric-sheep-fold Release tag carrying corpus-chunks-*.tar.
+      # Bump this ONE line to ship a newer corpus snapshot to the live site.
+      # Pinning (vs --latest) keeps deploys reproducible: a re-run always
+      # bakes in the same chunks, and a future ESF release can't silently
+      # change what pyr3 serves.
+      CHUNK_RELEASE_TAG: '2026-05-23'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tsc (typecheck) + vite build, base '/'. public/CNAME is copied into
+      # dist/ automatically (harmless under the Actions source, which holds
+      # the domain in Settings rather than reading a CNAME file).
+      - name: Build site
+        run: npm run build
+
+      # Cache the downloaded chunk tar, keyed on the pinned Release tag.
+      # The corpus changes rarely, so FE-only deploys hit this cache and skip
+      # the download entirely; it only misses the one deploy after the tag is
+      # bumped. The tar still gets untarred into the artifact every deploy
+      # (the Pages artifact is a complete site snapshot — see header note).
+      - name: Restore cached corpus-chunks tar
+        id: chunk-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/esf-chunks
+          key: esf-chunks-${{ env.CHUNK_RELEASE_TAG }}
+
+      # Same-origin corpus chunks the /v1 share-URL viewer fetches at runtime.
+      # electric-sheep-fold is PUBLIC, so the repo-scoped github.token can read
+      # its Release assets (public-repo reads work with any valid token).
+      # Only downloads on a cache miss (first deploy after a tag bump).
+      - name: Download corpus chunks from electric-sheep-fold
+        if: steps.chunk-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/esf-chunks
+          gh release download "$CHUNK_RELEASE_TAG" \
+            --repo MattAltermatt/electric-sheep-fold \
+            --pattern 'corpus-chunks-*.tar' \
+            --dir /tmp/esf-chunks
+
+      # Unpack into the artifact every deploy (cached or freshly downloaded).
+      - name: Bake chunks into dist/
+        run: |
+          mkdir -p dist/chunks
+          tar -xf /tmp/esf-chunks/corpus-chunks-*.tar -C dist/chunks
+          echo "Baked chunk tree (top level):"
+          ls dist/chunks
+
+      # 404.html = SPA deep-link fallback for /v1/gen/... paths.
+      # .nojekyll bypasses Jekyll (belt-and-suspenders; Actions source skips it).
+      - name: SPA deep-link fallback + Jekyll bypass
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
