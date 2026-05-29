@@ -11,14 +11,17 @@
 
 ## Status
 
-🚧 **v0.27 — `/showcase` gallery live + repo de-bloat (atop v0.26 CI deploy).** Engine in place (browser + CLI
+🚧 **v0.28 — Engine/GPU S-batch (chaos-oversample decouple + flam3 palette library).** Engine in place (browser + CLI
 render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
 test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
 flam3-C is the canonical lineage source of truth. **The hero
 `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
 floor.
 
-Recent ships: **v0.27** restored the live `/showcase` gallery (now served as a
+Recent ships: **v0.28** decoupled the chaos splat-scale `oversample` from the genome
+(reads the authoritative pipeline config now) and ported flam3's full 701-palette
+library as a parser fallback for inline-palette-less flames (`[PYR3-008]` +
+`[PYR3-022]`; `[PYR3-004]` variation audit closed 99/99); **v0.27** restored the live `/showcase` gallery (now served as a
 deploy-time Release asset, keeping the ~221M of 4K JPEGs out of git) and de-bloated
 the repo (`.git` 603M→41M via history rewrite); **v0.26** automated the deploy — pushing to `main` now publishes
 `pyr3.app` via GitHub Actions (`actions/deploy-pages`), baking in the corpus chunks
@@ -55,7 +58,7 @@ See [NOTICE.md](NOTICE.md) for third-party attribution.
 ```sh
 npm install
 npm test                  # unit suite only (~1s)
-npm run test:parity       # 19-fixture flam3-C parity suite (~90s, needs Dawn WebGPU)
+npm run test:parity       # 25-fixture flam3-C parity suite (~90s, needs Dawn WebGPU)
 npm run test:all          # unit + parity
 npm run dev               # browser viewer at http://localhost:5173/
 npm run render fixtures/electricsheep.247.19679.flam3 out.png    # CLI
