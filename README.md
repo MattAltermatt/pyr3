@@ -11,28 +11,19 @@
 
 ## Status
 
-🚧 **v0.23 — v1.0 FE-polish pass in flight (atop v0.22).** Engine in place
-(browser + CLI both render from one codebase); both parity rigs green —
-BE-vs-flam3-C (`npm run test:parity`) and FE↔BE quick-mode (`npm run
-test:parity-fe-be`, 25/25). flam3-C is the canonical lineage source of truth.
-**The README hero `electricsheep.247.19679` renders at R=2.78 vs flam3-C** —
-well inside the noise floor.
+🚧 **v0.25 — public-ship prep (atop v0.24).** Engine in place (browser + CLI
+render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
+test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
+flam3-C is the canonical lineage source of truth. **The hero
+`electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
+floor.
 
-**v0.22** fixed the last v1.0 render blocker (`[PYR3-034]`): `.flame` import
-silently dropped underscore-named variations (`radial_blur`, `gaussian_blur`,
-`pre_blur`, `super_shape`, `wedge_julia`, `wedge_sph`), so
-`electricsheep.243.00171` lost its soft-blue halo — now restored. The same fix
-also resolved the 248.22289 4K divergence (R 44.96 → 5.57). The public
-`/showcase` gallery shipped in v0.21.
-
-**v0.23** rebuilds the browser viewer's top bar into a single slim row
-(wordmark · about · flame name · attribution · centered Open button · WebGPU
-status pill · repo link-chips), turns render progress into an on-demand drop-down
-detail row, adds a first-paint "dreaming…" cue and a user-facing toast on
-`.flame` load failure, removes the Share button (the url-codec + inbound
-`?flame=` decoding stay intact, share is being redesigned later), and rebrands
-the `help/*.html` pages to "pyr3". This closes the FE-cleanup slice of
-`[PYR3-031]` and the FE-facing slice of `[PYR3-032]`.
+Recent ships: **v0.25** scrubbed the codebase of predecessor-project references
+ahead of the public repo; **v0.24** added the corpus share-URL viewer
+(`pyr3.app/v1/gen/{gen}/id/{id}` loads any Electric Sheep corpus flame
+in-browser); **v0.23** rebuilt the viewer's top bar into a single slim row;
+**v0.21** shipped the public `/showcase` gallery. Full history in
+[CHANGELOG.md](CHANGELOG.md).
 
 The only remaining known outliers — `coverage.248.02226` (R≈29.9) and
 `coverage.245.06687` — are accepted GPU-f32-floor (tier-2) fixtures under
