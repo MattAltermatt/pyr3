@@ -10,6 +10,42 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.23 — 2026-05-28 — Browser viewer v1.0 FE-polish pass (slim top bar, on-demand progress, dreaming cue, load toast)
+
+**Outcome:** The browser viewer gets its v1.0 chrome. Engine and parity gates
+are untouched — this is a frontend-only polish slice. All three rigs stay green.
+
+**Top bar — rebuilt into a single slim row.** 🔥 pyr3 wordmark (→ home) · "about"
+link · flame name · "by {nick}"; a centered 📂 Open button; right side carries a
+WebGPU status pill plus two GitHub octocat link-chips ("fork it" → the pyr3 repo,
+"more flames" → the electric-sheep-fold repo). The rebuild swept the vestigial
+`setLoading` / status-pulse wiring and the `.pyr3-bar-btn-accent` CSS.
+
+**Render progress is now an on-demand drop-down detail row** — it appears only
+during a render (bar, %, ETA + samples, "Why so long?" link, Cancel) instead of
+occupying chrome at rest.
+
+**First-paint "dreaming…" cue** in the canvas zone on cold load, so the empty
+canvas reads as intentional rather than broken.
+
+**User-facing toast on `.flame` load failure** — previously console-only; a
+malformed or unreadable flame now surfaces a visible error.
+
+**Share-link button removed.** Share is being redesigned in a separate future
+session; the url-codec module + inbound `?flame=` link decoding are kept intact.
+
+**help/*.html rebranded** from "pyr3-peek" (Phase-0 wholesale-copy leftover) to
+"pyr3" across all three pages.
+
+**Backlog impact:** closes the **FE-cleanup slice of `[PYR3-031]`** (slim-bar
+rebuild swept the dead `setLoading` / status-pulse / `.pyr3-bar-btn-accent` paths;
+Share button removed; no stale TODOs remained) and the **FE-facing slice of
+`[PYR3-032]`** (help-page branding + FE source comments). The **functional
+`[PYR3-032]` purge stays open** — fixture-manifest source paths,
+`fixtures/kotlin-*` renames, agent defs, and engine `Port: pyr3-kotlin`
+provenance comments are explicitly NOT done. Files **`[PYR3-037]`** (About-page
+brainstorm + rebuild).
+
 ## v0.22 — 2026-05-28 — PYR3-034 fixed: underscore-named variations were silently dropped (radial_blur halo)
 
 **Outcome:** `electricsheep.243.00171` renders its full soft-blue halo nebula again.

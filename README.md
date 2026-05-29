@@ -11,21 +11,35 @@
 
 ## Status
 
-🚧 **v0.18 — Phase 3, ground-truth pivot to flam3-C.** Engine in place
-(browser + CLI both render); three parity rigs green: 19-fixture BE-vs-flam3-C
-(`npm run test:parity`, **goldens regenerated from flam3-C `isaac_seed=<id>`
-on 2026-05-28** — see commit log), 19-fixture FE↔BE quick-mode
-(`npm run test:parity-fe-be`, v0.15), and 5-fixture BE 4K showcase
-(`npm run test:parity-4k`, v0.17). **The README hero `electricsheep.247.19679`
-renders at R=2.78 vs flam3-C** — well inside the noise floor. The 2026-05-28
-pivot replaced the prior kotlin-v1.1 reference: kotlin was close (R<5 in most
-cases) but carried a port-specific offset; flam3-C is the canonical lineage
-source of truth. One outlier (248.22289 at R=44.96) is blocked on `[PYR3-029]`
-investigation (Phase 1 + Phase 2 ruled out chaos-game chromatic drift AND
-calibration k2 as the dominant levers; Phase 3 targets per-pixel chromatic
-drift × tonemap k1 amplification). v1.0 ships when PYR3-029 lands and the
-showcase set expands to ~20-50 fixtures. See [ROADMAP.md](ROADMAP.md) and
-[BACKLOG.md](BACKLOG.md#pyr3-029).
+🚧 **v0.23 — v1.0 FE-polish pass in flight (atop v0.22).** Engine in place
+(browser + CLI both render from one codebase); all three parity rigs green —
+BE-vs-flam3-C (`npm run test:parity`), FE↔BE quick-mode (`npm run
+test:parity-fe-be`, 25/25), and the 5-fixture BE 4K showcase
+(`npm run test:parity-4k`). flam3-C is the canonical lineage source of truth
+(the 2026-05-28 pivot replaced the prior kotlin-v1.1 reference). **The README
+hero `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the
+noise floor.
+
+**v0.22** fixed the last v1.0 render blocker (`[PYR3-034]`): `.flame` import
+silently dropped underscore-named variations (`radial_blur`, `gaussian_blur`,
+`pre_blur`, `super_shape`, `wedge_julia`, `wedge_sph`), so
+`electricsheep.243.00171` lost its soft-blue halo — now restored. The same fix
+also resolved the 248.22289 4K divergence (R 44.96 → 5.57). The public
+`/showcase` gallery shipped in v0.21.
+
+**v0.23** rebuilds the browser viewer's top bar into a single slim row
+(wordmark · about · flame name · attribution · centered Open button · WebGPU
+status pill · repo link-chips), turns render progress into an on-demand drop-down
+detail row, adds a first-paint "dreaming…" cue and a user-facing toast on
+`.flame` load failure, removes the Share button (the url-codec + inbound
+`?flame=` decoding stay intact, share is being redesigned later), and rebrands
+the `help/*.html` pages to "pyr3". This closes the FE-cleanup slice of
+`[PYR3-031]` and the FE-facing slice of `[PYR3-032]`.
+
+The only remaining known outliers — `coverage.248.02226` (R≈29.9) and
+`coverage.245.06687` — are accepted GPU-f32-floor (tier-2) fixtures under
+`[PYR3-029]`, **not** regressions. v1.0 ships once the remaining chunks land;
+see [ROADMAP.md](ROADMAP.md) and [BACKLOG.md](BACKLOG.md).
 
 ## The contract
 

@@ -279,7 +279,16 @@ fixture (does flam3-C also render it black?). If flam3-C renders it fine, it's a
 pyr3 bug; if flam3-C is also black, the fixture is simply a bad showcase pick —
 drop it from the curated set.
 
-## [PYR3-032] chore · M · 🪨 · queued (next session) · v1.0 — Purge predecessor-repo references from the codebase
+## [PYR3-032] chore · M · 🪨 · partially done (FE-facing slice in v0.23) · v1.0 — Purge predecessor-repo references from the codebase
+
+**✅ FE-facing slice done (v0.23):** Layer 1's public-facing FE surface is
+clean — the three `help/*.html` pages were rebranded "pyr3-peek" → "pyr3", and
+FE source comments referencing the predecessor repos were swept during the
+`[PYR3-031]` slim-bar rebuild. **The functional purge stays open:** fixture
+manifest `source:` paths (Layer 2), `fixtures/kotlin-*` renames + parity-infra
+agent defs (Layer 5), engine `Port: pyr3-kotlin` provenance comments (Layer 3),
+and the internal dev-doc / CLAUDE.md `Port:` convention decision (Layer 4) are
+all still to do.
 
 **Filed 2026-05-28 (user-directive).** Remove all references to the dead
 predecessor repos — **`flam3-kotlin` (not a real project name), `pyr3-kotlin`,
@@ -323,7 +332,14 @@ rest of the codebase, scoped "everything" next session.
 returns only deliberate, documented exceptions (if any); parity rig still green;
 help pages branded "pyr3"; no broken fixture/agent wiring.
 
-## [PYR3-031] feat · M · 🪨 · queued · v1.0 — FE cleanup pass before public ship
+## [PYR3-031] feat · M · 🪨 · ✅ done (FE-cleanup slice, v0.23) · v1.0 — FE cleanup pass before public ship
+
+**✅ FE-cleanup slice done (v0.23):** The v1.0 FE-polish pass rebuilt the top
+bar into a single slim row, which swept the vestigial `setLoading` /
+status-pulse wiring and the `.pyr3-bar-btn-accent` CSS. The Share button was
+removed (url-codec + inbound `?flame=` decoding kept intact). No stale TODOs
+remained to clear. The companion brainstorm-and-rebuild of the About page is
+tracked separately as `[PYR3-037]`.
 
 **Filed 2026-05-28 (user-directive during v0.20 impl):** Before pyr3
 goes public via the GitHub repo replacement (CLAUDE.md decision #7) and
