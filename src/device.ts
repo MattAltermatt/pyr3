@@ -34,6 +34,20 @@ export async function initDevice(canvasId: string): Promise<PyrDevice> {
     maxBufferSize: limits.maxBufferSize,
   };
   const device = await adapter.requestDevice({ requiredLimits });
+  // PYR3-069: surface device loss instead of a silent blank canvas — the only
+  // failure net for a no-CPU-fallback renderer (GPU validation error, OOM,
+  // TDR). `reason === 'destroyed'` is the intentional teardown path
+  // (device.destroy()), so it's ignored.
+  void device.lost.then((info) => {
+    if (info.reason === 'destroyed') return;
+    const detail = `pyr3: WebGPU device lost (${info.reason || 'unknown'}): ${info.message}`;
+    console.error(detail);
+    const el = document.getElementById('pyr3-error');
+    if (el) {
+      el.textContent = `${detail}\nReload the page to retry.`;
+      el.classList.add('visible');
+    }
+  });
   const context = canvas.getContext('webgpu');
   if (!context) throw new Error('pyr3: getContext("webgpu") returned null');
   const format = navigator.gpu.getPreferredCanvasFormat();

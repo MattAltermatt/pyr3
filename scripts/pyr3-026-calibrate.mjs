@@ -66,7 +66,10 @@ for (const id of sortedIds) {
   let metaJsonStatus = '';
   try {
     const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-    meta.feBeBaselineR = +maxR.toFixed(4);
+    // PYR3-069: the live meta schema uses feBeExpectedR (renamed from the old
+    // feBeBaselineR in v0.19); writing the stale name on re-calibration left a
+    // dead field and desynced the FE-BE gate.
+    meta.feBeExpectedR = +maxR.toFixed(4);
     meta.feBeThresholdR = thr;
     writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
     metaJsonStatus = '✓ written';

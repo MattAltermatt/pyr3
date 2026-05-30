@@ -787,12 +787,11 @@ export function ts_var_fan(i: VarInput): VarOutput {
   const dx2 = 0.5 * dx;
   const phi = Math.atan2(i.tx, i.ty);
   const r = i.weight * Math.hypot(i.tx, i.ty);
-  // TS reference uses C-fmod (trunc-toward-zero) to MATCH the flam3-emitted
-  // fixture file at tests/fixtures/variations/fan.json. WGSL chaos.wgsl
-  // var_fan deliberately diverges from this and uses Euclidean mod to match
-  // pyr3 chaos.comp:819's GLSL `mod()` — that's the renderer that produced
-  // the v1.0 GPU reference JPGs we target for parity. ROADMAP backlog: regen
-  // fan.json from pyr3-GPU output to unify the two references.
+  // TS reference uses C-fmod (trunc-toward-zero) to match the flam3-emitted
+  // fixture at tests/fixtures/variations/fan.json. The WGSL `var_fan` in
+  // chaos.wgsl now uses the SAME C-fmod semantics (the v0.13 PYR3-010 fix
+  // replaced its former Euclidean `floor`-mod — see the chaos.wgsl comment),
+  // so the two references agree and no fan.json regen is outstanding.
   const t = phi + dy - dx * Math.trunc((phi + dy) / dx);
   const a = t > dx2 ? phi - dx2 : phi + dx2;
   return { x: r * Math.cos(a), y: r * Math.sin(a) };

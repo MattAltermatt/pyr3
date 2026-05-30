@@ -187,8 +187,8 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
  *  Used by serialize / importer to map between the positional in-memory
- *  shape and the named-params on-disk shape. Max 6 slots — see
- *  `Variation` in src/variations.ts. */
+ *  shape and the named-params on-disk shape. Max 8 slots (extended 6 → 8 in
+ *  Phase 9b Batch K for mobius) — see `Variation` in src/variations.ts. */
 export const PARAM_KEYS = [
   'param0',
   'param1',

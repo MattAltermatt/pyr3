@@ -1,7 +1,15 @@
 /**
  * Mean-absolute-difference metrics for the parity gate (R-metric).
- * RGB-only (alpha ignored) for the RGBA variants; accumulator variant
- * compares raw f64 values.
+ *
+ * `meanAbsDiffRgba` sums |Δ| over **all four channels (R, G, B, AND alpha)**
+ * and divides by the total byte count. The live parity thresholds in every
+ * `meta.json` are calibrated against this exact definition, so it must not
+ * change without re-baselining the whole corpus (PYR3-069). In practice alpha
+ * is identical between golden and render for opaque flames, so it contributes
+ * 0 to the numerator while still counting 1/4 of the denominator (i.e. the
+ * value is the RGB sum scaled by 3/4 relative to a true RGB-only mean).
+ * `perChannelDrift` below is the genuinely alpha-ignoring per-channel variant;
+ * the accumulator variant compares raw f64 values.
  */
 
 export function meanAbsDiffRgba(a: Uint8Array, b: Uint8Array): number {

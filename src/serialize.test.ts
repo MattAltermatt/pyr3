@@ -3,7 +3,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { type Genome, SPIRAL_GALAXY, packXforms, XFORM_FLOATS } from './genome';
-import { genomeToJson, genomeFromJson, PYR3_JSON_VERSION } from './serialize';
+import {
+  genomeToJson,
+  genomeFromJson,
+  PYR3_JSON_VERSION,
+  VARIATION_PARAMS,
+  VARIATION_DEFAULTS,
+  MAX_VARIATION_PARAMS,
+} from './serialize';
 import { DEFAULT_DENSITY } from './density';
 import { V } from './variations';
 
@@ -676,5 +683,27 @@ describe.skip('examples/spiral-galaxy-de.pyr3.json fixture', () => {
     // Round-trip should match the file byte-for-byte.
     const expected = JSON.stringify(genomeToJson(loaded), null, 2);
     expect(raw.trimEnd()).toBe(expected);
+  });
+});
+
+describe('variation param-table coupling (PYR3-069 invariant)', () => {
+  it('no variation declares more params than there are PARAM_KEYS slots', () => {
+    for (const [arm, params] of Object.entries(VARIATION_PARAMS)) {
+      expect(
+        params.length,
+        `${arm} declares ${params.length} params > MAX_VARIATION_PARAMS=${MAX_VARIATION_PARAMS}`,
+      ).toBeLessThanOrEqual(MAX_VARIATION_PARAMS);
+    }
+  });
+
+  it('every VARIATION_DEFAULTS arm matches its VARIATION_PARAMS length + ordering', () => {
+    for (const [arm, defaults] of Object.entries(VARIATION_DEFAULTS)) {
+      const params = VARIATION_PARAMS[arm];
+      expect(params, `VARIATION_DEFAULTS has '${arm}' but VARIATION_PARAMS does not`).toBeDefined();
+      expect(
+        defaults.length,
+        `${arm}: defaults length ${defaults.length} != params length ${params!.length}`,
+      ).toBe(params!.length);
+    }
   });
 });

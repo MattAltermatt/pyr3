@@ -147,6 +147,15 @@ async function main(): Promise<void> {
       maxBufferSize: limits.maxBufferSize,
     },
   });
+  // PYR3-069: surface device loss instead of producing a silent blank/garbage
+  // PNG. `reason === 'destroyed'` is the normal end-of-process teardown path.
+  void device.lost.then((info) => {
+    if (info.reason === 'destroyed') return;
+    console.error(
+      `pyr3-render: WebGPU device lost (${info.reason || 'unknown'}): ${info.message}`,
+    );
+    process.exitCode = 1;
+  });
 
   // 3. Build renderer + offscreen texture.
   // Use rgba8unorm (no sRGB conversion in the pipeline — pyr3's fragment
