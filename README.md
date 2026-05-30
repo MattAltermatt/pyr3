@@ -11,14 +11,16 @@
 
 ## Status
 
-🚧 **v0.29 — Live 4K render in the browser (decoupled orchestrator).** Engine in place (browser + CLI
+🚧 **v0.30 — Fix: flames with >32 xforms no longer render black.** Engine in place (browser + CLI
 render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
 test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
 flam3-C is the canonical lineage source of truth. **The hero
 `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
 floor.
 
-Recent ships: **v0.29** added the **🎯 4K** button — the viewer now renders the current
+Recent ships: **v0.30** raised `MAX_XFORMS` 32 → 128 + added a flame-import clamp
+guard, fixing the silent black-render of high-xform-count flames (`MAX_XFORMS` buffer
+overflow) — `electricsheep.242.01373` (54 xforms) now renders (`[PYR3-033]`); **v0.29** added the **🎯 4K** button — the viewer now renders the current
 flame at 3840-long-edge in the browser (~2.7s for the hero), building progressively via the
 decoupled display/dispatch orchestrator. This reverses the v0.14 FE-4K removal: the old
 crash/slowness was the chunked orchestrator (1887 rAF+present chunks) plus oversample-4;

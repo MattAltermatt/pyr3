@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Genome, SPIRAL_GALAXY } from './genome';
+import { type Genome, SPIRAL_GALAXY, MAX_XFORMS } from './genome';
 import { expandGenomeForGPU, generateSymmetryXforms } from './symmetry';
 import { V } from './variations';
 
@@ -105,9 +105,10 @@ describe('expandGenomeForGPU', () => {
   });
 
   it('throws when expansion would exceed MAX_XFORMS', () => {
-    // SPIRAL_GALAXY has 3 xforms. dihedral n=32 generates 32 xforms (1 reflection
-    // + 31 rotations). 3 + 32 = 35 > 32 (MAX_XFORMS). Must throw.
-    const g: Genome = { ...SPIRAL_GALAXY, symmetry: { kind: 'dihedral', n: 32 } };
+    // SPIRAL_GALAXY has 3 xforms. dihedral n generates n xforms (1 reflection
+    // + n-1 rotations). n = MAX_XFORMS → 3 + MAX_XFORMS > MAX_XFORMS. Must throw.
+    // (Relative to MAX_XFORMS so it survives cap bumps — PYR3-033 raised it to 128.)
+    const g: Genome = { ...SPIRAL_GALAXY, symmetry: { kind: 'dihedral', n: MAX_XFORMS } };
     expect(() => expandGenomeForGPU(g)).toThrow(/MAX_XFORMS/);
   });
 });

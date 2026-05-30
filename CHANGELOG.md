@@ -10,6 +10,37 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.30 — 2026-05-29 — Fix: flames with >32 xforms rendered black (`[PYR3-033]`)
+
+**Outcome:** flames with more than 32 xforms — common in rotationally-symmetric
+Electric Sheep flames — rendered pure black at every resolution. Root-caused and
+fixed. All 4602 unit tests green, 25/25 BE-vs-flam3-C parity, typecheck clean,
+code review clean, Chrome-verified.
+
+- **Root cause.** The GPU chaos `xforms` buffer is fixed at `(MAX_XFORMS+1) ×
+  XFORM_BYTES`. `MAX_XFORMS` was 32, so a genome with more xforms packed into a
+  larger `ArrayBuffer` than the buffer could hold; `queue.writeBuffer` overflowed,
+  Dawn **silently dropped the write**, and the chaos game iterated against empty
+  xform data → zero samples deposited → black image, with no error beyond a
+  validation log. `electricsheep.242.01373` (54 xforms) was the type specimen;
+  flam3-C renders it fine.
+
+- **Fix.** `MAX_XFORMS` 32 → 128 (`src/genome.ts`) + matching `MAX_XFORMS_U`
+  in `chaos.wgsl` (the constant is the xaos-matrix row stride and the
+  xform-distribution fallback-row index, so it must stay in sync). 128 covers all
+  known realistic flames with headroom; the xform-distrib buffer grows ~2 MB →
+  ~8.5 MB, negligible.
+
+- **Guard (never silent-black again).** `flame-import` now clamps a genome with
+  `>MAX_XFORMS` xforms to the cap, records `report.clampedXforms`, and
+  `console.warn`s — so an over-cap flame degrades to "fewer xforms" (still an
+  image) instead of a black canvas.
+
+- **Verification.** `242.01373` BE mean-luminance **0.00 → 29.6** (flam3-C 23.3);
+  FE Chrome renders the blue 6-fold lattice. New `genome.test.ts` buffer-fit
+  regression + flame-import clamp/guard tests; `symmetry.test.ts` overflow test
+  made relative to `MAX_XFORMS`.
+
 ## v0.29 — 2026-05-29 — Live 4K render in the browser (`[PYR3-027]`)
 
 **Outcome:** the viewer can now render the current flame at 4K

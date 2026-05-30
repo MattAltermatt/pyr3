@@ -51,9 +51,10 @@
 // regression-test scaffolding queued to prevent recurrence.
 
 const MAX_VARS_PER_XFORM = 8u;
-// Phase 9d: must match MAX_XFORMS in src/genome.ts. Used as the row stride
-// of the xaos_buffer (xaos[from][to] = xaos_buffer[from * MAX_XFORMS_U + to]).
-const MAX_XFORMS_U: u32 = 32u;
+// Must match MAX_XFORMS in src/genome.ts (PYR3-033: bumped 32 → 128). Used as
+// the row stride of the xaos_buffer (xaos[from][to] = xaos_buffer[from *
+// MAX_XFORMS_U + to]) and the xform_distrib fallback row index.
+const MAX_XFORMS_U: u32 = 128u;
 
 struct Uniforms {
   width: u32,

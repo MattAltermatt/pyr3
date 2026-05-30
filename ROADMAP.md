@@ -8,6 +8,7 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
+| **v0.30** | 2026-05-29 | `pending` | **Fix: flames with >32 xforms rendered black — `[PYR3-033]` resolved.** The fixed chaos `xforms` buffer (`(MAX_XFORMS+1)×XFORM_BYTES`, `MAX_XFORMS=32`) overflowed for flames with more xforms — `queue.writeBuffer` was silently dropped by Dawn → zero samples → pure-black render at every dim. Common in rotationally-symmetric Electric Sheep flames; `electricsheep.242.01373` (54 xforms) was the type specimen (flam3-C renders it fine). Fix: `MAX_XFORMS` 32 → 128 + matching `MAX_XFORMS_U` in `chaos.wgsl` (xaos stride / distrib fallback row) + a flame-import clamp guard (`>MAX_XFORMS` → clamp + `report.clampedXforms` + warn, never silent-black again). `242.01373` BE mean-lum 0.00 → 29.6 (flam3-C 23.3); FE renders the 6-fold lattice. 4602 unit (+ buffer-fit regression + clamp tests), 25/25 parity, review clean, Chrome-verified. |
 | **v0.29** | 2026-05-29 | `pending` | **Live 4K render in the browser — `[PYR3-027]` resolved.** The viewer gets a **🎯 4K** button (next to Open) that renders the current flame at 3840-long-edge in ~2.7s for the hero, building progressively. New `startDecoupledRender` runs iteration (fat back-to-back chaos dispatches) and display (steady ~30fps present cadence, cheap DE-off previews + one final DE-on) as independent loops sharing the histogram, so smoothness no longer depends on chunk count. **Reverses the v0.14 FE-4K removal:** PYR3-027 diagnosed the old "13× slower" as pure chunk count (~44ms fixed/dispatch; 1887 chunks at 4K), *not* Chrome IPC; decoupled + oversample-1 fixes it. `maxStorageBufferBindingSize` guard aborts gracefully (toast) when a 4K histogram won't fit. PYR3-025 reframed (crash ≠ chaos dispatch; suspect DE+visualize). 7 new orchestrator tests; 4598 unit green, typecheck clean, Chrome-verified. |
 | **v0.28** | 2026-05-29 | `pending` | **Engine/GPU S-batch — `[PYR3-008]` + `[PYR3-022]` + `[PYR3-004]`.** (1) Chaos splat-scale `oversample` decoupled from the genome — now read from the authoritative `ChaosConfig`/`pipelines.oversample`, not `genome.oversample` (kills the v0.2-class divergence); mock-device regression test added. (2) flam3 **palette-library fallback** (option B, no stop-gap): ported the full 701-palette `flam3-palettes.xml` into a base64-baked data module (`scripts/gen-flam3-palettes.mjs` → `src/flam3-palettes-data.ts`, lossless, sync `atob`), with a `flame-import` fallback chain inline→library(`<flame palette="N">`)→PYRE surfaced loudly in `report.paletteFallback` (replaces the old throw). (3) `[PYR3-004]` closed by audit — variation set already complete (99/99, guarded). 4591 unit green, typecheck clean. |
 | **v0.27** | 2026-05-29 | `db077f3` | **`/showcase` live via Release asset + history de-bloat (`[PYR3-047]`).** The `/showcase` gallery had silently 404'd since the v0.26 CI-deploy switch: it lives under gitignored `public/showcase/` (~221M), which the old local `dist/` push copied in but the clean-clone Actions build never has. Fix mirrors the corpus-chunk pattern — publish the gallery as a tar **Release asset** (`showcase-2026-05-29` on `MattAltermatt/pyr3`), `deploy.yml` fetches→caches→untars it into `dist/showcase/` (new `SHOWCASE_RELEASE_TAG` env line). Repo stays lean (0 bytes to git); end-user gallery byte-identical. Plus a `git filter-repo` de-bloat: purged ~238M orphaned showcase `*.jpg` + ~164M orphaned `*.flam3chunk` from all history (**`.git` 603M→41M**), force-pushed `main`+share-url branch, deleted obsolete `gh-pages`. Verified live in Chrome: gallery + 54 thumbs (200) + hero 4K + zero console errors; typecheck + 4582 unit green. **Rule: deploy artifacts never committed — ship as Release assets.** |
@@ -56,20 +57,17 @@ polish below first.
   FE cleanup · public repo+deploy) is done except the deferred click-to-load
   (Chunk 2 → post-v1 design, tracked by PYR3-020).
 
-**Latest ship:** v0.29 — live 4K render in the browser via the decoupled
-orchestrator (PYR3-027). Full arc (v0.19 → v0.29) in [CHANGELOG.md](CHANGELOG.md).
+**Latest ship:** v0.30 — fixed the >32-xform silent black-render (PYR3-033);
+v0.29 — live 4K render in the browser (PYR3-027). Full arc (v0.19 → v0.30) in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## 🚧 Next up — open work, by priority
 
 Detail lives in [BACKLOG.md](BACKLOG.md) → **🔥 Open**. Roughly ordered:
 
-1. 🐛 **PYR3-033 — flames with >32 xforms render black** (`MAX_XFORMS=32`
-   buffer overflow; root-caused v0.29). Silent, hits rotationally-symmetric
-   flames at *every* dim. Fix: raise the cap + loud importer guard + a
-   >32-xform regression fixture. **Top of the queue.**
-2. 🐛 **PYR3-020 — `?flame=` share-link decode fails on ~6KB+ payloads.**
+1. 🐛 **PYR3-020 — `?flame=` share-link decode fails on ~6KB+ payloads.**
    Also carries the deferred gallery→viewer click-to-load (v1.0 Chunk 2).
-3. **PYR3-019 — 3-way verify** (FE + BE + golden side-by-side).
+2. **PYR3-019 — 3-way verify** (FE + BE + golden side-by-side).
 4. **Engine / infra (v1.x):** `[PYR3-030]` f64 tonemap precision shim ·
    `[PYR3-014]` vitest worker RPC timeout on the parity suite · `[PYR3-003]`
    GPU perf characterization (partial findings landed v0.29) · `[PYR3-005]`

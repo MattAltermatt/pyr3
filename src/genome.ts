@@ -256,11 +256,18 @@ const VARS_EXTRA2_OFFSET = VARS_EXTRA_OFFSET + MAX_VARIATIONS_PER_XFORM * 4;
 export const XFORM_FLOATS = VARS_EXTRA2_OFFSET + MAX_VARIATIONS_PER_XFORM * 4;
 export const XFORM_BYTES = XFORM_FLOATS * 4;
 
-// Max regular xforms in the GPU storage buffer. Bumped from 16 → 32 in
-// Phase 5c to comfortably hold expanded symmetric pools (e.g. 1 source +
-// 12-fold dihedral = 25). The GPU buffer is sized to (MAX_XFORMS + 1) *
-// XFORM_BYTES to reserve one slot for finalxform.
-export const MAX_XFORMS = 32;
+// Max regular xforms in the GPU storage buffer. 16 → 32 (Phase 5c, for
+// expanded symmetric pools) → 128 (PYR3-033, 2026-05-29). 32 was too small
+// for large explicit flames: rotationally-symmetric Electric Sheep flames
+// routinely list 50+ xforms (e.g. electricsheep.242.01373 = 54), which
+// overflowed the fixed xforms buffer → silent writeBuffer drop → black
+// render. 128 covers all known realistic flames with headroom; the
+// flame-import clamp guard handles anything beyond (graceful, never black).
+// The GPU buffer is sized (MAX_XFORMS + 1) * XFORM_BYTES (one slot reserved
+// for finalxform). Cost is the xform-distrib buffer: (MAX_XFORMS + 1) *
+// CHOOSE_XFORM_GRAIN * 4 ≈ 8.5 MB at 128 (was ~2 MB at 32) — negligible.
+// MUST stay in sync with MAX_XFORMS_U in src/shaders/chaos.wgsl.
+export const MAX_XFORMS = 128;
 
 function packXformInto(buf: Float32Array, slotIndex: number, x: Xform): void {
   const o = slotIndex * XFORM_FLOATS;

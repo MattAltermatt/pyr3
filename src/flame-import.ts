@@ -6,7 +6,7 @@
 // (see src/variations.ts:V) are dropped with explicit per-name reporting; the
 // HUD report panel surfaces what the import lost.
 
-import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, isSpatialFilterShape } from './genome';
+import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, isSpatialFilterShape, MAX_XFORMS } from './genome';
 import { type Tonemap, DEFAULT_TONEMAP } from './tonemap';
 import { type Density, MAX_RAD_CAP, MIN_CURVE, MAX_CURVE } from './density';
 import {
@@ -88,6 +88,9 @@ export interface ImportReport {
   ignoredFields: IgnoredField[];
   /** Set only when no inline palette was present and a fallback was used. */
   paletteFallback?: PaletteFallback;
+  /** Set only when the flame had more xforms than the GPU buffer can hold
+   *  (MAX_XFORMS) and the import clamped the count (PYR3-033). */
+  clampedXforms?: { had: number; cap: number };
 }
 
 export interface FlameImportResult {
@@ -540,6 +543,22 @@ export function parseFlame(xml: string): FlameImportResult {
     throw new Error('pyr3: <flame> has no <xform> children; cannot render');
   }
 
+  // PYR3-033 guard: the GPU xform / xaos / xform_distrib buffers are fixed at
+  // (MAX_XFORMS + 1) slots. A genome with more xforms would overflow the
+  // writeBuffer — Dawn silently drops it and the render comes out pure black.
+  // Clamp loudly + record so the failure degrades to "fewer xforms" (still an
+  // image) rather than a silent black canvas. MAX_XFORMS is sized to cover all
+  // known realistic flames, so this rarely fires.
+  let clampedXforms: { had: number; cap: number } | undefined;
+  if (xforms.length > MAX_XFORMS) {
+    clampedXforms = { had: xforms.length, cap: MAX_XFORMS };
+    console.warn(
+      `pyr3: flame has ${xforms.length} xforms, above the ${MAX_XFORMS}-xform cap — `
+        + `keeping the first ${MAX_XFORMS}. The render will differ from the source. (PYR3-033)`,
+    );
+    xforms.length = MAX_XFORMS;
+  }
+
   // Genome-level fields pyr3 doesn't model yet — record them in the report
   // so the user sees what the import couldn't honor.
   // Phase 9a: gamma / vibrancy / highlight_power / brightness / gamma_threshold
@@ -711,6 +730,7 @@ export function parseFlame(xml: string): FlameImportResult {
     droppedVariations,
     ignoredFields,
     ...(paletteFallback ? { paletteFallback } : {}),
+    ...(clampedXforms ? { clampedXforms } : {}),
   };
 
   return { genome, report };

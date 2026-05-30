@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseFlame, parseCoefs } from './flame-import';
-import { SPIRAL_GALAXY } from './genome';
+import { SPIRAL_GALAXY, MAX_XFORMS } from './genome';
 import { V } from './variations';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,6 +22,26 @@ const minPalette =
 
 const wrapFlame = (children: string, attrs = ''): string =>
   `<flame name="t" size="1024 1024" center="0 0" scale="100"${attrs ? ' ' + attrs : ''}>${minPalette}${children}</flame>`;
+
+const oneXform = '<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"/>';
+
+describe('parseFlame xform-count cap (PYR3-033)', () => {
+  it('clamps a flame with more than MAX_XFORMS xforms and reports it loudly', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const n = MAX_XFORMS + 5;
+    const { genome, report } = parseFlame(wrapFlame(oneXform.repeat(n)));
+    expect(genome.xforms).toHaveLength(MAX_XFORMS);
+    expect(report.clampedXforms).toEqual({ had: n, cap: MAX_XFORMS });
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it('does NOT clamp a flame at exactly MAX_XFORMS xforms', () => {
+    const { genome, report } = parseFlame(wrapFlame(oneXform.repeat(MAX_XFORMS)));
+    expect(genome.xforms).toHaveLength(MAX_XFORMS);
+    expect(report.clampedXforms).toBeUndefined();
+  });
+});
 
 describe('parseFlame xform translation', () => {
   it('parses a single xform with one known variation (linear)', () => {
