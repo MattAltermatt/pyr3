@@ -52,12 +52,13 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     env:
-      # Pinned electric-sheep-fold Release tag carrying corpus-chunks-*.tar.
+      # Pinned electric-sheep-fold Release tag carrying corpus-chunks-genome-*.tar.
       # Bump this ONE line to ship a newer corpus snapshot to the live site.
       # Pinning (vs --latest) keeps deploys reproducible: a re-run always
       # bakes in the same chunks, and a future ESF release can't silently
-      # change what pyr3 serves.
-      CHUNK_RELEASE_TAG: '2026-05-23'
+      # change what pyr3 serves. As of 2026-05-29 we pull the GENOME-ONLY chunk
+      # tar (ESF-039 / #39): 52,365 canonical genomes, no animation morph-frames.
+      CHUNK_RELEASE_TAG: '2026-05-29'
       # Pinned pyr3 Release tag carrying showcase-*.tar (the 4K /showcase
       # gallery: 54 4k.jpg + 54 thumb.jpg + index.html). Bump this ONE line
       # to ship a regenerated gallery. The bundle is gitignored
@@ -108,14 +109,14 @@ jobs:
           mkdir -p /tmp/esf-chunks
           gh release download "$CHUNK_RELEASE_TAG" \
             --repo MattAltermatt/electric-sheep-fold \
-            --pattern 'corpus-chunks-*.tar' \
+            --pattern 'corpus-chunks-genome-*.tar' \
             --dir /tmp/esf-chunks
 
       # Unpack into the artifact every deploy (cached or freshly downloaded).
       - name: Bake chunks into dist/
         run: |
           mkdir -p dist/chunks
-          tar -xf /tmp/esf-chunks/corpus-chunks-*.tar -C dist/chunks
+          tar -xf /tmp/esf-chunks/corpus-chunks-genome-*.tar -C dist/chunks
           echo "Baked chunk tree (top level):"
           ls dist/chunks
 
