@@ -76,3 +76,13 @@ export function parseLoadIntent(loc: { pathname: string }): LoadIntent {
 
   return { kind: 'default' };
 }
+
+/**
+ * Canonical base-aware corpus share URL for a sheep. Single source of truth for
+ * the `/v1/gen/{gen}/id/{id}` route shape (parsed by parseLoadIntent above) —
+ * used by both the pushState navigation and the action-bar nav pills so they
+ * can never drift from the parser.
+ */
+export function corpusUrl(gen: number, id: number): string {
+  return `${import.meta.env.BASE_URL}v1/gen/${gen}/id/${id}`;
+}

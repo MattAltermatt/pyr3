@@ -186,30 +186,6 @@ add a narrow regression guard for dim-scaling / oversample / large-buffer bugs. 
 render a handful of fixtures through flam3-C at 4K, calibrate per-fixture thresholds (mirrors
 the native rig), and ship as a sibling `npm run test:parity-4k`.
 
-## [PYR3-041] feat · M · 🐑 · open · post-v1 — Viewer navigation hints (next/nearby available sheep)
-
-**Filed 2026-05-29 (user-directive).** Corpus ids are sparse, so users shouldn't have
-to guess valid ids. Surface in the viewer what the next / previous / nearby *available*
-sheep are (clickable), using the per-gen availability manifest (`avail.flam3idx`; the
-decoder `src/avail.ts` already ships but isn't wired into the viewer yet). Turns
-`/v1/gen/{gen}/id/{id}` into browsable click-through — "no guessing."
-
-## [PYR3-040] feat · M · 🐑 · open · post-v1 — Nearest-neighbor suggestion for missing sheep
-
-**Filed 2026-05-29 (user-directive).** When a `/v1/gen/{gen}/id/{id}` id doesn't exist,
-find the nearest existing id in that gen (via the avail manifest) and offer a one-click
-link to it, instead of a dead end. Pairs with PYR3-039. Example that motivated this:
-`/v1/gen/247/id/123` (missing).
-
-## [PYR3-039] fix · S · 🐑 · open · post-v1 — Missing sheep: still render the viewer + honest wording
-
-**Filed 2026-05-29 (user-directive).** A missing corpus id (e.g.
-`/v1/gen/248/id/103`) must still present the full pyr3 viewer chrome with a graceful
-in-app "not in the corpus" state — not just an error toast over the welcome flame.
-Also fix the wording: **don't claim the sheep was "never born"** — we only know it
-isn't in *our* corpus (it may exist upstream / was never preserved). Say "not in the
-corpus" / "not preserved," not "never born." Pairs with PYR3-040 (nearest-neighbor).
-
 ## [PYR3-028] parity · S · 🪶 · queued · post-v1 — Deterministic-seed FE↔BE calibration
 
 **Frame (filed 2026-05-27, post v0.15 PYR3-026 ship):** The FE↔BE parity
@@ -255,6 +231,30 @@ share-link + ship-gate first keeps the v1.0 scope honest.
 ## ✅ Resolved & shipped
 
 _Kept for provenance. Newest first._
+
+## [PYR3-041 / 040 / 039] feat+fix · 🐑 ✅ **RESOLVED (v0.33, 2026-05-29)** — corpus navigation: prev/next/nearest + graceful missing-sheep state
+
+The corpus-navigation trio shipped together on the new three-bar viewer chrome.
+A new cached `src/avail-client.ts` (`loadAvail` fetch+decode of
+`/chunks/{gen}/avail.flam3idx` + `neighbors()` prev/next/nearest binary search)
+wires `src/avail.ts` into the viewer for the first time.
+
+- **PYR3-041** — the action bar shows clickable `‹ prev` / `next ›` *available*
+  sheep on every corpus load; navigation uses History `pushState`/`popstate`
+  (no reload) via `loadCorpus(gen,id)`. The sparse corpus is now walkable.
+- **PYR3-040** — a missing id surfaces the nearest available sheep either side
+  (one-click) through the same nav cluster.
+- **PYR3-039** — a missing `/v1/gen/{gen}/id/{id}` keeps the full viewer chrome
+  with a graceful in-canvas panel: *"Electric Sheep was not found — use ‹ prev
+  or next › to jump to a valid flame."* No welcome-flame swap, no "never born"
+  wording.
+
+Also: the single viewer bar was split into **① info + ② action** rows (the
+render-progress row ③ unchanged) — the shared chrome the quality control
+(`[PYR3-050]`) also rides on. Review fixes: absent (404) manifests are cached;
+corpus nav serializes against any in-flight render so the URL/nav never desync
+from the canvas. 4601 unit (+ avail-client tests) green; Chrome-verified browse
++ miss + recovery.
 
 ## [PYR3-020] feat · M · 🐛 ✅ **RESOLVED-BY-REMOVAL (v0.32, 2026-05-29)** — legacy `?flame=` share-link codec removed
 

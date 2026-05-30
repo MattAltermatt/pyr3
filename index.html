@@ -45,6 +45,33 @@
       #pyr3-firstpaint.hidden { opacity: 0; }
       body.webgpu-unavailable #pyr3-firstpaint { display: none; }
 
+      /* Graceful corpus missing-sheep state (PYR3-039) — covers the canvas,
+         keeps all three bars; the action-bar nav offers prev/next. */
+      #pyr3-missing {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        text-align: center;
+        padding: 24px;
+        background: var(--bg);
+      }
+      #pyr3-missing[hidden] { display: none; }
+      #pyr3-missing .pyr3-missing-coord {
+        font-family: ui-monospace, monospace;
+        font-size: 14px;
+        color: var(--text-muted);
+      }
+      #pyr3-missing .pyr3-missing-msg {
+        font-size: 13px;
+        color: var(--text-dim);
+        max-width: 520px;
+        line-height: 1.6;
+      }
+
       html,
       body {
         margin: 0;

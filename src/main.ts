@@ -5,10 +5,11 @@
 // spec (docs/superpowers/specs/2026-05-26-pyr3-direction-design.md):
 // no drag-drop, no `L` hotkey, no overlays on the rendered flame.
 
+import { loadAvail, neighbors } from './avail-client';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { initDevice, showError } from './device';
 import { SPIRAL_GALAXY, type Genome } from './genome';
-import { parseLoadIntent, type LoadIntent } from './load-intent';
+import { corpusUrl, parseLoadIntent, type LoadIntent } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
@@ -66,11 +67,17 @@ async function main(): Promise<void> {
   let render4KFn: () => void = () => {
     console.warn('pyr3: 4K render invoked before canvas init');
   };
+  // Forwarding ref: corpus prev/next nav (PYR3-041) is defined after the load
+  // helpers exist; the action-bar pills call through this.
+  let navigateCorpus: (gen: number, id: number) => void = () => {
+    console.warn('pyr3: corpus navigate invoked before canvas init');
+  };
 
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     onOpenFile: () => openFilePicker(),
     onRender4K: () => render4KFn(),
+    onNavigate: (gen, id) => navigateCorpus(gen, id),
   });
 
   if (!webgpu.available) {
@@ -490,6 +497,10 @@ async function main(): Promise<void> {
     await rerender();
   };
 
+  // Graceful corpus missing-sheep panel (PYR3-039). Built once; covers the
+  // canvas while keeping all three bars. Hidden whenever a real flame loads.
+  const missingPanel = makeMissingPanel();
+
   let loadInFlight = false;
   const loadFromFile = async (file: File): Promise<void> => {
     console.log(`pyr3: loadFromFile("${file.name}") · loadInFlight=${loadInFlight}`);
@@ -497,6 +508,7 @@ async function main(): Promise<void> {
       console.warn(`pyr3: load already in flight; ignoring ${file.name}`);
       return;
     }
+    missingPanel.hide(); // a real flame is loading — clear any missing state
     loadInFlight = true;
     bar.setBusy(true);
     try {
@@ -558,7 +570,10 @@ async function main(): Promise<void> {
     input.style.display = 'none';
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
-      if (file) await loadFromFile(file);
+      if (file) {
+        await loadFromFile(file);
+        bar.setCorpusNav(null); // user-opened file is not a corpus sheep
+      }
       input.remove();
     });
     // Chrome 113+ fires `cancel` when the OS dialog is dismissed without a
@@ -568,17 +583,91 @@ async function main(): Promise<void> {
     input.click();
   };
 
+  // ── Corpus navigation (PYR3-041) ──
+  // Load a sheep by (gen, id) and refresh the action-bar prev/next cluster from
+  // the gen's availability manifest. `push` controls History (false for the
+  // initial load + popstate; true for in-app nav clicks).
+  const updateCorpusNav = async (gen: number, id: number): Promise<void> => {
+    const ids = await loadAvail(gen);
+    const n = neighbors(ids, id);
+    bar.setCorpusNav({ gen, prev: n.prev, next: n.next });
+  };
+
+  const loadCorpus = async (gen: number, id: number, push: boolean): Promise<void> => {
+    // Wait out any in-flight load (e.g. a multi-second 4K render drain or a
+    // file-picker load) BEFORE mutating history — otherwise loadFromFile's
+    // in-flight guard would silently drop this load while the URL + nav still
+    // advanced, desyncing them from the canvas. Mirrors __pyr3LoadFlame.
+    while (loadInFlight) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    if (push) {
+      history.pushState({ gen, id }, '', corpusUrl(gen, id));
+    }
+    let xml: string | null = null;
+    try {
+      xml = await fetchFlameXml(gen, id);
+    } catch (err) {
+      // FlameNotFound → graceful in-viewer missing state (PYR3-039/040); a
+      // genuine fetch/network error is logged but presents the same panel
+      // (nav still lets the user escape) rather than a hard crash.
+      if (!(err instanceof FlameNotFound)) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`pyr3: corpus fetch failed for gen ${gen} sheep ${id} — ${msg}`);
+      }
+      xml = null;
+    }
+
+    if (xml === null) {
+      // Keep the chrome; do NOT swap to the welcome flame. Honest wording —
+      // we only know it isn't in OUR corpus, not that it "never existed".
+      missingPanel.show(gen, id);
+      bar.setMeta({ flameName: `gen ${gen} · sheep ${id} — not in corpus` });
+      await updateCorpusNav(gen, id); // offer prev/next available
+      return;
+    }
+
+    const file = new File([xml], `electricsheep.${gen}.${id}.flam3`, { type: 'text/xml' });
+    await loadFromFile(file); // hides the missing panel on success
+    await updateCorpusNav(gen, id);
+  };
+  // Serialize ALL corpus loads through one promise chain so two rapid nav
+  // clicks can't both pushState + advance the nav before either renders (the
+  // while-loop above only waits if loadInFlight is ALREADY set, which a
+  // concurrently-entering loadCorpus has not yet done). Same idiom as the
+  // __pyr3LoadFlame loadHookQueue.
+  let corpusQueue: Promise<void> = Promise.resolve();
+  const enqueueCorpus = (gen: number, id: number, push: boolean): Promise<void> => {
+    const next = corpusQueue.then(() => loadCorpus(gen, id, push));
+    corpusQueue = next.catch(() => {}); // keep the chain alive past a failure
+    return next;
+  };
+  navigateCorpus = (gen, id) => {
+    void enqueueCorpus(gen, id, true);
+  };
+  // Back/forward through corpus history. Only our pushState entries (all corpus)
+  // surface here, so a non-corpus kind never appears.
+  window.addEventListener('popstate', () => {
+    const i = parseLoadIntent(window.location);
+    if (i.kind === 'corpus') void enqueueCorpus(i.gen, i.id, false);
+  });
+
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
-  // corpus link or default. Fallback chain is welcome fixture → hardcoded
-  // SPIRAL_GALAXY (safety net if fetch fails — better than a black canvas).
+  // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
+  // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
   const intent = parseLoadIntent(window.location);
-  const initialFile = await resolveLoadIntent(intent);
-  if (initialFile) {
-    await loadFromFile(initialFile);
+  if (intent.kind === 'corpus') {
+    await enqueueCorpus(intent.gen, intent.id, false); // initial load: no pushState
   } else {
-    console.warn('pyr3: no initial load resolved; painting SPIRAL_GALAXY default');
-    bar.setMeta({ flameName: SPIRAL_GALAXY.name });
-    await rerender();
+    const initialFile = await resolveLoadIntent(intent);
+    if (initialFile) {
+      await loadFromFile(initialFile);
+      bar.setCorpusNav(null); // non-corpus flame → hide nav
+    } else {
+      console.warn('pyr3: no initial load resolved; painting SPIRAL_GALAXY default');
+      bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+      await rerender();
+    }
   }
 
   console.log(
@@ -620,28 +709,45 @@ function mountWebGPUFallback(): void {
   fallback.hidden = false;
 }
 
+interface MissingPanel {
+  show(gen: number, id: number): void;
+  hide(): void;
+}
+
+/** Build the corpus missing-sheep overlay once (PYR3-039). DOM-built (no
+ *  innerHTML); covers the canvas, keeps the bars, offers escape via the nav. */
+function makeMissingPanel(): MissingPanel {
+  const zone = document.getElementById('pyr3-canvas-zone');
+  const root = document.createElement('div');
+  root.id = 'pyr3-missing';
+  root.hidden = true;
+  const coord = document.createElement('div');
+  coord.className = 'pyr3-missing-coord';
+  const msg = document.createElement('div');
+  msg.className = 'pyr3-missing-msg';
+  root.append(coord, msg);
+  zone?.appendChild(root);
+  return {
+    show(gen, id) {
+      coord.textContent = `gen ${gen} · sheep ${id}`;
+      msg.textContent =
+        'Electric Sheep was not found — use ‹ prev or next › to jump to a valid flame.';
+      root.hidden = false;
+    },
+    hide() {
+      root.hidden = true;
+    },
+  };
+}
+
 async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
   switch (intent.kind) {
-    case 'corpus': {
-      // Share-link leaf: /v1/gen/{gen}/id/{id} → fetch the one chunk holding
-      // this sheep, extract its flam3 XML, render it.
-      try {
-        const xml = await fetchFlameXml(intent.gen, intent.id);
-        const name = `electricsheep.${intent.gen}.${intent.id}.flam3`;
-        return new File([xml], name, { type: 'text/xml' });
-      } catch (err) {
-        if (err instanceof FlameNotFound) {
-          showError(
-            `pyr3: gen ${intent.gen} sheep ${intent.id} isn't in the corpus — ` +
-              `it was never born, or was lost upstream.`,
-          );
-        } else {
-          const msg = err instanceof Error ? err.message : String(err);
-          showError(`pyr3: couldn't load gen ${intent.gen} sheep ${intent.id} — ${msg}.`);
-        }
-        return fetchAsFile(WELCOME_FLAME_URL);
-      }
-    }
+    case 'corpus':
+      // Corpus leaves (/v1/gen/{gen}/id/{id}) are handled by loadCorpus() (wires
+      // nav + the graceful missing state). main routes corpus intents directly,
+      // so this is unreachable — fail loud rather than silently returning the
+      // wrong (welcome) flame if that invariant is ever broken.
+      throw new Error('resolveLoadIntent: corpus intents must go through loadCorpus()');
     case 'gen-list':
     case 'gen-browse':
     case 'custom-reserved':

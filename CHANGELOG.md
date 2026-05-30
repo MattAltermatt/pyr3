@@ -10,6 +10,38 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.33 — 2026-05-29 — Corpus navigation + three-bar viewer chrome (`[PYR3-039]` + `[PYR3-040]` + `[PYR3-041]`)
+
+**Outcome:** the share-URL corpus becomes browsable, with no dead ends, on a
+restructured viewer chrome.
+
+- **Three-bar chrome (`[PYR3-050]` foundation).** The single viewer bar split into
+  **① info** (identity · current-flame info · links out) and **② action**
+  (Open · 4K · corpus nav) rows; the **③ render-progress** row is unchanged and
+  still appears only during a render. `src/ui-bar.ts`.
+- **avail-client (`[PYR3-041]`).** New `src/avail-client.ts`: `loadAvail(gen)`
+  (cached, in-flight-deduped fetch+decode of `/chunks/{gen}/avail.flam3idx` via
+  `src/avail.ts`; absent 404 manifests cached, transient errors retryable) +
+  `neighbors(ids, id)` (binary-search prev / next / nearest; `id` need not be
+  present). Wires `src/avail.ts` into the viewer for the first time.
+- **Browsable corpus (`[PYR3-041]`).** Every `/v1/gen/{gen}/id/{id}` load renders
+  an action-bar **‹ prev · next ›** cluster of adjacent *available* sheep;
+  clicking navigates via History `pushState` (no reload), with `popstate`
+  back/forward. `loadCorpus(gen,id)` in `main.ts` serializes against any
+  in-flight render so the URL/nav never desync from the canvas.
+- **Nearest-neighbor (`[PYR3-040]`).** A missing id surfaces the closest available
+  sheep either side through the same nav cluster (one click).
+- **Graceful missing-sheep state (`[PYR3-039]`).** A missing `/v1/gen/{gen}/id/{id}`
+  keeps the full viewer chrome and paints an in-canvas panel — *"Electric Sheep
+  was not found — use ‹ prev or next › to jump to a valid flame."* No
+  welcome-flame swap, no error toast, and **no "never born"** wording (we only
+  know it isn't in *our* corpus). Info bar reads `gen N · sheep M — not in corpus`.
+
+**Verification:** `npm run typecheck` + 4601 unit tests (incl. avail-client cache /
+dedupe / neighbor edge cases) green; fresh code review (2 findings folded in:
+404-cache, nav-vs-in-flight serialization); build+preview Chrome pass — browse
+prev/next, missing-id panel, and recovery to a neighbour all confirmed.
+
 ## v0.32 — 2026-05-29 — Remove the legacy `?flame=` share-link codec (`[PYR3-020]`)
 
 **Outcome:** the `?flame=<inline-encoded>` share link is removed entirely. Its

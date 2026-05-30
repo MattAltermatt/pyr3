@@ -10,6 +10,7 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
+import { corpusUrl } from './load-intent';
 import type { WebGPUStatus } from './webgpu-check';
 
 export interface BarMeta {
@@ -25,6 +26,15 @@ export interface BarOpts {
   /** Render the current flame at 4K via the decoupled orchestrator.
    *  Opt-in heavy render — quick mode stays the default first paint. */
   onRender4K: () => void;
+  /** Navigate to a corpus sheep (prev/next/nearest click in the action bar). */
+  onNavigate: (gen: number, id: number) => void;
+}
+
+/** Adjacent available sheep for the action-bar corpus nav. */
+export interface CorpusNav {
+  gen: number;
+  prev: number | null;
+  next: number | null;
 }
 
 export interface ProgressDisplay {
@@ -42,6 +52,9 @@ export interface BarHandle {
   showProgress(p: ProgressDisplay): void;
   hideProgress(): void;
   showToast(text: string): void;
+  /** Render the action-bar corpus-nav cluster (prev/next available sheep);
+   *  pass null to hide it (non-corpus flame). */
+  setCorpusNav(nav: CorpusNav | null): void;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -62,10 +75,9 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   root.replaceChildren();
   root.classList.add('pyr3-bar-root');
 
-  const row = el('div', 'pyr3-bar-row');
-
-  // ---- left zone: wordmark · about · name · by nick ----
-  const left = el('div', 'pyr3-zone-left');
+  // ══ bar ① — info / identity / links out ══
+  const infoRow = el('div', 'pyr3-bar-info');
+  const infoLeft = el('div', 'pyr3-zone-left');
   const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
   wordmark.href = import.meta.env.BASE_URL; // home (welcome flame), base-aware
   const mark = document.createElement('img');
@@ -82,30 +94,32 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   showcase.href = `${import.meta.env.BASE_URL}showcase/`;
   showcase.textContent = 'showcase';
   const metaName = el('div', 'pyr3-bar-meta-name');
-  left.append(wordmark, sep(), about, sep(), showcase, sep(), metaName);
+  // Toast rides in the info zone next to the meta name.
+  const toast = el('span', 'pyr3-bar-toast');
+  infoLeft.append(wordmark, sep(), about, sep(), showcase, sep(), metaName, toast);
 
-  // ---- center zone: Open · 4K ----
-  const center = el('div', 'pyr3-zone-center');
-  const openBtn = button('📂 Open', 'pyr3-bar-btn', opts.onOpenFile);
-  const render4kBtn = button('🎯 4K', 'pyr3-bar-btn', opts.onRender4K);
-  render4kBtn.title = 'Render the current flame at 4K — watch it build progressively';
-  center.append(openBtn, render4kBtn);
-
-  // ---- right zone: WebGPU pill · octocat CTAs ----
-  const right = el('div', 'pyr3-zone-right');
+  const infoRight = el('div', 'pyr3-zone-right');
   const webgpuChip = buildWebGPUChip(opts.webgpu);
   const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
   const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
-  right.append(webgpuChip, forkCta, sheepCta);
+  infoRight.append(webgpuChip, forkCta, sheepCta);
+  infoRow.append(infoLeft, infoRight);
 
-  row.append(left, center, right);
-  root.append(row);
+  // ══ bar ② — actions (Open · 4K · …quality ladder later · corpus nav) ══
+  const actionRow = el('div', 'pyr3-bar-action');
+  const actionLeft = el('div', 'pyr3-zone-actleft');
+  const openBtn = button('📂 Open', 'pyr3-bar-btn', opts.onOpenFile);
+  const render4kBtn = button('🎯 4K', 'pyr3-bar-btn', opts.onRender4K);
+  render4kBtn.title = 'Render the current flame at 4K — watch it build progressively';
+  actionLeft.append(openBtn, render4kBtn);
+  // Corpus-nav cluster (filled by setCorpusNav in PYR3-041); right-aligned.
+  const navSlot = el('div', 'pyr3-bar-nav');
+  actionRow.append(actionLeft, navSlot);
+
+  root.append(infoRow, actionRow);
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
-  // Toast rides in the left zone next to the meta name.
-  const toast = el('span', 'pyr3-bar-toast');
-  left.append(toast);
 
   return {
     setMeta(meta) {
@@ -137,6 +151,26 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       toast.classList.add('visible');
       if (toastTimeout) clearTimeout(toastTimeout);
       toastTimeout = setTimeout(() => toast.classList.remove('visible'), 2500);
+    },
+    setCorpusNav(nav) {
+      // Called once per navigation (not per-frame), so replaceChildren is safe
+      // w.r.t. the rAF-rebuild click bug.
+      navSlot.replaceChildren();
+      if (!nav) return;
+      const pill = (id: number, label: string): HTMLAnchorElement => {
+        const a = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
+        a.href = corpusUrl(nav.gen, id);
+        a.textContent = label;
+        a.title = `gen ${nav.gen} · sheep ${id}`;
+        a.onclick = (e) => {
+          e.preventDefault();
+          opts.onNavigate(nav.gen, id);
+        };
+        return a;
+      };
+      const fmt = (id: number) => `${nav.gen}.${String(id).padStart(5, '0')}`;
+      if (nav.prev !== null) navSlot.append(pill(nav.prev, `‹ ${fmt(nav.prev)}`));
+      if (nav.next !== null) navSlot.append(pill(nav.next, `${fmt(nav.next)} ›`));
     },
   };
 }
@@ -260,14 +294,24 @@ const BAR_CSS = `
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   user-select: none;
 }
-.pyr3-bar-row {
+.pyr3-bar-info, .pyr3-bar-action {
   display: flex; align-items: center;
   padding: 8px 14px; font-size: 12px;
-  background: var(--bar-bg-2); border-bottom: 1px solid var(--bar-border);
+  border-bottom: 1px solid var(--bar-border);
 }
+.pyr3-bar-info { background: var(--bar-bg-2); }
+.pyr3-bar-action { background: var(--bar-bg-3); padding-top: 7px; padding-bottom: 7px; }
 .pyr3-zone-left { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pyr3-zone-center { flex: 0 0 auto; display: flex; justify-content: center; gap: 8px; }
-.pyr3-zone-right { flex: 1 1 0; display: flex; align-items: center; gap: 14px; justify-content: flex-end; }
+.pyr3-zone-right { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; justify-content: flex-end; }
+.pyr3-zone-actleft { flex: 1 1 0; display: flex; align-items: center; gap: 8px; }
+.pyr3-bar-nav { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.pyr3-nav-pill {
+  font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap;
+  color: var(--accent); text-decoration: none;
+  border: 1px solid var(--accent-border); background: var(--accent-soft);
+  border-radius: 999px; padding: 2px 10px;
+}
+.pyr3-nav-pill:hover { background: var(--accent); color: #0a0a0c; }
 
 .pyr3-bar-wordmark {
   color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap;

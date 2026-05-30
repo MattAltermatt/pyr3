@@ -8,6 +8,7 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
+| **v0.33** | 2026-05-29 | `pending` | **Corpus navigation + three-bar viewer chrome (`[PYR3-041]` + `[PYR3-040]` + `[PYR3-039]`).** The viewer becomes a browsable corpus: a new cached `src/avail-client.ts` (`loadAvail` + `neighbors()` over `/chunks/{gen}/avail.flam3idx`) drives an action-bar **‹ prev / next ›** cluster of *available* sheep on every `/v1/gen/{gen}/id/{id}` load (History pushState/popstate, no reload). A **missing** id keeps full chrome with a graceful in-canvas panel — *"Electric Sheep was not found — use ‹ prev or next › to jump to a valid flame"* (no welcome-flame swap, no "never born") — and the nav offers the nearest available either side. The single bar split into **① info + ② action** rows (render-progress ③ unchanged), the chrome quality control (`[PYR3-050]`) will also ride. Review-hardened (404 manifests cached; nav serialized vs in-flight render). 4601 unit green; Chrome-verified browse + miss + recovery. |
 | **v0.32** | 2026-05-29 | `pending` | **Remove the legacy `?flame=` share-link codec (`[PYR3-020]` resolved-by-removal).** The inline `?flame=<encoded>` share link — whose decode failed on ~6KB+ payloads (the original bug) — is deleted rather than fixed: it was superseded by the v0.24 corpus share-URL `/v1/gen/{gen}/id/{id}` (user-directive). Removed `src/url-codec.ts` (+test), the `flame` `LoadIntent` kind + `?flame=` parse + tests, the `case 'flame'` handler/import in `main.ts`, and the vestigial `LoadResult.sourceText` field. `/v1/flame/{token}` custom-reserved untouched. VISION + share-url doc synced. typecheck + 4587 unit green. |
 | **v0.31** | 2026-05-29 | `pending` | **UI: showcase↔viewer links + "hot base" brand mark (`[PYR3-045]` + `[PYR3-042]` + `[PYR3-044]`).** `/showcase` cards gain a **▶ Open in viewer** pill → the live viewer for that exact sheep (`../v1/gen/{gen}/id/{id}`, leading-zero ids normalized; PYR3-045); the viewer bar gains a **showcase** link (PYR3-042) — viewer ↔ gallery now bidirectional. New **"hot base"** favicon/wordmark (PYR3-044): a double-arm vortex flame with a black attractor-spiral heart on an amber→crimson gradient, designed via a 5-round drawing brainstorm, shipped as an inline SVG data-URI; it **replaces every `🔥`/`▲` brand mark** (favicon ×5, viewer wordmark, showcase hero, about H1) for one identity. README overhaul filed as `[PYR3-049]`. 4602 unit + typecheck green; Chrome-verified (card→viewer render, bar link, marks at 16–128 px on light/dark tabs). |
 | **v0.30** | 2026-05-29 | `pending` | **Fix: flames with >32 xforms rendered black — `[PYR3-033]` resolved.** The fixed chaos `xforms` buffer (`(MAX_XFORMS+1)×XFORM_BYTES`, `MAX_XFORMS=32`) overflowed for flames with more xforms — `queue.writeBuffer` was silently dropped by Dawn → zero samples → pure-black render at every dim. Common in rotationally-symmetric Electric Sheep flames; `electricsheep.242.01373` (54 xforms) was the type specimen (flam3-C renders it fine). Fix: `MAX_XFORMS` 32 → 128 + matching `MAX_XFORMS_U` in `chaos.wgsl` (xaos stride / distrib fallback row) + a flame-import clamp guard (`>MAX_XFORMS` → clamp + `report.clampedXforms` + warn, never silent-black again). `242.01373` BE mean-lum 0.00 → 29.6 (flam3-C 23.3); FE renders the 6-fold lattice. 4602 unit (+ buffer-fit regression + clamp tests), 25/25 parity, review clean, Chrome-verified. |
@@ -59,19 +60,19 @@ polish below first.
   FE cleanup · public repo+deploy) is done except the deferred click-to-load
   (Chunk 2 → post-v1 design, tracked by PYR3-020).
 
-**Latest ship:** v0.32 — removed the legacy `?flame=` share-link codec
-(PYR3-020, superseded by `/v1/gen/{gen}/id/{id}`); v0.31 — showcase↔viewer links
-+ the "hot base" brand mark (PYR3-045/042/044). Full arc (v0.19 → v0.32) in
-[CHANGELOG.md](CHANGELOG.md).
+**Latest ship:** v0.33 — corpus navigation (prev/next/nearest available sheep +
+graceful missing-sheep state) on a new three-bar chrome (PYR3-039/040/041);
+v0.32 — removed the legacy `?flame=` codec (PYR3-020). Full arc (v0.19 → v0.33)
+in [CHANGELOG.md](CHANGELOG.md).
 
 ## 🚧 Next up — open work, by priority
 
 Detail lives in [BACKLOG.md](BACKLOG.md) → **🔥 Open**. Roughly ordered:
 
-1. 🐑 **Corpus-navigation trio — no dead ends browsing `/v1/gen/{gen}/id/{id}`.**
-   `[PYR3-039]` graceful in-viewer missing-sheep state + honest wording (not
-   "never born") · `[PYR3-040]` nearest-neighbor "did you mean" link · `[PYR3-041]`
-   viewer nav hints (next/prev/nearby via `src/avail.ts`). _Active next._
+1. 🎛️ **PYR3-050 — quality control (v0.34, in progress).** Preset ladder
+   (Draft→4K) + Advanced custom resolution/SPP with a live cost/OOM estimate,
+   on the new action bar; `dims · quality` readout in the info bar. v0.33 shipped
+   the corpus-nav trio + the three-bar restructure this rides on.
 2. 📝 **PYR3-049 — README overhaul.** README has drifted from the live product
    (Status block ~v0.28, predates apex viewer + showcase + share-URLs + 4K-in-browser
    + the new "hot base" mark). Full refresh pass.
