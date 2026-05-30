@@ -76,7 +76,19 @@ fn density_main(@builtin(global_invocation_id) gid: vec3u) {
       // ≈ 0.38 px) — effectively a no-op single-tap filter, leaving the
       // bimodal-vs-unimodal flam3-parity gap visible on imported flames.
       let n_hits = n_count / 255.0;
-      let n_rad = clamp(u.max_rad / pow(n_hits + 1.0, u.curve), u.min_rad, u.max_rad);
+      let n_rad_f = clamp(u.max_rad / pow(n_hits + 1.0, u.curve), u.min_rad, u.max_rad);
+      // PYR3-056: snap to the INTEGER radius first, then reuse that single
+      // radius for the cutoff disc, the Gaussian sigma, AND the kernel-sum LUT
+      // index. The LUT (density.ts buildKernelNormLut) computes Σ exp(-d²/2σ²)
+      // over the disc of an INTEGER radius r with σ=r/3. Previously the cutoff
+      // and sigma used the FLOAT radius while only the LUT index was rounded —
+      // so each bucket's scattered weight Σ(kw/knorm) was not 1.0 (it swept
+      // ~0.58..1.53 with a ~2.6× jump at every round() boundary, a brightness
+      // ripple correlated with density gradients). Sharing one integer radius
+      // restores weight = 1.0 exactly (flam3 filters.c keeps numerator +
+      // denominator on one shared radius).
+      let n_rad_i = u32(clamp(i32(round(n_rad_f)), 0, MAX_RAD_CAP));
+      let n_rad = f32(n_rad_i);
       let d2 = f32(dx * dx + dy * dy);
       if (d2 > n_rad * n_rad) { continue; }
 
@@ -85,10 +97,8 @@ fn density_main(@builtin(global_invocation_id) gid: vec3u) {
       let n_sigma = max(n_rad / 3.0, 1e-6);
       let kw = exp(-d2 / (2.0 * n_sigma * n_sigma));
 
-      // Look up neighbor's kernel-sum normalization. Without this each bucket
-      // contributes >1.0 worth of weight to its kernel area; flam3 normalizes
-      // each bucket's kernel to sum=1 so total scattered weight = 1 per bucket.
-      let n_rad_i = u32(clamp(i32(round(n_rad)), 0, MAX_RAD_CAP));
+      // Look up neighbor's kernel-sum normalization (same integer radius), so
+      // each bucket scatters exactly 1.0 of weight across its kernel area.
       let knorm = max(kernel_norm[n_rad_i], 1e-6);
 
       // Per-bucket log-density tone-map (flam3 rect.c:140 — ls applied at

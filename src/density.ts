@@ -75,7 +75,7 @@ const MAX_RAD_LUT = 256;
  * scatters exactly 1.0 worth of weight across its kernel area, matching
  * flam3's `flam3_create_de_filters` precomputed kernel-sum behavior.
  */
-function buildKernelNormLut(): Float32Array {
+export function buildKernelNormLut(): Float32Array {
   const lut = new Float32Array(MAX_RAD_LUT + 1);
   for (let r = 0; r <= MAX_RAD_LUT; r++) {
     if (r === 0) {
