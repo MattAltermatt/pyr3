@@ -5,7 +5,7 @@
 ```bash
 npm install                     # one-time
 npm run dev                     # Vite dev server on :5173 (Chrome verify target)
-npm test                        # unit suite, ~1s wall, 4582 passed
+npm test                        # unit suite, ~1s wall, ~4600 passing
 npm run test:parity             # 25-fixture BE-vs-flam3-C parity rig, ~91s wall
 npm run test:all                # union of the above
 npm run typecheck               # tsc --noEmit

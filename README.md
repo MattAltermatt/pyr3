@@ -84,8 +84,10 @@ open fixtures/flam3-goldens/247.29388/diff.png   # eyeball the divergence map
 ```
 
 Fixtures live at `fixtures/flam3-goldens/<id>/` — each has `golden.png` (flam3-C
-output), `<id>.flam3` (source), and `meta.json` carrying calibrated `baselineR`
-+ `thresholdR`.
+output), `<id>.flam3` (source), and `meta.json` carrying the calibrated tier
+contract: `expectedR` (measured R vs flam3-C), `thresholdR` (= `expectedR + 1.0`),
+and `tier` (`1` = healthy parity band R<5; `2` = documented GPU-f32-vs-CPU-f64
+precision drift). The FE↔BE gate adds `feBeExpectedR` + `feBeThresholdR`.
 
 ## Corpus share links
 
@@ -121,7 +123,6 @@ summary and a pointer to the canonical cross-repo spec.
 - [BACKLOG.md](BACKLOG.md) — open task registry (`[PYR3-NNN]` IDs)
 - [CHANGELOG.md](CHANGELOG.md) — ship history
 - [CLAUDE.md](CLAUDE.md) — project notes for the Claude Code agent
-- [`docs/superpowers/specs/2026-05-27-pyr3-design.md`](docs/superpowers/specs/2026-05-27-pyr3-design.md) — v1.0 design spec
 - [`docs/corpus-share-url.md`](docs/corpus-share-url.md) — corpus share-URL + chunk delivery (pyr3-side summary)
 
 ## License

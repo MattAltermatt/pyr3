@@ -62,10 +62,11 @@ polish below first.
   FE cleanup · public repo+deploy) is done except the deferred click-to-load
   (Chunk 2 → post-v1 design, tracked by PYR3-020).
 
-**Latest ship:** v0.34 — viewer quality control (preset ladder Draft→4K +
-Advanced custom dims/SPP with a cost/OOM gate, `[PYR3-050]`); v0.33 — corpus
-navigation on a new three-bar chrome (PYR3-039/040/041). Full arc (v0.19 → v0.34)
-in [CHANGELOG.md](CHANGELOG.md).
+**Latest ship:** v0.35 — bare root forwards to the canonical hero corpus URL
+with nav wired (`[PYR3-055]`); v0.34 — viewer quality control (preset ladder
+Draft→4K + Advanced custom dims/SPP with a cost/OOM gate, `[PYR3-050]`); v0.33 —
+corpus navigation on a new three-bar chrome (PYR3-039/040/041). Full arc
+(v0.19 → v0.35) in [CHANGELOG.md](CHANGELOG.md).
 
 ## 🚧 Next up — open work, by priority
 
