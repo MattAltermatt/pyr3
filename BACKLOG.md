@@ -434,32 +434,41 @@ the root cause is WGSL fma/rounding that is hard to fully control. **Next phase 
   showcase build's luminance scan + spot-check N fixtures vs their reference URLs
   before committing to engine work.
 
-## [PYR3-033] bug · S · 🐛 · queued · v1.x — `electricsheep.242.01373` renders pure black at `--preset 4k`
+## [PYR3-033] bug · M · 🐛 · **ROOT CAUSE CONFIRMED — fix queued** · v1.x — flames with >32 xforms render pure black (`MAX_XFORMS` overflow); `electricsheep.242.01373` is the type specimen
 
-> **⚠️ Re-verify first (note added 2026-05-29):** this was observed v0.21, BEFORE the v0.22
-> PYR3-034 fix that restored 6 silently-dropped underscore variations. If 242.01373's genome
-> used `radial_blur`/`gaussian_blur`/`pre_blur`/`super_shape`/`wedge_julia`/`wedge_sph`, the
-> black render may already be self-fixed. **First step: re-render at `--preset 4k` on the
-> post-v0.22 engine and check mean luminance before any deeper investigation.**
+> **✅ ROOT CAUSE FOUND (2026-05-29).** NOT a camera/tonemap/DE issue and NOT
+> self-fixed by the v0.22 variation fix — it's a hard **xform-count cap**.
+> `MAX_XFORMS = 32` (`src/genome.ts:263`); the chaos xforms buffer is sized
+> `(MAX_XFORMS + 1) × XFORM_BYTES` = 33 × 464 = **15312 bytes**. `242.01373` has
+> **54 xforms + 1 finalxform**, packing to **25520 bytes** → the `queue.writeBuffer`
+> for `pyr3.chaos.xforms` **overflows and Dawn silently rejects the write**
+> (`Write range (size: 25520) does not fit in [Buffer "pyr3.chaos.xforms"] size
+> (15312)`). The pipeline then iterates against empty/stale xform data → **zero
+> samples deposited → pure-black image**, with no error beyond the validation
+> log. Confirmed 2026-05-29 via `npm run render` (BE threw the validation error;
+> see also FE 4K → black). **flam3-C renders the same flame fine** (698 KB PNG,
+> 817 K nonzero buckets) — so this is a genuine pyr3 bug, not a bad showcase pick.
 
-**Symptom (observed 2026-05-28):** `electricsheep.242.01373.pyr3-4k.png` is a
-completely black 3840×2841 image (mean luminance 0.00, 0% non-black pixels, 46KB
-on disk) despite the render running 5.4s without error. Surfaced during the v0.21
-showcase build; auto-excluded from the gallery by the new mean-luminance gate in
-`scripts/build-showcase.mjs` (so this is cosmetic-for-now, not gallery-blocking).
+**Impact:** ANY flame with >32 xforms renders black — not just at 4K, at *every*
+dim (the cap is on xform count, independent of resolution / oversample).
+Rotationally-symmetric Electric Sheep flames routinely exceed 32 (242.01373 is a
+6-fold-symmetric flame: ~9 base xforms × 6 rotations). The failure is **silent**
+(console validation log only), so other corpus sheep may be quietly black too —
+worth a corpus-wide scan for `<xform` count >32 when fixing.
 
-**Hypothesis (unverified):** Either (a) the fixture genome projects entirely
-outside the camera at the `--preset 4k` framing (3840 long-edge, q=200,
-oversample=1) — a camera/scale issue, not engine; or (b) a chaos-game/tonemap
-degenerate case for this specific genome (zero-weight xforms, all-NaN trajectory,
-or a brightness/gamma collapse). It is the ONLY pure-black render of the 55.
+**Fix (queued, not yet done — deferred 2026-05-29 per user):** raise `MAX_XFORMS`
+to comfortably cover symmetric flames (e.g. 64 or 128) and confirm the matching
+bound in the WGSL chaos shader's xform array + the xform-distribution buffer
+(`(MAX_XFORMS + 1) rows × 16384 × u32`, ~528 KB at 32 → scales linearly). Pair
+with a **loud guard**: the importer should clamp-or-reject + warn when a genome
+exceeds the cap (ties into the PYR3-036 loud-parser safeguard) so this can never
+silently black-render again. Add a regression fixture (a >32-xform flame) that
+asserts non-black output.
 
-**Next phase:** render it through the FE viewer at quick-mode + via `npm run
-render` at native dims and compare — does it produce output at other dims? Check
-the source `.flam3` xform weights. Compare against flam3-C output for the same
-fixture (does flam3-C also render it black?). If flam3-C renders it fine, it's a
-pyr3 bug; if flam3-C is also black, the fixture is simply a bad showcase pick —
-drop it from the curated set.
+**Original framing (now superseded):** observed v0.21 as a single black 4K
+showcase render (mean lum 0.00), auto-excluded by the showcase mean-luminance
+gate; hypothesized as camera-off-frame or tonemap/DE collapse. Root-caused
+2026-05-29 during the PYR3-025/033 4K re-test probe.
 
 ## [PYR3-032] chore · M · ✅ **RESOLVED (2026-05-29)** — Purge predecessor-repo references from the codebase
 
@@ -916,7 +925,18 @@ doesn't feel the gap; investigation can wait.
 
 Filed 2026-05-27 post-PYR3-023 probe + FE-4K-removal pivot.
 
-## [PYR3-025] gpu · M · 🪨 · investigation · post-v1 — Chrome WebGPU 4K renderer-tab-kill class (insurance investigation)
+## [PYR3-025] gpu · M · 🪨 ✅ **RESOLVED (v0.29, 2026-05-29)** — Chrome WebGPU 4K renderer-tab-kill class (insurance investigation)
+
+> **✅ RESOLVED by v0.29.** Both crash fixtures were re-tested through the
+> new decoupled 🎯 4K button (2026-05-29 probe): **244.36880 → 3.18s** and
+> **248.22289 → 4.68s**, each building cleanly to 3840×2160, no tab crash,
+> both visually correct. The chunked orchestrator's per-chunk DE+visualize
+> at 4K (hundreds of passes) was the trigger; the decoupled path runs DE
+> **once at the end** (cheap DE-off previews during the build), which
+> sidesteps it. The `estimator_radius=11` DE-parameter correlation is
+> consistent with that read. No further work — the crash class is gone with
+> the orchestrator that caused it. Original investigation frame preserved
+> below.
 
 **Frame:** During PYR3-023 probe, 2/5 sampled showcase fixtures
 (244.36880 + 248.22289) reproducibly crashed the Chrome renderer tab
