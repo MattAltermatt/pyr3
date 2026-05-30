@@ -41,8 +41,8 @@ flame in-browser); **v0.23** rebuilt the viewer's top bar into a single slim row
 
 The only remaining known outliers — `coverage.248.02226` (R≈29.9) and
 `coverage.245.06687` — are accepted GPU-f32-floor (tier-2) fixtures under
-`[PYR3-029]`, **not** regressions. v1.0 ships once the remaining chunks land;
-see [ROADMAP.md](ROADMAP.md) and [BACKLOG.md](BACKLOG.md).
+`[PYR3-029]`, **not** regressions. v1.0 ships once the `v1.0`
+[milestone](https://github.com/MattAltermatt/pyr3/milestones) closes out.
 
 ## The contract
 
@@ -107,7 +107,7 @@ build works at the apex `pyr3.app` and the `mattaltermatt.github.io/pyr3/`
 fallback (which redirects to the apex).
 
 The legacy inline `?flame=<encoded>` share-link codec was removed in v0.32
-(superseded by the corpus URL above — see BACKLOG `[PYR3-020]`).
+(superseded by the corpus URL above).
 
 The `/v1/gen` and `/v1/gen/{gen}` browse routes are reserved but show
 placeholder content — the visual gallery is deferred. Custom-flame sharing
@@ -116,12 +116,20 @@ placeholder content — the visual gallery is deferred. Custom-flame sharing
 See [`docs/corpus-share-url.md`](docs/corpus-share-url.md) for the pyr3-side
 summary and a pointer to the canonical cross-repo spec.
 
-## Docs
+## Docs & planning
+
+Open work and ship history moved to GitHub in the 2026-05-30 pivot:
+
+- [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry (labelled by
+  type: `feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
+- [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — `v1.0` is the ship gate
+  (close every issue in it → tag v1.0); `post-v1` is the deferred backlog
+- [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward
+- [HISTORY.md](HISTORY.md) — frozen pre-1.0 ship log (v0.0 → v0.36)
+
+In-repo docs:
 
 - [VISION.md](VISION.md) — what pyr3 is and isn't
-- [ROADMAP.md](ROADMAP.md) — phase plan + shipped table
-- [BACKLOG.md](BACKLOG.md) — open task registry (`[PYR3-NNN]` IDs)
-- [CHANGELOG.md](CHANGELOG.md) — ship history
 - [CLAUDE.md](CLAUDE.md) — project notes for the Claude Code agent
 - [`docs/corpus-share-url.md`](docs/corpus-share-url.md) — corpus share-URL + chunk delivery (pyr3-side summary)
 

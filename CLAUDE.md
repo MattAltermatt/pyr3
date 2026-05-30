@@ -27,8 +27,27 @@ If the request would add a CPU fallback, fork the engine into separate FE/BE cop
 introduce a WASM bridge — push back. Those are not in scope.
 
 If the request would build the visual editor / mutator / vault before the v1.0 ship gate
-passes — push back. Those are explicit `[PYR3-001]` / `[PYR3-002]` BACKLOG entries with a
-hard "much-later" status.
+passes — push back. Those are explicit GitHub issues (editor #37, Markov-gen #36) in the
+`post-v1` milestone with a hard "much-later" status.
+
+## Planning lives in GitHub (2026-05-30 pivot)
+
+Open work, roadmap, and ship history all live on GitHub now — **not** in markdown docs.
+The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not recreate them.
+
+- **Open tasks → [GitHub Issues](https://github.com/MattAltermatt/pyr3/issues).** Each issue
+  carries a **type label** (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` ·
+  `cli` · `perf`), a **size label** (`size/XS`…`size/XL`), and optionally `partial`. Reference
+  issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
+  git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
+- **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones) + the Project board.**
+  The `v1.0` milestone IS the ship gate: when every issue in it closes, tag `v1.0`. `post-v1` is
+  the deferred backlog (re-sort into feature-epic milestones — editor / find / create — as those
+  form).
+- **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
+  onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
+- **In-repo docs that survive:** `VISION` · `CLAUDE` · `README` (+ `HISTORY.md`, `NOTICE.md`).
+  These still track code. No more six-doc sync dance.
 
 ## Repo conventions
 
@@ -37,14 +56,11 @@ hard "much-later" status.
   - `user.name  = MattAltermatt`
   - `user.email = 1435066+MattAltermatt@users.noreply.github.com`
 - License: GPL-3.0-or-later (inherited from the flam3 lineage).
-- 6-doc structure mandatory: `VISION` · `ROADMAP` · `BACKLOG` · `CHANGELOG` · `CLAUDE` ·
-  `README`. All kept in sync with code at every ship.
-- BACKLOG IDs: `[PYR3-NNN]`, never reused, monotonically increasing (next ID lives at the top
-  of BACKLOG.md).
 - Spec location: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
+- Version source of truth: `package.json` (currently `0.36.0`). The showcase build reads it.
 - Git tags: **the first tag is `v1.0`.** The v0.x line is work-in-progress and is NOT tagged
-  (no one wants v0.x tags of a WIP); `package.json` version still tracks the CHANGELOG heading.
-  At v1.0 and after, each ship bumps `package.json` + `git tag vX.Y`. (PYR3-067.)
+  (no one wants v0.x tags of a WIP). At v1.0 and after, each ship bumps `package.json`, tags
+  `git tag vX.Y`, and cuts a GitHub Release (the ship notes). (See issue #12.)
 
 ## Lineage
 
@@ -151,13 +167,15 @@ variation kernels`. Both gates are equally load-bearing for the v1.0
 ship contract: a tier-2 regression that exceeds `thresholdR` means the
 f32 floor moved (real ship-blocker); tier-1 regressions read as engine
 bugs. The tier contract is the deliberate v0.19 closure of `[PYR3-029]`
-— see CHANGELOG v0.19 + the BACKLOG entry for the f32-floor rationale.
+— see `HISTORY.md` v0.19 for the f32-floor rationale. (Note: PYR3-056 in
+v0.36 retired most of that f32-floor narrative; re-tiering is issue #10.)
 
 ## Useful pointers
 
 - Design spec: [`docs/superpowers/specs/2026-05-27-pyr3-design.md`](docs/superpowers/specs/2026-05-27-pyr3-design.md)
-- Phase plan: [`ROADMAP.md`](ROADMAP.md) → "Next phases"
-- Open tasks: [`BACKLOG.md`](BACKLOG.md)
-- Ship history: [`CHANGELOG.md`](CHANGELOG.md)
+- Open tasks + roadmap: [GitHub Issues](https://github.com/MattAltermatt/pyr3/issues) +
+  [Milestones](https://github.com/MattAltermatt/pyr3/milestones) (`v1.0` = ship gate)
+- Ship history: [Releases](https://github.com/MattAltermatt/pyr3/releases) (v1.0+) ·
+  [`HISTORY.md`](HISTORY.md) (frozen pre-1.0 log)
 - The "single engine, two consumers" seam: `src/main.ts` (browser) + `bin/pyr3-render.ts` (CLI)
 - WGSL shaders: `src/shaders/{chaos,density,spatial-filter,visualize_u32,visualize_f32}.wgsl`

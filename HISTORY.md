@@ -1,7 +1,12 @@
-# 📋 pyr3 Changelog
+# 📋 pyr3 History — pre-1.0 ship log (frozen)
 
-Authoritative ship history. Backward-looking only — forward plans live in
-[ROADMAP.md](ROADMAP.md), open tasks in [BACKLOG.md](BACKLOG.md).
+**This file is the frozen pre-1.0 ship history (v0.0 → v0.36).** As of the
+2026-05-30 pivot to GitHub Issues, pyr3 no longer maintains a hand-written
+changelog: **v1.0 and later ship notes live in [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)**,
+and open work lives in [GitHub Issues](https://github.com/MattAltermatt/pyr3/issues)
+(grouped by the `v1.0` / `post-v1` milestones). This file is kept in-repo so the
+v0.x provenance — what was built, why, and in what order — stays in `git`, not on
+a platform that could disappear. It is append-frozen; nothing below changes.
 
 Version format: `vMAJOR.MINOR[-suffix]`. Pre-v1.0 versions are unstable scaffolding;
 **v1.0** marks the ship gate: pyr3 backend (Node CLI WebGPU) renders matching flam3-C's

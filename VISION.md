@@ -76,13 +76,14 @@ pulled for the public GitHub ship.
 - **Share links via URL.** `/v1/gen/{gen}/id/{id}` carries the corpus coordinates of an
   Electric Sheep flame; the viewer fetches that one chunk and renders it. Paste anywhere;
   always the same flame. (The legacy inline `?flame=<encoded>` codec was removed in v0.32,
-  superseded by the corpus URL — see BACKLOG `[PYR3-020]`.)
+  superseded by the corpus URL.)
 
 ## 🗃️ Explicitly defer
 
-- **Visual flame editor.** Comes later as its own arc. See BACKLOG `[PYR3-001]`.
-- **Markov-chain flame generation research.** Much-later research arc. See BACKLOG
-  `[PYR3-002]`.
+- **Visual flame editor.** Comes later as its own arc. See issue
+  [#37](https://github.com/MattAltermatt/pyr3/issues/37) (`post-v1`).
+- **Markov-chain flame generation research.** Much-later research arc. See issue
+  [#36](https://github.com/MattAltermatt/pyr3/issues/36) (`post-v1`).
 - **CPU fallback path.** Not happening. WebGPU is the only path.
 - **flam3 bit-faithful parity.** "Similar but not the same" is the standing contract.
 

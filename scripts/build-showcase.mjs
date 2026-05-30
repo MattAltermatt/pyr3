@@ -37,19 +37,18 @@ const hwIdx = args.indexOf('--hw');
 const HARDWARE = hwIdx >= 0 ? args[hwIdx + 1] : 'Apple M-series';
 const verIdx = args.indexOf('--ver');
 
-// Version comes from the latest CHANGELOG heading (package.json is stale at
-// 0.1.0 — pyr3 tracks versions in CHANGELOG.md, not the manifest). Override
-// with --ver if needed.
-function latestChangelogVersion() {
+// Version comes from package.json (the canonical source after the 2026-05-30
+// GitHub-issues pivot — ship history now lives in GitHub Releases, pre-1.0
+// history in HISTORY.md). Override with --ver if needed.
+function packageVersion() {
   try {
-    const cl = readFileSync(join(REPO, 'CHANGELOG.md'), 'utf8');
-    const m = cl.match(/^##\s*(v[0-9][^\s—-]*)/m);
-    return m ? m[1] : null;
+    const pkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'));
+    return pkg.version ? `v${pkg.version}` : null;
   } catch {
     return null;
   }
 }
-const VERSION = verIdx >= 0 ? args[verIdx + 1] : (latestChangelogVersion() ?? 'v1.0');
+const VERSION = verIdx >= 0 ? args[verIdx + 1] : (packageVersion() ?? 'v1.0');
 
 if (!existsSync(MANIFEST)) {
   console.error(`manifest missing — run scripts/render-showcase-v1.0.mjs first: ${MANIFEST}`);
@@ -223,7 +222,7 @@ const html = `<!doctype html>
     <div class="mark"><svg class="heromark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="heroMark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffbe3e"/><stop offset="1" stop-color="#bf2408"/></linearGradient></defs><path d="M16 2c4 7 8 9.5 6.5 17C21.4 25.8 11 26.5 9.6 19 8.5 13 13 10 16 2Z" fill="url(#heroMark)"/><path d="M16 9.5c3.4 0 4 4 .8 5.2 M16 22c-3.4 0-4-4-.8-5.2" fill="none" stroke="#0a0a0c" stroke-width="2.3" stroke-linecap="round"/></svg> pyr3</div>
     <div class="tagline">A modern fractal-flame renderer in TypeScript + WebGPU</div>
     <div class="lede">${ready} hand-picked electric sheep, rendered at 4K by pyr3's WebGPU backend. pyr3 is a fractal-flame renderer in the lineage of <a href="https://flam3.com/" rel="noopener">flam3</a>, the original C engine. The renderer that made these is the same one running the <a href="../">live viewer</a> — drop in your own <code>.flame</code> and watch it draw.</div>
-    <div class="nav"><a href="${GH}">github</a> · <a href="${GH}/blob/main/CHANGELOG.md">CHANGELOG</a> · <a href="${GH}/blob/main/VISION.md">VISION</a> · <a href="../">live viewer →</a></div>
+    <div class="nav"><a href="${GH}">github</a> · <a href="${GH}/releases">releases</a> · <a href="${GH}/blob/main/VISION.md">VISION</a> · <a href="../">live viewer →</a></div>
     <div class="banner"><span><b>pyr3 ${htmlEscape(VERSION)}</b></span><span>rendered ${renderedDate}</span><span>${htmlEscape(HARDWARE)}</span><span><b>${ready}</b> flames in <b>${totalMin}</b></span></div>
   </div>
   <div class="grid">
