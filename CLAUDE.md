@@ -94,7 +94,7 @@ Short form:
      in most cases (R<5 vs flam3) but carries a small port-specific offset
      that distorted pyr3's measured parity. flam3-C is the canonical lineage
      reference. Goldens in `fixtures/flam3-goldens/<id>/golden.png` are now
-     flam3-C renders; baselineR / thresholdR in each `meta.json` reflect
+     flam3-C renders; expectedR / thresholdR in each `meta.json` reflect
      pyr3 vs flam3-C.
 6. Frontend = the slim browser-viewer layout for v1.0; editor is much-later post-v1
 7. Repo replacement on GitHub is gated on ship-gate proof (do not push to
