@@ -396,6 +396,10 @@ const BAR_CSS = `
 .pyr3-bar-root {
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   user-select: none;
+  /* #7: positioning context for the render-progress row, which overlays the
+     canvas (absolute, top:100%) instead of mounting in flow — so showing/
+     hiding it never changes the bar height and the canvas never reflows. */
+  position: relative;
 }
 .pyr3-bar-info, .pyr3-bar-action {
   display: flex; align-items: center;
@@ -486,9 +490,14 @@ const BAR_CSS = `
 .pyr3-bar-toast.visible { opacity: 1; }
 
 .pyr3-bar-tier3 {
+  /* #7: overlay the top edge of the canvas (pinned just under the bar) rather
+     than taking flow height. The opaque background keeps the canvas from
+     bleeding through; the shadow reads it as a floating layer. */
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
   display: flex; align-items: center; gap: 12px;
   padding: 9px 14px; font-size: 11px;
   background: var(--bar-bg-3); border-bottom: 1px solid var(--bar-border);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
 }
 .pyr3-tier3-label { color: #ffb56e; font-weight: 500; white-space: nowrap; }
 .pyr3-tier3-bar { flex: 1; height: 8px; min-width: 120px; background: #332215; border-radius: 4px; overflow: hidden; }
