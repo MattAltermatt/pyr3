@@ -101,3 +101,36 @@ export function tierToSpec(t: QualityTier): PresetSpec {
 export type QualityRequest =
   | { kind: 'tier'; tier: QualityTier }
   | { kind: 'custom'; longEdge: number; spp: number };
+
+// #25 — CLI quality parity. The BE CLI consumes the SAME ladder as the FE so a
+// `--preset high` render produces identical dims/SPP to the viewer's High tier.
+
+/** Recognized quality-selector names for the CLI `--preset` flag (and any shared
+ *  parser): the lowercased tier names plus the legacy `quick` alias (≡ Preview). */
+export const QUALITY_NAMES: string[] = [
+  'quick',
+  ...QUALITY_TIERS.map((t) => t.name.toLowerCase()),
+];
+
+/** Resolve a quality-selector name (case-insensitive) to a PresetSpec: any tier
+ *  name (draft/preview/standard/high/4k) or the legacy `quick` alias (≡ Preview).
+ *  Returns null for an unrecognized name. Lets the CLI and FE share one ladder via
+ *  applyPreset(). `quick`/`4k` stay byte-identical to the legacy PRESETS entries. */
+export function specForQualityName(name: string): PresetSpec | null {
+  const lc = name.toLowerCase();
+  if (lc === 'quick') return tierToSpec(DEFAULT_TIER); // legacy alias ≡ Preview
+  const tier = QUALITY_TIERS.find((t) => t.name.toLowerCase() === lc);
+  return tier ? tierToSpec(tier) : null;
+}
+
+/** Build a PresetSpec for a custom render: explicit long edge + SPP, oversample 1,
+ *  force-rescale — mirrors the FE's `QualityRequest` custom kind. */
+export function customSpec(longEdge: number, spp: number): PresetSpec {
+  return {
+    maxDim: longEdge,
+    maxSpp: spp,
+    oversample: 1,
+    shortEdgeRound: 'floor',
+    mode: 'force',
+  };
+}

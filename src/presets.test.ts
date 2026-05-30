@@ -7,6 +7,9 @@ import {
   QUALITY_TIERS,
   DEFAULT_TIER,
   tierToSpec,
+  specForQualityName,
+  customSpec,
+  QUALITY_NAMES,
 } from './presets';
 
 function makeGenome(opts: Partial<Genome> = {}): Genome {
@@ -227,5 +230,40 @@ describe('QUALITY_TIERS ladder (PYR3-050)', () => {
     expect(Math.max(out.size!.width, out.size!.height)).toBe(standard.longEdge);
     expect(out.quality).toBe(standard.spp); // 500 capped to 50
     expect(out.oversample).toBe(1);
+  });
+});
+
+describe('#25 — CLI quality parity: tier-name + custom spec resolution', () => {
+  it('resolves every tier name (case-insensitive) to its tierToSpec', () => {
+    for (const t of QUALITY_TIERS) {
+      expect(specForQualityName(t.name.toLowerCase())).toEqual(tierToSpec(t));
+      expect(specForQualityName(t.name.toUpperCase())).toEqual(tierToSpec(t));
+    }
+  });
+
+  it('legacy "quick" === Preview spec; "4k" === 4K-tier spec (subsumes PRESETS)', () => {
+    expect(specForQualityName('quick')).toEqual(PRESETS.quick);
+    expect(specForQualityName('4k')).toEqual(PRESETS['4k']);
+  });
+
+  it('returns null for an unrecognized name', () => {
+    expect(specForQualityName('bogus')).toBeNull();
+  });
+
+  it('QUALITY_NAMES lists quick + all tier names (lowercased)', () => {
+    expect(QUALITY_NAMES).toContain('quick');
+    expect(QUALITY_NAMES).toContain('draft');
+    expect(QUALITY_NAMES).toContain('high');
+    expect(QUALITY_NAMES).toContain('4k');
+  });
+
+  it('customSpec builds a force-rescale spec at oversample 1', () => {
+    expect(customSpec(1920, 50)).toEqual({
+      maxDim: 1920,
+      maxSpp: 50,
+      oversample: 1,
+      shortEdgeRound: 'floor',
+      mode: 'force',
+    });
   });
 });

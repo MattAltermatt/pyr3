@@ -19,7 +19,13 @@ import { parseFlame } from '../src/flame-import';
 import { genomeFromJson } from '../src/serialize';
 import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
 import { type Genome } from '../src/genome';
-import { PRESETS, applyPreset, isPresetName, type PresetName } from '../src/presets';
+import {
+  applyPreset,
+  customSpec,
+  specForQualityName,
+  QUALITY_NAMES,
+  type PresetSpec,
+} from '../src/presets';
 
 // happy-dom shim — pyr3's flame-import.ts uses DOMParser which is
 // browser-only. Borrow happy-dom's instance and stamp it onto globalThis.
@@ -34,8 +40,10 @@ async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
   const args: string[] = [];
   let forceDeOff = false;
-  let preset: PresetName | null = null;
+  let presetSpec: PresetSpec | null = null;
   let maxDim: number | null = null;
+  let customLongEdge: number | null = null;
+  let customQuality: number | null = null;
   let sampleInflate = 1;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
@@ -43,11 +51,28 @@ async function main(): Promise<void> {
       forceDeOff = true;
     } else if (a === '--preset') {
       const v = rawArgs[++i];
-      if (v === undefined || !isPresetName(v)) {
-        console.error(`--preset requires one of: ${Object.keys(PRESETS).join(', ')}`);
+      const spec = v === undefined ? null : specForQualityName(v);
+      if (spec === null) {
+        console.error(`--preset requires one of: ${QUALITY_NAMES.join(', ')}`);
         process.exit(1);
       }
-      preset = v;
+      presetSpec = spec;
+    } else if (a === '--long-edge') {
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 1) {
+        console.error('--long-edge requires a positive integer argument');
+        process.exit(1);
+      }
+      customLongEdge = Math.max(1, Math.floor(n));
+    } else if (a === '--quality') {
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 1) {
+        console.error('--quality requires a positive number argument');
+        process.exit(1);
+      }
+      customQuality = n;
     } else if (a === '--max-dim') {
       const v = rawArgs[++i];
       const n = v === undefined ? NaN : Number(v);
@@ -71,13 +96,16 @@ async function main(): Promise<void> {
       args.push(a);
     }
   }
-  if (preset !== null && maxDim !== null) {
-    console.error('--preset and --max-dim are mutually exclusive');
+  const custom = customLongEdge !== null || customQuality !== null;
+  if ([presetSpec !== null, maxDim !== null, custom].filter(Boolean).length > 1) {
+    console.error('--preset, --max-dim, and --long-edge/--quality are mutually exclusive');
     process.exit(1);
   }
   if (args.length < 1) {
     console.error(
-      'usage: npm run render [--no-de] [--preset {quick,4k}] [--max-dim N] [--sample-inflate=F] <input.flam3 | input.pyr3.json> [output.png]',
+      `usage: npm run render [--no-de] [--preset {${QUALITY_NAMES.join('|')}}] ` +
+        '[--long-edge N --quality N] [--max-dim N] [--sample-inflate=F] ' +
+        '<input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);
   }
@@ -105,8 +133,17 @@ async function main(): Promise<void> {
   // the FE↔BE parity gate (PYR3-026). `--preset 4k` mirrors the predecessor's
   // Preset.SHOWCASE_4K for BE 4K showcase rendering. `--max-dim N` is a
   // standalone cap (rejected alongside --preset above).
-  if (preset !== null) {
-    genome = applyPreset(genome, PRESETS[preset]);
+  if (presetSpec !== null) {
+    genome = applyPreset(genome, presetSpec);
+  } else if (custom) {
+    // #25: custom render — explicit long edge and/or SPP. Override quality so it
+    // is SET (not merely capped); fall back to the genome's native long edge /
+    // quality for whichever flag is omitted.
+    const nativeLong = genome.size ? Math.max(genome.size.width, genome.size.height) : 1024;
+    const longEdge = customLongEdge ?? nativeLong;
+    const spp = customQuality ?? genome.quality ?? 16;
+    if (customQuality !== null) genome = { ...genome, quality: customQuality };
+    genome = applyPreset(genome, customSpec(longEdge, spp));
   }
   if (maxDim !== null) {
     const declW = genome.size?.width ?? 1024;
