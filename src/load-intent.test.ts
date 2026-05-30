@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseLoadIntent } from './load-intent';
+import { corpusUrl, HERO_GEN, HERO_ID, parseLoadIntent } from './load-intent';
 
 // Shorthand: p(pathname) → parseLoadIntent
 const p = (pathname: string) => parseLoadIntent({ pathname });
@@ -97,5 +97,28 @@ describe('parseLoadIntent – under a non-root base (/pyr3/)', () => {
     vi.stubEnv('BASE_URL', '/pyr3/');
     expect(p('/pyr3/')).toEqual({ kind: 'default' });
     expect(p('/pyr3')).toEqual({ kind: 'default' });
+  });
+});
+
+// ── hero-forward round-trip ──────────────────────────────────────────────
+// Bare root forwards to corpusUrl(HERO_GEN, HERO_ID) via replaceState. That URL
+// MUST parse back as the hero corpus leaf so a refresh / popstate of the
+// forwarded address resolves to the same sheep (not a 'default' loop or a
+// malformed fall-through). Guards both the apex and project-Pages base.
+
+describe('hero-forward target round-trips through the parser', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('apex base: corpusUrl(HERO) parses back to the hero corpus leaf', () => {
+    const url = corpusUrl(HERO_GEN, HERO_ID); // BASE_URL '/' in the default env
+    expect(p(url)).toEqual({ kind: 'corpus', gen: HERO_GEN, id: HERO_ID });
+  });
+
+  it('project-Pages base: corpusUrl(HERO) parses back to the hero corpus leaf', () => {
+    vi.stubEnv('BASE_URL', '/pyr3/');
+    const url = corpusUrl(HERO_GEN, HERO_ID); // '/pyr3/v1/gen/247/id/19679'
+    expect(p(url)).toEqual({ kind: 'corpus', gen: HERO_GEN, id: HERO_ID });
   });
 });

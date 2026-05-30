@@ -8,7 +8,7 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-055** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-056** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
@@ -295,6 +295,23 @@ share-link + ship-gate first keeps the v1.0 scope honest.
 ## ✅ Resolved & shipped
 
 _Kept for provenance. Newest first._
+
+## [PYR3-055] feat · S · 🏠 ✅ **RESOLVED (v0.35, 2026-05-29)** — Bare root forwards to the canonical hero corpus URL (nav-wired landing)
+
+**Filed + shipped 2026-05-29 (user-directive).** The bare site root (`/`, the `default`
+`LoadIntent`) was a navigation dead-end: it painted the bundled welcome fixture and called
+`setCorpusNav(null)`, so the landing page had no `‹`/`›` pills even though the hero
+(`electricsheep.247.19679`) *is* a real corpus sheep (gen 247 / id 19679). **A2 fix:** bare
+root now `history.replaceState`s the address bar to the canonical `/v1/gen/247/id/19679`
+**and wires the prev/next nav**, while still painting the *bundled fixture* for an instant,
+chunk-free first paint (never routes the landing through the `loadCorpus` chunk + brotli-wasm
+pipeline, which is slower in prod and broken under `npm run dev` — PYR3-048). `HERO_GEN`/
+`HERO_ID` constants added to `src/load-intent.ts` (`WELCOME_FLAME_URL` derived from them so the
+bundled filename can't drift from the forwarded URL); a hero→fixture fallback in `loadCorpus`
+keeps a refresh / Back to the forwarded URL instant + dev-safe. **Note:** nav pills are still
+absent under `npm run dev` (the avail manifest needs the brotli-wasm decoder dev can't serve,
+PYR3-048) — they appear in `npm run preview` + the live deploy. A URL round-trip regression
+guard (`corpusUrl(HERO) → {kind:'corpus', …}`, apex + project-Pages base) was added.
 
 ## [PYR3-050] feat · L · 🎛️ ✅ **RESOLVED (v0.34, 2026-05-29)** — Viewer quality control (preset ladder + Advanced custom)
 

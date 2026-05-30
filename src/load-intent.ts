@@ -11,6 +11,16 @@
 // Absent a recognized /v1 path → default (main.ts resolves to the hardcoded
 // welcome flame). Malformed /v1 paths never throw — they fall through to default.
 
+// The canonical "welcome" hero sheep. Bare root (`/`, the `default` intent)
+// forwards to this corpus leaf so the landing page is a real, shareable,
+// nav-wired corpus URL (PYR3-053-adjacent root-forward) — while still painting
+// the bundled fixture for an instant, chunk-free first paint. corpusUrl(HERO_*)
+// MUST round-trip back through parseLoadIntent to `{kind:'corpus', …}` (guarded
+// in load-intent.test.ts) so a refresh / popstate of the forwarded URL resolves
+// to the same sheep.
+export const HERO_GEN = 247;
+export const HERO_ID = 19679;
+
 export type LoadIntent =
   | { kind: 'corpus'; gen: number; id: number }
   | { kind: 'gen-list' }

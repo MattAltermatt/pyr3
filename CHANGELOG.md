@@ -10,6 +10,34 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.35 — 2026-05-29 — Root forwards to the hero corpus URL — nav-wired landing (`[PYR3-055]`)
+
+**Outcome:** the landing page is no longer a navigation dead-end. Opening bare `pyr3.app/`
+now lands you on the canonical, shareable, **nav-wired** hero corpus URL with working
+`‹`/`›` — without giving up the instant first paint.
+
+- **Root-forward (A2).** The bare root (`/`, the `default` `LoadIntent`) now
+  `history.replaceState`s the address bar to **`/v1/gen/247/id/19679`** (the hero,
+  `electricsheep.247.19679`) and wires the prev/next corpus nav — but still paints the
+  **bundled fixture** for an instant, chunk-free first paint. It deliberately does **not**
+  route the landing through `loadCorpus`'s chunk + brotli-wasm pipeline, which is slower in
+  prod and broken under `npm run dev` (PYR3-048). `replaceState` (not push) so Back never
+  lands on a bare-root entry that just re-forwards.
+- **Hero constants.** `HERO_GEN` / `HERO_ID` added to `src/load-intent.ts`;
+  `WELCOME_FLAME_URL` is derived from them so the bundled fixture filename can never drift
+  from the forwarded URL. A round-trip regression guard asserts `corpusUrl(HERO)` parses
+  back to `{kind:'corpus', gen:247, id:19679}` on both the apex and project-Pages base.
+- **Hero fallback.** `loadCorpus` gains a hero-only fallback: when the chunk fetch fails
+  (`xml === null`) for the hero id, it paints the bundled fixture instead of the
+  missing-sheep panel — so a refresh / Back to the forwarded URL stays instant and dev-safe.
+  Every other id keeps the honest missing state.
+- **Known limit.** Nav pills stay absent under `npm run dev` (the avail manifest needs the
+  brotli-wasm decoder dev can't serve, PYR3-048); they appear in `npm run preview` and on
+  the live deploy. Verified all three paths (dev forward + dev-safe landing · preview forward
+  + `‹ ›` pills · dev-refresh hero fallback). 4610 unit green, typecheck clean, review clean
+  (one defensive `default`-case loud-throw applied). The **🎲 surprise-me** shuffle and a
+  **save-image filename hint** were filed as `[PYR3-053]` / `[PYR3-054]`.
+
 ## v0.34 — 2026-05-29 — Viewer quality control: preset ladder + Advanced custom (`[PYR3-050]`)
 
 **Outcome:** the viewer can render the current flame across a spectrum of quality, from

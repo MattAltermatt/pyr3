@@ -9,7 +9,7 @@ import { loadAvail, neighbors } from './avail-client';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { initDevice, showError } from './device';
 import { SPIRAL_GALAXY, type Genome } from './genome';
-import { corpusUrl, parseLoadIntent, type LoadIntent } from './load-intent';
+import { corpusUrl, HERO_GEN, HERO_ID, parseLoadIntent, type LoadIntent } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { applyPreset, DEFAULT_TIER, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
@@ -17,11 +17,12 @@ import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer
 import { mountBar, type BarHandle, type CostEstimate } from './ui-bar';
 import { checkWebGPU } from './webgpu-check';
 
-// The "welcome flame" — what `/` paints when there's no recognized /v1 path.
-// Hardcoded path keeps the URL surface to the single /v1/gen/{gen}/id/{id}
-// share mechanism; no bundled-fixture slug exposed. The specific flame was
+// The "welcome flame" — the bundled fixture `/` paints for an instant,
+// chunk-free first paint. It's the hero sheep (gen HERO_GEN / id HERO_ID); the
+// filename is derived from those constants so the bundled copy can never drift
+// from the corpus URL the bare root forwards to. The specific flame was
 // hand-picked from the Electric Sheep Fold (ESF) corpus.
-const WELCOME_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/electricsheep.247.19679.flam3`;
+const WELCOME_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/electricsheep.${HERO_GEN}.${HERO_ID}.flam3`;
 
 const RENDER_SIZE = 1024;
 
@@ -670,6 +671,18 @@ async function main(): Promise<void> {
     }
 
     if (xml === null) {
+      // Hero fallback (A2 root-forward): the hero sheep ships as a bundled
+      // fixture, so a refresh / Back to its forwarded URL stays instant and
+      // dev-safe even when the chunk pipeline is unavailable (PYR3-048). Only the
+      // hero gets this — every other id keeps the honest missing-sheep state.
+      if (gen === HERO_GEN && id === HERO_ID) {
+        const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
+        if (heroFile) {
+          await loadFromFile(heroFile); // hides the missing panel on success
+          await updateCorpusNav(gen, id);
+          return;
+        }
+      }
       // Keep the chrome; do NOT swap to the welcome flame. Honest wording —
       // we only know it isn't in OUR corpus, not that it "never existed".
       missingPanel.show(gen, id);
@@ -709,7 +722,26 @@ async function main(): Promise<void> {
   const intent = parseLoadIntent(window.location);
   if (intent.kind === 'corpus') {
     await enqueueCorpus(intent.gen, intent.id, false); // initial load: no pushState
+  } else if (intent.kind === 'default') {
+    // Bare root (A2 root-forward): rewrite the address bar to the canonical hero
+    // corpus URL so the landing page is real, shareable and nav-wired — but keep
+    // painting the BUNDLED fixture for an instant, chunk-free first paint instead
+    // of routing through loadCorpus' chunk + brotli-wasm fetch (which would be
+    // slower in prod and broken under `npm run dev`, PYR3-048). replaceState (not
+    // push) so Back never lands on a bare-root entry that just re-forwards.
+    history.replaceState({ gen: HERO_GEN, id: HERO_ID }, '', corpusUrl(HERO_GEN, HERO_ID));
+    const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
+    if (heroFile) {
+      await loadFromFile(heroFile);
+      await updateCorpusNav(HERO_GEN, HERO_ID); // wire ‹ › (no-ops to empty if avail unavailable)
+    } else {
+      console.warn('pyr3: welcome-flame fetch failed; painting SPIRAL_GALAXY default');
+      bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+      await rerender();
+    }
   } else {
+    // Deferred views (gen-list / gen-browse / custom-reserved): paint the welcome
+    // fixture as a placeholder, keep the URL as-is, no nav (no built gallery yet).
     const initialFile = await resolveLoadIntent(intent);
     if (initialFile) {
       await loadFromFile(initialFile);
@@ -807,7 +839,10 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       console.info(`pyr3: "${intent.kind}" view is not built yet (deferred) — painting welcome flame.`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':
-      return fetchAsFile(WELCOME_FLAME_URL);
+      // Bare root is handled directly in main() (replaceState root-forward +
+      // bundled fast-paint + nav). Reaching here means routing drifted — fail
+      // loud rather than silently painting the placeholder without forwarding.
+      throw new Error('resolveLoadIntent: default intent must go through the root-forward path in main()');
   }
 }
 
