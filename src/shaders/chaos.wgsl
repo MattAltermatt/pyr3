@@ -78,7 +78,12 @@ struct Uniforms {
   // to trace_buffer for the first 1000 post-fuse iters. Normal renders
   // pass trace_mode=0 and the trace_buffer is a tiny stub (no perf impact).
   trace_mode: u32,      // slot 13 (byte 52)
-  _pad14: u32,
+  // #11 (PYR3-057): exact walker count for this dispatch. The host rounds the
+  // workgroup count up to a multiple of WORKGROUP_SIZE, so the final workgroup
+  // spawns threads with index >= walker_count and NO ISAAC stream of their own.
+  // chaos_main bails those threads (see the guard below) so they can't run the
+  // chaos loop against stale/zero RNG and atomicAdd bogus hits into the histogram.
+  walker_count: u32,    // slot 14 (byte 56)
   _pad15: u32,
 };
 
@@ -1528,6 +1533,16 @@ fn apply_variation(
 @compute @workgroup_size(64)
 fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   let walker_id = gid.x;
+
+  // #11 (PYR3-057): bail the padding threads from the rounded-up final
+  // workgroup BEFORE any RNG draw. Their isaac_states[] slot is stale or
+  // zero-init, so without this guard they'd run the full chaos loop and
+  // atomicAdd bogus-RNG trajectories into the histogram on every render
+  // (a ~1-5% density bias + within-hardware non-determinism when the walker
+  // count changes between renders).
+  if (walker_id >= u.walker_count) {
+    return;
+  }
 
   // Per-walker ISAAC state is in `isaac_states[walker_id]` (storage). Pre-initialized
   // host-side via `packIsaacStates()` (src/isaac.ts → src/chaos.ts). The

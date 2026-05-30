@@ -102,9 +102,14 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
   // ISAAC state buffer: one ISAAC stream per walker, sized for the configured
   // walker pool. Re-uploaded on every dispatch with fresh seeds. 36 u32 per
   // walker × MAX_WALKERS budget — at 1024 walkers × 144 bytes = 144 KB.
-  const isaacBuffer = device.createBuffer({
+  // #11 (PYR3-057): a dispatch can request more walkers than `config.walkers`
+  // (per-frame `opts.walkers`); the buffer lazily grows in `dispatch()` so the
+  // ISAAC writeBuffer never overruns it (which WebGPU would reject → silent
+  // blank). `let` + capacity tracking lets us rebuild it and the bind group.
+  let isaacCapacity = config.walkers;
+  let isaacBuffer = device.createBuffer({
     label: 'pyr3.chaos.isaac',
-    size: config.walkers * ISAAC_STATE_BYTES,
+    size: isaacCapacity * ISAAC_STATE_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
@@ -137,21 +142,25 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
     compute: { module, entryPoint: 'chaos_main' },
   });
 
-  const bindGroup = device.createBindGroup({
-    label: 'pyr3.chaos.bindgroup',
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: uniforms } },
-      { binding: 1, resource: { buffer: xforms } },
-      { binding: 2, resource: { buffer: histogram } },
-      { binding: 3, resource: { buffer: paletteBuffer } },
-      // Phase 5c: binding 4 (xaos_buffer) retired — xaos now baked into
-      // xform_distrib host-side.
-      { binding: 5, resource: { buffer: isaacBuffer } },
-      { binding: 6, resource: { buffer: traceBuffer } },
-      { binding: 7, resource: { buffer: xformDistribBuffer } },
-    ],
-  });
+  // Rebuilt whenever the ISAAC buffer grows (#11) — it references isaacBuffer.
+  function buildBindGroup(): GPUBindGroup {
+    return device.createBindGroup({
+      label: 'pyr3.chaos.bindgroup',
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: uniforms } },
+        { binding: 1, resource: { buffer: xforms } },
+        { binding: 2, resource: { buffer: histogram } },
+        { binding: 3, resource: { buffer: paletteBuffer } },
+        // Phase 5c: binding 4 (xaos_buffer) retired — xaos now baked into
+        // xform_distrib host-side.
+        { binding: 5, resource: { buffer: isaacBuffer } },
+        { binding: 6, resource: { buffer: traceBuffer } },
+        { binding: 7, resource: { buffer: xformDistribBuffer } },
+      ],
+    });
+  }
+  let bindGroup = buildBindGroup();
 
   return {
     config,
@@ -197,6 +206,22 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       const walkers = opts?.walkers ?? config.walkers;
       const itersPerWalker = opts?.itersPerWalker ?? config.itersPerWalker;
 
+      // #11 (PYR3-057): grow the ISAAC buffer if this dispatch needs more
+      // streams than it currently holds, so the writeBuffer below never
+      // overruns it. Round capacity up to a workgroup multiple to match the
+      // dispatch's rounded thread count. Rebuild the bind group to point at the
+      // new buffer.
+      if (walkers > isaacCapacity) {
+        isaacBuffer.destroy();
+        isaacCapacity = Math.ceil(walkers / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+        isaacBuffer = device.createBuffer({
+          label: 'pyr3.chaos.isaac',
+          size: isaacCapacity * ISAAC_STATE_BYTES,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        bindGroup = buildBindGroup();
+      }
+
       // Re-seed ISAAC streams from `seed`. Each walker gets its own independent
       // stream; flam3 does this per-thread (rect.c:858-865) by filling randrsl
       // with values from a global RNG and then calling irandinit. We mirror by
@@ -235,6 +260,9 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       u32[12] = (g.paletteMode ?? 'step') === 'linear' ? 1 : 0;
       // PYR3-029 Phase 5b trace gate. Default 0 = no trace emission.
       u32[13] = opts?.traceMode ? 1 : 0;
+      // #11 (PYR3-057): exact walker count (NOT the rounded-up thread count) so
+      // chaos_main bails the padding threads of the final workgroup.
+      u32[14] = walkers;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });
