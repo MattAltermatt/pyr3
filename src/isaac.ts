@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Lineage: the ISAAC algorithm is Bob Jenkins' work, released to the public
+// domain (https://burtleburtle.net/bob/rand/isaacafa.html). This TypeScript
+// implementation is part of pyr3 and distributed under GPL-3.0-or-later.
+//
 // ISAAC RNG — Bob Jenkins' indirection-shift-accumulate-add-count generator,
 // matching flam3's `RANDSIZL = 4` configuration (`isaac.c` + `isaac.h`).
 // State per stream: 4 scalars (randa, randb, randc, randcnt) + randmem[16]
