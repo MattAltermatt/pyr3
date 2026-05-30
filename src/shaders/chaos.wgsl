@@ -1530,6 +1530,33 @@ fn apply_variation(
   }
 }
 
+// #18 (PYR3-058): saturating atomic add into the histogram — pins at u32::MAX
+// instead of wrapping, mirroring flam3's `bump_no_overflow` (rect.c:460-461).
+// Each deposit's delta is <= 255 (opacity*255 / palette-scaled), but a bucket
+// can exceed 2^32 on a pathological single-pixel attractor at the 4K preset.
+// A WRAPPED count channel reads as LOW density at the brightest spot, so the
+// density estimator + log tonemap punch a black hole through the peak; wrapped
+// r/g/b corrupt the color there too. WGSL has no atomic saturating-add, so this
+// is a compare-exchange loop. Takes the bucket index (not a pointer) so it can
+// reference the module-scope `hist` binding directly. delta==0 is a no-op fast
+// path (skips the CAS) — common when opacity or a palette channel is 0.
+fn atomic_add_sat(idx: u32, delta: u32) {
+  if (delta == 0u) {
+    return;
+  }
+  var old = atomicLoad(&hist[idx]);
+  loop {
+    // Pin at u32::MAX when old + delta would overflow (matches flam3: add only
+    // while `U32_MAX - old >= delta`, else saturate).
+    let capped = select(old + delta, 0xffffffffu, (0xffffffffu - old) < delta);
+    let res = atomicCompareExchangeWeak(&hist[idx], old, capped);
+    if (res.exchanged) {
+      break;
+    }
+    old = res.old_value;
+  }
+}
+
 @compute @workgroup_size(64)
 fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   let walker_id = gid.x;
@@ -1890,10 +1917,12 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         let b_add = u32(pal.z * weight);
         let count_add = u32(weight);
         let base = (u32(yi) * u.width + u32(xi)) * 4u;
-        atomicAdd(&hist[base + 0u], r_add);
-        atomicAdd(&hist[base + 1u], g_add);
-        atomicAdd(&hist[base + 2u], b_add);
-        atomicAdd(&hist[base + 3u], count_add);
+        // #18: saturating adds — pin at u32::MAX instead of wrapping (flam3
+        // bump_no_overflow). A wrapped count = black hole at the brightest pixel.
+        atomic_add_sat(base + 0u, r_add);
+        atomic_add_sat(base + 1u, g_add);
+        atomic_add_sat(base + 2u, b_add);
+        atomic_add_sat(base + 3u, count_add);
       }
     }
   }
