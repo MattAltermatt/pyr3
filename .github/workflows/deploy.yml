@@ -35,9 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
           cache: npm
@@ -59,6 +59,11 @@ jobs:
       # change what pyr3 serves. As of 2026-05-29 we pull the GENOME-ONLY chunk
       # tar (ESF-039 / #39): 52,365 canonical genomes, no animation morph-frames.
       CHUNK_RELEASE_TAG: '2026-05-29'
+      # #14 — integrity gate: expected sha256 of corpus-chunks-genome-{tag}.tar,
+      # verified before `tar -xf` (covers the cached path too). Tag-pinning fixes
+      # WHICH tag, not WHICH bytes — a same-tag asset can be deleted + re-uploaded,
+      # and actions/cache would amplify a poisoned tar. Bump this WITH the tag above.
+      CHUNK_TAR_SHA256: '95afa35344e6eed5d3a0812059d8ed423083421b82a84ae8de00d009c215da68'
       # Pinned pyr3 Release tag carrying showcase-*.tar (the 4K /showcase
       # gallery: 54 4k.jpg + 54 thumb.jpg + index.html). Bump this ONE line
       # to ship a regenerated gallery. The bundle is gitignored
@@ -66,12 +71,16 @@ jobs:
       # git — so the repo stays lean. Same reproducibility rationale as the
       # chunk tag above.
       SHOWCASE_RELEASE_TAG: 'showcase-2026-05-29'
+      # #14 — expected sha256 of showcase-{tag}.tar (it carries a same-origin
+      # index.html served at /showcase/, so integrity matters most here). Verified
+      # before `tar -xf`. Bump WITH the showcase tag above.
+      SHOWCASE_TAR_SHA256: 'df451b442aebd3eb6a0281ce508a1be332ef5f53bc69523d29600dda5c7d4533'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
           cache: npm
@@ -92,7 +101,7 @@ jobs:
       # (the Pages artifact is a complete site snapshot — see header note).
       - name: Restore cached corpus-chunks tar
         id: chunk-cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /tmp/esf-chunks
           key: esf-chunks-${{ env.CHUNK_RELEASE_TAG }}
@@ -113,10 +122,12 @@ jobs:
             --dir /tmp/esf-chunks
 
       # Unpack into the artifact every deploy (cached or freshly downloaded).
-      - name: Bake chunks into dist/
+      - name: Verify + bake chunks into dist/
         run: |
+          TAR=$(ls /tmp/esf-chunks/corpus-chunks-genome-*.tar)
+          echo "${CHUNK_TAR_SHA256}  ${TAR}" | sha256sum -c -   # fails the deploy on mismatch
           mkdir -p dist/chunks
-          tar -xf /tmp/esf-chunks/corpus-chunks-genome-*.tar -C dist/chunks
+          tar -xf "$TAR" -C dist/chunks
           echo "Baked chunk tree (top level):"
           ls dist/chunks
 
@@ -126,7 +137,7 @@ jobs:
       # misses. The tar is still untarred into the artifact every deploy.
       - name: Restore cached showcase tar
         id: showcase-cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /tmp/showcase
           key: showcase-${{ env.SHOWCASE_RELEASE_TAG }}
@@ -148,9 +159,11 @@ jobs:
 
       # Unpack into the artifact every deploy. The tar root is "showcase/", so
       # this lands dist/showcase/ → served at https://pyr3.app/showcase/.
-      - name: Bake showcase into dist/
+      - name: Verify + bake showcase into dist/
         run: |
-          tar -xf /tmp/showcase/showcase-*.tar -C dist
+          TAR=$(ls /tmp/showcase/showcase-*.tar)
+          echo "${SHOWCASE_TAR_SHA256}  ${TAR}" | sha256sum -c -   # fails the deploy on mismatch
+          tar -xf "$TAR" -C dist
           echo "Baked showcase (file count):"
           ls dist/showcase | wc -l
 
@@ -162,7 +175,7 @@ jobs:
           touch dist/.nojekyll
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
 
@@ -175,4 +188,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
