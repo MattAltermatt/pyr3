@@ -8,7 +8,7 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-074** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-075** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
@@ -19,6 +19,15 @@ strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 > 25 confirmed + 28 partial findings, deduped to 14 entries. No criticals; two HIGHs
 > (PYR3-056 DE brightness ripple, PYR3-059 WGSL-path coverage). The README Status-block
 > staleness the review also surfaced is absorbed by the existing PYR3-049.
+
+## [PYR3-074] bug · S · 🎚️ · queued · v1.x — Render-progress (third) bar should overlay the canvas, not reflow it
+
+**Filed 2026-05-30 (user-directive).** The render-progress row (bar ③) is laid out in document flow,
+so it takes vertical space only while a render is active — the flame canvas **jumps twice per render**
+(shrinks when the bar appears on render-start, grows back when it's removed on done), which is
+disorienting. Make the progress row **overlay** the canvas (absolute/fixed, e.g. pinned to the bottom
+edge of the canvas area) so showing/hiding it never resizes the canvas. Mirrors the standing
+"UI must not jump" rule. `src/ui-bar.ts` (the third-bar element + show/hide) + the canvas layout CSS.
 
 ## [PYR3-073] feat · XS · ⌨️ · queued · v1.x — ←/→ arrow keys navigate corpus prev/next
 

@@ -42,6 +42,9 @@ hard "much-later" status.
 - BACKLOG IDs: `[PYR3-NNN]`, never reused, monotonically increasing (next ID lives at the top
   of BACKLOG.md).
 - Spec location: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
+- Git tags: **the first tag is `v1.0`.** The v0.x line is work-in-progress and is NOT tagged
+  (no one wants v0.x tags of a WIP); `package.json` version still tracks the CHANGELOG heading.
+  At v1.0 and after, each ship bumps `package.json` + `git tag vX.Y`. (PYR3-067.)
 
 ## Lineage
 
