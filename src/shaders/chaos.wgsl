@@ -1575,18 +1575,22 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   // host-side via `packIsaacStates()` (src/isaac.ts → src/chaos.ts). The
   // legacy PCG32 per-walker `var rng: u32` warm-up is gone.
 
-  // Walker state = (x, y, color). flam3 rect.c:449-451 init: x and y from
-  // flam3_random_isaac_11; sub_batch[2] = 0 (NO RNG draw — color seeded
-  // from 0 and contracts during fuse). PYR3-029 Phase 5 RNG-alignment fix:
-  // the prior pyr3 code drew rand01 for color, consuming 1 extra ISAAC u32
-  // per walker init vs flam3. That 1-draw shift propagated forever — at
-  // iter 0 pyr3's pick draw was already 1 u32 ahead of flam3's, causing
-  // the entire trajectory chain to diverge from flam3 even at bit-exact
-  // ISAAC seed alignment.
+  // Walker state = (x, y, color). flam3's RENDER path seeds the color
+  // coordinate RANDOMLY: rect.c:393-397 fills iter_storage[0]=isaac_11,
+  // [1]=isaac_11, [2]=isaac_01 (color), [3]=isaac_01. The earlier
+  // PYR3-029 Phase 5 "RNG-alignment fix" seeded color to 0.0, citing
+  // flam3.c:449-451 — but that is the BOUNDING-BOX ESTIMATOR path
+  // (flam3_estimate_bounding_box), NOT render_rectangle. Seeding color
+  // to 0 means that for genomes with color_speed=0 the color coord never
+  // moves off 0, so every hit deposits palette[0] (the dark end) → the
+  // whole image renders ~10x too dim (GH issue #3, electricsheep.248.23585).
+  // Restore the random color seed to match the real render path; with
+  // color_speed=0 each walker keeps a random palette index for life, so
+  // hits spread across the full palette (≈ palette mean) like flam3.
   var p = vec3f(
     rand_11(walker_id),
     rand_11(walker_id),
-    0.0,
+    rand01(walker_id),
   );
 
   // Phase 9-rotate: hoist cos/sin outside the iter loop. rotation_rad is uniform —
