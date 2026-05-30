@@ -17,6 +17,12 @@
 // not "brotli", though the runtime accepts it (Node 24+, 2026 browsers). Cast.
 const BROTLI = 'brotli' as CompressionFormat;
 
+// PYR3-065: hard ceiling on decompressed output to bound a decompression-bomb
+// DoS. The largest legitimate payload is a ~832 KB corpus chunk; 64 MB is a
+// generous ~77× headroom that still caps a malicious chunk well before it can
+// exhaust memory. Applied on both decode paths (native stream + wasm).
+const MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024;
+
 let _nativeBrotli: boolean | undefined;
 
 /** Whether this runtime has native DecompressionStream("brotli"). Cached. */
@@ -56,10 +62,41 @@ export async function inflateBrotliBytes(bytes: ArrayBuffer): Promise<Uint8Array
     const stream = new Response(bytes).body!.pipeThrough(
       new DecompressionStream(BROTLI),
     );
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    // Read incrementally so a decompression bomb is aborted as soon as the
+    // running total exceeds the cap — never buffering the whole bomb.
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_DECOMPRESSED_BYTES) {
+        await reader.cancel();
+        throw new Error(
+          `pyr3: brotli output exceeds ${MAX_DECOMPRESSED_BYTES} byte cap (decompression bomb?)`,
+        );
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      out.set(c, offset);
+      offset += c.byteLength;
+    }
+    return out;
   }
   const inflate = await loadWasmBrotli();
-  return inflate(new Uint8Array(bytes));
+  const out = inflate(new Uint8Array(bytes));
+  // The wasm decoder returns the full buffer in one call, so the cap is a
+  // post-hoc guard here (still bounds what we hand downstream).
+  if (out.byteLength > MAX_DECOMPRESSED_BYTES) {
+    throw new Error(
+      `pyr3: brotli output exceeds ${MAX_DECOMPRESSED_BYTES} byte cap (decompression bomb?)`,
+    );
+  }
+  return out;
 }
 
 // Cached promise for the wasm decoder — initialized at most once, on the

@@ -356,6 +356,14 @@ export function genomeFromJson(j: unknown): Genome {
   }
 
   const xformsRaw = expectArray(root['xforms'], 'xforms');
+  // PYR3-065: reject zero-xform genomes to match the XML loader. The chaos
+  // game picks transforms from the host-built `xform_distrib` table; with no
+  // regular xforms that table is degenerate and nothing is ever deposited (a
+  // finalxform-only genome is unrenderable). The XML path already throws here;
+  // genomeFromJson previously accepted it, producing a blank render.
+  if (xformsRaw.length === 0) {
+    throw new Error('pyr3: xforms must contain at least one xform; cannot render');
+  }
   const xforms: Xform[] = xformsRaw.map((x, i) => xformFromJson(x, `xforms[${i}]`));
 
   let finalxform: Xform | undefined;

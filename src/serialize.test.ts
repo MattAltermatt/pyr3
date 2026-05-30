@@ -105,6 +105,12 @@ describe('genomeFromJson', () => {
     tweaked.xforms[1].variations[0].params = { future_field: 99 };
     expect(() => genomeFromJson(tweaked)).not.toThrow();
   });
+
+  it('rejects a zero-xform genome to match the XML loader (PYR3-065)', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const bad = { ...json, xforms: [] };
+    expect(() => genomeFromJson(bad)).toThrow(/at least one xform/);
+  });
 });
 
 describe('finalxform round-trip', () => {

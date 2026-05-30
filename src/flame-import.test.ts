@@ -15,6 +15,22 @@ describe('parseFlame smoke', () => {
   it('throws when no <flame> element is present', () => {
     expect(() => parseFlame('<root><other /></root>')).toThrow(/no <flame> element/);
   });
+
+  it('parses a flame name containing HTML as inert text (PYR3-065 XSS)', () => {
+    // A malicious `.flame` name must survive import as a plain string — never
+    // an interpreted HTML fragment. The DOM side renders it via textContent;
+    // here we assert the importer itself stores it verbatim (no stripping, no
+    // element creation), so the value handed downstream is inert text.
+    const evil = '<img src=x onerror=alert(1)>';
+    // XML-escaped in the attribute (as any well-formed `.flame` would be);
+    // the parser decodes it back to the raw string, which must be stored as
+    // inert text rather than ever being interpreted as markup.
+    const xml =
+      `<flame name="&lt;img src=x onerror=alert(1)&gt;" size="1024 1024" center="0 0" scale="100">` +
+      `${minPalette}${oneXform}</flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.name).toBe(evil);
+  });
 });
 
 const minPalette =

@@ -536,9 +536,13 @@ export function parseFlame(xml: string): FlameImportResult {
     else { xforms.push(xform); regularIndex++; }
   }
 
-  // Reject zero-xform genomes: chaos.wgsl assumes num_xforms ≥ 1 (computes
-  // `num_xforms - 1u` as a u32 — wraps to 4294967295 with 0 xforms and reads
-  // out-of-bounds GPU memory). A finalxform-only flame is unrenderable too.
+  // Reject zero-xform genomes: the chaos game picks each iteration's transform
+  // from the host-built `xform_distrib` cumulative distribution table
+  // (chaos.wgsl). With no regular xforms that table is degenerate — there is no
+  // transform to apply, so nothing is ever deposited. A finalxform-only flame
+  // is unrenderable for the same reason. (PYR3-065: the old comment cited a
+  // `num_xforms - 1u` u32-wrap OOB read that the distribution-table rewrite
+  // removed — kept the guard, corrected the rationale.)
   if (xforms.length === 0) {
     throw new Error('pyr3: <flame> has no <xform> children; cannot render');
   }
