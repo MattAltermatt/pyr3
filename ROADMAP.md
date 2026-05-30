@@ -8,6 +8,7 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
+| **v0.36** | 2026-05-30 | `pending` | **Code-review batch — DE-norm parity win + hardening + CI gate.** Headline: **`[PYR3-056]`** shares one integer radius across the DE cutoff/sigma/normalization LUT (was float-vs-rounded mismatch → a density-gradient brightness ripple), improving parity on **every** fixture and collapsing the named "f32-floor" outliers into tier-1 (`coverage.248.02226` 29.92→5.73, `245.06687` 14.59→1.52) — retiring most of the f32-floor narrative and isolating the two genuine remainders (`248.23554`, `244.82986`, filed `[PYR3-075]`). Plus `[PYR3-060]` finalxform-opacity re-import, `[PYR3-065]` XSS/bomb/zero-xform hardening, `[PYR3-062]` bin/ typecheck + CI gate (deploy now `needs: verify`; Node 24), `[PYR3-069]`/`[PYR3-066]`/`[PYR3-067]`/`[PYR3-068]` partial hardening + docs. 4617 unit + 25/25 parity green; live hero Chrome-verified. Re-tiering deferred (`[PYR3-071]`). |
 | **v0.35** | 2026-05-29 | `pending` | **Root forwards to the hero corpus URL — nav-wired landing (`[PYR3-055]`).** Bare `/` (the `default` `LoadIntent`) was a nav dead-end (welcome fixture + `setCorpusNav(null)`). **A2 fix:** bare root now `history.replaceState`s to the canonical **`/v1/gen/247/id/19679`** (hero `electricsheep.247.19679`) and wires `‹`/`›` nav — while still painting the **bundled fixture** for an instant, chunk-free first paint (never routes the landing through `loadCorpus`'s chunk + brotli-wasm pipeline — slower in prod, broken under `npm run dev`/PYR3-048). `HERO_GEN`/`HERO_ID` added to `src/load-intent.ts` (`WELCOME_FLAME_URL` derived; URL round-trip regression guard); a hero→fixture fallback in `loadCorpus` keeps refresh/Back instant + dev-safe. Pills still absent under `npm run dev` (PYR3-048); appear in `preview` + live. 4610 unit, review clean; Chrome-verified all 3 paths. **🎲 surprise-me + save-image filename filed `[PYR3-053]`/`[PYR3-054]`.** |
 | **v0.34** | 2026-05-29 | `pending` | **Viewer quality control (`[PYR3-050]`).** The action bar's standalone 🎯 4K button becomes a **quality ladder** — `QUALITY_TIERS` (shared `src/presets.ts`): Draft·Preview·Standard·High·4K (Preview = legacy `quick`, 4K = legacy `4k`). An **Advanced ▾** row adds custom **long-edge** (native aspect) + **SPP** with a **live cost estimate** (`≈ W×H · N MB · ✓ fits/✗ exceeds`) gating Render on the `maxStorageBufferBindingSize` limit. Info bar shows the resolved **`dims · q · tier`**; active tier highlights. `render4K` generalized into `renderQuality(req)` resolving dims/SPP via `applyPreset(tierToSpec)` (shared math) → v0.29 decoupled orchestrator. Review-hardened (Advanced Render respects busy-state). 4608 unit; Chrome-verified tiers + custom + cost gate. **CLI parity filed as `[PYR3-051]`.** |
 | **v0.33** | 2026-05-29 | `pending` | **Corpus navigation + three-bar viewer chrome (`[PYR3-041]` + `[PYR3-040]` + `[PYR3-039]`).** The viewer becomes a browsable corpus: a new cached `src/avail-client.ts` (`loadAvail` + `neighbors()` over `/chunks/{gen}/avail.flam3idx`) drives an action-bar **‹ prev / next ›** cluster of *available* sheep on every `/v1/gen/{gen}/id/{id}` load (History pushState/popstate, no reload). A **missing** id keeps full chrome with a graceful in-canvas panel — *"Electric Sheep was not found — use ‹ prev or next › to jump to a valid flame"* (no welcome-flame swap, no "never born") — and the nav offers the nearest available either side. The single bar split into **① info + ② action** rows (render-progress ③ unchanged), the chrome quality control (`[PYR3-050]`) will also ride. Review-hardened (404 manifests cached; nav serialized vs in-flight render). 4601 unit green; Chrome-verified browse + miss + recovery. |
@@ -62,11 +63,11 @@ polish below first.
   FE cleanup · public repo+deploy) is done except the deferred click-to-load
   (Chunk 2 → post-v1 design, tracked by PYR3-020).
 
-**Latest ship:** v0.35 — bare root forwards to the canonical hero corpus URL
-with nav wired (`[PYR3-055]`); v0.34 — viewer quality control (preset ladder
-Draft→4K + Advanced custom dims/SPP with a cost/OOM gate, `[PYR3-050]`); v0.33 —
-corpus navigation on a new three-bar chrome (PYR3-039/040/041). Full arc
-(v0.19 → v0.35) in [CHANGELOG.md](CHANGELOG.md).
+**Latest ship:** v0.36 — code-review batch: the `[PYR3-056]` DE-norm parity win
+(retires most of the f32-floor narrative) + hardening + a CI quality gate; v0.35 —
+bare root forwards to the canonical hero corpus URL with nav wired (`[PYR3-055]`);
+v0.34 — viewer quality control (`[PYR3-050]`). Full arc (v0.19 → v0.36) in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## 🚧 Next up — open work, by priority
 

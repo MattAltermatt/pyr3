@@ -10,6 +10,47 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.36 — 2026-05-30 — Code-review batch: DE-norm parity win + hardening + CI gate
+
+**Outcome:** the safe/high-value slice of the PYR3-056→069 code-review backlog ships together.
+The headline is a **major parity fix** that retires most of the "f32 floor" mythology; the rest is
+correctness, security, and CI hardening. 4617 unit + 25/25 BE parity green; CI green on real GitHub
+infra; the live hero render was Chrome-verified.
+
+- **🎉 PYR3-056 — DE kernel normalization (the big one).** The density-estimation scatter used the
+  **float** adaptive radius for the gather cutoff + Gaussian sigma but a **rounded-integer** LUT for
+  the per-bucket normalization — mismatched discs, so each bucket's scattered weight wasn't 1.0 (it
+  swept ~0.58–1.53 with a ~2.6× jump at every `round()` boundary: a density-gradient brightness
+  ripple). Fix: snap to one integer radius and reuse it for cutoff, sigma, AND the LUT
+  (`src/shaders/density.wgsl`). **Parity improves on every fixture, dramatically where DE is
+  load-bearing** — `coverage.248.02226` **29.92→5.73**, `245.06687` **14.59→1.52**, `243.04616`
+  **11.56→3.50** — collapsing the two memory-flagged "f32-floor gate-blockers" into tier-1. It also
+  *partitioned* the outlier set: the only fixtures still >6 (`248.23554` R≈24, `244.82986` R≈8.9) were
+  barely moved, so they're a separate, now-isolated root cause (filed `[PYR3-075]`). A
+  `Σ(kw/knorm)≈1.0` regression test guards the invariant. `meta.json` thresholds untouched (re-tiering
+  is the approved follow-up `[PYR3-071]`).
+- **PYR3-060** — finalxform `opacity` is now read back on `.pyr3.json` re-import (was silently
+  dropped → brightened final lens). + round-trip tests.
+- **PYR3-065** — input/XSS hardening: a build-source grep test enforcing the no-`innerHTML` invariant
+  (+ a malicious-name import test), a 64 MB decompression-bomb cap in `src/brotli.ts`, and a
+  zero-xform guard in `genomeFromJson` matching the XML loader.
+- **PYR3-062 (partial)** — `tsconfig.bin.json` now type-checks the `bin/` CLI seam (surfaced + fixed
+  4 latent diagnostic-CLI bugs); a new `ci.yml` runs typecheck + tests on every push/PR, and
+  `deploy.yml` gains a `verify` job gating the live deploy. Aligned CI + deploy + `.nvmrc` on **Node
+  24** (the suite uses native brotli, Node 24.7+).
+- **PYR3-069 (partial)** — `device.lost` handlers (browser + CLI) so GPU loss isn't a silent blank;
+  `compare.ts` docstring corrected (R-metric includes alpha); param-table coupling invariant test;
+  stale `var_fan` comment fixed; calibrate-script field name; CWD-independent WGSL-loader resolution.
+- **PYR3-066 (partial)** — `NOTICE.md` corrected (it falsely claimed "we don't vendor or copy" while
+  shipping flam3's palette table verbatim) + `brotli-dec-wasm` listed + a fixtures attribution README
+  flagging the CC-BY-NC genomes; SPDX + lineage headers on the ported files (`isaac.ts`,
+  `flam3-palettes-data.ts`).
+- **PYR3-067 (partial)** — `package.json` version synced (0.1.0→0.36.0), `.nvmrc` + `engines`; tag
+  policy decided — **the first git tag is `v1.0`** (v0.x WIP stays untagged).
+- **PYR3-068** — doc-sync (README meta-schema/broken link, ROADMAP/CLAUDE staleness).
+- **Backlog filed:** `[PYR3-071]` re-tier · `[PYR3-072]` NaN-center default + load-failure UX ·
+  `[PYR3-073]` ←/→ corpus nav · `[PYR3-074]` progress-bar overlay · `[PYR3-075]` 248.23554 deep dive.
+
 ## v0.35 — 2026-05-29 — Root forwards to the hero corpus URL — nav-wired landing (`[PYR3-055]`)
 
 **Outcome:** the landing page is no longer a navigation dead-end. Opening bare `pyr3.app/`

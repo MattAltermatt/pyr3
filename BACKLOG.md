@@ -8,7 +8,7 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-075** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-079** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
@@ -19,6 +19,50 @@ strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 > 25 confirmed + 28 partial findings, deduped to 14 entries. No criticals; two HIGHs
 > (PYR3-056 DE brightness ripple, PYR3-059 WGSL-path coverage). The README Status-block
 > staleness the review also surfaced is absorbed by the existing PYR3-049.
+
+## [PYR3-078] bug · S · 🕳️ · queued · v1.x — Verify whether gen 248 / id 23585 is genuinely black (or a render bug)
+
+**Filed 2026-05-30 (user-directive — `https://pyr3.app/v1/gen/248/id/23585`).** This sheep renders
+**black** in the viewer; confirm whether that's correct (a genuinely near-empty / black genome) or a
+pyr3 bug. **Investigate:** render it in the BE CLI + compare to the flam3-C output for the same genome
+(if it's black in flam3-C too, it's the genome); check the import `report` for dropped variations /
+clamped xforms / palette fallback / zero-coverage; inspect mean-luminance (the `scripts/build-showcase`
+black-skip metric). Possible causes: an all-zero / degenerate xform set, a variation pyr3 drops, or a
+tonemap/coverage collapse. Cheap to settle with one BE render + an R/lum check. Related lineage:
+PYR3-030 (black-hole), PYR3-033 (>32-xform black), PYR3-034 (dropped-variation black).
+
+## [PYR3-077] feat · L · 🔎 · queued · post-v1 — Richer corpus discovery: by variation, xform count, gallery
+
+**Filed 2026-05-30 (user-directive).** More ways to FIND flames in the corpus beyond the linear `‹`/`›`
+nav: filter/browse **by variation used**, **by # of xforms**, and a **gallery (thumbnail grid) view**.
+Strongly overlaps `[PYR3-070]` (corpus discovery research) and `[PYR3-052]` (interestingness scoring +
+skip-to-interesting nav) — all three likely share a **precomputed per-gen feature index** baked
+alongside `avail.flam3idx` (variation signature, xform count, density/colour features) so the viewer
+just reads it. Fold into the PYR3-070 investigation when pulled. **Next:** decide the feature schema
+(variation bitset + xform count + score) + where it's computed (ESF-side / build-step).
+
+## [PYR3-076] feat · S · 🏷️ · queued · v1.x — Show the flame's variation set in the info bar
+
+**Filed 2026-05-30 (user-directive).** In the info bar (bar ①), right after the tier label
+(`… · 1920×1420 · q50 · Standard`), list the distinct **variation names** the current flame uses
+(e.g. `linear · julia · radial_blur`). Pull from the parsed genome's xform variation set; de-dupe and
+order by total weight (or alpha). Keep it compact — truncate with a `+N` past a few names so the bar
+doesn't grow unbounded. `src/ui-bar.ts` (info row) + the loaded-genome meta. Pairs with `[PYR3-077]`
+(variation is also a discovery axis).
+
+## [PYR3-075] parity · L · 🔬 · queued · v1.x — Full investigation: electricsheep.248.23554 R≈24 (persistent cross-version outlier)
+
+**Filed 2026-05-30 (user-directive — `https://pyr3.app/v1/gen/248/id/23554`).** After PYR3-056 crushed
+the DE-ripple outliers, `electricsheep.248.23554` is the worst remaining parity gap at **R≈23.99** vs
+the flam3-C golden — and **PYR3-056 barely moved it (Δ −0.13), so it is NOT the DE ripple.** The user
+notes this flame has diverged **across multiple pyr3 versions**, so it's a deep, reproducible root
+cause worth resolving once and for all. `244.82986` (R≈8.88) is the only other fixture >6 and may
+share the mechanism. **Investigate:** which variation kernel(s) / tonemap path / genome feature this
+flame exercises that diverges; build a CPU f64-vs-f32 oracle of its exact map first (per
+[[feedback_pyr3_parity_debug_oracle]] — oracle before precision; verify the variation is REACHED, not
+just kernel-correct); bilateral RNG-trace vs flam3-C; per-region/per-channel diff to localize.
+Distinguish a genuine f32 floor from a reachable bug. Tools: `bin/pyr3-{hist,pixel-dump,trace}.ts`,
+`scripts/pyr3-029-*`. **L** — its own probe → fix → verify arc.
 
 ## [PYR3-074] bug · S · 🎚️ · queued · v1.x — Render-progress (third) bar should overlay the canvas, not reflow it
 
@@ -85,7 +129,12 @@ early-return guard at the top of `chaos_main`, and size the ISAAC buffer to the 
 add a `chaos.test.ts` case with `walkers > config.walkers`. (Folds: overspawn-stale-isaac,
 chaos-shader-no-walker-bound-guard, isaac-buffer-walker-overrun.)
 
-## [PYR3-056] bug · M · 🩹 · queued · v1.0 — DE kernel normalization uses a different radius than the gather cutoff (brightness ripple)
+## [PYR3-056] bug · M · 🩹 · ✅ RESOLVED (v0.36) · v1.0 — DE kernel normalization uses a different radius than the gather cutoff (brightness ripple)
+
+> **✅ Resolved v0.36 (2026-05-30).** Snap to one integer radius for cutoff/sigma/LUT; parity improves
+> on every fixture (248.02226 29.92→5.73, 245.06687 14.59→1.52), 25/25 green, +Σ(kw/knorm)≈1.0 test.
+> Re-tiering deferred to `[PYR3-071]`. See CHANGELOG v0.36. _(Awaiting section-move to Resolved.)_
+
 
 **Filed 2026-05-29 (code-review).** In the density-estimation scatter (`src/shaders/density.wgsl:79-97`,
 `src/density.ts:78-99`) the gather cutoff and Gaussian sigma use the **float** adaptive radius
@@ -100,7 +149,11 @@ measured R against the flam3-C ship-gate goldens — touches the v1.0 parity gat
 the integer radius first, then reuse it for cutoff, sigma, and LUT (verified to restore weight = 1.0
 across [1,10]); add a `Σ(kw/knorm) ≈ 1.0` regression check over an `n_rad` sweep.
 
-## [PYR3-068] docs · S · 📝 · queued · v1.0 — Doc-sync fixes (meta-schema, broken link, ROADMAP, CLAUDE count)
+## [PYR3-068] docs · S · 📝 · ✅ RESOLVED (v0.36) · v1.0 — Doc-sync fixes (meta-schema, broken link, ROADMAP, CLAUDE count)
+
+> **✅ Resolved v0.36 (2026-05-30).** README meta-schema + dropped the gitignored spec link; ROADMAP
+> latest-ship + CLAUDE test-count softened. _(Awaiting section-move to Resolved.)_
+
 
 **Filed 2026-05-29 (code-review).** Beyond the PYR3-049 README Status overhaul: (1) `README.md:86-88`
 documents fixture `meta.json` as carrying `baselineR` — renamed to `expectedR` in v0.19; `grep
@@ -111,7 +164,12 @@ or point to VISION.md. (3) `ROADMAP.md:65` "Latest ship: v0.34" contradicts its 
 (4) `CLAUDE.md:8` states `npm test` = "4582 passed"; current suite is ~4610 — soften to "~4600
 passing" so it stops being a per-ship maintenance target.
 
-## [PYR3-067] chore · S · 🔖 · queued · v1.0 — Version-bump + git-tag + Node-pin ship discipline
+## [PYR3-067] chore · S · 🔖 · ◐ partial-shipped (v0.36) · v1.0 — Version-bump + git-tag + Node-pin ship discipline
+
+> **◐ Partial v0.36:** `package.json` version synced (→0.36.0) + `.nvmrc` (24) + `engines`; tag policy
+> decided — **first tag is `v1.0`**, v0.x WIP untagged (recorded in CLAUDE.md). **Remaining:** create
+> the `v1.0` tag at the ship gate (no v0.x backfill).
+
 
 **Filed 2026-05-29 (code-review).** `package.json` version is frozen at **0.1.0** across 37 shipped
 releases (the field surfaced 6× across review buckets), and **zero git tags exist** (`git tag -l`
@@ -122,7 +180,13 @@ vX.Y` (optionally backfill tags for shipped versions). Separately add a `.nvmrc`
 field — the native `webgpu` dep makes Node-version skew a realistic "works in CI, breaks locally"
 footgun, and deploy already pins Node 20.
 
-## [PYR3-066] chore · M · ⚖️ · queued · v1.0 — GPL/attribution hardening before the public v1.0 push
+## [PYR3-066] chore · M · ⚖️ · ◐ partial-shipped (v0.36) · v1.0 — GPL/attribution hardening before the public v1.0 push
+
+> **◐ Partial v0.36:** corrected NOTICE.md (palette-port admission + brotli-dec-wasm), added the
+> fixtures CC-attribution README (flags CC-BY-NC), and SPDX + lineage headers on the ported files
+> (`isaac.ts`, `flam3-palettes-data.ts` + generator). **Remaining:** the blanket 55-file SPDX sweep on
+> ORIGINAL pyr3 code was declined (not required for GPL validity; user scoped to ported files only).
+
 
 **Filed 2026-05-29 (code-review).** Real GPL-3.0 + lineage-attribution gaps to close before the repo
 goes public: (1) **zero** source files carry an SPDX/copyright header (0 of 55+) — most acute for
@@ -136,7 +200,11 @@ fixtures CC-attribution README that doesn't exist; 26+ Electric Sheep genomes sh
 CC-BY/CC-BY-NC attribution — **flag CC-BY-NC genomes specifically, as they constrain how pyr3.app may
 be monetized.**
 
-## [PYR3-065] chore · S · 🧼 · queued · v1.0 — Input/XSS hardening (innerHTML guard, brotli cap, zero-xform guard)
+## [PYR3-065] chore · S · 🧼 · ✅ RESOLVED (v0.36) · v1.0 — Input/XSS hardening (innerHTML guard, brotli cap, zero-xform guard)
+
+> **✅ Resolved v0.36 (2026-05-30).** innerHTML grep test + malicious-name test, 64 MB brotli bomb cap,
+> zero-xform `genomeFromJson` guard. _(Awaiting section-move to Resolved.)_
+
 
 **Filed 2026-05-29 (code-review).** The viewer ships to a public domain and consumes arbitrary
 user-supplied `.flame` files, so harden three convention-only safety boundaries: (1) the load-bearing
@@ -161,7 +229,12 @@ each tar in version control and verify before `tar -xf`; pin each Action to a fu
 version comment (optionally add Dependabot for github-actions). Same-owner repos cap likelihood —
 medium, not high.
 
-## [PYR3-062] chore · M · 🛡️ · queued · v1.0 — CI quality gate + bin/ typecheck + engine-only seam tsconfig
+## [PYR3-062] chore · M · 🛡️ · ◐ partial-shipped (v0.36) · v1.0 — CI quality gate + bin/ typecheck + engine-only seam tsconfig
+
+> **◐ Partial v0.36:** shipped the CI test/typecheck gate (`ci.yml` + deploy `needs: verify`) and the
+> `bin/` typecheck (`tsconfig.bin.json`, fixed 4 latent CLI bugs). **Remaining:** the engine-only
+> DOM-free tsconfig (part 3) — needs per-file engine/host classification of `src/`.
+
 
 **Filed 2026-05-29 (code-review).** Three CI/typecheck gaps, one cluster: (1) **No CI test/typecheck
 gate** — `deploy.yml` is the only workflow and goes push-to-main → `npm run build` → live, never
@@ -205,7 +278,11 @@ each default (or document the deliberate divergence at the call site). **Verify 
 regression after each numeric default change** before shipping; add importer tests covering the
 omitted-attribute paths.
 
-## [PYR3-060] bug · S · 💾 · queued · v1.x — finalxform opacity dropped on .pyr3.json re-import
+## [PYR3-060] bug · S · 💾 · ✅ RESOLVED (v0.36) · v1.x — finalxform opacity dropped on .pyr3.json re-import
+
+> **✅ Resolved v0.36 (2026-05-30).** `finalxformFromJson` now reads opacity (mirror of `xformFromJson`)
+> + round-trip tests. _(Awaiting section-move to Resolved.)_
+
 
 **Filed 2026-05-29 (code-review).** `xformToJson` serializes finalxform `opacity` (`serialize.ts:278`)
 and the JSON type keeps the field, but `finalxformFromJson` (`serialize.ts:487-515`) never reads it —
@@ -227,7 +304,13 @@ hence low — but flam3-32bit deliberately saturates here (`bump_no_overflow`). 
 accumulation saturating (CAS/min guard pinning at `u32::MAX`); add a single-pixel-attractor regression
 test past the threshold.
 
-## [PYR3-069] chore · M · 🧹 · queued · v1.x — Correctness & cleanup micro-batch (8 items)
+## [PYR3-069] chore · M · 🧹 · ◐ partial-shipped (v0.36) · v1.x — Correctness & cleanup micro-batch (8 items)
+
+> **◐ Partial v0.36:** shipped device.lost handlers (item 2), compare.ts docstring (4), param-coupling
+> test + "Max 8 slots" (5), var_fan comment (6), calibrate field name (7), wgsl-loader URL (8).
+> **Remaining:** WGSL constructor RNG eval-order capture (item 1, render-path — pair with PYR3-075's
+> investigation), and the createSpatialFilterPass dead-code delete-vs-wire-up (item 3, architectural).
+
 
 **Filed 2026-05-29 (code-review).** Small, independently-shippable hardening + hygiene items from the
 review: (1) **WGSL constructor RNG eval-order** — walker init / bad-value reseed / `var_square` pass
