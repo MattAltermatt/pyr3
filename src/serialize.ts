@@ -500,6 +500,15 @@ function finalxformFromJson(j: unknown, path: string): Xform {
     variationFromJson(v, `${path}.variations[${i}]`),
   );
   const out: Xform = { weight: 0, color, colorSpeed, a, b, c, d, e, f, variations };
+  // PYR3-060: mirror xformFromJson's opacity read — finalxform opacity is
+  // serialized (xformToJson) and genuinely honored by the engine (the final
+  // lens deposit is gated on color_params.z, chaos.wgsl), so dropping it here
+  // silently brightened any finalxform with opacity != 1.0 on .pyr3.json
+  // re-import.
+  if (o['opacity'] !== undefined) {
+    const op = expectNumber(o['opacity'], `${path}.opacity`);
+    if (op !== 1.0) out.opacity = op;
+  }
   if (o['post'] !== undefined) {
     const p = expectObject(o['post'], `${path}.post`);
     out.post = {

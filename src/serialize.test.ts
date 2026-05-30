@@ -135,6 +135,27 @@ describe('finalxform round-trip', () => {
     expect(back).toEqual(SPIRAL_GALAXY);
   });
 
+  it('round-trips a finalxform with opacity != 1 (PYR3-060 regression)', () => {
+    const g = withJuliaFinal();
+    g.finalxform!.opacity = 0.42;
+    const json = genomeToJson(g);
+    // The serialized finalxform must carry the non-default opacity...
+    expect(json.finalxform!.opacity).toBe(0.42);
+    // ...and the loader must read it back (was silently dropped → 1.0).
+    const back = genomeFromJson(json);
+    expect(back.finalxform!.opacity).toBe(0.42);
+    expect(back.finalxform).toEqual(g.finalxform);
+  });
+
+  it('omits opacity on a finalxform with opacity == 1 (canonical form)', () => {
+    const g = withJuliaFinal();
+    g.finalxform!.opacity = 1.0;
+    const json = genomeToJson(g);
+    expect(json.finalxform).not.toHaveProperty('opacity');
+    const back = genomeFromJson(json);
+    expect(back.finalxform!.opacity).toBeUndefined();
+  });
+
   it('emits no `weight` field on the serialized finalxform', () => {
     const json = genomeToJson(withJuliaFinal());
     expect(json.finalxform).toBeDefined();
