@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { startChunkedRender, type ProgressInfo } from './render-orchestrator';
+import { startChunkedRender, startDecoupledRender, type ProgressInfo } from './render-orchestrator';
 import type { Genome } from './genome';
 import type { Renderer } from './renderer';
 
@@ -10,18 +10,18 @@ function mockRenderer(): {
   renderer: Renderer;
   resetCalls: Array<Genome>;
   iterateCalls: Array<{ seed: number; walkers: number; iters: number }>;
-  presentCalls: Array<{ totalSamples: number }>;
+  presentCalls: Array<{ totalSamples: number; forceDeOff?: boolean }>;
 } {
   const resetCalls: Array<Genome> = [];
   const iterateCalls: Array<{ seed: number; walkers: number; iters: number }> = [];
-  const presentCalls: Array<{ totalSamples: number }> = [];
+  const presentCalls: Array<{ totalSamples: number; forceDeOff?: boolean }> = [];
   const renderer = {
     reset(g: Genome) { resetCalls.push(g); },
     iterate(req: { seed: number; walkers: number; itersPerWalker: number }) {
       iterateCalls.push({ seed: req.seed, walkers: req.walkers, iters: req.itersPerWalker });
     },
-    present(req: { totalSamples: number }) {
-      presentCalls.push({ totalSamples: req.totalSamples });
+    present(req: { totalSamples: number; forceDeOff?: boolean }) {
+      presentCalls.push({ totalSamples: req.totalSamples, forceDeOff: req.forceDeOff });
     },
     render() { throw new Error('not used'); },
     resize() { throw new Error('not used'); },
@@ -151,6 +151,128 @@ describe('startChunkedRender', () => {
   it('handles tiny targetSamples (< 1 chunk) by running exactly one chunk', async () => {
     const m = mockRenderer();
     const { promise } = startChunkedRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 500,
+      seedBase: 0,
+      onProgress: () => {},
+    });
+    await promise;
+    expect(m.iterateCalls.length).toBe(1);
+  });
+});
+
+describe('startDecoupledRender', () => {
+  it('runs ceil(targetSamples / samplesPerDispatch) dispatches and resolves "completed"', async () => {
+    const m = mockRenderer();
+    const progress: ProgressInfo[] = [];
+    const { promise } = startDecoupledRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 30_000_000,
+      seedBase: 0x10,
+      samplesPerDispatch: 10_000_000, // 3 dispatches
+      onProgress: (p) => progress.push(p),
+    });
+    const outcome = await promise;
+    expect(outcome).toBe('completed');
+    expect(m.resetCalls.length).toBe(1);
+    expect(m.iterateCalls.length).toBe(3);
+    expect(progress.length).toBe(3);
+    expect(progress[2]!.percent).toBeCloseTo(1.0, 5);
+  });
+
+  it('uses seedBase + dispatchIndex per iterate', async () => {
+    const m = mockRenderer();
+    const { promise } = startDecoupledRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 30_000_000,
+      seedBase: 0x99,
+      samplesPerDispatch: 10_000_000,
+      onProgress: () => {},
+    });
+    await promise;
+    expect(m.iterateCalls.map((c) => c.seed)).toEqual([0x99, 0x9a, 0x9b]);
+  });
+
+  it('derives walkersPerDispatch from samplesPerDispatch / ITERS_PER_CHUNK', async () => {
+    const m = mockRenderer();
+    const { promise } = startDecoupledRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 10_000_000,
+      seedBase: 0,
+      samplesPerDispatch: 10_000_000,
+      onProgress: () => {},
+    });
+    await promise;
+    // 10M / 4096 iters ≈ 2441 walkers; all dispatches use the same count.
+    expect(m.iterateCalls[0]!.walkers).toBe(Math.round(10_000_000 / 4096));
+    expect(m.iterateCalls[0]!.iters).toBe(4096);
+  });
+
+  it('lands a final full-quality present (DE on, forceDeOff=false) on completion', async () => {
+    const m = mockRenderer();
+    const { promise } = startDecoupledRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 20_000_000,
+      seedBase: 0,
+      samplesPerDispatch: 10_000_000,
+      onProgress: () => {},
+    });
+    await promise;
+    expect(m.presentCalls.length).toBeGreaterThanOrEqual(1);
+    expect(m.presentCalls[m.presentCalls.length - 1]!.forceDeOff).toBe(false);
+  });
+
+  it('mid-build display presents use cheap DE-off previews by default', async () => {
+    const m = mockRenderer();
+    const { promise } = startDecoupledRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 50_000_000,
+      seedBase: 0,
+      samplesPerDispatch: 10_000_000,
+      displayIntervalMs: 0, // present on every rAF so previews are observed
+      onProgress: () => {},
+    });
+    await promise;
+    // Every present except the final one is a cheap DE-off preview.
+    const previews = m.presentCalls.slice(0, -1);
+    for (const p of previews) expect(p.forceDeOff).toBe(true);
+  });
+
+  it('cancel() halts subsequent dispatches and resolves "cancelled"', async () => {
+    const m = mockRenderer();
+    const handle = startDecoupledRender({
+      renderer: m.renderer,
+      genome: FAKE_GENOME,
+      outputViewProvider: () => FAKE_VIEW,
+      targetSamples: 50_000_000, // 5 dispatches
+      seedBase: 0,
+      samplesPerDispatch: 10_000_000,
+      onProgress: () => {
+        if (m.iterateCalls.length === 2) handle.cancel();
+      },
+    });
+    const outcome = await handle.promise;
+    expect(outcome).toBe('cancelled');
+    expect(m.iterateCalls.length).toBe(2);
+    // A cancelled run does NOT emit the final full-DE present.
+    expect(m.presentCalls.every((p) => p.forceDeOff !== false)).toBe(true);
+  });
+
+  it('handles tiny targetSamples (< 1 dispatch) by running exactly one dispatch', async () => {
+    const m = mockRenderer();
+    const { promise } = startDecoupledRender({
       renderer: m.renderer,
       genome: FAKE_GENOME,
       outputViewProvider: () => FAKE_VIEW,

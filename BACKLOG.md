@@ -6,8 +6,42 @@ best-effort flags (optional): `category · size · sigil · status · milestone`
 Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
 current cycle lives in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-048** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-049** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks.
+
+## [PYR3-048] infra · S · 🔧 · queued · post-v1 — Dev server can't serve the brotli-dec-wasm `.wasm` → `/v1/gen/{gen}/id/{id}` fails under `npm run dev`
+
+**Symptom (observed 2026-05-29):** Loading a corpus sheep via the
+share-URL route on the **dev** server (`localhost:5173/v1/gen/247/id/19679`)
+fails with `WebAssembly.instantiate(): expected magic word 00 61 73 6d,
+found 3c 21 64 6f` (`3c 21 64 6f` = `<!do` = the SPA `index.html`
+fallback). The corpus chunk fetches fine; the failure is decoding it.
+
+**Cause:** Chrome has no native `DecompressionStream("brotli")`, so
+`src/brotli.ts` falls back to the lazily-imported `brotli-dec-wasm`
+package, which fetches its `.wasm` binary. **Vite's dev server doesn't
+serve that `.wasm` at the URL the package requests** → 404 → SPA
+fallback returns `index.html` → `WebAssembly.instantiate` chokes on the
+HTML magic bytes. **Production / `vite build` is unaffected** — the build
+emits + fingerprints the wasm correctly (`dist/assets/brotli_dec_wasm_bg-*.wasm`,
+`200 application/wasm`), so the live pyr3.app gen/id viewer works, as does
+`npm run preview`.
+
+**Why it went unnoticed:** the gen/id route was only ever exercised via
+the deployed site / preview, never under `npm run dev` (corpus chunks
+are deploy-baked; see `[PYR3-038]`). For local dev testing, chunks are
+now copied into gitignored `public/chunks/` (see the `.gitignore` note),
+but the wasm-serving gap remains.
+
+**Likely fix:** add `vite-plugin-wasm` (+ `vite-plugin-top-level-await`
+if needed) to `vite.config`, or `optimizeDeps.exclude: ['brotli-dec-wasm']`,
+or an explicit dev-middleware that serves the package's wasm with
+`application/wasm`. Probe which the package's loader expects (it may use
+`new URL('…wasm', import.meta.url)`). Dev-only DX; not a ship blocker.
+
+**Files:** `src/brotli.ts:73` (`loadWasmBrotli`), `vite.config.*`.
+
+Filed 2026-05-29 during the v0.29 4K-button verify (local gen/id test).
 
 ## [PYR3-047] infra · S · 🔧 ✅ **RESOLVED (2026-05-29)** — `/showcase` 404 under Actions deploy + repo de-bloat
 
@@ -805,7 +839,25 @@ calibration; tighten thresholds.
 
 
 
-## [PYR3-027] perf · M · 🪶 · investigation · post-v1 — Why is FE 13× slower than BE for the same render?
+## [PYR3-027] perf · M · 🪶 ✅ **RESOLVED (v0.29, 2026-05-29)** — Why is FE 13× slower than BE for the same render?
+
+**Resolution.** Not Chrome-vs-Dawn, not the rAF yield, not per-chunk
+present in any dominant way — it was **pure chunk count**. Each chaos
+dispatch carries ~44 ms of *fixed* overhead independent of sample count
+(`wallMs ≈ 20 + 44×chunks`); the GPU is nowhere near saturated at 1M
+samples. The chunked orchestrator at 4K ran 1887 chunks @ 1M each = 1887×
+that fixed cost, while the BE did one `render()`. BE/Dawn-node measured
+44.9 ms/dispatch ≈ FE's 44.1 ms — overturning hypotheses #1 (rAF ~0
+effect) and #2 (Chrome IPC, false). 100M-sample compute = ~70 ms total.
+
+**Fix shipped (v0.29):** `startDecoupledRender` — decouples display from
+dispatch so iteration uses a few dozen *fat* (10M-sample) dispatches
+(amortizing the 44 ms across far more work) while a display loop presents
+on a steady frame cadence. Wired to the viewer's 🎯 4K button; the hero
+renders at 4K in ~2.7 s. See CHANGELOG v0.29. The original investigation
+frame is preserved below for history.
+
+---
 
 **Frame (observed 2026-05-27, PYR3-023 probe):** On the 3 fixtures
 where FE 4K completed (before the button was removed), the FE took
@@ -868,11 +920,21 @@ Filed 2026-05-27 post-PYR3-023 probe + FE-4K-removal pivot.
 
 **Frame:** During PYR3-023 probe, 2/5 sampled showcase fixtures
 (244.36880 + 248.22289) reproducibly crashed the Chrome renderer tab
-within ~30-45s of clicking the (now-removed) 🎯 Render 4K button. Same
+within ~30-45s of clicking the (then) 🎯 Render 4K button. Same
 fixtures rendered fine on BE in 14-19s at the same 4096-long-edge dims.
-**No longer v1.0-blocking** since the FE 4K button is gone (PYR3-023
-pivot), but the failure class is interesting engine-health signal —
-might surface at lower dims too if the visualize-pass budget grows.
+
+**Reframed (v0.29, PYR3-027 findings + 4K button re-added):** the crash
+is **NOT the chaos dispatch** — that holds steady at ~70 ms even at
+100M-samples/dispatch, and the v0.29 decoupled 🎯 4K button now renders
+the hero at 4K in ~2.7s with no crash. The two original crash fixtures
+(244.36880, 248.22289) share `estimator_radius=11` (typical 1–3) and high
+`brightness` — both **DE (density-estimation) parameters**. The remaining
+suspect is the **4K DE+visualize pass / histogram memory pressure**, not
+iteration. The decoupled path runs DE *once* at the end (cheap DE-off
+previews mid-build), so if DE-at-4K is the trigger it now fires once
+rather than per-chunk. **Re-test the two fixtures via the new 🎯 4K
+button** as the next step — they may now complete, or crash only on the
+final DE present (which would localize it precisely).
 
 Distinguishing trait on 244.36880: `brightness="24.7609"` (3-5× typical),
 `estimator_radius="11"` (typical 1-3), `scale="355.352"` (large).
@@ -964,6 +1026,14 @@ class moved to PYR3-025 (post-v1 investigation); the 248.22289 BE
 visual divergence moved to PYR3-024 (folds into PYR3-021); the FE↔BE
 parity invariant became PYR3-026 (its own v1.0 entry). PYR3-023 now
 focuses narrowly on the BE-vs-predecessor 4K ship gate.
+
+**Reversal 2026-05-29 (v0.29)** — the "13× slower" was diagnosed
+(PYR3-027) as pure chunk count, not a Chrome/engine limit. The FE 🎯 4K
+button is **re-added**, now driven by the decoupled orchestrator at
+oversample-1 (a few dozen fat dispatches instead of 1887 chunks); the
+hero renders at 4K in ~2.7s. A `maxStorageBufferBindingSize` guard
+handles GPUs that can't fit the histogram. The two original crash
+fixtures still need re-testing under the new path — see PYR3-025.
 
 **Original probe findings** (preserved as load-bearing context for
 the BE 4K parity work this entry now drives) — see
@@ -1486,6 +1556,19 @@ parameter-space embeddings. Open research, not a feature ship.
 
 Once v1.0 ships, characterize wall-clock per-fixture on FE (Chrome) and BE (Node). Identify
 hot paths in WGSL. Decide whether perf work is worth the engineering cost.
+
+**Partial findings landed (v0.29, via PYR3-027):**
+- Each chaos dispatch carries **~44 ms fixed overhead** independent of
+  sample count (`wallMs ≈ 20 + 44×dispatches`). The GPU is far from
+  saturated at 1M samples — a 100M-sample dispatch still totals only
+  ~70 ms, i.e. ~0.7 ms of actual compute per 1M samples.
+- Implication: **orchestration shape dominates wall-clock**, not raw
+  compute. Fat dispatches amortize the fixed cost; the v0.29 decoupled
+  orchestrator (`startDecoupledRender`) exploits this.
+- FE (Chrome) and BE (Dawn-node) measured the *same* per-dispatch cost
+  (44.1 ms ≈ 44.9 ms) — no Chrome-WebGPU IPC penalty at this granularity.
+- Bench tooling: `scripts/pyr3-027-be-bench.ts`, `__pyr3Bench` /
+  `__pyr3Decoupled` dev hooks in `src/main.ts`.
 
 ## [PYR3-004] gpu · S · 🪨 ✅ **RESOLVED (2026-05-29)** — Expand variation set audit
 

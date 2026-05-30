@@ -10,7 +10,7 @@ import { initDevice, showError } from './device';
 import { SPIRAL_GALAXY, type Genome } from './genome';
 import { parseLoadIntent, type LoadIntent } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
-import { startChunkedRender, type RunHandle } from './render-orchestrator';
+import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { mountBar, type BarHandle } from './ui-bar';
 import { decodeFlame } from './url-codec';
@@ -62,10 +62,16 @@ async function main(): Promise<void> {
   let openFilePicker: () => void = () => {
     console.warn('pyr3: file picker invoked before canvas init');
   };
+  // Forwarding ref: the 4K render closure is defined after the bar mounts
+  // (it needs the renderer + device), so the button calls through this.
+  let render4KFn: () => void = () => {
+    console.warn('pyr3: 4K render invoked before canvas init');
+  };
 
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     onOpenFile: () => openFilePicker(),
+    onRender4K: () => render4KFn(),
   });
 
   if (!webgpu.available) {
@@ -162,6 +168,96 @@ async function main(): Promise<void> {
     };
   }
 
+  // PYR3-027 perf A/B: drive the orchestrator with explicit knob
+  // overrides on the last-rendered genome, holding total GPU samples
+  // constant so only orchestration overhead varies. Awaits a full GPU
+  // queue drain so wallMs is GPU-finished wall-clock, not JS-queue time.
+  // Load a flame before calling. Dev-only.
+  if (import.meta.env.DEV) {
+    (window as unknown as {
+      __pyr3Bench?: (cfg: {
+        targetSamples?: number;
+        samplesPerChunk?: number;
+        presentEach?: boolean;
+        yieldEveryNChunks?: number;
+      }) => Promise<{ result: string; chunks: number; targetSamples: number; wallMs: number }>;
+    }).__pyr3Bench = async (cfg) => {
+      if (!lastRenderInfo) {
+        throw new Error('__pyr3Bench: no render to bench (load a flame first)');
+      }
+      // Cancel any in-flight production render so it doesn't contend.
+      if (runHandle) {
+        runHandle.cancel();
+        await runHandle.promise;
+        runHandle = null;
+      }
+      await device.queue.onSubmittedWorkDone();
+      const genome = lastRenderInfo.genome;
+      const targetSamples = cfg.targetSamples ?? lastRenderInfo.totalSamples;
+      const spc = cfg.samplesPerChunk ?? 1_000_000;
+      const chunks = Math.max(1, Math.ceil(targetSamples / spc));
+      const t0 = performance.now();
+      const handle = startChunkedRender({
+        renderer,
+        genome,
+        outputViewProvider: () => context.getCurrentTexture().createView(),
+        targetSamples,
+        seedBase: seed,
+        onProgress: () => {},
+        presentAfterEachChunk: cfg.presentEach,
+        samplesPerChunk: cfg.samplesPerChunk,
+        yieldEveryNChunks: cfg.yieldEveryNChunks,
+      });
+      const result = await handle.promise;
+      await device.queue.onSubmittedWorkDone();
+      const wallMs = performance.now() - t0;
+      return { result, chunks, targetSamples, wallMs };
+    };
+  }
+
+  // PYR3-027 Option 1 prototype: decoupled display/dispatch render driven
+  // against the REAL canvas so the refinement is watchable in Chrome.
+  // Counts display presents so we can confirm refinement frames land at
+  // the display cadence rather than per-dispatch. Dev-only.
+  if (import.meta.env.DEV) {
+    (window as unknown as {
+      __pyr3Decoupled?: (cfg?: {
+        targetSamples?: number;
+        samplesPerDispatch?: number;
+        displayIntervalMs?: number;
+        cheapPreview?: boolean;
+      }) => Promise<{ result: string; targetSamples: number; wallMs: number }>;
+    }).__pyr3Decoupled = async (cfg = {}) => {
+      if (!lastRenderInfo) {
+        throw new Error('__pyr3Decoupled: no render to drive (load a flame first)');
+      }
+      if (runHandle) {
+        runHandle.cancel();
+        await runHandle.promise;
+        runHandle = null;
+      }
+      await device.queue.onSubmittedWorkDone();
+      const genome = lastRenderInfo.genome;
+      const targetSamples = cfg.targetSamples ?? lastRenderInfo.totalSamples;
+      const t0 = performance.now();
+      const handle = startDecoupledRender({
+        renderer,
+        genome,
+        outputViewProvider: () => context.getCurrentTexture().createView(),
+        targetSamples,
+        seedBase: seed,
+        onProgress: () => {},
+        samplesPerDispatch: cfg.samplesPerDispatch,
+        displayIntervalMs: cfg.displayIntervalMs,
+        cheapPreview: cfg.cheapPreview,
+      });
+      const result = await handle.promise;
+      await device.queue.onSubmittedWorkDone();
+      const wallMs = performance.now() - t0;
+      return { result, targetSamples, wallMs };
+    };
+  }
+
   const rerender = async (): Promise<void> => {
     // Cancel any in-flight orchestrator before starting a new one. The
     // promise still settles cleanly (either 'cancelled' or 'completed')
@@ -254,6 +350,123 @@ async function main(): Promise<void> {
       if (runHandle === handle) runHandle = null;
     }
   };
+
+  // PYR3-027: render the CURRENT flame at 4K via the decoupled
+  // orchestrator, so the visitor can watch a heavy render build
+  // progressively in the browser. This is exactly where the decoupled
+  // design pays off — fat back-to-back dispatches keep iteration
+  // throughput high while the display loop presents the accumulating
+  // histogram on a steady frame cadence (cheap DE-off previews
+  // mid-build, one full-DE present at the end).
+  //
+  // 4K @ oversample 1 → histogram = longEdge·shortEdge·4ch·4B. For a
+  // 16:9 flame that's ~126 MB; a square flame is ~226 MB. The
+  // capability guard below aborts (with a toast) when the device's
+  // maxStorageBufferBindingSize can't fit it, rather than crashing the
+  // tab. This reverses the PYR3-023 FE-4K removal: that removal was the
+  // CHUNKED orchestrator (1887 rAF/present chunks) plus oversample-4
+  // (16× the histogram); the decoupled path + oversample 1 avoid both.
+  const FOURK_LONG_EDGE = 3840;
+  const FOURK_QUALITY = 100;
+  const HIST_BYTES_PER_CELL = 4 * 4; // 4 channels (R,G,B,count) × 4 bytes
+  const render4K = async (): Promise<void> => {
+    // Disable both bar buttons synchronously BEFORE the first await, so a
+    // double-click during the cancel/drain below can't spawn a second
+    // concurrent render4K (disabled buttons don't fire click events).
+    bar.setBusy(true);
+    if (runHandle) {
+      runHandle.cancel();
+      await runHandle.promise;
+      runHandle = null;
+      await device.queue.onSubmittedWorkDone();
+    }
+
+    const declW = activeGenome.size?.width ?? RENDER_SIZE;
+    const declH = activeGenome.size?.height ?? RENDER_SIZE;
+    const maxDecl = Math.max(declW, declH);
+    const sizeScale = FOURK_LONG_EDGE / maxDecl;
+    const targetW = Math.max(1, Math.round(declW * sizeScale));
+    const targetH = Math.max(1, Math.round(declH * sizeScale));
+    const targetFilter = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+
+    // Capability guard — never allocate a histogram the GPU can't bind.
+    const histBytes = targetW * targetH * HIST_BYTES_PER_CELL;
+    const maxBind = device.limits.maxStorageBufferBindingSize;
+    if (histBytes > maxBind) {
+      const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
+      console.warn(
+        `pyr3: 4K render skipped — histogram ${mb(histBytes)} exceeds this GPU's max storage buffer ${mb(maxBind)}`,
+      );
+      bar.showToast(`4K too large for this GPU (needs ${mb(histBytes)})`);
+      bar.setBusy(false); // re-enable — we never started a render
+      return;
+    }
+
+    if (
+      targetW !== renderer.width
+      || targetH !== renderer.height
+      || renderer.oversample !== 1
+      || targetFilter !== renderer.filterRadius
+    ) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      renderer.resize({ width: targetW, height: targetH, oversample: 1, filterRadius: targetFilter });
+    }
+
+    const renderGenome: Genome = {
+      ...activeGenome,
+      scale: activeGenome.scale * sizeScale,
+      oversample: 1,
+      quality: FOURK_QUALITY,
+    };
+    const targetSamples = FOURK_QUALITY * renderer.width * renderer.height;
+    console.log(
+      `pyr3: 4K decoupled render — ${targetW}×${targetH} · q${FOURK_QUALITY} · ${(targetSamples / 1e6).toFixed(0)}M samples`,
+    );
+
+    bar.showProgress({
+      label: 'Rendering 4K',
+      percent: 0,
+      etaSeconds: 0,
+      samples: 0,
+      onCancel: () => runHandle?.cancel(),
+    });
+
+    const handle = startDecoupledRender({
+      renderer,
+      genome: renderGenome,
+      outputViewProvider: () => context.getCurrentTexture().createView(),
+      targetSamples,
+      seedBase: seed,
+      onProgress: (info) => {
+        bar.showProgress({
+          label: 'Rendering 4K',
+          percent: info.percent,
+          etaSeconds: info.etaSeconds,
+          samples: info.samples,
+          onCancel: () => runHandle?.cancel(),
+        });
+      },
+    });
+    runHandle = handle;
+    lastRenderInfo = { genome: renderGenome, totalSamples: targetSamples };
+
+    try {
+      await handle.promise;
+    } finally {
+      bar.hideProgress();
+      bar.setBusy(false);
+      clearFirstPaintCue();
+      if (runHandle === handle) runHandle = null;
+    }
+  };
+
+  // Wire the bar's 🎯 4K button (and a dev-only console hook) to the
+  // render closure now that it's defined.
+  render4KFn = () => { void render4K(); };
+  if (import.meta.env.DEV) {
+    (window as unknown as { __pyr3Render4K?: () => Promise<void> }).__pyr3Render4K = render4K;
+  }
 
   const applyLoadResult = async (result: LoadResult, sourceLabel: string): Promise<void> => {
     // Resize logic lives in rerender (it depends on the loaded genome's

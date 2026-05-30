@@ -10,6 +10,45 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.29 — 2026-05-29 — Live 4K render in the browser (`[PYR3-027]`)
+
+**Outcome:** the viewer can now render the current flame at 4K
+(3840-long-edge), building progressively in ~2.7s for the hero. The
+PYR3-027 investigation (why FE was "13× slower" than BE) resolved into a
+shippable feature. All 4598 unit tests green, typecheck clean,
+Chrome-verified end-to-end (1024×576 → 3840×2160, 0 console errors).
+
+- **Decoupled display/dispatch orchestrator (`startDecoupledRender`).**
+  Iteration and display run as two independent loops sharing the
+  accumulating histogram: the iterate loop fires fat back-to-back chaos
+  dispatches (no per-dispatch present), while a display loop presents the
+  current histogram on a steady ~30fps cadence — cheap DE-off previews
+  mid-build, one full-quality DE-on present at the end. Display smoothness
+  no longer depends on chunk count, so iteration uses efficient big
+  dispatches AND the refinement stays smooth.
+
+- **🎯 4K button** in the viewer's top bar (next to Open). Opt-in heavy
+  render — quick mode stays the snappy default first paint. A
+  `maxStorageBufferBindingSize` guard aborts with a toast (rather than
+  crashing the tab) on GPUs that can't fit the histogram: a square flame
+  at 4K needs ~226 MB, above the 128 MiB WebGPU guaranteed minimum, though
+  most desktop GPUs report far more.
+
+- **Reverses the v0.14 FE-4K removal (`[PYR3-023]`).** The PYR3-027 probe
+  found each chaos dispatch carries ~44 ms fixed overhead independent of
+  sample count; the FE's old slowness was pure chunk count (the chunked
+  orchestrator ran 1887 rAF+present chunks at 4K @ 1M-samples), *not*
+  Chrome-vs-Dawn IPC (BE/Dawn-node fit 44.9 ms ≈ FE 44.1 ms). Combined
+  with oversample-4 busting the storage limit, that was the removal
+  rationale. The decoupled path (a few dozen fat dispatches) at
+  oversample-1 sidesteps both. PYR3-025 (4K tab-kill class) is reframed:
+  it is not the chaos dispatch (steady ~70 ms even at 100M/dispatch) — the
+  remaining suspect is 4K DE+visualize / histogram memory.
+
+- 7 new unit tests for `startDecoupledRender` (dispatch count, seeds,
+  walker sizing, final DE-on present, cheap DE-off previews, cancel, tiny
+  target).
+
 ## v0.28 — 2026-05-29 — Engine/GPU S-batch: oversample decouple + flam3 palette library (`[PYR3-008]`, `[PYR3-022]`, `[PYR3-004]`)
 
 **Outcome:** three Engine/GPU backlog items closed in one pass. All 4591 unit

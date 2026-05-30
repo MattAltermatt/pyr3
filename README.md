@@ -11,14 +11,19 @@
 
 ## Status
 
-🚧 **v0.28 — Engine/GPU S-batch (chaos-oversample decouple + flam3 palette library).** Engine in place (browser + CLI
+🚧 **v0.29 — Live 4K render in the browser (decoupled orchestrator).** Engine in place (browser + CLI
 render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
 test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
 flam3-C is the canonical lineage source of truth. **The hero
 `electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
 floor.
 
-Recent ships: **v0.28** decoupled the chaos splat-scale `oversample` from the genome
+Recent ships: **v0.29** added the **🎯 4K** button — the viewer now renders the current
+flame at 3840-long-edge in the browser (~2.7s for the hero), building progressively via the
+decoupled display/dispatch orchestrator. This reverses the v0.14 FE-4K removal: the old
+crash/slowness was the chunked orchestrator (1887 rAF+present chunks) plus oversample-4;
+fat back-to-back dispatches at oversample-1 fix both, with a `maxStorageBufferBindingSize`
+guard for GPUs that can't fit a 4K histogram (`[PYR3-027]`); **v0.28** decoupled the chaos splat-scale `oversample` from the genome
 (reads the authoritative pipeline config now) and ported flam3's full 701-palette
 library as a parser fallback for inline-palette-less flames (`[PYR3-008]` +
 `[PYR3-022]`; `[PYR3-004]` variation audit closed 99/99); **v0.27** restored the live `/showcase` gallery (now served as a

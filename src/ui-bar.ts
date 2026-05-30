@@ -22,6 +22,9 @@ export interface BarMeta {
 export interface BarOpts {
   webgpu: WebGPUStatus;
   onOpenFile: () => void;
+  /** Render the current flame at 4K via the decoupled orchestrator.
+   *  Opt-in heavy render — quick mode stays the default first paint. */
+  onRender4K: () => void;
 }
 
 export interface ProgressDisplay {
@@ -66,10 +69,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const metaName = el('div', 'pyr3-bar-meta-name');
   left.append(wordmark, sep(), about, sep(), metaName);
 
-  // ---- center zone: Open ----
+  // ---- center zone: Open · 4K ----
   const center = el('div', 'pyr3-zone-center');
   const openBtn = button('📂 Open', 'pyr3-bar-btn', opts.onOpenFile);
-  center.append(openBtn);
+  const render4kBtn = button('🎯 4K', 'pyr3-bar-btn', opts.onRender4K);
+  render4kBtn.title = 'Render the current flame at 4K — watch it build progressively';
+  center.append(openBtn, render4kBtn);
 
   // ---- right zone: WebGPU pill · octocat CTAs ----
   const right = el('div', 'pyr3-zone-right');
@@ -93,6 +98,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     },
     setBusy(busy) {
       openBtn.disabled = busy;
+      render4kBtn.disabled = busy;
     },
     showProgress(p) {
       if (!tier3) {
@@ -245,7 +251,7 @@ const BAR_CSS = `
   background: var(--bar-bg-2); border-bottom: 1px solid var(--bar-border);
 }
 .pyr3-zone-left { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pyr3-zone-center { flex: 0 0 auto; display: flex; justify-content: center; }
+.pyr3-zone-center { flex: 0 0 auto; display: flex; justify-content: center; gap: 8px; }
 .pyr3-zone-right { flex: 1 1 0; display: flex; align-items: center; gap: 14px; justify-content: flex-end; }
 
 .pyr3-bar-wordmark {
