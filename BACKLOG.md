@@ -8,7 +8,7 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-079** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-081** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
@@ -19,6 +19,21 @@ strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 > 25 confirmed + 28 partial findings, deduped to 14 entries. No criticals; two HIGHs
 > (PYR3-056 DE brightness ripple, PYR3-059 WGSL-path coverage). The README Status-block
 > staleness the review also surfaced is absorbed by the existing PYR3-049.
+
+## [PYR3-080] feat · XS · 🏷️ · queued · v1.x — Show the pyr3 version next to the top-bar wordmark
+
+**Filed 2026-05-30 (user-directive).** Render the current version after the `pyr3` wordmark in the top
+bar (e.g. `pyr3 v0.36`). Single source — read it from `package.json` (or the build-injected version)
+so it can't drift. Keep it small/muted next to the wordmark. `src/ui-bar.ts` + a build-time version
+constant (Vite `define` or import of `package.json` version).
+
+## [PYR3-079] feat · XS · 🔖 · queued · v1.x — Document title reflects the current sheep (gen/id) for bookmarks + sharing
+
+**Filed 2026-05-30 (user-directive).** Set `document.title` to a compact, obvious id of the current
+flame — e.g. on `/v1/gen/248/id/23674` → `pyr3 — 248/23674` — so a browser bookmark / shared link
+auto-names itself with no manual editing (also helps sharing). Update the title on every corpus load +
+popstate nav; sensible default for the bare hero + file-opened flames (`pyr3 — <flame name>`, or just
+`pyr3`). `src/main.ts` load paths — pairs with the corpus share-URL story (PYR3-024).
 
 ## [PYR3-078] bug · S · 🕳️ · queued · v1.x — Verify whether gen 248 / id 23585 is genuinely black (or a render bug)
 
