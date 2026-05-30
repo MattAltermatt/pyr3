@@ -3,8 +3,9 @@
 **pyr3** (pronounced "pyre") is a TypeScript + WebGPU fractal-flame renderer in the
 [flam3](https://github.com/scottdraves/flam3) lineage. **One engine, two consumers:**
 
-- 🌐 **Browser viewer** — Vite + WebGPU + GitHub Pages. Drop a `.flame` file or visit a
-  share-link URL; the flame renders in the canvas.
+- 🌐 **Browser viewer** — Vite + WebGPU + GitHub Pages. Drop an Electric Sheep / flam3 `.flame`
+  file (unsupported variations are flagged in the import report) or visit a share-link URL; the
+  flame renders in the canvas.
 - 💻 **Headless CLI** — Node + `webgpu` npm + `tsx`. `npm run render flame.xml out.png`
   renders the same flame to a PNG using the same TS modules and the same WGSL compute
   shaders.
