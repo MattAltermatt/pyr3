@@ -527,10 +527,18 @@ async function main(): Promise<void> {
     if (result.kind === 'flame' && result.report) {
       const dropCount = result.report.droppedVariations.length;
       const ignoredCount = result.report.ignoredFields.length;
-      if (dropCount > 0 || ignoredCount > 0) {
+      const defaulted = result.report.defaultedFields;
+      if (dropCount > 0 || ignoredCount > 0 || defaulted.length > 0) {
         console.log(
-          `pyr3: import report — ${dropCount} unsupported variations · ${ignoredCount} ignored fields`,
+          `pyr3: import report — ${dropCount} unsupported variations · ${ignoredCount} ignored fields · ${defaulted.length} defaulted fields`,
         );
+      }
+      // #9: malformed scalars (e.g. NaN center/scale — 286 corpus flames) were
+      // substituted with real defaults so the flame still renders. Surface it
+      // loudly in-app so the user knows the framing/scale was synthesized.
+      if (defaulted.length > 0) {
+        const fields = defaulted.map((d) => d.field).join(', ');
+        bar.showToast(`Some values were missing (${fields}) — loaded with defaults.`);
       }
     }
     console.log(`pyr3: loaded "${result.genome.name}" from ${sourceLabel}`);
@@ -576,7 +584,12 @@ async function main(): Promise<void> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`pyr3: failed to load ${file.name}: ${msg}`);
-      bar.showToast('Couldn’t load that .flame — see console.');
+      // #9: surface the failure in-viewer (not just the console) with a
+      // report-an-issue affordance. The canvas keeps its prior content behind
+      // the panel; the bars stay live so the user can navigate away. The raw
+      // `msg` stays in the console (logged above) — the panel copy is kept
+      // high-level.
+      missingPanel.showLoadError(file.name);
     } finally {
       // Clear the first-paint cue even if the (initial) load threw before
       // rerender() ran — otherwise "dreaming…" would stick on a black canvas.
@@ -794,11 +807,18 @@ function mountWebGPUFallback(): void {
 
 interface MissingPanel {
   show(gen: number, id: number): void;
+  /** #9 — a real load failure (parse error, malformed genome, fetch error):
+   *  paint a visible in-viewer panel with a "report an issue" affordance,
+   *  rather than leaving the canvas unchanged with a console-only error. */
+  showLoadError(label: string): void;
   hide(): void;
 }
 
-/** Build the corpus missing-sheep overlay once (PYR3-039). DOM-built (no
- *  innerHTML); covers the canvas, keeps the bars, offers escape via the nav. */
+const ISSUES_URL = 'https://github.com/MattAltermatt/pyr3/issues';
+
+/** Build the corpus missing-sheep / load-failure overlay once (PYR3-039 + #9).
+ *  DOM-built (no innerHTML); covers the canvas, keeps the bars, offers escape
+ *  via the nav (missing) or a report-an-issue link (load failure). */
 function makeMissingPanel(): MissingPanel {
   const zone = document.getElementById('pyr3-canvas-zone');
   const root = document.createElement('div');
@@ -808,13 +828,29 @@ function makeMissingPanel(): MissingPanel {
   coord.className = 'pyr3-missing-coord';
   const msg = document.createElement('div');
   msg.className = 'pyr3-missing-msg';
-  root.append(coord, msg);
+  const report = document.createElement('a');
+  report.className = 'pyr3-missing-report';
+  report.href = ISSUES_URL;
+  report.target = '_blank';
+  report.rel = 'noopener noreferrer';
+  report.textContent = 'report an issue ↗';
+  report.hidden = true;
+  root.append(coord, msg, report);
   zone?.appendChild(root);
   return {
     show(gen, id) {
       coord.textContent = `gen ${gen} · sheep ${id}`;
       msg.textContent =
         'Electric Sheep was not found — use ‹ prev or next › to jump to a valid flame.';
+      report.hidden = true; // a missing sheep isn't a bug — nav is the escape
+      root.hidden = false;
+    },
+    showLoadError(label) {
+      // Higher-level user-facing copy — the raw parser detail stays in the
+      // console (logged at the call site) for debugging / issue reports.
+      coord.textContent = label;
+      msg.textContent = 'This flame couldn’t be loaded — it may be corrupt or in an unsupported format.';
+      report.hidden = false;
       root.hidden = false;
     },
     hide() {

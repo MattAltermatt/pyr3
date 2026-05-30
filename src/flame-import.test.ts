@@ -445,9 +445,11 @@ describe('parseFlame error paths', () => {
     expect(report.paletteFallback).toBeUndefined();
   });
 
-  it('throws on non-finite numeric attribute', () => {
+  it('non-finite scale defaults to 100 + reports it (#9 — formerly threw)', () => {
     const xml = `<flame name="t" size="1024 1024" center="0 0" scale="NaN">${minPalette}${minXform}</flame>`;
-    expect(() => parseFlame(xml)).toThrow(/scale/);
+    const { genome, report } = parseFlame(xml);
+    expect(genome.scale).toBe(100);
+    expect(report.defaultedFields.map((d) => d.field)).toContain('scale');
   });
 
   it('throws when xform is missing coefs', () => {
@@ -657,22 +659,31 @@ describe('parseFlame size honoring (Phase 9-size)', () => {
     expect(genome.size).toBeUndefined();
   });
 
-  it('rejects size with non-positive integers', () => {
+  // #9: malformed size no longer aborts the load — it falls back to the real
+  // viewer canvas default (size left unset) and records a loud report entry.
+  // Dimensions never collapse to 0×0.
+  it('non-positive size → viewer default (size unset) + reports it (#9 — formerly threw)', () => {
     const xml =
       `<flame name="t" size="0 0" center="0 0" scale="100">${minPalette}${xformLinear}</flame>`;
-    expect(() => parseFlame(xml)).toThrow(/positive integers/);
+    const { genome, report } = parseFlame(xml);
+    expect(genome.size).toBeUndefined();
+    expect(report.defaultedFields.map((d) => d.field)).toContain('size');
   });
 
-  it('rejects size with non-integer values', () => {
+  it('non-integer size → viewer default (size unset) + reports it (#9 — formerly threw)', () => {
     const xml =
       `<flame name="t" size="100.5 200" center="0 0" scale="100">${minPalette}${xformLinear}</flame>`;
-    expect(() => parseFlame(xml)).toThrow(/positive integers/);
+    const { genome, report } = parseFlame(xml);
+    expect(genome.size).toBeUndefined();
+    expect(report.defaultedFields.map((d) => d.field)).toContain('size');
   });
 
-  it('rejects size with the wrong number of components', () => {
+  it('wrong-component-count size → viewer default (size unset) + reports it (#9 — formerly threw)', () => {
     const xml =
       `<flame name="t" size="800" center="0 0" scale="100">${minPalette}${xformLinear}</flame>`;
-    expect(() => parseFlame(xml)).toThrow(/positive integers/);
+    const { genome, report } = parseFlame(xml);
+    expect(genome.size).toBeUndefined();
+    expect(report.defaultedFields.map((d) => d.field)).toContain('size');
   });
 });
 
@@ -910,5 +921,54 @@ describe('parseFlame multi-flame file handling', () => {
   it('still accepts a single-flame file (wrapping is a no-op for the first flame)', () => {
     const { genome } = parseFlame(namedFlame('solo', 'linear="1"'));
     expect(genome.name).toBe('solo');
+  });
+});
+
+describe('#9 — malformed scalar fields default + report (loud, never abort)', () => {
+  // flam3 accepts "nan" via sscanf/strtod and renders black; pyr3 deliberately
+  // diverges — substitutes a REAL working value and records a loud report entry
+  // so the (otherwise-fine) genome still renders. Observed live on gen 247 id 1
+  // (center="nan nan"). Dimensions default to real values, never 0.
+  it('non-finite center → defaults to 0 0 + reports it (no throw)', () => {
+    const xml =
+      `<flame name="t" size="800 600" center="nan nan" scale="100">${minPalette}${oneXform}</flame>`;
+    const { genome, report } = parseFlame(xml);
+    expect(genome.cx).toBe(0);
+    expect(genome.cy).toBe(0);
+    const c = report.defaultedFields.find((d) => d.field === 'center');
+    expect(c).toBeDefined();
+    expect(c!.value).toBe('nan nan');
+  });
+
+  it('malformed size → real viewer default (size left unset), reported (no 0×0)', () => {
+    const xml =
+      `<flame name="t" size="nan nan" center="0 0" scale="100">${minPalette}${oneXform}</flame>`;
+    const { genome, report } = parseFlame(xml);
+    expect(genome.size).toBeUndefined(); // consumer uses the real canvas default
+    expect(report.defaultedFields.map((d) => d.field)).toContain('size');
+  });
+
+  it('non-finite scale → real default (100), reported (no throw)', () => {
+    const xml =
+      `<flame name="t" size="800 600" center="0 0" scale="nan">${minPalette}${oneXform}</flame>`;
+    const { genome, report } = parseFlame(xml);
+    expect(genome.scale).toBe(100);
+    expect(report.defaultedFields.map((d) => d.field)).toContain('scale');
+  });
+
+  it('valid scalars → no defaultedFields entries (no false positives)', () => {
+    const xml =
+      `<flame name="t" size="800 600" center="0.1 0.2" scale="123">${minPalette}${oneXform}</flame>`;
+    const { genome, report } = parseFlame(xml);
+    expect(genome.cx).toBeCloseTo(0.1);
+    expect(genome.scale).toBe(123);
+    expect(report.defaultedFields).toEqual([]);
+  });
+
+  it('malformed coefs still throws — structural corruption surfaces via the load-failure panel', () => {
+    const badXform = '<xform weight="1" color="0" coefs="nan 0 0 1 0 0" linear="1"/>';
+    const xml =
+      `<flame name="t" size="800 600" center="0 0" scale="100">${minPalette}${badXform}</flame>`;
+    expect(() => parseFlame(xml)).toThrow(/coefs/);
   });
 });

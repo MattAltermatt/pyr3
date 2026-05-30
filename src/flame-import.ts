@@ -72,6 +72,19 @@ export interface IgnoredField {
   value: string;
 }
 
+/** #9 — a scalar field whose value was malformed (non-finite / unparseable) and
+ *  was replaced with a real working default so the otherwise-fine genome still
+ *  renders, instead of aborting the whole load. flam3 accepts "nan" and renders
+ *  black; pyr3 deliberately diverges (substitute + surface loudly). Dimensions
+ *  default to real values, never 0. */
+export interface DefaultedField {
+  field: string;
+  /** The malformed raw attribute value. */
+  value: string;
+  /** Human-readable description of the substituted default. */
+  usedDefault: string;
+}
+
 /** PYR3-022 — how the palette was resolved when the flame had no inline block.
  *  `library`: honored a `<flame palette="N">` reference from flam3's library.
  *  `pyre-default`: no usable palette info, fell back to PYRE (loud, never
@@ -86,6 +99,9 @@ export interface ImportReport {
   flameName: string;
   droppedVariations: DroppedVariation[];
   ignoredFields: IgnoredField[];
+  /** #9 — scalar fields whose malformed values were replaced with real defaults
+   *  (e.g. NaN center/scale) so the load could proceed. Empty when none. */
+  defaultedFields: DefaultedField[];
   /** Set only when no inline palette was present and a fallback was used. */
   paletteFallback?: PaletteFallback;
   /** Set only when the flame had more xforms than the GPU buffer can hold
@@ -172,14 +188,40 @@ function parseDensity(flame: Element): Density | undefined {
   return { maxRad, minRad, curve };
 }
 
-function parseCenter(flame: Element): { cx: number; cy: number } {
+function parseCenter(flame: Element, defaulted: DefaultedField[]): { cx: number; cy: number } {
   const c = flame.getAttribute('center');
   if (c === null) return { cx: 0, cy: 0 };
   const parts = c.trim().split(/\s+/).map(Number);
   if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) {
-    throw new Error(`pyr3: center must be 2 finite numbers, got: ${JSON.stringify(c)}`);
+    // #9: a malformed center (e.g. "nan nan" — 286 corpus flames carry it)
+    // must not abort the whole load. The rest of the genome is fine; fall back
+    // to the origin (a real coordinate that frames Electric Sheep flames) and
+    // surface the substitution loudly.
+    defaulted.push({ field: 'center', value: c, usedDefault: '0 0' });
+    return { cx: 0, cy: 0 };
   }
   return { cx: parts[0]!, cy: parts[1]! };
+}
+
+// #9: parse a scalar attribute that has a real working default. Absent → use
+// the default silently (flam3-compatible). Present-but-malformed (e.g. "nan" —
+// the 286 corrupt corpus flames pair a NaN scale with their NaN center) → use
+// the default AND record a loud report entry, rather than aborting the load.
+// NOTE: the default VALUE for scale (100 vs flam3's 50) is tracked separately
+// in #17; this only governs malformed-value recovery, not the default itself.
+function parseScalarOrDefault(
+  raw: string | null,
+  field: string,
+  fallback: number,
+  defaulted: DefaultedField[],
+): number {
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    defaulted.push({ field, value: raw, usedDefault: String(fallback) });
+    return fallback;
+  }
+  return n;
 }
 
 function parseHexBytes(hex: string): number[] {
@@ -524,6 +566,7 @@ export function parseFlame(xml: string): FlameImportResult {
   let finalxform: Xform | undefined;
   const droppedVariations: DroppedVariation[] = [];
   const ignoredFields: IgnoredField[] = [];
+  const defaultedFields: DefaultedField[] = [];
 
   let regularIndex = 0;
   for (const el of xformEls) {
@@ -588,11 +631,17 @@ export function parseFlame(xml: string): FlameImportResult {
   if (sizeAttr !== null) {
     const parts = sizeAttr.trim().split(/\s+/).map(Number);
     if (parts.length !== 2 || parts.some((n) => !Number.isInteger(n) || n <= 0)) {
-      throw new Error(
-        `pyr3: size must be 2 positive integers, got: ${JSON.stringify(sizeAttr)}`,
-      );
+      // #9: a malformed size must not abort the load and must NOT collapse to
+      // 0×0. Leave `size` unset so the consumer falls back to the real viewer
+      // canvas default (a working dimension), and surface it loudly.
+      defaultedFields.push({
+        field: 'size',
+        value: sizeAttr,
+        usedDefault: 'viewer canvas default',
+      });
+    } else {
+      size = { width: parts[0]!, height: parts[1]! };
     }
-    size = { width: parts[0]!, height: parts[1]! };
   }
 
   // Phase 9-filter / 9-filter-shapes: extract <flame filter="N"
@@ -627,7 +676,7 @@ export function parseFlame(xml: string): FlameImportResult {
   // declare nick="" rather than skipping the attribute.
   const nickAttr = flame.getAttribute('nick')?.trim();
   const flameNick = nickAttr && nickAttr.length > 0 ? nickAttr : undefined;
-  const { cx, cy } = parseCenter(flame);
+  const { cx, cy } = parseCenter(flame, defaultedFields);
   const symmetry = parseSymmetryChild(flame);
   const density = parseDensity(flame);
 
@@ -683,7 +732,7 @@ export function parseFlame(xml: string): FlameImportResult {
   const genome: Genome = {
     name: flameName,
     xforms,
-    scale: expectFiniteNumber(flame.getAttribute('scale') ?? '100', 'scale'),
+    scale: parseScalarOrDefault(flame.getAttribute('scale'), 'scale', 100, defaultedFields),
     cx,
     cy,
     palette: { name: flameName, stops },
@@ -733,6 +782,7 @@ export function parseFlame(xml: string): FlameImportResult {
     flameName,
     droppedVariations,
     ignoredFields,
+    defaultedFields,
     ...(paletteFallback ? { paletteFallback } : {}),
     ...(clampedXforms ? { clampedXforms } : {}),
   };
