@@ -1,13 +1,190 @@
 # 🗃️ pyr3 Backlog
 
-Authoritative registry of open tasks. Every open task carries a `[PYR3-NNN]` ID (required) and
+Authoritative task registry. Every task carries a `[PYR3-NNN]` ID (required) and
 best-effort flags (optional): `category · size · sigil · status · milestone`.
 
-Forward-only — shipped work lives in [CHANGELOG.md](CHANGELOG.md). Strategic narrative +
-current cycle lives in [ROADMAP.md](ROADMAP.md).
+Two sections: **🔥 Open** (actionable work, ordered by milestone then bugs-first,
+newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenance,
+newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
+strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
 > **Next ID: PYR3-049** — increment when creating a new entry. Never reuse, even for
-> shipped/removed tasks.
+> shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
+> to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
+
+## 🔥 Open
+
+## [PYR3-033] bug · M · 🐛 · **ROOT CAUSE CONFIRMED — fix queued** · v1.x — flames with >32 xforms render pure black (`MAX_XFORMS` overflow); `electricsheep.242.01373` is the type specimen
+
+> **✅ ROOT CAUSE FOUND (2026-05-29).** NOT a camera/tonemap/DE issue and NOT
+> self-fixed by the v0.22 variation fix — it's a hard **xform-count cap**.
+> `MAX_XFORMS = 32` (`src/genome.ts:263`); the chaos xforms buffer is sized
+> `(MAX_XFORMS + 1) × XFORM_BYTES` = 33 × 464 = **15312 bytes**. `242.01373` has
+> **54 xforms + 1 finalxform**, packing to **25520 bytes** → the `queue.writeBuffer`
+> for `pyr3.chaos.xforms` **overflows and Dawn silently rejects the write**
+> (`Write range (size: 25520) does not fit in [Buffer "pyr3.chaos.xforms"] size
+> (15312)`). The pipeline then iterates against empty/stale xform data → **zero
+> samples deposited → pure-black image**, with no error beyond the validation
+> log. Confirmed 2026-05-29 via `npm run render` (BE threw the validation error;
+> see also FE 4K → black). **flam3-C renders the same flame fine** (698 KB PNG,
+> 817 K nonzero buckets) — so this is a genuine pyr3 bug, not a bad showcase pick.
+
+**Impact:** ANY flame with >32 xforms renders black — not just at 4K, at *every*
+dim (the cap is on xform count, independent of resolution / oversample).
+Rotationally-symmetric Electric Sheep flames routinely exceed 32 (242.01373 is a
+6-fold-symmetric flame: ~9 base xforms × 6 rotations). The failure is **silent**
+(console validation log only), so other corpus sheep may be quietly black too —
+worth a corpus-wide scan for `<xform` count >32 when fixing.
+
+**Fix (queued, not yet done — deferred 2026-05-29 per user):** raise `MAX_XFORMS`
+to comfortably cover symmetric flames (e.g. 64 or 128) and confirm the matching
+bound in the WGSL chaos shader's xform array + the xform-distribution buffer
+(`(MAX_XFORMS + 1) rows × 16384 × u32`, ~528 KB at 32 → scales linearly). Pair
+with a **loud guard**: the importer should clamp-or-reject + warn when a genome
+exceeds the cap (ties into the PYR3-036 loud-parser safeguard) so this can never
+silently black-render again. Add a regression fixture (a >32-xform flame) that
+asserts non-black output.
+
+**Original framing (now superseded):** observed v0.21 as a single black 4K
+showcase render (mean lum 0.00), auto-excluded by the showcase mean-luminance
+gate; hypothesized as camera-off-frame or tonemap/DE collapse. Root-caused
+2026-05-29 during the PYR3-025/033 4K re-test probe.
+
+## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
+
+**Symptom (observed 2026-05-27):** Loading the FE viewer via a share
+link encoded from any multi-genome `.flame` (e.g. `247.29388.flam3`,
+~6.6KB URL) silently fails. Console shows
+`pyr3: failed to decode ?flame= share link — Failed to fetch; falling
+back to welcome`. The viewer then renders the welcome flame instead.
+
+**Hypothesis (unverified):** `streamDecompress` in `src/url-codec.ts`
+uses `new Response(stream).arrayBuffer()` — the `Failed to fetch`
+error likely originates from the Response wrapper around the
+DecompressionStream pipeline. Specific failure cause unknown; possible
+that Vite dev-server's overall payload handling truncates or the
+DecompressionStream barfs on the specific binary contents at this size.
+
+**Next phase:** verify hypothesis against current code first — repro
+with a smaller payload, add try/catch around each pipe stage, dump the
+base64-decoded bytes pre-decompress, narrow the failure point.
+
+Surfaced 2026-05-27 (v0.12) during PYR3-018 FE sweep — driven around by
+loading via the 📂 Open button file picker instead. Sweep proceeded to
+completion; this remains a real share-link regression to close before
+v1.0.
+
+## [PYR3-030] parity · M · 🪨 · queued · v1.x — f64 tonemap precision shim for visualize pass
+
+**Filed 2026-05-27 post Phase-C investigator findings.** Pyr3's `visualize_u32.wgsl`
+`calc_alpha` + `calc_newrgb` run in GPU f32. The predecessor (the BE 4K parity reference)
+runs tonemap in CPU f64. For high-`brightness` / high-`gamma` fixtures (the 248.22289
+class) the f32 precision at the HSV-highpow desaturation roundtrip is a non-trivial
+contributor to BE-vs-predecessor divergence.
+
+**Why M:** mechanism is clear — promote the per-pixel post-chaos tonemap to a CPU f64
+pass between GPU histogram readback and PNG encode. The chaos game still runs in GPU
+f32 (massive parallelism win), but the final per-pixel arithmetic is single-threaded
++ tiny + reasonable to do at f64. Estimated 50-100 LOC port from a CPU f64
+reference backend.
+
+**Acceptance:** 248.22289 BE-vs-predecessor R drops measurably (target: -5 to -10 R-units
+on its own). The FE↔BE quick-mode gate (PYR3-026) thresholds can be tightened post-
+calibration.
+
+**Depends on:** [PYR3-029] should land first (chaos-game fix is the bigger lever; f64
+tonemap is the precision-floor secondary).
+
+## [PYR3-019] parity · L · 🪨 · queued · v1.x — 3-way verify: FE + BE + golden side-by-side
+
+PYR3-018's sweep gates on FE-vs-flam3-C-golden (per spec §3, the v1.0
+ship gate). User-requested 2026-05-27: future verify HTMLs should
+surface all three pairings — FE-vs-golden (current), BE-vs-golden (from
+`meta.json`), and FE-vs-BE direct — so the geometry of any divergence
+is immediately visible (which engine is closer to flam3, where the two
+pyr3 engines disagree regardless of golden alignment).
+
+**Why L:** The current `pyr3-018-fe-collect.ts` produces FE-R + meta-
+stashed BE-R. Adding FE-vs-BE direct requires a per-fixture BE render
+on the fly (`npm run render` per fixture) OR reading from cached
+`fixtures/flam3-goldens/<fix>/pyr3-render.png` (committed gitignored).
+Then the diff PNG would expand to a 6-column grid (golden / FE / BE /
+FE-vs-golden-diff / BE-vs-golden-diff / FE-vs-BE-diff) or a tabbed
+layout. Affects both the collector and the HTML builder.
+
+**How to apply:** Likely extend `scripts/pyr3-018-fe-collect.ts` to
+optionally take a `--include-be-render` flag that loads pyr3-render.png
+(BE), computes the 3 pairings, and emits all three diff PNGs. Update
+`scripts/pyr3-018-build-html.mjs` to a wider grid. Generalize beyond
+PYR3-018 — this is the right shape for any post-v1.x parity verify.
+
+Filed 2026-05-27 (v0.12) as a follow-up to PYR3-018's first FE sweep.
+
+## [PYR3-014] infra · S · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
+
+`npm run test:parity` (19 fixtures, ~89 s total) emits an "Unhandled Error:
+`[vitest-worker]: Timeout calling 'onTaskUpdate'`" at the end and exits 1.
+All 19 tests pass — the error fires from vitest's internal worker→main RPC
+heartbeat (`birpc`), which has a hardcoded ack timeout that's NOT
+configurable via `testTimeout` / `hookTimeout` / `teardownTimeout` /
+`poolOptions`.
+
+**Why:** As Phase 3 adds more fixtures or higher-quality renders, the suite
+will only get slower; the noise will be persistent. The exit-1 makes CI
+treat the run as failed despite green tests.
+
+**Investigation log (2026-05-27, on `vitest@3.2.4`):**
+- ❌ `test.teardownTimeout: 120_000` + `test.hookTimeout: 120_000` in
+  `vitest.config.ts` — no effect (these gate test-runner phases, not RPC).
+- ❌ Switching `test.pool: 'forks'` + `poolOptions.forks.singleFork: true`
+  — same error reproduces. Forks vs threads doesn't change RPC behavior.
+- 🔍 Root cause confirmed: vitest 3.x bundles `birpc` with a hardcoded
+  per-call timeout in `node_modules/vitest/dist/chunks/rpc.-pEldfrD.js:53`.
+  Long-running GPU-driven tests block the event loop enough that the
+  RPC ack window expires.
+
+**Candidate fixes (none XS):**
+- 🅰 **Upgrade to `vitest@4.x`** — major-version bump (current dep `^3.0.0`).
+  May or may not include RPC-timeout config; needs migration testing.
+- 🅱 **Per-fixture vitest invocations** — replace `vitest run
+  src/parity.test.ts` with a shell loop that runs one fixture at a time
+  (each <30s, well under RPC threshold). Bigger restructure of the test
+  harness.
+- 🅲 **Stderr-filter wrapper** — `scripts/run-parity.sh` runs vitest,
+  filters the known noise, exits 0 iff all tests pass. Pragmatic hack.
+
+Surfaced 2026-05-27 during v0.8 (19-fixture expansion); investigation
+deepened 2026-05-27 during PYR3-014 attempt.
+
+## [PYR3-006] infra · S · 🎨 · queued · v1.x — GitHub Actions CI
+
+Build, typecheck, test on push to any branch. Auto-deploy frontend to `gh-pages` on tag push.
+Cache `node_modules` for fast turnaround.
+
+## [PYR3-005] cli · S · 🪨 · queued · v1.x — Single-binary CLI distribution
+
+Ship `pyr3` as a single self-contained executable (Node SEA / pkg / similar) so users don't
+need `npm install` or `node` installed on their machine. v1.0 ships with `npm run render`
+working; post-v1.0 wraps the same `bin/pyr3-render.ts` into a `pyr3` binary. The underneath
+must not change — `Phase 0` proves this seam works.
+
+## [PYR3-003] perf · M · 🎚️ · queued · v1.x — GPU perf characterization
+
+Once v1.0 ships, characterize wall-clock per-fixture on FE (Chrome) and BE (Node). Identify
+hot paths in WGSL. Decide whether perf work is worth the engineering cost.
+
+**Partial findings landed (v0.29, via PYR3-027):**
+- Each chaos dispatch carries **~44 ms fixed overhead** independent of
+  sample count (`wallMs ≈ 20 + 44×dispatches`). The GPU is far from
+  saturated at 1M samples — a 100M-sample dispatch still totals only
+  ~70 ms, i.e. ~0.7 ms of actual compute per 1M samples.
+- Implication: **orchestration shape dominates wall-clock**, not raw
+  compute. Fat dispatches amortize the fixed cost; the v0.29 decoupled
+  orchestrator (`startDecoupledRender`) exploits this.
+- FE (Chrome) and BE (Dawn-node) measured the *same* per-dispatch cost
+  (44.1 ms ≈ 44.9 ms) — no Chrome-WebGPU IPC penalty at this granularity.
+- Bench tooling: `scripts/pyr3-027-be-bench.ts`, `__pyr3Bench` /
+  `__pyr3Decoupled` dev hooks in `src/main.ts`.
 
 ## [PYR3-048] infra · S · 🔧 · queued · post-v1 — Dev server can't serve the brotli-dec-wasm `.wasm` → `/v1/gen/{gen}/id/{id}` fails under `npm run dev`
 
@@ -42,42 +219,6 @@ or an explicit dev-middleware that serves the package's wasm with
 **Files:** `src/brotli.ts:73` (`loadWasmBrotli`), `vite.config.*`.
 
 Filed 2026-05-29 during the v0.29 4K-button verify (local gen/id test).
-
-## [PYR3-047] infra · S · 🔧 ✅ **RESOLVED (2026-05-29)** — `/showcase` 404 under Actions deploy + repo de-bloat
-
-> **✅ Resolved 2026-05-29 (same day as discovered), shipped v0.27.** The
-> `/showcase` gallery silently 404'd after the v0.26 CI-deploy switch: it lives
-> under gitignored `public/showcase/` (~221M), which the old local `dist/` push
-> copied into the artifact but the clean-clone Actions build never has. Fix:
-> publish the gallery as a tar Release asset (`showcase-2026-05-29` on
-> `MattAltermatt/pyr3`) and have `deploy.yml` fetch→cache→untar it into
-> `dist/showcase/` — mirrors the corpus-chunk block; bump `SHOWCASE_RELEASE_TAG`
-> to ship a regen. Also de-bloated: `git filter-repo` purged ~402M of orphaned
-> binaries (old showcase `*.jpg` + `*.flam3chunk`) from all history, `.git`
-> 603M→41M; `gh-pages` deleted. Verified live in Chrome. **Standing rule: deploy
-> artifacts ship as Release assets, never committed to git.**
-
-**Discovered 2026-05-29.** Live `pyr3.app/showcase` returned 404 across every path
-variant while `/` was fine. Root cause: the v0.26 switch from manual local-`dist`
-force-push to the GitHub Actions clean-clone build invalidated the v0.21 "heavy
-images gitignored + deploy-only" assumption — gitignored assets never reach the CI
-artifact. Surfaced a second dead-weight problem: ~395M of orphaned showcase JPEGs +
-corpus chunks sitting in git history from superseded approaches.
-
-## [PYR3-046] infra · XS · 🔧 ✅ **RESOLVED (2026-05-29)** — Bump deploy-workflow actions to Node 24 support
-
-> **✅ Resolved 2026-05-29 (same day as filing).** Bumped to Node-24 majors:
-> `checkout@v6`, `setup-node@v6`, `cache@v5`, `upload-pages-artifact@v5`,
-> `deploy-pages@v5`. Verified each is `using: node24` (or composite wrapping it) with
-> no breaking input changes for our usage; the post-bump deploy run is green with
-> **zero** Node-20 deprecation annotations.
-
-**Filed 2026-05-29.** The v0.26 deploy run emitted a non-blocking annotation: the
-pinned `actions/{checkout,setup-node,cache,upload-artifact}@v4` run on Node.js 20,
-which GitHub forces to Node 24 by **2026-06-16** and removes from runners by
-2026-09-16. No breakage today; bump to whatever majors support Node 24 before the
-cutoff (or set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` as an interim). Pure
-maintenance, low urgency.
 
 ## [PYR3-045] feat · S · 🐑 · open · post-v1 — Showcase cards link to the viewer via `/v1/gen/{gen}/id/{id}`
 
@@ -141,6 +282,88 @@ in-app "not in the corpus" state — not just an error toast over the welcome fl
 Also fix the wording: **don't claim the sheep was "never born"** — we only know it
 isn't in *our* corpus (it may exist upstream / was never preserved). Say "not in the
 corpus" / "not preserved," not "never born." Pairs with PYR3-040 (nearest-neighbor).
+
+## [PYR3-028] parity · S · 🪶 · queued · post-v1 — Deterministic-seed FE↔BE calibration
+
+**Frame (filed 2026-05-27, post v0.15 PYR3-026 ship):** The FE↔BE parity
+gate shipped in v0.15 measures R(FE, BE) with both engines using
+`Math.random()` seeds (`renderer.ts:164` defaults; `main.ts:84` browser
+side; `bin/pyr3-render.ts` CLI side). Empirically observed run-to-run
+variance was tiny (< 1%), so R is dominated by systematic engine drift
+not RNG noise — but the calibration leaves a small unmeasured noise
+margin folded into `feBeThresholdR`'s 50%+2.0 headroom. A cleaner
+mid-term move: thread a deterministic seed through both engines (e.g.,
+hash of fixture-id) so R(FE, BE) is purely-engine-drift, then re-
+calibrate with much tighter thresholds (probably mul=1.1 + add=1.0).
+
+**Why post-v1.0:** The current thresholds work — gate passes, drift
+levels are documented, high-R outliers are already on PYR3-017/021's
+investigation list. Tighter thresholds would catch smaller regressions
+but the v0.15 gate already catches anything visible.
+
+**Next phase:** Add `--seed N` flag to `bin/pyr3-render.ts`; add a
+`__pyr3CapturePixels({ seed })` hook variant OR a `__pyr3SetSeed(N)`
+dev hook so the test rig can pin both sides to the same seed. Re-run
+calibration; tighten thresholds.
+
+## [PYR3-002] feat · XL · 🪨 · someday · post-v1 — Markov-chain flame generation research
+
+Algorithmic research: train a Markov chain on a corpus of "good" Electric Sheep flames, sample
+new flames from the chain, evaluate visual quality. Possibly with variation-arm or
+parameter-space embeddings. Open research, not a feature ship.
+
+**Depends on:** editor ([PYR3-001]) so generated flames have somewhere to live + be tweaked.
+
+## [PYR3-001] feat · XL · 🪨 · someday · post-v1 — Visual flame editor
+
+Mutator + vault + recents + undo + landing screen + session persistence — essentially
+an earlier prototype's scope, in pure TS (no WASM). Framework choice (React / Svelte / Solid) is itself
+a load-bearing decision worthy of dueling agents when pulled forward.
+
+**Depends on:** v1.0 ship-gate pass.
+
+**Why much-later:** the editor is large enough to consume the project. Locking the viewer +
+share-link + ship-gate first keeps the v1.0 scope honest.
+
+## ✅ Resolved & shipped
+
+_Kept for provenance. Newest first._
+
+## [PYR3-047] infra · S · 🔧 ✅ **RESOLVED (2026-05-29)** — `/showcase` 404 under Actions deploy + repo de-bloat
+
+> **✅ Resolved 2026-05-29 (same day as discovered), shipped v0.27.** The
+> `/showcase` gallery silently 404'd after the v0.26 CI-deploy switch: it lives
+> under gitignored `public/showcase/` (~221M), which the old local `dist/` push
+> copied into the artifact but the clean-clone Actions build never has. Fix:
+> publish the gallery as a tar Release asset (`showcase-2026-05-29` on
+> `MattAltermatt/pyr3`) and have `deploy.yml` fetch→cache→untar it into
+> `dist/showcase/` — mirrors the corpus-chunk block; bump `SHOWCASE_RELEASE_TAG`
+> to ship a regen. Also de-bloated: `git filter-repo` purged ~402M of orphaned
+> binaries (old showcase `*.jpg` + `*.flam3chunk`) from all history, `.git`
+> 603M→41M; `gh-pages` deleted. Verified live in Chrome. **Standing rule: deploy
+> artifacts ship as Release assets, never committed to git.**
+
+**Discovered 2026-05-29.** Live `pyr3.app/showcase` returned 404 across every path
+variant while `/` was fine. Root cause: the v0.26 switch from manual local-`dist`
+force-push to the GitHub Actions clean-clone build invalidated the v0.21 "heavy
+images gitignored + deploy-only" assumption — gitignored assets never reach the CI
+artifact. Surfaced a second dead-weight problem: ~395M of orphaned showcase JPEGs +
+corpus chunks sitting in git history from superseded approaches.
+
+## [PYR3-046] infra · XS · 🔧 ✅ **RESOLVED (2026-05-29)** — Bump deploy-workflow actions to Node 24 support
+
+> **✅ Resolved 2026-05-29 (same day as filing).** Bumped to Node-24 majors:
+> `checkout@v6`, `setup-node@v6`, `cache@v5`, `upload-pages-artifact@v5`,
+> `deploy-pages@v5`. Verified each is `using: node24` (or composite wrapping it) with
+> no breaking input changes for our usage; the post-bump deploy run is green with
+> **zero** Node-20 deprecation annotations.
+
+**Filed 2026-05-29.** The v0.26 deploy run emitted a non-blocking annotation: the
+pinned `actions/{checkout,setup-node,cache,upload-artifact}@v4` run on Node.js 20,
+which GitHub forces to Node 24 by **2026-06-16** and removes from runners by
+2026-09-16. No breakage today; bump to whatever majors support Node 24 before the
+cutoff (or set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` as an interim). Pure
+maintenance, low urgency.
 
 ## [PYR3-038] infra · M · 🔧 ✅ **RESOLVED (v0.26, 2026-05-29)** — CI deploy automation for corpus chunks
 
@@ -434,42 +657,6 @@ the root cause is WGSL fma/rounding that is hard to fully control. **Next phase 
   showcase build's luminance scan + spot-check N fixtures vs their reference URLs
   before committing to engine work.
 
-## [PYR3-033] bug · M · 🐛 · **ROOT CAUSE CONFIRMED — fix queued** · v1.x — flames with >32 xforms render pure black (`MAX_XFORMS` overflow); `electricsheep.242.01373` is the type specimen
-
-> **✅ ROOT CAUSE FOUND (2026-05-29).** NOT a camera/tonemap/DE issue and NOT
-> self-fixed by the v0.22 variation fix — it's a hard **xform-count cap**.
-> `MAX_XFORMS = 32` (`src/genome.ts:263`); the chaos xforms buffer is sized
-> `(MAX_XFORMS + 1) × XFORM_BYTES` = 33 × 464 = **15312 bytes**. `242.01373` has
-> **54 xforms + 1 finalxform**, packing to **25520 bytes** → the `queue.writeBuffer`
-> for `pyr3.chaos.xforms` **overflows and Dawn silently rejects the write**
-> (`Write range (size: 25520) does not fit in [Buffer "pyr3.chaos.xforms"] size
-> (15312)`). The pipeline then iterates against empty/stale xform data → **zero
-> samples deposited → pure-black image**, with no error beyond the validation
-> log. Confirmed 2026-05-29 via `npm run render` (BE threw the validation error;
-> see also FE 4K → black). **flam3-C renders the same flame fine** (698 KB PNG,
-> 817 K nonzero buckets) — so this is a genuine pyr3 bug, not a bad showcase pick.
-
-**Impact:** ANY flame with >32 xforms renders black — not just at 4K, at *every*
-dim (the cap is on xform count, independent of resolution / oversample).
-Rotationally-symmetric Electric Sheep flames routinely exceed 32 (242.01373 is a
-6-fold-symmetric flame: ~9 base xforms × 6 rotations). The failure is **silent**
-(console validation log only), so other corpus sheep may be quietly black too —
-worth a corpus-wide scan for `<xform` count >32 when fixing.
-
-**Fix (queued, not yet done — deferred 2026-05-29 per user):** raise `MAX_XFORMS`
-to comfortably cover symmetric flames (e.g. 64 or 128) and confirm the matching
-bound in the WGSL chaos shader's xform array + the xform-distribution buffer
-(`(MAX_XFORMS + 1) rows × 16384 × u32`, ~528 KB at 32 → scales linearly). Pair
-with a **loud guard**: the importer should clamp-or-reject + warn when a genome
-exceeds the cap (ties into the PYR3-036 loud-parser safeguard) so this can never
-silently black-render again. Add a regression fixture (a >32-xform flame) that
-asserts non-black output.
-
-**Original framing (now superseded):** observed v0.21 as a single black 4K
-showcase render (mean lum 0.00), auto-excluded by the showcase mean-luminance
-gate; hypothesized as camera-off-frame or tonemap/DE collapse. Root-caused
-2026-05-29 during the PYR3-025/033 4K re-test probe.
-
 ## [PYR3-032] chore · M · ✅ **RESOLVED (2026-05-29)** — Purge predecessor-repo references from the codebase
 
 **✅ Resolved by a working-tree scrub (2026-05-29).** A pass removed all
@@ -518,27 +705,6 @@ console for warnings); deletable code deleted.
 **Why v1.0-gating:** Public ship is irreversible reputation-wise. The
 cleanup pass is cheap (likely 2-4 hours session) and high-leverage —
 shipping with vestigial UI / dead code reads as unfinished.
-
-## [PYR3-030] parity · M · 🪨 · queued · v1.x — f64 tonemap precision shim for visualize pass
-
-**Filed 2026-05-27 post Phase-C investigator findings.** Pyr3's `visualize_u32.wgsl`
-`calc_alpha` + `calc_newrgb` run in GPU f32. The predecessor (the BE 4K parity reference)
-runs tonemap in CPU f64. For high-`brightness` / high-`gamma` fixtures (the 248.22289
-class) the f32 precision at the HSV-highpow desaturation roundtrip is a non-trivial
-contributor to BE-vs-predecessor divergence.
-
-**Why M:** mechanism is clear — promote the per-pixel post-chaos tonemap to a CPU f64
-pass between GPU histogram readback and PNG encode. The chaos game still runs in GPU
-f32 (massive parallelism win), but the final per-pixel arithmetic is single-threaded
-+ tiny + reasonable to do at f64. Estimated 50-100 LOC port from a CPU f64
-reference backend.
-
-**Acceptance:** 248.22289 BE-vs-predecessor R drops measurably (target: -5 to -10 R-units
-on its own). The FE↔BE quick-mode gate (PYR3-026) thresholds can be tightened post-
-calibration.
-
-**Depends on:** [PYR3-029] should land first (chaos-game fix is the bigger lever; f64
-tonemap is the precision-floor secondary).
 
 ## [PYR3-029] parity · L · ✅ resolved (f32 floor accepted in v0.19) — Sample-budget + post-chaos pipeline parity audit (root cause of PYR3-017/021/024 divergence)
 
@@ -822,31 +988,6 @@ once the bisection completes.
 re-dispatch):** `probeC-02226-{baseline,no-de}.png`, `probeC-22289-{native,no-de-native}.png`,
 `flam3-02226-{palette,tm}.json`, `flam3-02226-stderr.log`,
 `flam3-22289-palette.json`, `measure-r.mjs`, `palette-diff.mjs`, `dump-hist.mjs`.
-
-## [PYR3-028] parity · S · 🪶 · queued · post-v1 — Deterministic-seed FE↔BE calibration
-
-**Frame (filed 2026-05-27, post v0.15 PYR3-026 ship):** The FE↔BE parity
-gate shipped in v0.15 measures R(FE, BE) with both engines using
-`Math.random()` seeds (`renderer.ts:164` defaults; `main.ts:84` browser
-side; `bin/pyr3-render.ts` CLI side). Empirically observed run-to-run
-variance was tiny (< 1%), so R is dominated by systematic engine drift
-not RNG noise — but the calibration leaves a small unmeasured noise
-margin folded into `feBeThresholdR`'s 50%+2.0 headroom. A cleaner
-mid-term move: thread a deterministic seed through both engines (e.g.,
-hash of fixture-id) so R(FE, BE) is purely-engine-drift, then re-
-calibrate with much tighter thresholds (probably mul=1.1 + add=1.0).
-
-**Why post-v1.0:** The current thresholds work — gate passes, drift
-levels are documented, high-R outliers are already on PYR3-017/021's
-investigation list. Tighter thresholds would catch smaller regressions
-but the v0.15 gate already catches anything visible.
-
-**Next phase:** Add `--seed N` flag to `bin/pyr3-render.ts`; add a
-`__pyr3CapturePixels({ seed })` hook variant OR a `__pyr3SetSeed(N)`
-dev hook so the test rig can pin both sides to the same seed. Re-run
-calibration; tighten thresholds.
-
-
 
 ## [PYR3-027] perf · M · 🪶 ✅ **RESOLVED (v0.29, 2026-05-29)** — Why is FE 13× slower than BE for the same render?
 
@@ -1242,56 +1383,6 @@ signature direction for both fixtures.
 
 Originally filed 2026-05-27 (v0.13). Closed 2026-05-27 post-Phase-C.
 
-## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
-
-**Symptom (observed 2026-05-27):** Loading the FE viewer via a share
-link encoded from any multi-genome `.flame` (e.g. `247.29388.flam3`,
-~6.6KB URL) silently fails. Console shows
-`pyr3: failed to decode ?flame= share link — Failed to fetch; falling
-back to welcome`. The viewer then renders the welcome flame instead.
-
-**Hypothesis (unverified):** `streamDecompress` in `src/url-codec.ts`
-uses `new Response(stream).arrayBuffer()` — the `Failed to fetch`
-error likely originates from the Response wrapper around the
-DecompressionStream pipeline. Specific failure cause unknown; possible
-that Vite dev-server's overall payload handling truncates or the
-DecompressionStream barfs on the specific binary contents at this size.
-
-**Next phase:** verify hypothesis against current code first — repro
-with a smaller payload, add try/catch around each pipe stage, dump the
-base64-decoded bytes pre-decompress, narrow the failure point.
-
-Surfaced 2026-05-27 (v0.12) during PYR3-018 FE sweep — driven around by
-loading via the 📂 Open button file picker instead. Sweep proceeded to
-completion; this remains a real share-link regression to close before
-v1.0.
-
-## [PYR3-019] parity · L · 🪨 · queued · v1.x — 3-way verify: FE + BE + golden side-by-side
-
-PYR3-018's sweep gates on FE-vs-flam3-C-golden (per spec §3, the v1.0
-ship gate). User-requested 2026-05-27: future verify HTMLs should
-surface all three pairings — FE-vs-golden (current), BE-vs-golden (from
-`meta.json`), and FE-vs-BE direct — so the geometry of any divergence
-is immediately visible (which engine is closer to flam3, where the two
-pyr3 engines disagree regardless of golden alignment).
-
-**Why L:** The current `pyr3-018-fe-collect.ts` produces FE-R + meta-
-stashed BE-R. Adding FE-vs-BE direct requires a per-fixture BE render
-on the fly (`npm run render` per fixture) OR reading from cached
-`fixtures/flam3-goldens/<fix>/pyr3-render.png` (committed gitignored).
-Then the diff PNG would expand to a 6-column grid (golden / FE / BE /
-FE-vs-golden-diff / BE-vs-golden-diff / FE-vs-BE-diff) or a tabbed
-layout. Affects both the collector and the HTML builder.
-
-**How to apply:** Likely extend `scripts/pyr3-018-fe-collect.ts` to
-optionally take a `--include-be-render` flag that loads pyr3-render.png
-(BE), computes the 3 pairings, and emits all three diff PNGs. Update
-`scripts/pyr3-018-build-html.mjs` to a wider grid. Generalize beyond
-PYR3-018 — this is the right shape for any post-v1.x parity verify.
-
-Filed 2026-05-27 (v0.12) as a follow-up to PYR3-018's first FE sweep.
-
-
 ## [PYR3-017] parity · M · ✅ resolved (superseded by PYR3-029) — `coverage.248.02226` systematic-brightness divergence
 
 **SUPERSEDED 2026-05-27 by `[PYR3-029]`.** Phase C investigator located
@@ -1443,42 +1534,6 @@ Surfaced as a session-handoff mystery 2026-05-27 (v0.7 → v0.11); first
 focused investigation 2026-05-27. Probe script preserved at
 `scripts/pyr3-017-probe.ts` for re-use.
 
-## [PYR3-014] infra · S · 🪶 · queued · v1.x — Vitest worker RPC timeout on 89s parity suite
-
-`npm run test:parity` (19 fixtures, ~89 s total) emits an "Unhandled Error:
-`[vitest-worker]: Timeout calling 'onTaskUpdate'`" at the end and exits 1.
-All 19 tests pass — the error fires from vitest's internal worker→main RPC
-heartbeat (`birpc`), which has a hardcoded ack timeout that's NOT
-configurable via `testTimeout` / `hookTimeout` / `teardownTimeout` /
-`poolOptions`.
-
-**Why:** As Phase 3 adds more fixtures or higher-quality renders, the suite
-will only get slower; the noise will be persistent. The exit-1 makes CI
-treat the run as failed despite green tests.
-
-**Investigation log (2026-05-27, on `vitest@3.2.4`):**
-- ❌ `test.teardownTimeout: 120_000` + `test.hookTimeout: 120_000` in
-  `vitest.config.ts` — no effect (these gate test-runner phases, not RPC).
-- ❌ Switching `test.pool: 'forks'` + `poolOptions.forks.singleFork: true`
-  — same error reproduces. Forks vs threads doesn't change RPC behavior.
-- 🔍 Root cause confirmed: vitest 3.x bundles `birpc` with a hardcoded
-  per-call timeout in `node_modules/vitest/dist/chunks/rpc.-pEldfrD.js:53`.
-  Long-running GPU-driven tests block the event loop enough that the
-  RPC ack window expires.
-
-**Candidate fixes (none XS):**
-- 🅰 **Upgrade to `vitest@4.x`** — major-version bump (current dep `^3.0.0`).
-  May or may not include RPC-timeout config; needs migration testing.
-- 🅱 **Per-fixture vitest invocations** — replace `vitest run
-  src/parity.test.ts` with a shell loop that runs one fixture at a time
-  (each <30s, well under RPC threshold). Bigger restructure of the test
-  harness.
-- 🅲 **Stderr-filter wrapper** — `scripts/run-parity.sh` runs vitest,
-  filters the known noise, exits 0 iff all tests pass. Pragmatic hack.
-
-Surfaced 2026-05-27 during v0.8 (19-fixture expansion); investigation
-deepened 2026-05-27 during PYR3-014 attempt.
-
 ## [PYR3-013] feat · L · ✅ **CLOSED (superseded by PYR3-007, v0.21)** — Showcase gallery (mirror the predecessor's v1.1)
 
 > **✅ CLOSED — superseded.** This was the original (broad) showcase-gallery idea. The public
@@ -1552,69 +1607,6 @@ not `genomeOversample × g.scale`.
 - **milestone:** v1.x · v2.0 · post-v1 · ...
 
 Order convention when flags present: `category · size · sigil · status · milestone — title`.
-
-## [PYR3-001] feat · XL · 🪨 · someday · post-v1 — Visual flame editor
-
-Mutator + vault + recents + undo + landing screen + session persistence — essentially
-an earlier prototype's scope, in pure TS (no WASM). Framework choice (React / Svelte / Solid) is itself
-a load-bearing decision worthy of dueling agents when pulled forward.
-
-**Depends on:** v1.0 ship-gate pass.
-
-**Why much-later:** the editor is large enough to consume the project. Locking the viewer +
-share-link + ship-gate first keeps the v1.0 scope honest.
-
-## [PYR3-002] feat · XL · 🪨 · someday · post-v1 — Markov-chain flame generation research
-
-Algorithmic research: train a Markov chain on a corpus of "good" Electric Sheep flames, sample
-new flames from the chain, evaluate visual quality. Possibly with variation-arm or
-parameter-space embeddings. Open research, not a feature ship.
-
-**Depends on:** editor ([PYR3-001]) so generated flames have somewhere to live + be tweaked.
-
-## [PYR3-003] perf · M · 🎚️ · queued · v1.x — GPU perf characterization
-
-Once v1.0 ships, characterize wall-clock per-fixture on FE (Chrome) and BE (Node). Identify
-hot paths in WGSL. Decide whether perf work is worth the engineering cost.
-
-**Partial findings landed (v0.29, via PYR3-027):**
-- Each chaos dispatch carries **~44 ms fixed overhead** independent of
-  sample count (`wallMs ≈ 20 + 44×dispatches`). The GPU is far from
-  saturated at 1M samples — a 100M-sample dispatch still totals only
-  ~70 ms, i.e. ~0.7 ms of actual compute per 1M samples.
-- Implication: **orchestration shape dominates wall-clock**, not raw
-  compute. Fat dispatches amortize the fixed cost; the v0.29 decoupled
-  orchestrator (`startDecoupledRender`) exploits this.
-- FE (Chrome) and BE (Dawn-node) measured the *same* per-dispatch cost
-  (44.1 ms ≈ 44.9 ms) — no Chrome-WebGPU IPC penalty at this granularity.
-- Bench tooling: `scripts/pyr3-027-be-bench.ts`, `__pyr3Bench` /
-  `__pyr3Decoupled` dev hooks in `src/main.ts`.
-
-## [PYR3-004] gpu · S · 🪨 ✅ **RESOLVED (2026-05-29)** — Expand variation set audit
-
-> **✅ Resolved by audit (2026-05-29), no code.** pyr3's variation table `V`
-> (`src/variations.ts`) holds **exactly 99 entries, indices 0–98** (linear→mobius)
-> — the complete canonical flam3 set — and PYR3-036's reachability test already
-> asserts every entry survives import. `gdoffs` (named below as the gap) is **not a
-> flam3 variation** (flam3-C's own source defines no such name); it was a
-> predecessor-specific artifact whose framing died with the v0.25 scrub. Audit
-> conclusion: variation set complete + guarded; nothing to port.
-
-**Filed (original framing, now obsolete):** The prior TS+WebGPU viewer's README claims 99
-variations; the JVM predecessor shipped 98/99 with `gdoffs` as the gap. Audit which 99 the
-prior viewer has, confirm completeness, port any missing arms.
-
-## [PYR3-005] cli · S · 🪨 · queued · v1.x — Single-binary CLI distribution
-
-Ship `pyr3` as a single self-contained executable (Node SEA / pkg / similar) so users don't
-need `npm install` or `node` installed on their machine. v1.0 ships with `npm run render`
-working; post-v1.0 wraps the same `bin/pyr3-render.ts` into a `pyr3` binary. The underneath
-must not change — `Phase 0` proves this seam works.
-
-## [PYR3-006] infra · S · 🎨 · queued · v1.x — GitHub Actions CI
-
-Build, typecheck, test on push to any branch. Auto-deploy frontend to `gh-pages` on tag push.
-Cache `node_modules` for fast turnaround.
 
 ## [PYR3-007] feat · L · 🪨 · ✅ gallery shipped v0.21 (Chunk 1) · v1.0 — Public showcase gallery
 
@@ -1699,3 +1691,17 @@ viewer, `/showcase` = gallery. The unversioned principle still holds for
 
 **Depends on:** `[PYR3-031]` FE cleanup pass (bundled — they share
 the FE surface area; ship together).
+
+## [PYR3-004] gpu · S · 🪨 ✅ **RESOLVED (2026-05-29)** — Expand variation set audit
+
+> **✅ Resolved by audit (2026-05-29), no code.** pyr3's variation table `V`
+> (`src/variations.ts`) holds **exactly 99 entries, indices 0–98** (linear→mobius)
+> — the complete canonical flam3 set — and PYR3-036's reachability test already
+> asserts every entry survives import. `gdoffs` (named below as the gap) is **not a
+> flam3 variation** (flam3-C's own source defines no such name); it was a
+> predecessor-specific artifact whose framing died with the v0.25 scrub. Audit
+> conclusion: variation set complete + guarded; nothing to port.
+
+**Filed (original framing, now obsolete):** The prior TS+WebGPU viewer's README claims 99
+variations; the JVM predecessor shipped 98/99 with `gdoffs` as the gap. Audit which 99 the
+prior viewer has, confirm completeness, port any missing arms.

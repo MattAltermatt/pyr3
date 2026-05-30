@@ -37,123 +37,68 @@ in [BACKLOG.md](BACKLOG.md).
 | **v0.1** | 2026-05-27 | `aae6d5b` | **Phase 0: TS+WGPU engine basis.** Copied the prior TS+WebGPU viewer wholesale (`src/` + `bin/` + `scripts/` + `tests/` + `fixtures/` + `index.html` + Vite/tsconfig/package). Renamed it to `pyr3`. Stripped the prior viewer's identifiers across 7 files. Verified: `npm test` 4471/4471 green, `npm run render` produces PNG in 5.22 s, `npm run dev` + Chrome verify renders welcome flame. |
 | **v0.0** | 2026-05-27 | `bbc3b5a` | **Project genesis.** 6-doc structure + design spec + LICENSE seeded. No engine code yet. |
 
-## 🎯 Next phases
+## 🎯 Where we are — v1.0 ship gate MET
 
-### Phase 3 — Iterate to v1.0 ship gate (active, target v0.15 → v1.0)
+Both v1.0 ship gates are **green** for the curated 25-fixture corpus, and the
+public surface is live. The engineering bar for 1.0 is cleared; **stamping the
+`v1.0` version is the remaining call** — cut it now, or fold in more of the v1.x
+polish below first.
 
-Drive the parity rigs to passing. v1.0 = both ship gates green for the
-curated fixture set. Each iteration is a discrete versioned ship.
+- ✅ **BE parity vs flam3-C** — `npm run test:parity` 25/25 (hero `247.19679`
+  R=2.78). Tier-aware thresholds (v0.19) accept the GPU-f32-vs-CPU-f64 precision
+  floor: per "similar but not the same" (VISION), pyr3 owes visual tolerance, not
+  bit-exactness. PYR3-029 closed.
+- ✅ **FE↔BE parity at quick-mode dims** — `npm run test:parity-fe-be` 25/25
+  (PYR3-026, shipped v0.15).
+- ✅ **Public surface** — repo public at `github.com/MattAltermatt/pyr3`; site at
+  the apex `https://pyr3.app/` (viewer) + `/showcase` (gallery); deploy automated
+  on push to `main` (PYR3-038). The v1.0 chunk plan (gallery · click-to-load ·
+  FE cleanup · public repo+deploy) is done except the deferred click-to-load
+  (Chunk 2 → post-v1 design, tracked by PYR3-020).
 
-**v1.0 ship gates (re-scoped post-2026-05-28 pivot to flam3-C ground truth):**
-- ✅ **BE parity vs flam3-C** — infrastructure shipped v0.17; goldens
-  switched from the predecessor → deterministic flam3-C (`isaac_seed=<id>`)
-  in v0.18. 4K showcase set: 4/5 clean (247.19679 hero R=2.78);
-  19-fixture corpus baselines recalibrated. 1 fixture (248.22289)
-  still blocked on PYR3-029.
-- ✅ **FE↔BE parity at quick-mode dims** — shipped v0.15 (PYR3-026 closed).
+**Latest ship:** v0.29 — live 4K render in the browser via the decoupled
+orchestrator (PYR3-027). Full arc (v0.19 → v0.29) in [CHANGELOG.md](CHANGELOG.md).
 
-**Acceptance:** both gates green. Trigger pulled for replacing
-the predecessor projects on GitHub.
+## 🚧 Next up — open work, by priority
 
-## 🚧 Current todos — next steps to v1.0
+Detail lives in [BACKLOG.md](BACKLOG.md) → **🔥 Open**. Roughly ordered:
 
-Post-v0.18 reframe (2026-05-28): PYR3-029 deep investigation across
-Phases 1-5 ported every flam3-canonical chaos-engine algorithm we could
-identify (rand transforms, walker init RNG draws, xform-pick distribution
-table, bilateral RNG-aligned trace infrastructure). R(02226) ≈ 29.91
-remained unchanged — the residual is **GPU f32 vs CPU f64 precision in
-the variation kernels**, not an algorithm bug. CLAUDE.md decision #4
-("GPU only; no CPU path") is load-bearing: chasing bit-exactness via
-compensated arithmetic in WGSL is heroic for marginal payoff.
+1. 🐛 **PYR3-033 — flames with >32 xforms render black** (`MAX_XFORMS=32`
+   buffer overflow; root-caused v0.29). Silent, hits rotationally-symmetric
+   flames at *every* dim. Fix: raise the cap + loud importer guard + a
+   >32-xform regression fixture. **Top of the queue.**
+2. 🐛 **PYR3-020 — `?flame=` share-link decode fails on ~6KB+ payloads.**
+   Also carries the deferred gallery→viewer click-to-load (v1.0 Chunk 2).
+3. **PYR3-019 — 3-way verify** (FE + BE + golden side-by-side).
+4. **Engine / infra (v1.x):** `[PYR3-030]` f64 tonemap precision shim ·
+   `[PYR3-014]` vitest worker RPC timeout on the parity suite · `[PYR3-003]`
+   GPU perf characterization (partial findings landed v0.29) · `[PYR3-005]`
+   single-binary CLI · `[PYR3-006]` build+test CI gate.
+5. **Corpus share-link polish (post-v1):** `[PYR3-039]` honest missing-sheep
+   wording · `[PYR3-040]` nearest-neighbor for missing ids · `[PYR3-041]`
+   viewer nav hints · `[PYR3-045]` showcase cards → viewer · `[PYR3-042]`
+   showcase reachable from the viewer.
+6. **Viewer / DX polish (post-v1):** `[PYR3-044]` favicon redesign ·
+   `[PYR3-048]` dev-server brotli-wasm (so `/v1/gen/.../id/...` works under
+   `npm run dev`) · `[PYR3-028]` deterministic-seed FE↔BE calibration ·
+   `[PYR3-043]` optional 4K parity gate vs flam3-C.
 
-**"Similar but not the same"** (per VISION.md) applies here — pyr3
-doesn't owe flam3 bit-faithfulness, just visual tolerance within the
-curated corpus. v1.0 ships when the curated corpus passes its
-per-fixture thresholds (which acknowledge the f32 reality), not when
-every fixture closes to R<5.
-
-🎯 **Next phase — v1.0 (decomposed into 4 chunks, 2026-05-28):**
-
-The v1.0 public surface was broken into independently-shippable chunks
-(supersedes the earlier "four deliverables bundled" framing). **Landing
-reversal:** root `/` stays the FE viewer (front door); the gallery lives
-at `/showcase`. This *reverses* the original "root = showcase" decision —
-re-decided once the viewer's continued root presence was recalled.
-
-1. ✅ **Chunk 1 — public `/showcase` gallery** (shipped v0.21). Static
-   masonry gallery from the 55 pre-rendered 4K PNGs; two JPEG tiers
-   (`~q90`), `.flame` downloads, attribution, render-time pills (time only,
-   **no `×faster` comparison**), permalinks, mobile. Heavy images gitignored
-   + deploy-only (gh-pages via Vite `dist/`; never in `main`). Unversioned
-   URL. See CHANGELOG v0.21 + spec `docs/superpowers/specs/2026-05-28-v1.0-showcase-gallery-design.md`.
-2. 🚧 **Chunk 2 — gallery→viewer click-to-load + `[PYR3-020]`** (post-v1
-   sharing-mechanics). Deferred: how share/load works needs its own design.
-3. ✅ **Chunk 3 — `[PYR3-031]` FE viewer cleanup pass** (FE-cleanup slice
-   shipped v0.23: slim top-bar rebuild, on-demand progress row, dreaming cue,
-   load-failure toast, Share button removed, help pages rebranded; swept
-   vestigial `setLoading`/status-pulse/`.pyr3-bar-btn-accent`). Companion
-   About-page rebuild filed as `[PYR3-037]`. See CHANGELOG v0.23.
-4. ✅ **Chunk 4 — public GitHub repo + automated deploy** (shipped v0.25–v0.26).
-   `github.com/MattAltermatt/pyr3` is public; the predecessor scrub landed (v0.25);
-   the site serves at the **apex `https://pyr3.app/`** (Vite `base: '/'`) with
-   `mattaltermatt.github.io/pyr3/` 301-redirecting to it. Deploy is now **automated
-   on push to `main`** via GitHub Actions (`[PYR3-038]`, v0.26 — see below).
-
-   Viewer URL: `https://pyr3.app/` · gallery: `https://pyr3.app/showcase/`
-   (both unversioned — always latest).
-
-   **Pre-rendered artifacts already in place (2026-05-28):**
-   - 55 × 4K renders at `fixtures/showcase-v1.0/<id>.pyr3-4k.png`
-     (gitignored, ~928MB total disk; regenerated by
-     `scripts/render-showcase-v1.0.mjs` in ~9 min on M-series Mac).
-   - Manifest JSON committed for the gallery-builder lookup table
-     (carries source-`.flame` paths + per-fixture render times).
-
-✅ **v0.20 shipped (2026-05-28):** Parity corpus 19→25; `--preset
-{quick,4k}` CLI flag family (legacy `--quick` removed; 4K wrapper
-script deleted); 4K meta harmonized; `[PYR3-023]` closes. See CHANGELOG
-v0.20.
-
-✅ **v0.19 shipped (2026-05-28):** Per-fixture threshold tier
-recalibration. 19-fixture corpus tier-aware: 14 Tier-1 (R<5), 5 Tier-2
-(R≥5, engine-precision-drift band). `[PYR3-029]` formally closes. See
-CHANGELOG v0.19.
-
-🪨 **Post-v1.0 backlog (filed, not gating):**
-- `[PYR3-030]` — f64 tonemap precision shim (helps with FE↔BE
-  tightening, secondary post-PYR3-029 finding).
-- Phase 6 PYR3-029 follow-on: per-variation f64 reference impl +
-  variation bottleneck locate. If a future contributor cares about
-  closing the precision gap, this is the runway.
+**Precision floor (closed, kept as context):** PYR3-029's Phase 1-5
+investigation ported every flam3-canonical chaos algorithm; the residual
+(e.g. `coverage.248.02226` R≈29.9) is **GPU f32 vs CPU f64 in the variation
+kernels**, not an algorithm bug. Per CLAUDE.md decision #4 (GPU only) +
+VISION's "similar but not the same," pyr3 owes visual tolerance, not
+bit-exactness — so the tier-2 thresholds (v0.19) accept it. A future f64
+reference impl + variation-bottleneck locate is the runway if anyone wants to
+close it (`[PYR3-030]` is the nearest slice).
 
 ## 🔮 Future (post-v1.0, sketch only)
 
-- **Visual flame editor** (BACKLOG `[PYR3-001]`) — open + tweak + save flames; framework TBD
-  via dueling agents when pulled forward.
-- **Markov-chain flame generation research** (BACKLOG `[PYR3-002]`) — algorithmic exploration
-  of new genome-generation strategies.
-- **Single-binary CLI distribution** (BACKLOG `[PYR3-005]`) — Node SEA / pkg wraps
-  `bin/pyr3-render.ts` into a self-contained executable.
-- **GitHub Actions CI** (BACKLOG `[PYR3-006]`) — build + test on PR/push. (The
-  **auto-deploy** half shipped separately in v0.26 via `[PYR3-038]`; this entry is
-  now just the build+test CI gate.)
-- **Showcase gallery on homepage** (BACKLOG `[PYR3-007]`).
+The genuinely-someday big swings — everything concrete + near-term lives in
+**🚧 Next up** above; the corpus share-link feature itself shipped v0.24
+(`/v1/gen/{gen}/id/{id}`, see CHANGELOG):
 
-### 🐑 Corpus share-links — follow-ups (the `/v1/gen/{gen}/id/{id}` feature, shipped v0.24)
-
-The corpus share-link feature is live (chunked brotli delivery from
-electric-sheep-fold; see CHANGELOG v0.24 + `docs/corpus-share-url.md`). Next
-refinements, filed 2026-05-29:
-
-- ✅ **CI deploy automation** (BACKLOG `[PYR3-038]`, **shipped v0.26**) — push to
-  `main` auto-deploys via `actions/deploy-pages`, baking chunks from the ESF Release
-  (pinned + cached by `CHUNK_RELEASE_TAG`). Followed by `[PYR3-046]` (Node-24 action bump).
-- **Missing sheep: still render the viewer + honest wording** (BACKLOG `[PYR3-039]`) —
-  a missing id (e.g. `/v1/gen/248/id/103`) should show the full viewer + a graceful
-  "not in the corpus" state; stop saying "never born."
-- **Nearest-neighbor for missing ids** (BACKLOG `[PYR3-040]`) — offer a one-click link
-  to the closest existing sheep instead of a dead end.
-- **Viewer navigation hints** (BACKLOG `[PYR3-041]`) — surface next/nearby available
-  sheep (via the `avail` manifest) for click-through; no id-guessing.
-- **Showcase reachable from the main viewer** (BACKLOG `[PYR3-042]`) — an in-app entry
-  to the `/showcase` gallery.
+- **Visual flame editor** (BACKLOG `[PYR3-001]`) — open + tweak + save flames;
+  framework TBD via dueling agents when pulled forward.
+- **Markov-chain flame generation research** (BACKLOG `[PYR3-002]`) — algorithmic
+  exploration of new genome-generation strategies.
