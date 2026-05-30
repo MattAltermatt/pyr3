@@ -8,6 +8,7 @@ in [BACKLOG.md](BACKLOG.md).
 
 | Version | Date | Commit | Headline |
 |---|---|---|---|
+| **v0.34** | 2026-05-29 | `pending` | **Viewer quality control (`[PYR3-050]`).** The action bar's standalone 🎯 4K button becomes a **quality ladder** — `QUALITY_TIERS` (shared `src/presets.ts`): Draft·Preview·Standard·High·4K (Preview = legacy `quick`, 4K = legacy `4k`). An **Advanced ▾** row adds custom **long-edge** (native aspect) + **SPP** with a **live cost estimate** (`≈ W×H · N MB · ✓ fits/✗ exceeds`) gating Render on the `maxStorageBufferBindingSize` limit. Info bar shows the resolved **`dims · q · tier`**; active tier highlights. `render4K` generalized into `renderQuality(req)` resolving dims/SPP via `applyPreset(tierToSpec)` (shared math) → v0.29 decoupled orchestrator. Review-hardened (Advanced Render respects busy-state). 4608 unit; Chrome-verified tiers + custom + cost gate. **CLI parity filed as `[PYR3-051]`.** |
 | **v0.33** | 2026-05-29 | `pending` | **Corpus navigation + three-bar viewer chrome (`[PYR3-041]` + `[PYR3-040]` + `[PYR3-039]`).** The viewer becomes a browsable corpus: a new cached `src/avail-client.ts` (`loadAvail` + `neighbors()` over `/chunks/{gen}/avail.flam3idx`) drives an action-bar **‹ prev / next ›** cluster of *available* sheep on every `/v1/gen/{gen}/id/{id}` load (History pushState/popstate, no reload). A **missing** id keeps full chrome with a graceful in-canvas panel — *"Electric Sheep was not found — use ‹ prev or next › to jump to a valid flame"* (no welcome-flame swap, no "never born") — and the nav offers the nearest available either side. The single bar split into **① info + ② action** rows (render-progress ③ unchanged), the chrome quality control (`[PYR3-050]`) will also ride. Review-hardened (404 manifests cached; nav serialized vs in-flight render). 4601 unit green; Chrome-verified browse + miss + recovery. |
 | **v0.32** | 2026-05-29 | `pending` | **Remove the legacy `?flame=` share-link codec (`[PYR3-020]` resolved-by-removal).** The inline `?flame=<encoded>` share link — whose decode failed on ~6KB+ payloads (the original bug) — is deleted rather than fixed: it was superseded by the v0.24 corpus share-URL `/v1/gen/{gen}/id/{id}` (user-directive). Removed `src/url-codec.ts` (+test), the `flame` `LoadIntent` kind + `?flame=` parse + tests, the `case 'flame'` handler/import in `main.ts`, and the vestigial `LoadResult.sourceText` field. `/v1/flame/{token}` custom-reserved untouched. VISION + share-url doc synced. typecheck + 4587 unit green. |
 | **v0.31** | 2026-05-29 | `pending` | **UI: showcase↔viewer links + "hot base" brand mark (`[PYR3-045]` + `[PYR3-042]` + `[PYR3-044]`).** `/showcase` cards gain a **▶ Open in viewer** pill → the live viewer for that exact sheep (`../v1/gen/{gen}/id/{id}`, leading-zero ids normalized; PYR3-045); the viewer bar gains a **showcase** link (PYR3-042) — viewer ↔ gallery now bidirectional. New **"hot base"** favicon/wordmark (PYR3-044): a double-arm vortex flame with a black attractor-spiral heart on an amber→crimson gradient, designed via a 5-round drawing brainstorm, shipped as an inline SVG data-URI; it **replaces every `🔥`/`▲` brand mark** (favicon ×5, viewer wordmark, showcase hero, about H1) for one identity. README overhaul filed as `[PYR3-049]`. 4602 unit + typecheck green; Chrome-verified (card→viewer render, bar link, marks at 16–128 px on light/dark tabs). |
@@ -60,22 +61,22 @@ polish below first.
   FE cleanup · public repo+deploy) is done except the deferred click-to-load
   (Chunk 2 → post-v1 design, tracked by PYR3-020).
 
-**Latest ship:** v0.33 — corpus navigation (prev/next/nearest available sheep +
-graceful missing-sheep state) on a new three-bar chrome (PYR3-039/040/041);
-v0.32 — removed the legacy `?flame=` codec (PYR3-020). Full arc (v0.19 → v0.33)
+**Latest ship:** v0.34 — viewer quality control (preset ladder Draft→4K +
+Advanced custom dims/SPP with a cost/OOM gate, `[PYR3-050]`); v0.33 — corpus
+navigation on a new three-bar chrome (PYR3-039/040/041). Full arc (v0.19 → v0.34)
 in [CHANGELOG.md](CHANGELOG.md).
 
 ## 🚧 Next up — open work, by priority
 
 Detail lives in [BACKLOG.md](BACKLOG.md) → **🔥 Open**. Roughly ordered:
 
-1. 🎛️ **PYR3-050 — quality control (v0.34, in progress).** Preset ladder
-   (Draft→4K) + Advanced custom resolution/SPP with a live cost/OOM estimate,
-   on the new action bar; `dims · quality` readout in the info bar. v0.33 shipped
-   the corpus-nav trio + the three-bar restructure this rides on.
+1. 🎛️ **PYR3-051 — CLI quality parity.** The FE quality ladder + custom dims/SPP
+   (shipped v0.34, `[PYR3-050]`) should also be in the BE CLI (`bin/pyr3-render.ts`):
+   `--preset <tier>` + `--long-edge N` / `--quality N`, sharing `QUALITY_TIERS` /
+   `tierToSpec` so both consumers produce identical renders. "Single engine, two consumers."
 2. 📝 **PYR3-049 — README overhaul.** README has drifted from the live product
-   (Status block ~v0.28, predates apex viewer + showcase + share-URLs + 4K-in-browser
-   + the new "hot base" mark). Full refresh pass.
+   (Status block ~v0.28; now v0.34, with corpus nav + quality control + the "hot
+   base" mark). Full refresh pass.
 3. **PYR3-019 — 3-way verify** (FE + BE + golden side-by-side).
 4. **Engine / infra (v1.x):** `[PYR3-030]` f64 tonemap precision shim ·
    `[PYR3-014]` vitest worker RPC timeout on the parity suite · `[PYR3-003]`

@@ -10,6 +10,41 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.34 — 2026-05-29 — Viewer quality control: preset ladder + Advanced custom (`[PYR3-050]`)
+
+**Outcome:** the viewer can render the current flame across a spectrum of quality, from
+a fast Draft to a custom 4K+, instead of just quick-preview ⟷ one fixed 4K button.
+
+- **Quality ladder.** The action bar's standalone 🎯 4K button is replaced by a segmented
+  **Draft · Preview · Standard · High · 4K** control. The tiers live in the shared
+  `src/presets.ts` as `QUALITY_TIERS` (long-edge / SPP): 512/q8 · 1024/q16 · 1920/q50 ·
+  2560/q100 · 3840/q200, all oversample 1. **Preview === the legacy `quick` preset** and
+  **4K === the legacy `4k` preset**, so the CLI and FE share one source of truth.
+- **Advanced custom (`Advanced ▾`).** A disclosure row adds a custom **long-edge** number
+  field (short edge follows the flame's native aspect) + an **SPP** slider, with a **live
+  cost estimate** — `≈ W×H · N MB · ✓ fits GPU | ✗ exceeds limit` — computed against the
+  device's `maxStorageBufferBindingSize`. Render is gated on fit (and on
+  render-in-flight), so a custom request can't OOM the tab or interrupt a running render.
+- **Info-bar readout.** The resolved **`{w}×{h} · q{spp} · {tier}`** shows after the flame
+  name; the active tier highlights in the ladder (custom → none).
+- **Sticky quality.** The chosen tier/custom **persists across corpus nav + file loads** —
+  `‹`/`›` re-render the next flame at your selected quality rather than resetting to
+  Preview (the render-progress bar is the heavy-render cue). The cold-load default stays
+  Preview so first browsing is fast until you opt up.
+- **Engine wiring.** `main.ts`'s old `render4K` is generalized into `renderQuality(req)`:
+  it resolves dims/aspect/SPP via `applyPreset(tierToSpec(tier) | customSpec)` — identical
+  math to the CLI presets — then drives the v0.29 decoupled orchestrator (progressive,
+  re-targets on tier switch, no freeze). The same `applyPreset` math backs the Advanced
+  cost estimate, so the ✓/✗ gate matches what the render guard would decide.
+- **CLI parity** (the same tiers + custom dims/quality in `bin/pyr3-render.ts`) is filed
+  as `[PYR3-051]` — "single engine, two consumers".
+
+**Verification:** `npm run typecheck` + 4608 unit tests (incl. `QUALITY_TIERS` invariants +
+`applyPreset` round-trip) green; fresh code review (1 finding folded in: Advanced Render now
+respects `setBusy`); build+preview Chrome pass — each tier renders + updates the readout +
+highlights; Advanced custom render works; the live cost estimate tracks dims/MB (47 MB @
+2048 → 758 MB @ 8192) and gates Render on GPU fit.
+
 ## v0.33 — 2026-05-29 — Corpus navigation + three-bar viewer chrome (`[PYR3-039]` + `[PYR3-040]` + `[PYR3-041]`)
 
 **Outcome:** the share-URL corpus becomes browsable, with no dead ends, on a

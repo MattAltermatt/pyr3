@@ -11,9 +11,10 @@ import { initDevice, showError } from './device';
 import { SPIRAL_GALAXY, type Genome } from './genome';
 import { corpusUrl, parseLoadIntent, type LoadIntent } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
+import { applyPreset, DEFAULT_TIER, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
-import { mountBar, type BarHandle } from './ui-bar';
+import { mountBar, type BarHandle, type CostEstimate } from './ui-bar';
 import { checkWebGPU } from './webgpu-check';
 
 // The "welcome flame" — what `/` paints when there's no recognized /v1 path.
@@ -62,11 +63,19 @@ async function main(): Promise<void> {
   let openFilePicker: () => void = () => {
     console.warn('pyr3: file picker invoked before canvas init');
   };
-  // Forwarding ref: the 4K render closure is defined after the bar mounts
-  // (it needs the renderer + device), so the button calls through this.
-  let render4KFn: () => void = () => {
-    console.warn('pyr3: 4K render invoked before canvas init');
+  // Forwarding ref: the quality render closure is defined after the bar mounts
+  // (it needs the renderer + device), so the ladder calls through this.
+  let renderQualityFn: (req: QualityRequest) => void = () => {
+    console.warn('pyr3: quality render invoked before canvas init');
   };
+  // Forwarding ref: the Advanced row's live cost estimate (needs activeGenome
+  // aspect + the device limit, both bound after init).
+  let estimateCostFn: (longEdge: number, spp: number) => CostEstimate = () => ({
+    width: 0,
+    height: 0,
+    mb: 0,
+    fits: false,
+  });
   // Forwarding ref: corpus prev/next nav (PYR3-041) is defined after the load
   // helpers exist; the action-bar pills call through this.
   let navigateCorpus: (gen: number, id: number) => void = () => {
@@ -76,8 +85,9 @@ async function main(): Promise<void> {
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     onOpenFile: () => openFilePicker(),
-    onRender4K: () => render4KFn(),
+    onRenderQuality: (req) => renderQualityFn(req),
     onNavigate: (gen, id) => navigateCorpus(gen, id),
+    estimateCost: (longEdge, spp) => estimateCostFn(longEdge, spp),
   });
 
   if (!webgpu.available) {
@@ -103,6 +113,12 @@ async function main(): Promise<void> {
   let activeGenome: Genome = SPIRAL_GALAXY;
 
   let runHandle: RunHandle | null = null;
+
+  // Sticky quality: the tier/custom the user last chose persists across corpus
+  // nav + file loads (PYR3-050) — every load re-renders at this quality, not a
+  // reset to Preview. The render-progress bar is the "this is heavy" signal.
+  // Defaults to Preview so cold browsing stays fast until the user opts up.
+  let currentQuality: QualityRequest = { kind: 'tier', tier: DEFAULT_TIER };
 
   // PYR3-018 FE parity sweep: pixel-readback hook (dev-only).
   // The canvas swap-chain texture is single-frame-presented and not
@@ -354,6 +370,13 @@ async function main(): Promise<void> {
       bar.hideProgress();
       clearFirstPaintCue();
       if (runHandle === handle) runHandle = null;
+      // Initial/default paint is the Preview tier — reflect it in the readout.
+      bar.setQuality({
+        width: renderer.width,
+        height: renderer.height,
+        spp: renderGenome.quality ?? QUICK_MAX_SPP,
+        tierLabel: DEFAULT_TIER.name,
+      });
     }
   };
 
@@ -372,13 +395,17 @@ async function main(): Promise<void> {
   // tab. This reverses the PYR3-023 FE-4K removal: that removal was the
   // CHUNKED orchestrator (1887 rAF/present chunks) plus oversample-4
   // (16× the histogram); the decoupled path + oversample 1 avoid both.
-  const FOURK_LONG_EDGE = 3840;
-  const FOURK_QUALITY = 100;
   const HIST_BYTES_PER_CELL = 4 * 4; // 4 channels (R,G,B,count) × 4 bytes
-  const render4K = async (): Promise<void> => {
-    // Disable both bar buttons synchronously BEFORE the first await, so a
-    // double-click during the cancel/drain below can't spawn a second
-    // concurrent render4K (disabled buttons don't fire click events).
+  // Render the current flame at a chosen quality — a preset tier or a custom
+  // resolution/SPP (PYR3-050). Generalizes the old 4K path: applyPreset()
+  // resolves dims/aspect/quality from the request's PresetSpec (so FE + CLI
+  // share the math), the capability guard aborts when the histogram won't fit,
+  // and the info-bar readout updates on completion. 4K is just the top tier.
+  const renderQuality = async (req: QualityRequest): Promise<void> => {
+    // Remember this choice so it persists across the next corpus nav / load.
+    currentQuality = req;
+    // Disable the ladder synchronously BEFORE the first await, so a double-tap
+    // during the cancel/drain can't spawn a second concurrent render.
     bar.setBusy(true);
     if (runHandle) {
       runHandle.cancel();
@@ -387,12 +414,17 @@ async function main(): Promise<void> {
       await device.queue.onSubmittedWorkDone();
     }
 
-    const declW = activeGenome.size?.width ?? RENDER_SIZE;
-    const declH = activeGenome.size?.height ?? RENDER_SIZE;
-    const maxDecl = Math.max(declW, declH);
-    const sizeScale = FOURK_LONG_EDGE / maxDecl;
-    const targetW = Math.max(1, Math.round(declW * sizeScale));
-    const targetH = Math.max(1, Math.round(declH * sizeScale));
+    const spec: PresetSpec = req.kind === 'tier'
+      ? tierToSpec(req.tier)
+      : { maxDim: req.longEdge, maxSpp: req.spp, oversample: 1, shortEdgeRound: 'floor', mode: 'force' };
+    const tierLabel = req.kind === 'tier' ? req.tier.name : 'Custom';
+
+    // applyPreset resolves size (long-edge → native aspect), scale, oversample(1)
+    // and capped quality — identical math to the CLI presets.
+    const renderGenome = applyPreset(activeGenome, spec);
+    const targetW = renderGenome.size?.width ?? RENDER_SIZE;
+    const targetH = renderGenome.size?.height ?? RENDER_SIZE;
+    const spp = renderGenome.quality ?? spec.maxSpp;
     const targetFilter = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
 
     // Capability guard — never allocate a histogram the GPU can't bind.
@@ -401,9 +433,9 @@ async function main(): Promise<void> {
     if (histBytes > maxBind) {
       const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
       console.warn(
-        `pyr3: 4K render skipped — histogram ${mb(histBytes)} exceeds this GPU's max storage buffer ${mb(maxBind)}`,
+        `pyr3: ${tierLabel} render skipped — histogram ${mb(histBytes)} exceeds this GPU's max storage buffer ${mb(maxBind)}`,
       );
-      bar.showToast(`4K too large for this GPU (needs ${mb(histBytes)})`);
+      bar.showToast(`${tierLabel} too large for this GPU (needs ${mb(histBytes)})`);
       bar.setBusy(false); // re-enable — we never started a render
       return;
     }
@@ -419,19 +451,13 @@ async function main(): Promise<void> {
       renderer.resize({ width: targetW, height: targetH, oversample: 1, filterRadius: targetFilter });
     }
 
-    const renderGenome: Genome = {
-      ...activeGenome,
-      scale: activeGenome.scale * sizeScale,
-      oversample: 1,
-      quality: FOURK_QUALITY,
-    };
-    const targetSamples = FOURK_QUALITY * renderer.width * renderer.height;
+    const targetSamples = spp * renderer.width * renderer.height;
     console.log(
-      `pyr3: 4K decoupled render — ${targetW}×${targetH} · q${FOURK_QUALITY} · ${(targetSamples / 1e6).toFixed(0)}M samples`,
+      `pyr3: ${tierLabel} decoupled render — ${renderer.width}×${renderer.height} · q${spp} · ${(targetSamples / 1e6).toFixed(0)}M samples`,
     );
 
     bar.showProgress({
-      label: 'Rendering 4K',
+      label: `Rendering ${tierLabel}`,
       percent: 0,
       etaSeconds: 0,
       samples: 0,
@@ -446,7 +472,7 @@ async function main(): Promise<void> {
       seedBase: seed,
       onProgress: (info) => {
         bar.showProgress({
-          label: 'Rendering 4K',
+          label: `Rendering ${tierLabel}`,
           percent: info.percent,
           etaSeconds: info.etaSeconds,
           samples: info.samples,
@@ -464,15 +490,33 @@ async function main(): Promise<void> {
       bar.setBusy(false);
       clearFirstPaintCue();
       if (runHandle === handle) runHandle = null;
+      bar.setQuality({ width: renderer.width, height: renderer.height, spp, tierLabel });
     }
   };
 
-  // Wire the bar's 🎯 4K button (and a dev-only console hook) to the
-  // render closure now that it's defined.
-  render4KFn = () => { void render4K(); };
+  // Wire the bar's quality ladder (and a dev-only console hook) to the render
+  // closure now that it's defined.
+  renderQualityFn = (req) => { void renderQuality(req); };
   if (import.meta.env.DEV) {
-    (window as unknown as { __pyr3Render4K?: () => Promise<void> }).__pyr3Render4K = render4K;
+    (window as unknown as { __pyr3RenderQuality?: (req: QualityRequest) => Promise<void> }).__pyr3RenderQuality = renderQuality;
   }
+
+  // Advanced-row cost estimate: resolve dims via applyPreset (identical to the
+  // render path) then size the histogram against the GPU's binding limit, so
+  // the readout/✗-gate matches what renderQuality's guard would decide.
+  estimateCostFn = (longEdge, spp) => {
+    const spec: PresetSpec = { maxDim: longEdge, maxSpp: spp, oversample: 1, shortEdgeRound: 'floor', mode: 'force' };
+    const g = applyPreset(activeGenome, spec);
+    const width = g.size?.width ?? RENDER_SIZE;
+    const height = g.size?.height ?? RENDER_SIZE;
+    const bytes = width * height * HIST_BYTES_PER_CELL;
+    return {
+      width,
+      height,
+      mb: bytes / (1024 * 1024),
+      fits: bytes <= device.limits.maxStorageBufferBindingSize,
+    };
+  };
 
   const applyLoadResult = async (result: LoadResult, sourceLabel: string): Promise<void> => {
     // Resize logic lives in rerender (it depends on the loaded genome's
@@ -494,7 +538,14 @@ async function main(): Promise<void> {
       authorNick: result.genome.nick,
       sourceFilename: sourceLabel,
     });
-    await rerender();
+    // Render at the sticky quality (PYR3-050) — persists the user's tier/custom
+    // choice across nav + loads. Preview-default uses the fast chunked rerender
+    // (the FE↔BE parity path); higher tiers / custom use the decoupled path.
+    if (currentQuality.kind === 'tier' && currentQuality.tier.name === DEFAULT_TIER.name) {
+      await rerender();
+    } else {
+      await renderQuality(currentQuality);
+    }
   };
 
   // Graceful corpus missing-sheep panel (PYR3-039). Built once; covers the

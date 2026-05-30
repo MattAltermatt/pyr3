@@ -11,6 +11,7 @@
 // octocat is assembled via createElementNS for the same reason.
 
 import { corpusUrl } from './load-intent';
+import { QUALITY_TIERS, type QualityRequest } from './presets';
 import type { WebGPUStatus } from './webgpu-check';
 
 export interface BarMeta {
@@ -23,11 +24,31 @@ export interface BarMeta {
 export interface BarOpts {
   webgpu: WebGPUStatus;
   onOpenFile: () => void;
-  /** Render the current flame at 4K via the decoupled orchestrator.
-   *  Opt-in heavy render — quick mode stays the default first paint. */
-  onRender4K: () => void;
+  /** Render the current flame at a chosen quality (preset tier or custom dims/SPP)
+   *  via the decoupled orchestrator. The default first paint stays Preview. */
+  onRenderQuality: (req: QualityRequest) => void;
   /** Navigate to a corpus sheep (prev/next/nearest click in the action bar). */
   onNavigate: (gen: number, id: number) => void;
+  /** Estimate a custom render's resolved dims + histogram cost + GPU-fit, given
+   *  a long edge + SPP. Drives the Advanced row's live cost readout + OOM gate. */
+  estimateCost: (longEdge: number, spp: number) => CostEstimate;
+}
+
+/** Resolved cost of a custom render request. */
+export interface CostEstimate {
+  width: number;
+  height: number;
+  mb: number;
+  fits: boolean;
+}
+
+/** Current render's resolved quality, shown in the info bar + used to highlight
+ *  the active tier in the ladder. */
+export interface QualityReadout {
+  width: number;
+  height: number;
+  spp: number;
+  tierLabel: string;
 }
 
 /** Adjacent available sheep for the action-bar corpus nav. */
@@ -55,6 +76,9 @@ export interface BarHandle {
   /** Render the action-bar corpus-nav cluster (prev/next available sheep);
    *  pass null to hide it (non-corpus flame). */
   setCorpusNav(nav: CorpusNav | null): void;
+  /** Update the info-bar `dims · quality · tier` readout and highlight the
+   *  active tier in the ladder (tierLabel 'Custom' highlights none). */
+  setQuality(q: QualityReadout): void;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -94,9 +118,11 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   showcase.href = `${import.meta.env.BASE_URL}showcase/`;
   showcase.textContent = 'showcase';
   const metaName = el('div', 'pyr3-bar-meta-name');
+  // Quality readout (PYR3-050): ` · {w}×{h} · q{spp} · {tier}` after the name.
+  const metaQuality = el('span', 'pyr3-bar-quality');
   // Toast rides in the info zone next to the meta name.
   const toast = el('span', 'pyr3-bar-toast');
-  infoLeft.append(wordmark, sep(), about, sep(), showcase, sep(), metaName, toast);
+  infoLeft.append(wordmark, sep(), about, sep(), showcase, sep(), metaName, metaQuality, toast);
 
   const infoRight = el('div', 'pyr3-zone-right');
   const webgpuChip = buildWebGPUChip(opts.webgpu);
@@ -105,18 +131,89 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   infoRight.append(webgpuChip, forkCta, sheepCta);
   infoRow.append(infoLeft, infoRight);
 
-  // ══ bar ② — actions (Open · 4K · …quality ladder later · corpus nav) ══
+  // ══ bar ② — actions (Open · quality ladder · corpus nav) ══
   const actionRow = el('div', 'pyr3-bar-action');
   const actionLeft = el('div', 'pyr3-zone-actleft');
   const openBtn = button('📂 Open', 'pyr3-bar-btn', opts.onOpenFile);
-  const render4kBtn = button('🎯 4K', 'pyr3-bar-btn', opts.onRender4K);
-  render4kBtn.title = 'Render the current flame at 4K — watch it build progressively';
-  actionLeft.append(openBtn, render4kBtn);
+  // Quality ladder (PYR3-050) — replaces the standalone 🎯 4K button; 4K is its
+  // top tier. Each tap requests a render at that tier's dims/SPP.
+  const qLabel = el('span', 'pyr3-bar-qlabel');
+  qLabel.textContent = 'quality';
+  const ladder = el('div', 'pyr3-bar-ladder');
+  const tierBtns = new Map<string, HTMLButtonElement>();
+  for (const tier of QUALITY_TIERS) {
+    const b = document.createElement('button');
+    b.className = 'pyr3-tier-btn';
+    b.textContent = tier.name;
+    b.title = `${tier.longEdge}px long edge · q${tier.spp}`;
+    b.onclick = () => opts.onRenderQuality({ kind: 'tier', tier });
+    tierBtns.set(tier.name, b);
+    ladder.append(b);
+  }
+  // Advanced ▾ — toggles the custom resolution/SPP sub-row (PYR3-050).
+  const advBtn = button('Advanced ▾', 'pyr3-bar-btn', () => toggleAdvanced());
+  actionLeft.append(openBtn, qLabel, ladder, advBtn);
   // Corpus-nav cluster (filled by setCorpusNav in PYR3-041); right-aligned.
   const navSlot = el('div', 'pyr3-bar-nav');
   actionRow.append(actionLeft, navSlot);
 
-  root.append(infoRow, actionRow);
+  // ══ bar ②b — Advanced custom resolution/SPP (PYR3-050); hidden until toggled ══
+  const advRow = el('div', 'pyr3-bar-advanced');
+  advRow.hidden = true;
+  const advLabel = el('span', 'pyr3-bar-qlabel');
+  advLabel.textContent = 'custom';
+  const longEdgeInput = document.createElement('input');
+  longEdgeInput.type = 'number';
+  longEdgeInput.className = 'pyr3-adv-num';
+  longEdgeInput.min = '64';
+  longEdgeInput.max = '8192';
+  longEdgeInput.step = '64';
+  longEdgeInput.value = '2048';
+  longEdgeInput.title = 'Long edge in px (short edge follows the flame’s aspect)';
+  const leUnit = el('span', 'pyr3-adv-unit');
+  leUnit.textContent = 'px long edge';
+  const sppLabel = el('span', 'pyr3-bar-qlabel');
+  sppLabel.textContent = 'spp';
+  const sppInput = document.createElement('input');
+  sppInput.type = 'range';
+  sppInput.className = 'pyr3-adv-range';
+  sppInput.min = '4';
+  sppInput.max = '400';
+  sppInput.step = '1';
+  sppInput.value = '100';
+  const sppVal = el('span', 'pyr3-adv-sppval');
+  const costSpan = el('span', 'pyr3-adv-cost');
+  const renderBtn = button('Render', 'pyr3-adv-render', () => {
+    opts.onRenderQuality({ kind: 'custom', longEdge: readLongEdge(), spp: readSpp() });
+  });
+  advRow.append(advLabel, longEdgeInput, leUnit, sppLabel, sppInput, sppVal, costSpan, renderBtn);
+
+  const readLongEdge = (): number => Math.max(1, Math.round(Number(longEdgeInput.value) || 0));
+  const readSpp = (): number => Math.max(1, Math.round(Number(sppInput.value) || 0));
+  // Render is gated by BOTH a render-in-flight (setBusy) and the cost fit, so
+  // it can't interrupt an in-flight tier render or dispatch an OOM request.
+  let advBusy = false;
+  let lastFits = false;
+  const recompute = (): void => {
+    const spp = readSpp();
+    sppVal.textContent = `q${spp}`;
+    const est = opts.estimateCost(readLongEdge(), spp);
+    costSpan.textContent = `≈ ${est.width}×${est.height} · ${est.mb.toFixed(0)} MB · ${est.fits ? '✓ fits GPU' : '✗ exceeds limit'}`;
+    costSpan.classList.toggle('over', !est.fits);
+    lastFits = est.fits;
+    renderBtn.disabled = advBusy || !est.fits;
+  };
+  longEdgeInput.oninput = recompute;
+  sppInput.oninput = recompute;
+  let advOpen = false;
+  const toggleAdvanced = (): void => {
+    advOpen = !advOpen;
+    advRow.hidden = !advOpen;
+    advBtn.textContent = advOpen ? 'Advanced ▴' : 'Advanced ▾';
+    if (advOpen) recompute();
+  };
+
+  root.append(infoRow, actionRow, advRow);
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -126,8 +223,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       renderMetaName(metaName, meta);
     },
     setBusy(busy) {
+      advBusy = busy;
       openBtn.disabled = busy;
-      render4kBtn.disabled = busy;
+      for (const b of tierBtns.values()) b.disabled = busy;
+      renderBtn.disabled = busy || !lastFits;
     },
     showProgress(p) {
       if (!tier3) {
@@ -171,6 +270,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       const fmt = (id: number) => `${nav.gen}.${String(id).padStart(5, '0')}`;
       if (nav.prev !== null) navSlot.append(pill(nav.prev, `‹ ${fmt(nav.prev)}`));
       if (nav.next !== null) navSlot.append(pill(nav.next, `${fmt(nav.next)} ›`));
+    },
+    setQuality(q) {
+      metaQuality.textContent = ` · ${q.width}×${q.height} · q${q.spp} · ${q.tierLabel}`;
+      for (const [name, b] of tierBtns) b.classList.toggle('on', name === q.tierLabel);
     },
   };
 }
@@ -312,6 +415,38 @@ const BAR_CSS = `
   border-radius: 999px; padding: 2px 10px;
 }
 .pyr3-nav-pill:hover { background: var(--accent); color: #0a0a0c; }
+.pyr3-bar-qlabel { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.pyr3-bar-ladder { display: inline-flex; border: 1px solid #3a3a42; border-radius: 6px; overflow: hidden; }
+.pyr3-tier-btn {
+  font-size: 11px; padding: 4px 11px; font-family: inherit; cursor: pointer;
+  background: #202026; color: var(--text-muted); border: 0; border-right: 1px solid #3a3a42;
+}
+.pyr3-tier-btn:last-child { border-right: 0; }
+.pyr3-tier-btn:hover:not(:disabled):not(.on) { background: #2a2a30; color: var(--text); }
+.pyr3-tier-btn.on { background: var(--accent); color: #0a0a0c; font-weight: 600; }
+.pyr3-tier-btn:disabled { color: #555; cursor: not-allowed; }
+.pyr3-bar-quality { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
+
+.pyr3-bar-advanced {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 14px; font-size: 11px;
+  background: var(--bar-bg-3); border-bottom: 1px solid var(--bar-border);
+}
+.pyr3-bar-advanced[hidden] { display: none; }
+.pyr3-adv-num {
+  width: 72px; font-family: ui-monospace, monospace; font-size: 11px;
+  background: #202026; color: var(--text); border: 1px solid #3a3a42; border-radius: 4px; padding: 3px 6px;
+}
+.pyr3-adv-unit { font-size: 10px; color: var(--text-dim); }
+.pyr3-adv-range { width: 130px; accent-color: var(--accent); }
+.pyr3-adv-sppval { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent); min-width: 36px; }
+.pyr3-adv-cost { font-family: ui-monospace, monospace; font-size: 10px; color: var(--text-dim); }
+.pyr3-adv-cost.over { color: var(--err); }
+.pyr3-adv-render {
+  font-size: 11px; padding: 4px 14px; border-radius: 4px; font-family: inherit; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: #0a0a0c; border: 1px solid var(--accent);
+}
+.pyr3-adv-render:disabled { background: #2a2118; color: #6b5a44; border-color: #3a3a42; cursor: not-allowed; }
 
 .pyr3-bar-wordmark {
   color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap;

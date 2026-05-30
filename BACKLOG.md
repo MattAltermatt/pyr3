@@ -8,11 +8,51 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-050** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-053** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
 ## 🔥 Open
+
+## [PYR3-052] feat · L · 🐑 · queued · post-v1 — "Interesting flames" scoring + a skip-to-interesting nav mode
+
+**Filed 2026-05-29 (user-directive).** Browsing the corpus with `‹`/`›` (PYR3-041) steps
+through *every* id in order — and many adjacent sheep are near-duplicate blobs, so you can
+see "the same boring blob 10× in a row." Add a way to find the **more interesting** flames
+programmatically and a nav **mode** where `‹`/`›` jump to those instead of the literal
+neighbor.
+
+**Interestingness, programmatically (candidates — needs a probe):**
+- **Histogram coverage** — % of non-empty density cells; sparse/blob flames score low.
+  pyr3 already has the related mean-luminance black-skip in `scripts/build-showcase.mjs`
+  and the chaos-coverage metric from the PYR3-034 work — reuse that lineage.
+- **Density entropy / variance** — flat or single-spike histograms = boring; spread +
+  structure = interesting.
+- **Colour variance + edge/detail density** — multi-hue, high-frequency detail scores up.
+- Compute cheaply on a tiny **Draft (512) thumbnail** render (we already have the tier),
+  then **precompute a per-gen "interestingness index"** baked alongside `avail.flam3idx`
+  (an ESF-side or build-step pass), so the viewer just reads scores — mirrors the avail
+  manifest pattern (`src/avail-client.ts`).
+
+**Nav mode:** a toggle (e.g. an "✨ interesting" switch by the nav cluster) that makes
+`neighbors()` skip to the next id whose score ≥ threshold, using the precomputed index
+(or a live skip-ahead sampling pass as a fallback). Default off (literal neighbors).
+
+**Why L / post-v1:** the scoring heuristic needs a real probe (what actually correlates
+with "interesting" on the ES corpus?) + likely an ESF-side precompute to be fast at browse
+time. Pairs with the corpus-nav trio (PYR3-039/040/041, shipped v0.33).
+
+## [PYR3-051] feat · M · 🎛️ · queued · v1.x — CLI quality parity: tiers + custom dims/quality in the BE
+
+**Filed 2026-05-29 (user-directive).** The quality settings being wired into the FE
+(`[PYR3-050]`) must also be available in the **BE CLI** (`bin/pyr3-render.ts`) — the
+"single engine, two consumers" principle. `QUALITY_TIERS` already lives in the shared
+`src/presets.ts`, so the CLI can consume the same ladder (Draft / Preview / Standard /
+High / 4K) plus arbitrary **custom dimensions + quality**, rather than only today's
+`--preset {quick,4k}`. Proposed surface: extend the preset flag to accept tier names
+(`--preset high`) and add `--long-edge N` / `--quality N` (or `--dims WxH`) for custom
+renders, sharing `tierToSpec()` / `applyPreset()` so FE and CLI produce identical dims/
+SPP for the same request. Keeps the two consumers in lockstep.
 
 ## [PYR3-049] docs · M · 📝 · queued · v1.x — README overhaul
 
@@ -231,6 +271,24 @@ share-link + ship-gate first keeps the v1.0 scope honest.
 ## ✅ Resolved & shipped
 
 _Kept for provenance. Newest first._
+
+## [PYR3-050] feat · L · 🎛️ ✅ **RESOLVED (v0.34, 2026-05-29)** — Viewer quality control (preset ladder + Advanced custom)
+
+The viewer's action bar (v0.33 three-bar chrome) gained quality control. The standalone
+🎯 4K button is replaced by a segmented **tier ladder** — `QUALITY_TIERS` in the shared
+`src/presets.ts`: Draft (512/q8) · Preview (1024/q16, = legacy `quick`) · Standard
+(1920/q50) · High (2560/q100) · 4K (3840/q200, = legacy `4k`). An **Advanced ▾**
+disclosure row adds a custom **long-edge** field (native aspect preserved) + an **SPP**
+slider with a **live cost estimate** (`≈ W×H · N MB · ✓ fits / ✗ exceeds limit`) reusing
+the v0.29 `maxStorageBufferBindingSize` guard — Render is gated on fit (and on
+render-in-flight). The resolved **`dims · q · tier`** shows in the info bar and the active
+tier highlights. `main.ts` generalized the old `render4K` into `renderQuality(req)` —
+resolving dims/SPP via `applyPreset(tierToSpec | customSpec)` (so the math is shared with
+the CLI presets) and driving the v0.29 decoupled orchestrator. The chosen quality is
+**sticky** — it persists across corpus nav + file loads (the progress bar is the
+heavy-render cue), defaulting to Preview for fast cold browsing. 4608 unit (+ tier tests),
+review-hardened (Advanced Render now respects `setBusy`), Chrome-verified across tiers +
+custom + the live cost estimate. **CLI parity is `[PYR3-051]`** (still open).
 
 ## [PYR3-041 / 040 / 039] feat+fix · 🐑 ✅ **RESOLVED (v0.33, 2026-05-29)** — corpus navigation: prev/next/nearest + graceful missing-sheep state
 

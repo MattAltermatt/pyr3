@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Genome } from './genome';
-import { PRESETS, applyPreset, isPresetName } from './presets';
+import {
+  PRESETS,
+  applyPreset,
+  isPresetName,
+  QUALITY_TIERS,
+  DEFAULT_TIER,
+  tierToSpec,
+} from './presets';
 
 function makeGenome(opts: Partial<Genome> = {}): Genome {
   return {
@@ -142,5 +149,83 @@ describe('applyPreset (both presets)', () => {
     const g = makeGenome({ quality: undefined });
     expect(applyPreset(g, PRESETS.quick).quality).toBe(16);
     expect(applyPreset(g, PRESETS['4k']).quality).toBe(200);
+  });
+});
+
+describe('QUALITY_TIERS ladder (PYR3-050)', () => {
+  it('has exactly 5 entries in order Draft → Preview → Standard → High → 4K', () => {
+    expect(QUALITY_TIERS).toHaveLength(5);
+    expect(QUALITY_TIERS.map((t) => t.name)).toEqual([
+      'Draft',
+      'Preview',
+      'Standard',
+      'High',
+      '4K',
+    ]);
+  });
+
+  it('longEdge is strictly increasing [512, 1024, 1920, 2560, 3840]', () => {
+    const edges = QUALITY_TIERS.map((t) => t.longEdge);
+    expect(edges).toEqual([512, 1024, 1920, 2560, 3840]);
+    for (let i = 1; i < edges.length; i++) {
+      expect(edges[i]!).toBeGreaterThan(edges[i - 1]!);
+    }
+  });
+
+  it('spp is strictly increasing [8, 16, 50, 100, 200] and every oversample === 1', () => {
+    const spps = QUALITY_TIERS.map((t) => t.spp);
+    expect(spps).toEqual([8, 16, 50, 100, 200]);
+    for (let i = 1; i < spps.length; i++) {
+      expect(spps[i]!).toBeGreaterThan(spps[i - 1]!);
+    }
+    for (const t of QUALITY_TIERS) {
+      expect(t.oversample).toBe(1);
+    }
+  });
+
+  it('Preview tier maps to the legacy quick preset values', () => {
+    const preview = QUALITY_TIERS.find((t) => t.name === 'Preview')!;
+    expect(tierToSpec(preview)).toEqual({
+      maxDim: 1024,
+      maxSpp: 16,
+      oversample: 1,
+      shortEdgeRound: 'round',
+      mode: 'cap',
+    });
+    // ...and those match the legacy quick preset (dims/quality/oversample/mode).
+    expect(PRESETS.quick.maxDim).toBe(preview.longEdge);
+    expect(PRESETS.quick.maxSpp).toBe(preview.spp);
+    expect(PRESETS.quick.oversample).toBe(preview.oversample);
+    expect(PRESETS.quick.mode).toBe(preview.mode);
+  });
+
+  it('4K tier maps to the legacy 4k preset values', () => {
+    const fourK = QUALITY_TIERS.find((t) => t.name === '4K')!;
+    const spec = tierToSpec(fourK);
+    expect(spec.maxDim).toBe(3840);
+    expect(spec.maxSpp).toBe(200);
+    expect(spec.mode).toBe('force');
+    expect(spec.shortEdgeRound).toBe('floor');
+    // ...and those match the legacy 4k preset.
+    expect(PRESETS['4k'].maxDim).toBe(fourK.longEdge);
+    expect(PRESETS['4k'].maxSpp).toBe(fourK.spp);
+    expect(PRESETS['4k'].mode).toBe(fourK.mode);
+    expect(PRESETS['4k'].shortEdgeRound).toBe('floor');
+  });
+
+  it('DEFAULT_TIER is the Preview tier', () => {
+    expect(DEFAULT_TIER.name).toBe('Preview');
+    expect(DEFAULT_TIER).toBe(QUALITY_TIERS[1]);
+  });
+
+  it('round-trip: applyPreset(tierToSpec(Standard)) forces 800x600 long-edge to 1920 and caps spp', () => {
+    const standard = QUALITY_TIERS.find((t) => t.name === 'Standard')!;
+    const g = makeGenome({ size: { width: 800, height: 600 }, scale: 100, quality: 500 });
+    const out = applyPreset(g, tierToSpec(standard));
+    // force mode: long edge (width) → exactly 1920; short = floor(1920 * 600 / 800) = 1440.
+    expect(out.size).toEqual({ width: standard.longEdge, height: 1440 });
+    expect(Math.max(out.size!.width, out.size!.height)).toBe(standard.longEdge);
+    expect(out.quality).toBe(standard.spp); // 500 capped to 50
+    expect(out.oversample).toBe(1);
   });
 });
