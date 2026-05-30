@@ -8,7 +8,7 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-071** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-074** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
@@ -19,6 +19,44 @@ strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 > 25 confirmed + 28 partial findings, deduped to 14 entries. No criticals; two HIGHs
 > (PYR3-056 DE brightness ripple, PYR3-059 WGSL-path coverage). The README Status-block
 > staleness the review also surfaced is absorbed by the existing PYR3-049.
+
+## [PYR3-073] feat · XS · ⌨️ · queued · v1.x — ←/→ arrow keys navigate corpus prev/next
+
+**Filed 2026-05-30 (user-directive).** Bind the Left/Right arrow keys to the corpus `‹ prev` /
+`next ›` nav — the same `enqueueCorpus` / `neighbors` path the action-bar pills drive (PYR3-041) —
+so keyboard browsing matches the on-screen cluster. Guard against firing while a text input is
+focused or a render is in-flight; no-op when there's no corpus-nav context (a non-corpus / file-opened
+flame). `src/main.ts` (key handler) + `src/ui-bar.ts` (nav state).
+
+## [PYR3-072] bug · M · 🩹 · queued · v1.x — Malformed `center` (NaN) hard-fails a corpus load silently; default it + surface load failures in-viewer
+
+**Filed 2026-05-30 (user-directive — observed live on `https://pyr3.app/v1/gen/247/id/1`).** The
+corpus flame `electricsheep.247.1` carries a `center` that parses to `nan nan`, so
+`flame-import.ts:179-180` throws `pyr3: center must be 2 finite numbers, got: "nan nan"` and the whole
+load aborts. **Two problems:**
+1. **Hard-fail vs default.** A non-finite `center` should fall back to flam3's default (`0 0`) and
+   record a loud `report` entry, not abort the render — the rest of the genome is fine. Audit the
+   sibling finiteness guards (size / scale / coefs) for the same "default where one exists, else
+   report" treatment. **Keep it loud** (report + in-viewer surface), not a silent substitution.
+2. **Silent failure.** The error surfaced ONLY in the console — no user-visible cue (the canvas just
+   stayed unchanged). A failed load (this throw, a 404, a genuine parse error) should paint a centered
+   in-viewer blurb — reuse the PYR3-039 missing-panel pattern — saying the flame couldn't be loaded,
+   with a **"report an issue"** affordance linking to the GitHub issues. **Symptom (observed
+   2026-05-30):** blank/unchanged canvas + console-only error + a 404 on the resource. **Next:**
+   (a) default-substitute non-finite `center` in the importer + report; (b) generalize the
+   load-failure path in `src/main.ts` (`loadFromFile` catch / `loadCorpus`) to render a visible panel
+   + issue link instead of just `console.error` + a transient toast.
+
+## [PYR3-071] parity · M · 🎚️ · approved · v1.0 — Re-tier the parity contract after the PYR3-056 DE-norm win
+
+**Filed 2026-05-30 (user-approved to execute).** PYR3-056 (DE kernel-norm fix) collapsed the tier-2
+outliers into the tier-1 band — `coverage.248.02226` 29.92→5.73, `coverage.245.06687` 14.59→1.52,
+`coverage.243.04616` 11.56→3.50; every fixture improved, none regressed. The per-fixture `meta.json`
+`expectedR`/`thresholdR`/`tier` are now stale (loose), and the CLAUDE.md tier-contract + ROADMAP
+"precision floor (closed)" narrative overstate the f32 floor — it was mostly this DE bug. **Do:**
+re-measure `expectedR` for all 25 fixtures on the fixed engine (3-run mean), set
+`thresholdR = expectedR + 1.0`, flip `tier` 2→1 wherever R<5 now, and correct the CLAUDE.md/ROADMAP
+"precision floor" sections to credit PYR3-056. **Depends on PYR3-056 landing on `main` first.**
 
 ## [PYR3-057] bug · M · 🧵 · queued · v1.0 — Chaos dispatch over-spawns threads reading stale ISAAC state (histogram contamination)
 
