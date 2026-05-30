@@ -1,7 +1,7 @@
 // Top-bar mount + state handle.
 //
 // Single slim row (v1.0 polish) — three flex zones:
-//   · left:   wordmark (→ home) · about · flame name · "by nick"
+//   · left:   wordmark (→ home) · about · showcase · flame name · "by nick"
 //   · center: Open
 //   · right:  WebGPU pill · "fork it" octocat · "more flames" octocat
 // Plus an optional progress detail row that mounts only during render.
@@ -45,6 +45,12 @@ export interface BarHandle {
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+// "hot base" brand mark (PYR3-044): double-arm vortex flame, amber→crimson
+// gradient, black attractor heart. Shipped as a data-URI <img> so it stays
+// isolated (no gradient-id collisions) and the bar keeps its no-innerHTML
+// invariant. Identical artwork to the favicon in index.html.
+const FLAME_MARK_URI =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffbe3e'/%3E%3Cstop offset='1' stop-color='%23bf2408'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M16 2c4 7 8 9.5 6.5 17C21.4 25.8 11 26.5 9.6 19 8.5 13 13 10 16 2Z' fill='url(%23g)'/%3E%3Cpath d='M16 9.5c3.4 0 4 4 .8 5.2 M16 22c-3.4 0-4-4-.8-5.2' fill='none' stroke='%230a0a0c' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E";
 // Canonical GitHub octocat mark.
 const OCTOCAT_PATH =
   'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z';
@@ -62,12 +68,21 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const left = el('div', 'pyr3-zone-left');
   const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
   wordmark.href = import.meta.env.BASE_URL; // home (welcome flame), base-aware
-  wordmark.textContent = '🔥 pyr3';
+  const mark = document.createElement('img');
+  mark.className = 'pyr3-bar-mark';
+  mark.src = FLAME_MARK_URI;
+  mark.alt = '';
+  wordmark.append(mark, document.createTextNode('pyr3'));
   const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
   about.href = `${import.meta.env.BASE_URL}help/about.html`;
   about.textContent = 'about';
+  // PYR3-042 — in-app entry point to the /showcase gallery (same internal-nav
+  // style as "about"; the gallery cards link back to the viewer per PYR3-045).
+  const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  showcase.href = `${import.meta.env.BASE_URL}showcase/`;
+  showcase.textContent = 'showcase';
   const metaName = el('div', 'pyr3-bar-meta-name');
-  left.append(wordmark, sep(), about, sep(), metaName);
+  left.append(wordmark, sep(), about, sep(), showcase, sep(), metaName);
 
   // ---- center zone: Open · 4K ----
   const center = el('div', 'pyr3-zone-center');
@@ -256,7 +271,9 @@ const BAR_CSS = `
 
 .pyr3-bar-wordmark {
   color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
 }
+.pyr3-bar-mark { width: 16px; height: 16px; display: block; }
 .pyr3-bar-wordmark:hover { text-decoration: underline; }
 .pyr3-bar-about { color: var(--text-dim); font-size: 11px; text-decoration: none; white-space: nowrap; }
 .pyr3-bar-about:hover { color: var(--text-muted); text-decoration: underline; }

@@ -10,6 +10,36 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.31 — 2026-05-29 — UI: showcase↔viewer links + the "hot base" brand mark (`[PYR3-045]` + `[PYR3-042]` + `[PYR3-044]`)
+
+**Outcome:** the gallery and the viewer are now linked both ways, and pyr3 has a
+single coherent brand mark in place of the old caution-triangle.
+
+- **Showcase cards → viewer (`[PYR3-045]`).** Each `/showcase` card gains a
+  prominent **▶ Open in viewer** pill that opens the live viewer on that exact
+  sheep via the v0.24 corpus share-URL. `scripts/build-showcase.mjs` parses the
+  `electricsheep.{gen}.{id}` fixture id and emits a base-relative
+  `../v1/gen/{gen}/id/{id}` href; padded segments (e.g. `00866`) are normalized to
+  the canonical numeric ids the brotli chunk map is keyed by. The thumbnail keeps
+  its full-4K-image zoom. Verified end-to-end in Chrome (card → viewer renders).
+- **Viewer → showcase (`[PYR3-042]`).** The viewer top bar gains a **showcase**
+  link in its left zone (next to `about`), making viewer ↔ gallery bidirectional.
+- **"Hot base" brand mark (`[PYR3-044]`).** The orange-triangle favicon (which read
+  as a warning sign) is replaced by a **double-arm vortex flame** — teardrop body +
+  black attractor-spiral heart on an amber→crimson gradient (`#ffbe3e → #bf2408`).
+  Chosen via a 5-round drawing-driven brainstorm (galleries archived under
+  `.remember/verify/`). Shipped as an inline SVG data-URI (base-independent, no
+  extra asset) and applied to **every** brand surface: the favicon on `index.html`,
+  the showcase, and the three `public/help/*.html` pages; the viewer wordmark; the
+  showcase hero (was a `▲`); and the about-page H1 (was `🔥`). One mark everywhere.
+- **README overhaul filed as `[PYR3-049]`** (the README has drifted from the live
+  product) — queued, not in this ship.
+
+**Verification:** `npm run typecheck` + 4602 unit tests green; production build +
+`npm run preview` Chrome-verified — showcase card → viewer renders the linked sheep,
+the bar showcase link navigates, and the mark renders crisply at 16–128 px on both
+light and dark browser tabs.
+
 ## v0.30 — 2026-05-29 — Fix: flames with >32 xforms rendered black (`[PYR3-033]`)
 
 **Outcome:** flames with more than 32 xforms — common in rotationally-symmetric

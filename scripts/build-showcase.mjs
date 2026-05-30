@@ -144,12 +144,28 @@ for (const fx of fixtures) {
   const nick = srcPath && existsSync(srcPath) ? extractNick(srcPath) : null;
   const byHtml = nick ? `By <b>${htmlEscape(nick)}</b>` : `<span class="anon">artist unknown</span>`;
 
+  // PYR3-045 — link the card to the live viewer for this exact sheep via the
+  // v0.24 corpus share-URL (/v1/gen/{gen}/id/{id}). The fixture id is
+  // "electricsheep.{gen}.{id}"; the route is relative to the showcase dir
+  // (../) to survive both the apex domain and a project-Pages base prefix.
+  // Normalize the padded fixture segments (e.g. "00866") to the canonical
+  // non-padded route ids (e.g. 866) — the chunk map is keyed by the numeric
+  // string, and parseLoadIntent runs Number() on the path segment anyway.
+  const corpusMatch = id.match(/\.(\d+)\.(\d+)$/);
+  const viewerHref = corpusMatch
+    ? `../v1/gen/${Number(corpusMatch[1])}/id/${Number(corpusMatch[2])}`
+    : null;
+  const viewerLink = viewerHref
+    ? `<a class="viewer" href="${viewerHref}" title="Open this flame in the live pyr3 viewer">▶ Open in viewer</a>`
+    : '';
+
   cards.push(`    <div class="card" id="${id}">
       <a class="thumb" href="./${id}.4k.jpg" target="_blank" rel="noopener" title="Open full 4K image in a new tab"><img src="./${id}.thumb.jpg" loading="lazy" alt="${id}"></a>
       <div class="cap">
         <div class="id"><span class="idtext"><a class="anchor" href="#${id}" title="permalink to this flame">#</a>${id}</span><a class="open" href="./${id}.4k.jpg" target="_blank" rel="noopener">⤢ Open 4K</a></div>
         <div class="by">${byHtml}</div>
         <div class="rendered">${renderedLine}</div>
+        ${viewerLink ? `<div class="actions">${viewerLink}</div>` : ''}
       </div>
     </div>`);
   ready++;
@@ -161,7 +177,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='8,2 14,14 2,14' fill='%23ff8c1a'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffbe3e'/%3E%3Cstop offset='1' stop-color='%23bf2408'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M16 2c4 7 8 9.5 6.5 17C21.4 25.8 11 26.5 9.6 19 8.5 13 13 10 16 2Z' fill='url(%23g)'/%3E%3Cpath d='M16 9.5c3.4 0 4 4 .8 5.2 M16 22c-3.4 0-4-4-.8-5.2' fill='none' stroke='%230a0a0c' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E">
 <title>pyr3 — showcase</title>
 <style>
   :root{--bg:#0a0a0c;--panel:#15151a;--border:#2a2a30;--accent:#ff8c1a;--accent-soft:rgba(255,140,26,.15);--text:#ddd;--dim:#888;--muted:#aaa}
@@ -171,7 +187,7 @@ const html = `<!doctype html>
   a{color:#ffb56e}
   .hero{text-align:center;padding:18px 0 8px}
   .hero .mark{font-size:34px;font-weight:800;letter-spacing:.5px}
-  .hero .mark .tri{color:var(--accent)}
+  .hero .mark .heromark{width:.92em;height:.92em;vertical-align:-.1em}
   .hero .tagline{color:var(--muted);font-size:14px;margin-top:2px}
   .hero .lede{max-width:600px;margin:14px auto 0;font-size:13px;color:var(--dim);line-height:1.65}
   .nav{text-align:center;margin:14px 0 0;font-size:13px;color:var(--dim)}
@@ -193,6 +209,9 @@ const html = `<!doctype html>
   .card .by b{color:var(--muted)}
   .card .by .anon{color:#666}
   .card .rendered{font-size:11px;color:var(--dim);margin-top:5px}
+  .card .actions{margin-top:9px}
+  .card .viewer{display:inline-block;font-size:11.5px;font-weight:600;color:#0a0a0c;background:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:3px 13px;text-decoration:none;white-space:nowrap}
+  .card .viewer:hover{background:#ffa64d;border-color:#ffa64d}
   :target{scroll-margin-top:16px}
   .card:target{outline:2px solid var(--accent);outline-offset:2px}
   @media(max-width:760px){.grid{column-count:1}.wrap{padding:16px}}
@@ -201,7 +220,7 @@ const html = `<!doctype html>
 <body>
 <div class="wrap">
   <div class="hero">
-    <div class="mark"><span class="tri">▲</span> pyr3</div>
+    <div class="mark"><svg class="heromark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="heroMark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffbe3e"/><stop offset="1" stop-color="#bf2408"/></linearGradient></defs><path d="M16 2c4 7 8 9.5 6.5 17C21.4 25.8 11 26.5 9.6 19 8.5 13 13 10 16 2Z" fill="url(#heroMark)"/><path d="M16 9.5c3.4 0 4 4 .8 5.2 M16 22c-3.4 0-4-4-.8-5.2" fill="none" stroke="#0a0a0c" stroke-width="2.3" stroke-linecap="round"/></svg> pyr3</div>
     <div class="tagline">A modern fractal-flame renderer in TypeScript + WebGPU</div>
     <div class="lede">${ready} hand-picked electric sheep, rendered at 4K by pyr3's WebGPU backend. pyr3 is a fractal-flame renderer in the lineage of <a href="https://flam3.com/" rel="noopener">flam3</a>, the original C engine. The renderer that made these is the same one running the <a href="../">live viewer</a> — drop in your own <code>.flame</code> and watch it draw.</div>
     <div class="nav"><a href="${GH}">github</a> · <a href="${GH}/blob/main/CHANGELOG.md">CHANGELOG</a> · <a href="${GH}/blob/main/VISION.md">VISION</a> · <a href="../">live viewer →</a></div>

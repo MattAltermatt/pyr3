@@ -8,11 +8,23 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-049** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-050** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
 ## 🔥 Open
+
+## [PYR3-049] docs · M · 📝 · queued · v1.x — README overhaul
+
+**Filed 2026-05-29 (user-directive).** The root `README.md` has drifted from the
+current product and feature set — its `## Status` block trails the live version
+(last refreshed ~v0.28; code is now v0.31+), it predates the live public surface
+(apex `pyr3.app` viewer + `/showcase` gallery + corpus share-URLs + live 4K render),
+and it carries the old `🔥` wordmark rather than the new "hot base" mark story.
+Do a full pass: refresh the hero/tagline, the Status block, the feature list
+(viewer · showcase · share-URLs · 4K-in-browser · CLI presets), the quick-start,
+and the screenshots/links — so a first-time visitor lands on an accurate, current
+picture of pyr3. Coordinate with `doc-refresh` if run as part of a broader sweep.
 
 ## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
 
@@ -184,23 +196,6 @@ or an explicit dev-middleware that serves the package's wasm with
 
 Filed 2026-05-29 during the v0.29 4K-button verify (local gen/id test).
 
-## [PYR3-045] feat · S · 🐑 · open · post-v1 — Showcase cards link to the viewer via `/v1/gen/{gen}/id/{id}`
-
-**Filed 2026-05-29 (user-directive).** Each `/showcase` gallery card should link to the
-live pyr3 viewer for that exact sheep using the corpus share-URL shipped in v0.24:
-`/v1/gen/{gen}/id/{id}`. The fixture id (`electricsheep.{gen}.{id}`) is already in the
-showcase manifest, so `scripts/build-showcase.mjs` can emit a per-card "open in viewer"
-link (or point the thumb there). Realizes the click-to-load story (`[PYR3-007]` Chunk 2)
-on top of the now-shipped share-URL router. Distinct from `[PYR3-042]` (the reverse link:
-viewer → showcase).
-
-## [PYR3-044] feat · XS · 🎨 · open · post-v1 — Redesign the favicon (orange triangle reads as a warning)
-
-**Filed 2026-05-29 (user-directive).** The current favicon is an orange triangle that reads
-more like a warning/caution sign than a fractal-flame mark. Replace it with something that
-signals pyr3 (a flame / the 🔥 wordmark / an attractor motif). Touch `index.html`'s
-`<link rel="icon">` + the asset under `public/`. Needs a quick design pick before impl.
-
 ## [PYR3-043] parity · M · 🪶 · queued · post-v1 — Optional 4K parity gate vs flam3-C
 
 **Filed 2026-05-29.** The legacy 4K parity gate (its reference-fixture dir +
@@ -214,14 +209,6 @@ sample/pixel counts, so native-dim parity implies 4K parity. A dedicated 4K gate
 add a narrow regression guard for dim-scaling / oversample / large-buffer bugs. **If wanted:**
 render a handful of fixtures through flam3-C at 4K, calibrate per-fixture thresholds (mirrors
 the native rig), and ship as a sibling `npm run test:parity-4k`.
-
-## [PYR3-042] feat · S · 🎨 · open · post-v1 — Showcase reachable from the main viewer
-
-**Filed 2026-05-29 (user-directive).** The `/showcase` gallery (v0.21) is a separate
-URL with no in-app entry point. Add a link/launch from the main viewer (the bar,
-alongside about / fork-it / more-flames, or another sensible spot) so visitors
-discover the gallery from the viewer. "Showcase should be in the main pyre view,
-somewhere."
 
 ## [PYR3-041] feat · M · 🐑 · open · post-v1 — Viewer navigation hints (next/nearby available sheep)
 
@@ -292,6 +279,33 @@ share-link + ship-gate first keeps the v1.0 scope honest.
 ## ✅ Resolved & shipped
 
 _Kept for provenance. Newest first._
+
+## [PYR3-045] feat · S · 🐑 ✅ **RESOLVED (v0.31, 2026-05-29)** — Showcase cards link to the viewer via `/v1/gen/{gen}/id/{id}`
+
+Each `/showcase` card now carries a prominent **▶ Open in viewer** pill linking to the
+live viewer for that exact sheep via the v0.24 corpus share-URL. `scripts/build-showcase.mjs`
+parses the `electricsheep.{gen}.{id}` fixture id and emits a base-relative
+`../v1/gen/{gen}/id/{id}` href (leading-zero segments normalized to the canonical numeric
+ids the chunk map is keyed by). Thumbnail keeps its 4K-image zoom; the pill is the viewer
+affordance. Verified end-to-end in Chrome (card → viewer renders the sheep). Realizes the
+click-to-load story (`[PYR3-007]` Chunk 2) on the now-shipped share-URL router.
+
+## [PYR3-044] feat · XS · 🎨 ✅ **RESOLVED (v0.31, 2026-05-29)** — Favicon redesign → the "hot base" mark
+
+The orange-triangle favicon (read as a caution/warning sign) is replaced by the **"hot base"**
+mark: a double-arm vortex flame (teardrop body + black attractor-spiral heart) with an
+amber→crimson vertical gradient (`#ffbe3e → #bf2408`). Designed via a 5-round
+drawing-driven brainstorm (gallery archived in `.remember/verify/`). Shipped as an inline
+SVG data-URI (base-independent) across `index.html`, `scripts/build-showcase.mjs`, and the
+three `public/help/*.html` pages. The same mark also **replaced every `🔥`/`▲` brand mark**
+(viewer wordmark, showcase hero, about-page H1) for one consistent identity. Verified in
+Chrome at 16–128 px on light + dark tabs.
+
+## [PYR3-042] feat · S · 🎨 ✅ **RESOLVED (v0.31, 2026-05-29)** — Showcase reachable from the main viewer
+
+The viewer top bar gains a **showcase** link in its left zone (next to `about`, same
+internal-nav style), pointing at the base-aware `showcase/` gallery. Pairs with `[PYR3-045]`
+(the reverse link) to make viewer ↔ gallery navigation bidirectional. Verified in Chrome.
 
 ## [PYR3-047] infra · S · 🔧 ✅ **RESOLVED (2026-05-29)** — `/showcase` 404 under Actions deploy + repo de-bloat
 
