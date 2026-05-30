@@ -8,11 +8,234 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-056** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-071** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
 ## 🔥 Open
+
+> **Code-review batch (2026-05-29):** PYR3-056 → PYR3-069 filed from the full
+> multi-agent review (`.remember/reviews/2026-05-29-complete-review.md`, gitignored).
+> 25 confirmed + 28 partial findings, deduped to 14 entries. No criticals; two HIGHs
+> (PYR3-056 DE brightness ripple, PYR3-059 WGSL-path coverage). The README Status-block
+> staleness the review also surfaced is absorbed by the existing PYR3-049.
+
+## [PYR3-057] bug · M · 🧵 · queued · v1.0 — Chaos dispatch over-spawns threads reading stale ISAAC state (histogram contamination)
+
+**Filed 2026-05-29 (code-review).** `chaos_main` (`src/shaders/chaos.wgsl:1528-1530`) has no
+`if (walker_id >= num_walkers) return;` guard, and dispatch size is `ceil(walkers/64)×64`. Both live
+browser paths use non-multiple-of-64 walker counts (chunked ≈244→256, decoupled ≈2441→2496), so 2–5%
+of threads per dispatch run the full chaos loop against zero-init or **stale** ISAAC state (the buffer
+is written only for `walkers` entries and never cleared by `reset()`) and `atomicAdd` their bogus-RNG
+trajectories into the histogram **on every viewer render** — a subtle ~1-5% density bias that also
+breaks within-hardware determinism when the walker count changes between renders. The BE parity rig
+escapes it (`render()` uses 1024 = mult of 64), so goldens stay clean. Two compounding latents: the
+ISAAC buffer is fixed at 4096 walkers but `render()` can request up to ~4.2M (heavy native-res flames
+at high quality → `writeBuffer` overrun → WebGPU validation error → silent blank/garbage, with no
+error scope to surface it); and the missing bound guard would read truly out-of-bounds once that
+buffer is grown. **Fix:** add `walker_count` to the chaos uniforms (free `_pad14/_pad15` slots),
+early-return guard at the top of `chaos_main`, and size the ISAAC buffer to the worst-case dispatch;
+add a `chaos.test.ts` case with `walkers > config.walkers`. (Folds: overspawn-stale-isaac,
+chaos-shader-no-walker-bound-guard, isaac-buffer-walker-overrun.)
+
+## [PYR3-056] bug · M · 🩹 · queued · v1.0 — DE kernel normalization uses a different radius than the gather cutoff (brightness ripple)
+
+**Filed 2026-05-29 (code-review).** In the density-estimation scatter (`src/shaders/density.wgsl:79-97`,
+`src/density.ts:78-99`) the gather cutoff and Gaussian sigma use the **float** adaptive radius
+`n_rad`, but the per-bucket normalization is `kernel_norm[round(n_rad)]` — an **integer-radius LUT**.
+Because the float cutoff disc and the `round`ed-integer LUT disc cover different taps with slightly
+different sigmas, each bucket's total scattered weight is not 1.0 — it sweeps ~0.58→1.53 with a ~2.6×
+discontinuity at every `round()` boundary, producing a **brightness ripple correlated with density
+gradients** (banding), not smooth precision drift. Reproduced in pure f64 JS (structural, distinct
+from the f32 floor); flam3-C `filters.c` keeps numerator + denominator on one shared radius, so this
+is pyr3-introduced. It propagates to final output (no downstream renormalization) and **can inflate
+measured R against the flam3-C ship-gate goldens — touches the v1.0 parity gate.** **Fix:** snap to
+the integer radius first, then reuse it for cutoff, sigma, and LUT (verified to restore weight = 1.0
+across [1,10]); add a `Σ(kw/knorm) ≈ 1.0` regression check over an `n_rad` sweep.
+
+## [PYR3-068] docs · S · 📝 · queued · v1.0 — Doc-sync fixes (meta-schema, broken link, ROADMAP, CLAUDE count)
+
+**Filed 2026-05-29 (code-review).** Beyond the PYR3-049 README Status overhaul: (1) `README.md:86-88`
+documents fixture `meta.json` as carrying `baselineR` — renamed to `expectedR` in v0.19; `grep
+'"baselineR"' fixtures/` returns 0 matches, and the load-bearing `tier` field is omitted entirely →
+update to `expectedR`/`thresholdR`/`tier` (+ `feBeExpectedR`/`feBeThresholdR`). (2) `README.md:124`
+links the v1.0 design spec at a gitignored path → 404 for anyone cloning the now-public repo; drop it
+or point to VISION.md. (3) `ROADMAP.md:65` "Latest ship: v0.34" contradicts its own v0.35 table row.
+(4) `CLAUDE.md:8` states `npm test` = "4582 passed"; current suite is ~4610 — soften to "~4600
+passing" so it stops being a per-ship maintenance target.
+
+## [PYR3-067] chore · S · 🔖 · queued · v1.0 — Version-bump + git-tag + Node-pin ship discipline
+
+**Filed 2026-05-29 (code-review).** `package.json` version is frozen at **0.1.0** across 37 shipped
+releases (the field surfaced 6× across review buckets), and **zero git tags exist** (`git tag -l`
+empty) — no machine-readable ship record, no `git describe`, no `git checkout v0.34`.
+`build-showcase.mjs` already works around it by parsing the version out of CHANGELOG. Decide the
+canonical policy and wire a ship-time step: bump `package.json` to the CHANGELOG heading + `git tag
+vX.Y` (optionally backfill tags for shipped versions). Separately add a `.nvmrc` (`20`) / `engines`
+field — the native `webgpu` dep makes Node-version skew a realistic "works in CI, breaks locally"
+footgun, and deploy already pins Node 20.
+
+## [PYR3-066] chore · M · ⚖️ · queued · v1.0 — GPL/attribution hardening before the public v1.0 push
+
+**Filed 2026-05-29 (code-review).** Real GPL-3.0 + lineage-attribution gaps to close before the repo
+goes public: (1) **zero** source files carry an SPDX/copyright header (0 of 55+) — most acute for
+`src/isaac.ts` (ports Bob Jenkins' ISAAC) and the ported variation kernels/shaders; add a one-line
+`// SPDX-License-Identifier: GPL-3.0-or-later` + copyright (+ lineage credit where ported), scriptable
+in one pass. (2) `NOTICE.md` claims "we do not vendor or copy" flam3 — contradicted by
+`src/flam3-palettes-data.ts` (flam3's 701-palette table ported verbatim); add Draves/Reckase + GPL-3.0
+attribution and soften the NOTICE sentence. (3) `brotli-dec-wasm` — the only runtime-distributed dep —
+is absent from NOTICE (MIT-or-Apache, GPL-compatible, just unlisted). (4) `NOTICE.md` promises a
+fixtures CC-attribution README that doesn't exist; 26+ Electric Sheep genomes ship with no
+CC-BY/CC-BY-NC attribution — **flag CC-BY-NC genomes specifically, as they constrain how pyr3.app may
+be monetized.**
+
+## [PYR3-065] chore · S · 🧼 · queued · v1.0 — Input/XSS hardening (innerHTML guard, brotli cap, zero-xform guard)
+
+**Filed 2026-05-29 (code-review).** The viewer ships to a public domain and consumes arbitrary
+user-supplied `.flame` files, so harden three convention-only safety boundaries: (1) the load-bearing
+no-`innerHTML` XSS invariant is enforced only by comment/convention — add an ESLint
+`no-restricted-properties` ban on `innerHTML`/`outerHTML`/`insertAdjacentHTML` in `src/` (or a
+build-source grep test) + a regression test loading a `.flame` with `name='<img src=x
+onerror=alert(1)>'`. (2) `src/brotli.ts` decompresses with no output-size cap (decompression-bomb
+DoS) — add a generous ceiling (e.g. 64 MB ≫ the ~832 KB legit chunk). (3) `genomeFromJson`
+(`serialize.ts:359`) accepts zero-xform genomes the XML loader rejects — add the matching guard and
+correct the now-stale load-bearing comment at `flame-import.ts:539` (the live shader is
+distribution-table driven, not `num_xforms - 1u` OOB).
+
+## [PYR3-064] chore · S · 🔒 · queued · v1.0 — Supply-chain: pin Actions to SHAs + verify Release-tar checksums
+
+**Filed 2026-05-29 (code-review).** `deploy.yml` auto-deploys to live pyr3.app on push to main and
+(1) extracts the corpus + showcase Release tarballs directly into the served Pages artifact with **no
+integrity check** (`deploy.yml:97,131`) — the showcase tar carries an `index.html` served same-origin,
+and tag-pinning fixes *which tag*, not *which bytes* (a same-tag asset can be deleted and re-uploaded;
+actions/cache then amplifies a poisoned tar across deploys). (2) all Actions use floating
+major-version tags (`@v5`/`@v6`) rather than commit SHAs. **Fix:** publish/pin an expected sha256 for
+each tar in version control and verify before `tar -xf`; pin each Action to a full commit SHA with a
+version comment (optionally add Dependabot for github-actions). Same-owner repos cap likelihood —
+medium, not high.
+
+## [PYR3-062] chore · M · 🛡️ · queued · v1.0 — CI quality gate + bin/ typecheck + engine-only seam tsconfig
+
+**Filed 2026-05-29 (code-review).** Three CI/typecheck gaps, one cluster: (1) **No CI test/typecheck
+gate** — `deploy.yml` is the only workflow and goes push-to-main → `npm run build` → live, never
+running `npm test` (~1s) or the standalone typecheck; a unit regression or a bin/ type error
+auto-deploys to production. (2) **bin/ is never type-checked** — `tsconfig.json` includes only
+`["src", "vite.config.ts"]` and the CLI runs via `tsx`/`--strip-types`; the review empirically proved
+a deliberate type error in `bin/pyr3-render.ts` passes `npm run typecheck` clean, leaving the
+load-bearing BE half of the seam unguarded. (3) **The seam is enforced by grep only** — `tsconfig`
+hands `DOM` lib + `vite/client` to all of `src`, so `document`/`window` in a kernel would typecheck
+clean. **Fix:** a CI job (`npm ci && npm run typecheck && npm test`, skip the gated parity rigs) that
+the deploy `needs:`; a `tsconfig.bin.json` covering `bin/` + `scripts/`; and an engine-only DOM-free
+tsconfig project so a browser global inside a kernel becomes a compile error.
+
+## [PYR3-059] test · L · 🧪 · queued · v1.0 — Close the WGSL-render-path coverage gap (kernel tests + regressions + parity-in-CI)
+
+**Filed 2026-05-29 (code-review).** The 4,116 variation tests validate the **TypeScript reference**
+impls (`ts_var_*`), but production renders the **WGSL port** in `chaos.wgsl`, which no fast test
+executes — `chaos.test.ts` uses a mock device that no-ops `dispatchWorkgroups`. The only catch for a
+WGSL regression (sign flip, wrong param index) or a re-introduced PYR3-029 RNG bug / v0.33 load race
+is the parity rig, which is **env-gated off by default and never run in CI** (deploy runs only `npm
+run build`). variations.ts documents the intended "Layer 3" WGSL-vs-reference assertion as *planned*.
+**Fix:** add a GPU-backed test (Node + `webgpu`, same host as the BE CLI) running each WGSL kernel on
+a fixed input vs the TS reference / flam3 fixture within an f32 tolerance; add fast-suite regression
+tests for the four PYR3-029 RNG behaviors and the `loadInFlight`/cancel sequencing (extract it into a
+testable async fn); and at minimum run the BE parity rig in CI so the single load-bearing gate isn't
+purely opt-in. (Highest-leverage item — closes review finding H2.)
+
+## [PYR3-061] bug · M · 🎯 · queued · v1.x — flam3 importer-default parity sweep (hand-authored / partial flames)
+
+**Filed 2026-05-29 (code-review).** Six importer defaults diverge from flam3 for flames that omit
+attributes. **The ESF corpus is unaffected** (every shipped fixture carries explicit attributes, so
+the parity rig never exercises these) — they bite only hand-authored / legacy Apophysis flames, but
+each is a real semantic divergence: (a) missing `<flame scale>` defaults to 100 vs flam3's 50 → 2×
+zoom (`flame-import.ts:682`); (b) missing xform `color` defaults to 0 vs flam3's `i&1` (`:358`); (c)
+partial-tonemap fill uses pyr3 continuity defaults (vibrancy 0, highpow 1) not flam3's (vibrancy 1,
+highpow −1), collapsing the vibrancy composite (`:634-648`); (d) sparse `<color index>` palettes leave
+gaps black instead of interpolating like `flam3_interp_missing_colors` (`:199-225`); (e) `<color
+rgba>`/`<color a>` alpha ignored, no premultiply (`:217`); (f) explicit variation `weight=0` dropped →
+all-zero xform force-substituted `linear(1)` vs flam3's degenerate point (`:405,438`). **Fix:** align
+each default (or document the deliberate divergence at the call site). **Verify no corpus/golden R
+regression after each numeric default change** before shipping; add importer tests covering the
+omitted-attribute paths.
+
+## [PYR3-060] bug · S · 💾 · queued · v1.x — finalxform opacity dropped on .pyr3.json re-import
+
+**Filed 2026-05-29 (code-review).** `xformToJson` serializes finalxform `opacity` (`serialize.ts:278`)
+and the JSON type keeps the field, but `finalxformFromJson` (`serialize.ts:487-515`) never reads it —
+so a finalxform with `opacity != 1.0` round-trips to 1.0, silently brightening the final-lens deposit
+(the engine genuinely honors it: `chaos.wgsl:1729` gates the final lens on `color_params.z`). The
+existing round-trip test passes vacuously (its fixture omits opacity). **Fix:** mirror
+`xformFromJson`'s opacity read (`serialize.ts:534-537`) in `finalxformFromJson`; add a round-trip test
+for a finalxform with `opacity != 1`.
+
+## [PYR3-058] bug · S · 🪣 · queued · v1.x — u32 histogram count saturates, not wraps
+
+**Filed 2026-05-29 (code-review).** The chaos deposit accumulates `u32(opacity*255)` into a u32 atomic
+histogram via plain `atomicAdd` with no saturation (`chaos.wgsl:1872-1881`), and the histogram
+accumulates across all chunks (reset once per render). The count channel holds 255×hits/pixel and
+wraps at 2^32 (~16.8M hits/super-pixel); the downstream density estimator + log tonemap divide by the
+raw count, so a wrapped pixel reads as **low density at the brightest spot — a black hole**. Only
+reachable on a pathological single-pixel attractor at the 4K preset (no corpus fixture exhibits it),
+hence low — but flam3-32bit deliberately saturates here (`bump_no_overflow`). **Fix:** make the count
+accumulation saturating (CAS/min guard pinning at `u32::MAX`); add a single-pixel-attractor regression
+test past the threshold.
+
+## [PYR3-069] chore · M · 🧹 · queued · v1.x — Correctness & cleanup micro-batch (8 items)
+
+**Filed 2026-05-29 (code-review).** Small, independently-shippable hardening + hygiene items from the
+review: (1) **WGSL constructor RNG eval-order** — walker init / bad-value reseed / `var_square` pass
+two `rand` draws as constructor args; WGSL §10.3 doesn't guarantee order (the file already guards this
+for gaussian/radial blur) → capture each draw into a sequential `let` to restore byte-identical
+determinism + flam3 left-to-right alignment. (2) **No `device.lost` / error-scope handling** anywhere
+→ GPU validation/OOM/TDR shows as a silent blank canvas (the only safety net for a no-CPU-fallback
+renderer); register `device.lost` handlers in `device.ts` + `pyr3-render.ts`. (3) **Dead code:**
+`createSpatialFilterPass` + 13 of 14 filter shapes are unused (only `gaussian` is wired) and hide a
+fractional-`r` truncation trap at `spatial-filter.ts:384` → delete or wire up + downgrade the
+"14 shapes" comment. (4) **R-metric `meanAbsDiffRgba` includes alpha** despite its "alpha ignored"
+docstring → reconcile (skip alpha + re-baseline, or fix the docstring). (5)
+`VARIATION_DEFAULTS`/`VARIATION_PARAMS`/`PARAM_KEYS` length+order coupling is runtime-only → add a
+one-line invariant test (+ fix the stale "Max 6 slots" comment → 8). (6) Stale `var_fan` comments
+(chaos.wgsl + variations.ts) still claim a Euclidean-mod divergence the v0.13 fix removed → update.
+(7) `pyr3-026-calibrate.mjs:69` writes the old `feBeBaselineR` field name → desyncs the FE-BE gate on
+re-calibration → write `feBeExpectedR`. (8) `wgsl-loader-register.mjs:7` registers via a CWD-relative
+path → breaks outside repo root → use `new URL('./wgsl-loader.mjs', import.meta.url)`.
+
+## [PYR3-063] chore · M · ♻️ · queued · v1.x — bin/ DRY (host.ts, computeDispatch, parseGenomeText, arg helper)
+
+**Filed 2026-05-29 (code-review).** The host-side seam setup is correctly *not* in the engine, but
+it's copy-pasted across the 5 GPU `bin/` tools: (1) the happy-dom + `DOMParser` globals shim + Dawn
+`requestDevice({requiredLimits})` acquisition + navigator-drop teardown → extract `bin/host.ts`
+(`installWebGPUHost()` / `acquireDawnDevice()`). (2) the walker-sizing constants + dispatch formula
+(private in `renderer.ts`) are re-declared verbatim in 3 diagnostics + an inline probe, with comments
+admitting they "mirror renderer.ts" (and citing stale line numbers) — any tuning silently invalidates
+the parity diffs → export a single `computeDispatch(targetSpp, w, h)`. (3) the `sniffKind →
+parseFlame|genomeFromJson` dispatch is re-implemented in 4 bin/ entries → extract `parseGenomeText(text,
+filename)` reused by `loader.load()` and all CLIs. (4) `pyr3-pixel-dump --max-dim`/`--walkers` lack the
+`isFinite` validation the sibling tools have (NaN dims) → shared `parsePositiveInt` arg helper. Keeps
+the engine-purity invariant; collapses ~15 boilerplate lines per tool.
+
+## [PYR3-070] feat · L · 🔭 · queued · post-v1 — Corpus discovery: research easier ways to find new sheep (gallery / find-like / find-patterns)
+
+**Filed 2026-05-29 (user-directive).** Linear `‹`/`›` corpus nav (PYR3-041) steps id-by-id, which
+makes *discovering* a good or novel flame slow. Research richer discovery affordances — **this is an
+investigation entry: surface the option-paths and a probe before building.** Directions the user named:
+- **Gallery** — a browsable thumbnail grid over the live corpus (or a curated/interesting subset),
+  beyond the shipped 4K `/showcase` gallery (which is a fixed v1.0 set, not a corpus browser). Open Qs:
+  thumbnail source (precomputed vs on-the-fly Draft renders), pagination over 100k+ ids, same-origin
+  chunk-fetch cost.
+- **Find like / similar** — given the current flame, surface visually or genetically similar ones
+  (genome distance over variation set + affines + palette; or a perceptual hash on a Draft thumbnail),
+  fronted by a "more like this" pill.
+- **Find patterns** — cluster the corpus by structural pattern (variation signature, symmetry,
+  density/colour features) so the user jumps between *kinds* of flame rather than literal neighbours.
+
+Shares lineage with PYR3-052 (interestingness scoring + skip-to-interesting nav) and PYR3-053 (🎲
+surprise-me) — all three likely want the same **precomputed per-gen feature index baked alongside
+`avail.flam3idx`** (the avail-manifest pattern, `src/avail-client.ts`), computed cheaply on Draft (512)
+thumbnails, ideally as an ESF-side / build-step pass so the viewer just reads scores/embeddings.
+**Next step when pulled:** a probe comparing feature candidates (histogram coverage · density entropy ·
+colour variance · perceptual hash · genome distance) on a corpus sample before committing to a
+representation. **L** — likely splits into its own design + probe + ship arc once prioritized.
 
 ## [PYR3-054] feat · S · 💾 · queued · post-v1 — Save-image hints flame name + preset in the filename
 
