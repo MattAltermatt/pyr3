@@ -31,25 +31,27 @@ not the default.
 
 ## 🎯 The v1.0 ship gate
 
-**Two gates, both green, on a curated fixture set of Electric Sheep flames:**
+**Two gates, both green, on a curated 25-fixture set of Electric Sheep flames:**
 
 1. **BE parity vs flam3-C.** The headless CLI renders match
-   `flam3-render-32bit-isaac qs=1` output within R tolerance, both
-   at the 19-fixture parity-corpus dims (native genome size) AND
-   at the 4K showcase set (3840 long-edge). flam3-C is the canonical
+   `flam3-render-32bit-isaac qs=1` output within R tolerance at native
+   genome dims (the 25-fixture parity corpus). flam3-C is the canonical
    lineage source of truth; the **2026-05-28 pivot replaced the
    prior reference renderer**. The predecessor port was close (R<5 vs flam3
    in most cases) but carried a port-specific offset that confounded
    pyr3's measured drift. Goldens regenerated deterministically via
-   `isaac_seed=<fixture-id>`.
+   `isaac_seed=<fixture-id>`. (An optional 4K-resolution gate is deferred —
+   native-dim parity implies 4K; see issue #34.)
 2. **FE↔BE parity at quick-mode dims.** The browser viewer renders
    match the BE CLI for the same fixture at FE's supported dims
    (1024 long-edge, 16 SPP) within R tolerance. FE is interactive only
    — 4K is BE-exclusive per the v0.14 pivot.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
-same" contract holds across engines too. Both gates green = trigger
-pulled for the public GitHub ship.
+same" contract holds across engines too. **Both gates are green**, the repo
+is public, and the viewer is live at [pyr3.app](https://pyr3.app/) — stamping
+the `v1.0` tag (once its [milestone](https://github.com/MattAltermatt/pyr3/milestones)
+closes) is the remaining call.
 
 ## 🔥 Keep (the soul)
 

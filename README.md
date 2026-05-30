@@ -11,38 +11,22 @@
 
 ## Status
 
-🚧 **v0.30 — Fix: flames with >32 xforms no longer render black.** Engine in place (browser + CLI
-render from one codebase); both parity rigs green — BE-vs-flam3-C (`npm run
-test:parity`, 25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25).
-flam3-C is the canonical lineage source of truth. **The hero
-`electricsheep.247.19679` renders at R=2.78 vs flam3-C** — well inside the noise
-floor.
+🚧 **v0.36 — pre-1.0, live, both ship gates green.** The engine is in place (browser + CLI
+render from one codebase) and deployed at [**pyr3.app**](https://pyr3.app/) (viewer) +
+[`/showcase`](https://pyr3.app/showcase) (gallery), auto-deployed on push to `main`. Both
+parity rigs pass on the curated 25-fixture corpus — BE-vs-flam3-C (`npm run test:parity`,
+25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25). flam3-C is the canonical
+lineage source of truth; the hero `electricsheep.247.19679` renders at **R=2.78** vs flam3-C,
+well inside the noise floor.
 
-Recent ships: **v0.30** raised `MAX_XFORMS` 32 → 128 + added a flame-import clamp
-guard, fixing the silent black-render of high-xform-count flames (`MAX_XFORMS` buffer
-overflow) — `electricsheep.242.01373` (54 xforms) now renders (`[PYR3-033]`); **v0.29** added the **🎯 4K** button — the viewer now renders the current
-flame at 3840-long-edge in the browser (~2.7s for the hero), building progressively via the
-decoupled display/dispatch orchestrator. This reverses the v0.14 FE-4K removal: the old
-crash/slowness was the chunked orchestrator (1887 rAF+present chunks) plus oversample-4;
-fat back-to-back dispatches at oversample-1 fix both, with a `maxStorageBufferBindingSize`
-guard for GPUs that can't fit a 4K histogram (`[PYR3-027]`); **v0.28** decoupled the chaos splat-scale `oversample` from the genome
-(reads the authoritative pipeline config now) and ported flam3's full 701-palette
-library as a parser fallback for inline-palette-less flames (`[PYR3-008]` +
-`[PYR3-022]`; `[PYR3-004]` variation audit closed 99/99); **v0.27** restored the live `/showcase` gallery (now served as a
-deploy-time Release asset, keeping the ~221M of 4K JPEGs out of git) and de-bloated
-the repo (`.git` 603M→41M via history rewrite); **v0.26** automated the deploy — pushing to `main` now publishes
-`pyr3.app` via GitHub Actions (`actions/deploy-pages`), baking in the corpus chunks
-from the electric-sheep-fold Release; **v0.25** scrubbed the codebase of
-predecessor-project references ahead of the public repo; **v0.24** added the corpus
-share-URL viewer (`pyr3.app/v1/gen/{gen}/id/{id}` loads any Electric Sheep corpus
-flame in-browser); **v0.23** rebuilt the viewer's top bar into a single slim row;
-**v0.21** shipped the public `/showcase` gallery. Full history in
-[CHANGELOG.md](CHANGELOG.md).
-
-The only remaining known outliers — `coverage.248.02226` (R≈29.9) and
-`coverage.245.06687` — are accepted GPU-f32-floor (tier-2) fixtures under
-`[PYR3-029]`, **not** regressions. v1.0 ships once the `v1.0`
-[milestone](https://github.com/MattAltermatt/pyr3/milestones) closes out.
+The v0.36 DE-normalization fix (issue #10's predecessor) pulled the last two f32-floor
+outliers back into the healthy band (`coverage.248.02226` 29.92→5.73, `245.06687` 14.59→1.52),
+so the worst remaining parity gap is now `electricsheep.248.23554` (R≈24, a genuine
+cross-version divergence under investigation in [issue #6](https://github.com/MattAltermatt/pyr3/issues/6))
+— **not** a regression. v1.0 ships once the
+[`v1.0` milestone](https://github.com/MattAltermatt/pyr3/milestones) closes out. Ship history:
+[Releases](https://github.com/MattAltermatt/pyr3/releases) (v1.0+) and [HISTORY.md](HISTORY.md)
+(frozen pre-1.0 log).
 
 ## The contract
 
