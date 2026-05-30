@@ -37,8 +37,10 @@ struct DEUniforms {
 @group(0) @binding(0) var<uniform>            u:           DEUniforms;
 @group(0) @binding(1) var<storage, read>      hist:        array<u32>;
 @group(0) @binding(2) var<storage, read_write> filtered:   array<f32>;
-// Per-radius kernel-sum normalization. Indexed by floor(r) clamped to
-// [0, MAX_RAD]; LUT size = MAX_RAD + 1. Built host-side in density.ts.
+// Per-radius kernel-sum normalization. Indexed by round(n_rad_f) clamped to
+// [0, MAX_RAD_CAP]; LUT size = MAX_RAD_CAP + 1. Built host-side in density.ts.
+// PYR3-056: the shader uses this SAME integer radius for the disc cutoff and
+// the Gaussian sigma, so each bucket's scattered weight Σ(kw/knorm) = 1.0.
 @group(0) @binding(3) var<storage, read>      kernel_norm: array<f32>;
 
 // Sized to fit the largest comp_max_radius in super-pixel units: original

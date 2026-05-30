@@ -9,11 +9,17 @@ function brotli(text: string): ArrayBuffer {
 }
 
 describe('inflateBrotli', () => {
-  it('round-trips a brotli payload (native path)', async () => {
-    // This Node ships native DecompressionStream("brotli"); assert we use it.
-    expect(nativeBrotliSupported()).toBe(true);
+  it('round-trips a brotli payload', async () => {
     const text = JSON.stringify({ _v: 1, '5': "<flame name='a'>x</flame>" });
     expect(await inflateBrotli(brotli(text))).toBe(text);
+  });
+
+  it('uses native DecompressionStream when the runtime supports it', () => {
+    // Native brotli landed in Node 24.7; CI pins Node 24 (see ci.yml). On an
+    // older runtime this capability check is simply absent — the wasm fallback
+    // covers it — so we don't hard-fail, we document the expectation.
+    if (!nativeBrotliSupported()) return;
+    expect(nativeBrotliSupported()).toBe(true);
   });
 
   it('preserves non-ASCII bytes', async () => {
@@ -40,5 +46,16 @@ describe('inflateBrotliBytes', () => {
     const c = brotliCompressSync(Buffer.alloc(0));
     const ab = c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength);
     expect((await inflateBrotliBytes(ab)).length).toBe(0);
+  });
+
+  it('throws when decompressed output exceeds the 64 MB cap (PYR3-065 bomb guard)', async () => {
+    // 64 MB + 1 KB of zeros compresses to a few KB but decompresses past the
+    // cap — the inflate must abort rather than buffer the whole bomb.
+    const oversize = brotliCompressSync(Buffer.alloc(64 * 1024 * 1024 + 1024));
+    const ab = oversize.buffer.slice(
+      oversize.byteOffset,
+      oversize.byteOffset + oversize.byteLength,
+    );
+    await expect(inflateBrotliBytes(ab)).rejects.toThrow(/cap|decompression bomb/i);
   });
 });

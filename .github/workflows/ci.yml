@@ -24,7 +24,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Node 24: the suite exercises native DecompressionStream("brotli"),
+          # added in Node 24.7 — Node 20/22 lack it (brotli.test.ts).
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
