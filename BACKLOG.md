@@ -8,11 +8,35 @@ newest ID first within a tier) and **✅ Resolved & shipped** (kept for provenan
 newest first). The ship narrative lives in [CHANGELOG.md](CHANGELOG.md); the
 strategic arc + current cycle in [ROADMAP.md](ROADMAP.md).
 
-> **Next ID: PYR3-053** — increment when creating a new entry. Never reuse, even for
+> **Next ID: PYR3-055** — increment when creating a new entry. Never reuse, even for
 > shipped/removed tasks. New open entries go at the top of **🔥 Open**; flip an entry
 > to ✅ in its header and move it into **✅ Resolved & shipped** when it ships.
 
 ## 🔥 Open
+
+## [PYR3-054] feat · S · 💾 · queued · post-v1 — Save-image hints flame name + preset in the filename
+
+**Filed 2026-05-29 (user-directive).** When the user right-clicks the canvas and "Save image
+as…", the browser's suggested filename should hint at **the flame name + the preset that was
+rendered**, instead of a generic `download.png`. E.g. `electricsheep.247.19679-4k.png`,
+`electricsheep.247.19679-preview-q16.png`, or for an Advanced custom render
+`electricsheep.247.19679-2048px-q100.png`. Pull the name from the loaded flame's meta and the
+preset/quality from the active `QUALITY_TIERS` selection (`src/presets.ts`); fall back to a
+plain `<flame-name>.png` when no preset applies. **Implementation note:** a WebGPU `<canvas>`
+right-click "Save image" doesn't honor a filename attribute the way an `<a download>` does —
+likely needs a download affordance (explicit "💾 save" pill, or a hidden `<a download="…">`
+wired to a `canvas.toBlob()` / texture readback) rather than relying on the native context
+menu. Confirm the native-menu behavior first before picking the mechanism.
+
+## [PYR3-053] feat · S · 🎲 · queued · post-v1 — "🎲 Surprise me" — random showcase flame on click
+
+**Filed 2026-05-29 (user-directive).** An explicit shuffle action (e.g. a `🎲 surprise me`
+pill in the action bar, or a `/v1/random` route) that jumps to a **random flame drawn from
+the curated showcase set** — not the whole corpus, so it always lands on a vetted-good flame
+(no weak/slow/tier-2 surprises). Deliberately **not** wired to bare-root load: the front door
+stays the stable hero (`electricsheep.247.19679`) for brand + share-determinism; randomness is
+a chosen click, not a load-time dice roll. Pairs naturally with PYR3-052 (interestingness
+scoring) — a "surprise" could bias toward high-interest flames once that index exists.
 
 ## [PYR3-052] feat · L · 🐑 · queued · post-v1 — "Interesting flames" scoring + a skip-to-interesting nav mode
 
