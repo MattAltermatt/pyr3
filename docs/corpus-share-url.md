@@ -18,7 +18,7 @@ loads that exact corpus flame.
    - `/v1/gen/{gen}/id/{id}` → load & render the corpus flame.
    - `/v1/flame/{token}` → reserved (future custom flame); "not yet supported".
    - (The legacy inline `?flame=v1:<gzip+base64url>` codec was removed in v0.32
-     — superseded by this corpus URL; see BACKLOG `[PYR3-020]`.)
+     — superseded by this corpus URL.)
 2. **Chunk fetch + decode** — `chunk_lo = (id // 256) * 256`; fetch
    `/chunks/{gen}/{chunk_lo:05d}.flam3chunk` (same-origin, baked into the
    deploy); fetch **raw bytes**; brotli-decode via
