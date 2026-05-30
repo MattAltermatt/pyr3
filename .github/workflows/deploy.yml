@@ -28,7 +28,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # PYR3-062: gate the live deploy on typecheck + unit tests. Before this, a
+  # push to main went straight to `npm run build` -> live with no test run, so
+  # a unit regression or a bin/ type error could auto-deploy to production.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck (src + bin)
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     env:
       # Pinned electric-sheep-fold Release tag carrying corpus-chunks-*.tar.

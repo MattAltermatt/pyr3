@@ -1,0 +1,25 @@
+{
+  // PYR3-062: the main tsconfig includes only ["src", "vite.config.ts"], so the
+  // CLI half of the "single engine, two consumers" seam (bin/) was never
+  // type-checked — a type error in bin/pyr3-render.ts passed `npm run typecheck`
+  // clean. This project covers bin/ (the load-bearing BE seam). The one-off
+  // diagnostic .ts tools under scripts/ are intentionally out of scope (they
+  // import via .ts extensions for tsx and aren't part of the ship path).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["@webgpu/types", "vite/client", "node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["bin"]
+}

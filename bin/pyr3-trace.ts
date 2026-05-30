@@ -81,6 +81,7 @@ async function main(): Promise<void> {
     walkers: 1,
     itersPerWalker: TRACE_ENTRIES,
     fuse: FUSE,
+    oversample, // PYR3-062: was omitted (→ undefined splat scale); match renderer
   });
 
   const seed = seedOverride ?? 0xDEADBEEF;
@@ -149,15 +150,18 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < TRACE_ENTRIES; i++) {
     const base = i * TRACE_FLOATS_PER_ENTRY;
-    const iter = f32[base];
-    const pick = f32[base + 1];
-    const pax = f32[base + 2];
-    const pay = f32[base + 3];
-    const pvx_pre = f32[base + 4];
-    const pvy_pre = f32[base + 5];
-    const pvx = f32[base + 6];
-    const pvy = f32[base + 7];
-    const isBad = f32[base + 8];
+    // In-bounds by construction (buffer sized to TRACE_ENTRIES × TRACE_FLOATS_
+    // PER_ENTRY); `?? 0` satisfies noUncheckedIndexedAccess and matches the
+    // break-on-zero sentinel logic below.
+    const iter = f32[base] ?? 0;
+    const pick = f32[base + 1] ?? 0;
+    const pax = f32[base + 2] ?? 0;
+    const pay = f32[base + 3] ?? 0;
+    const pvx_pre = f32[base + 4] ?? 0;
+    const pvy_pre = f32[base + 5] ?? 0;
+    const pvx = f32[base + 6] ?? 0;
+    const pvy = f32[base + 7] ?? 0;
+    const isBad = f32[base + 8] ?? 0;
     if (iter === 0 && pick === 0 && pax === 0 && pay === 0 && i > 0) break;
     // Flam3 -rngtrace format (chaos.wgsl Phase 5b schema mirrors this byte-for-byte):
     //   [iter=N walker=0 pick=X pax=f pay=f pvx_pre=f pvy_pre=f pvx=f pvy=f isBad=0|1 draw=?]

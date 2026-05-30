@@ -105,9 +105,10 @@ const SCENARIOS: Scenario[] = [
     mutate: (g) => {
       // Identity-affine julia finalxform. Matches examples/spiral-galaxy-julia-final.pyr3.json shape.
       g.finalxform = {
+        weight: 0, // meaningless on finalxform
         color: 0.5,
         colorSpeed: 0.5,
-        affine: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+        a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, // pyr3-identity affine (flat fields)
         variations: [{ index: 13, weight: 1 }], // V.julia = 13
       };
     },
@@ -160,9 +161,10 @@ const SCENARIOS: Scenario[] = [
       g.spatialFilter = { radius: 0.5, shape: 'gaussian' };
       g.oversample = 2;
       g.finalxform = {
+        weight: 0, // meaningless on finalxform
         color: 0.5,
         colorSpeed: 0.5,
-        affine: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+        a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, // pyr3-identity affine (flat fields)
         variations: [{ index: 13, weight: 1 }],
       };
       if (g.xforms[0]) {

@@ -139,6 +139,7 @@ async function main(): Promise<void> {
     walkers: INIT_WALKERS,
     itersPerWalker: INIT_ITERS,
     fuse: FUSE,
+    oversample, // PYR3-062: was omitted (→ undefined splat scale); match renderer
   });
 
   const seed = (Math.random() * 0xffffffff) >>> 0;

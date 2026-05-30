@@ -1,0 +1,39 @@
+name: CI
+
+# PYR3-062: a real quality gate. Before this, deploy.yml was the only workflow
+# and it went push-to-main -> `npm run build` -> live, never running the unit
+# suite or the bin/ typecheck — a unit regression or a CLI type error could
+# auto-deploy to production. This runs on every push + PR.
+#
+# The gated parity rigs (test:parity / test:parity-fe-be) are NOT run here: they
+# need a real/software GPU and take ~91s / ~13min. They stay opt-in (run locally
+# when the render path changes).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Covers both the src engine/viewer (tsconfig.json) and the bin/ CLI seam
+      # (tsconfig.bin.json) — the latter was previously unguarded.
+      - name: Typecheck (src + bin)
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
