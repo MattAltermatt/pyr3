@@ -13,13 +13,12 @@ import { load as loadFileFromUser, type LoadResult } from './loader';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { mountBar, type BarHandle } from './ui-bar';
-import { decodeFlame } from './url-codec';
 import { checkWebGPU } from './webgpu-check';
 
-// The "welcome flame" — what `/` paints when there are no URL params.
-// Hardcoded path keeps the URL surface to a single share mechanism
-// (?flame=<inline>); no bundled-fixture slug exposed. The specific
-// flame was hand-picked from the Electric Sheep Fold (ESF) corpus.
+// The "welcome flame" — what `/` paints when there's no recognized /v1 path.
+// Hardcoded path keeps the URL surface to the single /v1/gen/{gen}/id/{id}
+// share mechanism; no bundled-fixture slug exposed. The specific flame was
+// hand-picked from the Electric Sheep Fold (ESF) corpus.
 const WELCOME_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/electricsheep.247.19679.flam3`;
 
 const RENDER_SIZE = 1024;
@@ -570,9 +569,8 @@ async function main(): Promise<void> {
   };
 
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
-  // corpus link, a legacy ?flame= share link, or default. Fallback chain is
-  // welcome fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails —
-  // better than a black canvas).
+  // corpus link or default. Fallback chain is welcome fixture → hardcoded
+  // SPIRAL_GALAXY (safety net if fetch fails — better than a black canvas).
   const intent = parseLoadIntent(window.location);
   const initialFile = await resolveLoadIntent(intent);
   if (initialFile) {
@@ -651,15 +649,6 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       // For now, paint the welcome flame; no gallery/overlay UI is built yet.
       console.info(`pyr3: "${intent.kind}" view is not built yet (deferred) — painting welcome flame.`);
       return fetchAsFile(WELCOME_FLAME_URL);
-    case 'flame':
-      try {
-        const xml = await decodeFlame(intent.payload);
-        return new File([xml], 'from-link.flame', { type: 'text/xml' });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`pyr3: failed to decode ?flame= share link — ${msg}; falling back to welcome`);
-        return fetchAsFile(WELCOME_FLAME_URL);
-      }
     case 'default':
       return fetchAsFile(WELCOME_FLAME_URL);
   }

@@ -10,6 +10,29 @@ pyr3 frontend (browser WebGPU) renders matching the backend at quick-mode dims w
 tolerance. (The 2026-05-28 pivot replaced the prior kotlin-v1.1 reference with flam3-C
 directly — see v0.18.)
 
+## v0.32 — 2026-05-29 — Remove the legacy `?flame=` share-link codec (`[PYR3-020]`)
+
+**Outcome:** the `?flame=<inline-encoded>` share link is removed entirely. Its
+decode silently failed on ~6KB+ payloads (the original PYR3-020 bug); rather than
+fix a mechanism the **v0.24 corpus share-URL `/v1/gen/{gen}/id/{id}` already
+replaced**, it is deleted (user-directive). Resolved-by-removal.
+
+- **Deleted:** `src/url-codec.ts` (`encodeFlame`/`decodeFlame`) + `src/url-codec.test.ts`.
+- **`src/load-intent.ts`:** dropped the `flame` `LoadIntent` kind and the `?flame=`
+  query-param parse; `parseLoadIntent` now takes `{ pathname }` only (no `search`).
+  Module doc updated; legacy-`?flame=` tests removed from `load-intent.test.ts`.
+- **`src/main.ts`:** removed the `decodeFlame` import and the `case 'flame'` handler;
+  welcome-flame comment updated.
+- **`src/loader.ts`:** removed the now-vestigial `LoadResult.sourceText` field (it
+  existed only to feed the encoder — set but never read).
+- **Untouched:** the `/v1/flame/{token}` `custom-reserved` path grammar (a separate
+  future mechanism, not the legacy query param).
+- **Docs:** VISION's "share links via URL" principle and `docs/corpus-share-url.md`
+  re-pointed from `?flame=` to the corpus URL.
+
+**Verification:** `npm run typecheck` clean; 4587 unit tests green (15 fewer — the
+removed codec + parse tests); no dangling references to the removed symbols.
+
 ## v0.31 — 2026-05-29 — UI: showcase↔viewer links + the "hot base" brand mark (`[PYR3-045]` + `[PYR3-042]` + `[PYR3-044]`)
 
 **Outcome:** the gallery and the viewer are now linked both ways, and pyr3 has a

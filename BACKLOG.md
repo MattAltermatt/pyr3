@@ -26,30 +26,6 @@ Do a full pass: refresh the hero/tagline, the Status block, the feature list
 and the screenshots/links — so a first-time visitor lands on an accurate, current
 picture of pyr3. Coordinate with `doc-refresh` if run as part of a broader sweep.
 
-## [PYR3-020] feat · M · 🐛 · queued · v1.x — `?flame=` share-link decode fails on ~6KB+ payloads
-
-**Symptom (observed 2026-05-27):** Loading the FE viewer via a share
-link encoded from any multi-genome `.flame` (e.g. `247.29388.flam3`,
-~6.6KB URL) silently fails. Console shows
-`pyr3: failed to decode ?flame= share link — Failed to fetch; falling
-back to welcome`. The viewer then renders the welcome flame instead.
-
-**Hypothesis (unverified):** `streamDecompress` in `src/url-codec.ts`
-uses `new Response(stream).arrayBuffer()` — the `Failed to fetch`
-error likely originates from the Response wrapper around the
-DecompressionStream pipeline. Specific failure cause unknown; possible
-that Vite dev-server's overall payload handling truncates or the
-DecompressionStream barfs on the specific binary contents at this size.
-
-**Next phase:** verify hypothesis against current code first — repro
-with a smaller payload, add try/catch around each pipe stage, dump the
-base64-decoded bytes pre-decompress, narrow the failure point.
-
-Surfaced 2026-05-27 (v0.12) during PYR3-018 FE sweep — driven around by
-loading via the 📂 Open button file picker instead. Sweep proceeded to
-completion; this remains a real share-link regression to close before
-v1.0.
-
 ## [PYR3-030] parity · M · 🪨 · queued · v1.x — f64 tonemap precision shim for visualize pass
 
 **Filed 2026-05-27 post Phase-C investigator findings.** Pyr3's `visualize_u32.wgsl`
@@ -279,6 +255,17 @@ share-link + ship-gate first keeps the v1.0 scope honest.
 ## ✅ Resolved & shipped
 
 _Kept for provenance. Newest first._
+
+## [PYR3-020] feat · M · 🐛 ✅ **RESOLVED-BY-REMOVAL (v0.32, 2026-05-29)** — legacy `?flame=` share-link codec removed
+
+The `?flame=<inline-encoded>` share link (whose decode failed on ~6KB+ payloads —
+the original bug) is **removed entirely** rather than fixed: it was superseded by the
+v0.24 corpus share-URL `/v1/gen/{gen}/id/{id}` (user-directive 2026-05-29). Deleted
+`src/url-codec.ts` + its test, the `flame` `LoadIntent` kind + `?flame=` parse in
+`src/load-intent.ts` (+ tests), the `case 'flame'` handler + import in `src/main.ts`,
+and the now-vestigial `LoadResult.sourceText` field in `src/loader.ts` (it existed only
+to feed the encoder). `/v1/flame/{token}` custom-reserved is untouched (separate future
+mechanism). VISION + `docs/corpus-share-url.md` updated. typecheck + 4587 unit green.
 
 ## [PYR3-045] feat · S · 🐑 ✅ **RESOLVED (v0.31, 2026-05-29)** — Showcase cards link to the viewer via `/v1/gen/{gen}/id/{id}`
 

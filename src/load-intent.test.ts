@@ -1,41 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseLoadIntent } from './load-intent';
 
-// Shorthand: p(pathname, search?) → parseLoadIntent
-const p = (pathname: string, search = '') => parseLoadIntent({ pathname, search });
-
-// ── Legacy ?flame= cases (adapted from original — new signature) ──────────
-
-describe('parseLoadIntent – legacy ?flame= (path-unrecognized)', () => {
-  it('returns {kind:"default"} when search is empty', () => {
-    expect(p('/')).toEqual({ kind: 'default' });
-  });
-
-  it('returns {kind:"default"} when ?flame is not set', () => {
-    expect(p('/', '?other=1&another=2')).toEqual({ kind: 'default' });
-  });
-
-  it('extracts ?flame=<payload> as a flame intent', () => {
-    expect(p('/', '?flame=v1:AAAA')).toEqual({ kind: 'flame', payload: 'v1:AAAA' });
-  });
-
-  it('treats a leading question mark as optional (URLSearchParams handles either)', () => {
-    expect(p('/', 'flame=v1:x')).toEqual({ kind: 'flame', payload: 'v1:x' });
-  });
-
-  it('preserves URL-safe base64 characters in the flame payload', () => {
-    const payload = 'v1:abc-def_ghi-jkl';
-    expect(p('/', `?flame=${payload}`)).toEqual({ kind: 'flame', payload });
-  });
-
-  it('ignores unrecognized params (e.g. legacy ?fixture= no longer honored)', () => {
-    expect(p('/', '?fixture=247')).toEqual({ kind: 'default' });
-  });
-
-  it('non-v1 path still honors ?flame=', () => {
-    expect(p('/whatever', '?flame=v1:q')).toEqual({ kind: 'flame', payload: 'v1:q' });
-  });
-});
+// Shorthand: p(pathname) → parseLoadIntent
+const p = (pathname: string) => parseLoadIntent({ pathname });
 
 // ── /v1 path grammar ─────────────────────────────────────────────────────
 
@@ -76,8 +43,8 @@ describe('parseLoadIntent – /v1 path grammar', () => {
     expect(p('/about.html')).toEqual({ kind: 'default' });
   });
 
-  it('legacy ?flame= wins when /v1 path is unrecognized', () => {
-    expect(p('/v1/unknown/path', '?flame=v1:xyz')).toEqual({ kind: 'flame', payload: 'v1:xyz' });
+  it('unrecognized /v1 path → default', () => {
+    expect(p('/v1/unknown/path')).toEqual({ kind: 'default' });
   });
 
   it('gen 0 is valid (non-negative integer)', () => {
@@ -130,10 +97,5 @@ describe('parseLoadIntent – under a non-root base (/pyr3/)', () => {
     vi.stubEnv('BASE_URL', '/pyr3/');
     expect(p('/pyr3/')).toEqual({ kind: 'default' });
     expect(p('/pyr3')).toEqual({ kind: 'default' });
-  });
-
-  it('still honors legacy ?flame= under a base', () => {
-    vi.stubEnv('BASE_URL', '/pyr3/');
-    expect(p('/pyr3/', '?flame=v1:z')).toEqual({ kind: 'flame', payload: 'v1:z' });
   });
 });

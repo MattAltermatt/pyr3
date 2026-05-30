@@ -21,13 +21,6 @@ export interface LoadResult {
   kind: LoadKind;
   genome: Genome;
   report?: ImportReport;
-  /**
-   * The raw file text. Retained for the share-link round-trip: `url-codec`
-   * encodes it into `?flame=v1:<gzip+base64>` so the original XML is preserved
-   * byte-for-byte. (The outbound share button was removed in v0.23; the codec
-   * + inbound `?flame=` decode remain for the future share redesign.)
-   */
-  sourceText: string;
 }
 
 export function sniffKind(filename: string, content: string): LoadKind {
@@ -44,9 +37,9 @@ export async function load(file: File): Promise<LoadResult> {
   const kind = sniffKind(file.name, text);
   if (kind === 'flame') {
     const { genome, report } = parseFlame(text);
-    return { kind, genome, report, sourceText: text };
+    return { kind, genome, report };
   }
   const parsed: unknown = JSON.parse(text);
   const genome = genomeFromJson(parsed);
-  return { kind: 'pyr3-json', genome, sourceText: text };
+  return { kind: 'pyr3-json', genome };
 }

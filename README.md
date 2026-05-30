@@ -79,7 +79,7 @@ visibility-scaled `diff.png` per fixture.
 
 ```sh
 npm run test:parity                              # BE path: vitest gates R per fixture
-node scripts/fe-parity.ts 247.29388              # FE path: prints chrome-devtools-mcp steps
+npm run test:parity-fe-be                        # FE↔BE path: headless-WebGPU Playwright rig
 open fixtures/flam3-goldens/247.29388/diff.png   # eyeball the divergence map
 ```
 
@@ -104,7 +104,8 @@ for missing sheep. URLs are base-aware (`import.meta.env.BASE_URL`), so the same
 build works at the apex `pyr3.app` and the `mattaltermatt.github.io/pyr3/`
 fallback (which redirects to the apex).
 
-Legacy `?flame=<encoded>` share links continue to work unchanged.
+The legacy inline `?flame=<encoded>` share-link codec was removed in v0.32
+(superseded by the corpus URL above — see BACKLOG `[PYR3-020]`).
 
 The `/v1/gen` and `/v1/gen/{gen}` browse routes are reserved but show
 placeholder content — the visual gallery is deferred. Custom-flame sharing

@@ -73,8 +73,10 @@ pulled for the public GitHub ship.
 - **One engine, two consumers.** Pure TS modules + WGSL shaders, called from a browser (Vite
   + gh-pages) and a CLI (Node + `webgpu` npm + `tsx`). No language boundary, no WASM, no
   parallel implementations to keep in sync.
-- **Share links via URL.** `?flame=<inline-encoded>` carries the full flame content in the
-  URL — no remote fetch, no 404 risk. Paste anywhere; always renders the same flame.
+- **Share links via URL.** `/v1/gen/{gen}/id/{id}` carries the corpus coordinates of an
+  Electric Sheep flame; the viewer fetches that one chunk and renders it. Paste anywhere;
+  always the same flame. (The legacy inline `?flame=<encoded>` codec was removed in v0.32,
+  superseded by the corpus URL — see BACKLOG `[PYR3-020]`.)
 
 ## 🗃️ Explicitly defer
 
