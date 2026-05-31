@@ -81,6 +81,19 @@ export interface PresentRequest {
   forceDeOff?: boolean;
 }
 
+// Canvas-repoint contract (relied on by the gallery wave-fill orchestrator):
+// the Renderer holds NO reference to any canvas or GPUCanvasContext. The
+// presentation target is supplied per-call as `outputView: GPUTextureView`
+// on `render()` / `present()`. A single Renderer + single GPUDevice can
+// therefore drive any number of distinct canvases in sequence — the caller
+// just hands a fresh `context.getCurrentTexture().createView()` (or an
+// offscreen texture view, on the CLI side) on each call. There is no
+// `setCanvas()` because there is no canvas to set; swapping targets between
+// calls is the supported path. The only invariant: every target view must
+// be created against the same GPUDevice the Renderer was built with, and
+// match the GPUTextureFormat passed to `createRenderer()`. Dimensions and
+// oversample are controlled by `resize()`; the target view is dimension-
+// agnostic so long as it covers the configured (width, height).
 export interface Renderer {
   /** Single-shot render — clears the histogram, runs one dispatch sized
    *  to the genome's quality, and presents. Kept as a convenience wrapper

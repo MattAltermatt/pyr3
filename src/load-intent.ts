@@ -25,8 +25,13 @@ export type LoadIntent =
   | { kind: 'corpus'; gen: number; id: number }
   | { kind: 'gen-list' }
   | { kind: 'gen-browse'; gen: number }
+  | { kind: 'gallery'; page: number }
   | { kind: 'custom-reserved' }
   | { kind: 'default' };
+
+/** Single source of truth for the gallery grid size (3×3). Used by URL math,
+ *  the corpus walker that resolves a page's 9 sheep, and any future caller. */
+export const GALLERY_PAGE_SIZE = 9;
 
 /** Returns true iff the segment is a string of one-or-more decimal digits. */
 function isNonNegInt(segment: string): boolean {
@@ -80,6 +85,21 @@ export function parseLoadIntent(loc: { pathname: string }): LoadIntent {
         return { kind: 'custom-reserved' };
       }
       // /v1/flame with nothing after — fall through
+    } else if (sub === 'gallery') {
+      // /v1/gallery → page 1 (canonical default — no /p/1 suffix)
+      if (parts.length === 2) {
+        return { kind: 'gallery', page: 1 };
+      }
+      // /v1/gallery/p/{page} — 1-indexed; /p/0 and non-numeric fall through
+      if (
+        parts.length === 4 &&
+        parts[2] === 'p' &&
+        isNonNegInt(parts[3]!) &&
+        Number(parts[3]) >= 1
+      ) {
+        return { kind: 'gallery', page: Number(parts[3]) };
+      }
+      // Malformed — fall through
     }
     // Any other /v1/... or bare /v1 — fall through to default.
   }
@@ -95,4 +115,27 @@ export function parseLoadIntent(loc: { pathname: string }): LoadIntent {
  */
 export function corpusUrl(gen: number, id: number): string {
   return `${import.meta.env.BASE_URL}v1/gen/${gen}/id/${id}`;
+}
+
+/**
+ * Canonical base-aware gallery share URL. Page 1 produces the bare
+ * `/v1/gallery` URL (no `/p/1` suffix); page ≥ 2 includes `/p/N`. Single
+ * source of truth for the gallery route shape — round-trips through
+ * parseLoadIntent (guarded in load-intent.test.ts). Mirrors corpusUrl's
+ * relationship with the corpus route.
+ */
+export function galleryUrl(page: number): string {
+  if (page <= 1) return `${import.meta.env.BASE_URL}v1/gallery`;
+  return `${import.meta.env.BASE_URL}v1/gallery/p/${page}`;
+}
+
+/**
+ * Which 1-indexed gallery page contains the sheep at `corpusIndex` (0-based
+ * position in the cross-gen canonical walk). The caller (gallery-mount /
+ * main.ts) computes `corpusIndex` via the corpus-bounds walker — this helper
+ * stays free of corpus-fetch concerns so it can live in load-intent alongside
+ * the URL grammar it serves.
+ */
+export function pageForCorpusIndex(corpusIndex: number, perPage = GALLERY_PAGE_SIZE): number {
+  return Math.floor(corpusIndex / perPage) + 1;
 }

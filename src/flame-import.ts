@@ -669,7 +669,11 @@ export function parseFlame(xml: string): FlameImportResult {
   }
 
   const { stops, fallback: paletteFallback } = parsePalette(flame);
-  const flameName = flame.getAttribute('name') ?? 'imported';
+  // Empty string when the XML carries no `name` attribute; the caller decides
+  // the fallback (file basename for user uploads, gen/id-derived for corpus
+  // loads) — leaving 'imported' here would leak into the Save filename and
+  // the document title even when a more informative label is available.
+  const flameName = flame.getAttribute('name') ?? '';
   // Author nick (Electric Sheep / Apophysis convention). Stripped of
   // surrounding whitespace; empty string treated as absent so the
   // "By <nick>" attribution stays cleanly omitted on flames that

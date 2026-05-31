@@ -1,0 +1,542 @@
+// @vitest-environment happy-dom
+
+import { describe, it, expect } from 'vitest';
+import {
+  clampGalleryPage,
+  coalesce,
+  mountGallery,
+  pageOfSheep,
+  pageForSheep,
+  type SheepRef,
+} from './gallery-mount';
+import type { GensManifest } from './corpus-bounds';
+import type { Genome } from './genome';
+import type { QualityTier } from './presets';
+import type { OrchestratorOpts, RunHandle } from './render-orchestrator';
+import type { Renderer } from './renderer';
+
+// Synthetic 2-gen corpus:
+//   gen 100: [10, 20, 30, 40, 50]   (5 sheep)
+//   gen 101: [11, 22, 33]           (3 sheep)
+// → canonical order (8 total):
+//   0:(100,10) 1:(100,20) 2:(100,30) 3:(100,40) 4:(100,50)
+//   5:(101,11) 6:(101,22) 7:(101,33)
+const MANIFEST: GensManifest = {
+  schema: 1,
+  build_date: '2026-05-31',
+  chunk_size: 256,
+  gens: [
+    { gen: 100, count: 5, min_id: 10, max_id: 50 },
+    { gen: 101, count: 3, min_id: 11, max_id: 33 },
+  ],
+};
+const AVAIL: Record<number, number[]> = {
+  100: [10, 20, 30, 40, 50],
+  101: [11, 22, 33],
+};
+const loadAvail = async (g: number): Promise<number[]> => AVAIL[g] ?? [];
+const loadManifest = async (): Promise<GensManifest | null> => MANIFEST;
+
+describe('pageOfSheep — page math + cross-gen walk', () => {
+  it('page 1 returns the first perPage sheep', async () => {
+    expect(await pageOfSheep(1, 3, loadAvail, loadManifest)).toEqual([
+      { gen: 100, id: 10 },
+      { gen: 100, id: 20 },
+      { gen: 100, id: 30 },
+    ]);
+  });
+
+  it('page 2 crosses a gen boundary mid-page', async () => {
+    expect(await pageOfSheep(2, 3, loadAvail, loadManifest)).toEqual([
+      { gen: 100, id: 40 },
+      { gen: 100, id: 50 },
+      { gen: 101, id: 11 },
+    ]);
+  });
+
+  it('trailing page returns fewer than perPage when corpus runs out', async () => {
+    expect(await pageOfSheep(3, 3, loadAvail, loadManifest)).toEqual([
+      { gen: 101, id: 22 },
+      { gen: 101, id: 33 },
+    ]);
+  });
+
+  it('page past the corpus tail returns []', async () => {
+    expect(await pageOfSheep(4, 3, loadAvail, loadManifest)).toEqual([]);
+  });
+
+  it('page < 1 returns []', async () => {
+    expect(await pageOfSheep(0, 3, loadAvail, loadManifest)).toEqual([]);
+  });
+
+  it('returns [] when the manifest is unavailable', async () => {
+    expect(await pageOfSheep(1, 3, loadAvail, async () => null)).toEqual([]);
+  });
+
+  it('skips empty gens transparently', async () => {
+    const manifestWithGap: GensManifest = {
+      ...MANIFEST,
+      gens: [
+        { gen: 99, count: 0, min_id: 0, max_id: 0 },
+        ...MANIFEST.gens,
+      ],
+    };
+    const avail: Record<number, number[]> = { ...AVAIL, 99: [] };
+    expect(
+      await pageOfSheep(1, 3, async (g) => avail[g] ?? [], async () => manifestWithGap),
+    ).toEqual([
+      { gen: 100, id: 10 },
+      { gen: 100, id: 20 },
+      { gen: 100, id: 30 },
+    ]);
+  });
+
+  it('default perPage is GALLERY_PAGE_SIZE (9) — bigger corpus collects 9', async () => {
+    // 9 gens × 1 id each = 9 sheep on page 1 at the default perPage.
+    const bigManifest: GensManifest = {
+      schema: 1,
+      build_date: '2026-05-31',
+      chunk_size: 256,
+      gens: Array.from({ length: 9 }, (_, i) => ({
+        gen: 200 + i,
+        count: 1,
+        min_id: i,
+        max_id: i,
+      })),
+    };
+    const bigAvail = async (g: number): Promise<number[]> => [g - 200];
+    const refs = await pageOfSheep(1, undefined, bigAvail, async () => bigManifest);
+    expect(refs).toHaveLength(9);
+    expect(refs[0]).toEqual({ gen: 200, id: 0 });
+    expect(refs[8]).toEqual({ gen: 208, id: 8 });
+  });
+});
+
+describe('pageForSheep — contextual page lookup', () => {
+  it.each([
+    [100, 10, 1], // index 0
+    [100, 30, 1], // index 2
+    [100, 40, 2], // index 3 → page 2 at perPage=3
+    [101, 11, 2], // index 5 → page 2
+    [101, 22, 3], // index 6 → page 3
+    [101, 33, 3], // index 7 → page 3
+  ])('(%i, %i) lives on page %i (perPage=3)', async (gen, id, expected) => {
+    expect(await pageForSheep(gen, id, 3, loadAvail, loadManifest)).toBe(expected);
+  });
+
+  it('agrees with pageOfSheep — every returned ref maps back to the same page', async () => {
+    for (const page of [1, 2, 3]) {
+      const refs = await pageOfSheep(page, 3, loadAvail, loadManifest);
+      for (const ref of refs) {
+        expect(await pageForSheep(ref.gen, ref.id, 3, loadAvail, loadManifest)).toBe(page);
+      }
+    }
+  });
+
+  it('unknown gen degrades to page 1', async () => {
+    expect(await pageForSheep(999, 1, 3, loadAvail, loadManifest)).toBe(1);
+  });
+
+  it('known gen but unknown id degrades to page 1', async () => {
+    expect(await pageForSheep(100, 99, 3, loadAvail, loadManifest)).toBe(1);
+  });
+
+  it('returns 1 when the manifest is unavailable', async () => {
+    expect(await pageForSheep(100, 10, 3, loadAvail, async () => null)).toBe(1);
+  });
+});
+
+// ── mountGallery — wave-fill orchestrator + DOM grid ────────────────────
+//
+// Tests cover: cell DOM construction, wave-fill ordering, trailing partial
+// page handling, setPage cancellation, missing-cell fallback, destroy.
+// Tests run under happy-dom (annotation at file top) so `document` is
+// available. Renderer + startRender are stubbed — no real WebGPU is touched.
+
+// 12-sheep single-gen corpus so page 1 fills exactly (9 refs) and page 2
+// is a 3-ref trailing partial.
+const ORCH_MANIFEST: GensManifest = {
+  schema: 1,
+  build_date: '2026-05-31',
+  chunk_size: 256,
+  gens: [{ gen: 100, count: 12, min_id: 1, max_id: 12 }],
+};
+const ORCH_AVAIL: Record<number, number[]> = {
+  100: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+};
+const orchLoadAvail = async (g: number): Promise<number[]> => ORCH_AVAIL[g] ?? [];
+const orchLoadManifest = async (): Promise<GensManifest | null> => ORCH_MANIFEST;
+
+const DRAFT_TIER: QualityTier = {
+  name: 'Draft',
+  longEdge: 512,
+  spp: 8,
+  oversample: 1,
+  mode: 'cap',
+};
+
+function stubRenderer(): Renderer {
+  return {
+    width: 512,
+    height: 512,
+    oversample: 1,
+    filterRadius: 1,
+    resize: () => {},
+  } as unknown as Renderer;
+}
+
+function stubGenome(): Genome {
+  // applyPreset only reads .size / .quality / .oversample / .scale; all
+  // optional. Empty object is enough — the orchestrator never inspects
+  // the genome itself, only passes it to startRender (also stubbed).
+  return {} as unknown as Genome;
+}
+
+// Settle the microtask queue so the orchestrator's await chain finishes.
+// Each cell uses ~2-3 microtask ticks (fetchGenome → startRender → resolve);
+// 60 flushes safely covers 9 cells.
+async function flushMicrotasks(n = 60): Promise<void> {
+  for (let i = 0; i < n; i++) await Promise.resolve();
+}
+
+interface OrchHandleEntry {
+  seedBase: number;
+  resolve: (v: 'completed' | 'cancelled') => void;
+  resolved: boolean;
+  cancelled: boolean;
+}
+
+function makeOrchHarness(opts: { autoResolve?: boolean } = {}) {
+  const seeds: number[] = [];
+  const handles: OrchHandleEntry[] = [];
+  let autoResolveMode = opts.autoResolve ?? true;
+
+  const startRender = (renderOpts: OrchestratorOpts): RunHandle => {
+    seeds.push(renderOpts.seedBase);
+    let resolveFn!: (v: 'completed' | 'cancelled') => void;
+    const promise = new Promise<'completed' | 'cancelled'>((r) => {
+      resolveFn = r;
+    });
+    const entry: OrchHandleEntry = {
+      seedBase: renderOpts.seedBase,
+      resolved: false,
+      cancelled: false,
+      resolve(v) {
+        if (entry.resolved) return;
+        entry.resolved = true;
+        if (v === 'cancelled') entry.cancelled = true;
+        resolveFn(v);
+      },
+    };
+    handles.push(entry);
+    if (autoResolveMode) {
+      queueMicrotask(() => entry.resolve('completed'));
+    }
+    return {
+      promise,
+      cancel: () => entry.resolve('cancelled'),
+    };
+  };
+
+  return {
+    startRender,
+    seeds,
+    handles,
+    setAutoResolve(v: boolean) {
+      autoResolveMode = v;
+    },
+  };
+}
+
+describe('mountGallery — DOM grid', () => {
+  it('mounts 9 cell anchors in the container', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    expect(container.querySelectorAll('.pyr3-gallery-cell')).toHaveLength(9);
+    expect(container.querySelectorAll('.pyr3-gallery-cell canvas')).toHaveLength(9);
+    handle.destroy();
+  });
+
+  it('attaches corpus hrefs + gen/id labels to cells after refs resolve', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+
+    const cells = container.querySelectorAll<HTMLAnchorElement>('.pyr3-gallery-cell');
+    // Page 1 of the 12-sheep corpus: sheep id 1-9.
+    expect(cells[0]!.getAttribute('href')).toMatch(/v1\/gen\/100\/id\/1$/);
+    expect(cells[0]!.querySelector('.pyr3-gallery-cell-label')!.textContent).toBe('100/00001');
+    expect(cells[8]!.getAttribute('href')).toMatch(/v1\/gen\/100\/id\/9$/);
+    expect(cells[8]!.querySelector('.pyr3-gallery-cell-label')!.textContent).toBe('100/00009');
+
+    handle.destroy();
+  });
+
+  it('destroy() empties the container', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    expect(container.children.length).toBeGreaterThan(0);
+    handle.destroy();
+    expect(container.children.length).toBe(0);
+  });
+});
+
+describe('mountGallery — wave-fill orchestration', () => {
+  it('paints cells in corpus order top-left → bottom-right', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchCalls: SheepRef[] = [];
+    const fetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
+      fetchCalls.push({ gen, id });
+      return stubGenome();
+    };
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+
+    expect(fetchCalls).toEqual([
+      { gen: 100, id: 1 },
+      { gen: 100, id: 2 },
+      { gen: 100, id: 3 },
+      { gen: 100, id: 4 },
+      { gen: 100, id: 5 },
+      { gen: 100, id: 6 },
+      { gen: 100, id: 7 },
+      { gen: 100, id: 8 },
+      { gen: 100, id: 9 },
+    ]);
+    expect(harness.seeds).toHaveLength(9);
+
+    handle.destroy();
+  });
+
+  it('trailing partial page renders only the available refs', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchCalls: SheepRef[] = [];
+    const fetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
+      fetchCalls.push({ gen, id });
+      return stubGenome();
+    };
+
+    const handle = await mountGallery(2, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+
+    // Page 2 of a 12-sheep corpus → sheep 10, 11, 12 (3 refs).
+    expect(fetchCalls).toEqual([
+      { gen: 100, id: 10 },
+      { gen: 100, id: 11 },
+      { gen: 100, id: 12 },
+    ]);
+    expect(harness.seeds).toHaveLength(3);
+
+    // The remaining 6 cells should be in the .empty class state.
+    const emptyCells = container.querySelectorAll('.pyr3-gallery-cell.empty');
+    expect(emptyCells).toHaveLength(6);
+
+    handle.destroy();
+  });
+
+  it('cell fetchGenome failure shows missing label, wave continues', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (_gen: number, id: number): Promise<Genome | null> => {
+      if (id === 4) return null; // simulate a 404 on the 4th cell
+      return stubGenome();
+    };
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+
+    // 8 successful renders (cells 1-3 and 5-9), 1 missing (cell 4).
+    expect(harness.seeds).toHaveLength(8);
+
+    const missingCell = container.querySelectorAll('.pyr3-gallery-cell.missing');
+    expect(missingCell).toHaveLength(1);
+    expect(missingCell[0]!.querySelector('.pyr3-gallery-cell-label')!.textContent)
+      .toBe('100/00004 (missing)');
+
+    handle.destroy();
+  });
+
+  it('setPage(N) cancels current wave and restarts on the new page', async () => {
+    const container = document.createElement('div');
+    // autoResolve=false so we can observe the cancellation deterministically.
+    const harness = makeOrchHarness({ autoResolve: false });
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    // Let the first cell's render begin.
+    await flushMicrotasks(5);
+    expect(harness.seeds.length).toBeGreaterThanOrEqual(1);
+    const seedsBeforeFlip = harness.seeds.length;
+
+    // Re-enable autoResolve so the page-2 wave can complete.
+    harness.setAutoResolve(true);
+
+    // Flip to page 2 — cancels the in-flight render, awaits prior wave, restarts.
+    await handle.setPage(2);
+    await flushMicrotasks();
+
+    // The first wave's in-flight handle should have been cancelled.
+    expect(harness.handles[seedsBeforeFlip - 1]!.cancelled).toBe(true);
+
+    // Page-2 sheep are ids 10/11/12 → seedBase = (100*100003 + id).
+    const expectedSeed10 = (100 * 100003 + 10) >>> 0;
+    expect(harness.seeds).toContain(expectedSeed10);
+
+    handle.destroy();
+  });
+});
+
+describe('clampGalleryPage — URL out-of-range clamp', () => {
+  it('clamps below 1 to 1', () => {
+    expect(clampGalleryPage(0, 10)).toBe(1);
+    expect(clampGalleryPage(-5, 10)).toBe(1);
+  });
+
+  it('clamps above totalPages to totalPages', () => {
+    expect(clampGalleryPage(27, 10)).toBe(10);
+    expect(clampGalleryPage(11, 10)).toBe(10);
+  });
+
+  it('passes valid pages through unchanged', () => {
+    expect(clampGalleryPage(1, 10)).toBe(1);
+    expect(clampGalleryPage(5, 10)).toBe(5);
+    expect(clampGalleryPage(10, 10)).toBe(10);
+  });
+
+  it('floors fractional inputs', () => {
+    expect(clampGalleryPage(3.7, 10)).toBe(3);
+  });
+
+  it('totalPages 0 (manifest unavailable) → request passes through with floor of 1', () => {
+    expect(clampGalleryPage(27, 0)).toBe(27);
+    expect(clampGalleryPage(0, 0)).toBe(1);
+  });
+});
+
+describe('coalesce — rapid-fire debounce', () => {
+  // Helper: wait `ms` real wall time so the setTimeout inside coalesce fires.
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+  it('fires once with the final args when calls arrive faster than delayMs', async () => {
+    const calls: number[] = [];
+    const debounced = coalesce((n: number) => calls.push(n), 30);
+    debounced(1);
+    debounced(2);
+    debounced(3);
+    expect(calls).toEqual([]); // none fired yet
+    await sleep(50);
+    expect(calls).toEqual([3]); // only the last one
+  });
+
+  it('fires separately when calls are spaced beyond delayMs', async () => {
+    const calls: number[] = [];
+    const debounced = coalesce((n: number) => calls.push(n), 20);
+    debounced(1);
+    await sleep(40);
+    debounced(2);
+    await sleep(40);
+    expect(calls).toEqual([1, 2]);
+  });
+
+  it('each new call inside the window resets the timer (final call always wins)', async () => {
+    const calls: number[] = [];
+    const debounced = coalesce((n: number) => calls.push(n), 30);
+    debounced(1);
+    await sleep(20);
+    debounced(2);
+    await sleep(20);
+    debounced(3); // window keeps resetting — still nothing fired
+    expect(calls).toEqual([]);
+    await sleep(50);
+    expect(calls).toEqual([3]);
+  });
+});

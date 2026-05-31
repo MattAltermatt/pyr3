@@ -27,6 +27,23 @@
       /* Hide the canvas while the WebGPU fallback panel is mounted. */
       body.webgpu-unavailable #pyr3-canvas { display: none; }
 
+      /* Gallery surface — sibling of the canvas; main.ts toggles `hidden`
+         on both elements between viewer and gallery modes (#47, v1.2).
+         Absolute-positioned within the canvas-zone (same pattern as
+         #pyr3-missing) so the flex parent's center-align doesn't squeeze
+         the grid container to content-width. The grid sizes to fit the
+         viewport (no scroll — see .pyr3-gallery-grid max-width calc in
+         gallery-mount.ts). */
+      #pyr3-gallery {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      #pyr3-gallery[hidden] { display: none; }
+
       /* First-paint cue: a quiet "dreaming…" in the canvas zone on cold
          load, cleared once the first flame paints. Not an overlay on a
          rendered flame — there is none yet at first paint. */
@@ -199,6 +216,7 @@
         <canvas id="pyr3-canvas"></canvas>
         <div id="pyr3-firstpaint">dreaming…</div>
         <div id="pyr3-fallback" hidden></div>
+        <div id="pyr3-gallery" hidden></div>
       </main>
     </div>
     <div id="pyr3-error" role="alert"></div>

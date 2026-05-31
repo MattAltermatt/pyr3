@@ -10,7 +10,7 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
-import { corpusUrl } from './load-intent';
+import { corpusUrl, galleryUrl, HERO_GEN, HERO_ID } from './load-intent';
 import { QUALITY_TIERS, type QualityRequest } from './presets';
 import { composeSaveFilename } from './save-image';
 import type { WebGPUStatus } from './webgpu-check';
@@ -92,6 +92,32 @@ export interface BarHandle {
    *  the full weight-ordered list; the bar truncates past a few with `+N` and
    *  exposes the complete list on hover. Pass [] to clear. */
   setVariations(names: string[]): void;
+  /** Update the viewer bar's `gallery` link to point at the gallery page that
+   *  contains the currently-displayed sheep. main.ts computes the contextual
+   *  page via pageForCorpusIndex and calls this on each corpus load / nav. */
+  setGalleryHref(page: number): void;
+}
+
+/** Options for the gallery's top bar variant. */
+export interface GalleryBarOpts {
+  webgpu: WebGPUStatus;
+  /** Current 1-indexed page (drives the `page N of M` label + the prev/next
+   *  enabled-at-bounds state). */
+  page: number;
+  /** Total pages in the corpus walk; 0 means "unknown" — the label shows just
+   *  `page N` and next stays enabled. */
+  totalPages: number;
+  onPrevPage(): void;
+  onNextPage(): void;
+}
+
+export interface GalleryBarHandle {
+  /** Update the visible page + bounds. totalPages omitted preserves the prior
+   *  value (lets a late corpus-size resolve update only the count). */
+  setPage(page: number, totalPages?: number): void;
+  /** Remove every DOM node this bar mounted on `root`. main.ts calls this when
+   *  swapping back to the viewer bar so the chrome doesn't double-mount. */
+  destroy(): void;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -135,6 +161,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
   showcase.href = `${import.meta.env.BASE_URL}showcase/`;
   showcase.textContent = 'showcase';
+  // Sibling of `showcase` — both point at gallery-like surfaces (curated
+  // /showcase vs the full corpus). Default href is page 1; main.ts updates
+  // it via setGalleryHref to the contextual page containing the currently-
+  // displayed sheep, so a click lands the visitor on a page where their
+  // current sheep is visible on first paint.
+  const gallery = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  gallery.href = galleryUrl(1);
+  gallery.textContent = 'gallery';
   const metaName = el('div', 'pyr3-bar-meta-name');
   // Quality readout (PYR3-050): ` · {w}×{h} · q{spp} · {tier}` after the name.
   const metaQuality = el('span', 'pyr3-bar-quality');
@@ -143,7 +177,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const metaVariations = el('span', 'pyr3-bar-variations');
   // Toast rides in the info zone next to the meta name.
   const toast = el('span', 'pyr3-bar-toast');
-  infoLeft.append(wordmark, version, sep(), about, sep(), showcase, sep(), metaName, metaQuality, metaVariations, toast);
+  infoLeft.append(wordmark, version, sep(), about, sep(), showcase, sep(), gallery, sep(), metaName, metaQuality, metaVariations, toast);
 
   const infoRight = el('div', 'pyr3-zone-right');
   const webgpuChip = buildWebGPUChip(opts.webgpu);
@@ -350,6 +384,9 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       currentQuality = q; // #22
       refreshSave();
     },
+    setGalleryHref(page) {
+      gallery.href = galleryUrl(page);
+    },
     setVariations(names) {
       const MAX_SHOWN = 4;
       if (names.length === 0) {
@@ -472,6 +509,117 @@ function formatSamples(n: number): string {
   return `${n} samples`;
 }
 
+/**
+ * Mount the gallery's top bar (parallel to mountBar). Same three-zone chrome
+ * shape as the viewer bar, but the center carries page nav (`‹ prev · page N
+ * of M · next ›`) instead of the viewer's Open / quality ladder cluster.
+ *
+ * Kept as a separate exported function rather than a flag on mountBar — the
+ * left/right helper composition is shared, but the center cluster and the
+ * lifecycle (no flame meta, no quality readout, no progress row) diverge
+ * enough that a parallel function reads cleaner than a sea of branching.
+ */
+export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): GalleryBarHandle {
+  injectStylesOnce();
+  root.replaceChildren();
+  root.classList.add('pyr3-bar-root');
+
+  // ══ info row — left (wordmark + nav links) / center (page nav) / right ══
+  const infoRow = el('div', 'pyr3-bar-info');
+
+  // Left zone — wordmark, about, showcase, "← viewer". The `gallery` link is
+  // omitted (we're already in the gallery); a `viewer` link points back at
+  // the hero corpus URL so a fresh / bookmarked gallery load has an obvious
+  // way home that doesn't depend on browser history.
+  const infoLeft = el('div', 'pyr3-zone-left');
+  const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
+  wordmark.href = import.meta.env.BASE_URL;
+  const mark = document.createElement('img');
+  mark.className = 'pyr3-bar-mark';
+  mark.src = FLAME_MARK_URI;
+  mark.alt = '';
+  wordmark.append(mark, document.createTextNode('pyr3'));
+  const version = el('span', 'pyr3-bar-version');
+  version.textContent = `v${__PYR3_VERSION__}`;
+  const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  about.href = `${import.meta.env.BASE_URL}help/about.html`;
+  about.textContent = 'about';
+  const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  showcase.href = `${import.meta.env.BASE_URL}showcase/`;
+  showcase.textContent = 'showcase';
+  const viewerLink = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  viewerLink.href = corpusUrl(HERO_GEN, HERO_ID);
+  viewerLink.textContent = '← viewer';
+  infoLeft.append(wordmark, version, sep(), about, sep(), showcase, sep(), viewerLink);
+
+  // Center zone — page nav cluster. Pinned width on the page label so prev/
+  // next don't shift under the cursor as N grows (matches the corpus-nav
+  // min-width discipline in the viewer bar).
+  const infoCenter = el('div', 'pyr3-bar-gallery-nav');
+  const prevPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
+  prevPill.textContent = '‹ prev';
+  prevPill.title = 'previous page';
+  const pageLabel = el('span', 'pyr3-bar-page-label');
+  const nextPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
+  nextPill.textContent = 'next ›';
+  nextPill.title = 'next page';
+  infoCenter.append(prevPill, pageLabel, nextPill);
+
+  // Right zone — WebGPU pill + the two octocat CTAs (reused unchanged from
+  // the viewer bar's helpers).
+  const infoRight = el('div', 'pyr3-zone-right');
+  const webgpuChip = buildWebGPUChip(opts.webgpu);
+  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
+  const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
+  infoRight.append(webgpuChip, forkCta, sheepCta);
+
+  infoRow.append(infoLeft, infoCenter, infoRight);
+  root.append(infoRow);
+
+  let currentPage = opts.page;
+  let currentTotal = opts.totalPages;
+
+  const applyBounds = (): void => {
+    const atFirst = currentPage <= 1;
+    const atLast = currentTotal > 0 && currentPage >= currentTotal;
+    prevPill.classList.toggle('disabled', atFirst);
+    nextPill.classList.toggle('disabled', atLast);
+  };
+
+  const renderLabel = (): void => {
+    pageLabel.textContent = currentTotal > 0
+      ? `page ${currentPage} of ${currentTotal}`
+      : `page ${currentPage}`;
+  };
+
+  prevPill.onclick = (e) => {
+    e.preventDefault();
+    if (prevPill.classList.contains('disabled')) return;
+    opts.onPrevPage();
+  };
+  nextPill.onclick = (e) => {
+    e.preventDefault();
+    if (nextPill.classList.contains('disabled')) return;
+    opts.onNextPage();
+  };
+
+  renderLabel();
+  applyBounds();
+
+  return {
+    setPage(page, totalPages) {
+      currentPage = page;
+      if (totalPages !== undefined) currentTotal = totalPages;
+      renderLabel();
+      applyBounds();
+    },
+    destroy() {
+      root.replaceChildren();
+      root.classList.remove('pyr3-bar-root');
+    },
+  };
+}
+
 function injectStylesOnce(): void {
   if (stylesInjected) return;
   stylesInjected = true;
@@ -523,6 +671,16 @@ const BAR_CSS = `
 .pyr3-tier-btn.on { background: var(--accent); color: #0a0a0c; font-weight: 600; }
 .pyr3-tier-btn:disabled { color: #555; cursor: not-allowed; }
 .pyr3-bar-quality { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
+.pyr3-bar-gallery-nav {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  margin: 0 auto; /* center between left + right flex zones */
+}
+.pyr3-bar-page-label {
+  font-family: ui-monospace, monospace; font-size: 11px; color: var(--text);
+  /* Pin a width so the prev/next pills don't reflow as N grows; "page 9999 of
+     9999" is the widest reasonable label. */
+  min-width: 18ch; text-align: center; white-space: nowrap;
+}
 .pyr3-bar-version { color: var(--text-dim); font-size: 10px; font-weight: 400; white-space: nowrap; }
 .pyr3-bar-variations {
   color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px;

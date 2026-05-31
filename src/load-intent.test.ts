@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { corpusUrl, HERO_GEN, HERO_ID, parseLoadIntent } from './load-intent';
+import {
+  corpusUrl,
+  GALLERY_PAGE_SIZE,
+  galleryUrl,
+  HERO_GEN,
+  HERO_ID,
+  pageForCorpusIndex,
+  parseLoadIntent,
+} from './load-intent';
 
 // Shorthand: p(pathname) → parseLoadIntent
 const p = (pathname: string) => parseLoadIntent({ pathname });
@@ -120,5 +128,103 @@ describe('hero-forward target round-trips through the parser', () => {
     vi.stubEnv('BASE_URL', '/pyr3/');
     const url = corpusUrl(HERO_GEN, HERO_ID); // '/pyr3/v1/gen/247/id/19679'
     expect(p(url)).toEqual({ kind: 'corpus', gen: HERO_GEN, id: HERO_ID });
+  });
+});
+
+// ── /v1/gallery grammar ──────────────────────────────────────────────────
+// Gallery URLs: `/v1/gallery` (page 1 canonical) and `/v1/gallery/p/N` for
+// N ≥ 2. Page 1 has no `/p/1` suffix on the canonical share URL. Malformed
+// variants (page 0, non-numeric, junk segments) fall through to default —
+// the parser never throws.
+
+describe('parseLoadIntent – /v1/gallery grammar', () => {
+  it('parses /v1/gallery as page 1', () => {
+    expect(p('/v1/gallery')).toEqual({ kind: 'gallery', page: 1 });
+  });
+
+  it('parses /v1/gallery/ (trailing slash) as page 1', () => {
+    expect(p('/v1/gallery/')).toEqual({ kind: 'gallery', page: 1 });
+  });
+
+  it('parses /v1/gallery/p/27 as page 27', () => {
+    expect(p('/v1/gallery/p/27')).toEqual({ kind: 'gallery', page: 27 });
+  });
+
+  it('parses /v1/gallery/p/1 as page 1 (non-canonical but accepted)', () => {
+    expect(p('/v1/gallery/p/1')).toEqual({ kind: 'gallery', page: 1 });
+  });
+
+  it('rejects /v1/gallery/p/0 (1-indexed) as default', () => {
+    expect(p('/v1/gallery/p/0')).toEqual({ kind: 'default' });
+  });
+
+  it('rejects /v1/gallery/p/abc as default', () => {
+    expect(p('/v1/gallery/p/abc')).toEqual({ kind: 'default' });
+  });
+
+  it('rejects /v1/gallery/junk/p/3 as default', () => {
+    expect(p('/v1/gallery/junk/p/3')).toEqual({ kind: 'default' });
+  });
+
+  it('rejects /v1/gallery/p (no number) as default', () => {
+    expect(p('/v1/gallery/p')).toEqual({ kind: 'default' });
+  });
+});
+
+// ── galleryUrl + pageForCorpusIndex ──────────────────────────────────────
+
+describe('galleryUrl', () => {
+  it('page 1 produces the bare /v1/gallery URL', () => {
+    expect(galleryUrl(1)).toMatch(/v1\/gallery$/);
+  });
+
+  it('page 0 and negatives also collapse to the bare URL (clamped)', () => {
+    expect(galleryUrl(0)).toMatch(/v1\/gallery$/);
+    expect(galleryUrl(-5)).toMatch(/v1\/gallery$/);
+  });
+
+  it('page ≥ 2 includes the /p/N suffix', () => {
+    expect(galleryUrl(2)).toMatch(/v1\/gallery\/p\/2$/);
+    expect(galleryUrl(27)).toMatch(/v1\/gallery\/p\/27$/);
+    expect(galleryUrl(5778)).toMatch(/v1\/gallery\/p\/5778$/);
+  });
+
+  it('round-trips through parseLoadIntent for typical pages', () => {
+    for (const page of [1, 2, 27, 5778]) {
+      const url = galleryUrl(page);
+      const pathname = new URL(url, 'http://x/').pathname;
+      expect(parseLoadIntent({ pathname })).toEqual({ kind: 'gallery', page });
+    }
+  });
+
+  it('honors a non-root base prefix', () => {
+    vi.stubEnv('BASE_URL', '/pyr3/');
+    expect(galleryUrl(1)).toMatch(/\/pyr3\/v1\/gallery$/);
+    expect(galleryUrl(27)).toMatch(/\/pyr3\/v1\/gallery\/p\/27$/);
+    vi.unstubAllEnvs();
+  });
+});
+
+describe('pageForCorpusIndex', () => {
+  it.each([
+    [0, 1],
+    [8, 1],
+    [9, 2],
+    [17, 2],
+    [18, 3],
+    [243, 28],
+  ])('index %i → page %i (default perPage=9)', (idx, expected) => {
+    expect(pageForCorpusIndex(idx)).toBe(expected);
+  });
+
+  it('honors a custom perPage', () => {
+    expect(pageForCorpusIndex(0, 3)).toBe(1);
+    expect(pageForCorpusIndex(2, 3)).toBe(1);
+    expect(pageForCorpusIndex(3, 3)).toBe(2);
+    expect(pageForCorpusIndex(8, 3)).toBe(3);
+  });
+
+  it('GALLERY_PAGE_SIZE constant is 9 (3×3 grid)', () => {
+    expect(GALLERY_PAGE_SIZE).toBe(9);
   });
 });

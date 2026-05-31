@@ -9,13 +9,37 @@ import { loadAvail, neighbors } from './avail-client';
 import { loadGensManifest, resolveCorpusNeighbors } from './corpus-bounds';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { initDevice, showError } from './device';
+import { parseFlame } from './flame-import';
+import {
+  clampGalleryPage,
+  coalesce,
+  GALLERY_NAV_COALESCE_MS,
+  mountGallery,
+  pageForSheep,
+  type GalleryMountHandle,
+} from './gallery-mount';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
-import { corpusUrl, HERO_GEN, HERO_ID, parseLoadIntent, type LoadIntent } from './load-intent';
+import {
+  corpusUrl,
+  galleryUrl,
+  GALLERY_PAGE_SIZE,
+  HERO_GEN,
+  HERO_ID,
+  parseLoadIntent,
+  type LoadIntent,
+} from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
-import { applyPreset, DEFAULT_TIER, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
+import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
-import { mountBar, type BarHandle, type CorpusNav, type CostEstimate } from './ui-bar';
+import {
+  mountBar,
+  mountGalleryBar,
+  type BarHandle,
+  type CorpusNav,
+  type CostEstimate,
+  type GalleryBarHandle,
+} from './ui-bar';
 import { checkWebGPU } from './webgpu-check';
 
 // The "welcome flame" — the bundled fixture `/` paints for an instant,
@@ -591,8 +615,15 @@ async function main(): Promise<void> {
       }
     }
     console.log(`pyr3: loaded "${result.genome.name}" from ${sourceLabel}`);
+    // Flame-name fallback ladder: XML `name` attr first; then the source
+    // file's basename (stripped of .flam3 / .flame); then a sane default.
+    // Without this the Save filename would read `imported.png` (or
+    // `Untitled.png`) for corpus sheep whose XML lacks `name` — even though
+    // the canonical `electricsheep.<gen>.<id>` label is right in the
+    // sourceLabel that loadCorpus hands us.
+    const sourceBase = sourceLabel.replace(/\.(flam3|flame)$/i, '');
     bar.setMeta({
-      flameName: result.genome.name || 'Untitled',
+      flameName: result.genome.name || sourceBase || 'Untitled',
       authorNick: result.genome.nick,
       sourceFilename: sourceLabel,
     });
@@ -725,6 +756,10 @@ async function main(): Promise<void> {
       neighbors,
     );
     setNav({ gen, prev, next });
+    // v1.2 contextual gallery entry — the viewer's `gallery` link points at
+    // the page containing the current sheep, so flipping into the gallery
+    // lands on the neighborhood instead of page 1.
+    void pageForSheep(gen, id).then((page) => bar.setGalleryHref(page));
   };
 
   const loadCorpus = async (gen: number, id: number, push: boolean): Promise<void> => {
@@ -804,11 +839,131 @@ async function main(): Promise<void> {
     navLocked = true;
     void enqueueCorpus(gen, id, true).finally(() => { navLocked = false; });
   };
-  // Back/forward through corpus history. Only our pushState entries (all corpus)
-  // surface here, so a non-corpus kind never appears.
+  // ── Gallery surface state (v1.2 #47) ──
+  // When the gallery is active, the viewer bar's DOM is cleared and replaced
+  // by the gallery bar; the canvas is hidden and the #pyr3-gallery container
+  // takes its place. The shared `renderer` is resized to Draft-tier cell dims
+  // (512²) when the gallery mounts. The gallery owns its own cancellation
+  // state via galleryHandle.cancel() / setPage().
+  let galleryHandle: GalleryMountHandle | null = null;
+  let galleryBar: GalleryBarHandle | null = null;
+  let galleryTotalPages = 0;
+  let currentGalleryPage = 1;
+  let currentSurface: 'viewer' | 'gallery' = 'viewer';
+
+  const galleryFetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
+    try {
+      const xml = await fetchFlameXml(gen, id);
+      return parseFlame(xml).genome;
+    } catch (err) {
+      // FlameNotFound is expected for sparse-corpus gaps — the cell renders
+      // a "(missing)" placeholder. Any other failure is logged but treated
+      // the same way so the wave-fill doesn't stall on one bad cell.
+      if (!(err instanceof FlameNotFound)) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`pyr3 gallery: fetch ${gen}/${id} failed — ${msg}`);
+      }
+      return null;
+    }
+  };
+
+  const computeGalleryTotalPages = async (): Promise<number> => {
+    const manifest = await loadGensManifest();
+    if (manifest === null) return 0;
+    const totalSheep = manifest.gens.reduce((sum, g) => sum + g.count, 0);
+    return Math.max(1, Math.ceil(totalSheep / GALLERY_PAGE_SIZE));
+  };
+
+  // Debounced commit — rapid ‹/› mashing keeps the bar's page label in
+  // sync each click (instant visual feedback) but coalesces the canonical
+  // commit (history.pushState + setDocTitle + galleryHandle.setPage) into
+  // the final page so the back-stack doesn't fill with intermediate pages
+  // that would each trigger a wave-fill on popstate. ≤100ms window.
+  const flushGalleryCommit = coalesce((page: number) => {
+    history.pushState({}, '', galleryUrl(page));
+    setDocTitle(`gallery · p${page}`);
+    void galleryHandle?.setPage(page);
+  }, GALLERY_NAV_COALESCE_MS);
+
+  const navGallery = (newPage: number): void => {
+    if (galleryHandle === null || galleryBar === null) return;
+    const clamped = clampGalleryPage(newPage, galleryTotalPages);
+    if (clamped === currentGalleryPage) return;
+    currentGalleryPage = clamped;
+    // Bar label updates immediately so each click looks responsive; the
+    // URL + title + render commit on the coalesced final value.
+    galleryBar.setPage(clamped, galleryTotalPages);
+    flushGalleryCommit(clamped);
+  };
+
+  const mountGallerySurface = async (initialPage: number): Promise<void> => {
+    galleryTotalPages = await computeGalleryTotalPages();
+    const page = clampGalleryPage(initialPage, galleryTotalPages);
+    if (page !== initialPage) {
+      // URL out of range → replaceState to the clamped page so reload / share
+      // stays consistent with what the user actually sees.
+      history.replaceState({}, '', galleryUrl(page));
+    }
+    currentGalleryPage = page;
+    currentSurface = 'gallery';
+    setDocTitle(`gallery · p${page}`);
+
+    canvas.hidden = true;
+    const galleryDiv = document.getElementById('pyr3-gallery');
+    if (galleryDiv === null) {
+      console.error('pyr3 gallery: #pyr3-gallery missing from index.html');
+      return;
+    }
+    galleryDiv.hidden = false;
+
+    // Swap the bar — the viewer's BarHandle stays in memory but its DOM
+    // is gone, so its setters become harmless no-ops until we swap back
+    // (which today is via full page reload, not an inline remount).
+    const barRoot = document.getElementById('pyr3-bar');
+    if (barRoot === null) return;
+    barRoot.replaceChildren();
+
+    galleryBar = mountGalleryBar(barRoot, {
+      webgpu,
+      page,
+      totalPages: galleryTotalPages,
+      onPrevPage: () => navGallery(currentGalleryPage - 1),
+      onNextPage: () => navGallery(currentGalleryPage + 1),
+    });
+
+    // QUALITY_TIERS[0] is the Draft tier (longEdge 512, spp 8) — the
+    // intentional gallery cell quality per the spec.
+    galleryHandle = await mountGallery(page, {
+      renderer,
+      device,
+      format,
+      container: galleryDiv,
+      fetchGenome: galleryFetchGenome,
+      draftTier: QUALITY_TIERS[0]!,
+    });
+
+    clearFirstPaintCue();
+  };
+
+  // Back/forward through history. Within a single surface (viewer or gallery)
+  // we update in place; a cross-surface popstate triggers a full reload — the
+  // cleanest correct path for v1 since the renderer + WebGPU state would need
+  // a careful inline teardown otherwise. Cell-click cross-surface navigation
+  // is also a full reload by design (anchor href, no preventDefault).
   window.addEventListener('popstate', () => {
     const i = parseLoadIntent(window.location);
-    if (i.kind === 'corpus') void enqueueCorpus(i.gen, i.id, false);
+    if (currentSurface === 'gallery' && i.kind === 'gallery') {
+      currentGalleryPage = i.page;
+      setDocTitle(`gallery · p${i.page}`);
+      void galleryHandle?.setPage(i.page);
+      galleryBar?.setPage(i.page, galleryTotalPages);
+      return;
+    }
+    if (currentSurface === 'viewer' && i.kind === 'corpus') {
+      void enqueueCorpus(i.gen, i.id, false);
+      return;
+    }
+    window.location.reload();
   });
 
   // #8: ←/→ arrow keys browse the corpus prev/next — the same enqueueCorpus
@@ -821,6 +976,13 @@ async function main(): Promise<void> {
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    // Gallery mode: arrows page through the grid (same direction as the
+    // ‹/› pills). navGallery handles clamping + coalesced render commit.
+    if (currentSurface === 'gallery') {
+      e.preventDefault();
+      navGallery(currentGalleryPage + (e.key === 'ArrowLeft' ? -1 : 1));
+      return;
+    }
     if (!currentNav) return;
     // #38: prev/next now carry their own (gen, id) so the arrow keys cross
     // gen boundaries the same way the action-bar pills do.
@@ -834,7 +996,9 @@ async function main(): Promise<void> {
   // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
   // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
   const intent = parseLoadIntent(window.location);
-  if (intent.kind === 'corpus') {
+  if (intent.kind === 'gallery') {
+    await mountGallerySurface(intent.page);
+  } else if (intent.kind === 'corpus') {
     await enqueueCorpus(intent.gen, intent.id, false); // initial load: no pushState
   } else if (intent.kind === 'default') {
     // Bare root (A2 root-forward): rewrite the address bar to the canonical hero
@@ -980,6 +1144,14 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       // Browse + custom-flame sharing are a deferred phase (design spec §12).
       // For now, paint the welcome flame; no gallery/overlay UI is built yet.
       console.info(`pyr3: "${intent.kind}" view is not built yet (deferred) — painting welcome flame.`);
+      return fetchAsFile(WELCOME_FLAME_URL);
+    case 'gallery':
+      // Defensive guard. Gallery intents dispatch via mountGallerySurface()
+      // BEFORE this function is called (see the initial-load block at the
+      // bottom of main()). Reaching here means the dispatch order was broken
+      // — log loudly + paint welcome as a safe fallback so the page isn't
+      // blank, but treat it as a bug to fix.
+      console.error(`pyr3: gallery intent reached resolveLoadIntent — dispatch order broken (page ${intent.page})`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':
       // Bare root is handled directly in main() (replaceState root-forward +
