@@ -40,10 +40,10 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   `cli` · `perf`), a **size label** (`size/XS`…`size/XL`), and optionally `partial`. Reference
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
-- **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones) + the Project board.**
-  The `v1.0` milestone IS the ship gate: when every issue in it closes, tag `v1.0`. `post-v1` is
-  the deferred backlog (re-sort into feature-epic milestones — editor / find / create — as those
-  form).
+- **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
+  milestone IS a ship gate: when every issue in it closes, tag the release. v1.0 and v1.1 have
+  shipped; `v1.2 - gallery and discovery` is the current theme. `post-v1` is the deferred backlog
+  (re-sort into themed milestones as they form). No Project board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
 - **In-repo docs that survive:** `VISION` · `CLAUDE` · `README` (+ `HISTORY.md`, `NOTICE.md`).
