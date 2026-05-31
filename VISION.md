@@ -1,4 +1,4 @@
-# 🔥 pyr3 — vision
+# pyr3 — vision
 
 **pyr3** (pronounced "pyre") — a fractal-flame renderer in the flam3 lineage, written in
 TypeScript with WebGPU compute shaders. GPL-3.0-or-later.
