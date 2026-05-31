@@ -143,28 +143,31 @@ for (const fx of fixtures) {
   const nick = srcPath && existsSync(srcPath) ? extractNick(srcPath) : null;
   const byHtml = nick ? `By <b>${htmlEscape(nick)}</b>` : `<span class="anon">artist unknown</span>`;
 
-  // PYR3-045 — link the card to the live viewer for this exact sheep via the
-  // v0.24 corpus share-URL (/v1/gen/{gen}/id/{id}). The fixture id is
+  // #44 — the flame NAME is the link to the live viewer for this exact sheep,
+  // via the v0.24 corpus share-URL (/v1/gen/{gen}/id/{id}). Supersedes the
+  // PYR3-045 separate "▶ Open in viewer" pill + the "#" permalink bookmark:
+  // the name itself now carries the affordance. The fixture id is
   // "electricsheep.{gen}.{id}"; the route is relative to the showcase dir
   // (../) to survive both the apex domain and a project-Pages base prefix.
   // Normalize the padded fixture segments (e.g. "00866") to the canonical
   // non-padded route ids (e.g. 866) — the chunk map is keyed by the numeric
   // string, and parseLoadIntent runs Number() on the path segment anyway.
+  // All v1.0 showcase fixtures are canonical genomes, so corpusMatch always
+  // hits; the plain-text fallback covers any future non-corpus fixture.
   const corpusMatch = id.match(/\.(\d+)\.(\d+)$/);
   const viewerHref = corpusMatch
     ? `../v1/gen/${Number(corpusMatch[1])}/id/${Number(corpusMatch[2])}`
     : null;
-  const viewerLink = viewerHref
-    ? `<a class="viewer" href="${viewerHref}" title="Open this flame in the live pyr3 viewer">▶ Open in viewer</a>`
-    : '';
+  const idHtml = viewerHref
+    ? `<a class="idlink" href="${viewerHref}" title="Open this flame in the live pyr3 viewer">${id}</a>`
+    : id;
 
   cards.push(`    <div class="card" id="${id}">
       <a class="thumb" href="./${id}.4k.jpg" target="_blank" rel="noopener" title="Open full 4K image in a new tab"><img src="./${id}.thumb.jpg" loading="lazy" alt="${id}"></a>
       <div class="cap">
-        <div class="id"><span class="idtext"><a class="anchor" href="#${id}" title="permalink to this flame">#</a>${id}</span><a class="open" href="./${id}.4k.jpg" target="_blank" rel="noopener">⤢ Open 4K</a></div>
+        <div class="id"><span class="idtext">${idHtml}</span><a class="open" href="./${id}.4k.jpg" target="_blank" rel="noopener">⤢ Open 4K</a></div>
         <div class="by">${byHtml}</div>
         <div class="rendered">${renderedLine}</div>
-        ${viewerLink ? `<div class="actions">${viewerLink}</div>` : ''}
       </div>
     </div>`);
   ready++;
@@ -200,17 +203,14 @@ const html = `<!doctype html>
   .card .cap{padding:9px 11px}
   .card .id{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .card .idtext{font-family:ui-monospace,monospace;font-size:12px;color:var(--text);word-break:break-all;min-width:0}
-  .card .anchor{color:var(--dim);text-decoration:none;font-weight:700}
-  .card .anchor:hover{color:var(--accent)}
+  .card .idlink{color:#ffb56e;text-decoration:none;font-weight:600}
+  .card .idlink:hover{color:var(--accent);text-decoration:underline}
   .card .open{flex:0 0 auto;font-size:11px;font-weight:600;color:#ffb56e;text-decoration:none;border:1px solid var(--accent);background:var(--accent-soft);border-radius:999px;padding:2px 11px;white-space:nowrap}
   .card .open:hover{background:var(--accent);color:#0a0a0c}
   .card .by{font-size:11.5px;color:var(--dim);margin-top:4px}
   .card .by b{color:var(--muted)}
   .card .by .anon{color:#666}
   .card .rendered{font-size:11px;color:var(--dim);margin-top:5px}
-  .card .actions{margin-top:9px}
-  .card .viewer{display:inline-block;font-size:11.5px;font-weight:600;color:#0a0a0c;background:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:3px 13px;text-decoration:none;white-space:nowrap}
-  .card .viewer:hover{background:#ffa64d;border-color:#ffa64d}
   :target{scroll-margin-top:16px}
   .card:target{outline:2px solid var(--accent);outline-offset:2px}
   @media(max-width:760px){.grid{column-count:1}.wrap{padding:16px}}

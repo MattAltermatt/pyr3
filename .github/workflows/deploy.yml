@@ -70,11 +70,11 @@ jobs:
       # (public/showcase/) and lives only here as a Release asset — never in
       # git — so the repo stays lean. Same reproducibility rationale as the
       # chunk tag above.
-      SHOWCASE_RELEASE_TAG: 'showcase-2026-05-29'
+      SHOWCASE_RELEASE_TAG: 'showcase-2026-05-31'
       # #14 — expected sha256 of showcase-{tag}.tar (it carries a same-origin
       # index.html served at /showcase/, so integrity matters most here). Verified
       # before `tar -xf`. Bump WITH the showcase tag above.
-      SHOWCASE_TAR_SHA256: 'df451b442aebd3eb6a0281ce508a1be332ef5f53bc69523d29600dda5c7d4533'
+      SHOWCASE_TAR_SHA256: '76520aa16d4d9e6f5a6325a5bbfa0a75713fccc3cd2419323240ff23a5c8cfe2'
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
