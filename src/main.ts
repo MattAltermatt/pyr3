@@ -8,13 +8,13 @@
 import { loadAvail, neighbors } from './avail-client';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { initDevice, showError } from './device';
-import { SPIRAL_GALAXY, type Genome } from './genome';
+import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
 import { corpusUrl, HERO_GEN, HERO_ID, parseLoadIntent, type LoadIntent } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { applyPreset, DEFAULT_TIER, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
-import { mountBar, type BarHandle, type CostEstimate } from './ui-bar';
+import { mountBar, type BarHandle, type CorpusNav, type CostEstimate } from './ui-bar';
 import { checkWebGPU } from './webgpu-check';
 
 // The "welcome flame" — the bundled fixture `/` paints for an instant,
@@ -44,6 +44,19 @@ const RENDER_SIZE = 1024;
 const QUICK_MAX_DIM = 1024;
 const QUICK_MAX_SPP = 16;
 const QUICK_OVERSAMPLE = 1;
+
+// #2: name the browser tab after the current flame so a bookmark / shared link
+// auto-titles itself. Corpus sheep → `pyr3 — 248/23674`; file-opened flames →
+// `pyr3 — <flame name>`; bare default → `pyr3`. Updated on every load + popstate.
+function setDocTitle(label: string | null): void {
+  document.title = label ? `pyr3 — ${label}` : 'pyr3';
+}
+
+// Compact `gen/id` label for the document title (id zero-padded to 5, matching
+// the corpus URL + nav-pill formatting).
+function corpusTitleLabel(gen: number, id: number): string {
+  return `${gen}/${String(id).padStart(5, '0')}`;
+}
 
 async function main(): Promise<void> {
   const webgpu = await checkWebGPU();
@@ -114,6 +127,11 @@ async function main(): Promise<void> {
   let activeGenome: Genome = SPIRAL_GALAXY;
 
   let runHandle: RunHandle | null = null;
+  // #8: true for the duration of a quality-ladder / custom (e.g. 4K) render.
+  // Corpus loads track their own in-flight state via loadInFlight; this covers
+  // the standalone ladder path so arrow-key / pill nav can't queue behind a
+  // heavy render that was started without a flame load.
+  let renderInFlight = false;
 
   // Sticky quality: the tier/custom the user last chose persists across corpus
   // nav + file loads (PYR3-050) — every load re-renders at this quality, not a
@@ -406,7 +424,9 @@ async function main(): Promise<void> {
     // Remember this choice so it persists across the next corpus nav / load.
     currentQuality = req;
     // Disable the ladder synchronously BEFORE the first await, so a double-tap
-    // during the cancel/drain can't spawn a second concurrent render.
+    // during the cancel/drain can't spawn a second concurrent render. The
+    // renderInFlight flag (also set synchronously) gates corpus nav for #8.
+    renderInFlight = true;
     bar.setBusy(true);
     if (runHandle) {
       runHandle.cancel();
@@ -438,6 +458,7 @@ async function main(): Promise<void> {
       );
       bar.showToast(`${tierLabel} too large for this GPU (needs ${mb(histBytes)})`);
       bar.setBusy(false); // re-enable — we never started a render
+      renderInFlight = false;
       return;
     }
 
@@ -489,6 +510,7 @@ async function main(): Promise<void> {
     } finally {
       bar.hideProgress();
       bar.setBusy(false);
+      renderInFlight = false;
       clearFirstPaintCue();
       if (runHandle === handle) runHandle = null;
       bar.setQuality({ width: renderer.width, height: renderer.height, spp, tierLabel });
@@ -547,6 +569,8 @@ async function main(): Promise<void> {
       authorNick: result.genome.nick,
       sourceFilename: sourceLabel,
     });
+    // #5: surface the flame's distinct variation set after the tier label.
+    bar.setVariations(distinctVariationNames(result.genome));
     // Render at the sticky quality (PYR3-050) — persists the user's tier/custom
     // choice across nav + loads. Preview-default uses the fast chunked rerender
     // (the FE↔BE parity path); higher tiers / custom use the decoupled path.
@@ -637,7 +661,8 @@ async function main(): Promise<void> {
       const file = input.files?.[0];
       if (file) {
         await loadFromFile(file);
-        bar.setCorpusNav(null); // user-opened file is not a corpus sheep
+        setNav(null); // user-opened file is not a corpus sheep
+        setDocTitle(activeGenome.name || null); // #2: tab named after the flame
       }
       input.remove();
     });
@@ -652,10 +677,19 @@ async function main(): Promise<void> {
   // Load a sheep by (gen, id) and refresh the action-bar prev/next cluster from
   // the gen's availability manifest. `push` controls History (false for the
   // initial load + popstate; true for in-app nav clicks).
+  // Current corpus-nav context (#8): the arrow-key handler reads this to decide
+  // whether ←/→ have anywhere to go. Kept in sync with the action-bar pills via
+  // setNav — null whenever the loaded flame isn't a corpus sheep.
+  let currentNav: CorpusNav | null = null;
+  const setNav = (nav: CorpusNav | null): void => {
+    currentNav = nav;
+    bar.setCorpusNav(nav);
+  };
+
   const updateCorpusNav = async (gen: number, id: number): Promise<void> => {
     const ids = await loadAvail(gen);
     const n = neighbors(ids, id);
-    bar.setCorpusNav({ gen, prev: n.prev, next: n.next });
+    setNav({ gen, prev: n.prev, next: n.next });
   };
 
   const loadCorpus = async (gen: number, id: number, push: boolean): Promise<void> => {
@@ -669,6 +703,9 @@ async function main(): Promise<void> {
     if (push) {
       history.pushState({ gen, id }, '', corpusUrl(gen, id));
     }
+    // #2: name the tab after the navigated sheep (reflects the coord regardless
+    // of whether the flame loads or turns out to be missing).
+    setDocTitle(corpusTitleLabel(gen, id));
     let xml: string | null = null;
     try {
       xml = await fetchFlameXml(gen, id);
@@ -700,6 +737,7 @@ async function main(): Promise<void> {
       // we only know it isn't in OUR corpus, not that it "never existed".
       missingPanel.show(gen, id);
       bar.setMeta({ flameName: `gen ${gen} · sheep ${id} — not in corpus` });
+      bar.setVariations([]); // no genome loaded → clear any stale variation set
       await updateCorpusNav(gen, id); // offer prev/next available
       return;
     }
@@ -719,14 +757,40 @@ async function main(): Promise<void> {
     corpusQueue = next.catch(() => {}); // keep the chain alive past a failure
     return next;
   };
+  // #8: a synchronous lock that engages the instant a nav is dispatched and
+  // releases only when that load + its render fully settle — so rapid pill
+  // clicks or arrow presses can't stack navigations behind the in-flight load.
+  // (loadInFlight flips too late — only after the chunk fetch resolves, leaving
+  // a window where several navs slip through and queue.) Also refuses while a
+  // standalone quality-ladder render (e.g. 4K) is running.
+  let navLocked = false;
   navigateCorpus = (gen, id) => {
-    void enqueueCorpus(gen, id, true);
+    if (navLocked || renderInFlight) return;
+    navLocked = true;
+    void enqueueCorpus(gen, id, true).finally(() => { navLocked = false; });
   };
   // Back/forward through corpus history. Only our pushState entries (all corpus)
   // surface here, so a non-corpus kind never appears.
   window.addEventListener('popstate', () => {
     const i = parseLoadIntent(window.location);
     if (i.kind === 'corpus') void enqueueCorpus(i.gen, i.id, false);
+  });
+
+  // #8: ←/→ arrow keys browse the corpus prev/next — the same enqueueCorpus
+  // path the action-bar pills drive. No-ops while a text field is focused, when
+  // there's no corpus-nav context (file-opened / non-corpus flame), or — via
+  // navigateCorpus's lock — while any load/render is in flight. Modifier combos
+  // (e.g. ⌘← browser-back) are left to the browser.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (!currentNav) return;
+    const targetId = e.key === 'ArrowLeft' ? currentNav.prev : currentNav.next;
+    if (targetId === null) return;
+    e.preventDefault();
+    navigateCorpus(currentNav.gen, targetId);
   });
 
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
@@ -747,9 +811,12 @@ async function main(): Promise<void> {
     if (heroFile) {
       await loadFromFile(heroFile);
       await updateCorpusNav(HERO_GEN, HERO_ID); // wire ‹ › (no-ops to empty if avail unavailable)
+      setDocTitle(corpusTitleLabel(HERO_GEN, HERO_ID)); // #2: hero is a corpus sheep
     } else {
       console.warn('pyr3: welcome-flame fetch failed; painting SPIRAL_GALAXY default');
       bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+      bar.setVariations(distinctVariationNames(SPIRAL_GALAXY));
+      setDocTitle(SPIRAL_GALAXY.name || null);
       await rerender();
     }
   } else {
@@ -758,10 +825,13 @@ async function main(): Promise<void> {
     const initialFile = await resolveLoadIntent(intent);
     if (initialFile) {
       await loadFromFile(initialFile);
-      bar.setCorpusNav(null); // non-corpus flame → hide nav
+      setNav(null); // non-corpus flame → hide nav
+      setDocTitle(activeGenome.name || null); // #2
     } else {
       console.warn('pyr3: no initial load resolved; painting SPIRAL_GALAXY default');
       bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+      bar.setVariations(distinctVariationNames(SPIRAL_GALAXY));
+      setDocTitle(SPIRAL_GALAXY.name || null);
       await rerender();
     }
   }

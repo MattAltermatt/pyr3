@@ -79,6 +79,10 @@ export interface BarHandle {
   /** Update the info-bar `dims · quality · tier` readout and highlight the
    *  active tier in the ladder (tierLabel 'Custom' highlights none). */
   setQuality(q: QualityReadout): void;
+  /** Show the flame's distinct variation set after the tier label (#5). Pass
+   *  the full weight-ordered list; the bar truncates past a few with `+N` and
+   *  exposes the complete list on hover. Pass [] to clear. */
+  setVariations(names: string[]): void;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -109,6 +113,11 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   mark.src = FLAME_MARK_URI;
   mark.alt = '';
   wordmark.append(mark, document.createTextNode('pyr3'));
+  // #1: version chip — small/muted, immediately after the wordmark. Single-
+  // sourced from package.json via the __PYR3_VERSION__ build constant so it
+  // can't drift. Sits outside the wordmark anchor (it's a label, not a link).
+  const version = el('span', 'pyr3-bar-version');
+  version.textContent = `v${__PYR3_VERSION__}`;
   const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
   about.href = `${import.meta.env.BASE_URL}help/about.html`;
   about.textContent = 'about';
@@ -120,9 +129,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const metaName = el('div', 'pyr3-bar-meta-name');
   // Quality readout (PYR3-050): ` · {w}×{h} · q{spp} · {tier}` after the name.
   const metaQuality = el('span', 'pyr3-bar-quality');
+  // #5: distinct variation set, ` · linear · julia · radial_blur`, right after
+  // the tier label. Set on flame load; truncated past a few names with `+N`.
+  const metaVariations = el('span', 'pyr3-bar-variations');
   // Toast rides in the info zone next to the meta name.
   const toast = el('span', 'pyr3-bar-toast');
-  infoLeft.append(wordmark, sep(), about, sep(), showcase, sep(), metaName, metaQuality, toast);
+  infoLeft.append(wordmark, version, sep(), about, sep(), showcase, sep(), metaName, metaQuality, metaVariations, toast);
 
   const infoRight = el('div', 'pyr3-zone-right');
   const webgpuChip = buildWebGPUChip(opts.webgpu);
@@ -217,6 +229,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+  // #8: the corpus-nav pills must go inactive during any load/render so a
+  // visitor can't queue a pile of navigations behind a slow (4K) render. Track
+  // the live pills + busy state; setBusy and setCorpusNav both reapply it.
+  let barBusy = false;
+  const navPills: HTMLAnchorElement[] = [];
+  const applyNavBusy = (): void => {
+    for (const p of navPills) p.classList.toggle('disabled', barBusy);
+  };
 
   return {
     setMeta(meta) {
@@ -224,9 +244,11 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     },
     setBusy(busy) {
       advBusy = busy;
+      barBusy = busy;
       openBtn.disabled = busy;
       for (const b of tierBtns.values()) b.disabled = busy;
       renderBtn.disabled = busy || !lastFits;
+      applyNavBusy(); // #8: grey out + disable ‹ prev / next › while busy
     },
     showProgress(p) {
       if (!tier3) {
@@ -255,6 +277,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       // Called once per navigation (not per-frame), so replaceChildren is safe
       // w.r.t. the rAF-rebuild click bug.
       navSlot.replaceChildren();
+      navPills.length = 0;
       if (!nav) return;
       const pill = (id: number, label: string): HTMLAnchorElement => {
         const a = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
@@ -263,17 +286,33 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
         a.title = `gen ${nav.gen} · sheep ${id}`;
         a.onclick = (e) => {
           e.preventDefault();
+          if (barBusy) return; // #8: no queuing navigations behind a render
           opts.onNavigate(nav.gen, id);
         };
         return a;
       };
       const fmt = (id: number) => `${nav.gen}.${String(id).padStart(5, '0')}`;
-      if (nav.prev !== null) navSlot.append(pill(nav.prev, `‹ ${fmt(nav.prev)}`));
-      if (nav.next !== null) navSlot.append(pill(nav.next, `${fmt(nav.next)} ›`));
+      if (nav.prev !== null) navPills.push(pill(nav.prev, `‹ ${fmt(nav.prev)}`));
+      if (nav.next !== null) navPills.push(pill(nav.next, `${fmt(nav.next)} ›`));
+      for (const p of navPills) navSlot.append(p);
+      applyNavBusy(); // a nav rebuilt mid-render starts out disabled
     },
     setQuality(q) {
       metaQuality.textContent = ` · ${q.width}×${q.height} · q${q.spp} · ${q.tierLabel}`;
       for (const [name, b] of tierBtns) b.classList.toggle('on', name === q.tierLabel);
+    },
+    setVariations(names) {
+      const MAX_SHOWN = 4;
+      if (names.length === 0) {
+        metaVariations.textContent = '';
+        metaVariations.title = '';
+        return;
+      }
+      const shown = names.slice(0, MAX_SHOWN);
+      const extra = names.length - shown.length;
+      metaVariations.textContent = ` · ${shown.join(' · ')}${extra > 0 ? ` · +${extra}` : ''}`;
+      // Full list on hover, so truncation never hides what the flame uses.
+      metaVariations.title = names.join(' · ');
     },
   };
 }
@@ -419,6 +458,7 @@ const BAR_CSS = `
   border-radius: 999px; padding: 2px 10px;
 }
 .pyr3-nav-pill:hover { background: var(--accent); color: #0a0a0c; }
+.pyr3-nav-pill.disabled { opacity: 0.4; pointer-events: none; cursor: not-allowed; }
 .pyr3-bar-qlabel { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
 .pyr3-bar-ladder { display: inline-flex; border: 1px solid #3a3a42; border-radius: 6px; overflow: hidden; }
 .pyr3-tier-btn {
@@ -430,6 +470,11 @@ const BAR_CSS = `
 .pyr3-tier-btn.on { background: var(--accent); color: #0a0a0c; font-weight: 600; }
 .pyr3-tier-btn:disabled { color: #555; cursor: not-allowed; }
 .pyr3-bar-quality { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
+.pyr3-bar-version { color: var(--text-dim); font-size: 10px; font-weight: 400; white-space: nowrap; }
+.pyr3-bar-variations {
+  color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
 
 .pyr3-bar-advanced {
   display: flex; align-items: center; gap: 9px;

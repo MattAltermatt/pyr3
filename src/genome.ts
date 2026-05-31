@@ -6,6 +6,7 @@
 import {
   type Variation,
   MAX_VARIATIONS_PER_XFORM,
+  VARIATION_NAMES,
   julian,
   spherical,
   linear,
@@ -348,6 +349,28 @@ export function packXforms(genome: Genome): ArrayBuffer {
 
 export function totalWeight(genome: Genome): number {
   return genome.xforms.reduce((s, x) => s + x.weight, 0);
+}
+
+// #5: the distinct set of variation names a genome uses, ordered by total
+// contribution weight (descending; alpha tie-break). "Contribution" = the
+// xform's selection weight × the variation's chain weight, summed across every
+// xform — so the dominant kernels lead. The finalxform's selection weight is
+// meaningless (it's a post-pick lens, not in the chaos draw), so its variations
+// are folded in with a nominal weight of 1 — they still shape the image and
+// belong in the set. Drives the info-bar variation readout in src/ui-bar.ts.
+export function distinctVariationNames(genome: Genome): string[] {
+  const weightByName = new Map<string, number>();
+  const accumulate = (xform: Xform, xformWeight: number): void => {
+    for (const v of xform.variations) {
+      const name = VARIATION_NAMES[v.index] ?? `var${v.index}`;
+      weightByName.set(name, (weightByName.get(name) ?? 0) + xformWeight * (v.weight ?? 0));
+    }
+  };
+  for (const x of genome.xforms) accumulate(x, x.weight);
+  if (genome.finalxform) accumulate(genome.finalxform, 1);
+  return [...weightByName.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
 }
 
 // Phase 9d: pack the xaos matrix as MAX_XFORMS × MAX_XFORMS row-major flat

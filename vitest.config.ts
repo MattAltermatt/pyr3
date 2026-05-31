@@ -1,9 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 
 const includeParity = process.env.VITEST_INCLUDE_PARITY === '1';
 const includeParityFeBe = process.env.VITEST_INCLUDE_PARITY_FE_BE === '1';
 
+// Mirror vite.config's __PYR3_VERSION__ define so any test that touches code
+// referencing the build constant resolves it (vitest doesn't load vite.config).
+const version = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version;
+
 export default defineConfig({
+  define: {
+    __PYR3_VERSION__: JSON.stringify(version),
+  },
   test: {
     exclude: [
       'node_modules/**',
