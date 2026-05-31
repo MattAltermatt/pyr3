@@ -1,122 +1,119 @@
-# 🔥 pyr3 — fractal flame renderer for the web and CLI
+# pyr3
 
-**pyr3** (pronounced "pyre") is a TypeScript + WebGPU fractal-flame renderer in the
-[flam3](https://github.com/scottdraves/flam3) lineage. **One engine, two consumers:**
+> Fractal flames in your browser — and on the command line.
 
-- 🌐 **Browser viewer** — Vite + WebGPU + GitHub Pages. Drop an Electric Sheep / flam3 `.flame`
-  file (unsupported variations are flagged in the import report) or visit a share-link URL; the
-  flame renders in the canvas.
-- 💻 **Headless CLI** — Node + `webgpu` npm + `tsx`. `npm run render flame.xml out.png`
-  renders the same flame to a PNG using the same TS modules and the same WGSL compute
-  shaders.
+<p align="center">
+  <a href="https://pyr3.app"><img src="docs/assets/hero.jpg" alt="A pyr3-rendered fractal flame — amber and crimson lattice on black" width="100%"></a>
+</p>
 
-## Status
+<p align="center">
+  <b><a href="https://pyr3.app">▶&nbsp; Open the viewer</a></b>
+  &nbsp;·&nbsp;
+  <b><a href="https://pyr3.app/showcase">🖼&nbsp; Browse the gallery</a></b>
+</p>
 
-🚧 **v0.36 — pre-1.0, live, both ship gates green.** The engine is in place (browser + CLI
-render from one codebase) and deployed at [**pyr3.app**](https://pyr3.app/) (viewer) +
-[`/showcase`](https://pyr3.app/showcase) (gallery), auto-deployed on push to `main`. Both
-parity rigs pass on the curated 25-fixture corpus — BE-vs-flam3-C (`npm run test:parity`,
-25/25) and FE↔BE quick-mode (`npm run test:parity-fe-be`, 25/25). flam3-C is the canonical
-lineage source of truth; the hero `electricsheep.247.19679` renders at **R=2.78** vs flam3-C,
-well inside the noise floor.
+**pyr3** (say "pyre") renders *fractal flames* — the glowing, organic shapes of the
+[Electric Sheep](https://electricsheep.org/) screensaver — live in your browser using your
+GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through the flock of
+52,000+ sheep. The same engine also runs headless on the command line.
 
-The v0.36 DE-normalization fix (issue #10's predecessor) pulled the last two f32-floor
-outliers back into the healthy band (`coverage.248.02226` 29.92→5.73, `245.06687` 14.59→1.52),
-so the worst remaining parity gap is now `electricsheep.248.23554` (R≈24, a genuine
-cross-version divergence under investigation in [issue #6](https://github.com/MattAltermatt/pyr3/issues/6))
-— **not** a regression. v1.0 ships once the
-[`v1.0` milestone](https://github.com/MattAltermatt/pyr3/milestones) closes out. Ship history:
-[Releases](https://github.com/MattAltermatt/pyr3/releases) (v1.0+) and [HISTORY.md](HISTORY.md)
-(frozen pre-1.0 log).
+**No code required — just click a link above:**
 
-## The contract
+- ▶ **[Open the viewer](https://pyr3.app)** — a live flame paints instantly; tap a quality
+  tier (up to **4K, in the browser**) to render it sharper, or drop into the Electric Sheep
+  corpus and press **← / →** (or the `‹ prev` / `next ›` buttons) to roam 52,000+ flames.
+- 🖼 **[Browse the gallery](https://pyr3.app/showcase)** — a wall of rendered flames to scroll.
 
-Pyr3 renders are **"similar but not the same" as flam3-C** — lineage-respectful, but pyr3
-exercises independent judgment where flam3's C-era constraints don't apply. **v1.0 ships
-when both the browser and CLI independently render fixtures within R tolerance of flam3-C
-golden PNGs.**
+> Needs a WebGPU-capable browser — Chrome/Edge 113+, Safari 18+ (macOS Sequoia), or Firefox
+> Nightly. If yours can't, the viewer says so and points you to a fix.
+
+---
+
+The rest of this page is for **running and building pyr3 yourself**.
+
+## One engine, two consumers
+
+pyr3 is a single TypeScript + WebGPU renderer with two front ends sharing the exact same
+engine modules and WGSL compute shaders — no second code path, no environment branching:
+
+- 🌐 **Browser viewer** — Vite + WebGPU, deployed to GitHub Pages at
+  [pyr3.app](https://pyr3.app). Open any Electric Sheep / flam3 `.flame` file (unsupported
+  variations are flagged in an import report), browse the corpus by share-link, and render
+  from a fast preview up to 4K. The top bar shows the version, the flame's variation set, and
+  prev/next navigation.
+- 💻 **Headless CLI** — Node + the `webgpu` npm package. `npm run render flame.flam3 out.png`
+  renders the same flame to a PNG using the same modules and shaders as the browser.
+
+## Run it locally
+
+```sh
+npm install
+npm run dev                 # browser viewer at http://localhost:5173/
+npm test                    # unit suite (~2s)
+```
+
+## Render from the command line
+
+```sh
+# render at the flame's native dimensions
+npm run render fixtures/electricsheep.247.19679.flam3 out.png
+
+# fast preview (1024px long edge, capped quality) — matches the viewer's quick mode
+npm run render -- --preset quick fixtures/electricsheep.247.19679.flam3 preview.png
+
+# full 4K showcase render (3840px long edge)
+npm run render -- --preset 4k fixtures/electricsheep.247.19679.flam3 hero-4k.png
+```
+
+See [CLAUDE.md](CLAUDE.md#quick-commands) for the full command list (parity rigs, typecheck,
+benchmarks).
+
+## Parity & the contract
+
+pyr3 renders are **"similar but not the same" as flam3-C** — lineage-respectful, but pyr3
+exercises independent judgment where flam3's C-era constraints don't apply. **v1.0 ships when
+both the browser and CLI independently render fixtures within R-tolerance of flam3-C golden
+PNGs.** Both gates currently pass on the curated 25-fixture corpus:
+
+```sh
+npm run test:parity         # BE: each render gated against its flam3-C golden (~90s, needs Dawn WebGPU)
+npm run test:parity-fe-be   # FE↔BE: headless-WebGPU Playwright rig, browser vs CLI
+```
+
+Each fixture in `fixtures/flam3-goldens/<id>/` carries `golden.png` (flam3-C output), the
+source `.flame`, and a `meta.json` with the calibrated tier contract: `expectedR` (measured R
+vs flam3-C), `thresholdR` (`= expectedR + 1.0`), and `tier`. **21 of 25 fixtures** sit in the
+**tier-1** healthy band (R < 5). The 4 **tier-2** fixtures (R ≥ 5) are a small residual of
+**GPU-f32 chaos-game spatial diffuseness** — the walker measure spreads slightly more than
+flam3-C's f64 path — minimized by the v0.36 walker-jitter tuning and tracked for a principled
+re-fuse fix in [#43](https://github.com/MattAltermatt/pyr3/issues/43). It is **not** the
+variation-kernel "f32 precision floor" earlier framings claimed: the v0.36 DE-normalization
+fix collapsed the old outliers back into tier-1, so the bulk of that gap was a bug, not a
+floor. The widest remaining fixture, `electricsheep.248.23554`, renders at R ≈ 11 (down from
+~24 before the jitter fix).
 
 ## Lineage
 
 pyr3 is an independent TypeScript + WebGPU reimplementation in the **flam3** lineage — the
 fractal-flame algorithm of Scott Draves & Erik Reckase. It reads the upstream
 [flam3](https://github.com/scottdraves/flam3) C reference renderer (GPL-3.0-or-later) for
-algorithmic clarity; flam3-C is its parity ground truth.
-
-See [NOTICE.md](NOTICE.md) for third-party attribution.
-
-## Quick start
-
-```sh
-npm install
-npm test                  # unit suite only (~1s)
-npm run test:parity       # 25-fixture flam3-C parity suite (~90s, needs Dawn WebGPU)
-npm run test:all          # unit + parity
-npm run dev               # browser viewer at http://localhost:5173/
-npm run render fixtures/electricsheep.247.19679.flam3 out.png    # CLI
-```
-
-## Verifying parity
-
-The Phase 2 rig compares pyr3 renders against flam3-C goldens via an R-metric
-(mean absolute diff, RGB-only) plus per-channel / per-region drift and a
-visibility-scaled `diff.png` per fixture.
-
-```sh
-npm run test:parity                              # BE path: vitest gates R per fixture
-npm run test:parity-fe-be                        # FE↔BE path: headless-WebGPU Playwright rig
-open fixtures/flam3-goldens/247.29388/diff.png   # eyeball the divergence map
-```
-
-Fixtures live at `fixtures/flam3-goldens/<id>/` — each has `golden.png` (flam3-C
-output), `<id>.flam3` (source), and `meta.json` carrying the calibrated tier
-contract: `expectedR` (measured R vs flam3-C), `thresholdR` (= `expectedR + 1.0`),
-and `tier` (`1` = healthy parity band R<5; `2` = documented GPU-f32-vs-CPU-f64
-precision drift). The FE↔BE gate adds `feBeExpectedR` + `feBeThresholdR`.
-
-## Corpus share links
-
-A URL of the form `https://pyr3.app/v1/gen/{gen}/id/{id}`
-opens the renderer and loads that exact Electric Sheep corpus flame directly
-in the browser. No file upload needed.
-
-**How it works:** the renderer parses the `/v1` path (`src/load-intent.ts`),
-fetches the matching same-origin brotli chunk (`/chunks/{gen}/{lo:05d}.flam3chunk`
-via `src/chunk-fetch.ts`), and decodes it (`src/brotli.ts`) — natively via
-`DecompressionStream("brotli")` on Safari/Firefox, or via a code-split
-`brotli-dec-wasm` decoder on Chromium (which has no native brotli stream) —
-then hands the extracted flam3 XML to the existing flame-import path. An
-availability manifest client (`src/avail.ts`) enables fast dead-link detection
-for missing sheep. URLs are base-aware (`import.meta.env.BASE_URL`), so the same
-build works at the apex `pyr3.app` and the `mattaltermatt.github.io/pyr3/`
-fallback (which redirects to the apex).
-
-The legacy inline `?flame=<encoded>` share-link codec was removed in v0.32
-(superseded by the corpus URL above).
-
-The `/v1/gen` and `/v1/gen/{gen}` browse routes are reserved but show
-placeholder content — the visual gallery is deferred. Custom-flame sharing
-(`/v1/flame/...`) is also deferred.
-
-See [`docs/corpus-share-url.md`](docs/corpus-share-url.md) for the pyr3-side
-summary and a pointer to the canonical cross-repo spec.
+algorithmic clarity; flam3-C is its parity ground truth. See [NOTICE.md](NOTICE.md) for
+third-party attribution.
 
 ## Docs & planning
 
-Open work and ship history moved to GitHub in the 2026-05-30 pivot:
+Open work and ship history live on GitHub (since the 2026-05-30 pivot):
 
-- [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry (labelled by
-  type: `feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
+- [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry, labelled by
+  type (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
 - [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — `v1.0` is the ship gate
   (close every issue in it → tag v1.0); `post-v1` is the deferred backlog
 - [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward
 - [HISTORY.md](HISTORY.md) — frozen pre-1.0 ship log (v0.0 → v0.36)
 
-In-repo docs:
-
-- [VISION.md](VISION.md) — what pyr3 is and isn't
-- [CLAUDE.md](CLAUDE.md) — project notes for the Claude Code agent
-- [`docs/corpus-share-url.md`](docs/corpus-share-url.md) — corpus share-URL + chunk delivery (pyr3-side summary)
+In-repo docs: [VISION.md](VISION.md) (what pyr3 is and isn't) ·
+[CLAUDE.md](CLAUDE.md) (agent + contributor notes) ·
+[`docs/corpus-share-url.md`](docs/corpus-share-url.md) (the share-link + chunk-delivery design).
 
 ## License
 
