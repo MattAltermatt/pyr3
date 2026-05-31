@@ -84,10 +84,10 @@ Short form:
    - **BE parity vs flam3-C** (BE CLI renders match flam3-C
      `flam3-render-32bit-isaac qs=1` output at genome-native dims within
      R tolerance) — the 25-fixture parity rig (`npm run test:parity`); an
-     optional 4K-resolution gate is deferred (`[PYR3-043]`)
+     optional 4K-resolution gate is deferred (`#34`)
    - **FE↔BE parity at quick-mode dims** (browser viewer renders match
      BE CLI for the same fixture at 1024 long-edge within R tolerance) —
-     `[PYR3-026]`
+     `#35`
    - **Ground truth = flam3-C, NOT the predecessor.** The 2026-05-28 pivot
      replaced the predecessor-port goldens with deterministic `flam3-render-32bit-isaac`
      output (`isaac_seed=<fixture-id>`). The predecessor was sufficiently faithful
