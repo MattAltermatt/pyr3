@@ -95,6 +95,11 @@ async function main(): Promise<void> {
   let navigateCorpus: (gen: number, id: number) => void = () => {
     console.warn('pyr3: corpus navigate invoked before canvas init');
   };
+  // Forwarding ref: #22 — the canvas isn't bound until initDevice resolves, so
+  // the Save click routes through this shim until the real downloader replaces it.
+  let saveCanvas: (filename: string) => void = () => {
+    console.warn('pyr3: save invoked before canvas init');
+  };
 
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
@@ -102,6 +107,7 @@ async function main(): Promise<void> {
     onRenderQuality: (req) => renderQualityFn(req),
     onNavigate: (gen, id) => navigateCorpus(gen, id),
     estimateCost: (longEdge, spp) => estimateCostFn(longEdge, spp),
+    onSave: (filename) => saveCanvas(filename),
   });
 
   if (!webgpu.available) {
@@ -122,6 +128,26 @@ async function main(): Promise<void> {
     oversample: QUICK_OVERSAMPLE,
     filterRadius: DEFAULT_FILTER_RADIUS,
   });
+
+  // #22: wire the Save click to a canvas.toBlob download with the bar's
+  // suggested filename. The WebGPU canvas's swap-chain texture is read back
+  // directly by toBlob (verified in current Chrome — the earlier "not
+  // readable post-render" note was stale once WebGPU canvas snapshotting
+  // landed). A null blob (toBlob can fail on a clobbered swap-chain) surfaces
+  // as a toast rather than a silent no-op.
+  saveCanvas = (filename) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        bar.showToast('Save failed — canvas was not snapshottable');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 0);
+    }, 'image/png');
+  };
 
   const seed = (Math.random() * 0xffffffff) >>> 0;
   let activeGenome: Genome = SPIRAL_GALAXY;

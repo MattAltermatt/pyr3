@@ -12,6 +12,7 @@
 
 import { corpusUrl } from './load-intent';
 import { QUALITY_TIERS, type QualityRequest } from './presets';
+import { composeSaveFilename } from './save-image';
 import type { WebGPUStatus } from './webgpu-check';
 
 export interface BarMeta {
@@ -32,6 +33,10 @@ export interface BarOpts {
   /** Estimate a custom render's resolved dims + histogram cost + GPU-fit, given
    *  a long edge + SPP. Drives the Advanced row's live cost readout + OOM gate. */
   estimateCost: (longEdge: number, spp: number) => CostEstimate;
+  /** #22: download the current canvas as PNG with the given filename hint. The
+   *  bar composes the filename (flame + tier + quality) and hands it down; main
+   *  owns the actual canvas.toBlob + anchor-download wiring. */
+  onSave: (filename: string) => void;
 }
 
 /** Resolved cost of a custom render request. */
@@ -164,7 +169,15 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   }
   // Advanced ▾ — toggles the custom resolution/SPP sub-row (PYR3-050).
   const advBtn = button('Advanced ▾', 'pyr3-bar-btn', () => toggleAdvanced());
-  actionLeft.append(openBtn, qLabel, ladder, advBtn);
+  // #22: 💾 Save — download the current canvas as PNG with a hint filename
+  // (flame name + tier/custom quality). Disabled until a render lands and while
+  // any render is in flight.
+  const saveBtn = button('💾 Save', 'pyr3-bar-btn', () => {
+    opts.onSave(composeSaveFilename(currentFlameName, currentQuality));
+  });
+  saveBtn.disabled = true;
+  saveBtn.title = 'Download the current render as a PNG';
+  actionLeft.append(openBtn, qLabel, ladder, advBtn, saveBtn);
   // Corpus-nav cluster (filled by setCorpusNav in PYR3-041); right-aligned.
   const navSlot = el('div', 'pyr3-bar-nav');
   actionRow.append(actionLeft, navSlot);
@@ -237,10 +250,19 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const applyNavBusy = (): void => {
     for (const p of navPills) p.classList.toggle('disabled', barBusy);
   };
+  // #22: latest flame name + quality, so the Save button can compose the
+  // download filename on click and gate itself on "is there something to save?".
+  let currentFlameName: string | null = null;
+  let currentQuality: QualityReadout | null = null;
+  const refreshSave = (): void => {
+    saveBtn.disabled = barBusy || currentQuality === null;
+  };
 
   return {
     setMeta(meta) {
       renderMetaName(metaName, meta);
+      currentFlameName = meta.flameName || null;
+      refreshSave(); // #22
     },
     setBusy(busy) {
       advBusy = busy;
@@ -249,6 +271,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       for (const b of tierBtns.values()) b.disabled = busy;
       renderBtn.disabled = busy || !lastFits;
       applyNavBusy(); // #8: grey out + disable ‹ prev / next › while busy
+      refreshSave(); // #22: no Save click mid-render
     },
     showProgress(p) {
       if (!tier3) {
@@ -300,6 +323,8 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     setQuality(q) {
       metaQuality.textContent = ` · ${q.width}×${q.height} · q${q.spp} · ${q.tierLabel}`;
       for (const [name, b] of tierBtns) b.classList.toggle('on', name === q.tierLabel);
+      currentQuality = q; // #22
+      refreshSave();
     },
     setVariations(names) {
       const MAX_SHOWN = 4;
