@@ -1844,18 +1844,18 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
 
     // Trajectory update — flam3-canonical: continues from pre-lens point.
     //
-    // v0.36-H walker jitter (port from pyr3 chaos.comp:2580-2599):
-    // ±5e-7 per-iter sub-ulp perturbation on the trajectory commit.
-    // Recovers attractor concentration on f32-precision-sensitive
-    // genomes — without it, walkers either get trapped in low-density
-    // regions OR escape attractors prematurely, both reading as
-    // "samples spread too uniformly." Splat coords stay un-jittered
-    // (splat_p above); the jitter only affects trajectory continuation.
-    // Retry path at the rollback gate intentionally stays un-jittered
-    // to match pyr3 chaos.comp:2553-2557. See
-    // docs/render-divergence-investigation.md.
-    let jx = (rand01(walker_id) - 0.5) * 1e-6;
-    let jy = (rand01(walker_id) - 0.5) * 1e-6;
+    // Walker jitter — per-iter sub-ulp perturbation on the trajectory commit
+    // (splat coords stay un-jittered; retry/rollback path stays un-jittered).
+    // It counteracts the OPPOSITE f32 bias: with jitter off, f32 rounding
+    // collapses walkers onto near-singular orbits (issue #6 R 24→51). The
+    // jitter is a deliberate diffusing blur; too much over-spreads the
+    // attractor (the issue-#6 over-brightness). Amplitude tuned via 25-fixture
+    // regressions (2026-05-30/31, #6/#10): 1e-6 (R24) → 1e-8 (R17) → 1e-10
+    // (R11), each strictly better with 0 regressions. R is monotone-decreasing
+    // toward the f32-collapse cliff at 0 (1e-10 is ~100× above it; below is
+    // unmapped). A scale-relative jitter is the principled long-term fix (#43).
+    let jx = (rand01(walker_id) - 0.5) * 1e-10;
+    let jy = (rand01(walker_id) - 0.5) * 1e-10;
     p = vec3f(p_pre_final.x + jx, p_pre_final.y + jy, p_pre_final.z);
 
     if (i >= u.fuse) {

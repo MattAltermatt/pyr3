@@ -2,11 +2,12 @@
   "id": "coverage.248.19873",
   "width": 800,
   "height": 592,
-  "expectedR": 1.582,
-  "thresholdR": 2.582,
+  "expectedR": 1.583,
+  "thresholdR": 2.583,
   "tier": 1,
   "source": "flam3-render-32bit-isaac qs=1 isaac_seed=coverage.248.19873",
-  "calibration": "v0.19 (2026-05-28): tier-aware schema. expectedR = mean of 3 pyr3 runs vs flam3-C golden. thresholdR = expectedR + 1.0 headroom. tier 2 if expectedR ≥ 5.0.",
+  "calibration": "Median of 3 pyr3 runs vs flam3-C golden at jitter 1e-10, 2026-05-31. thresholdR = expectedR + 1.0. tier 2 if expectedR >= 5.0.",
   "feBeExpectedR": 6.8267,
-  "feBeThresholdR": 12.24
+  "feBeThresholdR": 12.24,
+  "notes": "tier-1 healthy band (R<5) on the 1e-8 jitter engine. See issue #10 (2026-05-30 re-baseline)."
 }

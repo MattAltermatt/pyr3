@@ -2,10 +2,11 @@
   "id": "electricsheep.245.07670",
   "width": 800,
   "height": 592,
-  "expectedR": 2.338,
-  "thresholdR": 3.338,
+  "expectedR": 2.23,
+  "thresholdR": 3.23,
   "tier": 1,
   "source": "flam3-render-32bit-isaac qs=1 isaac_seed=electricsheep.245.07670",
-  "calibration": "Mean of 3 pyr3 runs vs flam3-C golden, 2026-05-28. thresholdR = expectedR + 1.0 headroom. tier 2 if expectedR ≥ 5.0.",
-  "feBeThresholdR": null
+  "calibration": "Median of 3 pyr3 runs vs flam3-C golden at jitter 1e-10, 2026-05-31. thresholdR = expectedR + 1.0. tier 2 if expectedR >= 5.0.",
+  "feBeThresholdR": null,
+  "notes": "tier-1 healthy band (R<5) on the 1e-8 jitter engine. See issue #10 (2026-05-30 re-baseline)."
 }
