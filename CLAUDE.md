@@ -57,10 +57,11 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   - `user.email = 1435066+MattAltermatt@users.noreply.github.com`
 - License: GPL-3.0-or-later (inherited from the flam3 lineage).
 - Spec location: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
-- Version source of truth: `package.json` (currently `0.36.0`). The showcase build reads it.
-- Git tags: **the first tag is `v1.0`.** The v0.x line is work-in-progress and is NOT tagged
-  (no one wants v0.x tags of a WIP). At v1.0 and after, each ship bumps `package.json`, tags
-  `git tag vX.Y`, and cuts a GitHub Release (the ship notes). (See issue #12.)
+- Version source of truth: `package.json` (currently `1.0.0`). The showcase build reads it.
+- Git tags: **the first tag is `v1.0.0`** (semver, matching `package.json`). The v0.x line is
+  work-in-progress and is NOT tagged (no one wants v0.x tags of a WIP). At v1.0.0 and after,
+  each ship bumps `package.json`, tags `git tag vX.Y.Z`, and cuts a GitHub Release (the ship
+  notes). (See issue #12.)
 
 ## Lineage
 
