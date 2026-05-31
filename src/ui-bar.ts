@@ -56,11 +56,15 @@ export interface QualityReadout {
   tierLabel: string;
 }
 
-/** Adjacent available sheep for the action-bar corpus nav. */
+/** Adjacent available sheep for the action-bar corpus nav. `prev`/`next` carry
+ *  full (gen, id) so the pill can cross gen boundaries at the corpus edges
+ *  (#38) — e.g. `/v1/gen/0/id/1` resolves next → first sheep of the first gen.
+ *  Either side is null at the genuine corpus boundary. The top-level `gen` is
+ *  the anchor gen of the current load (used for context, not for prev/next). */
 export interface CorpusNav {
   gen: number;
-  prev: number | null;
-  next: number | null;
+  prev: { gen: number; id: number } | null;
+  next: { gen: number; id: number } | null;
 }
 
 export interface ProgressDisplay {
@@ -302,22 +306,42 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       navSlot.replaceChildren();
       navPills.length = 0;
       if (!nav) return;
-      const pill = (id: number, label: string): HTMLAnchorElement => {
+      const pill = (gen: number, id: number, label: string): HTMLAnchorElement => {
         const a = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
-        a.href = corpusUrl(nav.gen, id);
+        a.href = corpusUrl(gen, id);
         a.textContent = label;
-        a.title = `gen ${nav.gen} · sheep ${id}`;
+        a.title = `gen ${gen} · sheep ${id}`;
         a.onclick = (e) => {
           e.preventDefault();
           if (barBusy) return; // #8: no queuing navigations behind a render
-          opts.onNavigate(nav.gen, id);
+          opts.onNavigate(gen, id);
         };
         return a;
       };
-      const fmt = (id: number) => `${nav.gen}.${String(id).padStart(5, '0')}`;
-      if (nav.prev !== null) navPills.push(pill(nav.prev, `‹ ${fmt(nav.prev)}`));
-      if (nav.next !== null) navPills.push(pill(nav.next, `${fmt(nav.next)} ›`));
-      for (const p of navPills) navSlot.append(p);
+      // #38: at the genuine corpus boundary (prev=null below the floor, next=
+      // null above the ceiling), keep the ‹ / › pill in the row as a dimmed,
+      // non-clickable placeholder. CLAUDE.md "UI must not jump under the
+      // cursor": every navigation lands the same slot in the same spot.
+      const inactivePill = (label: string, title: string): HTMLAnchorElement => {
+        const a = el('a', 'pyr3-nav-pill disabled') as HTMLAnchorElement;
+        a.textContent = label;
+        a.title = title;
+        return a; // intentionally no href / no onclick — pure placeholder
+      };
+      const fmt = (gen: number, id: number) => `${gen}.${String(id).padStart(5, '0')}`;
+      // #38: prev/next pills carry their OWN (gen, id) so the cluster can cross
+      // gen boundaries at corpus edges without dead-ending.
+      const prevEl = nav.prev !== null
+        ? pill(nav.prev.gen, nav.prev.id, `‹ ${fmt(nav.prev.gen, nav.prev.id)}`)
+        : inactivePill('‹ start', 'start of corpus');
+      const nextEl = nav.next !== null
+        ? pill(nav.next.gen, nav.next.id, `${fmt(nav.next.gen, nav.next.id)} ›`)
+        : inactivePill('end ›', 'end of corpus');
+      navSlot.append(prevEl, nextEl);
+      // Only ACTIVE pills track render-busy state; inactive placeholders stay
+      // permanently .disabled via the class baked in at creation.
+      if (nav.prev !== null) navPills.push(prevEl);
+      if (nav.next !== null) navPills.push(nextEl);
       applyNavBusy(); // a nav rebuilt mid-render starts out disabled
     },
     setQuality(q) {
@@ -481,6 +505,10 @@ const BAR_CSS = `
   color: var(--accent); text-decoration: none;
   border: 1px solid var(--accent-border); background: var(--accent-soft);
   border-radius: 999px; padding: 2px 10px;
+  /* #38: pin the pill width so the row doesn't reflow across corpus boundaries
+     — boundary placeholder ('start' / 'end' + arrow) and active labels
+     (gen.id + arrow, 10-11 chars) all occupy the same slot. */
+  min-width: 10ch; text-align: center;
 }
 .pyr3-nav-pill:hover { background: var(--accent); color: #0a0a0c; }
 .pyr3-nav-pill.disabled { opacity: 0.4; pointer-events: none; cursor: not-allowed; }

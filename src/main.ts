@@ -6,6 +6,7 @@
 // no drag-drop, no `L` hotkey, no overlays on the rendered flame.
 
 import { loadAvail, neighbors } from './avail-client';
+import { loadGensManifest, resolveCorpusNeighbors } from './corpus-bounds';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { initDevice, showError } from './device';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
@@ -713,9 +714,17 @@ async function main(): Promise<void> {
   };
 
   const updateCorpusNav = async (gen: number, id: number): Promise<void> => {
-    const ids = await loadAvail(gen);
-    const n = neighbors(ids, id);
-    setNav({ gen, prev: n.prev, next: n.next });
+    // #38: cross-gen resolution lets out-of-corpus URLs (gen=0, gen=999, id past
+    // a gen's max) still surface a logical prev/next on the action bar instead
+    // of dead-ending. In-gen lookups remain authoritative when both sides exist.
+    const { prev, next } = await resolveCorpusNeighbors(
+      gen,
+      id,
+      loadAvail,
+      loadGensManifest,
+      neighbors,
+    );
+    setNav({ gen, prev, next });
   };
 
   const loadCorpus = async (gen: number, id: number, push: boolean): Promise<void> => {
@@ -813,10 +822,12 @@ async function main(): Promise<void> {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (!currentNav) return;
-    const targetId = e.key === 'ArrowLeft' ? currentNav.prev : currentNav.next;
-    if (targetId === null) return;
+    // #38: prev/next now carry their own (gen, id) so the arrow keys cross
+    // gen boundaries the same way the action-bar pills do.
+    const target = e.key === 'ArrowLeft' ? currentNav.prev : currentNav.next;
+    if (target === null) return;
     e.preventDefault();
-    navigateCorpus(currentNav.gen, targetId);
+    navigateCorpus(target.gen, target.id);
   });
 
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
