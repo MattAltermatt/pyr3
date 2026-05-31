@@ -156,19 +156,26 @@ tightened through Phase 3 cycles. Live thresholds in each
 `fixtures/flam3-goldens/<id>/meta.json`. R-metric implementation at
 `src/compare.ts`.
 
-**Tier contract (v0.19):** Per-fixture `meta.json` carries `expectedR`
-(measured R vs flam3-C, replacing the prior `baselineR` label),
-`thresholdR = expectedR + 1.0`, and `tier: 1 | 2`. **Tier-1** fixtures
-have `expectedR < 5.0` and represent the healthy parity band where pyr3
-matches flam3-C within visual tolerance. **Tier-2** fixtures have
-`expectedR ≥ 5.0` and carry a `notes` field naming the band as
-`engine-precision-drift, not regression — GPU f32 vs CPU f64 in
-variation kernels`. Both gates are equally load-bearing for the v1.0
-ship contract: a tier-2 regression that exceeds `thresholdR` means the
-f32 floor moved (real ship-blocker); tier-1 regressions read as engine
-bugs. The tier contract is the deliberate v0.19 closure of `[PYR3-029]`
-— see `HISTORY.md` v0.19 for the f32-floor rationale. (Note: PYR3-056 in
-v0.36 retired most of that f32-floor narrative; re-tiering is issue #10.)
+**Tier contract (v0.19, re-baselined 2026-05-31 — issue #10):** Per-fixture
+`meta.json` carries `expectedR` (3-run mean R vs flam3-C on the current
+engine, replacing the prior `baselineR` label), `thresholdR = expectedR + 1.0`,
+and `tier: 1 | 2`. **Tier-1** fixtures have `expectedR < 5.0` — the healthy
+parity band where pyr3 matches flam3-C within visual tolerance (21 of 25
+fixtures). **Tier-2** fixtures have `expectedR ≥ 5.0` (4 fixtures) and carry a
+`notes` field describing the residual. Both gates are equally load-bearing for
+the v1.0 ship contract: a tier-2 regression past `thresholdR` means the residual
+moved (real ship-blocker); tier-1 regressions read as engine bugs.
+
+The tier-2 band is **NOT** the "GPU f32 vs CPU f64 in variation kernels"
+precision floor the original v0.19 framing claimed. That narrative was mostly
+wrong: **PYR3-056** (the DE kernel-normalization fix, v0.36) collapsed the bulk
+of the old outliers into tier-1 — `coverage.248.02226` 29.92→5.73,
+`coverage.245.06687` 14.59→1.52, `coverage.243.04616` 11.56→3.50 — so it was a
+DE bug, not a precision floor. The 4 residual tier-2 fixtures are **GPU-f32
+chaos-game spatial diffuseness** (the walker measure spreads slightly more than
+flam3-C), minimized via the walker jitter (`1e-10`, issue #6); the principled
+re-fuse fix is tracked in issue #43. (`HISTORY.md` v0.19 records the original
+f32-floor rationale as a frozen historical entry — superseded by this section.)
 
 ## Useful pointers
 
