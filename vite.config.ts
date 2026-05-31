@@ -17,4 +17,15 @@ export default defineConfig({
   server: {
     open: false,
   },
+  // #33: brotli-dec-wasm loads its `.wasm` via `new URL("...wasm", import.meta.url)`
+  // (the standard wasm-bindgen web-target pattern). Vite's dev-server pre-bundles
+  // node_modules via esbuild, which breaks that import.meta.url resolution and the
+  // wasm fetch falls through to the SPA index.html — `WebAssembly.instantiate`
+  // then chokes on HTML magic bytes. Excluding the package from dep-optimization
+  // keeps its source unbundled in dev so Vite's native wasm asset handling kicks
+  // in. Production build (`vite build`) emits + serves the wasm correctly and is
+  // unaffected by this option.
+  optimizeDeps: {
+    exclude: ['brotli-dec-wasm'],
+  },
 });
