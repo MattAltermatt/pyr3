@@ -65,7 +65,7 @@ jobs:
       # verified before `tar -xf` (covers the cached path too). Tag-pinning fixes
       # WHICH tag, not WHICH bytes — a same-tag asset can be deleted + re-uploaded,
       # and actions/cache would amplify a poisoned tar. Bump this WITH the tag above.
-      CHUNK_TAR_SHA256: 'dbc4719d0b42b6082a90d1ff091dd3de33be1586fa934262a8d86e1eadf43a62'
+      CHUNK_TAR_SHA256: 'ab27687aab069b381f81c1fce76f7c7bed91c8942bf95269b45b19e967698865'
       # Pinned pyr3 Release tag carrying showcase-*.tar (the 4K /showcase
       # gallery: 54 4k.jpg + 54 thumb.jpg + index.html). Bump this ONE line
       # to ship a regenerated gallery. The bundle is gitignored
