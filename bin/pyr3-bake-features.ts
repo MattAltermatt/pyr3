@@ -170,6 +170,17 @@ function partFilePath(outPath: string): string {
   return `${outPath}.part`;
 }
 
+/** Format a seconds count as "Xs" / "X.Xmin" / "Xh Ym" depending on
+ *  magnitude — so a 4h ETA reads cleanly as "3h 47m" instead of "227.3min". */
+function formatDuration(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return '?';
+  if (sec < 60) return `${sec.toFixed(0)}s`;
+  if (sec < 3600) return `${(sec / 60).toFixed(1)}min`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec - h * 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
 /** Returns the last (gen, id) successfully written to the `.part` file, or
  *  null when the file is missing / empty / corrupt. Truncated trailing
  *  bytes (count not a multiple of 30) are silently discarded — the caller
@@ -314,6 +325,11 @@ async function main(): Promise<void> {
   const t0 = Date.now();
   let processed = 0;
   let failed = 0;
+  // Aim for ~100 progress lines across the whole run regardless of size — so
+  // a smoke of 100 sheep gets a line per sheep, the full 52k corpus gets a
+  // line every ~500 sheep (~one line per couple of GPU-minutes).
+  const logEvery = Math.max(1, Math.floor(toProcess.length / 100));
+  console.log(`  starting render loop — logging every ${logEvery} sheep`);
 
   for (const entry of toProcess) {
     try {
@@ -363,13 +379,14 @@ async function main(): Promise<void> {
       appendFileSync(partPath, encodeRecord(rec));
 
       processed++;
-      if (processed % 100 === 0) {
+      if (processed % logEvery === 0 || processed === toProcess.length) {
         const elapsed = (Date.now() - t0) / 1000;
         const rate = processed / elapsed;
         const remaining = toProcess.length - processed;
         const eta = remaining / rate;
+        const pct = (processed / toProcess.length * 100).toFixed(1);
         console.log(
-          `  ${processed}/${toProcess.length} (${(processed / toProcess.length * 100).toFixed(1)}%) — ${rate.toFixed(1)} sheep/s, ETA ${(eta / 60).toFixed(1)}min`,
+          `  ${processed}/${toProcess.length} (${pct}%) — ${rate.toFixed(2)} sheep/s, ETA ${formatDuration(eta)}`,
         );
       }
     } catch (err) {
@@ -381,7 +398,7 @@ async function main(): Promise<void> {
 
   const elapsed = (Date.now() - t0) / 1000;
   console.log(
-    `  walk complete: ${processed} ok, ${failed} failed in ${(elapsed / 60).toFixed(1)}min`,
+    `  walk complete: ${processed} ok, ${failed} failed in ${formatDuration(elapsed)}`,
   );
 
   await finalize(args, partPath);
