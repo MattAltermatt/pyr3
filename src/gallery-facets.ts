@@ -28,17 +28,20 @@ function passesFilters(
   return true;
 }
 
-/** Collapse any xform_count ≥ 10 into bucket key 10 — the UI's "10+" cell.
- *  Buckets keep the per-value resolution for 1..9. */
+/** Collapse any xform_count ≥ 14 into bucket key 14 — the UI's "14+" cell.
+ *  Buckets keep the per-value resolution for 1..13. Threshold chosen to
+ *  match the measured corpus distribution (p95=14, p99=17); values ≥14 are
+ *  <3% combined, so collapsing them into a single tail bucket keeps the
+ *  count strip compact while preserving signal on the common cases. */
 function xformBucket(n: number): number {
-  return n >= 10 ? 10 : n;
+  return n >= 14 ? 14 : n;
 }
 
 export interface FacetCounts {
   /** variation index → count of flames having THIS variation among the
    *  set that passes ALL OTHER filters (variation axis excluded). */
   variations: Map<number, number>;
-  /** xform bucket (1..9, or 10 for 10+) → count of flames having THIS
+  /** xform bucket (1..13, or 14 for 14+) → count of flames having THIS
    *  xform count among the set that passes ALL OTHER filters (xform
    *  axis excluded). */
   xforms: Map<number, number>;

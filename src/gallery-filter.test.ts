@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  countActiveAxes,
   DEFAULT_FILTER_SPEC,
   encodeFilterSpec,
   filterSpecEquals,
@@ -13,6 +14,7 @@ describe('FilterSpec defaults', () => {
   it('default spec is the canonical no-filter state', () => {
     expect(DEFAULT_FILTER_SPEC).toEqual({
       sort: 'time',
+      sortDir: 'desc',
       vars: [],
       xformMin: 1,
       xformMax: null,
@@ -31,8 +33,8 @@ describe('FilterSpec defaults', () => {
   });
 
   it('filterSpecEquals compares structurally (vars kept sorted asc by class invariant)', () => {
-    const a: FilterSpec = { sort: 'interest', vars: [3, 14], xformMin: 2, xformMax: 8 };
-    const b: FilterSpec = { sort: 'interest', vars: [3, 14], xformMin: 2, xformMax: 8 };
+    const a: FilterSpec = { sort: 'interest', sortDir: 'desc', vars: [3, 14], xformMin: 2, xformMax: 8 };
+    const b: FilterSpec = { sort: 'interest', sortDir: 'desc', vars: [3, 14], xformMin: 2, xformMax: 8 };
     expect(filterSpecEquals(a, b)).toBe(true);
     expect(filterSpecEquals(a, { ...a, sort: 'time' })).toBe(false);
     expect(filterSpecEquals(a, { ...a, vars: [3] })).toBe(false);
@@ -53,8 +55,20 @@ describe('parseFilterSpec', () => {
     expect(parse('sort=interest').sort).toBe('interest');
   });
 
+  it('all 5 non-default sort names are recognized', () => {
+    expect(parse('sort=interest').sort).toBe('interest');
+    expect(parse('sort=coverage').sort).toBe('coverage');
+    expect(parse('sort=entropy').sort).toBe('entropy');
+    expect(parse('sort=colorVar').sort).toBe('colorVar');
+    expect(parse('sort=meanLum').sort).toBe('meanLum');
+  });
+
   it('unknown sort value silently falls back to default', () => {
     expect(parse('sort=garbage').sort).toBe('time');
+  });
+
+  it('custom is NOT yet recognized (deferred to Phase E) — falls back to time', () => {
+    expect(parse('sort=custom').sort).toBe('time');
   });
 
   it('vars=julia,linear → sorted variation indices', () => {
@@ -152,6 +166,19 @@ describe('parseFilterSpec', () => {
     expect(out.xformMin).toBe(1);
     expect(out.xformMax).toBe(null);
   });
+
+  it('order=asc → sortDir asc', () => {
+    expect(parse('order=asc').sortDir).toBe('asc');
+  });
+  it('order=desc → sortDir desc (default)', () => {
+    expect(parse('order=desc').sortDir).toBe('desc');
+  });
+  it('omitted order → sortDir desc (default)', () => {
+    expect(parse('').sortDir).toBe('desc');
+  });
+  it('unknown order value → sortDir desc (default)', () => {
+    expect(parse('order=sideways').sortDir).toBe('desc');
+  });
 });
 
 describe('encodeFilterSpec', () => {
@@ -162,6 +189,18 @@ describe('encodeFilterSpec', () => {
   it('non-default sort emitted', () => {
     const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sort: 'interest' });
     expect(p.get('sort')).toBe('interest');
+  });
+
+  it('each named sort preset emits its name', () => {
+    for (const s of ['interest', 'coverage', 'entropy', 'colorVar', 'meanLum'] as const) {
+      const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sort: s });
+      expect(p.get('sort')).toBe(s);
+    }
+  });
+
+  it('default sort=time is omitted', () => {
+    const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sort: 'time' });
+    expect(p.has('sort')).toBe(false);
   });
 
   it('vars emitted as comma-separated names, alphabetical', () => {
@@ -188,16 +227,58 @@ describe('encodeFilterSpec', () => {
     const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, xformMin: 6, xformMax: 6 });
     expect(p.get('xforms')).toBe('6-6');
   });
+
+  it('sortDir asc emits order=asc', () => {
+    const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sortDir: 'asc' });
+    expect(p.get('order')).toBe('asc');
+  });
+
+  it('sortDir desc (default) is omitted', () => {
+    const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sortDir: 'desc' });
+    expect(p.get('order')).toBe(null);
+  });
+});
+
+describe('countActiveAxes', () => {
+  it('default → 0', () => {
+    expect(countActiveAxes(DEFAULT_FILTER_SPEC)).toBe(0);
+  });
+  it('sort changed → 1', () => {
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest' })).toBe(1);
+  });
+  it('vars set → 1 regardless of count', () => {
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, vars: [13] })).toBe(1);
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, vars: [13, 0, 20] })).toBe(1);
+  });
+  it('xform min OR max changed → 1', () => {
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMin: 2 })).toBe(1);
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMax: 8 })).toBe(1);
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMin: 2, xformMax: 8 })).toBe(1);
+  });
+  it('all three axes → 3', () => {
+    expect(countActiveAxes({ sort: 'interest', sortDir: 'desc', vars: [13], xformMin: 2, xformMax: 8 })).toBe(3);
+  });
+  it('sortDir asc on default sort → 1 (still part of the sort axis)', () => {
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sortDir: 'asc' })).toBe(1);
+  });
+  it('sort and sortDir both non-default → still 1 axis (bundled)', () => {
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest', sortDir: 'asc' })).toBe(1);
+  });
 });
 
 describe('FilterSpec round-trip', () => {
   it('parse(encode(spec)) === spec for various specs', () => {
     const specs: FilterSpec[] = [
       DEFAULT_FILTER_SPEC,
-      { sort: 'interest', vars: [V.julia], xformMin: 1, xformMax: null },
-      { sort: 'time', vars: [V.linear, V.julia, V.spherical].sort((a, b) => a - b), xformMin: 3, xformMax: 7 },
-      { sort: 'interest', vars: [], xformMin: 2, xformMax: null },
-      { sort: 'interest', vars: [], xformMin: 1, xformMax: 8 },
+      { sort: 'interest', sortDir: 'desc', vars: [V.julia], xformMin: 1, xformMax: null },
+      { sort: 'time', sortDir: 'desc', vars: [V.linear, V.julia, V.spherical].sort((a, b) => a - b), xformMin: 3, xformMax: 7 },
+      { sort: 'time', sortDir: 'asc', vars: [], xformMin: 1, xformMax: null },
+      { sort: 'interest', sortDir: 'asc', vars: [], xformMin: 2, xformMax: null },
+      { sort: 'interest', sortDir: 'desc', vars: [], xformMin: 1, xformMax: 8 },
+      { sort: 'coverage', sortDir: 'desc', vars: [], xformMin: 1, xformMax: null },
+      { sort: 'entropy', sortDir: 'asc', vars: [], xformMin: 1, xformMax: null },
+      { sort: 'colorVar', sortDir: 'desc', vars: [], xformMin: 1, xformMax: null },
+      { sort: 'meanLum', sortDir: 'desc', vars: [], xformMin: 1, xformMax: null },
     ];
     for (const s of specs) {
       const round = parseFilterSpec(encodeFilterSpec(s));

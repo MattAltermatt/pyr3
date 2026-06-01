@@ -114,12 +114,20 @@ export interface GalleryBarOpts {
    *  symmetric viewer-side dice (#23) is a different surface that draws
    *  from the curated showcase. */
   onRandomPage(): void;
+  /** Initial active-axis count for the filter pill's badge (#49). Hidden
+   *  when 0. Update at runtime via setActiveAxes() on the handle. */
+  activeAxes: number;
+  /** Fired when the user clicks the [⚙ filters ▾] pill. main.ts forwards
+   *  to the drawer's toggleOpen(). */
+  onFilterToggle(): void;
 }
 
 export interface GalleryBarHandle {
   /** Update the visible page + bounds. totalPages omitted preserves the prior
    *  value (lets a late corpus-size resolve update only the count). */
   setPage(page: number, totalPages?: number): void;
+  /** Update the filter pill's badge count (hidden when 0). */
+  setActiveAxes(n: number): void;
   /** Remove every DOM node this bar mounted on `root`. main.ts calls this when
    *  swapping back to the viewer bar so the chrome doesn't double-mount. */
   destroy(): void;
@@ -577,7 +585,32 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   const dicePill = el('a', 'pyr3-nav-pill pyr3-bar-gallery-dice') as HTMLAnchorElement;
   dicePill.textContent = '🎲 random page';
   dicePill.title = 'jump to a random page in the gallery';
-  infoCenter.append(prevPill, pageLabel, nextPill, dicePill);
+  // [⚙ filters ▾ (N active)] pill — wired in #49 Phase B. Click toggles the
+  // filter drawer that mounts below this bar. Badge hidden when no axes
+  // active; setActiveAxes() updates it at runtime.
+  const filterPill = el('a', 'pyr3-nav-pill pyr3-bar-filter-pill') as HTMLAnchorElement;
+  filterPill.href = '#';
+  const filterPillLabel = document.createElement('span');
+  filterPillLabel.textContent = '⚙ filters ▾';
+  const filterPillBadge = document.createElement('span');
+  filterPillBadge.className = 'pyr3-bar-filter-badge';
+  filterPill.append(filterPillLabel, filterPillBadge);
+  filterPill.title = 'open the gallery filter drawer';
+  const renderFilterBadge = (n: number): void => {
+    if (n <= 0) {
+      filterPillBadge.textContent = '';
+      filterPillBadge.style.display = 'none';
+    } else {
+      filterPillBadge.textContent = `${n} active`;
+      filterPillBadge.style.display = '';
+    }
+  };
+  renderFilterBadge(opts.activeAxes);
+  filterPill.onclick = (e) => {
+    e.preventDefault();
+    opts.onFilterToggle();
+  };
+  infoCenter.append(prevPill, pageLabel, nextPill, dicePill, filterPill);
 
   // Right zone — WebGPU pill + the two octocat CTAs (reused unchanged from
   // the viewer bar's helpers).
@@ -630,6 +663,9 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
       if (totalPages !== undefined) currentTotal = totalPages;
       renderLabel();
       applyBounds();
+    },
+    setActiveAxes(n) {
+      renderFilterBadge(n);
     },
     destroy() {
       root.replaceChildren();
@@ -704,6 +740,25 @@ const BAR_CSS = `
      (the .pyr3-nav-pill default of 10ch would clip the label on
      narrow viewports otherwise). */
   min-width: 0;
+}
+.pyr3-bar-filter-pill {
+  /* Pill carries "⚙ filters ▾" + optional "N active" badge. Natural
+     width like the dice pill. */
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pyr3-bar-filter-badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  /* Hidden by inline style when activeAxes === 0; rules here apply only
+     when visible. */
 }
 .pyr3-bar-info-gallery .pyr3-zone-left,
 .pyr3-bar-info-gallery .pyr3-zone-right {

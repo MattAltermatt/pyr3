@@ -14,10 +14,24 @@ const NAME_TO_INDEX: Map<string, number> = new Map(
   Object.entries(V).map(([name, idx]) => [name, idx as number]),
 );
 
-export type SortMode = 'time' | 'interest';
+export type SortMode = 'time' | 'interest' | 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
+
+/** All sort presets that ship in Phase B. Ordered as they appear in the
+ *  drawer's segmented control (time first = default). Phase E will add
+ *  `'custom'` for the tunable interest-weights surface. */
+export const SORT_MODES: readonly SortMode[] = Object.freeze([
+  'time', 'interest', 'coverage', 'entropy', 'colorVar', 'meanLum',
+]) as readonly SortMode[];
+
+export type SortDir = 'asc' | 'desc';
 
 export interface FilterSpec {
   sort: SortMode;
+  /** Sort direction. For weighted-stat sorts (interest/coverage/entropy/
+   *  colorVar/meanLum), `desc` puts the highest-scoring flames first.
+   *  For `time`, `desc` is reverse-chronological (newest first) and
+   *  `asc` is canonical chronological (oldest first). Default `desc`. */
+  sortDir: SortDir;
   /** Variation indices, AND semantics across the set. Sorted ascending
    *  as a class invariant for canonical URL emission + structural equality. */
   vars: number[];
@@ -29,6 +43,7 @@ export interface FilterSpec {
 
 export const DEFAULT_FILTER_SPEC: FilterSpec = Object.freeze({
   sort: 'time' as SortMode,
+  sortDir: 'desc' as SortDir,
   vars: Object.freeze([]) as unknown as number[],
   xformMin: 1,
   xformMax: null,
@@ -38,6 +53,7 @@ export const DEFAULT_FILTER_SPEC: FilterSpec = Object.freeze({
  *  Vars are kept sorted asc as a class invariant — direct compare suffices. */
 export function filterSpecEquals(a: FilterSpec, b: FilterSpec): boolean {
   if (a.sort !== b.sort) return false;
+  if (a.sortDir !== b.sortDir) return false;
   if (a.xformMin !== b.xformMin) return false;
   if (a.xformMax !== b.xformMax) return false;
   if (a.vars.length !== b.vars.length) return false;
@@ -53,11 +69,36 @@ export function isDefaultFilterSpec(spec: FilterSpec): boolean {
   return filterSpecEquals(spec, DEFAULT_FILTER_SPEC);
 }
 
+/** Count of axes that differ from the default — drives the bar pill's
+ *  "N active" badge. Variations count as ONE axis regardless of how many
+ *  are selected; xform min/max collapse into one axis. */
+export function countActiveAxes(spec: FilterSpec): number {
+  let n = 0;
+  // Sort axis: mode OR direction differing from default = one axis active.
+  // (Direction asc on default `time` is still "non-default sort".)
+  if (
+    spec.sort !== DEFAULT_FILTER_SPEC.sort
+    || spec.sortDir !== DEFAULT_FILTER_SPEC.sortDir
+  ) n++;
+  if (spec.vars.length > 0) n++;
+  if (
+    spec.xformMin !== DEFAULT_FILTER_SPEC.xformMin
+    || spec.xformMax !== DEFAULT_FILTER_SPEC.xformMax
+  ) n++;
+  return n;
+}
+
 /** Parse a URLSearchParams into a FilterSpec. Forgiving: unknown values
  *  silently fall back to the default for that axis. Never throws. */
 export function parseFilterSpec(params: URLSearchParams): FilterSpec {
   let sort: SortMode = 'time';
-  if (params.get('sort') === 'interest') sort = 'interest';
+  const rawSort = params.get('sort');
+  if (rawSort !== null && (SORT_MODES as readonly string[]).includes(rawSort)) {
+    sort = rawSort as SortMode;
+  }
+
+  let sortDir: SortDir = 'desc';
+  if (params.get('order') === 'asc') sortDir = 'asc';
 
   const vars: number[] = [];
   const varsParam = params.get('vars');
@@ -111,7 +152,7 @@ export function parseFilterSpec(params: URLSearchParams): FilterSpec {
     }
   }
 
-  return { sort, vars, xformMin, xformMax };
+  return { sort, sortDir, vars, xformMin, xformMax };
 }
 
 /** Encode a FilterSpec into URLSearchParams. Default axes are OMITTED so
@@ -120,6 +161,7 @@ export function parseFilterSpec(params: URLSearchParams): FilterSpec {
 export function encodeFilterSpec(spec: FilterSpec): URLSearchParams {
   const p = new URLSearchParams();
   if (spec.sort !== 'time') p.set('sort', spec.sort);
+  if (spec.sortDir !== 'desc') p.set('order', spec.sortDir);
   if (spec.vars.length > 0) {
     const names = spec.vars
       .map((i) => VARIATION_NAMES[i])

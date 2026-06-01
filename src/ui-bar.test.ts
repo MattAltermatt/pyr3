@@ -49,6 +49,8 @@ function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
     onPrevPage: vi.fn(),
     onNextPage: vi.fn(),
     onRandomPage: vi.fn(),
+    activeAxes: 0,
+    onFilterToggle: vi.fn(),
     ...over,
   };
 }
@@ -158,5 +160,53 @@ describe('mountGalleryBar', () => {
     expect(root.children.length).toBeGreaterThan(0);
     handle.destroy();
     expect(root.children.length).toBe(0);
+  });
+});
+
+describe('mountGalleryBar — [⚙ filters ▾] pill (#49)', () => {
+  it('renders the pill with the wrench-and-caret label', () => {
+    const root = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 100 }));
+    const pill = root.querySelector('.pyr3-bar-filter-pill');
+    expect(pill).not.toBeNull();
+    expect(pill!.textContent).toContain('⚙ filters ▾');
+  });
+
+  it('badge is hidden when activeAxes is 0', () => {
+    const root = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts({ activeAxes: 0 }));
+    const badge = root.querySelector('.pyr3-bar-filter-badge') as HTMLSpanElement;
+    expect(badge).not.toBeNull();
+    expect(badge.style.display).toBe('none');
+    expect(badge.textContent).toBe('');
+  });
+
+  it('badge shows "N active" when activeAxes ≥ 1', () => {
+    const root = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts({ activeAxes: 2 }));
+    const badge = root.querySelector('.pyr3-bar-filter-badge') as HTMLSpanElement;
+    expect(badge.textContent).toBe('2 active');
+    expect(badge.style.display).not.toBe('none');
+  });
+
+  it('setActiveAxes updates the badge at runtime', () => {
+    const root = document.createElement('div');
+    const handle = mountGalleryBar(root, makeGalleryOpts({ activeAxes: 0 }));
+    const badge = root.querySelector('.pyr3-bar-filter-badge') as HTMLSpanElement;
+    expect(badge.style.display).toBe('none');
+    handle.setActiveAxes(3);
+    expect(badge.textContent).toBe('3 active');
+    expect(badge.style.display).not.toBe('none');
+    handle.setActiveAxes(0);
+    expect(badge.style.display).toBe('none');
+  });
+
+  it('clicking the pill fires onFilterToggle', () => {
+    const root = document.createElement('div');
+    const onFilterToggle = vi.fn();
+    mountGalleryBar(root, makeGalleryOpts({ onFilterToggle }));
+    const pill = root.querySelector('.pyr3-bar-filter-pill') as HTMLAnchorElement;
+    pill.click();
+    expect(onFilterToggle).toHaveBeenCalledTimes(1);
   });
 });

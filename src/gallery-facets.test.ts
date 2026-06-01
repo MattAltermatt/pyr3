@@ -92,16 +92,16 @@ describe('computeFacetCounts', () => {
     expect(c.total).toBe(2);
   });
 
-  it('xform counts collapse 10+ into bucket key 10', () => {
+  it('xform counts collapse 14+ into bucket key 14', () => {
     const idx = makeIndex([
-      rec(165, 0, [0], 9),
-      rec(165, 1, [0], 10),
+      rec(165, 0, [0], 13),
+      rec(165, 1, [0], 14),
       rec(165, 2, [0], 15),
       rec(165, 3, [0], 30),
     ]);
     const c = computeFacetCounts(idx, DEFAULT_FILTER_SPEC);
-    expect(c.xforms.get(9)).toBe(1);
-    expect(c.xforms.get(10)).toBe(3);  // 10, 15, 30 all collapse here
+    expect(c.xforms.get(13)).toBe(1);
+    expect(c.xforms.get(14)).toBe(3);  // 14, 15, 30 all collapse here
   });
 
   it('variation AND semantic — total respects intersection', () => {

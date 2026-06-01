@@ -243,14 +243,34 @@ function buildMasterList(index: FeatureIndex, spec: FilterSpec): SheepRef[] {
     }
     passing.push(rec);
   });
-  // Second pass: sort. `time` is identity — the index walks records in
-  // (gen↑, id↑) order already. `interest` sorts by interestScore descending,
-  // tie-break ascending by (gen, id) for stable canonical ordering.
-  if (spec.sort === 'interest') {
+  // Second pass: sort. `time` lives on the index's natural (gen↑, id↑)
+  // order — desc reverses to (gen↓, id↓). The named-stat presets sort by
+  // their respective FeatureRecord field; `interest` by interestScore.
+  // Direction `desc` = highest-score first; `asc` = lowest-score first.
+  // Ties break ascending by (gen, id) regardless of direction for a
+  // stable, predictable secondary order.
+  const dirSign = spec.sortDir === 'asc' ? -1 : 1;
+  if (spec.sort === 'time') {
+    if (spec.sortDir === 'desc') {
+      // desc-time = reverse-chronological (newest first); the natural index
+      // walk yielded asc-time, so reverse in place.
+      passing.reverse();
+    }
+  } else {
+    const scoreOf = (r: FeatureRecord): number => {
+      switch (spec.sort) {
+        case 'interest': return interestScore(r);
+        case 'coverage': return r.coverage;
+        case 'entropy': return r.entropy;
+        case 'colorVar': return r.colorVar;
+        case 'meanLum': return r.meanLum;
+        default: return 0;
+      }
+    };
     passing.sort((a, b) => {
-      const dA = interestScore(a);
-      const dB = interestScore(b);
-      if (dB !== dA) return dB - dA;
+      const dA = scoreOf(a);
+      const dB = scoreOf(b);
+      if (dB !== dA) return (dB - dA) * dirSign;
       if (a.gen !== b.gen) return a.gen - b.gen;
       return a.id - b.id;
     });

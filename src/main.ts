@@ -20,10 +20,13 @@ import {
   type GalleryMountHandle,
 } from './gallery-mount';
 import {
+  countActiveAxes,
   DEFAULT_FILTER_SPEC,
   filterSpecEquals,
   type FilterSpec,
 } from './gallery-filter';
+import { computeFacetCounts } from './gallery-facets';
+import { mountFilterDrawer, type FilterDrawerHandle } from './gallery-filter-ui';
 import { loadFeatureIndex } from './feature-index-client';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
 import {
@@ -857,6 +860,16 @@ async function main(): Promise<void> {
   let galleryTotalPages = 0;
   let currentGalleryPage = 1;
   let currentSurface: 'viewer' | 'gallery' = 'viewer';
+  // #49 Phase B: drawer beneath the gallery bar. Mounted in the gallery
+  // surface, destroyed on cross-surface nav. Its DOM root is a sibling of
+  // the bar root, inserted dynamically so index.html stays viewer-shaped.
+  let drawerHandle: FilterDrawerHandle | null = null;
+  let drawerRoot: HTMLElement | null = null;
+  // #49 Phase B6: banner above the gallery grid, shown only when the current
+  // filter narrows the corpus to 0 matches. Inserted as a sibling above
+  // galleryDiv (mountGallery would wipe a child of galleryDiv on each
+  // wave). main.ts shows/hides it from inside applyFilter.
+  let emptyBanner: HTMLElement | null = null;
   // #49 Phase A: live FilterSpec the gallery surface is paging through. Set
   // from the initial URL via parseLoadIntent, mutated by popstate cross-spec
   // navigation, and by applyFilter (the seam Phase B's drawer will call).
@@ -927,17 +940,20 @@ async function main(): Promise<void> {
     currentFilter = nextFilter;
     history.pushState({}, '', galleryUrl(1, nextFilter));
     setDocTitle('gallery · p1');
+    galleryBar?.setActiveAxes(countActiveAxes(nextFilter));
+    drawerHandle?.setFilter(nextFilter);
     void ensureFeatureIndex().then((index) => {
+      const counts = computeFacetCounts(index, nextFilter);
       galleryTotalPages = totalPagesFiltered(currentFilter, GALLERY_PAGE_SIZE, { index });
       galleryBar?.setPage(1, galleryTotalPages);
       currentGalleryPage = 1;
+      drawerHandle?.setFacetCounts(counts);
+      if (emptyBanner !== null) {
+        emptyBanner.style.display = counts.total === 0 ? 'flex' : 'none';
+      }
       void galleryHandle?.setPage(1, nextFilter);
     });
   };
-  // Silence the `applyFilter is unused` lint until Phase B wires the drawer.
-  // The export-internal reference is retained — Phase B imports applyFilter
-  // through a module-local handoff rather than reaching across files.
-  void applyFilter;
 
   const mountGallerySurface = async (initialPage: number): Promise<void> => {
     // Parse the URL once more here so the FilterSpec the gallery actually
@@ -949,26 +965,6 @@ async function main(): Promise<void> {
     currentFilter = intent !== null && intent.kind === 'gallery'
       ? intent.filter
       : DEFAULT_FILTER_SPEC;
-
-    // Load the feature index up-front so totalPagesFiltered and the mount's
-    // runWave share the same index reference. ensureFeatureIndex memoizes,
-    // so subsequent applyFilter calls reuse this promise.
-    const index = await ensureFeatureIndex();
-    galleryTotalPages = totalPagesFiltered(currentFilter, GALLERY_PAGE_SIZE, { index });
-
-    const page = clampGalleryPage(initialPage, galleryTotalPages);
-    // Self-consistency: if the URL contains unrecognized filter tokens
-    // (typo'd variation name, malformed xforms, etc.), the parser drops
-    // them silently — but the address bar would lie about what's applied.
-    // Rewrite to the canonical form so what the visitor sees IS what's
-    // actually filtering. Also covers the URL-out-of-range page clamp.
-    const canonical = galleryUrl(page, currentFilter);
-    if (canonical !== location.pathname + location.search) {
-      history.replaceState({}, '', canonical);
-    }
-    currentGalleryPage = page;
-    currentSurface = 'gallery';
-    setDocTitle(`gallery · p${page}`);
 
     canvas.hidden = true;
     const galleryDiv = document.getElementById('pyr3-gallery');
@@ -985,10 +981,17 @@ async function main(): Promise<void> {
     if (barRoot === null) return;
     barRoot.replaceChildren();
 
+    // Initial page clamped to a floor of 1; the real upper-bound clamp
+    // happens after the index resolves below (totalPagesFiltered isn't
+    // known yet). totalPages=0 displays "page N" (no "of M") until then.
+    currentGalleryPage = Math.max(1, Math.floor(initialPage));
+    currentSurface = 'gallery';
+    setDocTitle(`gallery · p${currentGalleryPage}`);
+
     galleryBar = mountGalleryBar(barRoot, {
       webgpu,
-      page,
-      totalPages: galleryTotalPages,
+      page: currentGalleryPage,
+      totalPages: 0,
       onPrevPage: () => navGallery(currentGalleryPage - 1),
       onNextPage: () => navGallery(currentGalleryPage + 1),
       onRandomPage: () => {
@@ -1000,7 +1003,106 @@ async function main(): Promise<void> {
         const next = Math.floor(Math.random() * galleryTotalPages) + 1;
         navGallery(next);
       },
+      activeAxes: countActiveAxes(currentFilter),
+      onFilterToggle: () => drawerHandle?.toggleOpen(),
     });
+
+    // #49 Phase B6 — mount drawer EAGERLY with loading=true, before
+    // awaiting the index. On slow networks the visitor sees the drawer
+    // outline + a "loading feature index…" banner instead of an empty bar.
+    drawerRoot = document.createElement('div');
+    drawerRoot.id = 'pyr3-gallery-filter-drawer-root';
+    barRoot.insertAdjacentElement('afterend', drawerRoot);
+    drawerHandle = mountFilterDrawer(drawerRoot, {
+      initialFilter: currentFilter,
+      facetCounts: { variations: new Map(), xforms: new Map(), total: 0 },
+      onChange: (next) => applyFilter(next),
+      loading: true,
+    });
+
+    // #49 Phase B6 — empty-state banner. Inserted as a sibling of
+    // galleryDiv inside the canvas-zone (galleryDiv is position:absolute
+    // overlaying the zone; the banner needs to overlay TOO so it's not
+    // hidden behind the 3×3 empty cells). z-index above the grid so it
+    // visually reads as the primary message. galleryDiv is wiped on every
+    // mountGallery wave, but the banner — its sibling — survives.
+    const canvasZone = galleryDiv.parentElement;
+    if (emptyBanner === null && canvasZone !== null) {
+      emptyBanner = document.createElement('div');
+      emptyBanner.id = 'pyr3-gallery-empty-banner';
+      const icon = document.createElement('div');
+      icon.className = 'pyr3-empty-icon';
+      icon.textContent = '∅';
+      const headline = document.createElement('div');
+      headline.className = 'pyr3-empty-headline';
+      headline.textContent = 'no flames match the current filter';
+      const hint = document.createElement('div');
+      hint.className = 'pyr3-empty-hint';
+      hint.append(
+        document.createTextNode('try clearing variations or widening the xform range — or hit '),
+        Object.assign(document.createElement('kbd'), { textContent: '✕ reset' }),
+        document.createTextNode(' above.'),
+      );
+      emptyBanner.append(icon, headline, hint);
+      Object.assign(emptyBanner.style, {
+        display: 'none',
+        position: 'absolute',
+        inset: '0',
+        zIndex: '5',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        padding: '24px',
+        textAlign: 'center',
+        fontFamily: 'ui-monospace, monospace',
+        color: 'var(--accent, #ff8c1a)',
+        background: 'rgba(10, 10, 12, 0.85)',
+        pointerEvents: 'none',
+      });
+      // Inject one-shot styles for the inner pieces so we get bigger
+      // typography on the headline + dimmer hint + a glyph block.
+      if (document.getElementById('pyr3-empty-banner-styles') === null) {
+        const style = document.createElement('style');
+        style.id = 'pyr3-empty-banner-styles';
+        style.textContent = `
+#pyr3-gallery-empty-banner .pyr3-empty-icon { font-size: 48px; line-height: 1; opacity: 0.6; }
+#pyr3-gallery-empty-banner .pyr3-empty-headline { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+#pyr3-gallery-empty-banner .pyr3-empty-hint { font-size: 12px; color: var(--text-dim, #888); max-width: 36em; }
+#pyr3-gallery-empty-banner kbd { background: var(--bar-bg-1, #15151a); border: 1px solid var(--bar-border, #2a2a30); padding: 1px 6px; border-radius: 3px; font-family: inherit; }
+`;
+        document.head.appendChild(style);
+      }
+      canvasZone.appendChild(emptyBanner);
+    } else if (emptyBanner !== null) {
+      emptyBanner.style.display = 'none';
+    }
+
+    // Now load the index + compute totals + counts. ensureFeatureIndex
+    // memoizes, so subsequent applyFilter calls reuse this promise.
+    const index = await ensureFeatureIndex();
+    const counts = computeFacetCounts(index, currentFilter);
+    galleryTotalPages = totalPagesFiltered(currentFilter, GALLERY_PAGE_SIZE, { index });
+
+    const page = clampGalleryPage(currentGalleryPage, galleryTotalPages);
+    // Self-consistency: if the URL contains unrecognized filter tokens
+    // (typo'd variation name, malformed xforms, etc.), the parser drops
+    // them silently — but the address bar would lie about what's applied.
+    // Rewrite to the canonical form so what the visitor sees IS what's
+    // actually filtering. Also covers the URL-out-of-range page clamp.
+    const canonical = galleryUrl(page, currentFilter);
+    if (canonical !== location.pathname + location.search) {
+      history.replaceState({}, '', canonical);
+    }
+    currentGalleryPage = page;
+    setDocTitle(`gallery · p${page}`);
+
+    galleryBar.setPage(page, galleryTotalPages);
+    drawerHandle.setFacetCounts(counts);
+    drawerHandle.setLoading(false);
+    if (emptyBanner !== null) {
+      emptyBanner.style.display = counts.total === 0 ? 'flex' : 'none';
+    }
 
     // QUALITY_TIERS[0] is the Draft tier (longEdge 512, spp 8) — the
     // intentional gallery cell quality per the spec.

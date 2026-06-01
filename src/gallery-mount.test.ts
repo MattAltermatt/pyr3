@@ -747,9 +747,22 @@ describe('pageOfSheepFiltered', () => {
     Array.from({ length: 25 }, (_, i) => recF(165, i, 3, (25 - i) / 25)),
   );
 
-  it('default filter, page 1, perPage 9 returns 9 refs in (gen,id) order', async () => {
+  it('default filter (time/desc) returns 9 refs in REVERSE (gen,id) order', async () => {
+    // Default sortDir is 'desc' — time-desc reverses the index's natural
+    // (gen↑, id↑) walk so the discovery surface lands newest-first by
+    // default (Twitter/Instagram-style "what's new in the corpus").
     const out = await pageOfSheepFiltered(1, 9, DEFAULT_FILTER_SPEC, { index: idx });
     expect(out.length).toBe(9);
+    expect(out[0]).toEqual({ gen: 165, id: 24 });  // last index, first in desc walk
+    expect(out[8]).toEqual({ gen: 165, id: 16 });
+  });
+
+  it('time/asc returns refs in canonical (gen↑, id↑) order', async () => {
+    const out = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sortDir: 'asc' },
+      { index: idx },
+    );
     expect(out[0]).toEqual({ gen: 165, id: 0 });
     expect(out[8]).toEqual({ gen: 165, id: 8 });
   });
@@ -767,6 +780,68 @@ describe('pageOfSheepFiltered', () => {
     expect(out[0]).toEqual({ gen: 165, id: 0 });
   });
 
+  it('sort=coverage orders descending by coverage, tie-break (gen,id) asc', async () => {
+    const stub = makeStubIndex([
+      recF(165, 0, 3, 0.2, 0.5, 0.5, 0.5),
+      recF(165, 1, 3, 0.9, 0.5, 0.5, 0.5),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5),
+      recF(166, 0, 3, 0.9, 0.5, 0.5, 0.5), // tied with 165/1
+    ]);
+    const out = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sort: 'coverage' },
+      { index: stub },
+    );
+    expect(out).toEqual([
+      { gen: 165, id: 1 }, // cov 0.9, lower gen wins tie
+      { gen: 166, id: 0 }, // cov 0.9
+      { gen: 165, id: 2 }, // cov 0.5
+      { gen: 165, id: 0 }, // cov 0.2
+    ]);
+  });
+
+  it('sort=entropy orders descending by entropy', async () => {
+    const stub = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.2, 0.5, 0.5),
+      recF(165, 1, 3, 0.5, 0.9, 0.5, 0.5),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5),
+    ]);
+    const out = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sort: 'entropy' },
+      { index: stub },
+    );
+    expect(out.map((r) => r.id)).toEqual([1, 2, 0]);
+  });
+
+  it('sort=colorVar orders descending by colorVar', async () => {
+    const stub = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.5, 0.2, 0.5),
+      recF(165, 1, 3, 0.5, 0.5, 0.9, 0.5),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5),
+    ]);
+    const out = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sort: 'colorVar' },
+      { index: stub },
+    );
+    expect(out.map((r) => r.id)).toEqual([1, 2, 0]);
+  });
+
+  it('sort=meanLum orders descending by meanLum', async () => {
+    const stub = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.5, 0.5, 0.2),
+      recF(165, 1, 3, 0.5, 0.5, 0.5, 0.9),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5),
+    ]);
+    const out = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sort: 'meanLum' },
+      { index: stub },
+    );
+    expect(out.map((r) => r.id)).toEqual([1, 2, 0]);
+  });
+
   it('vars filter narrows the result set', async () => {
     const mixed = makeStubIndex([
       recF(165, 0, 3, 0.5, 0.5, 0.5, 0.5, [14]),    // julia
@@ -775,7 +850,9 @@ describe('pageOfSheepFiltered', () => {
     ]);
     const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, vars: [14] };
     const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
-    expect(out).toEqual([{ gen: 165, id: 0 }, { gen: 165, id: 2 }]);
+    // Default sortDir='desc' → reverse natural order. Two passing records
+    // (165/0 + 165/2) walked in reverse = 165/2 first.
+    expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 0 }]);
   });
 
   it('xform range narrows the result set', async () => {
@@ -787,7 +864,9 @@ describe('pageOfSheepFiltered', () => {
     ]);
     const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, xformMin: 3, xformMax: 4 };
     const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
-    expect(out).toEqual([{ gen: 165, id: 1 }, { gen: 165, id: 2 }]);
+    // Default sortDir='desc' → reverse-walk; passing records 165/1 + 165/2
+    // → 165/2 first.
+    expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 1 }]);
   });
 });
 
@@ -862,9 +941,10 @@ describe('mountGallery — filtered path', () => {
 
     await flushMicrotasks();
 
-    // Refs come from the index walk — gen 165 ids 0..8 in (gen, id) order.
+    // Default sortDir='desc' on time = reverse-chronological walk: ids
+    // appear 8 → 0 instead of 0 → 8.
     expect(fetchCalls).toEqual(
-      Array.from({ length: 9 }, (_, i) => ({ gen: 165, id: i })),
+      Array.from({ length: 9 }, (_, i) => ({ gen: 165, id: 8 - i })),
     );
 
     handle.destroy();
@@ -909,9 +989,11 @@ describe('mountGallery — filtered path', () => {
     await handle.setPage(1, { ...DEFAULT_FILTER_SPEC, vars: [14] });
     await flushMicrotasks();
 
+    // Default sortDir='desc' on time → reverse walk; vars=[14] passes
+    // records 165/0 + 165/1 → fetched 165/1 first.
     expect(fetchCalls).toEqual([
-      { gen: 165, id: 0 },
       { gen: 165, id: 1 },
+      { gen: 165, id: 0 },
     ]);
 
     handle.destroy();
