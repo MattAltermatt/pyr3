@@ -17,12 +17,25 @@
 # full 166614-sheep ESF corpus → 5554 batches × 3.4s ≈ 5.2 hours wall.
 # Acceptable for a once-per-corpus-release bake.
 #
-# USAGE: bake-features-batched.sh <esf-root> <corpus-tag> <out-path> [batch-size]
+# USAGE: bake-features-batched.sh <esf-root> <corpus-tag> <out-path> [batch-size] [--force]
+#
+# By default the script ALWAYS resumes from `<out-path>.part` if it exists,
+# so a re-run after a crash picks up where it left off — and a re-run after
+# a parser fix retries the previously-failed sheep (failures aren't written
+# to .part, so they're naturally re-attempted on the next pass).
+#
+# --force: wipe `.part` + `.errors.log` first, then bake fresh from sheep 0.
+# Use when the binary format changed, the corpus tag changed, or you want a
+# guaranteed clean output regardless of prior state.
+#
+# Subprocess stderr is captured to `<out-path>.errors.log` (append-only across
+# runs, so morning-after you can grep the prior night's failures). Stdout is
+# the per-batch [batched-bake] progress lines that print to your terminal.
 #
 # Example:
 #   ./scripts/bake-features-batched.sh \
 #     /Users/matt/dev/MattAltermatt/electric-sheep-fold \
-#     corpus-chunks-genome-2026-05-29 \
+#     corpus-chunks-genome-2026-06-01 \
 #     /tmp/features.flam3idx
 
 # `set -u` (undefined vars) + pipefail are safety nets we keep; we
@@ -32,21 +45,47 @@
 # and bails after MAX_NOPROGRESS in a row instead.
 set -uo pipefail
 
-if [[ $# -lt 3 || $# -gt 4 ]]; then
-  echo "usage: $0 <esf-root> <corpus-tag> <out-path> [batch-size]" >&2
+FORCE=0
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    *)       POSITIONAL+=("$arg") ;;
+  esac
+done
+
+if [[ ${#POSITIONAL[@]} -lt 3 || ${#POSITIONAL[@]} -gt 4 ]]; then
+  echo "usage: $0 <esf-root> <corpus-tag> <out-path> [batch-size] [--force]" >&2
   exit 1
 fi
 
-ESF_ROOT="$1"
-TAG="$2"
-OUT="$3"
-BATCH="${4:-30}"
+ESF_ROOT="${POSITIONAL[0]}"
+TAG="${POSITIONAL[1]}"
+OUT="${POSITIONAL[2]}"
+BATCH="${POSITIONAL[3]:-30}"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
 PART="${OUT}.part"
+ERR_LOG="${OUT}.errors.log"
+
+if [[ ${FORCE} -eq 1 ]]; then
+  echo "[batched-bake] --force: wiping ${PART} + ${ERR_LOG}"
+  rm -f "${PART}" "${ERR_LOG}"
+fi
+
+# Stamp a session header into the error log so post-run greps can tell
+# which run a given failure belongs to.
+mkdir -p "$(dirname "${ERR_LOG}")"
+{
+  echo "════════════════════════════════════════════════════════════════════════════"
+  echo "[batched-bake] session $(date '+%Y-%m-%d %H:%M:%S') · tag=${TAG}"
+  echo "════════════════════════════════════════════════════════════════════════════"
+} >> "${ERR_LOG}"
+
 echo "[batched-bake] esf=${ESF_ROOT} tag=${TAG} out=${OUT} batch=${BATCH}"
+echo "[batched-bake] error log: ${ERR_LOG}"
 
 # Discover total genome-only corpus size — what the bake CLI's allowlist
 # filter will actually process (kind=="genome" in ESF's index.json). The
@@ -91,9 +130,13 @@ while :; do
   fi
   # `|| true` keeps the loop alive past a SIGSEGV in the bake CLI; the
   # no-progress counter below catches a genuinely stuck pipeline.
+  # stderr → ERR_LOG so per-sheep parse warnings + the rare subprocess
+  # crash signature are inspectable after the run. stdout (per-batch
+  # progress lines) is suppressed since the parent loop's printf does
+  # its own progress reporting.
   npm run bake-features -- \
     --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" \
-    ${RESUME_FLAG} --limit "${BATCH}" >/dev/null 2>&1 || true
+    ${RESUME_FLAG} --limit "${BATCH}" >/dev/null 2>>"${ERR_LOG}" || true
   # Detect no-progress (subprocess crashed before writing anything new).
   if [[ ${DONE} -le ${PREV_DONE} ]]; then
     NOPROGRESS=$(( NOPROGRESS + 1 ))
