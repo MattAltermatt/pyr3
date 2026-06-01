@@ -929,6 +929,15 @@ async function main(): Promise<void> {
       totalPages: galleryTotalPages,
       onPrevPage: () => navGallery(currentGalleryPage - 1),
       onNextPage: () => navGallery(currentGalleryPage + 1),
+      onRandomPage: () => {
+        // 🎲 — gallery-internal jump to a random page. Distinct from the
+        // viewer's dice (#23) which picks a random sheep + opens viewer.
+        // No-op when totalPages is unknown (manifest fetch failed) so a
+        // misclick doesn't navigate to a non-canonical URL.
+        if (galleryTotalPages <= 0) return;
+        const next = Math.floor(Math.random() * galleryTotalPages) + 1;
+        navGallery(next);
+      },
     });
 
     // QUALITY_TIERS[0] is the Draft tier (longEdge 512, spp 8) — the

@@ -48,9 +48,46 @@ function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
     totalPages: 0,
     onPrevPage: vi.fn(),
     onNextPage: vi.fn(),
+    onRandomPage: vi.fn(),
     ...over,
   };
 }
+
+describe('mountGalleryBar — 🎲 random-page pill (#50)', () => {
+  it('center cluster contains a labeled 🎲 pill', () => {
+    const root = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 100 }));
+    const dice = root.querySelector('.pyr3-bar-gallery-dice');
+    expect(dice).not.toBeNull();
+    expect(dice!.textContent).toBe('🎲 random page');
+  });
+
+  it('clicking the dice fires onRandomPage', () => {
+    const root = document.createElement('div');
+    const onRandom = vi.fn();
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 100, onRandomPage: onRandom }));
+    const dice = root.querySelector('.pyr3-bar-gallery-dice') as HTMLAnchorElement;
+    dice.click();
+    expect(onRandom).toHaveBeenCalledTimes(1);
+  });
+
+  it('dice remains active at page bounds (prev/next disable but dice does not)', () => {
+    const root = document.createElement('div');
+    const onRandom = vi.fn();
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 10, onRandomPage: onRandom }));
+    const dice = root.querySelector('.pyr3-bar-gallery-dice') as HTMLAnchorElement;
+    expect(dice.classList.contains('disabled')).toBe(false);
+    dice.click();
+    expect(onRandom).toHaveBeenCalledTimes(1);
+  });
+
+  it('row carries the pyr3-bar-info-gallery class so the center cluster centers via the balanced-zone CSS', () => {
+    const root = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 10 }));
+    const row = root.querySelector('.pyr3-bar-info-gallery');
+    expect(row).not.toBeNull();
+  });
+});
 
 describe('mountGalleryBar', () => {
   it('renders prev pill, page label, and next pill in the center cluster', () => {

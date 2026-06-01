@@ -7,6 +7,7 @@ import {
   mountGallery,
   pageOfSheep,
   pageForSheep,
+  randomSheep,
   type SheepRef,
 } from './gallery-mount';
 import type { GensManifest } from './corpus-bounds';
@@ -587,6 +588,47 @@ describe('mountGallery — wave-fill orchestration', () => {
     expect(harness.seeds).toContain(expectedSeed10);
 
     handle.destroy();
+  });
+});
+
+describe('randomSheep — uniform corpus picker', () => {
+  it('returns null when the manifest is unavailable', async () => {
+    expect(await randomSheep(Math.random, loadAvail, async () => null)).toBeNull();
+  });
+
+  it('returns a SheepRef from the 8-sheep synthetic corpus', async () => {
+    // randFn=0 → target index 0 → (100, 10)
+    expect(await randomSheep(() => 0, loadAvail, loadManifest))
+      .toEqual({ gen: 100, id: 10 });
+  });
+
+  it('locates the last sheep when randFn approaches 1 (target=total-1)', async () => {
+    // 8 total sheep; randFn just under 1 → target = floor(0.999*8) = 7 → (101, 33)
+    expect(await randomSheep(() => 0.999, loadAvail, loadManifest))
+      .toEqual({ gen: 101, id: 33 });
+  });
+
+  it('crosses gen boundaries — target index 5 → first sheep of gen 101', async () => {
+    // index 0-4 = gen 100 (5 sheep); index 5 = gen 101's first id (11)
+    // randFn = 5.5/8 = 0.6875 → floor(0.6875*8) = 5
+    expect(await randomSheep(() => 5.5 / 8, loadAvail, loadManifest))
+      .toEqual({ gen: 101, id: 11 });
+  });
+
+  it('returns null on empty manifest (sum of counts = 0)', async () => {
+    const emptyManifest = { ...MANIFEST, gens: [] };
+    expect(await randomSheep(Math.random, loadAvail, async () => emptyManifest))
+      .toBeNull();
+  });
+
+  it('every random draw lands on a (gen, id) that actually exists in avail', async () => {
+    // Sample many draws; each should resolve to a real sheep, never a phantom.
+    for (let i = 0; i < 50; i++) {
+      const ref = await randomSheep(Math.random, loadAvail, loadManifest);
+      expect(ref).not.toBeNull();
+      const ids = AVAIL[ref!.gen] ?? [];
+      expect(ids).toContain(ref!.id);
+    }
   });
 });
 

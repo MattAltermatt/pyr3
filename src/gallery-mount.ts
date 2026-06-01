@@ -126,6 +126,43 @@ export async function pageOfSheep(
 }
 
 /**
+ * Pick a uniformly-random sheep from the full corpus. Walks the manifest
+ * to compute totals + locates the chosen index. Returns null when the
+ * manifest is unavailable. Used by the gallery's 🎲 pill (#50).
+ *
+ * Probability is exactly uniform over all genome ids present in the
+ * manifest — equal weight to every sheep regardless of which gen holds it.
+ * `randFn` defaults to `Math.random` but is injectable for deterministic tests.
+ */
+export async function randomSheep(
+  randFn: () => number = Math.random,
+  loadAvail: LoadAvailFn = defaultLoadAvail,
+  loadManifest: LoadManifestFn = defaultLoadManifest,
+): Promise<SheepRef | null> {
+  const manifest = await loadManifest();
+  if (manifest === null) return null;
+  let total = 0;
+  for (const entry of manifest.gens) total += entry.count;
+  if (total === 0) return null;
+  const target = Math.floor(randFn() * total);
+  let seen = 0;
+  for (const entry of manifest.gens) {
+    if (target < seen + entry.count) {
+      // Target lives in this gen; resolve to the id by walking the gen's
+      // avail list (sorted ascending). loadAvail caches per-gen so a
+      // burst of dice rolls within a session reuses the same array.
+      const ids = await loadAvail(entry.gen);
+      if (ids.length === 0) return null;
+      const idx = target - seen;
+      if (idx < 0 || idx >= ids.length) return null;
+      return { gen: entry.gen, id: ids[idx] as number };
+    }
+    seen += entry.count;
+  }
+  return null;
+}
+
+/**
  * Which 1-indexed gallery page contains (gen, id) under canonical corpus
  * order. Powers the viewer's `gallery` link contextual entry. Returns 1 when
  * the sheep is not found in the corpus (degrades to page-1 rather than

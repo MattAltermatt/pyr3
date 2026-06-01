@@ -109,6 +109,11 @@ export interface GalleryBarOpts {
   totalPages: number;
   onPrevPage(): void;
   onNextPage(): void;
+  /** Fired when the user clicks the 🎲 pill — picks a random page within
+   *  the gallery and navigates to it (gallery-internal browse jump). The
+   *  symmetric viewer-side dice (#23) is a different surface that draws
+   *  from the curated showcase. */
+  onRandomPage(): void;
 }
 
 export interface GalleryBarHandle {
@@ -525,7 +530,11 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   root.classList.add('pyr3-bar-root');
 
   // ══ info row — left (wordmark + nav links) / center (page nav) / right ══
-  const infoRow = el('div', 'pyr3-bar-info');
+  // `pyr3-bar-info-gallery` modifier balances the left/right zones (both
+  // flex: 1 1 0) so the center page-nav cluster sits in the visual middle
+  // of the bar — the default viewer bar has the right zone content-width,
+  // which off-centered the gallery's nav (#50 feedback).
+  const infoRow = el('div', 'pyr3-bar-info pyr3-bar-info-gallery');
 
   // Left zone — wordmark, about, showcase, "← viewer". The `gallery` link is
   // omitted (we're already in the gallery); a `viewer` link points back at
@@ -554,7 +563,9 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
 
   // Center zone — page nav cluster. Pinned width on the page label so prev/
   // next don't shift under the cursor as N grows (matches the corpus-nav
-  // min-width discipline in the viewer bar).
+  // min-width discipline in the viewer bar). 🎲 dice pill rides at the
+  // right end of the cluster — picks a random sheep from the full corpus
+  // and opens it in a new tab (matches gallery cell-click behavior).
   const infoCenter = el('div', 'pyr3-bar-gallery-nav');
   const prevPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
   prevPill.textContent = '‹ prev';
@@ -563,7 +574,10 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   const nextPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
   nextPill.textContent = 'next ›';
   nextPill.title = 'next page';
-  infoCenter.append(prevPill, pageLabel, nextPill);
+  const dicePill = el('a', 'pyr3-nav-pill pyr3-bar-gallery-dice') as HTMLAnchorElement;
+  dicePill.textContent = '🎲 random page';
+  dicePill.title = 'jump to a random page in the gallery';
+  infoCenter.append(prevPill, pageLabel, nextPill, dicePill);
 
   // Right zone — WebGPU pill + the two octocat CTAs (reused unchanged from
   // the viewer bar's helpers).
@@ -601,6 +615,10 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
     e.preventDefault();
     if (nextPill.classList.contains('disabled')) return;
     opts.onNextPage();
+  };
+  dicePill.onclick = (e) => {
+    e.preventDefault();
+    opts.onRandomPage();
   };
 
   renderLabel();
@@ -681,6 +699,21 @@ const BAR_CSS = `
      9999" is the widest reasonable label. */
   min-width: 18ch; text-align: center; white-space: nowrap;
 }
+.pyr3-bar-gallery-dice {
+  /* Pill carries "🎲 random page" — natural width, no min-width pin
+     (the .pyr3-nav-pill default of 10ch would clip the label on
+     narrow viewports otherwise). */
+  min-width: 0;
+}
+.pyr3-bar-info-gallery .pyr3-zone-left,
+.pyr3-bar-info-gallery .pyr3-zone-right {
+  /* Both zones flex-grow equally so the center page-nav cluster lands in
+     the literal middle of the bar (the default viewer bar has zone-right
+     as flex: 0 0 auto, which would push the gallery's center off to the
+     right whenever left+right have unequal content widths). */
+  flex: 1 1 0;
+}
+.pyr3-bar-info-gallery .pyr3-zone-right { justify-content: flex-end; }
 .pyr3-bar-version { color: var(--text-dim); font-size: 10px; font-weight: 400; white-space: nowrap; }
 .pyr3-bar-variations {
   color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px;
