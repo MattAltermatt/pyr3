@@ -106,7 +106,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /tmp/esf-chunks
-          key: esf-chunks-${{ env.CHUNK_RELEASE_TAG }}
+          # Key on (tag, sha) so a same-tag re-upload (asset deleted + replaced)
+          # busts the cache automatically — bumping CHUNK_TAR_SHA256 alone is enough.
+          key: esf-chunks-${{ env.CHUNK_RELEASE_TAG }}-${{ env.CHUNK_TAR_SHA256 }}
 
       # Same-origin corpus chunks the /v1 share-URL viewer fetches at runtime.
       # electric-sheep-fold is PUBLIC, so the repo-scoped github.token can read
