@@ -126,14 +126,45 @@ function parseSheepFilename(name: string): { gen: number; id: number } | null {
   return { gen: Number(m[1]), id: Number(m[2]) };
 }
 
-/** Enumerate every .flame in canonical corpus order (gen ascending, id
- *  ascending). Uses ESF's filesystem layout directly — no manifest fetch. */
+/** Load the genome-id allowlist from ESF's `corpus/_index/index.json`.
+ *  The index has one record per sheep with `kind: "genome" | "animation"`;
+ *  pyr3's deployed corpus is genome-only and `parseFlame` only handles
+ *  single-`<flame>` files cleanly (animation files have multiple keyframes
+ *  and silently lose all but the first), so we filter at walk time to
+ *  match what the runtime actually consumes. Returns a Set of "gen/id"
+ *  strings for O(1) membership tests. */
+function loadGenomeAllowlist(esfRoot: string): Set<string> {
+  const indexPath = join(esfRoot, 'corpus', '_index', 'index.json');
+  if (!existsSync(indexPath)) {
+    console.error(`pyr3-bake: ESF index missing: ${indexPath}`);
+    process.exit(1);
+  }
+  const raw = readFileSync(indexPath, 'utf8');
+  // The index is ~66MB — parse once at startup. interface { genomes: [{id, kind, ...}] }
+  const data = JSON.parse(raw) as {
+    genomes: Array<{ id: string; gen: number; sheep_id: number; kind: string }>;
+  };
+  const allow = new Set<string>();
+  for (const r of data.genomes) {
+    if (r.kind === 'genome') allow.add(`${r.gen}/${r.sheep_id}`);
+  }
+  return allow;
+}
+
+/** Enumerate every genome-kind .flame in canonical corpus order (gen
+ *  ascending, id ascending). Animation kinds are skipped — they have
+ *  multiple `<flame>` keyframes per file and aren't in the deployed
+ *  pyr3 corpus anyway. */
 function walkCorpus(esfRoot: string): SheepEntry[] {
   const corpusRoot = join(esfRoot, 'corpus');
   if (!existsSync(corpusRoot) || !statSync(corpusRoot).isDirectory()) {
     console.error(`pyr3-bake: corpus directory missing: ${corpusRoot}`);
     process.exit(1);
   }
+  const t0 = Date.now();
+  const allow = loadGenomeAllowlist(esfRoot);
+  console.log(`  genome allowlist loaded (${allow.size} entries, ${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+
   const out: SheepEntry[] = [];
   const gens = readdirSync(corpusRoot)
     .map((name) => ({ name, gen: parseGenDirName(name) }))
@@ -152,11 +183,10 @@ function walkCorpus(esfRoot: string): SheepEntry[] {
         .sort((a, b) => a.parsed.id - b.parsed.id);
       for (const { name, parsed } of sheepFiles) {
         if (parsed.gen !== gen) {
-          // Defensive: filename's gen disagrees with parent directory; skip
-          // rather than committing inconsistent data to the index.
           console.warn(`pyr3-bake: filename/dir gen mismatch — ${join(bucketDir, name)}`);
           continue;
         }
+        if (!allow.has(`${gen}/${parsed.id}`)) continue;
         out.push({ gen, id: parsed.id, path: join(bucketDir, name) });
       }
     }
