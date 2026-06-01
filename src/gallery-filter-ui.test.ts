@@ -92,7 +92,11 @@ describe('mountFilterDrawer — scaffold + open/close + reset', () => {
     expect(onChange).toHaveBeenCalledWith(DEFAULT_FILTER_SPEC);
   });
 
-  it('setFilter from non-default to default closes the drawer (auto-close on reset)', () => {
+  it('setFilter from non-default to default does NOT auto-close (visitor stays in drawer)', () => {
+    // The drawer's open/closed state belongs to the visitor — auto-closing
+    // when state returns to default would slam the drawer shut mid-edit
+    // (e.g. clicking the default `time` sort pill). The bar pill is the
+    // close affordance; auto-OPEN on non-default still fires.
     const root = document.createElement('div');
     const handle = mountFilterDrawer(root, {
       initialFilter: { ...DEFAULT_FILTER_SPEC, sort: 'interest' },
@@ -101,7 +105,20 @@ describe('mountFilterDrawer — scaffold + open/close + reset', () => {
     });
     expect(handle.isOpen()).toBe(true);
     handle.setFilter(DEFAULT_FILTER_SPEC);
+    expect(handle.isOpen()).toBe(true);
+    handle.destroy();
+  });
+
+  it('setFilter from default to non-default auto-opens the drawer', () => {
+    const root = document.createElement('div');
+    const handle = mountFilterDrawer(root, {
+      initialFilter: DEFAULT_FILTER_SPEC,
+      facetCounts: makeCounts(),
+      onChange: vi.fn(),
+    });
     expect(handle.isOpen()).toBe(false);
+    handle.setFilter({ ...DEFAULT_FILTER_SPEC, sort: 'coverage' });
+    expect(handle.isOpen()).toBe(true);
     handle.destroy();
   });
 

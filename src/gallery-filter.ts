@@ -7,6 +7,7 @@
 // encodeFilterSpec emits only non-default axes (clean canonical URLs).
 
 import { V, VARIATION_NAMES } from './variations';
+import type { ScoreWeights } from './feature-score';
 
 // Reverse lookup name → index. VARIATION_NAMES is index → name; the URL
 // parser needs the inverse. Built once at module load.
@@ -14,13 +15,14 @@ const NAME_TO_INDEX: Map<string, number> = new Map(
   Object.entries(V).map(([name, idx]) => [name, idx as number]),
 );
 
-export type SortMode = 'time' | 'interest' | 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
+export type SortMode = 'time' | 'interest' | 'coverage' | 'entropy' | 'colorVar' | 'meanLum' | 'custom';
 
-/** All sort presets that ship in Phase B. Ordered as they appear in the
- *  drawer's segmented control (time first = default). Phase E will add
- *  `'custom'` for the tunable interest-weights surface. */
+/** All sort modes the gallery exposes. Ordered as they appear in the
+ *  drawer's segmented control (time first = default; custom last — the UI
+ *  treats it specially: there's no "click me" pill, the tune panel toggles
+ *  it on when the visitor edits weights). */
 export const SORT_MODES: readonly SortMode[] = Object.freeze([
-  'time', 'interest', 'coverage', 'entropy', 'colorVar', 'meanLum',
+  'time', 'interest', 'coverage', 'entropy', 'colorVar', 'meanLum', 'custom',
 ]) as readonly SortMode[];
 
 export type SortDir = 'asc' | 'desc';
@@ -56,6 +58,12 @@ export interface FilterSpec {
   colorVarMax: number | null;
   meanLumMin: number;
   meanLumMax: number | null;
+  /** Tunable interest-score weights. ONLY meaningful when `sort === 'custom'`;
+   *  for every other sort mode the canonical preset weights apply and this
+   *  field is `null`. URL grammar: `weights=cov,ent,col,dim` (4 floats in
+   *  [0,1]). When `sort=custom` but weights are missing/malformed, callers
+   *  treat null as DEFAULT_SCORE_WEIGHTS. */
+  weights: ScoreWeights | null;
 }
 
 export const DEFAULT_FILTER_SPEC: FilterSpec = Object.freeze({
@@ -72,7 +80,24 @@ export const DEFAULT_FILTER_SPEC: FilterSpec = Object.freeze({
   colorVarMax: null,
   meanLumMin: 0,
   meanLumMax: null,
+  weights: null,
 }) as FilterSpec;
+
+const WEIGHTS_EPS = 1e-9;
+
+/** Epsilon-tolerant ScoreWeights comparison. Handles the URL round-trip
+ *  drift (parseFloat(toFixed(3))) so a spec re-loaded from URL still
+ *  compares equal to the in-memory original. Null compares equal to null. */
+export function weightsEqual(a: ScoreWeights | null, b: ScoreWeights | null): boolean {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return false;
+  return (
+    Math.abs(a.coverage - b.coverage) <= WEIGHTS_EPS
+    && Math.abs(a.entropy - b.entropy) <= WEIGHTS_EPS
+    && Math.abs(a.colorVar - b.colorVar) <= WEIGHTS_EPS
+    && Math.abs(a.dimPenalty - b.dimPenalty) <= WEIGHTS_EPS
+  );
+}
 
 /** Structural equality: same sort, same xform bounds, same set of variations.
  *  Vars are kept sorted asc as a class invariant — direct compare suffices. */
@@ -85,6 +110,7 @@ export function filterSpecEquals(a: FilterSpec, b: FilterSpec): boolean {
   if (a.entropyMin !== b.entropyMin || a.entropyMax !== b.entropyMax) return false;
   if (a.colorVarMin !== b.colorVarMin || a.colorVarMax !== b.colorVarMax) return false;
   if (a.meanLumMin !== b.meanLumMin || a.meanLumMax !== b.meanLumMax) return false;
+  if (!weightsEqual(a.weights, b.weights)) return false;
   if (a.vars.length !== b.vars.length) return false;
   for (let i = 0; i < a.vars.length; i++) {
     if (a.vars[i] !== b.vars[i]) return false;
@@ -217,12 +243,35 @@ export function parseFilterSpec(params: URLSearchParams): FilterSpec {
   const col = stat('colorVar');
   const lum = stat('meanLum');
 
+  // Weights are ONLY honored when sort=custom. For named presets the canonical
+  // weights apply; explicit `weights=` is ignored to keep the URL grammar
+  // unambiguous ("preset name + tuple" can't disagree).
+  let weights: ScoreWeights | null = null;
+  if (sort === 'custom') {
+    const raw = params.get('weights');
+    if (raw) {
+      const parts = raw.split(',');
+      if (parts.length === 4) {
+        const nums = parts.map((s) => Number.parseFloat(s));
+        if (nums.every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) {
+          weights = {
+            coverage: nums[0]!,
+            entropy: nums[1]!,
+            colorVar: nums[2]!,
+            dimPenalty: nums[3]!,
+          };
+        }
+      }
+    }
+  }
+
   return {
     sort, sortDir, vars, xformMin, xformMax,
     coverageMin: cov.min, coverageMax: cov.max,
     entropyMin: ent.min, entropyMax: ent.max,
     colorVarMin: col.min, colorVarMax: col.max,
     meanLumMin: lum.min, meanLumMax: lum.max,
+    weights,
   };
 }
 
@@ -262,5 +311,12 @@ export function encodeFilterSpec(spec: FilterSpec): URLSearchParams {
   emitStat('entropy', spec.entropyMin, spec.entropyMax);
   emitStat('colorVar', spec.colorVarMin, spec.colorVarMax);
   emitStat('meanLum', spec.meanLumMin, spec.meanLumMax);
+  // Weights emit ONLY when sort=custom AND weights are non-null. Named presets
+  // imply their canonical weights; explicit `weights=` would be ambiguous + is
+  // stripped on parse.
+  if (spec.sort === 'custom' && spec.weights !== null) {
+    const w = spec.weights;
+    p.set('weights', `${fmt(w.coverage)},${fmt(w.entropy)},${fmt(w.colorVar)},${fmt(w.dimPenalty)}`);
+  }
   return p;
 }

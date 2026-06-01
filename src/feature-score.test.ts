@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_SCORE_WEIGHTS,
   interestScore,
+  PRESET_WEIGHTS,
+  weightsToPresetName,
   type ScoreWeights,
+  type SortPreset,
 } from './feature-score';
 import type { SheepFeatures } from './feature-index';
 
@@ -79,5 +82,42 @@ describe('interestScore', () => {
     const wDim: ScoreWeights = { coverage: 0, entropy: 0, colorVar: 0, dimPenalty: 1 };
     expect(interestScore(baseFeatures({ meanLum: 0 }), wDim)).toBe(0);
     expect(interestScore(baseFeatures({ meanLum: 1 }), wDim)).toBe(0);
+  });
+});
+
+describe('PRESET_WEIGHTS + weightsToPresetName', () => {
+  const ALL_PRESETS: SortPreset[] = ['interest', 'coverage', 'entropy', 'colorVar', 'meanLum'];
+
+  it('each preset matches its own tuple via weightsToPresetName', () => {
+    for (const name of ALL_PRESETS) {
+      expect(weightsToPresetName(PRESET_WEIGHTS[name])).toBe(name);
+    }
+  });
+
+  it('small float drift (1e-10) still matches the interest preset', () => {
+    const drifted: ScoreWeights = {
+      coverage: DEFAULT_SCORE_WEIGHTS.coverage + 1e-10,
+      entropy: DEFAULT_SCORE_WEIGHTS.entropy - 1e-10,
+      colorVar: DEFAULT_SCORE_WEIGHTS.colorVar,
+      dimPenalty: DEFAULT_SCORE_WEIGHTS.dimPenalty,
+    };
+    expect(weightsToPresetName(drifted)).toBe('interest');
+  });
+
+  it('a clearly non-preset tuple returns null', () => {
+    const custom: ScoreWeights = { coverage: 0.2, entropy: 0.4, colorVar: 0.3, dimPenalty: 0.1 };
+    expect(weightsToPresetName(custom)).toBeNull();
+  });
+
+  it('preset tuples do not collide with each other', () => {
+    // Sanity: no two presets share the same tuple, so weightsToPresetName is
+    // unambiguous on its inputs.
+    for (let i = 0; i < ALL_PRESETS.length; i++) {
+      for (let j = i + 1; j < ALL_PRESETS.length; j++) {
+        const a = PRESET_WEIGHTS[ALL_PRESETS[i]!];
+        const b = PRESET_WEIGHTS[ALL_PRESETS[j]!];
+        expect(a).not.toEqual(b);
+      }
+    }
   });
 });

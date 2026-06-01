@@ -21,6 +21,12 @@ import {
 } from './gallery-filter';
 import { mountVariationPicker, type VariationPickerHandle } from './variation-picker';
 import { VARIATION_NAMES } from './variations';
+import {
+  DEFAULT_SCORE_WEIGHTS,
+  PRESET_WEIGHTS,
+  weightsToPresetName,
+  type ScoreWeights,
+} from './feature-score';
 
 /** Hover tooltips for each sort preset — the abstract pill labels
  *  ("coverage", "entropy", …) don't explain what they order by; the
@@ -32,6 +38,9 @@ const SORT_TOOLTIPS: Record<SortMode, string> = {
   entropy: 'sort: textural complexity of the rendered image (descending — most-detailed first)',
   colorVar: 'sort: variety of colors in the palette (descending — most-colorful first)',
   meanLum: 'sort: mean brightness (descending — brightest first)',
+  // Custom is wired by Phase E4 (tunable-weights slider panel); the E2 data
+  // layer only ensures the SortMode union compiles end-to-end.
+  custom: 'sort: custom weights (tune the interest-score sliders)',
 };
 import type { FacetCounts } from './gallery-facets';
 
@@ -239,6 +248,88 @@ const STYLES = `
   border-bottom: 1px solid var(--bar-border, #2a2a30);
   margin: 4px 0;
 }
+
+.pyr3-tune-btn {
+  background: var(--bar-bg-1, #15151a);
+  color: var(--text-dim, #aaa);
+  border: 1px solid var(--bar-border, #2a2a30);
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  margin-left: 4px;
+}
+.pyr3-tune-btn:hover { background: var(--bar-bg-3, #0f0f13); color: var(--text, #ddd); }
+.pyr3-tune-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.pyr3-tune-panel {
+  display: none;
+  padding: 8px 16px 12px 70px;
+  border-top: 1px solid var(--bar-border, #2a2a30);
+  border-bottom: 1px solid var(--bar-border, #2a2a30);
+  margin: 4px 0;
+}
+.pyr3-tune-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 0;
+}
+.pyr3-tune-label {
+  color: var(--text-dim, #aaa);
+  font-size: 12px;
+}
+.pyr3-tune-slider {
+  width: 100%;
+  accent-color: var(--accent, #ff8c1a);
+}
+.pyr3-tune-value {
+  color: var(--accent, #ff8c1a);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  text-align: right;
+}
+.pyr3-tune-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+}
+.pyr3-tune-reset {
+  background: var(--bar-bg-1, #15151a);
+  color: var(--text-dim, #aaa);
+  border: 1px solid var(--bar-border, #2a2a30);
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.pyr3-tune-reset:hover { background: var(--bar-bg-3, #0f0f13); color: var(--text, #ddd); }
+
+.pyr3-filter-hide-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 16px;
+  background: var(--bar-bg-1, #15151a);
+  color: var(--text-dim, #aaa);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.pyr3-filter-hide-btn:hover {
+  background: var(--bar-bg-3, #0f0f13);
+  color: var(--text, #ddd);
+}
 `;
 
 function injectStylesOnce(): void {
@@ -282,7 +373,11 @@ export function mountFilterDrawer(
   sortLabel.textContent = 'sort:';
   sortRow.appendChild(sortLabel);
   const sortPills = new Map<SortMode, HTMLButtonElement>();
+  // E4 will mount the `custom` pill via the tune-weights panel; for the E2
+  // data layer it stays out of the pill row (no click target — the panel
+  // toggles it on).
   for (const mode of SORT_MODES) {
+    if (mode === 'custom') continue;
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = 'pyr3-sort-pill';
@@ -315,7 +410,126 @@ export function mountFilterDrawer(
     opts.onChange({ ...currentFilter, sortDir: nextDir });
   };
   sortRow.appendChild(orderBtn);
+
+  // [tune ▾] — opens the slider panel for editing the interest-score
+  // weights. Sits at the end of the sort row; appears highlighted when
+  // sort is 'custom' (so the visitor sees that named pills are inactive
+  // because custom weights are in play).
+  const tuneBtn = document.createElement('button');
+  tuneBtn.type = 'button';
+  tuneBtn.className = 'pyr3-tune-btn';
+  tuneBtn.textContent = 'tune ▾';
+  tuneBtn.title = 'tune the interest-score weights — drag sliders to build a custom sort';
+  sortRow.appendChild(tuneBtn);
+
   drawer.appendChild(sortRow);
+
+  // Tune panel — slider editor for the 4 score weights. Lives directly
+  // below the sort row. Toggles open/closed via the [tune ▾] button OR
+  // auto-opens if the URL arrives with sort=custom.
+  const tunePanel = document.createElement('div');
+  tunePanel.className = 'pyr3-tune-panel';
+  tunePanel.style.display = 'none';
+
+  const sliderEls: Record<keyof ScoreWeights, HTMLInputElement> = {} as Record<keyof ScoreWeights, HTMLInputElement>;
+  const sliderValueEls: Record<keyof ScoreWeights, HTMLSpanElement> = {} as Record<keyof ScoreWeights, HTMLSpanElement>;
+  const WEIGHT_KEYS: Array<keyof ScoreWeights> = ['coverage', 'entropy', 'colorVar', 'dimPenalty'];
+  const WEIGHT_TOOLTIPS: Record<keyof ScoreWeights, string> = {
+    coverage: 'coverage weight — how much "frame fullness" influences the sort',
+    entropy: 'entropy weight — how much "textural complexity" influences the sort',
+    colorVar: 'colorVar weight — how much "palette variety" influences the sort',
+    dimPenalty: 'dimPenalty weight — how much darkness drags the score down (or up, when sorting by meanLum)',
+  };
+
+  for (const k of WEIGHT_KEYS) {
+    const row = document.createElement('div');
+    row.className = 'pyr3-tune-row';
+    const label = document.createElement('span');
+    label.className = 'pyr3-tune-label';
+    label.textContent = k;
+    label.title = WEIGHT_TOOLTIPS[k];
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '1';
+    slider.step = '0.05';
+    slider.className = 'pyr3-tune-slider';
+    slider.dataset.weight = k;
+    slider.title = WEIGHT_TOOLTIPS[k];
+    const value = document.createElement('span');
+    value.className = 'pyr3-tune-value';
+    sliderEls[k] = slider;
+    sliderValueEls[k] = value;
+    row.append(label, slider, value);
+    tunePanel.appendChild(row);
+  }
+
+  const tuneActions = document.createElement('div');
+  tuneActions.className = 'pyr3-tune-actions';
+  const resetWeightsBtn = document.createElement('button');
+  resetWeightsBtn.type = 'button';
+  resetWeightsBtn.className = 'pyr3-tune-reset';
+  resetWeightsBtn.textContent = '↺ reset to interest defaults';
+  resetWeightsBtn.title = 'reset weights to the canonical "interest" preset';
+  tuneActions.appendChild(resetWeightsBtn);
+  tunePanel.appendChild(tuneActions);
+
+  function effectiveWeights(spec: FilterSpec): ScoreWeights {
+    if (spec.sort === 'custom') return spec.weights ?? DEFAULT_SCORE_WEIGHTS;
+    if (spec.sort === 'time') return DEFAULT_SCORE_WEIGHTS;  // shown as a baseline; not used
+    return PRESET_WEIGHTS[spec.sort];
+  }
+
+  function renderTunePanel(spec: FilterSpec): void {
+    const w = effectiveWeights(spec);
+    for (const k of WEIGHT_KEYS) {
+      sliderEls[k].value = String(w[k]);
+      sliderValueEls[k].textContent = w[k].toFixed(2);
+    }
+    tuneBtn.classList.toggle('active', spec.sort === 'custom');
+  }
+
+  function onSliderChange(): void {
+    const next: ScoreWeights = {
+      coverage: Number.parseFloat(sliderEls.coverage.value),
+      entropy: Number.parseFloat(sliderEls.entropy.value),
+      colorVar: Number.parseFloat(sliderEls.colorVar.value),
+      dimPenalty: Number.parseFloat(sliderEls.dimPenalty.value),
+    };
+    // Update each value label immediately so the visitor sees the live
+    // weight even before the round-trip through main.ts's applyFilter.
+    for (const k of WEIGHT_KEYS) sliderValueEls[k].textContent = next[k].toFixed(2);
+    // If the new tuple matches a known preset, snap sort to that preset's
+    // name (and clear weights). Otherwise it's custom.
+    const preset = weightsToPresetName(next);
+    if (preset !== null) {
+      opts.onChange({ ...currentFilter, sort: preset, weights: null });
+    } else {
+      opts.onChange({ ...currentFilter, sort: 'custom', weights: next });
+    }
+  }
+
+  for (const k of WEIGHT_KEYS) {
+    sliderEls[k].addEventListener('input', onSliderChange);
+  }
+
+  resetWeightsBtn.onclick = () => {
+    opts.onChange({ ...currentFilter, sort: 'interest', weights: null });
+  };
+
+  tuneBtn.onclick = () => {
+    const open = tunePanel.style.display !== 'block';
+    tunePanel.style.display = open ? 'block' : 'none';
+  };
+
+  // Auto-open the tune panel if we arrive with sort=custom (so the
+  // visitor sees the weights that produced the current view).
+  if (currentFilter.sort === 'custom') {
+    tunePanel.style.display = 'block';
+  }
+
+  drawer.appendChild(tunePanel);
+  renderTunePanel(currentFilter);
 
   function renderSortActive(sort: SortMode): void {
     for (const [mode, pill] of sortPills) {
@@ -691,6 +905,21 @@ export function mountFilterDrawer(
   actionsRow.appendChild(resetBtn);
   drawer.appendChild(actionsRow);
 
+  // Hide-drawer footer — full-width single button at the very bottom so
+  // visitors who have scrolled past the bar's [⚙ filters ▾] toggle still
+  // have an obvious dismissal affordance. Doesn't touch filter state;
+  // mirrors the bar pill's toggleOpen behavior.
+  const hideBtn = document.createElement('button');
+  hideBtn.type = 'button';
+  hideBtn.className = 'pyr3-filter-hide-btn';
+  hideBtn.textContent = '▴ hide filters';
+  hideBtn.title = 'collapse the filter drawer (filter state stays applied)';
+  hideBtn.onclick = () => {
+    isOpen = false;
+    drawer.classList.remove('open');
+  };
+  drawer.appendChild(hideBtn);
+
   root.appendChild(drawer);
 
   return {
@@ -704,17 +933,20 @@ export function mountFilterDrawer(
       currentFilter = f;
       renderSortActive(f.sort);
       renderOrderBtn(f.sortDir);
+      renderTunePanel(f);
       renderXformPickers(f);
       renderXformStrip(f, currentCounts);
       for (const r of statRowRenderers) r(f, currentCounts);
       renderVarsChips(f.vars);
       syncVarsPicker();
-      // Auto-open on non-default; auto-close on reset-to-default. The
-      // drawer mirrors the meaningfulness of the filter state.
-      const shouldOpen = !isDefaultFilterSpec(f);
-      if (shouldOpen !== isOpen) {
-        isOpen = shouldOpen;
-        drawer.classList.toggle('open', isOpen);
+      // Auto-OPEN when state goes non-default (covers popstate landing on
+      // a filtered URL, and the initial mount). Never auto-CLOSE — the
+      // visitor controls open/closed via the bar pill. Auto-close on
+      // setFilter would slam the drawer shut when picking the default
+      // sort (`time`) mid-edit, which is user-hostile.
+      if (!isOpen && !isDefaultFilterSpec(f)) {
+        isOpen = true;
+        drawer.classList.toggle('open', true);
       }
     },
     toggleOpen() {

@@ -31,7 +31,7 @@ import {
 } from './render-orchestrator';
 import type { Renderer } from './renderer';
 import { type FilterSpec, filterSpecEquals } from './gallery-filter';
-import { interestScore } from './feature-score';
+import { PRESET_WEIGHTS, DEFAULT_SCORE_WEIGHTS, type ScoreWeights } from './feature-score';
 import type { FeatureIndex } from './feature-index-client';
 import type { FeatureRecord } from './feature-index';
 
@@ -265,15 +265,36 @@ function buildMasterList(index: FeatureIndex, spec: FilterSpec): SheepRef[] {
       passing.reverse();
     }
   } else {
+    // Resolve the effective ScoreWeights for this sort:
+    //   - 'interest' → DEFAULT_SCORE_WEIGHTS (the tunable balanced tuple)
+    //   - 'coverage'/'entropy'/'colorVar'/'meanLum' → their one-hot preset
+    //     (interestScore degenerates to the named stat — `meanLum`'s preset
+    //     is {0,0,0,1}, giving score = -(1-meanLum) = meanLum - 1, sort-equiv
+    //     to sorting by meanLum directly since constants don't shift order)
+    //   - 'custom' → spec.weights or DEFAULT_SCORE_WEIGHTS when null
+    let effectiveWeights: ScoreWeights;
+    if (spec.sort === 'custom') {
+      effectiveWeights = spec.weights ?? DEFAULT_SCORE_WEIGHTS;
+    } else if (spec.sort === 'interest') {
+      effectiveWeights = DEFAULT_SCORE_WEIGHTS;
+    } else {
+      // One of the named-stat presets — coverage/entropy/colorVar/meanLum
+      effectiveWeights = PRESET_WEIGHTS[spec.sort];
+    }
+    // Use the raw weighted sum (NOT interestScore's clamped [0,1] result)
+    // so sort order is preserved for one-hot presets. e.g. meanLum's preset
+    // {0,0,0,1} gives raw = meanLum - 1 (negative for all meanLum<1); the
+    // clamp in interestScore would collapse every record to 0 + destroy the
+    // ordering. Constants don't affect sort, so the raw sum sorts identically
+    // to interestScore for non-pathological cases.
+    const w = effectiveWeights;
     const scoreOf = (r: FeatureRecord): number => {
-      switch (spec.sort) {
-        case 'interest': return interestScore(r);
-        case 'coverage': return r.coverage;
-        case 'entropy': return r.entropy;
-        case 'colorVar': return r.colorVar;
-        case 'meanLum': return r.meanLum;
-        default: return 0;
-      }
+      const raw =
+        w.coverage * r.coverage
+        + w.entropy * r.entropy
+        + w.colorVar * r.colorVar
+        - w.dimPenalty * (1 - r.meanLum);
+      return Number.isFinite(raw) ? raw : 0;
     };
     passing.sort((a, b) => {
       const dA = scoreOf(a);

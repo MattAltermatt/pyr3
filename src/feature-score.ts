@@ -49,3 +49,44 @@ export function interestScore(f: SheepFeatures, w: ScoreWeights = DEFAULT_SCORE_
   if (raw > 1) return 1;
   return raw;
 }
+
+/** The five weighted-sort presets the gallery exposes as named pills.
+ *  `time` is NOT in here — it's chronological, not a weighted score.
+ *  Each preset name's tuple defines the exact weights the preset applies. */
+export type SortPreset = 'interest' | 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
+
+/** Canonical weights for each named preset. `interest` is the tunable
+ *  DEFAULT_SCORE_WEIGHTS; the other four are one-hot tuples that reduce
+ *  interestScore to a single stat (or 1 - (1 - meanLum) = meanLum - 1 for
+ *  meanLum; constants don't affect sort order). Used by gallery-mount to
+ *  resolve `spec.sort` → weights, and by gallery-filter-ui to render the
+ *  tune panel's "you're matching <preset>" indicator. */
+export const PRESET_WEIGHTS: Record<SortPreset, ScoreWeights> = {
+  interest: DEFAULT_SCORE_WEIGHTS,
+  coverage: { coverage: 1, entropy: 0, colorVar: 0, dimPenalty: 0 },
+  entropy:  { coverage: 0, entropy: 1, colorVar: 0, dimPenalty: 0 },
+  colorVar: { coverage: 0, entropy: 0, colorVar: 1, dimPenalty: 0 },
+  meanLum:  { coverage: 0, entropy: 0, colorVar: 0, dimPenalty: 1 },
+};
+
+const WEIGHTS_EPS = 1e-9;
+
+/** Reverse lookup: given a ScoreWeights tuple, return the preset name that
+ *  matches it (within `1e-9` per-field tolerance), or `null` if it doesn't
+ *  match any preset (UI treats `null` as "custom"). The epsilon absorbs the
+ *  round-trip through URL float encoding so a tuple that came back from
+ *  parseFloat(v.toFixed(3)) still matches its canonical preset. */
+export function weightsToPresetName(w: ScoreWeights): SortPreset | null {
+  for (const name of Object.keys(PRESET_WEIGHTS) as SortPreset[]) {
+    const p = PRESET_WEIGHTS[name];
+    if (
+      Math.abs(p.coverage - w.coverage) <= WEIGHTS_EPS
+      && Math.abs(p.entropy - w.entropy) <= WEIGHTS_EPS
+      && Math.abs(p.colorVar - w.colorVar) <= WEIGHTS_EPS
+      && Math.abs(p.dimPenalty - w.dimPenalty) <= WEIGHTS_EPS
+    ) {
+      return name;
+    }
+  }
+  return null;
+}

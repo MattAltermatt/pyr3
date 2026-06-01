@@ -828,6 +828,41 @@ describe('pageOfSheepFiltered', () => {
     expect(out.map((r) => r.id)).toEqual([1, 2, 0]);
   });
 
+  it('sort=custom with explicit weights produces a weighted interest-score sort', async () => {
+    // Weights = {1, 0, 0, 0} → equivalent to sort=coverage desc.
+    const stub = makeStubIndex([
+      recF(165, 0, 3, 0.2, 0.5, 0.5, 0.5),
+      recF(165, 1, 3, 0.9, 0.5, 0.5, 0.5),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5),
+    ]);
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      sort: 'custom',
+      weights: { coverage: 1, entropy: 0, colorVar: 0, dimPenalty: 0 },
+    };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: stub });
+    expect(out.map((r) => r.id)).toEqual([1, 2, 0]);
+  });
+
+  it('sort=custom with weights=null falls back to DEFAULT_SCORE_WEIGHTS (same as sort=interest)', async () => {
+    const records = Array.from({ length: 5 }, (_, i) => recF(165, i, 3, (5 - i) / 5));
+    const stub = makeStubIndex(records);
+
+    _resetMasterListCache();
+    const customOut = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sort: 'custom', weights: null },
+      { index: stub },
+    );
+    _resetMasterListCache();
+    const interestOut = await pageOfSheepFiltered(
+      1, 9,
+      { ...DEFAULT_FILTER_SPEC, sort: 'interest' },
+      { index: stub },
+    );
+    expect(customOut).toEqual(interestOut);
+  });
+
   it('sort=meanLum orders descending by meanLum', async () => {
     const stub = makeStubIndex([
       recF(165, 0, 3, 0.5, 0.5, 0.5, 0.2),

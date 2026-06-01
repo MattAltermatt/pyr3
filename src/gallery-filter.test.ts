@@ -6,8 +6,10 @@ import {
   filterSpecEquals,
   isDefaultFilterSpec,
   parseFilterSpec,
+  weightsEqual,
   type FilterSpec,
 } from './gallery-filter';
+import { PRESET_WEIGHTS } from './feature-score';
 import { V } from './variations';
 
 describe('FilterSpec defaults', () => {
@@ -26,6 +28,7 @@ describe('FilterSpec defaults', () => {
       colorVarMax: null,
       meanLumMin: 0,
       meanLumMax: null,
+      weights: null,
     });
   });
 
@@ -75,8 +78,32 @@ describe('parseFilterSpec', () => {
     expect(parse('sort=garbage').sort).toBe('time');
   });
 
-  it('custom is NOT yet recognized (deferred to Phase E) — falls back to time', () => {
-    expect(parse('sort=custom').sort).toBe('time');
+  it('sort=custom is recognized (Phase E)', () => {
+    expect(parse('sort=custom').sort).toBe('custom');
+  });
+
+  it('sort=custom with weights=cov,ent,col,dim parses to a ScoreWeights tuple', () => {
+    const out = parse('sort=custom&weights=0.4,0.3,0.2,0.1');
+    expect(out.sort).toBe('custom');
+    expect(out.weights).toEqual({ coverage: 0.4, entropy: 0.3, colorVar: 0.2, dimPenalty: 0.1 });
+  });
+
+  it('sort=custom without weights falls back to null (UI uses DEFAULT_SCORE_WEIGHTS)', () => {
+    const out = parse('sort=custom');
+    expect(out.sort).toBe('custom');
+    expect(out.weights).toBeNull();
+  });
+
+  it('sort=custom with malformed weights falls back to null', () => {
+    expect(parse('sort=custom&weights=garbage').weights).toBeNull();
+    expect(parse('sort=custom&weights=0.4,0.3,0.2').weights).toBeNull(); // 3 fields
+    expect(parse('sort=custom&weights=1.5,0.3,0.2,0.1').weights).toBeNull(); // out of [0,1]
+  });
+
+  it('named preset + weights=... ignores the weights (preset wins)', () => {
+    const out = parse('sort=interest&weights=0.4,0.3,0.2,0.1');
+    expect(out.sort).toBe('interest');
+    expect(out.weights).toBeNull();
   });
 
   it('vars=julia,linear → sorted variation indices', () => {
@@ -294,6 +321,36 @@ describe('encodeFilterSpec', () => {
     expect(p.get('entropy')).toBe('0.5');
   });
 
+  it('sort=custom + weights emits BOTH sort and weights params', () => {
+    const p = encodeFilterSpec({
+      ...DEFAULT_FILTER_SPEC,
+      sort: 'custom',
+      weights: { coverage: 0.4, entropy: 0.3, colorVar: 0.2, dimPenalty: 0.1 },
+    });
+    expect(p.get('sort')).toBe('custom');
+    expect(p.get('weights')).toBe('0.4,0.3,0.2,0.1');
+  });
+
+  it('named-preset sorts emit only sort=, never weights=', () => {
+    for (const s of ['interest', 'coverage', 'entropy', 'colorVar', 'meanLum'] as const) {
+      const p = encodeFilterSpec({
+        ...DEFAULT_FILTER_SPEC,
+        sort: s,
+        // Even if weights are somehow non-null on a named preset, encoding
+        // strips them — named presets imply their canonical weights.
+        weights: { coverage: 0.4, entropy: 0.3, colorVar: 0.2, dimPenalty: 0.1 },
+      });
+      expect(p.get('sort')).toBe(s);
+      expect(p.has('weights')).toBe(false);
+    }
+  });
+
+  it('sort=custom with weights=null omits weights param entirely', () => {
+    const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sort: 'custom', weights: null });
+    expect(p.get('sort')).toBe('custom');
+    expect(p.has('weights')).toBe(false);
+  });
+
   it('all 4 stat ranges emit independently', () => {
     const p = encodeFilterSpec({
       ...DEFAULT_FILTER_SPEC,
@@ -315,6 +372,13 @@ describe('countActiveAxes', () => {
   });
   it('sort changed → 1', () => {
     expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest' })).toBe(1);
+  });
+  it('sort=custom counts as 1 axis (non-default sort)', () => {
+    expect(countActiveAxes({
+      ...DEFAULT_FILTER_SPEC,
+      sort: 'custom',
+      weights: PRESET_WEIGHTS.interest,
+    })).toBe(1);
   });
   it('vars set → 1 regardless of count', () => {
     expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, vars: [13] })).toBe(1);
@@ -344,6 +408,28 @@ describe('countActiveAxes', () => {
   });
 });
 
+describe('weightsEqual', () => {
+  it('null === null', () => {
+    expect(weightsEqual(null, null)).toBe(true);
+  });
+  it('null !== non-null', () => {
+    expect(weightsEqual(null, PRESET_WEIGHTS.interest)).toBe(false);
+    expect(weightsEqual(PRESET_WEIGHTS.interest, null)).toBe(false);
+  });
+  it('identical tuples are equal', () => {
+    expect(weightsEqual(PRESET_WEIGHTS.interest, { ...PRESET_WEIGHTS.interest })).toBe(true);
+  });
+  it('1e-10 drift still compares equal (URL round-trip tolerance)', () => {
+    expect(weightsEqual(
+      PRESET_WEIGHTS.interest,
+      { ...PRESET_WEIGHTS.interest, coverage: PRESET_WEIGHTS.interest.coverage + 1e-10 },
+    )).toBe(true);
+  });
+  it('clearly different tuples are not equal', () => {
+    expect(weightsEqual(PRESET_WEIGHTS.coverage, PRESET_WEIGHTS.entropy)).toBe(false);
+  });
+});
+
 describe('FilterSpec round-trip', () => {
   it('parse(encode(spec)) === spec for various specs', () => {
     const specs: FilterSpec[] = [
@@ -357,6 +443,8 @@ describe('FilterSpec round-trip', () => {
       { ...DEFAULT_FILTER_SPEC, sort: 'entropy', sortDir: 'asc' },
       { ...DEFAULT_FILTER_SPEC, sort: 'colorVar' },
       { ...DEFAULT_FILTER_SPEC, sort: 'meanLum' },
+      { ...DEFAULT_FILTER_SPEC, sort: 'custom', weights: { coverage: 0.4, entropy: 0.3, colorVar: 0.2, dimPenalty: 0.1 } },
+      { ...DEFAULT_FILTER_SPEC, sort: 'custom', weights: null },
       // Stat ranges round-trip via parse/encode.
       { ...DEFAULT_FILTER_SPEC, coverageMin: 0.3, coverageMax: 0.7 },
       { ...DEFAULT_FILTER_SPEC, entropyMin: 0.5 },
