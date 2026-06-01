@@ -93,7 +93,22 @@ async function waitForDevServer(url: string, timeoutMs = 30_000): Promise<void> 
   throw new Error(`dev server not ready at ${url} after ${timeoutMs}ms`);
 }
 
-const fixtures = discoverFixtures();
+// Smoke filter (#59): when VITEST_INCLUDE_PARITY_FE_BE_SMOKE=1 is set,
+// restrict the sweep to a 3-fixture representative set — hero, the
+// historical tier-2 outlier, and a healthy tier-1. Cuts wall time from
+// ~13min to ~90s for the routine "I touched the FE viewer" gate. Full
+// sweep (VITEST_INCLUDE_PARITY_FE_BE=1) is unchanged + remains the
+// pre-release sanity check.
+const SMOKE_IDS = new Set([
+  '247.19679',  // hero — user-visible regression surface
+  '248.23554',  // long-standing tier-2 outlier (post-jitter R≈11)
+  '244.42746',  // representative healthy tier-1 baseline
+]);
+const isSmoke = process.env.VITEST_INCLUDE_PARITY_FE_BE_SMOKE === '1';
+const allFixtures = discoverFixtures();
+const fixtures = isSmoke
+  ? allFixtures.filter((f) => SMOKE_IDS.has(f.id))
+  : allFixtures;
 
 // Per-fixture R results are appended JSONL to .remember/tmp/pyr3-026-results.jsonl
 // (truncated at beforeAll). Consumed by `scripts/pyr3-026-build-html.mjs` to

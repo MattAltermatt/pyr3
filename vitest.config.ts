@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 
 const includeParity = process.env.VITEST_INCLUDE_PARITY === '1';
-const includeParityFeBe = process.env.VITEST_INCLUDE_PARITY_FE_BE === '1';
+// Full 26-fixture FE↔BE sweep (~13min) — pre-release only per #58. The
+// SMOKE variant (3 fixtures, ~90s) is gated separately + uses the same
+// underlying test file; either flag includes it.
+const includeParityFeBeFull = process.env.VITEST_INCLUDE_PARITY_FE_BE === '1';
+const includeParityFeBeSmoke = process.env.VITEST_INCLUDE_PARITY_FE_BE_SMOKE === '1';
+const includeParityFeBe = includeParityFeBeFull || includeParityFeBeSmoke;
 
 // Mirror vite.config's __PYR3_VERSION__ define so any test that touches code
 // referencing the build constant resolves it (vitest doesn't load vite.config).
