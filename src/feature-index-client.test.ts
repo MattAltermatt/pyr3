@@ -225,3 +225,47 @@ describe('loadFeatureIndex', () => {
     expect(f).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('FeatureIndex.forEachRecord', () => {
+  beforeEach(() => {
+    _resetFeatureIndexCache();
+  });
+
+  it('visits every record exactly once in ascending (gen,id) order', async () => {
+    const f = vi.fn(async () => buildIndexResponse(sample));
+    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    const seen: Array<{ gen: number; id: number }> = [];
+    idx.forEachRecord((rec) => {
+      seen.push({ gen: rec.gen, id: rec.id });
+    });
+    expect(seen).toEqual(sample.map((r) => ({ gen: r.gen, id: r.id })));
+  });
+
+  it('does nothing on the EMPTY sentinel index', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f = vi.fn(async () => new Response(null, { status: 503 }));
+    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    expect(idx.recordCount).toBe(0);
+    let visits = 0;
+    idx.forEachRecord(() => {
+      visits++;
+    });
+    expect(visits).toBe(0);
+    warn.mockRestore();
+  });
+
+  it('returns early when visitor returns false', async () => {
+    const f = vi.fn(async () => buildIndexResponse(sample));
+    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    const seen: Array<{ gen: number; id: number }> = [];
+    idx.forEachRecord((rec) => {
+      seen.push({ gen: rec.gen, id: rec.id });
+      if (seen.length >= 2) return false;
+    });
+    expect(seen).toHaveLength(2);
+    expect(seen).toEqual([
+      { gen: sample[0]!.gen, id: sample[0]!.id },
+      { gen: sample[1]!.gen, id: sample[1]!.id },
+    ]);
+  });
+});

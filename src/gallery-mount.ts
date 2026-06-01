@@ -30,6 +30,10 @@ import {
   type RunHandle,
 } from './render-orchestrator';
 import type { Renderer } from './renderer';
+import { type FilterSpec, filterSpecEquals } from './gallery-filter';
+import { interestScore } from './feature-score';
+import type { FeatureIndex } from './feature-index-client';
+import type { FeatureRecord } from './feature-index';
 
 export interface SheepRef {
   gen: number;
@@ -204,6 +208,94 @@ export async function pageForSheep(
   return 1;
 }
 
+// ── Filtered master-list + page helpers (#49) ──────────────────────────
+//
+// When a FilterSpec is active, the gallery walks a feature-index-backed
+// master list instead of the canonical manifest walk above. Filtering +
+// sorting happens once per spec; consecutive page navigations within the
+// same spec are a single Array.slice on the cached master list.
+
+export interface FilteredPageDeps {
+  index: FeatureIndex;
+}
+
+interface MasterListCache {
+  spec: FilterSpec;
+  refs: SheepRef[];
+}
+
+let masterCache: MasterListCache | null = null;
+
+/** Test-only: clear the master-list cache so consecutive tests don't see each
+ *  other's filtered lists. Production code never calls. */
+export function _resetMasterListCache(): void {
+  masterCache = null;
+}
+
+function buildMasterList(index: FeatureIndex, spec: FilterSpec): SheepRef[] {
+  // First pass: filter — variation AND semantics, xform range bounds.
+  const passing: FeatureRecord[] = [];
+  index.forEachRecord((rec) => {
+    if (rec.xforms < spec.xformMin) return;
+    if (spec.xformMax !== null && rec.xforms > spec.xformMax) return;
+    for (const v of spec.vars) {
+      if (!rec.variations.includes(v)) return;
+    }
+    passing.push(rec);
+  });
+  // Second pass: sort. `time` is identity — the index walks records in
+  // (gen↑, id↑) order already. `interest` sorts by interestScore descending,
+  // tie-break ascending by (gen, id) for stable canonical ordering.
+  if (spec.sort === 'interest') {
+    passing.sort((a, b) => {
+      const dA = interestScore(a);
+      const dB = interestScore(b);
+      if (dB !== dA) return dB - dA;
+      if (a.gen !== b.gen) return a.gen - b.gen;
+      return a.id - b.id;
+    });
+  }
+  const out: SheepRef[] = [];
+  for (const r of passing) out.push({ gen: r.gen, id: r.id });
+  return out;
+}
+
+function getMasterList(index: FeatureIndex, spec: FilterSpec): SheepRef[] {
+  if (masterCache && filterSpecEquals(masterCache.spec, spec)) {
+    return masterCache.refs;
+  }
+  const refs = buildMasterList(index, spec);
+  masterCache = { spec, refs };
+  return refs;
+}
+
+/** Return the refs for `page` (1-indexed) under the given filter, sliced
+ *  from a per-process cached master list. The master list is rebuilt only
+ *  when `spec` changes; page nav within the same spec is a single slice. */
+export async function pageOfSheepFiltered(
+  page: number,
+  perPage: number,
+  spec: FilterSpec,
+  deps: FilteredPageDeps,
+): Promise<SheepRef[]> {
+  if (page < 1 || perPage < 1) return [];
+  const master = getMasterList(deps.index, spec);
+  const start = (page - 1) * perPage;
+  return master.slice(start, start + perPage);
+}
+
+/** Total pages for the given filter spec. 0 when the filter matches no
+ *  records (drives the empty-state UX). */
+export function totalPagesFiltered(
+  spec: FilterSpec,
+  perPage: number,
+  deps: FilteredPageDeps,
+): number {
+  if (perPage < 1) return 0;
+  const master = getMasterList(deps.index, spec);
+  return Math.ceil(master.length / perPage);
+}
+
 // ── Wave-fill orchestrator + DOM grid (Task 4) ──────────────────────────
 //
 // Mount a 3×3 gallery surface in `container`. The shared Renderer renders
@@ -360,10 +452,21 @@ export interface GalleryMountDeps {
   loadAvail?: LoadAvailFn;
   /** Injectable for tests + offline; defaults to corpus-bounds.loadGensManifest. */
   loadManifest?: LoadManifestFn;
+  /** Feature index for the filtered ref-resolution path (#49). When BOTH this
+   *  and `initialFilter` are present, runWave resolves refs via
+   *  pageOfSheepFiltered. When either is absent, runWave falls back to the
+   *  unfiltered pageOfSheep walk (test/offline/default-filter path). */
+  index?: FeatureIndex;
+  /** Initial FilterSpec for filtered ref-resolution (#49). See `index` above. */
+  initialFilter?: FilterSpec;
 }
 
 export interface GalleryMountHandle {
-  setPage(page: number): Promise<void>;
+  /** Switch to `page`. When `nextFilter` is provided and differs from the
+   *  mount's current filter, the mount adopts the new filter BEFORE running
+   *  the wave — the per-process master-list cache in pageOfSheepFiltered
+   *  rebuilds automatically on the spec change. */
+  setPage(page: number, nextFilter?: FilterSpec): Promise<void>;
   cancel(): void;
   destroy(): void;
 }
@@ -408,6 +511,13 @@ export async function mountGallery(
     deps.renderer.resize({ width: cellDim, height: cellDim, oversample: 1 });
   }
 
+  // Filtered-path closure state (#49). When both `index` and a filter are
+  // available, runWave uses pageOfSheepFiltered; otherwise it falls back to
+  // the canonical unfiltered pageOfSheep walk. setPage(page, nextFilter) can
+  // swap currentFilter mid-flight; the master-list cache in
+  // pageOfSheepFiltered keys on the spec and auto-rebuilds when it changes.
+  let currentFilter: FilterSpec | undefined = deps.initialFilter;
+
   const state = {
     cancelled: false,
     currentRun: null as RunHandle | null,
@@ -420,12 +530,19 @@ export async function mountGallery(
     // covers the "old cells linger ~2-3s into the new wave" gap (#54).
     for (const cell of cells) cell.setLoading();
 
-    const refs = await pageOfSheep(
-      page,
-      GALLERY_PAGE_SIZE,
-      deps.loadAvail,
-      deps.loadManifest,
-    );
+    const refs = (deps.index !== undefined && currentFilter !== undefined)
+      ? await pageOfSheepFiltered(
+          page,
+          GALLERY_PAGE_SIZE,
+          currentFilter,
+          { index: deps.index },
+        )
+      : await pageOfSheep(
+          page,
+          GALLERY_PAGE_SIZE,
+          deps.loadAvail,
+          deps.loadManifest,
+        );
     if (state.cancelled) return;
 
     // Attach refs / clear unused cells up-front so labels + links appear
@@ -485,7 +602,7 @@ export async function mountGallery(
   let pendingWave: Promise<void> = runWave(initialPage);
 
   return {
-    async setPage(newPage) {
+    async setPage(newPage, nextFilter) {
       state.cancelled = true;
       state.currentRun?.cancel();
       try {
@@ -496,6 +613,13 @@ export async function mountGallery(
       }
       state.cancelled = false;
       state.currentRun = null;
+      // Adopt the new filter BEFORE kicking the wave. The master-list cache
+      // in pageOfSheepFiltered rebuilds automatically when the spec changes.
+      if (nextFilter !== undefined) {
+        if (currentFilter === undefined || !filterSpecEquals(currentFilter, nextFilter)) {
+          currentFilter = nextFilter;
+        }
+      }
       pendingWave = runWave(newPage);
     },
     cancel() {

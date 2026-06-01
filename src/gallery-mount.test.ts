@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   clampGalleryPage,
   coalesce,
@@ -695,5 +695,257 @@ describe('coalesce — rapid-fire debounce', () => {
     expect(calls).toEqual([]);
     await sleep(50);
     expect(calls).toEqual([3]);
+  });
+});
+
+// ── #49 Task A5: pageOfSheepFiltered + totalPagesFiltered ──────────────
+
+import {
+  pageOfSheepFiltered,
+  totalPagesFiltered,
+  _resetMasterListCache,
+} from './gallery-mount';
+import { DEFAULT_FILTER_SPEC, type FilterSpec } from './gallery-filter';
+import type { FeatureIndex } from './feature-index-client';
+import type { FeatureRecord } from './feature-index';
+
+function makeStubIndex(records: FeatureRecord[]): FeatureIndex {
+  return {
+    schemaVersion: 1,
+    corpusTag: 'test',
+    recordCount: records.length,
+    has: (g, i) => records.some((r) => r.gen === g && r.id === i),
+    get: (g, i) => records.find((r) => r.gen === g && r.id === i) ?? null,
+    filter: (p) => records.filter(p).map((r) => ({ gen: r.gen, id: r.id })),
+    forEachRecord: (visitor) => {
+      for (const r of records) {
+        if (visitor(r) === false) return;
+      }
+    },
+  };
+}
+
+function recF(
+  gen: number,
+  id: number,
+  xforms: number,
+  coverage = 0.5,
+  entropy = 0.5,
+  colorVar = 0.5,
+  meanLum = 0.5,
+  variations: number[] = [14],
+): FeatureRecord {
+  return { gen, id, xforms, coverage, entropy, colorVar, meanLum, variations };
+}
+
+describe('pageOfSheepFiltered', () => {
+  beforeEach(() => {
+    _resetMasterListCache();
+  });
+
+  const idx = makeStubIndex(
+    Array.from({ length: 25 }, (_, i) => recF(165, i, 3, (25 - i) / 25)),
+  );
+
+  it('default filter, page 1, perPage 9 returns 9 refs in (gen,id) order', async () => {
+    const out = await pageOfSheepFiltered(1, 9, DEFAULT_FILTER_SPEC, { index: idx });
+    expect(out.length).toBe(9);
+    expect(out[0]).toEqual({ gen: 165, id: 0 });
+    expect(out[8]).toEqual({ gen: 165, id: 8 });
+  });
+
+  it('page 3 returns the trailing 7 refs (25 - 18 = 7)', async () => {
+    const out = await pageOfSheepFiltered(3, 9, DEFAULT_FILTER_SPEC, { index: idx });
+    expect(out.length).toBe(7);
+  });
+
+  it('sort=interest reorders by interestScore descending', async () => {
+    // Coverage decreases with id; interestScore is dominated by coverage in
+    // the defaults — so id 0 (cov 1.0) should sort first.
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, sort: 'interest' };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: idx });
+    expect(out[0]).toEqual({ gen: 165, id: 0 });
+  });
+
+  it('vars filter narrows the result set', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.5, 0.5, 0.5, [14]),    // julia
+      recF(165, 1, 3, 0.5, 0.5, 0.5, 0.5, [0]),     // linear
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5, [14, 0]), // julia + linear
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, vars: [14] };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    expect(out).toEqual([{ gen: 165, id: 0 }, { gen: 165, id: 2 }]);
+  });
+
+  it('xform range narrows the result set', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 2),
+      recF(165, 1, 3),
+      recF(165, 2, 4),
+      recF(165, 3, 5),
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, xformMin: 3, xformMax: 4 };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    expect(out).toEqual([{ gen: 165, id: 1 }, { gen: 165, id: 2 }]);
+  });
+});
+
+describe('totalPagesFiltered', () => {
+  beforeEach(() => {
+    _resetMasterListCache();
+  });
+
+  it('25 records / 9 per page = 3 pages', () => {
+    const idx = makeStubIndex(
+      Array.from({ length: 25 }, (_, i) => recF(165, i, 3)),
+    );
+    expect(totalPagesFiltered(DEFAULT_FILTER_SPEC, 9, { index: idx })).toBe(3);
+  });
+
+  it('empty result set → 0 pages', () => {
+    const idx = makeStubIndex([recF(165, 0, 3, 0.5, 0.5, 0.5, 0.5, [14])]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, vars: [0] }; // linear absent
+    expect(totalPagesFiltered(spec, 9, { index: idx })).toBe(0);
+  });
+});
+
+// ── #49 Task A6: mountGallery filtered path wiring ─────────────────────
+//
+// Verify that when an `index` + `initialFilter` are passed, runWave resolves
+// refs via the master-list (pageOfSheepFiltered) instead of pageOfSheep —
+// and that setPage(page, nextFilter) rebuilds the master list when the
+// filter changes. A regression case asserts the existing pageOfSheep path
+// still runs when neither hook is provided.
+
+describe('mountGallery — filtered path', () => {
+  beforeEach(() => {
+    _resetMasterListCache();
+  });
+
+  // Throws if pageOfSheep's loadAvail is ever called — proves the filtered
+  // path skipped the unfiltered walk.
+  const throwingLoadAvail = async (_g: number): Promise<number[]> => {
+    throw new Error('loadAvail must not be called on the filtered path');
+  };
+  const throwingLoadManifest = async (): Promise<null> => {
+    throw new Error('loadManifest must not be called on the filtered path');
+  };
+
+  it('uses pageOfSheepFiltered when index + initialFilter are provided', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchCalls: SheepRef[] = [];
+    const fetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
+      fetchCalls.push({ gen, id });
+      return stubGenome();
+    };
+    // Stub index: 9 records, ids 0..8, gen 165 — page 1 (perPage 9) covers all.
+    const idx = makeStubIndex(
+      Array.from({ length: 9 }, (_, i) => recF(165, i, 3)),
+    );
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      // throwingLoadAvail/Manifest must never be called on the filtered path.
+      loadAvail: throwingLoadAvail,
+      loadManifest: throwingLoadManifest,
+      index: idx,
+      initialFilter: DEFAULT_FILTER_SPEC,
+    });
+
+    await flushMicrotasks();
+
+    // Refs come from the index walk — gen 165 ids 0..8 in (gen, id) order.
+    expect(fetchCalls).toEqual(
+      Array.from({ length: 9 }, (_, i) => ({ gen: 165, id: i })),
+    );
+
+    handle.destroy();
+  });
+
+  it('setPage(page, nextFilter) rebuilds the master list when the filter differs', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchCalls: SheepRef[] = [];
+    const fetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
+      fetchCalls.push({ gen, id });
+      return stubGenome();
+    };
+    // Mixed index: half have variation 14 (julia), half have variation 0 (linear).
+    const idx = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.5, 0.5, 0.5, [14]),
+      recF(165, 1, 3, 0.5, 0.5, 0.5, 0.5, [14]),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.5, [0]),
+      recF(165, 3, 3, 0.5, 0.5, 0.5, 0.5, [0]),
+    ]);
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: throwingLoadAvail,
+      loadManifest: throwingLoadManifest,
+      index: idx,
+      initialFilter: DEFAULT_FILTER_SPEC, // no vars filter → all 4 records
+    });
+
+    await flushMicrotasks();
+    const initialCount = fetchCalls.length;
+    expect(initialCount).toBe(4);
+
+    // Switch to a vars=[14] filter — master list rebuilds to 2 records.
+    fetchCalls.length = 0;
+    await handle.setPage(1, { ...DEFAULT_FILTER_SPEC, vars: [14] });
+    await flushMicrotasks();
+
+    expect(fetchCalls).toEqual([
+      { gen: 165, id: 0 },
+      { gen: 165, id: 1 },
+    ]);
+
+    handle.destroy();
+  });
+
+  it('falls back to pageOfSheep when index/initialFilter are not provided', async () => {
+    // Regression guard: omitting the filtered hooks must keep the legacy
+    // pageOfSheep walk active — proven by orchLoadAvail being called.
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const availCalls: number[] = [];
+    const recordingLoadAvail = async (g: number): Promise<number[]> => {
+      availCalls.push(g);
+      return ORCH_AVAIL[g] ?? [];
+    };
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: recordingLoadAvail,
+      loadManifest: orchLoadManifest,
+      // No `index`, no `initialFilter` — legacy path.
+    });
+
+    await flushMicrotasks();
+    expect(availCalls.length).toBeGreaterThan(0); // legacy path was used
+    expect(harness.seeds.length).toBe(9);
+
+    handle.destroy();
   });
 });

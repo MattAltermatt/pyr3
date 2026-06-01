@@ -11,6 +11,12 @@
 // Absent a recognized /v1 path → default (main.ts resolves to the hardcoded
 // welcome flame). Malformed /v1 paths never throw — they fall through to default.
 
+import {
+  encodeFilterSpec,
+  parseFilterSpec,
+  type FilterSpec,
+} from './gallery-filter';
+
 // The canonical "welcome" hero sheep. Bare root (`/`, the `default` intent)
 // forwards to this corpus leaf so the landing page is a real, shareable,
 // nav-wired corpus URL (PYR3-053-adjacent root-forward) — while still painting
@@ -25,7 +31,7 @@ export type LoadIntent =
   | { kind: 'corpus'; gen: number; id: number }
   | { kind: 'gen-list' }
   | { kind: 'gen-browse'; gen: number }
-  | { kind: 'gallery'; page: number }
+  | { kind: 'gallery'; page: number; filter: FilterSpec }
   | { kind: 'custom-reserved' }
   | { kind: 'default' };
 
@@ -38,11 +44,23 @@ function isNonNegInt(segment: string): boolean {
   return /^\d+$/.test(segment);
 }
 
-export function parseLoadIntent(loc: { pathname: string }): LoadIntent {
+export function parseLoadIntent(input: string): LoadIntent | null {
+  // Accept either a bare pathname ("/v1/gallery") or path+search
+  // ("/v1/gallery?sort=interest"); a synthetic base lets new URL() parse both.
+  // Malformed input that URL can't even tokenize → null (callers treat as default).
+  let pathname: string;
+  let search: string;
+  try {
+    const u = new URL(input, 'http://_');
+    pathname = u.pathname;
+    search = u.search;
+  } catch {
+    return null;
+  }
+
   // Strip the Vite base prefix so the /v1 grammar matches on a project-Pages
   // site (pathname is "/pyr3/v1/..." there) as well as an apex domain
   // (base "/", pathname "/v1/..."). import.meta.env.BASE_URL always ends "/".
-  let pathname = loc.pathname;
   const base = import.meta.env.BASE_URL;
   if (base && base !== '/') {
     const prefix = base.replace(/\/$/, ''); // "/pyr3"
@@ -86,9 +104,10 @@ export function parseLoadIntent(loc: { pathname: string }): LoadIntent {
       }
       // /v1/flame with nothing after — fall through
     } else if (sub === 'gallery') {
+      const filter = parseFilterSpec(new URLSearchParams(search));
       // /v1/gallery → page 1 (canonical default — no /p/1 suffix)
       if (parts.length === 2) {
-        return { kind: 'gallery', page: 1 };
+        return { kind: 'gallery', page: 1, filter };
       }
       // /v1/gallery/p/{page} — 1-indexed; /p/0 and non-numeric fall through
       if (
@@ -97,7 +116,7 @@ export function parseLoadIntent(loc: { pathname: string }): LoadIntent {
         isNonNegInt(parts[3]!) &&
         Number(parts[3]) >= 1
       ) {
-        return { kind: 'gallery', page: Number(parts[3]) };
+        return { kind: 'gallery', page: Number(parts[3]), filter };
       }
       // Malformed — fall through
     }
@@ -124,9 +143,14 @@ export function corpusUrl(gen: number, id: number): string {
  * parseLoadIntent (guarded in load-intent.test.ts). Mirrors corpusUrl's
  * relationship with the corpus route.
  */
-export function galleryUrl(page: number): string {
-  if (page <= 1) return `${import.meta.env.BASE_URL}v1/gallery`;
-  return `${import.meta.env.BASE_URL}v1/gallery/p/${page}`;
+export function galleryUrl(page: number, filter?: FilterSpec): string {
+  const base =
+    page <= 1
+      ? `${import.meta.env.BASE_URL}v1/gallery`
+      : `${import.meta.env.BASE_URL}v1/gallery/p/${page}`;
+  if (!filter) return base;
+  const qs = encodeFilterSpec(filter).toString();
+  return qs.length === 0 ? base : `${base}?${qs}`;
 }
 
 /**

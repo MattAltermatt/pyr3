@@ -16,8 +16,15 @@ import {
   GALLERY_NAV_COALESCE_MS,
   mountGallery,
   pageForSheep,
+  totalPagesFiltered,
   type GalleryMountHandle,
 } from './gallery-mount';
+import {
+  DEFAULT_FILTER_SPEC,
+  filterSpecEquals,
+  type FilterSpec,
+} from './gallery-filter';
+import { loadFeatureIndex } from './feature-index-client';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
 import {
   corpusUrl,
@@ -850,6 +857,19 @@ async function main(): Promise<void> {
   let galleryTotalPages = 0;
   let currentGalleryPage = 1;
   let currentSurface: 'viewer' | 'gallery' = 'viewer';
+  // #49 Phase A: live FilterSpec the gallery surface is paging through. Set
+  // from the initial URL via parseLoadIntent, mutated by popstate cross-spec
+  // navigation, and by applyFilter (the seam Phase B's drawer will call).
+  let currentFilter: FilterSpec = DEFAULT_FILTER_SPEC;
+  // Lazy-loaded feature index — fetched on first need (gallery mount) and
+  // memoized for the rest of the session. Phase A always loads it on the
+  // gallery surface (even for the default filter), so totalPagesFiltered
+  // shares the same index reference as runWave inside mountGallery.
+  let featureIndexPromise: ReturnType<typeof loadFeatureIndex> | null = null;
+  const ensureFeatureIndex = (): ReturnType<typeof loadFeatureIndex> => {
+    if (featureIndexPromise === null) featureIndexPromise = loadFeatureIndex();
+    return featureIndexPromise;
+  };
 
   const galleryFetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
     try {
@@ -896,13 +916,55 @@ async function main(): Promise<void> {
     flushGalleryCommit(clamped);
   };
 
+  // #49 Phase A seam — wired but not yet reachable from any UI control. The
+  // FilterDrawer + sort picker (Phase B/C) will invoke this with the spec
+  // they assemble. Keeping the function defined now means Phase B can import
+  // it without restructuring main.ts. Early-out on equal specs so accidental
+  // re-applies are free; on a real change we pushState (so Back returns to
+  // the prior filter), then refresh totalPages + page the mount.
+  const applyFilter = (nextFilter: FilterSpec): void => {
+    if (filterSpecEquals(currentFilter, nextFilter)) return;
+    currentFilter = nextFilter;
+    history.pushState({}, '', galleryUrl(1, nextFilter));
+    setDocTitle('gallery · p1');
+    void ensureFeatureIndex().then((index) => {
+      galleryTotalPages = totalPagesFiltered(currentFilter, GALLERY_PAGE_SIZE, { index });
+      galleryBar?.setPage(1, galleryTotalPages);
+      currentGalleryPage = 1;
+      void galleryHandle?.setPage(1, nextFilter);
+    });
+  };
+  // Silence the `applyFilter is unused` lint until Phase B wires the drawer.
+  // The export-internal reference is retained — Phase B imports applyFilter
+  // through a module-local handoff rather than reaching across files.
+  void applyFilter;
+
   const mountGallerySurface = async (initialPage: number): Promise<void> => {
-    galleryTotalPages = await computeGalleryTotalPages();
+    // Parse the URL once more here so the FilterSpec the gallery actually
+    // mounts with always tracks the live address bar — the caller (the
+    // initial-load block at the bottom of main) passes `intent.page` but not
+    // `intent.filter`, and a popstate-into-gallery (which today calls
+    // location.reload — see the popstate handler) will land here too.
+    const intent = parseLoadIntent(location.pathname + location.search);
+    currentFilter = intent !== null && intent.kind === 'gallery'
+      ? intent.filter
+      : DEFAULT_FILTER_SPEC;
+
+    // Load the feature index up-front so totalPagesFiltered and the mount's
+    // runWave share the same index reference. ensureFeatureIndex memoizes,
+    // so subsequent applyFilter calls reuse this promise.
+    const index = await ensureFeatureIndex();
+    galleryTotalPages = totalPagesFiltered(currentFilter, GALLERY_PAGE_SIZE, { index });
+
     const page = clampGalleryPage(initialPage, galleryTotalPages);
-    if (page !== initialPage) {
-      // URL out of range → replaceState to the clamped page so reload / share
-      // stays consistent with what the user actually sees.
-      history.replaceState({}, '', galleryUrl(page));
+    // Self-consistency: if the URL contains unrecognized filter tokens
+    // (typo'd variation name, malformed xforms, etc.), the parser drops
+    // them silently — but the address bar would lie about what's applied.
+    // Rewrite to the canonical form so what the visitor sees IS what's
+    // actually filtering. Also covers the URL-out-of-range page clamp.
+    const canonical = galleryUrl(page, currentFilter);
+    if (canonical !== location.pathname + location.search) {
+      history.replaceState({}, '', canonical);
     }
     currentGalleryPage = page;
     currentSurface = 'gallery';
@@ -949,6 +1011,8 @@ async function main(): Promise<void> {
       container: galleryDiv,
       fetchGenome: galleryFetchGenome,
       draftTier: QUALITY_TIERS[0]!,
+      index,
+      initialFilter: currentFilter,
     });
 
     clearFirstPaintCue();
@@ -960,8 +1024,23 @@ async function main(): Promise<void> {
   // a careful inline teardown otherwise. Cell-click cross-surface navigation
   // is also a full reload by design (anchor href, no preventDefault).
   window.addEventListener('popstate', () => {
-    const i = parseLoadIntent(window.location);
+    const i = parseLoadIntent(window.location.pathname + window.location.search);
+    if (i === null) { window.location.reload(); return; }
     if (currentSurface === 'gallery' && i.kind === 'gallery') {
+      // #49: cross-spec popstate (Back/Forward across a filter change) → adopt
+      // the new filter + recompute totalPagesFiltered before paging the mount.
+      // Same-spec / different-page popstate falls through to the page-only path.
+      if (!filterSpecEquals(i.filter, currentFilter)) {
+        currentFilter = i.filter;
+        currentGalleryPage = i.page;
+        setDocTitle(`gallery · p${i.page}`);
+        void ensureFeatureIndex().then((index) => {
+          galleryTotalPages = totalPagesFiltered(currentFilter, GALLERY_PAGE_SIZE, { index });
+          galleryBar?.setPage(i.page, galleryTotalPages);
+          void galleryHandle?.setPage(i.page, i.filter);
+        });
+        return;
+      }
       currentGalleryPage = i.page;
       setDocTitle(`gallery · p${i.page}`);
       void galleryHandle?.setPage(i.page);
@@ -1004,7 +1083,8 @@ async function main(): Promise<void> {
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
   // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
   // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
-  const intent = parseLoadIntent(window.location);
+  const intent = parseLoadIntent(window.location.pathname + window.location.search)
+    ?? { kind: 'default' as const };
   if (intent.kind === 'gallery') {
     await mountGallerySurface(intent.page);
   } else if (intent.kind === 'corpus') {

@@ -36,6 +36,10 @@ export interface FeatureIndex {
    *  decoded record view — allocates one object per record visited; fine
    *  for v1.2's ~50k-row corpus. */
   filter(predicate: (rec: FeatureRecord) => boolean): SheepRef[];
+  /** Single-pass walk yielding every record in (gen↑, id↑) order. Allocates
+   *  one FeatureRecord per visit — fine for the ~50k-row corpus. Returns
+   *  early when the visitor returns false (truthy keeps walking). */
+  forEachRecord(visitor: (rec: FeatureRecord) => void | boolean): void;
 }
 
 function featureIndexUrl(): string {
@@ -51,6 +55,7 @@ const EMPTY: FeatureIndex = Object.freeze({
   has: () => false,
   get: () => null,
   filter: () => [],
+  forEachRecord: () => {},
 }) as FeatureIndex;
 
 /** Sentinel for a transient failure — caller does NOT cache, so a later
@@ -231,6 +236,13 @@ async function buildIndex(fetchImpl: typeof fetch): Promise<BuiltIndex> {
         if (predicate(rec)) out.push({ gen: rec.gen, id: rec.id });
       }
       return out;
+    },
+    forEachRecord(visitor) {
+      for (let i = 0; i < count; i++) {
+        const rec = decodeRecord(recordsBytes, i * FEATURE_INDEX_RECORD_BYTES);
+        const cont = visitor(rec);
+        if (cont === false) return;
+      }
     },
   };
 }

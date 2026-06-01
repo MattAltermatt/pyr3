@@ -8,9 +8,11 @@ import {
   pageForCorpusIndex,
   parseLoadIntent,
 } from './load-intent';
+import { DEFAULT_FILTER_SPEC } from './gallery-filter';
+import { V } from './variations';
 
 // Shorthand: p(pathname) → parseLoadIntent
-const p = (pathname: string) => parseLoadIntent({ pathname });
+const p = (pathname: string) => parseLoadIntent(pathname);
 
 // ── /v1 path grammar ─────────────────────────────────────────────────────
 
@@ -139,19 +141,19 @@ describe('hero-forward target round-trips through the parser', () => {
 
 describe('parseLoadIntent – /v1/gallery grammar', () => {
   it('parses /v1/gallery as page 1', () => {
-    expect(p('/v1/gallery')).toEqual({ kind: 'gallery', page: 1 });
+    expect(p('/v1/gallery')).toEqual({ kind: 'gallery', page: 1, filter: DEFAULT_FILTER_SPEC });
   });
 
   it('parses /v1/gallery/ (trailing slash) as page 1', () => {
-    expect(p('/v1/gallery/')).toEqual({ kind: 'gallery', page: 1 });
+    expect(p('/v1/gallery/')).toEqual({ kind: 'gallery', page: 1, filter: DEFAULT_FILTER_SPEC });
   });
 
   it('parses /v1/gallery/p/27 as page 27', () => {
-    expect(p('/v1/gallery/p/27')).toEqual({ kind: 'gallery', page: 27 });
+    expect(p('/v1/gallery/p/27')).toEqual({ kind: 'gallery', page: 27, filter: DEFAULT_FILTER_SPEC });
   });
 
   it('parses /v1/gallery/p/1 as page 1 (non-canonical but accepted)', () => {
-    expect(p('/v1/gallery/p/1')).toEqual({ kind: 'gallery', page: 1 });
+    expect(p('/v1/gallery/p/1')).toEqual({ kind: 'gallery', page: 1, filter: DEFAULT_FILTER_SPEC });
   });
 
   it('rejects /v1/gallery/p/0 (1-indexed) as default', () => {
@@ -193,7 +195,11 @@ describe('galleryUrl', () => {
     for (const page of [1, 2, 27, 5778]) {
       const url = galleryUrl(page);
       const pathname = new URL(url, 'http://x/').pathname;
-      expect(parseLoadIntent({ pathname })).toEqual({ kind: 'gallery', page });
+      expect(parseLoadIntent(pathname)).toEqual({
+        kind: 'gallery',
+        page,
+        filter: DEFAULT_FILTER_SPEC,
+      });
     }
   });
 
@@ -226,5 +232,57 @@ describe('pageForCorpusIndex', () => {
 
   it('GALLERY_PAGE_SIZE constant is 9 (3×3 grid)', () => {
     expect(GALLERY_PAGE_SIZE).toBe(9);
+  });
+});
+
+// ── gallery filter URL handling (#49 Task A4) ────────────────────────────
+
+describe('parseLoadIntent — gallery filter', () => {
+  it('/v1/gallery → page 1, default filter', () => {
+    const i = parseLoadIntent('/v1/gallery');
+    expect(i).toEqual({ kind: 'gallery', page: 1, filter: DEFAULT_FILTER_SPEC });
+  });
+
+  it('/v1/gallery/p/3 → page 3, default filter', () => {
+    const i = parseLoadIntent('/v1/gallery/p/3');
+    expect(i).toEqual({ kind: 'gallery', page: 3, filter: DEFAULT_FILTER_SPEC });
+  });
+
+  it('/v1/gallery?sort=interest → page 1, interest sort', () => {
+    const i = parseLoadIntent('/v1/gallery?sort=interest');
+    expect(i?.kind).toBe('gallery');
+    if (i?.kind === 'gallery') {
+      expect(i.page).toBe(1);
+      expect(i.filter.sort).toBe('interest');
+    }
+  });
+
+  it('/v1/gallery/p/3?vars=julia → page 3, julia filter', () => {
+    const i = parseLoadIntent('/v1/gallery/p/3?vars=julia');
+    expect(i?.kind).toBe('gallery');
+    if (i?.kind === 'gallery') {
+      expect(i.page).toBe(3);
+      expect(i.filter.vars).toEqual([V.julia]);
+    }
+  });
+});
+
+describe('galleryUrl — filter round-trip', () => {
+  it('default filter → bare /v1/gallery', () => {
+    expect(galleryUrl(1)).toMatch(/v1\/gallery$/);
+  });
+
+  it('default filter, page 3 → /v1/gallery/p/3 (no querystring)', () => {
+    expect(galleryUrl(3, DEFAULT_FILTER_SPEC)).toMatch(/v1\/gallery\/p\/3$/);
+  });
+
+  it('non-default filter on page 1 emits /v1/gallery?...', () => {
+    const url = galleryUrl(1, { ...DEFAULT_FILTER_SPEC, sort: 'interest' });
+    expect(url).toMatch(/v1\/gallery\?sort=interest$/);
+  });
+
+  it('non-default filter on page 3 emits /v1/gallery/p/3?...', () => {
+    const url = galleryUrl(3, { ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [V.julia] });
+    expect(url).toMatch(/v1\/gallery\/p\/3\?sort=interest&vars=julia$/);
   });
 });
