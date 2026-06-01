@@ -913,7 +913,11 @@ async function main(): Promise<void> {
   // the final page so the back-stack doesn't fill with intermediate pages
   // that would each trigger a wave-fill on popstate. ≤100ms window.
   const flushGalleryCommit = coalesce((page: number) => {
-    history.pushState({}, '', galleryUrl(page));
+    // Preserve the active filter on every page-nav — otherwise ‹/› clicks
+    // would strip `?coverage=0.5&…` from the URL, lying about what's
+    // applied. The grid would still render filtered (closure-captured
+    // filter state survives), but a refresh after nav would blow it away.
+    history.pushState({}, '', galleryUrl(page, currentFilter));
     setDocTitle(`gallery · p${page}`);
     void galleryHandle?.setPage(page);
   }, GALLERY_NAV_COALESCE_MS);
