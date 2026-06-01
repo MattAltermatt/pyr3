@@ -1,0 +1,189 @@
+// Seam-invariant unit tests (#60).
+//
+// pyr3's load-bearing architectural invariant: the same engine modules
+// (`src/*.ts` + `src/shaders/*.wgsl`) drive BOTH the browser viewer
+// (`src/main.ts`) and the headless CLI (`bin/pyr3-render.ts` +
+// `bin/pyr3-bake-features.ts`). The CLI hosts stamp WebGPU globals +
+// happy-dom's DOMParser onto `globalThis` before importing engine code;
+// engine code is supposed to be ENVIRONMENT-AGNOSTIC — never checking
+// `typeof window`, `process`, `isNode`, etc.
+//
+// Before this file: the only thing catching a regression that broke the
+// seam (e.g., someone added `if (typeof window === 'undefined')` to a
+// hot path) was the 13-minute FE↔BE parity sweep (`parity-fe-be.test.ts`,
+// retired from routine runs in #58). This file catches the same class of
+// regression in milliseconds.
+//
+// Companion: `src/renderer.test.ts` (added in #48 Task 2) pins the
+// canvas-per-call contract on the Renderer specifically. This file
+// generalizes — it scans the engine surface for the broader "no
+// environment branching" invariant.
+
+import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRenderer } from './renderer';
+import { applyPreset, QUALITY_TIERS, tierToSpec } from './presets';
+import { parseFlame } from './flame-import';
+import { GALLERY_PAGE_SIZE, galleryUrl } from './load-intent';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SRC_DIR = __dirname;
+
+// Files in `src/` that are ALLOWED to reference environment-specific
+// globals — entry points (main.ts is the viewer's, mounts DOM) and
+// build-constant consumers (avail-client / chunk-fetch read
+// `import.meta.env.BASE_URL`, a Vite-build-time string, not a runtime
+// environment branch). New entry points or build-constant readers go
+// here; engine modules MUST NOT.
+const SEAM_EXEMPT = new Set<string>([
+  'main.ts',              // viewer entry — uses document, window, history
+  'avail-client.ts',      // uses import.meta.env.BASE_URL (build constant)
+  'corpus-bounds.ts',     // same
+  'chunk-fetch.ts',       // same
+  'feature-index-client.ts', // same
+  'gallery-mount.ts',     // mounts DOM — fine to use document there
+  'load-intent.ts',       // galleryUrl/corpusUrl read import.meta.env.BASE_URL
+  'loader.ts',            // user-facing file loader, uses File API
+  'ui-bar.ts',            // viewer bar — uses document
+  'webgpu-check.ts',      // probes navigator.gpu — checking is its job
+  'brotli.ts',            // platform-aware decoder probe (native vs wasm)
+  'device.ts',            // viewer-side device acquisition uses navigator.gpu
+  'save-image.ts',        // unrelated — exports a pure helper, no env access
+  'no-innerhtml.test.ts', // test file; allowed
+  'parity.test.ts',       // test file
+  'parity-fe-be.test.ts', // test file
+  'render-orchestrator.ts', // orchestrator pulls rAF when available — see below
+]);
+
+// Banned patterns — direct runtime checks for the host environment.
+// These would fork the engine into "do X in browser, Y in node" at
+// runtime, which is exactly the seam we're protecting.
+const BANNED_PATTERNS: ReadonlyArray<{ pattern: RegExp; description: string }> = [
+  { pattern: /typeof\s+window\s*[!=]==?\s*['"`]undefined['"`]/, description: 'typeof window check' },
+  { pattern: /typeof\s+process\s*[!=]==?\s*['"`]undefined['"`]/, description: 'typeof process check' },
+  { pattern: /typeof\s+document\s*[!=]==?\s*['"`]undefined['"`]/, description: 'typeof document check' },
+  { pattern: /\bisNode\b/, description: 'isNode runtime branch' },
+  { pattern: /\bisBrowser\b/, description: 'isBrowser runtime branch' },
+];
+
+function listEngineFiles(): string[] {
+  return readdirSync(SRC_DIR)
+    .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+    .filter((name) => !SEAM_EXEMPT.has(name));
+}
+
+describe('seam invariant — engine modules are environment-agnostic', () => {
+  it('no engine module contains a typeof-window / typeof-process / isNode runtime branch', () => {
+    const offenders: Array<{ file: string; pattern: string; line: string }> = [];
+    for (const name of listEngineFiles()) {
+      const text = readFileSync(join(SRC_DIR, name), 'utf8');
+      for (const { pattern, description } of BANNED_PATTERNS) {
+        const match = text.match(pattern);
+        if (match !== null) {
+          // Pull the offending line for the error message.
+          const lines = text.split('\n');
+          const lineIndex = lines.findIndex((l) => pattern.test(l));
+          offenders.push({
+            file: name,
+            pattern: description,
+            line: lineIndex >= 0 ? `${lineIndex + 1}: ${lines[lineIndex]!.trim()}` : '?',
+          });
+        }
+      }
+    }
+    if (offenders.length > 0) {
+      const formatted = offenders
+        .map((o) => `  ${o.file}:${o.line}  [${o.pattern}]`)
+        .join('\n');
+      throw new Error(
+        `seam invariant violated — engine modules must NOT branch on host environment:\n${formatted}\n` +
+          `If this is intentional (new entry point or build-constant consumer), add the file to SEAM_EXEMPT in seam.test.ts.`,
+      );
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('the SEAM_EXEMPT list points at real files (catches stale entries)', () => {
+    const present = new Set(readdirSync(SRC_DIR));
+    const stale: string[] = [];
+    for (const name of SEAM_EXEMPT) {
+      if (!present.has(name)) stale.push(name);
+    }
+    expect(stale).toEqual([]);
+  });
+});
+
+describe('seam invariant — engine module surface is stable', () => {
+  it('createRenderer is exported from src/renderer.ts', () => {
+    expect(typeof createRenderer).toBe('function');
+  });
+
+  it('QUALITY_TIERS exports a Draft tier as the default low-cost preset', () => {
+    expect(QUALITY_TIERS.length).toBeGreaterThan(0);
+    const draft = QUALITY_TIERS[0]!;
+    expect(draft.name).toBe('Draft');
+    expect(draft.longEdge).toBe(512);
+    expect(draft.spp).toBeLessThan(20);
+  });
+
+  it('applyPreset(tierToSpec(tier)) returns a spec-shape that the Renderer understands', () => {
+    const tier = QUALITY_TIERS[0]!;
+    const spec = tierToSpec(tier);
+    expect(spec.maxDim).toBe(tier.longEdge);
+    expect(spec.maxSpp).toBe(tier.spp);
+    expect(spec.oversample).toBe(1);
+  });
+
+  it('parseFlame is exported + accepts an XML string (smoke contract — no real flame parse)', () => {
+    expect(typeof parseFlame).toBe('function');
+    // Don't call it — happy-dom not stamped in this env. The exported
+    // identity is the contract that matters for the seam.
+  });
+
+  it('load-intent exports the gallery URL shape used by both surfaces', () => {
+    expect(typeof galleryUrl).toBe('function');
+    expect(GALLERY_PAGE_SIZE).toBe(9);
+    expect(galleryUrl(1)).toMatch(/v1\/gallery$/);
+    expect(galleryUrl(27)).toMatch(/v1\/gallery\/p\/27$/);
+  });
+});
+
+describe('seam invariant — dawn-node globals stamp pattern works', () => {
+  // bin/pyr3-render.ts + bin/pyr3-bake-features.ts both do
+  // `Object.assign(globalThis, globals)` from the `webgpu` npm to make
+  // WebGPU constants (GPUBufferUsage etc.) available to engine code.
+  // This test verifies the dawn-node `globals` export still has the
+  // constants the engine references — catches breaking changes to the
+  // dawn-node API in node-only test runs (no GPU device needed).
+
+  it('webgpu npm exports a globals object with the constants engine code uses', async () => {
+    // dawn-node's `globals` export is typed as `Object`; cast to a record
+    // shape locally so we can poke at the GPU* fields without ts-ignore.
+    const dawn = await import('webgpu');
+    const g = dawn.globals as unknown as Record<string, unknown>;
+    expect(typeof g).toBe('object');
+    expect(g).not.toBeNull();
+    // The actual engine references these in shader bind groups, buffer
+    // descriptors, texture descriptors, etc. If dawn-node drops or
+    // renames any of these, the engine breaks under the CLI hosts.
+    // The WebGPU spec exposes them as namespace-style objects with
+    // static numeric props; dawn-node packages each as either a function
+    // (class with static props) or a plain object depending on version,
+    // both of which work at the engine call site (`GPUBufferUsage.COPY_SRC`
+    // resolves either way). The contract we pin is presence + a
+    // referenceable static prop.
+    const required = [
+      ['GPUBufferUsage', 'COPY_SRC'],
+      ['GPUMapMode', 'READ'],
+      ['GPUTextureUsage', 'RENDER_ATTACHMENT'],
+      ['GPUShaderStage', 'COMPUTE'],
+    ] as const;
+    for (const [api, prop] of required) {
+      const obj = g[api] as Record<string, unknown> | undefined;
+      expect(obj, `dawn-node globals.${api} is missing`).toBeDefined();
+      expect(obj![prop], `dawn-node globals.${api}.${prop} is missing`).toBeDefined();
+    }
+  });
+});
