@@ -19,6 +19,8 @@ import {
   type SortDir,
   type SortMode,
 } from './gallery-filter';
+import { mountVariationPicker, type VariationPickerHandle } from './variation-picker';
+import { VARIATION_NAMES } from './variations';
 
 /** Hover tooltips for each sort preset — the abstract pill labels
  *  ("coverage", "entropy", …) don't explain what they order by; the
@@ -193,6 +195,50 @@ const STYLES = `
 }
 .pyr3-stat-cell.active { color: var(--accent, #ff8c1a); }
 .pyr3-stat-cell.empty { color: #444; font-style: italic; }
+
+.pyr3-vars-add-btn {
+  background: var(--bar-bg-1, #15151a);
+  color: var(--text-dim, #aaa);
+  border: 1px solid var(--bar-border, #2a2a30);
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.pyr3-vars-add-btn:hover { background: var(--bar-bg-3, #0f0f13); color: var(--text, #ddd); }
+.pyr3-vars-add-btn.open {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.pyr3-vars-chips {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 6px;
+}
+.pyr3-vars-chip {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.pyr3-vars-chip:hover { background: rgba(255, 140, 26, 0.28); }
+.pyr3-vars-chip-x { padding-left: 4px; opacity: 0.7; }
+.pyr3-vars-chip:hover .pyr3-vars-chip-x { opacity: 1; }
+.pyr3-vars-picker-panel {
+  padding: 8px 16px 12px 70px;
+  max-height: 360px;
+  overflow-y: auto;
+  border-top: 1px solid var(--bar-border, #2a2a30);
+  border-bottom: 1px solid var(--bar-border, #2a2a30);
+  margin: 4px 0;
+}
 `;
 
 function injectStylesOnce(): void {
@@ -277,9 +323,115 @@ export function mountFilterDrawer(
     }
   }
 
+  // ── Variations row (D2) ─────────────────────────────────────────────
+  // Label + `[+ add ▾]` button + active-selection chips (each removable).
+  // Click `[+ add ▾]` toggles a picker panel that lives as a sibling row
+  // below this one — opened panel is `display: block`, closed = `none`.
   const varsRow = document.createElement('div');
   varsRow.className = 'pyr3-filter-row vars';
   drawer.appendChild(varsRow);
+
+  const varsLabel = document.createElement('span');
+  varsLabel.className = 'pyr3-filter-row-label';
+  varsLabel.textContent = 'vars:';
+  varsRow.appendChild(varsLabel);
+
+  const addVarBtn = document.createElement('button');
+  addVarBtn.type = 'button';
+  addVarBtn.className = 'pyr3-vars-add-btn';
+  addVarBtn.textContent = '+ add ▾';
+  addVarBtn.title = 'open the variation picker — filter by which variations the flame uses (AND across selections)';
+  varsRow.appendChild(addVarBtn);
+
+  const varsChips = document.createElement('span');
+  varsChips.className = 'pyr3-vars-chips';
+  varsRow.appendChild(varsChips);
+
+  // Picker panel — sits AFTER the vars row, hidden until the button toggles
+  // it. Inserted into the drawer via insertAdjacentElement('afterend')
+  // after we've appended varsRow below.
+  const varsPickerPanel = document.createElement('div');
+  varsPickerPanel.className = 'pyr3-vars-picker-panel';
+  varsPickerPanel.style.display = 'none';
+
+  let varsPickerHandle: VariationPickerHandle | null = null;
+  let varsPickerOpen = false;
+
+  /** Render the active-selection chips outside the picker (so visitor
+   *  sees what's selected without opening). Each chip's × click removes
+   *  that single variation. */
+  function renderVarsChips(vars: number[]): void {
+    varsChips.replaceChildren();
+    for (const v of vars) {
+      const chip = document.createElement('span');
+      chip.className = 'pyr3-vars-chip';
+      const name = VARIATION_NAMES[v] ?? `var${v}`;
+      chip.append(
+        document.createTextNode(`${name} `),
+        Object.assign(document.createElement('span'), { className: 'pyr3-vars-chip-x', textContent: '×' }),
+      );
+      chip.title = `remove ${name} from the variation filter`;
+      chip.onclick = () => {
+        opts.onChange({ ...currentFilter, vars: currentFilter.vars.filter((i) => i !== v) });
+      };
+      varsChips.appendChild(chip);
+    }
+  }
+
+  function syncVarsPicker(): void {
+    if (varsPickerHandle !== null) {
+      varsPickerHandle.setState({
+        selected: currentFilter.vars,
+        counts: currentCounts.variations,
+      });
+    }
+  }
+
+  function toggleVarsPicker(): void {
+    varsPickerOpen = !varsPickerOpen;
+    varsPickerPanel.style.display = varsPickerOpen ? 'block' : 'none';
+    addVarBtn.classList.toggle('open', varsPickerOpen);
+    if (varsPickerOpen && varsPickerHandle === null) {
+      varsPickerHandle = mountVariationPicker(varsPickerPanel, {
+        selected: currentFilter.vars,
+        counts: currentCounts.variations,
+        onChange: (nextVars) => {
+          opts.onChange({ ...currentFilter, vars: nextVars });
+        },
+      });
+    } else if (varsPickerOpen) {
+      syncVarsPicker();
+    }
+  }
+
+  addVarBtn.onclick = (e) => {
+    e.stopPropagation();
+    toggleVarsPicker();
+  };
+
+  // Click-outside dismissal — close the picker when the click target is
+  // outside both the picker panel AND the [+ add ▾] button. Registered on
+  // document; removed in destroy() to avoid leaks.
+  const onDocumentClick = (e: MouseEvent): void => {
+    if (!varsPickerOpen) return;
+    // Use composedPath — the picker re-renders on every selection (via
+    // applyFilter → setFilter → syncVarsPicker), which removes the clicked
+    // row node from the DOM BEFORE this document-level handler runs. A
+    // naive `target.contains()` check would then fail, falsely concluding
+    // the click landed outside the panel. composedPath captures the path
+    // at event dispatch time, before any mutation.
+    const path = e.composedPath();
+    if (path.includes(varsPickerPanel) || path.includes(addVarBtn)) return;
+    varsPickerOpen = false;
+    varsPickerPanel.style.display = 'none';
+    addVarBtn.classList.remove('open');
+  };
+  document.addEventListener('click', onDocumentClick);
+
+  renderVarsChips(currentFilter.vars);
+
+  // The picker panel lives directly below the vars row inside the drawer.
+  drawer.appendChild(varsPickerPanel);
 
   // Stat-range rows — coverage, entropy, colorVar, meanLum. Each row is a
   // 0..1 float range with decile-bucket count strip. Inserted between
@@ -546,6 +698,7 @@ export function mountFilterDrawer(
       currentCounts = c;
       renderXformStrip(currentFilter, c);
       for (const r of statRowRenderers) r(currentFilter, c);
+      syncVarsPicker();
     },
     setFilter(f) {
       currentFilter = f;
@@ -554,6 +707,8 @@ export function mountFilterDrawer(
       renderXformPickers(f);
       renderXformStrip(f, currentCounts);
       for (const r of statRowRenderers) r(f, currentCounts);
+      renderVarsChips(f.vars);
+      syncVarsPicker();
       // Auto-open on non-default; auto-close on reset-to-default. The
       // drawer mirrors the meaningfulness of the filter state.
       const shouldOpen = !isDefaultFilterSpec(f);
@@ -573,6 +728,8 @@ export function mountFilterDrawer(
       drawer.classList.toggle('loading', loading);
     },
     destroy() {
+      document.removeEventListener('click', onDocumentClick);
+      varsPickerHandle?.destroy();
       root.replaceChildren();
     },
   };
