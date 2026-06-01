@@ -43,10 +43,19 @@ cd "$REPO"
 PART="${OUT}.part"
 echo "[batched-bake] esf=${ESF_ROOT} tag=${TAG} out=${OUT} batch=${BATCH}"
 
-# Discover total corpus size so we can compute progress. Cheap — just walk
-# the directory tree once.
-TOTAL=$(find "${ESF_ROOT}/corpus" -name 'electricsheep.*.flam3' | wc -l | tr -d ' ')
-echo "[batched-bake] corpus total: ${TOTAL} sheep"
+# Discover total genome-only corpus size — what the bake CLI's allowlist
+# filter will actually process (kind=="genome" in ESF's index.json). The
+# raw filesystem count of *.flam3 files is ~3x larger (animation files
+# are included on disk but skipped by the bake) — using THAT here makes
+# progress percentages wrong AND breaks the `DONE >= TOTAL` completion
+# check (DONE would cap at ~52k while TOTAL stays at ~166k → infinite loop).
+INDEX="${ESF_ROOT}/corpus/_index/index.json"
+if [[ ! -f "${INDEX}" ]]; then
+  echo "[batched-bake] ESF index missing: ${INDEX}" >&2
+  exit 1
+fi
+TOTAL=$(jq '[.genomes[] | select(.kind == "genome")] | length' "${INDEX}")
+echo "[batched-bake] genome-only corpus total: ${TOTAL} sheep"
 
 # First invocation: NO --resume so any stale .part is truncated. Subsequent
 # invocations use --resume.
