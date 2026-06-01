@@ -23,7 +23,8 @@
     "build:showcase": "node scripts/build-showcase.mjs",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
-    "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts"
+    "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts",
+    "bake-features": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bake-features.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
