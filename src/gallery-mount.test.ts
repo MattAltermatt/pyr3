@@ -434,6 +434,121 @@ describe('mountGallery — wave-fill orchestration', () => {
     handle.destroy();
   });
 
+  it('cells expose loading… overlay until each render lands; clear on completion', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness({ autoResolve: false });
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    // Page-switch clear runs synchronously at the top of runWave — all 9
+    // cells should be in .loading immediately, before the first render fires.
+    await flushMicrotasks(2);
+    let loadingCells = container.querySelectorAll('.pyr3-gallery-cell.loading');
+    expect(loadingCells.length).toBe(9);
+    expect(container.querySelector('.pyr3-gallery-cell-loading')!.textContent).toBe('loading…');
+
+    // Resolve the first cell's render — only it should clear .loading.
+    harness.handles[0]!.resolve('completed');
+    await flushMicrotasks(5);
+    loadingCells = container.querySelectorAll('.pyr3-gallery-cell.loading');
+    expect(loadingCells.length).toBe(8);
+
+    // Drain the rest.
+    harness.setAutoResolve(true);
+    for (const h of harness.handles.slice(1)) h.resolve('completed');
+    await flushMicrotasks(30);
+    loadingCells = container.querySelectorAll('.pyr3-gallery-cell.loading');
+    expect(loadingCells.length).toBe(0);
+
+    handle.destroy();
+  });
+
+  it('setPage clears all cells back to loading immediately, before the new pageOfSheep resolves', async () => {
+    const container = document.createElement('div');
+    // autoResolve=false so the page-1 wave settles to "loading + renders
+    // in-flight, never completing" — every cell stays in .loading until
+    // we explicitly resolve. Same for page 2 once setPage fires.
+    const harness = makeOrchHarness({ autoResolve: false });
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    // Let page-1's wave reach a steady state — refs attached, first cell
+    // rendering but never resolving. All 9 cells should be in .loading.
+    await flushMicrotasks();
+    expect(container.querySelectorAll('.pyr3-gallery-cell.loading').length).toBe(9);
+
+    // Resolve the cells that have already started rendering so they leave
+    // .loading. Page 1 should now have at least the first cell rendered
+    // (out of loading) — confirms the clearLoading wire-up.
+    harness.handles[0]!.resolve('completed');
+    await flushMicrotasks(5);
+    expect(container.querySelectorAll('.pyr3-gallery-cell.loading').length).toBe(8);
+
+    // Trigger page 2 — the page-switch clear should immediately re-add
+    // .loading to every cell (including the one that had finished
+    // rendering), BEFORE the new wave's first render starts.
+    const pending = handle.setPage(2);
+    await flushMicrotasks(3);
+    expect(container.querySelectorAll('.pyr3-gallery-cell.loading').length).toBe(9);
+
+    // Drain page 2.
+    harness.setAutoResolve(true);
+    await pending;
+    await flushMicrotasks(30);
+    expect(container.querySelectorAll('.pyr3-gallery-cell.loading').length).toBe(0);
+
+    handle.destroy();
+  });
+
+  it('missing-genome cells exit the loading state (no overlay on a dead cell)', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (_gen: number, id: number): Promise<Genome | null> => {
+      if (id === 4) return null;
+      return stubGenome();
+    };
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+    expect(container.querySelectorAll('.pyr3-gallery-cell.missing').length).toBe(1);
+    expect(container.querySelectorAll('.pyr3-gallery-cell.missing.loading').length).toBe(0);
+
+    handle.destroy();
+  });
+
   it('setPage(N) cancels current wave and restarts on the new page', async () => {
     const container = document.createElement('div');
     // autoResolve=false so we can observe the cancellation deterministically.

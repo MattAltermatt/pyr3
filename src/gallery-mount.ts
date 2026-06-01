@@ -194,12 +194,25 @@ const CELL_STYLE_ID = 'pyr3-gallery-styles';
 // without scrolling at any viewport size — the surface design (#47).
 const CELL_STYLE = `
 .pyr3-gallery-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; padding:16px; max-width:min(1200px, calc(100vh - 122px)); width:100%; box-sizing:border-box; margin:0 auto; }
-.pyr3-gallery-cell { display:flex; flex-direction:column; gap:4px; text-decoration:none; color:inherit; }
+.pyr3-gallery-cell { display:flex; flex-direction:column; gap:4px; text-decoration:none; color:inherit; position:relative; }
 .pyr3-gallery-cell canvas { width:100%; aspect-ratio:1; background:#000; border-radius:2px; display:block; }
 .pyr3-gallery-cell.empty canvas, .pyr3-gallery-cell.missing canvas { background:#15151a; border:1px solid #2a2a30; }
 .pyr3-gallery-cell-label { font-family:ui-monospace, monospace; font-size:11px; color:#888; text-align:center; }
 .pyr3-gallery-cell.missing .pyr3-gallery-cell-label { color:#555; font-style:italic; }
 .pyr3-gallery-cell:hover canvas { outline:1px solid #ff8c1a; outline-offset:2px; }
+.pyr3-gallery-cell-loading {
+  position:absolute; left:0; right:0; top:0; aspect-ratio:1;
+  display:none; align-items:center; justify-content:center;
+  background:#0a0a0c; border-radius:2px;
+  font-family:ui-monospace, monospace; font-size:11px; color:#666;
+  pointer-events:none;
+  animation: pyr3-gallery-loading-pulse 1.4s ease-in-out infinite;
+}
+.pyr3-gallery-cell.loading .pyr3-gallery-cell-loading { display:flex; }
+@keyframes pyr3-gallery-loading-pulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 0.55; }
+}
 `;
 
 function ensureGalleryStyles(): void {
@@ -215,7 +228,14 @@ interface CellHandle {
   canvas: HTMLCanvasElement;
   ctx: GPUCanvasContext | null;
   label: HTMLSpanElement;
+  /** Show the "loading…" overlay + clear any stale href. Called when a wave
+   *  starts (so the prior page's rendered content is visually replaced
+   *  instantly instead of waiting for the new render to paint over it),
+   *  and re-applied alongside `setRef` while the new render is in flight. */
+  setLoading(): void;
   setRef(gen: number, id: number): void;
+  /** Remove the loading overlay — called after a successful render lands. */
+  clearLoading(): void;
   setEmpty(): void;
   setMissing(gen: number, id: number): void;
 }
@@ -223,11 +243,6 @@ interface CellHandle {
 function buildCell(cellDim: number): CellHandle {
   const root = document.createElement('a');
   root.className = 'pyr3-gallery-cell empty';
-  // Cell clicks open the sheep in a new tab — the visitor keeps the gallery
-  // grid intact (no re-render on return) and can fan out multiple sheep for
-  // side-by-side compare. `noopener noreferrer` is best-practice security
-  // for target=_blank (modern browsers infer noopener anyway, but the
-  // explicit attr covers older engines + suppresses referrer leakage).
   root.target = '_blank';
   root.rel = 'noopener noreferrer';
 
@@ -235,6 +250,17 @@ function buildCell(cellDim: number): CellHandle {
   canvas.width = cellDim;
   canvas.height = cellDim;
   root.appendChild(canvas);
+
+  // Loading overlay — absolutely positioned over the canvas, displayed only
+  // when the cell has the `.loading` class. Its purpose is two-fold:
+  //   1. obvious "still working" cue per cell while the wave-fill renders
+  //   2. instant visual clear on page-switch — the old render is replaced
+  //      by the overlay the moment a new wave starts, instead of lingering
+  //      until the new render paints over it
+  const loading = document.createElement('span');
+  loading.className = 'pyr3-gallery-cell-loading';
+  loading.textContent = 'loading…';
+  root.appendChild(loading);
 
   const label = document.createElement('span');
   label.className = 'pyr3-gallery-cell-label';
@@ -250,22 +276,36 @@ function buildCell(cellDim: number): CellHandle {
     canvas,
     ctx,
     label,
+    setLoading() {
+      root.removeAttribute('href');
+      root.classList.add('loading');
+      root.classList.remove('empty', 'missing');
+      // Keep any existing label — once setRef lands the gen/id text is
+      // already in place, just hidden behind the overlay. If setLoading is
+      // called before refs resolve (page-switch transient), label stays
+      // whatever the prior page had; the overlay covers it visually.
+    },
     setRef(gen, id) {
       root.href = corpusUrl(gen, id);
       label.textContent = `${gen}/${String(id).padStart(5, '0')}`;
       root.classList.remove('empty', 'missing');
+      // The wave-fill calls setLoading() before setRef, so .loading stays;
+      // it's cleared by clearLoading() after the render lands.
+    },
+    clearLoading() {
+      root.classList.remove('loading');
     },
     setEmpty() {
       root.removeAttribute('href');
       label.textContent = '';
       root.classList.add('empty');
-      root.classList.remove('missing');
+      root.classList.remove('missing', 'loading');
     },
     setMissing(gen, id) {
       root.removeAttribute('href');
       label.textContent = `${gen}/${String(id).padStart(5, '0')} (missing)`;
       root.classList.add('missing');
-      root.classList.remove('empty');
+      root.classList.remove('empty', 'loading');
     },
   };
 }
@@ -337,15 +377,24 @@ export async function mountGallery(
   };
 
   async function runWave(page: number): Promise<void> {
+    // Page-switch clear: flip every cell to the loading overlay BEFORE we
+    // await pageOfSheep. The visitor sees the old page replaced instantly
+    // (no waiting for the new wave's first render to paint over). This
+    // covers the "old cells linger ~2-3s into the new wave" gap (#54).
+    for (const cell of cells) cell.setLoading();
+
     const refs = await pageOfSheep(
       page,
       GALLERY_PAGE_SIZE,
       deps.loadAvail,
       deps.loadManifest,
     );
+    if (state.cancelled) return;
 
-    // Attach refs / clear empties up-front so the user sees the page's
-    // outline (labels + links) immediately, before any render lands.
+    // Attach refs / clear unused cells up-front so labels + links appear
+    // immediately. Cells with a ref stay in `.loading` (overlay covering
+    // the prior canvas content) until their render lands; cells beyond
+    // refs.length go to `.empty`.
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i]!;
       const ref = refs[i];
@@ -391,6 +440,8 @@ export async function mountGallery(
       const result = await handle.promise;
       state.currentRun = null;
       if (result === 'cancelled') return;
+      // Render landed — reveal the canvas by dropping the loading overlay.
+      cell.clearLoading();
     }
   }
 
