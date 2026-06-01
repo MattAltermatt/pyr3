@@ -57,15 +57,20 @@ fi
 TOTAL=$(jq '[.genomes[] | select(.kind == "genome")] | length' "${INDEX}")
 echo "[batched-bake] genome-only corpus total: ${TOTAL} sheep"
 
-# First invocation: NO --resume so any stale .part is truncated. Subsequent
-# invocations use --resume.
-FIRST=1
+# Resume policy: if `.part` already has records, pass --resume on EVERY
+# invocation so the bake CLI picks up where it left off. Only when no
+# .part exists at all do we omit --resume (so the CLI does the initial
+# create). This is the load-bearing fix on top of the original draft —
+# which unconditionally truncated the .part on its first iteration,
+# silently throwing away any prior bake work.
 START=$(date +%s)
 while :; do
   if [[ -f "${PART}" ]]; then
     DONE=$(( $(stat -f%z "${PART}" 2>/dev/null || stat -c%s "${PART}") / 30 ))
+    RESUME_FLAG="--resume"
   else
     DONE=0
+    RESUME_FLAG=""
   fi
   if [[ ${DONE} -ge ${TOTAL} ]]; then
     echo "[batched-bake] ${DONE}/${TOTAL} complete — running final finalize pass"
@@ -73,16 +78,9 @@ while :; do
       --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" --resume
     break
   fi
-  if [[ ${FIRST} -eq 1 ]]; then
-    FIRST=0
-    npm run bake-features -- \
-      --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" \
-      --limit "${BATCH}" >/dev/null
-  else
-    npm run bake-features -- \
-      --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" \
-      --resume --limit "${BATCH}" >/dev/null
-  fi
+  npm run bake-features -- \
+    --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" \
+    ${RESUME_FLAG} --limit "${BATCH}" >/dev/null
   NEW_DONE=$(( $(stat -f%z "${PART}" 2>/dev/null || stat -c%s "${PART}") / 30 ))
   ELAPSED=$(( $(date +%s) - START ))
   if [[ ${NEW_DONE} -gt 0 && ${ELAPSED} -gt 0 ]]; then
