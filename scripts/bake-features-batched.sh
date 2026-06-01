@@ -25,7 +25,12 @@
 #     corpus-chunks-genome-2026-05-29 \
 #     /tmp/features.flam3idx
 
-set -euo pipefail
+# `set -u` (undefined vars) + pipefail are safety nets we keep; we
+# DELIBERATELY drop `set -e` so a single-batch crash (e.g. the dawn-node
+# SIGSEGV that surfaces ~1× per 4-5k sheep at this scale) doesn't kill
+# the whole hours-long bake. The loop below detects no-progress runs
+# and bails after MAX_NOPROGRESS in a row instead.
+set -uo pipefail
 
 if [[ $# -lt 3 || $# -gt 4 ]]; then
   echo "usage: $0 <esf-root> <corpus-tag> <out-path> [batch-size]" >&2
@@ -59,11 +64,17 @@ echo "[batched-bake] genome-only corpus total: ${TOTAL} sheep"
 
 # Resume policy: if `.part` already has records, pass --resume on EVERY
 # invocation so the bake CLI picks up where it left off. Only when no
-# .part exists at all do we omit --resume (so the CLI does the initial
-# create). This is the load-bearing fix on top of the original draft —
-# which unconditionally truncated the .part on its first iteration,
-# silently throwing away any prior bake work.
+# .part exists at all do we omit --resume.
+#
+# Crash resilience: a single npm subprocess may exit with SIGSEGV (139)
+# under dawn-node native-pool pressure ~1× per several thousand sheep.
+# We tolerate the failure as long as the .part record count keeps
+# advancing — only bail out if MAX_NOPROGRESS batches in a row produce
+# zero new records (the bake is genuinely stuck or the file is broken).
+MAX_NOPROGRESS=5
+NOPROGRESS=0
 START=$(date +%s)
+PREV_DONE=-1
 while :; do
   if [[ -f "${PART}" ]]; then
     DONE=$(( $(stat -f%z "${PART}" 2>/dev/null || stat -c%s "${PART}") / 30 ))
@@ -78,9 +89,22 @@ while :; do
       --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" --resume
     break
   fi
+  # `|| true` keeps the loop alive past a SIGSEGV in the bake CLI; the
+  # no-progress counter below catches a genuinely stuck pipeline.
   npm run bake-features -- \
     --esf-root "${ESF_ROOT}" --tag "${TAG}" --out "${OUT}" \
-    ${RESUME_FLAG} --limit "${BATCH}" >/dev/null
+    ${RESUME_FLAG} --limit "${BATCH}" >/dev/null 2>&1 || true
+  # Detect no-progress (subprocess crashed before writing anything new).
+  if [[ ${DONE} -le ${PREV_DONE} ]]; then
+    NOPROGRESS=$(( NOPROGRESS + 1 ))
+    if [[ ${NOPROGRESS} -ge ${MAX_NOPROGRESS} ]]; then
+      echo "[batched-bake] ABORT — ${MAX_NOPROGRESS} batches in a row produced zero new records (DONE=${DONE}). Investigate the .part state + the bake CLI manually." >&2
+      exit 1
+    fi
+  else
+    NOPROGRESS=0
+  fi
+  PREV_DONE=${DONE}
   NEW_DONE=$(( $(stat -f%z "${PART}" 2>/dev/null || stat -c%s "${PART}") / 30 ))
   ELAPSED=$(( $(date +%s) - START ))
   if [[ ${NEW_DONE} -gt 0 && ${ELAPSED} -gt 0 ]]; then
