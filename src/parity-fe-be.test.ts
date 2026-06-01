@@ -10,6 +10,18 @@
 //      this gate is "the two pyr3 engines agree on their own output",
 //      not "either engine matches flam3-C"; that's `parity.test.ts`)
 //
+// ── Routine vs pre-release: read this before invoking ──────────────────
+//
+// As of v1.2 (#58), this full 26-fixture sweep is PRE-RELEASE ONLY.
+// Routine "I touched the render path" guidance is:
+//   - `npm run test:parity`         — BE↔flam3-C, ~91s (always)
+//   - `npm run test:fe-be-smoke`    — 3-fixture FE↔BE smoke, ~90s (#59)
+//   - `npm test`                    — seam-invariant unit tests (#60) catch
+//                                     the kind of regressions this rig used
+//                                     to be the only thing protecting against
+// Run THIS full sweep when prepping a release tag (or whenever you have
+// 13 minutes to burn and want maximum certainty).
+//
 // Toggled by `VITEST_INCLUDE_PARITY_FE_BE=1`. Per-fixture threshold
 // lives in `meta.json` as `feBeThresholdR` (null = record-only).
 

@@ -5,17 +5,24 @@
 ```bash
 npm install                     # one-time
 npm run dev                     # Vite dev server on :5173 (Chrome verify target)
-npm test                        # unit suite, ~1s wall, ~4600 passing
-npm run test:parity             # 25-fixture BE-vs-flam3-C parity rig, ~91s wall
-npm run test:all                # union of the above
+npm test                        # unit suite, ~2s wall, ~4800 passing (includes seam-invariant tests)
+npm run test:parity             # 26-fixture BE-vs-flam3-C parity rig, ~91s wall
+npm run test:fe-be-smoke        # 3-fixture FE↔BE smoke (~90s) — run when the FE viewer changes
+npm run test:parity-fe-be       # FULL 26-fixture FE↔BE sweep, ~13min — PRE-RELEASE ONLY
+npm run test:all                # union of test + parity (excludes the slow FE↔BE full sweep)
 npm run typecheck               # tsc --noEmit
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims
 npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
 npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (reference SHOWCASE_4K)
 ```
 
-Before commit: `npm run typecheck && npm test` (parity rig optional —
-skip unless the render path was touched).
+Before commit: `npm run typecheck && npm test`. The BE↔flam3-C parity rig
+(`npm run test:parity`, 91s) is optional but recommended when the render
+path changes. The 3-fixture FE↔BE smoke (`npm run test:fe-be-smoke`, 90s)
+is the right gate when the viewer-side WebGPU path changes specifically.
+The full 13-minute FE↔BE sweep (`npm run test:parity-fe-be`) is **pre-
+release only** — too slow for routine work, and the seam-invariant unit
+tests in `npm test` catch the class of regressions it used to guard.
 
 ## Scope guardrail
 
