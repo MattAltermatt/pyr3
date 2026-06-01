@@ -141,6 +141,45 @@ describe('parseFlame xform translation', () => {
   });
 });
 
+describe('parseFlame xform scalar recovery (malformed defaults to 0/1)', () => {
+  // The genome-only ESF v0.7 corpus surfaced gen-191 ids 4902-4974 with
+  // `color="0 1"` — a space-separated pair where a single number was
+  // expected. The old behavior threw, aborting the entire parse; the new
+  // behavior records an `ignored` entry + defaults the value (0 for color,
+  // 1 for weight, etc.) so the rest of the genome still loads.
+
+  it('malformed color ("0 1") defaults to 0 + records in ignoredFields', () => {
+    const xml = wrapFlame('<xform weight="1" color="0 1" color_speed="0.5" coefs="1 0 0 1 0 0" linear="1"/>');
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.color).toBe(0);
+    expect(report.ignoredFields.some((f) => f.field === 'color@xform[0]' && f.value === '0 1')).toBe(true);
+  });
+
+  it('malformed weight ("nan") defaults to 1', () => {
+    const xml = wrapFlame('<xform weight="nan" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" linear="1"/>');
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.weight).toBe(1);
+    expect(report.ignoredFields.some((f) => f.field === 'weight@xform[0]')).toBe(true);
+  });
+
+  it('malformed color_speed defaults to 0', () => {
+    const xml = wrapFlame('<xform weight="1" color="0" color_speed="garbage" coefs="1 0 0 1 0 0" linear="1"/>');
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.colorSpeed).toBe(0);
+    expect(report.ignoredFields.some((f) => f.field === 'color_speed@xform[0]')).toBe(true);
+  });
+
+  it('genome still renders cleanly when multiple scalars are malformed', () => {
+    const xml = wrapFlame('<xform weight="oops" color="0 1" color_speed="nan" coefs="1 0 0 1 0 0" linear="1"/>');
+    const { genome, report } = parseFlame(xml);
+    // No throw; defaults across the board.
+    expect(genome.xforms[0]!.weight).toBe(1);
+    expect(genome.xforms[0]!.color).toBe(0);
+    expect(genome.xforms[0]!.colorSpeed).toBe(0);
+    expect(report.ignoredFields.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 const xformOnly = '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" linear="1"/>';
 
 describe('parseFlame palette parsing', () => {

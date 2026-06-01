@@ -393,11 +393,29 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
   const dropped: DroppedVariation[] = [];
   const ignored: IgnoredField[] = [];
 
+  // Local mirror of parseScalarOrDefault — same NaN-recovery semantics
+  // (record + substitute, don't throw) but writes to `ignored` since
+  // parseXformElement doesn't own the defaulted-fields stream. Used for
+  // xform scalars that the wild corpus has been known to malform (e.g.
+  // `color="0 1"` — a space-separated pair where a single number was
+  // expected, observed in gen 191 ids 4902..4974 during the v0.7 bake).
+  const numOrDefault = (
+    raw: string | null,
+    field: string,
+    fallback: number,
+  ): number => {
+    if (raw === null) return fallback;
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+    ignored.push({ field: `${field}@xform[${xformIndex}]`, value: raw });
+    return fallback;
+  };
+
   const weightAttr = el.getAttribute('weight');
   const weight = isFinal
     ? 0
-    : (weightAttr !== null ? expectFiniteNumber(weightAttr, 'weight') : 1);
-  const color = expectFiniteNumber(el.getAttribute('color') ?? '0', 'color');
+    : numOrDefault(weightAttr, 'weight', 1);
+  const color = numOrDefault(el.getAttribute('color'), 'color', 0);
   // flam3 parser.c:856-861 — `symmetry` is the deprecated alias for color_speed
   // with the formula color_speed = (1 - N) / 2. Explicit color_speed wins over
   // the deprecated form (modern attribute takes precedence).
@@ -405,9 +423,9 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
   const symmetryAttr = el.getAttribute('symmetry');
   let colorSpeed: number;
   if (colorSpeedAttr !== null) {
-    colorSpeed = expectFiniteNumber(colorSpeedAttr, 'color_speed');
+    colorSpeed = numOrDefault(colorSpeedAttr, 'color_speed', 0);
   } else if (symmetryAttr !== null) {
-    const sym = expectFiniteNumber(symmetryAttr, 'symmetry');
+    const sym = numOrDefault(symmetryAttr, 'symmetry', 1);
     colorSpeed = (1 - sym) / 2;
   } else {
     colorSpeed = 0.5;
