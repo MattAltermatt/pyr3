@@ -56,14 +56,16 @@ jobs:
       # Bump this ONE line to ship a newer corpus snapshot to the live site.
       # Pinning (vs --latest) keeps deploys reproducible: a re-run always
       # bakes in the same chunks, and a future ESF release can't silently
-      # change what pyr3 serves. As of 2026-05-29 we pull the GENOME-ONLY chunk
-      # tar (ESF-039 / #39): 52,365 canonical genomes, no animation morph-frames.
-      CHUNK_RELEASE_TAG: '2026-05-29'
+      # change what pyr3 serves. ESF v0.7 (2026-06-01): genome-only tar carries
+      # 52,365 sheep (52,284 standalones + 81 promoted orphan keyframes); the
+      # index.json schema bumped to v7 with thumb_hash + is_thumb_representative
+      # for the dedup-aware gallery filter (#49).
+      CHUNK_RELEASE_TAG: '2026-06-01'
       # #14 — integrity gate: expected sha256 of corpus-chunks-genome-{tag}.tar,
       # verified before `tar -xf` (covers the cached path too). Tag-pinning fixes
       # WHICH tag, not WHICH bytes — a same-tag asset can be deleted + re-uploaded,
       # and actions/cache would amplify a poisoned tar. Bump this WITH the tag above.
-      CHUNK_TAR_SHA256: '95afa35344e6eed5d3a0812059d8ed423083421b82a84ae8de00d009c215da68'
+      CHUNK_TAR_SHA256: 'dbc4719d0b42b6082a90d1ff091dd3de33be1586fa934262a8d86e1eadf43a62'
       # Pinned pyr3 Release tag carrying showcase-*.tar (the 4K /showcase
       # gallery: 54 4k.jpg + 54 thumb.jpg + index.html). Bump this ONE line
       # to ship a regenerated gallery. The bundle is gitignored
