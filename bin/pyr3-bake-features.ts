@@ -127,12 +127,16 @@ function parseSheepFilename(name: string): { gen: number; id: number } | null {
 }
 
 /** Load the genome-id allowlist from ESF's `corpus/_index/index.json`.
- *  The index has one record per sheep with `kind: "genome" | "animation"`;
- *  pyr3's deployed corpus is genome-only and `parseFlame` only handles
- *  single-`<flame>` files cleanly (animation files have multiple keyframes
- *  and silently lose all but the first), so we filter at walk time to
- *  match what the runtime actually consumes. Returns a Set of "gen/id"
- *  strings for O(1) membership tests. */
+ *  Filters:
+ *   - `kind === "genome"` — pyr3's deployed corpus is genome-only;
+ *     parseFlame only handles single-`<flame>` files cleanly (animation
+ *     files have multiple keyframes and silently lose all but the first).
+ *   - `xform_count > 0` — ESF marks 109 zero-xform flames as `kind="genome"`,
+ *     but parseFlame throws on them ("no <xform> children; cannot render").
+ *     Excluding here means the bake never attempts them + the batched
+ *     wrapper script's MAX_NOPROGRESS check doesn't trip on the
+ *     consecutive zero-xform run in gen 198.
+ *  Returns a Set of "gen/id" strings for O(1) membership tests. */
 function loadGenomeAllowlist(esfRoot: string): Set<string> {
   const indexPath = join(esfRoot, 'corpus', '_index', 'index.json');
   if (!existsSync(indexPath)) {
@@ -140,13 +144,22 @@ function loadGenomeAllowlist(esfRoot: string): Set<string> {
     process.exit(1);
   }
   const raw = readFileSync(indexPath, 'utf8');
-  // The index is ~66MB — parse once at startup. interface { genomes: [{id, kind, ...}] }
+  // The index is ~85MB — parse once at startup. Interface shape mirrors
+  // ESF's v7 schema (the fields we read; v7 added thumb_hash + others).
   const data = JSON.parse(raw) as {
-    genomes: Array<{ id: string; gen: number; sheep_id: number; kind: string }>;
+    genomes: Array<{
+      id: string;
+      gen: number;
+      sheep_id: number;
+      kind: string;
+      xform_count: number;
+    }>;
   };
   const allow = new Set<string>();
   for (const r of data.genomes) {
-    if (r.kind === 'genome') allow.add(`${r.gen}/${r.sheep_id}`);
+    if (r.kind === 'genome' && r.xform_count > 0) {
+      allow.add(`${r.gen}/${r.sheep_id}`);
+    }
   }
   return allow;
 }

@@ -98,8 +98,12 @@ if [[ ! -f "${INDEX}" ]]; then
   echo "[batched-bake] ESF index missing: ${INDEX}" >&2
   exit 1
 fi
-TOTAL=$(jq '[.genomes[] | select(.kind == "genome")] | length' "${INDEX}")
-echo "[batched-bake] genome-only corpus total: ${TOTAL} sheep"
+# Same filter the bake CLI's loadGenomeAllowlist applies — genome-kind AND
+# xform_count>0 (ESF v7 has 109 "genome" entries with zero xforms that
+# parseFlame can't render; they're excluded from the bake set so progress
+# math matches the renderable count exactly).
+TOTAL=$(jq '[.genomes[] | select(.kind == "genome" and .xform_count > 0)] | length' "${INDEX}")
+echo "[batched-bake] genome-only renderable total: ${TOTAL} sheep"
 
 # Resume policy: if `.part` already has records, pass --resume on EVERY
 # invocation so the bake CLI picks up where it left off. Only when no
