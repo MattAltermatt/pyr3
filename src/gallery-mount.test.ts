@@ -868,6 +868,101 @@ describe('pageOfSheepFiltered', () => {
     // → 165/2 first.
     expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 1 }]);
   });
+
+  it('coverage range narrows the result set', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 3, 0.2, 0.5, 0.5, 0.5),  // below min
+      recF(165, 1, 3, 0.6, 0.5, 0.5, 0.5),  // in range
+      recF(165, 2, 3, 0.8, 0.5, 0.5, 0.5),  // in range
+      recF(165, 3, 3, 0.95, 0.5, 0.5, 0.5), // above max
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, coverageMin: 0.5, coverageMax: 0.9 };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    // Default sortDir='desc' → reverse-walk; passing records 165/1 + 165/2
+    // → 165/2 first.
+    expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 1 }]);
+  });
+
+  it('entropy range narrows the result set', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.2, 0.5, 0.5),
+      recF(165, 1, 3, 0.5, 0.6, 0.5, 0.5),
+      recF(165, 2, 3, 0.5, 0.8, 0.5, 0.5),
+      recF(165, 3, 3, 0.5, 0.95, 0.5, 0.5),
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, entropyMin: 0.5, entropyMax: 0.9 };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 1 }]);
+  });
+
+  it('colorVar range narrows the result set', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.5, 0.2, 0.5),
+      recF(165, 1, 3, 0.5, 0.5, 0.6, 0.5),
+      recF(165, 2, 3, 0.5, 0.5, 0.8, 0.5),
+      recF(165, 3, 3, 0.5, 0.5, 0.95, 0.5),
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, colorVarMin: 0.5, colorVarMax: 0.9 };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 1 }]);
+  });
+
+  it('meanLum range narrows the result set', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 3, 0.5, 0.5, 0.5, 0.2),
+      recF(165, 1, 3, 0.5, 0.5, 0.5, 0.6),
+      recF(165, 2, 3, 0.5, 0.5, 0.5, 0.8),
+      recF(165, 3, 3, 0.5, 0.5, 0.5, 0.95),
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, meanLumMin: 0.5, meanLumMax: 0.9 };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    expect(out).toEqual([{ gen: 165, id: 2 }, { gen: 165, id: 1 }]);
+  });
+
+  it('combined stat ranges compose (AND across axes)', async () => {
+    const mixed = makeStubIndex([
+      recF(165, 0, 3, 0.6, 0.6, 0.5, 0.5), // pass both
+      recF(165, 1, 3, 0.6, 0.2, 0.5, 0.5), // fails entropy
+      recF(165, 2, 3, 0.2, 0.6, 0.5, 0.5), // fails coverage
+      recF(165, 3, 3, 0.7, 0.7, 0.5, 0.5), // pass both
+    ]);
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      coverageMin: 0.5,
+      coverageMax: 0.9,
+      entropyMin: 0.5,
+      entropyMax: 0.9,
+    };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    // Default sortDir='desc' → reverse-walk; passing 165/0 + 165/3 → 165/3 first.
+    expect(out).toEqual([{ gen: 165, id: 3 }, { gen: 165, id: 0 }]);
+  });
+
+  it('stat range + variation + xform compose (AND across families)', async () => {
+    const mixed = makeStubIndex([
+      // pass everything
+      recF(165, 0, 3, 0.6, 0.5, 0.5, 0.5, [14]),
+      // fails variation (needs 14)
+      recF(165, 1, 3, 0.6, 0.5, 0.5, 0.5, [0]),
+      // fails xform range (xforms=5 > max 4)
+      recF(165, 2, 5, 0.6, 0.5, 0.5, 0.5, [14]),
+      // fails coverage range (0.2 < min 0.5)
+      recF(165, 3, 3, 0.2, 0.5, 0.5, 0.5, [14]),
+      // pass everything
+      recF(165, 4, 4, 0.8, 0.5, 0.5, 0.5, [14]),
+    ]);
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      xformMin: 3,
+      xformMax: 4,
+      coverageMin: 0.5,
+      coverageMax: 0.9,
+      vars: [14],
+    };
+    const out = await pageOfSheepFiltered(1, 9, spec, { index: mixed });
+    // Default sortDir='desc' → reverse-walk; passing 165/0 + 165/4 → 165/4 first.
+    expect(out).toEqual([{ gen: 165, id: 4 }, { gen: 165, id: 0 }]);
+  });
 });
 
 describe('totalPagesFiltered', () => {

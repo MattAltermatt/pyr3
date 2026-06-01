@@ -170,6 +170,29 @@ const STYLES = `
 .pyr3-xform-cell.active { color: var(--accent, #ff8c1a); }
 .pyr3-xform-cell.empty { color: #444; font-style: italic; }
 .pyr3-filter-row-stat-label { color: var(--text-dim, #888); }
+
+.pyr3-stat-from, .pyr3-stat-to {
+  background: var(--bar-bg-1, #15151a);
+  color: var(--text, #ddd);
+  border: 1px solid var(--bar-border, #2a2a30);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.pyr3-stat-count-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-left: 70px;
+}
+.pyr3-stat-cell {
+  color: var(--text-dim, #666);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pyr3-stat-cell.active { color: var(--accent, #ff8c1a); }
+.pyr3-stat-cell.empty { color: #444; font-style: italic; }
 `;
 
 function injectStylesOnce(): void {
@@ -257,6 +280,144 @@ export function mountFilterDrawer(
   const varsRow = document.createElement('div');
   varsRow.className = 'pyr3-filter-row vars';
   drawer.appendChild(varsRow);
+
+  // Stat-range rows — coverage, entropy, colorVar, meanLum. Each row is a
+  // 0..1 float range with decile-bucket count strip. Inserted between
+  // `vars` and `xforms` so the most-used filter (xforms) stays closest to
+  // the actions row.
+  type StatName = 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
+  const STAT_NAMES: StatName[] = ['coverage', 'entropy', 'colorVar', 'meanLum'];
+  const statRowRenderers: Array<(f: FilterSpec, counts: FacetCounts) => void> = [];
+
+  function mountStatRow(stat: StatName): void {
+    const row = document.createElement('div');
+    row.className = `pyr3-filter-row stat ${stat}`;
+
+    const label = document.createElement('span');
+    label.className = 'pyr3-filter-row-label';
+    label.textContent = `${stat}:`;
+    row.appendChild(label);
+
+    const fromTxt = document.createElement('span');
+    fromTxt.className = 'pyr3-filter-row-stat-label';
+    fromTxt.textContent = 'from';
+    row.appendChild(fromTxt);
+
+    const fromSel = document.createElement('select');
+    fromSel.className = 'pyr3-stat-from';
+    fromSel.dataset.stat = stat;
+    for (let i = 0; i <= 10; i++) {
+      const v = (i / 10).toFixed(1);
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      fromSel.appendChild(opt);
+    }
+    row.appendChild(fromSel);
+
+    const toTxt = document.createElement('span');
+    toTxt.className = 'pyr3-filter-row-stat-label';
+    toTxt.textContent = 'to';
+    row.appendChild(toTxt);
+
+    const toSel = document.createElement('select');
+    toSel.className = 'pyr3-stat-to';
+    toSel.dataset.stat = stat;
+    {
+      const optAll = document.createElement('option');
+      optAll.value = 'all';
+      optAll.textContent = 'all';
+      toSel.appendChild(optAll);
+      for (let i = 0; i <= 10; i++) {
+        const v = (i / 10).toFixed(1);
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        toSel.appendChild(opt);
+      }
+    }
+    row.appendChild(toSel);
+
+    const strip = document.createElement('div');
+    strip.className = 'pyr3-stat-count-strip';
+    strip.dataset.stat = stat;
+    const cells: HTMLSpanElement[] = [];
+    for (let b = 0; b < 10; b++) {
+      const cell = document.createElement('span');
+      cell.className = 'pyr3-stat-cell';
+      cell.dataset.stat = stat;
+      cell.dataset.bucket = String(b);
+      cells.push(cell);
+      strip.appendChild(cell);
+    }
+
+    drawer.appendChild(row);
+    drawer.appendChild(strip);
+
+    const minKey = `${stat}Min` as const;
+    const maxKey = `${stat}Max` as const;
+
+    function renderPickers(f: FilterSpec): void {
+      fromSel.value = (f[minKey] as number).toFixed(1);
+      const mx = f[maxKey] as number | null;
+      toSel.value = mx === null ? 'all' : mx.toFixed(1);
+    }
+
+    function renderStrip(f: FilterSpec, counts: FacetCounts): void {
+      const min = f[minKey] as number;
+      const max = f[maxKey] as number | null;
+      const minBucket = Math.min(9, Math.max(0, Math.floor(min * 10)));
+      // Upper bound is exclusive at picker boundaries: max=0.7 includes
+      // buckets up to [0.6, 0.7) only (bucket 6, not 7). null/all → all 10.
+      const maxBucket = max === null
+        ? 9
+        : Math.min(9, Math.max(0, Math.ceil(max * 10) - 1));
+      const bucketMap = counts[stat];
+      for (let b = 0; b < 10; b++) {
+        const cell = cells[b]!;
+        const count = bucketMap.get(b) ?? 0;
+        const lo = (b / 10).toFixed(1);
+        const hi = ((b + 1) / 10).toFixed(1);
+        cell.textContent = `${lo}-${hi} (${count.toLocaleString()})`;
+        const inRange = b >= minBucket && b <= maxBucket;
+        cell.classList.toggle('active', inRange);
+        cell.classList.toggle('empty', count === 0);
+      }
+    }
+
+    fromSel.addEventListener('change', () => {
+      const nextFrom = Number(fromSel.value);
+      let nextTo = currentFilter[maxKey] as number | null;
+      if (nextTo !== null && nextTo < nextFrom) nextTo = nextFrom;
+      opts.onChange({
+        ...currentFilter,
+        [minKey]: nextFrom,
+        [maxKey]: nextTo,
+      } as FilterSpec);
+    });
+
+    toSel.addEventListener('change', () => {
+      const raw = toSel.value;
+      const nextTo = raw === 'all' ? null : Number(raw);
+      let nextFrom = currentFilter[minKey] as number;
+      if (nextTo !== null && nextTo < nextFrom) nextFrom = nextTo;
+      opts.onChange({
+        ...currentFilter,
+        [minKey]: nextFrom,
+        [maxKey]: nextTo,
+      } as FilterSpec);
+    });
+
+    renderPickers(currentFilter);
+    renderStrip(currentFilter, currentCounts);
+
+    statRowRenderers.push((f, counts) => {
+      renderPickers(f);
+      renderStrip(f, counts);
+    });
+  }
+
+  for (const s of STAT_NAMES) mountStatRow(s);
 
   // Xforms row — `from` (1..15, required) and `to` (`all` + 1..15) integer
   // pickers + a 14-cell live count strip below. Auto-clamp invariant:
@@ -384,6 +545,7 @@ export function mountFilterDrawer(
     setFacetCounts(c) {
       currentCounts = c;
       renderXformStrip(currentFilter, c);
+      for (const r of statRowRenderers) r(currentFilter, c);
     },
     setFilter(f) {
       currentFilter = f;
@@ -391,6 +553,7 @@ export function mountFilterDrawer(
       renderOrderBtn(f.sortDir);
       renderXformPickers(f);
       renderXformStrip(f, currentCounts);
+      for (const r of statRowRenderers) r(f, currentCounts);
       // Auto-open on non-default; auto-close on reset-to-default. The
       // drawer mirrors the meaningfulness of the filter state.
       const shouldOpen = !isDefaultFilterSpec(f);

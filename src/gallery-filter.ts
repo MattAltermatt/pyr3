@@ -25,6 +25,13 @@ export const SORT_MODES: readonly SortMode[] = Object.freeze([
 
 export type SortDir = 'asc' | 'desc';
 
+/** The four 0..1 stat axes from features.flam3idx that the gallery can
+ *  filter on. Same range/from-to UX as xforms; the stat name appears in
+ *  the URL param. Used by parse/encode/equals + the master-list build +
+ *  the drawer's UI rows. */
+export const STAT_AXES = ['coverage', 'entropy', 'colorVar', 'meanLum'] as const;
+export type StatAxis = (typeof STAT_AXES)[number];
+
 export interface FilterSpec {
   sort: SortMode;
   /** Sort direction. For weighted-stat sorts (interest/coverage/entropy/
@@ -39,6 +46,16 @@ export interface FilterSpec {
   xformMin: number;
   /** Inclusive upper bound on xform count, or null for "no upper cap". */
   xformMax: number | null;
+  /** Stat-range filters — same shape as xform, in 0..1 float space.
+   *  Default min=0 (no lower cap effect); default max=null (no upper cap). */
+  coverageMin: number;
+  coverageMax: number | null;
+  entropyMin: number;
+  entropyMax: number | null;
+  colorVarMin: number;
+  colorVarMax: number | null;
+  meanLumMin: number;
+  meanLumMax: number | null;
 }
 
 export const DEFAULT_FILTER_SPEC: FilterSpec = Object.freeze({
@@ -47,6 +64,14 @@ export const DEFAULT_FILTER_SPEC: FilterSpec = Object.freeze({
   vars: Object.freeze([]) as unknown as number[],
   xformMin: 1,
   xformMax: null,
+  coverageMin: 0,
+  coverageMax: null,
+  entropyMin: 0,
+  entropyMax: null,
+  colorVarMin: 0,
+  colorVarMax: null,
+  meanLumMin: 0,
+  meanLumMax: null,
 }) as FilterSpec;
 
 /** Structural equality: same sort, same xform bounds, same set of variations.
@@ -56,6 +81,10 @@ export function filterSpecEquals(a: FilterSpec, b: FilterSpec): boolean {
   if (a.sortDir !== b.sortDir) return false;
   if (a.xformMin !== b.xformMin) return false;
   if (a.xformMax !== b.xformMax) return false;
+  if (a.coverageMin !== b.coverageMin || a.coverageMax !== b.coverageMax) return false;
+  if (a.entropyMin !== b.entropyMin || a.entropyMax !== b.entropyMax) return false;
+  if (a.colorVarMin !== b.colorVarMin || a.colorVarMax !== b.colorVarMax) return false;
+  if (a.meanLumMin !== b.meanLumMin || a.meanLumMax !== b.meanLumMax) return false;
   if (a.vars.length !== b.vars.length) return false;
   for (let i = 0; i < a.vars.length; i++) {
     if (a.vars[i] !== b.vars[i]) return false;
@@ -85,6 +114,11 @@ export function countActiveAxes(spec: FilterSpec): number {
     spec.xformMin !== DEFAULT_FILTER_SPEC.xformMin
     || spec.xformMax !== DEFAULT_FILTER_SPEC.xformMax
   ) n++;
+  // Each stat axis is one active count when its range differs from default.
+  if (spec.coverageMin !== 0 || spec.coverageMax !== null) n++;
+  if (spec.entropyMin !== 0 || spec.entropyMax !== null) n++;
+  if (spec.colorVarMin !== 0 || spec.colorVarMax !== null) n++;
+  if (spec.meanLumMin !== 0 || spec.meanLumMax !== null) n++;
   return n;
 }
 
@@ -152,7 +186,44 @@ export function parseFilterSpec(params: URLSearchParams): FilterSpec {
     }
   }
 
-  return { sort, sortDir, vars, xformMin, xformMax };
+  const stat = (name: StatAxis): { min: number; max: number | null } => {
+    const raw = params.get(name);
+    if (!raw) return { min: 0, max: null };
+    const dash = raw.indexOf('-');
+    if (dash !== -1) {
+      const lhs = raw.slice(0, dash);
+      const rhs = raw.slice(dash + 1);
+      let lo = Number.parseFloat(lhs);
+      let hi: number | null = null;
+      if (!Number.isFinite(lo)) lo = 0;
+      lo = Math.max(0, Math.min(1, lo));
+      if (rhs && rhs !== 'all') {
+        const h = Number.parseFloat(rhs);
+        if (Number.isFinite(h)) hi = Math.max(0, Math.min(1, h));
+      }
+      if (hi !== null && lo > hi) [lo, hi] = [hi, lo];
+      return { min: lo, max: hi };
+    }
+    // Bare float `coverage=0.5` → ≥0.5 (open above), mirroring xforms semantics.
+    const lo = Number.parseFloat(raw);
+    if (Number.isFinite(lo) && lo > 0) {
+      return { min: Math.max(0, Math.min(1, lo)), max: null };
+    }
+    return { min: 0, max: null };
+  };
+
+  const cov = stat('coverage');
+  const ent = stat('entropy');
+  const col = stat('colorVar');
+  const lum = stat('meanLum');
+
+  return {
+    sort, sortDir, vars, xformMin, xformMax,
+    coverageMin: cov.min, coverageMax: cov.max,
+    entropyMin: ent.min, entropyMax: ent.max,
+    colorVarMin: col.min, colorVarMax: col.max,
+    meanLumMin: lum.min, meanLumMax: lum.max,
+  };
 }
 
 /** Encode a FilterSpec into URLSearchParams. Default axes are OMITTED so
@@ -177,5 +248,19 @@ export function encodeFilterSpec(spec: FilterSpec): URLSearchParams {
       p.set('xforms', `${spec.xformMin}-${spec.xformMax}`);
     }
   }
+  /** Stat-range emission — same compact grammar as xforms but in 0..1
+   *  floats. Default min=0 + max=null omits the param entirely. Values
+   *  serialize with up to 3 sig figs after the decimal to keep URLs tidy
+   *  while preserving the picker's 0.1-step resolution. */
+  const fmt = (v: number): string => Number.parseFloat(v.toFixed(3)).toString();
+  const emitStat = (name: StatAxis, lo: number, hi: number | null): void => {
+    if (lo === 0 && hi === null) return;
+    if (hi === null) p.set(name, fmt(lo));
+    else p.set(name, `${fmt(lo)}-${fmt(hi)}`);
+  };
+  emitStat('coverage', spec.coverageMin, spec.coverageMax);
+  emitStat('entropy', spec.entropyMin, spec.entropyMax);
+  emitStat('colorVar', spec.colorVarMin, spec.colorVarMax);
+  emitStat('meanLum', spec.meanLumMin, spec.meanLumMax);
   return p;
 }

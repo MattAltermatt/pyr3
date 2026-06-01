@@ -1015,7 +1015,12 @@ async function main(): Promise<void> {
     barRoot.insertAdjacentElement('afterend', drawerRoot);
     drawerHandle = mountFilterDrawer(drawerRoot, {
       initialFilter: currentFilter,
-      facetCounts: { variations: new Map(), xforms: new Map(), total: 0 },
+      facetCounts: {
+        variations: new Map(), xforms: new Map(),
+        coverage: new Map(), entropy: new Map(),
+        colorVar: new Map(), meanLum: new Map(),
+        total: 0,
+      },
       onChange: (next) => applyFilter(next),
       loading: true,
     });

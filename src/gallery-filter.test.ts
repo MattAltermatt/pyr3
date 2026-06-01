@@ -18,6 +18,14 @@ describe('FilterSpec defaults', () => {
       vars: [],
       xformMin: 1,
       xformMax: null,
+      coverageMin: 0,
+      coverageMax: null,
+      entropyMin: 0,
+      entropyMax: null,
+      colorVarMin: 0,
+      colorVarMax: null,
+      meanLumMin: 0,
+      meanLumMax: null,
     });
   });
 
@@ -33,8 +41,8 @@ describe('FilterSpec defaults', () => {
   });
 
   it('filterSpecEquals compares structurally (vars kept sorted asc by class invariant)', () => {
-    const a: FilterSpec = { sort: 'interest', sortDir: 'desc', vars: [3, 14], xformMin: 2, xformMax: 8 };
-    const b: FilterSpec = { sort: 'interest', sortDir: 'desc', vars: [3, 14], xformMin: 2, xformMax: 8 };
+    const a: FilterSpec = { ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [3, 14], xformMin: 2, xformMax: 8 };
+    const b: FilterSpec = { ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [3, 14], xformMin: 2, xformMax: 8 };
     expect(filterSpecEquals(a, b)).toBe(true);
     expect(filterSpecEquals(a, { ...a, sort: 'time' })).toBe(false);
     expect(filterSpecEquals(a, { ...a, vars: [3] })).toBe(false);
@@ -179,6 +187,36 @@ describe('parseFilterSpec', () => {
   it('unknown order value → sortDir desc (default)', () => {
     expect(parse('order=sideways').sortDir).toBe('desc');
   });
+
+  it('coverage=0.5-0.9 sets both stat bounds', () => {
+    const out = parse('coverage=0.5-0.9');
+    expect(out.coverageMin).toBe(0.5);
+    expect(out.coverageMax).toBe(0.9);
+  });
+  it('bare coverage=0.5 sets min only (≥0.5)', () => {
+    const out = parse('coverage=0.5');
+    expect(out.coverageMin).toBe(0.5);
+    expect(out.coverageMax).toBe(null);
+  });
+  it('coverage=0.5-all = bare coverage=0.5', () => {
+    expect(parse('coverage=0.5-all')).toEqual(parse('coverage=0.5'));
+  });
+  it('coverage out-of-range clamps to 0..1', () => {
+    expect(parse('coverage=1.5-2.0').coverageMin).toBe(1);
+    expect(parse('coverage=1.5-2.0').coverageMax).toBe(1);
+    expect(parse('coverage=-0.5-0.3').coverageMin).toBe(0);
+  });
+  it('all 4 stat axes parse independently', () => {
+    const out = parse('coverage=0.3-0.7&entropy=0.5&colorVar=0.2-0.6&meanLum=0.4');
+    expect(out.coverageMin).toBe(0.3);
+    expect(out.coverageMax).toBe(0.7);
+    expect(out.entropyMin).toBe(0.5);
+    expect(out.entropyMax).toBe(null);
+    expect(out.colorVarMin).toBe(0.2);
+    expect(out.colorVarMax).toBe(0.6);
+    expect(out.meanLumMin).toBe(0.4);
+    expect(out.meanLumMax).toBe(null);
+  });
 });
 
 describe('encodeFilterSpec', () => {
@@ -237,6 +275,38 @@ describe('encodeFilterSpec', () => {
     const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, sortDir: 'desc' });
     expect(p.get('order')).toBe(null);
   });
+
+  it('stat-range default (0..null) is omitted', () => {
+    const p = encodeFilterSpec(DEFAULT_FILTER_SPEC);
+    expect(p.get('coverage')).toBe(null);
+    expect(p.get('entropy')).toBe(null);
+    expect(p.get('colorVar')).toBe(null);
+    expect(p.get('meanLum')).toBe(null);
+  });
+
+  it('non-default stat range emits N-M when bounded', () => {
+    const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, coverageMin: 0.3, coverageMax: 0.7 });
+    expect(p.get('coverage')).toBe('0.3-0.7');
+  });
+
+  it('non-default stat range emits compact bare N when unbounded above', () => {
+    const p = encodeFilterSpec({ ...DEFAULT_FILTER_SPEC, entropyMin: 0.5, entropyMax: null });
+    expect(p.get('entropy')).toBe('0.5');
+  });
+
+  it('all 4 stat ranges emit independently', () => {
+    const p = encodeFilterSpec({
+      ...DEFAULT_FILTER_SPEC,
+      coverageMin: 0.3, coverageMax: 0.7,
+      entropyMin: 0.5, entropyMax: null,
+      colorVarMin: 0.2, colorVarMax: 0.6,
+      meanLumMin: 0.4, meanLumMax: null,
+    });
+    expect(p.get('coverage')).toBe('0.3-0.7');
+    expect(p.get('entropy')).toBe('0.5');
+    expect(p.get('colorVar')).toBe('0.2-0.6');
+    expect(p.get('meanLum')).toBe('0.4');
+  });
 });
 
 describe('countActiveAxes', () => {
@@ -256,7 +326,7 @@ describe('countActiveAxes', () => {
     expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMin: 2, xformMax: 8 })).toBe(1);
   });
   it('all three axes → 3', () => {
-    expect(countActiveAxes({ sort: 'interest', sortDir: 'desc', vars: [13], xformMin: 2, xformMax: 8 })).toBe(3);
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [13], xformMin: 2, xformMax: 8 })).toBe(3);
   });
   it('sortDir asc on default sort → 1 (still part of the sort axis)', () => {
     expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sortDir: 'asc' })).toBe(1);
@@ -264,21 +334,45 @@ describe('countActiveAxes', () => {
   it('sort and sortDir both non-default → still 1 axis (bundled)', () => {
     expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest', sortDir: 'asc' })).toBe(1);
   });
+  it('each non-default stat range counts as 1 axis', () => {
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, coverageMin: 0.3 })).toBe(1);
+    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, entropyMax: 0.7 })).toBe(1);
+    expect(countActiveAxes({
+      ...DEFAULT_FILTER_SPEC,
+      coverageMin: 0.3, entropyMax: 0.7, colorVarMin: 0.5, meanLumMin: 0.2,
+    })).toBe(4);
+  });
 });
 
 describe('FilterSpec round-trip', () => {
   it('parse(encode(spec)) === spec for various specs', () => {
     const specs: FilterSpec[] = [
       DEFAULT_FILTER_SPEC,
-      { sort: 'interest', sortDir: 'desc', vars: [V.julia], xformMin: 1, xformMax: null },
-      { sort: 'time', sortDir: 'desc', vars: [V.linear, V.julia, V.spherical].sort((a, b) => a - b), xformMin: 3, xformMax: 7 },
-      { sort: 'time', sortDir: 'asc', vars: [], xformMin: 1, xformMax: null },
-      { sort: 'interest', sortDir: 'asc', vars: [], xformMin: 2, xformMax: null },
-      { sort: 'interest', sortDir: 'desc', vars: [], xformMin: 1, xformMax: 8 },
-      { sort: 'coverage', sortDir: 'desc', vars: [], xformMin: 1, xformMax: null },
-      { sort: 'entropy', sortDir: 'asc', vars: [], xformMin: 1, xformMax: null },
-      { sort: 'colorVar', sortDir: 'desc', vars: [], xformMin: 1, xformMax: null },
-      { sort: 'meanLum', sortDir: 'desc', vars: [], xformMin: 1, xformMax: null },
+      { ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [V.julia] },
+      { ...DEFAULT_FILTER_SPEC, vars: [V.linear, V.julia, V.spherical].sort((a, b) => a - b), xformMin: 3, xformMax: 7 },
+      { ...DEFAULT_FILTER_SPEC, sortDir: 'asc' },
+      { ...DEFAULT_FILTER_SPEC, sort: 'interest', sortDir: 'asc', xformMin: 2 },
+      { ...DEFAULT_FILTER_SPEC, sort: 'interest', xformMin: 1, xformMax: 8 },
+      { ...DEFAULT_FILTER_SPEC, sort: 'coverage' },
+      { ...DEFAULT_FILTER_SPEC, sort: 'entropy', sortDir: 'asc' },
+      { ...DEFAULT_FILTER_SPEC, sort: 'colorVar' },
+      { ...DEFAULT_FILTER_SPEC, sort: 'meanLum' },
+      // Stat ranges round-trip via parse/encode.
+      { ...DEFAULT_FILTER_SPEC, coverageMin: 0.3, coverageMax: 0.7 },
+      { ...DEFAULT_FILTER_SPEC, entropyMin: 0.5 },
+      { ...DEFAULT_FILTER_SPEC, colorVarMin: 0.2, colorVarMax: 0.6 },
+      { ...DEFAULT_FILTER_SPEC, meanLumMin: 0.4 },
+      // All four stat axes + sort + variations + xforms combined.
+      {
+        ...DEFAULT_FILTER_SPEC,
+        sort: 'coverage', sortDir: 'asc',
+        vars: [V.julia],
+        xformMin: 3, xformMax: 8,
+        coverageMin: 0.4, coverageMax: 0.9,
+        entropyMin: 0.5,
+        colorVarMin: 0.3, colorVarMax: 0.7,
+        meanLumMin: 0.2,
+      },
     ];
     for (const s of specs) {
       const round = parseFilterSpec(encodeFilterSpec(s));

@@ -31,6 +31,22 @@ function rec(gen: number, id: number, vars: number[], xforms: number): FeatureRe
   };
 }
 
+/** Stat-axis record builder — vars/xforms held to neutral defaults
+ *  (linear variation, 2 xforms) so the stat-axis tests aren't confounded
+ *  by variation/xform filtering. */
+function recStats(
+  gen: number, id: number,
+  coverage: number, entropy: number, colorVar: number, meanLum: number,
+  vars: number[] = [0], xforms = 2,
+): FeatureRecord {
+  return {
+    gen, id,
+    variations: vars,
+    xforms,
+    coverage, entropy, colorVar, meanLum,
+  };
+}
+
 describe('computeFacetCounts', () => {
   it('no filter → variation counts are raw corpus counts', () => {
     const idx = makeIndex([
@@ -102,6 +118,91 @@ describe('computeFacetCounts', () => {
     const c = computeFacetCounts(idx, DEFAULT_FILTER_SPEC);
     expect(c.xforms.get(13)).toBe(1);
     expect(c.xforms.get(14)).toBe(3);  // 14, 15, 30 all collapse here
+  });
+
+  it('stat axes bucket into deciles — boundaries (0.05→0, 0.55→5, 1.0→9)', () => {
+    const idx = makeIndex([
+      recStats(165, 0, 0.05, 0.05, 0.05, 0.05),
+      recStats(165, 1, 0.55, 0.55, 0.55, 0.55),
+      recStats(165, 2, 1.0,  1.0,  1.0,  1.0),
+      recStats(165, 3, 0.0,  0.0,  0.0,  0.0),
+    ]);
+    const c = computeFacetCounts(idx, DEFAULT_FILTER_SPEC);
+    for (const axis of [c.coverage, c.entropy, c.colorVar, c.meanLum]) {
+      expect(axis.get(0)).toBe(2);  // 0.0 and 0.05 → bucket 0
+      expect(axis.get(5)).toBe(1);  // 0.55 → bucket 5
+      expect(axis.get(9)).toBe(1);  // 1.0 collapses into bucket 9
+    }
+    expect(c.total).toBe(4);
+  });
+
+  it('coverage axis counts apply OTHER active filters (leave-one-out)', () => {
+    // entropy filter [0.5, 1.0] should narrow the coverage-axis subset to
+    // records with entropy≥0.5; the coverage range itself is excluded.
+    const idx = makeIndex([
+      recStats(165, 0, 0.15, 0.20, 0.50, 0.50), // dropped by entropy filter
+      recStats(165, 1, 0.25, 0.60, 0.50, 0.50), // counted in coverage bucket 2
+      recStats(165, 2, 0.85, 0.70, 0.50, 0.50), // counted in coverage bucket 8
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, entropyMin: 0.5 };
+    const c = computeFacetCounts(idx, spec);
+    expect(c.coverage.get(1)).toBeUndefined();  // 0.15 record was filtered out
+    expect(c.coverage.get(2)).toBe(1);
+    expect(c.coverage.get(8)).toBe(1);
+    expect(c.total).toBe(2);
+  });
+
+  it('coverage axis does NOT apply the coverage range itself (leave-one-out)', () => {
+    // Selecting coverage=[0.5, 1.0] should NOT narrow the coverage-axis
+    // counts to "only ≥0.5" — the picker strip must still show low-bucket
+    // counts so the user can see what they're excluding.
+    const idx = makeIndex([
+      recStats(165, 0, 0.15, 0.5, 0.5, 0.5),
+      recStats(165, 1, 0.55, 0.5, 0.5, 0.5),
+      recStats(165, 2, 0.85, 0.5, 0.5, 0.5),
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, coverageMin: 0.5 };
+    const c = computeFacetCounts(idx, spec);
+    expect(c.coverage.get(1)).toBe(1);  // 0.15 still appears in the strip
+    expect(c.coverage.get(5)).toBe(1);
+    expect(c.coverage.get(8)).toBe(1);
+    expect(c.total).toBe(2);  // total respects the coverage range
+  });
+
+  it('variation filter + coverage range narrows coverage-axis counts to that variation', () => {
+    const idx = makeIndex([
+      recStats(165, 0, 0.15, 0.5, 0.5, 0.5, [14]),     // julia
+      recStats(165, 1, 0.55, 0.5, 0.5, 0.5, [14]),     // julia
+      recStats(165, 2, 0.85, 0.5, 0.5, 0.5, [0]),      // linear — filtered out
+    ]);
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      vars: [14],
+      coverageMin: 0.5,
+    };
+    const c = computeFacetCounts(idx, spec);
+    // Coverage strip shows the julia-only subset, full coverage range
+    // (leave-one-out on the coverage range itself).
+    expect(c.coverage.get(1)).toBe(1);  // 0.15 julia
+    expect(c.coverage.get(5)).toBe(1);  // 0.55 julia
+    expect(c.coverage.get(8)).toBeUndefined();  // linear dropped
+    expect(c.total).toBe(1);  // julia AND coverage≥0.5 → 165/1 only
+  });
+
+  it('total respects all stat-range filters', () => {
+    const idx = makeIndex([
+      recStats(165, 0, 0.55, 0.55, 0.55, 0.55),  // in range on all axes
+      recStats(165, 1, 0.55, 0.55, 0.55, 0.15),  // meanLum out
+      recStats(165, 2, 0.55, 0.55, 0.15, 0.55),  // colorVar out
+      recStats(165, 3, 0.55, 0.15, 0.55, 0.55),  // entropy out
+      recStats(165, 4, 0.15, 0.55, 0.55, 0.55),  // coverage out
+    ]);
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      coverageMin: 0.5, entropyMin: 0.5, colorVarMin: 0.5, meanLumMin: 0.5,
+    };
+    const c = computeFacetCounts(idx, spec);
+    expect(c.total).toBe(1);
   });
 
   it('variation AND semantic — total respects intersection', () => {

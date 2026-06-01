@@ -238,6 +238,14 @@ function buildMasterList(index: FeatureIndex, spec: FilterSpec): SheepRef[] {
   index.forEachRecord((rec) => {
     if (rec.xforms < spec.xformMin) return;
     if (spec.xformMax !== null && rec.xforms > spec.xformMax) return;
+    if (rec.coverage < spec.coverageMin) return;
+    if (spec.coverageMax !== null && rec.coverage > spec.coverageMax) return;
+    if (rec.entropy < spec.entropyMin) return;
+    if (spec.entropyMax !== null && rec.entropy > spec.entropyMax) return;
+    if (rec.colorVar < spec.colorVarMin) return;
+    if (spec.colorVarMax !== null && rec.colorVar > spec.colorVarMax) return;
+    if (rec.meanLum < spec.meanLumMin) return;
+    if (spec.meanLumMax !== null && rec.meanLum > spec.meanLumMax) return;
     for (const v of spec.vars) {
       if (!rec.variations.includes(v)) return;
     }
