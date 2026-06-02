@@ -24,9 +24,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          # Node 24: the suite exercises native DecompressionStream("brotli"),
-          # added in Node 24.7 — Node 20/22 lack it (brotli.test.ts).
-          node-version: 24
+          # Node 26 (#63): parity with local dev. Local devs land on the same
+          # major via .nvmrc, so test code that touches Node-version-gated
+          # globals (like Storage / Storage.prototype, added with the
+          # --localstorage-file path in 26) doesn't pass locally then crash
+          # CI. Also covers the older Node 24 brotli requirement (the suite
+          # exercises native DecompressionStream("brotli")).
+          node-version: 26
           cache: npm
 
       - name: Install dependencies
