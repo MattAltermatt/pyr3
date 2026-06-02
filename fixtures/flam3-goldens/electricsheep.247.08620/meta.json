@@ -7,6 +7,7 @@
   "tier": 1,
   "source": "flam3-render-32bit-isaac qs=1 isaac_seed=electricsheep.247.08620",
   "calibration": "Median of 3 pyr3 runs vs flam3-C golden at jitter 1e-10, 2026-05-31. thresholdR = expectedR + 1.0. tier 2 if expectedR >= 5.0.",
-  "feBeThresholdR": null,
-  "notes": "tier-1 healthy band (R<5) on the 1e-8 jitter engine. See issue #10 (2026-05-30 re-baseline)."
+  "feBeThresholdR": 7.54,
+  "notes": "tier-1 healthy band (R<5) on the 1e-8 jitter engine. See issue #10 (2026-05-30 re-baseline).",
+  "feBeExpectedR": 5.9414
 }
