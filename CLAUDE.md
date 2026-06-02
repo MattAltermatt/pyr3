@@ -206,4 +206,4 @@ historical entry — superseded by this section.)
 - Ship history: [Releases](https://github.com/MattAltermatt/pyr3/releases) (v1.0+) ·
   [`HISTORY.md`](HISTORY.md) (frozen pre-1.0 log)
 - The "single engine, two consumers" seam: `src/main.ts` (browser) + `bin/pyr3-render.ts` (CLI)
-- WGSL shaders: `src/shaders/{chaos,density,spatial-filter,visualize_u32,visualize_f32}.wgsl`
+- WGSL shaders: `src/shaders/{chaos,density,visualize_u32,visualize_f32}.wgsl`

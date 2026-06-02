@@ -13,6 +13,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
 
@@ -31,10 +32,11 @@ afterAll(() => {
 });
 
 // Extract the shipped helper verbatim — the test validates the real function,
-// not a copy. The function body has no column-0 `}` until its own closing brace.
+// not a copy. Uses the brace-balanced `extractWgslFn` helper so nested `{`/`}`
+// inside the function body are handled correctly (the prior inline regex
+// assumed no column-0 `}` until the closing brace, which doesn't generalize).
 const SHADER_SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
-const FN_MATCH = SHADER_SRC.match(/fn atomic_add_sat\([\s\S]*?\n\}/);
-const ATOMIC_ADD_SAT = FN_MATCH ? FN_MATCH[0] : '';
+const ATOMIC_ADD_SAT = extractWgslFn(SHADER_SRC, 'atomic_add_sat');
 
 describe('#18 — chaos histogram deposit saturates (shader source)', () => {
   it('chaos.wgsl ships a CAS-based atomic_add_sat helper (not plain atomicAdd)', () => {
