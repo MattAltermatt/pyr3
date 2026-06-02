@@ -1205,7 +1205,7 @@ async function main(): Promise<void> {
   openFilePicker = (): void => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.flame,.flam3';
+    input.accept = '.flame,.flam3,.pyr3.json,.json';
     input.style.display = 'none';
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
