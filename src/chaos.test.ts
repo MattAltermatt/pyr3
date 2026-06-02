@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest';
-import { createChaosPass, type ChaosConfig } from './chaos';
+import { createChaosPass, DEFAULT_WALKER_JITTER, type ChaosConfig } from './chaos';
 import { parseFlame } from './flame-import';
 import { ISAAC_STATE_U32 } from './isaac';
 
@@ -136,5 +136,52 @@ describe('issue #11 (PYR3-057) — chaos walker bound guard + ISAAC buffer sizin
     // Only the single creation-time ISAAC buffer — no growth needed.
     const isaacCreations = buffers.filter((b) => b.label === 'pyr3.chaos.isaac');
     expect(isaacCreations.length).toBe(1);
+  });
+});
+
+describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 15)', () => {
+  it('writes DEFAULT_WALKER_JITTER (1e-10) into f32 slot 15 when DispatchOpts.walkerJitter is omitted', () => {
+    // Default preserves the shipped #6 behavior — any caller that doesn't
+    // explicitly pass walkerJitter must still get 1e-10, otherwise every
+    // existing parity-rig baseline silently shifts.
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    expect(u).toBeDefined();
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    // Written via f32[15] → f32 rounding of DEFAULT_WALKER_JITTER (Math.fround
+    // is the bit-exact f32 representation; toBeCloseTo's per-decimal precision
+    // can't express the ~1e-18 f32 error band at 1e-10 magnitude).
+    expect(f32[15]).toBe(Math.fround(DEFAULT_WALKER_JITTER));
+  });
+
+  it('writes a caller-supplied walkerJitter into f32 slot 15', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    // Pick a value distinguishable from the default by f32 representation.
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8, walkerJitter: 5e-20 });
+
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    expect(u).toBeDefined();
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[15]).toBe(Math.fround(5e-20));
+  });
+
+  it('writes 0 into f32 slot 15 when caller explicitly passes walkerJitter: 0', () => {
+    // Setting jitter to 0 disables the perturbation — the #43 / #6 collapse-cliff
+    // probe path. `?? DEFAULT_WALKER_JITTER` must NOT trigger on a real 0.
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8, walkerJitter: 0 });
+
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    expect(u).toBeDefined();
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[15]).toBe(0);
   });
 });

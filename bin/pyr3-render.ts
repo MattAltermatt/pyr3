@@ -14,6 +14,7 @@ import { PNG } from 'pngjs';
 
 import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch } from '../src/renderer';
 import { type Genome } from '../src/genome';
+import { DEFAULT_WALKER_JITTER } from '../src/chaos';
 import {
   applyPreset,
   customSpec,
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   let customQuality: number | null = null;
   let sampleInflate = 1;
   let seedOverride: number | null = null;
+  let walkerJitter: number = DEFAULT_WALKER_JITTER;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -70,6 +72,17 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       seedOverride = (n >>> 0);
+    } else if (a === '--jitter') {
+      // #65 Tier 1 — override walker-jitter amplitude (default 1e-10, the
+      // shipped #6 value). 0 disables jitter (f32-collapse cliff returns);
+      // see src/shaders/chaos.wgsl for the rationale.
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        console.error('--jitter requires a non-negative number (e.g. 1e-10, 0)');
+        process.exit(1);
+      }
+      walkerJitter = n;
     } else if (a.startsWith('--sample-inflate=')) {
       // PYR3-029 probe: multiplies the `totalSamples` passed to
       // deriveCalibration, shrinking k2 by the same factor. Use to
@@ -177,6 +190,7 @@ async function main(): Promise<void> {
       outputView: texture.createView(),
       forceDeOff,
       seed: seedOverride ?? undefined,
+      walkerJitter,
     });
   } else {
     // PYR3-029 probe path: same walker-sizing as renderer.render, then present
@@ -186,7 +200,7 @@ async function main(): Promise<void> {
     const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(targetSpp, width, height);
     console.log(`[pyr3-render] probe: sample-inflate=${sampleInflate} → totalSamples ${actualSamples} → ${actualSamples * sampleInflate}`);
     renderer.reset(genome);
-    renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters });
+    renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter });
     renderer.present({
       genome,
       outputView: texture.createView(),

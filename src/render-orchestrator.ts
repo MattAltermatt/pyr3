@@ -52,6 +52,9 @@ export interface OrchestratorOpts {
    *  (yield every chunk). Higher values reduce compositor-tick overhead
    *  at the cost of UI responsiveness between yields. PYR3-027 A/B knob. */
   yieldEveryNChunks?: number;
+  /** #65 Tier 1 — walker-jitter amplitude forwarded to renderer.iterate.
+   *  Default DEFAULT_WALKER_JITTER (1e-10). */
+  walkerJitter?: number;
 }
 
 export interface ProgressInfo {
@@ -93,6 +96,9 @@ export interface DecoupledOpts {
   /** Present with density-estimation OFF during refinement (cheap), then
    *  one full-quality DE present at the end. Default true. */
   cheapPreview?: boolean;
+  /** #65 Tier 1 — walker-jitter amplitude forwarded to renderer.iterate.
+   *  Default DEFAULT_WALKER_JITTER (1e-10). */
+  walkerJitter?: number;
 }
 
 /** Default samples per iterate dispatch in the decoupled orchestrator.
@@ -163,6 +169,7 @@ export function startDecoupledRender(opts: DecoupledOpts): RunHandle {
         seed: (opts.seedBase + i) >>> 0,
         walkers: walkersPerDispatch,
         itersPerWalker: ITERS_PER_CHUNK,
+        walkerJitter: opts.walkerJitter,
       });
       samplesAccumulated += samplesPerDispatch;
       const elapsed = (performance.now() - startTime) / 1000;
@@ -223,6 +230,7 @@ export function startChunkedRender(opts: OrchestratorOpts): RunHandle {
         seed: (opts.seedBase + i) >>> 0,
         walkers: walkersPerChunk,
         itersPerWalker: ITERS_PER_CHUNK,
+        walkerJitter: opts.walkerJitter,
       });
       samplesAccumulated += samplesPerChunk;
       if (presentEach) {

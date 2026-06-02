@@ -94,6 +94,9 @@ export interface RenderRequest {
   seed?: number;
   /** Forces DE off regardless of genome.density. */
   forceDeOff?: boolean;
+  /** #65 Tier 1 — override walker-jitter amplitude for this render.
+   *  Defaults to DEFAULT_WALKER_JITTER (`src/chaos.ts`, 1e-10). */
+  walkerJitter?: number;
 }
 
 export interface IterateRequest {
@@ -101,6 +104,8 @@ export interface IterateRequest {
   seed: number;
   walkers: number;
   itersPerWalker: number;
+  /** #65 Tier 1 — same as RenderRequest.walkerJitter; defaults to DEFAULT_WALKER_JITTER. */
+  walkerJitter?: number;
 }
 
 export interface PresentRequest {
@@ -177,6 +182,7 @@ export function createRenderer(
       pipelines.chaos.dispatch(req.genome, req.seed, {
         walkers: req.walkers,
         itersPerWalker: req.itersPerWalker,
+        walkerJitter: req.walkerJitter,
       });
     },
 
@@ -215,7 +221,7 @@ export function createRenderer(
       );
 
       renderer.reset(genome);
-      renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters });
+      renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter: req.walkerJitter });
       renderer.present({ genome, outputView: req.outputView, totalSamples: actualSamples, forceDeOff: req.forceDeOff });
     },
 

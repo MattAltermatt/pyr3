@@ -44,6 +44,7 @@ import { readGlobalQuality, writeGlobalQuality } from './prefs';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
+import { resolveWalkerJitter } from './walker-jitter';
 import {
   mountBar,
   mountGalleryBar,
@@ -97,6 +98,25 @@ function corpusTitleLabel(gen: number, id: number): string {
 
 async function main(): Promise<void> {
   const webgpu = await checkWebGPU();
+
+  // #65 Tier 1 — resolve walker-jitter for this session from `?jitter=<amp>`
+  // (e.g. `?jitter=1e-20`), falling back to DEFAULT_WALKER_JITTER (1e-10).
+  // `let` because the dev hook below mutates it for ad-hoc sweeps without
+  // a page reload (matches the existing __pyr3Bench / __pyr3Decoupled idiom).
+  let currentWalkerJitter = resolveWalkerJitter(window.location.search);
+  if (import.meta.env.DEV) {
+    (window as unknown as {
+      __pyr3SetJitter?: (amp: number) => number;
+    }).__pyr3SetJitter = (amp: number): number => {
+      if (!Number.isFinite(amp) || amp < 0) {
+        console.warn(`__pyr3SetJitter: ignoring invalid amplitude ${amp}`);
+        return currentWalkerJitter;
+      }
+      currentWalkerJitter = amp;
+      console.log(`pyr3: walker jitter → ${amp}`);
+      return amp;
+    };
+  }
 
   // First-paint cue ("dreaming…" in index.html) — cleared once the first
   // flame paints, so the visitor sees the engine is alive on a cold load.
@@ -330,6 +350,7 @@ async function main(): Promise<void> {
         presentAfterEachChunk: cfg.presentEach,
         samplesPerChunk: cfg.samplesPerChunk,
         yieldEveryNChunks: cfg.yieldEveryNChunks,
+        walkerJitter: currentWalkerJitter,
       });
       const result = await handle.promise;
       await device.queue.onSubmittedWorkDone();
@@ -373,6 +394,7 @@ async function main(): Promise<void> {
         samplesPerDispatch: cfg.samplesPerDispatch,
         displayIntervalMs: cfg.displayIntervalMs,
         cheapPreview: cfg.cheapPreview,
+        walkerJitter: currentWalkerJitter,
       });
       const result = await handle.promise;
       await device.queue.onSubmittedWorkDone();
@@ -455,6 +477,7 @@ async function main(): Promise<void> {
           onCancel: () => runHandle?.cancel(),
         });
       },
+      walkerJitter: currentWalkerJitter,
     });
     runHandle = handle;
     if (import.meta.env.DEV) {
@@ -585,6 +608,7 @@ async function main(): Promise<void> {
           onCancel: () => runHandle?.cancel(),
         });
       },
+      walkerJitter: currentWalkerJitter,
     });
     runHandle = handle;
     lastRenderInfo = { genome: renderGenome, totalSamples: targetSamples };

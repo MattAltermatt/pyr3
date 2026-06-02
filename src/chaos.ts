@@ -46,7 +46,18 @@ export interface DispatchOpts {
   /** PYR3-029 Phase 5b — enable per-iter trace emission for walker 0, first
    *  1000 post-fuse iters. Caller reads `pass.traceBuffer` to retrieve. */
   traceMode?: boolean;
+  /** #65 Tier 1 — per-iter walker trajectory jitter amplitude. Default
+   *  DEFAULT_WALKER_JITTER (1e-10, the shipped #6 value); 0 disables jitter
+   *  (f32-collapse cliff returns). See chaos.wgsl `walker_jitter` for the
+   *  full rationale; #43 tracks the principled scale-relative replacement. */
+  walkerJitter?: number;
 }
+
+/** Default walker-jitter amplitude — shipped value from #6 (2026-05-31 / 7110721).
+ *  Any caller can override via DispatchOpts.walkerJitter (or via the propagated
+ *  IterateRequest/RenderRequest.walkerJitter); the URL `?jitter=` + BE
+ *  `--jitter` flags route through that same path. */
+export const DEFAULT_WALKER_JITTER = 1e-10;
 
 export interface ChaosPass {
   config: ChaosConfig;
@@ -263,6 +274,9 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // #11 (PYR3-057): exact walker count (NOT the rounded-up thread count) so
       // chaos_main bails the padding threads of the final workgroup.
       u32[14] = walkers;
+      // #65 Tier 1: walker jitter amplitude — runtime parameter.
+      // `??` lets call sites omit it and pick up the shipped default.
+      f32[15] = opts?.walkerJitter ?? DEFAULT_WALKER_JITTER;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

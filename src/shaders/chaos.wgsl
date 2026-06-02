@@ -84,7 +84,11 @@ struct Uniforms {
   // chaos_main bails those threads (see the guard below) so they can't run the
   // chaos loop against stale/zero RNG and atomicAdd bogus hits into the histogram.
   walker_count: u32,    // slot 14 (byte 56)
-  _pad15: u32,
+  // #65 Tier 1: walker jitter amplitude is now a runtime parameter. Per-iter
+  // sub-ulp perturbation on the trajectory commit; see the jx/jy site below
+  // for the rationale. Default 1e-10 (shipped value from #6) — DEFAULT_WALKER_JITTER
+  // in src/chaos.ts. Setting 0 disables jitter (f32-collapse cliff returns).
+  walker_jitter: f32,   // slot 15 (byte 60)
 };
 
 // Variation slots:
@@ -1866,8 +1870,9 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     // (R11), each strictly better with 0 regressions. R is monotone-decreasing
     // toward the f32-collapse cliff at 0 (1e-10 is ~100× above it; below is
     // unmapped). A scale-relative jitter is the principled long-term fix (#43).
-    let jx = (rand01(walker_id) - 0.5) * 1e-10;
-    let jy = (rand01(walker_id) - 0.5) * 1e-10;
+    // #65 Tier 1: amplitude is now `u.walker_jitter` (default 1e-10 host-side).
+    let jx = (rand01(walker_id) - 0.5) * u.walker_jitter;
+    let jy = (rand01(walker_id) - 0.5) * u.walker_jitter;
     p = vec3f(p_pre_final.x + jx, p_pre_final.y + jy, p_pre_final.z);
 
     if (i >= u.fuse) {
