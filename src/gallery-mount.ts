@@ -41,13 +41,23 @@ export interface SheepRef {
 }
 
 /**
+ * Sentinel upper bound when the manifest is unavailable. Without it,
+ * mashing `›` from a manifest-failure state would push unbounded history
+ * entries (each rendering 9 empty cells). 99999 is large enough that a
+ * legitimate `?p=N` URL never trips it, small enough that the bounded
+ * history is reachable.
+ */
+export const MAX_SAFE_PAGE = 99999;
+
+/**
  * Clamp a requested gallery page into [1, totalPages]. When totalPages is
  * 0 or negative (manifest unavailable / empty corpus) the request passes
- * through with a floor of 1 — main.ts's mount path treats that as "render
- * page 1 with whatever cells resolve" rather than hard-failing.
+ * through with a floor of 1 and a ceiling of MAX_SAFE_PAGE — main.ts's
+ * mount path treats that as "render page 1 with whatever cells resolve"
+ * rather than hard-failing, but the sentinel prevents unbounded `›` mashing.
  */
 export function clampGalleryPage(requested: number, totalPages: number): number {
-  const max = totalPages > 0 ? totalPages : Number.POSITIVE_INFINITY;
+  const max = totalPages > 0 ? totalPages : MAX_SAFE_PAGE;
   const floored = Math.max(1, Math.floor(requested));
   return Math.min(max, floored);
 }

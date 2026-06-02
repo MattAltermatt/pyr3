@@ -973,6 +973,18 @@ async function main(): Promise<void> {
   };
 
   const mountGallerySurface = async (initialPage: number): Promise<void> => {
+    // #52: drain any in-flight viewer render before the gallery mount path
+    // starts resizing pipelines. Currently the gallery is only entered via
+    // URL intent (fresh page) or a full-page <a href> reload, so runHandle
+    // is null in practice — but a future inline viewer↔gallery swap would
+    // expose this. Mirrors the drain pattern at the bench / loadCorpus paths.
+    if (runHandle) {
+      runHandle.cancel();
+      await runHandle.promise;
+      runHandle = null;
+    }
+    await device.queue.onSubmittedWorkDone();
+
     // Parse the URL once more here so the FilterSpec the gallery actually
     // mounts with always tracks the live address bar — the caller (the
     // initial-load block at the bottom of main) passes `intent.page` but not

@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   clampGalleryPage,
   coalesce,
+  MAX_SAFE_PAGE,
   mountGallery,
   pageOfSheep,
   pageForSheep,
@@ -653,9 +654,16 @@ describe('clampGalleryPage — URL out-of-range clamp', () => {
     expect(clampGalleryPage(3.7, 10)).toBe(3);
   });
 
-  it('totalPages 0 (manifest unavailable) → request passes through with floor of 1', () => {
+  it('totalPages 0 (manifest unavailable) → request passes through bounded by MAX_SAFE_PAGE', () => {
+    // Manifest-unavailable state still mounts page 1, but #52: with no upper
+    // bound, mashing `›` would push unbounded history entries. The
+    // MAX_SAFE_PAGE sentinel caps reachable pages while leaving in-range
+    // requests untouched.
     expect(clampGalleryPage(27, 0)).toBe(27);
     expect(clampGalleryPage(0, 0)).toBe(1);
+    expect(clampGalleryPage(MAX_SAFE_PAGE, 0)).toBe(MAX_SAFE_PAGE);
+    expect(clampGalleryPage(MAX_SAFE_PAGE + 1, 0)).toBe(MAX_SAFE_PAGE);
+    expect(clampGalleryPage(1e9, 0)).toBe(MAX_SAFE_PAGE);
   });
 });
 
