@@ -11,6 +11,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in */src/shaders/*.wgsl) printf '[hook] WGSL edited (%s) — render path may have changed. Run `npm run test:parity` (~91s) before FF-merge to verify BE↔flam3-C parity.\\n' \"$(basename \"$f\")\" >&2 ;; esac"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
