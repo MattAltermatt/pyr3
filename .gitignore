@@ -12,6 +12,7 @@ coverage/
 .claude/worktrees/
 .claude/*.png
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .phase*.png
 .diag*.png
 
