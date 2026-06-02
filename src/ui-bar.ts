@@ -37,6 +37,11 @@ export interface BarOpts {
    *  bar composes the filename (flame + tier + quality) and hands it down; main
    *  owns the actual canvas.toBlob + anchor-download wiring. */
   onSave: (filename: string) => void;
+  /** #23: fired when the user clicks the viewer's 🎲 pill — picks an
+   *  interestingness-weighted flame from the corpus (80% from top-10%
+   *  elite, 20% from the middle band, bottom 5% excluded) and navigates
+   *  to it. Sibling of the gallery 🎲 (uniform across the full corpus). */
+  onSurpriseMe: () => void;
 }
 
 /** Resolved cost of a custom render request. */
@@ -229,9 +234,24 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   saveBtn.disabled = true;
   saveBtn.title = 'Download the current render as a PNG';
   actionLeft.append(openBtn, qLabel, ladder, advBtn, saveBtn);
+  // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
+  // curated showcase set (sibling of the gallery dice #50, which picks from
+  // the full corpus). Lives in the action row right-side cluster next to the
+  // corpus-nav prev/next pills. Always present — independent of whether the
+  // current flame has a corpus nav (a user-loaded file with no corpus context
+  // can still dice into the showcase).
+  const dicePill = el('a', 'pyr3-nav-pill pyr3-bar-viewer-dice') as HTMLAnchorElement;
+  dicePill.href = '#';
+  dicePill.textContent = '🎲 surprise me';
+  dicePill.title = 'jump to a random interesting flame from the corpus';
+  dicePill.onclick = (e) => {
+    e.preventDefault();
+    if (barBusy) return; // #8: no queuing dice rolls behind a render
+    opts.onSurpriseMe();
+  };
   // Corpus-nav cluster (filled by setCorpusNav in PYR3-041); right-aligned.
   const navSlot = el('div', 'pyr3-bar-nav');
-  actionRow.append(actionLeft, navSlot);
+  actionRow.append(actionLeft, dicePill, navSlot);
 
   // ══ bar ②b — Advanced custom resolution/SPP (PYR3-050); hidden until toggled ══
   const advRow = el('div', 'pyr3-bar-advanced');
@@ -300,6 +320,9 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const navPills: HTMLAnchorElement[] = [];
   const applyNavBusy = (): void => {
     for (const p of navPills) p.classList.toggle('disabled', barBusy);
+    // #23: dice pill is permanent (not rebuilt per setCorpusNav), so toggle
+    // its .disabled class directly here rather than via navPills.
+    dicePill.classList.toggle('disabled', barBusy);
   };
   // #22: latest flame name + quality, so the Save button can compose the
   // download filename on click and gate itself on "is there something to save?".
@@ -740,6 +763,14 @@ const BAR_CSS = `
      (the .pyr3-nav-pill default of 10ch would clip the label on
      narrow viewports otherwise). */
   min-width: 0;
+}
+.pyr3-bar-viewer-dice {
+  /* #23: viewer-side dice pill carries "🎲 surprise me". Natural width
+     like the gallery dice; the 10ch default would clip the label.
+     margin-right separates the dice from the prev/next corpus-nav cluster
+     so the two functions read as distinct controls. */
+  min-width: 0;
+  margin-right: 16px;
 }
 .pyr3-bar-filter-pill {
   /* Pill carries "⚙ filters ▾" + optional "N active" badge. Natural

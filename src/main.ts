@@ -40,6 +40,7 @@ import {
 } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
+import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import {
@@ -143,6 +144,18 @@ async function main(): Promise<void> {
     onNavigate: (gen, id) => navigateCorpus(gen, id),
     estimateCost: (longEdge, spp) => estimateCostFn(longEdge, spp),
     onSave: (filename) => saveCanvas(filename),
+    onSurpriseMe: () => {
+      // #23: pick a flame from the corpus weighted by interestingness +
+      // navigate to it. The first click awaits the feature-index load
+      // (cached for the gallery too, so usually already in memory);
+      // subsequent clicks are sync-cheap. Reuses the existing /v1/gen/...
+      // corpus-load path so the dice click is indistinguishable from a
+      // manual share-link visit.
+      void pickSurpriseFlame().then((pick) => {
+        if (pick === null) return;
+        navigateCorpus(pick.gen, pick.id);
+      });
+    },
   });
 
   if (!webgpu.available) {

@@ -15,6 +15,7 @@ function makeBarOpts(over: Partial<BarOpts> = {}): BarOpts {
     onRenderQuality: vi.fn(),
     onNavigate: vi.fn(),
     onSave: vi.fn(),
+    onSurpriseMe: vi.fn(),
     estimateCost: () => ({ width: 1024, height: 1024, mb: 4, fits: true }),
     ...over,
   };
