@@ -8,6 +8,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -26,8 +27,17 @@ function esfPath(gen, id) {
 function renderFlam3(flamePath, goldenOut, isaacSeed) {
   if (existsSync(goldenOut)) return { cached: true, ms: 0 };
   const t0 = Date.now();
+  // ESF animation files contain N concatenated <flame> blocks with no root
+  // wrapping; libxml2 (flam3-render) rejects them with "Extra content at the
+  // end of the document". Wrap in <flames>...</flames> via a temp file so
+  // flam3-render parses + renders the first flame. Single-flame files survive
+  // the wrap unchanged.
+  const xml = readFileSync(flamePath, 'utf8');
+  const wrapped = `<flames>\n${xml}\n</flames>\n`;
+  const tmpPath = join(tmpdir(), `pyr3-043-followup-${isaacSeed}-${Date.now()}.flam3`);
+  writeFileSync(tmpPath, wrapped);
   const r = spawnSync(FLAM3_BIN, [], {
-    env: { ...process.env, in: flamePath, out: goldenOut, isaac_seed: String(isaacSeed), qs: '1' },
+    env: { ...process.env, in: tmpPath, out: goldenOut, isaac_seed: String(isaacSeed), qs: '1' },
     encoding: 'utf8',
   });
   if (r.status !== 0) {

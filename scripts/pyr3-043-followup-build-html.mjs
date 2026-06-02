@@ -64,7 +64,7 @@ function classSection(classKey, items) {
   return `<section class="cls"><h2>${desc}</h2>${cells}</section>`;
 }
 
-function main() {
+async function main() {
   const resultsPath = join(OUT_DIR, 'results.jsonl');
   if (!existsSync(resultsPath)) {
     console.error(`missing ${resultsPath} — run scripts/pyr3-043-followup-render.mjs first`);
@@ -83,6 +83,31 @@ function main() {
     byClass[r.class][slot]++;
     if (r.R !== null) byClass[r.class].Rs.push(r.R);
   }
+
+  // Also aggregate by nFlames (we annotated this onto each record in the renderer).
+  // For records that lack the field (older data), fall back to filesystem read.
+  const { readFileSync: rfs } = await import('node:fs');
+  const ESF_ROOT = '/Users/matt/dev/MattAltermatt/electric-sheep-fold';
+  function nFlamesFor(r) {
+    if (typeof r.nFlames === 'number') return r.nFlames;
+    try {
+      const bucket = Math.floor(r.id / 10000) * 10000;
+      const path = `${ESF_ROOT}/corpus/${r.gen}/${bucket}/electricsheep.${r.gen}.${r.id}.flam3`;
+      return (rfs(path, 'utf8').match(/<flame /g) || []).length;
+    } catch { return 0; }
+  }
+  const byNFlames = { 1: { tier1: 0, tier2: 0, tier3: 0, Rs: [] }, multi: { tier1: 0, tier2: 0, tier3: 0, Rs: [] } };
+  for (const r of results) {
+    const n = nFlamesFor(r);
+    const slot = n === 1 ? '1' : 'multi';
+    const tslot = r.tier === 'tier-1' ? 'tier1' : r.tier === 'tier-2' ? 'tier2' : r.tier === 'error' ? null : 'tier3';
+    if (tslot) byNFlames[slot][tslot]++;
+    if (r.R !== null) byNFlames[slot].Rs.push(r.R);
+  }
+  const nFlamesSummary = `<table class="summary"><thead><tr><th>nFlames</th><th>tier-1</th><th>tier-2</th><th>tier-3 (R≥10)</th><th>mean R</th><th>interpretation</th></tr></thead><tbody>
+    <tr><td class="cls">1 (single-frame)</td><td>${byNFlames['1'].tier1}</td><td>${byNFlames['1'].tier2}</td><td>${byNFlames['1'].tier3}</td><td>${byNFlames['1'].Rs.length ? (byNFlames['1'].Rs.reduce((a,b)=>a+b,0)/byNFlames['1'].Rs.length).toFixed(2) : '—'}</td><td style="text-align:left">parity-class flames; pyr3 should match flam3-C</td></tr>
+    <tr><td class="cls">2+ (animation)</td><td>${byNFlames.multi.tier1}</td><td>${byNFlames.multi.tier2}</td><td>${byNFlames.multi.tier3}</td><td>${byNFlames.multi.Rs.length ? (byNFlames.multi.Rs.reduce((a,b)=>a+b,0)/byNFlames.multi.Rs.length).toFixed(2) : '—'}</td><td style="text-align:left">flam3 motion-blurs across keyframes; pyr3 renders first frame — feature gap, not parity bug</td></tr>
+    </tbody></table>`;
 
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>#43 follow-up — targeted corpus sweep</title><style>
@@ -119,7 +144,17 @@ section.cls h2{margin:0 0 16px;font-size:17px;color:#eef;border-bottom:1px solid
   25 corpus candidates rendered against flam3-C goldens using pyr3 post-#43 (scale-relative walker jitter @ k=1e-7). Each candidate was selected by a predictor designed to match the structure of one of the 4 known tier-2 fixtures. The question this sweep answers: <strong>do the predictors actually correlate with tier-2 R, or are the 4 known tier-2s isolated anomalies?</strong>
 </p>
 
-<h2 style="margin-top:0">Summary by class</h2>
+<h2 style="margin-top:0">Headline finding — split by nFlames</h2>
+<p style="color:var(--txt-dim);font-size:13px;max-width:1080px;line-height:1.55;">
+The 25-candidate predictor classes were designed to catch parity outliers. What they actually
+revealed is a clean separation by <strong>nFlames</strong> (number of <code>&lt;flame&gt;</code>
+blocks in the source XML): single-frame files render in tier-1/2; multi-flame animation files
+render at R 30–75 because pyr3 doesn't implement temporal interpolation / motion blur (out of
+scope per CLAUDE.md guardrail). Those tier-3 numbers are <em>feature gap, not parity bug.</em>
+</p>
+${nFlamesSummary}
+
+<h2>Summary by predictor class</h2>
 ${summaryBlock(byClass)}
 
 ${classSection('A', perClassItems.A || [])}
