@@ -9,5 +9,5 @@
   "calibration": "Median of 3 pyr3 runs vs flam3-C golden at jitter 1e-10, 2026-05-31. thresholdR = expectedR + 1.0. tier 2 if expectedR >= 5.0.",
   "feBeExpectedR": 8.3756,
   "feBeThresholdR": 10.21,
-  "notes": "tier-1 healthy band (R<5) on the 1e-8 jitter engine. See issue #10 (2026-05-30 re-baseline)."
+  "notes": "tier-1 healthy band (R<5) on the scale-relative-jitter engine (#43, k=1e-7 proportional factor). See issue #43 (2026-06-02 re-baseline)."
 }

@@ -5,13 +5,13 @@ import {
   DEFAULT_WALKER_JITTER,
 } from './walker-jitter';
 
-describe('#65 Tier 1 — DEFAULT_WALKER_JITTER', () => {
-  it('locks the shipped post-#6 amplitude at 1e-10', () => {
-    // This constant is load-bearing: it's the post-#6 value that lands all
-    // existing parity-rig expectedR / thresholdR baselines. Any change to it
-    // must come with a 25-fixture re-baseline + meta.json update, not a quiet
-    // edit. The chaos.wgsl uniform default mirror lives in chaos.ts.
-    expect(DEFAULT_WALKER_JITTER).toBe(1e-10);
+describe('DEFAULT_WALKER_JITTER', () => {
+  it('locks the scale-relative proportional factor at f32 epsilon', () => {
+    // #43 Tier 4 (2026-06-02): jitter is now scale-relative. The factor is
+    // anchored to f32 epsilon (2^-23 ≈ 1.19e-7); 1e-7 is the empirical sweet
+    // spot found in the parity sweep on 248.23554 (R 11.4 → 6.4, −44%). Any
+    // change must come with a 25-fixture re-baseline + meta.json update.
+    expect(DEFAULT_WALKER_JITTER).toBe(1e-7);
   });
 });
 

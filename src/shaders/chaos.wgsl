@@ -1862,17 +1862,27 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     //
     // Walker jitter — per-iter sub-ulp perturbation on the trajectory commit
     // (splat coords stay un-jittered; retry/rollback path stays un-jittered).
-    // It counteracts the OPPOSITE f32 bias: with jitter off, f32 rounding
-    // collapses walkers onto near-singular orbits (issue #6 R 24→51). The
-    // jitter is a deliberate diffusing blur; too much over-spreads the
-    // attractor (the issue-#6 over-brightness). Amplitude tuned via 25-fixture
-    // regressions (2026-05-30/31, #6/#10): 1e-6 (R24) → 1e-8 (R17) → 1e-10
-    // (R11), each strictly better with 0 regressions. R is monotone-decreasing
-    // toward the f32-collapse cliff at 0 (1e-10 is ~100× above it; below is
-    // unmapped). A scale-relative jitter is the principled long-term fix (#43).
-    // #65 Tier 1: amplitude is now `u.walker_jitter` (default 1e-10 host-side).
-    let jx = (rand01(walker_id) - 0.5) * u.walker_jitter;
-    let jy = (rand01(walker_id) - 0.5) * u.walker_jitter;
+    // It counteracts an f32 bias: with jitter off, f32 rounding collapses
+    // walkers onto near-singular orbits (issue #6 R 24→51).
+    //
+    // #43 Tier 4: scale-relative amplitude. The perturbation scales with the
+    // walker's local coord magnitude — so f32-precision-relative behavior is
+    // preserved across the full magnitude range a walker traverses (near-
+    // singular passes near origin get a proportionally smaller nudge; outer
+    // attractor points get a proportionally larger one). `u.walker_jitter` is
+    // now a DIMENSIONLESS proportional factor (NOT an absolute amplitude).
+    //
+    // History (replaced by scale-relative; kept for git-blame context):
+    //   1e-6 abs (R24) → 1e-8 (R17) → 1e-10 (R11) — see #6/#10/#43.
+    //   The static-amplitude story bottomed out at a per-class basin near
+    //   1e-20 with only a per-fixture win; scale-relative replaces it.
+    //
+    // Floor on local_mag at 1e-30 keeps walkers near (0,0) from receiving a
+    // literally-zero amplitude (which would re-introduce the collapse cliff).
+    let local_mag = max(max(abs(p_pre_final.x), abs(p_pre_final.y)), 1e-30);
+    let amp = local_mag * u.walker_jitter;
+    let jx = (rand01(walker_id) - 0.5) * amp;
+    let jy = (rand01(walker_id) - 0.5) * amp;
     p = vec3f(p_pre_final.x + jx, p_pre_final.y + jy, p_pre_final.z);
 
     if (i >= u.fuse) {

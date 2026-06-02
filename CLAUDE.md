@@ -164,26 +164,39 @@ tightened through Phase 3 cycles. Live thresholds in each
 `fixtures/flam3-goldens/<id>/meta.json`. R-metric implementation at
 `src/compare.ts`.
 
-**Tier contract (v0.19, re-baselined 2026-05-31 — issue #10):** Per-fixture
+**Tier contract (re-baselined 2026-06-02 — issue #43):** Per-fixture
 `meta.json` carries `expectedR` (3-run mean R vs flam3-C on the current
-engine, replacing the prior `baselineR` label), `thresholdR = expectedR + 1.0`,
-and `tier: 1 | 2`. **Tier-1** fixtures have `expectedR < 5.0` — the healthy
-parity band where pyr3 matches flam3-C within visual tolerance (21 of 25
-fixtures). **Tier-2** fixtures have `expectedR ≥ 5.0` (4 fixtures) and carry a
-`notes` field describing the residual. Both gates are equally load-bearing for
-the v1.0 ship contract: a tier-2 regression past `thresholdR` means the residual
+engine), `thresholdR = expectedR + 1.0`, and `tier: 1 | 2`. **Tier-1**
+fixtures have `expectedR < 5.0` — the healthy parity band where pyr3
+matches flam3-C within visual tolerance (21 of 25 fixtures). **Tier-2**
+fixtures have `expectedR ≥ 5.0` (4 fixtures) and carry a `notes` field
+describing the residual. Both gates are equally load-bearing for the v1.0
+ship contract: a tier-2 regression past `thresholdR` means the residual
 moved (real ship-blocker); tier-1 regressions read as engine bugs.
 
-The tier-2 band is **NOT** the "GPU f32 vs CPU f64 in variation kernels"
-precision floor the original v0.19 framing claimed. That narrative was mostly
-wrong: **PYR3-056** (the DE kernel-normalization fix, v0.36) collapsed the bulk
-of the old outliers into tier-1 — `coverage.248.02226` 29.92→5.73,
-`coverage.245.06687` 14.59→1.52, `coverage.243.04616` 11.56→3.50 — so it was a
-DE bug, not a precision floor. The 4 residual tier-2 fixtures are **GPU-f32
-chaos-game spatial diffuseness** (the walker measure spreads slightly more than
-flam3-C), minimized via the walker jitter (`1e-10`, issue #6); the principled
-re-fuse fix is tracked in issue #43. (`HISTORY.md` v0.19 records the original
-f32-floor rationale as a frozen historical entry — superseded by this section.)
+**Walker jitter is now scale-relative (#43, 2026-06-02).** The chaos kernel
+adds a per-iter perturbation of `local_mag × k` where `local_mag` is the
+walker's current coord magnitude and `k = DEFAULT_WALKER_JITTER = 1e-7` is
+a dimensionless proportional factor anchored to f32 epsilon
+(`2^-23 ≈ 1.19e-7`). This replaced the static-amplitude story (`1e-6` →
+`1e-8` → `1e-10` across #6/#10) which was a per-class band-aid; the new
+mechanism self-tunes per walker and retired the amplitude conversation.
+On the canonical jitter-sensitive fixture `electricsheep.248.23554` this
+drops R from 11.4 → 6.4 (−44%) without per-fixture tuning. Future
+investigations of `--jitter` / `?jitter=` debug knobs interpret the value
+as a proportional factor, NOT an absolute amplitude.
+
+The 4 remaining tier-2 fixtures (`248.23554` R≈6.4, `244.82986` R≈8.9,
+`coverage.248.02226` R≈5.7, `244.42746` R≈5.3) have **non-jitter
+residuals** — they were unchanged by the scale-relative mechanism, which
+is the empirical proof that their divergence is upstream/orthogonal to
+the chaos-game perturbation. Each needs its own diagnosis (the
+`electricsheep.248.25703` case in #64 is one such example; the others are
+not yet filed). Historical lineage: **PYR3-056** (v0.36 DE-norm fix)
+collapsed the original wave of outliers; #43 (this commit) collapsed the
+jitter-sensitive subset; what's left needs per-fixture investigation.
+(`HISTORY.md` v0.19 records the original f32-floor rationale as a frozen
+historical entry — superseded by this section.)
 
 ## Useful pointers
 

@@ -37,6 +37,7 @@ async function main(): Promise<void> {
   let sampleInflate = 1;
   let seedOverride: number | null = null;
   let walkerJitter: number = DEFAULT_WALKER_JITTER;
+  let walkersOverride: number | null = null;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -83,6 +84,11 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       walkerJitter = n;
+    } else if (a === '--walkers') {
+      // #43 re-fuse probe — override the auto-computed walker count.
+      // Smaller iters_per_walker = re-fuse-like behavior (each walker has a
+      // bounded lifetime, can't get trapped on a singular f32 orbit).
+      walkersOverride = parsePositiveInt(rawArgs[++i], '--walkers');
     } else if (a.startsWith('--sample-inflate=')) {
       // PYR3-029 probe: multiplies the `totalSamples` passed to
       // deriveCalibration, shrinking k2 by the same factor. Use to
@@ -184,7 +190,7 @@ async function main(): Promise<void> {
 
   // 4. Render.
   const t0 = Date.now();
-  if (sampleInflate === 1) {
+  if (sampleInflate === 1 && walkersOverride === null) {
     renderer.render({
       genome,
       outputView: texture.createView(),
@@ -193,12 +199,19 @@ async function main(): Promise<void> {
       walkerJitter,
     });
   } else {
-    // PYR3-029 probe path: same walker-sizing as renderer.render, then present
-    // with INFLATED totalSamples so deriveCalibration shrinks k2 proportionally.
+    // Probe path: manual walker-sizing for #43 re-fuse probe (--walkers) and/or
+    // PYR3-029 sample-inflate. Walker count from --walkers or auto-computed.
     const seed = seedOverride ?? ((Math.random() * 0xffffffff) >>> 0);
     const targetSpp = genome.quality ?? 16;
-    const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(targetSpp, width, height);
-    console.log(`[pyr3-render] probe: sample-inflate=${sampleInflate} → totalSamples ${actualSamples} → ${actualSamples * sampleInflate}`);
+    const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(
+      targetSpp, width, height, walkersOverride ?? undefined,
+    );
+    if (sampleInflate !== 1) {
+      console.log(`[pyr3-render] probe: sample-inflate=${sampleInflate} → totalSamples ${actualSamples} → ${actualSamples * sampleInflate}`);
+    }
+    if (walkersOverride !== null) {
+      console.log(`[pyr3-render] probe: walkers=${dispatchWalkers} iters=${dispatchIters} (--walkers override)`);
+    }
     renderer.reset(genome);
     renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter });
     renderer.present({

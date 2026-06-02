@@ -53,11 +53,25 @@ export interface DispatchOpts {
   walkerJitter?: number;
 }
 
-/** Default walker-jitter amplitude — shipped value from #6 (2026-05-31 / 7110721).
- *  Any caller can override via DispatchOpts.walkerJitter (or via the propagated
- *  IterateRequest/RenderRequest.walkerJitter); the URL `?jitter=` + BE
- *  `--jitter` flags route through that same path. */
-export const DEFAULT_WALKER_JITTER = 1e-10;
+/** Default walker-jitter proportional factor.
+ *
+ *  #43 Tier 4 (2026-06-02): the jitter mechanism is now SCALE-RELATIVE
+ *  (chaos.wgsl uses `local_mag * u.walker_jitter` per iter, not the bare
+ *  amplitude). So this constant is a DIMENSIONLESS multiplier, not an
+ *  absolute amplitude. The empirical sweet spot at `1e-7` sits at f32 epsilon
+ *  (`2^-23 ≈ 1.19e-7`) — anchored to a physical constant of the float
+ *  format itself rather than a per-genome tunable.
+ *
+ *  Historical (replaced by scale-relative; absolute amplitudes for git-blame):
+ *    pre-#6:        1e-6  abs   (R 24 on 248.23554)
+ *    PYR3-N/v0.35:  1e-8  abs
+ *    #6 7110721:    1e-10 abs   (R 11.4)
+ *
+ *  Any caller can override via DispatchOpts.walkerJitter (or the propagated
+ *  IterateRequest/RenderRequest.walkerJitter); the BE `--jitter` flag and
+ *  the DEV-gated `?jitter=` URL param both route through that path.
+ */
+export const DEFAULT_WALKER_JITTER = 1e-7;
 
 export interface ChaosPass {
   config: ChaosConfig;
