@@ -274,12 +274,50 @@ fn rand_11(wi: u32) -> f32 {
 // All take post-affine `p` and weight `w`. Some take extra params or rng.
 // ---------------------------------------------------------------------
 
+// #72: Dawn's f32 sin/cos return 0 for |arg| ≳ 1e7 (their range-reduction limit;
+// accurate to ~6 digits below ~5e6, then a hard cliff to 0 — within the WGSL
+// spec, which only guarantees trig accuracy in a bounded argument range). ANY
+// variation that feeds sin/cos/tan a non-angle-bounded argument is affected:
+// coef-scaled (waves: sin(p/(c²+EPS)) with c→0 → p·1e10), radius-scaled
+// (swirl: sin(r²); disc: sin(π·r)), or a far-flung coordinate. The arg silently
+// overflows the GPU trig unit and the variation degenerates — e.g. waves → the
+// identity transform, collapsing attractor coverage (electricsheep.248.25703:
+// 1.26M vs flam3 4.0M buckets → dark/sharp at high gamma).
+//
+// Below the threshold Dawn's trig IS accurate, so use it directly (the faithful
+// path — angle-bounded args never trip it). Above it — where the true phase is
+// ALSO below f32 INPUT resolution anyway — synthesize a deterministic, well-
+// distributed pseudo-spread from the argument's bits: this keeps the variation's
+// BREADTH (matching flam3's f64 spread statistically, not bit-faithfully —
+// within pyr3's "similar, not bit-faithful" contract). safe_sin/safe_cos share
+// one hashed angle θ so (sin,cos) of the same huge arg stay a consistent pair.
+// flam3 (f64 + full Payne-Hanek reduction) handles any argument; GPU f32 cannot.
+const SIN_SAFE_MAX: f32 = 1.0e6;
+fn hash01(x: u32) -> f32 {
+  var h = x;
+  h = h ^ (h >> 17u); h = h * 0xed5ad4bbu;
+  h = h ^ (h >> 11u); h = h * 0xac4c1b51u;
+  h = h ^ (h >> 15u);
+  return f32(h) / 4294967296.0; // [0,1)
+}
+fn safe_sin(a: f32) -> f32 {
+  if (abs(a) <= SIN_SAFE_MAX) { return sin(a); }
+  return sin(hash01(bitcast<u32>(a)) * TAU);
+}
+fn safe_cos(a: f32) -> f32 {
+  if (abs(a) <= SIN_SAFE_MAX) { return cos(a); }
+  return cos(hash01(bitcast<u32>(a)) * TAU);
+}
+fn safe_tan(a: f32) -> f32 {
+  return safe_sin(a) / safe_cos(a);
+}
+
 fn var_linear(p: vec2f, w: f32) -> vec2f {
   return p * w;
 }
 
 fn var_sinusoidal(p: vec2f, w: f32) -> vec2f {
-  return w * vec2f(sin(p.x), sin(p.y));
+  return w * vec2f(safe_sin(p.x), safe_sin(p.y));
 }
 
 fn var_spherical(p: vec2f, w: f32) -> vec2f {
@@ -289,8 +327,8 @@ fn var_spherical(p: vec2f, w: f32) -> vec2f {
 
 fn var_swirl(p: vec2f, w: f32) -> vec2f {
   let r2 = dot(p, p);
-  let s = sin(r2);
-  let c = cos(r2);
+  let s = safe_sin(r2);
+  let c = safe_cos(r2);
   return w * vec2f(s * p.x - c * p.y, c * p.x + s * p.y);
 }
 
@@ -315,13 +353,13 @@ fn var_polar(p: vec2f, w: f32) -> vec2f {
 fn var_handkerchief(p: vec2f, w: f32) -> vec2f {
   let phi = atan2(p.x, p.y);
   let r = length(p);
-  return w * r * vec2f(sin(phi + r), cos(phi - r));
+  return w * r * vec2f(safe_sin(phi + r), safe_cos(phi - r));
 }
 
 fn var_heart(p: vec2f, w: f32) -> vec2f {
   let phi = atan2(p.x, p.y);
   let r = length(p);
-  return w * r * vec2f(sin(phi * r), -cos(phi * r));
+  return w * r * vec2f(safe_sin(phi * r), -safe_cos(phi * r));
 }
 
 fn var_disc(p: vec2f, w: f32) -> vec2f {
@@ -331,7 +369,7 @@ fn var_disc(p: vec2f, w: f32) -> vec2f {
   // via VAR_DISC → precalc_atan_xy_flag=1.)
   let phi = atan2(p.x, p.y);
   let r = length(p);
-  return w * (phi / PI) * vec2f(sin(PI * r), cos(PI * r));
+  return w * (phi / PI) * vec2f(safe_sin(PI * r), safe_cos(PI * r));
 }
 
 // flam3 spiral / hyperbolic / diamond use precalc_angles_flag = 1, computed
@@ -343,7 +381,7 @@ fn var_spiral(p: vec2f, w: f32) -> vec2f {
   let r = length(p) + EPS;
   let sina = p.x / r;
   let cosa = p.y / r;
-  return (w / r) * vec2f(cosa + sin(r), sina - cos(r));
+  return (w / r) * vec2f(cosa + safe_sin(r), sina - safe_cos(r));
 }
 
 fn var_hyperbolic(p: vec2f, w: f32) -> vec2f {
@@ -358,15 +396,15 @@ fn var_diamond(p: vec2f, w: f32) -> vec2f {
   let sina = p.x / r;
   let cosa = p.y / r;
   let r_orig = length(p);
-  return w * vec2f(sina * cos(r_orig), cosa * sin(r_orig));
+  return w * vec2f(sina * safe_cos(r_orig), cosa * safe_sin(r_orig));
 }
 
 fn var_ex(p: vec2f, w: f32) -> vec2f {
   // flam3 ex uses precalc_atan_xy = atan2(tx, ty), see top-of-file comment.
   let phi = atan2(p.x, p.y);
   let r = length(p);
-  let n0 = sin(phi + r);
-  let n1 = cos(phi - r);
+  let n0 = safe_sin(phi + r);
+  let n1 = safe_cos(phi - r);
   let m0 = n0 * n0 * n0;
   let m1 = n1 * n1 * n1;
   return w * r * vec2f(m0 + m1, m0 - m1);
@@ -382,7 +420,7 @@ fn var_julia(p: vec2f, w: f32, wi: u32) -> vec2f {
   let phi = atan2(p.x, p.y);
   let theta = phi * 0.5 + select(0.0, PI, (isaac_irand(wi) & 1u) == 1u);
   let r = sqrt(length(p));
-  return w * r * vec2f(cos(theta), sin(theta));
+  return w * r * vec2f(safe_cos(theta), safe_sin(theta));
 }
 
 fn var_julian(p: vec2f, w: f32, power: f32, dist: f32, wi: u32) -> vec2f {
@@ -392,7 +430,7 @@ fn var_julian(p: vec2f, w: f32, power: f32, dist: f32, wi: u32) -> vec2f {
   let n = floor(rand01(wi) * p_abs);
   let theta = (phi + TAU * n) / power;
   let new_r = w * pow(r, dist / power);
-  return vec2f(new_r * cos(theta), new_r * sin(theta));
+  return vec2f(new_r * safe_cos(theta), new_r * safe_sin(theta));
 }
 
 fn var_bent(p: vec2f, w: f32) -> vec2f {
@@ -407,8 +445,8 @@ fn var_waves(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
   let e = a1.y;
   let f = a1.z;
   return w * vec2f(
-    p.x + b * sin(p.y / (c * c + EPS)),
-    p.y + e * sin(p.x / (f * f + EPS)),
+    p.x + b * safe_sin(p.y / (c * c + EPS)),
+    p.y + e * safe_sin(p.x / (f * f + EPS)),
   );
 }
 
@@ -421,8 +459,8 @@ fn var_popcorn(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
   let c = a0.z;
   let f = a1.z;
   return w * vec2f(
-    p.x + c * sin(tan(3.0 * p.y)),
-    p.y + f * sin(tan(3.0 * p.x)),
+    p.x + c * safe_sin(safe_tan(3.0 * p.y)),
+    p.y + f * safe_sin(safe_tan(3.0 * p.x)),
   );
 }
 
@@ -439,23 +477,23 @@ fn var_bubble(p: vec2f, w: f32) -> vec2f {
 }
 
 // var_cylinder — flam3 var29_cylinder (variations.c:680). Pure:
-// new_x = w*sin(tx), new_y = w*ty. No singularities.
+// new_x = w*safe_sin(tx), new_y = w*ty. No singularities.
 fn var_cylinder(p: vec2f, w: f32) -> vec2f {
-  return vec2f(w * sin(p.x), w * p.y);
+  return vec2f(w * safe_sin(p.x), w * p.y);
 }
 
 // var_pdj — flam3 var24_pdj (variations.c:579-596). Pure: no rng, no atan2,
 // no affine. Four params (pdj_a/b/c/d) — the first variation to consume
 // pyr3's extended param seam (param2/param3 in addition to param0/param1
 // via vars_extra). flam3 kernel verbatim:
-//   nx1 = cos(pdj_b * tx); nx2 = sin(pdj_c * tx);
-//   ny1 = sin(pdj_a * ty); ny2 = cos(pdj_d * ty);
+//   nx1 = safe_cos(pdj_b * tx); nx2 = safe_sin(pdj_c * tx);
+//   ny1 = safe_sin(pdj_a * ty); ny2 = safe_cos(pdj_d * ty);
 //   out = w * (ny1 - nx1, nx2 - ny2)
 fn var_pdj(p: vec2f, w: f32, pa: f32, pb: f32, pc: f32, pd: f32) -> vec2f {
-  let nx1 = cos(pb * p.x);
-  let nx2 = sin(pc * p.x);
-  let ny1 = sin(pa * p.y);
-  let ny2 = cos(pd * p.y);
+  let nx1 = safe_cos(pb * p.x);
+  let nx2 = safe_sin(pc * p.x);
+  let ny1 = safe_sin(pa * p.y);
+  let ny2 = safe_cos(pd * p.y);
   return w * vec2f(ny1 - nx1, nx2 - ny2);
 }
 
@@ -469,8 +507,8 @@ fn var_pdj(p: vec2f, w: f32, pa: f32, pb: f32, pc: f32, pd: f32) -> vec2f {
 // flam3 variations.c:1986-1996 byte-for-byte.
 fn var_disc2(p: vec2f, w: f32, rot: f32, twist: f32) -> vec2f {
   let timespi = rot * PI;
-  var cosadd = cos(twist) - 1.0;
-  var sinadd = sin(twist);
+  var cosadd = safe_cos(twist) - 1.0;
+  var sinadd = safe_sin(twist);
   if (twist > TAU) {
     let k = 1.0 + twist - TAU;
     cosadd = cosadd * k;
@@ -481,8 +519,8 @@ fn var_disc2(p: vec2f, w: f32, rot: f32, twist: f32) -> vec2f {
     sinadd = sinadd * k;
   }
   let t = timespi * (p.x + p.y);
-  let sinr = sin(t);
-  let cosr = cos(t);
+  let sinr = safe_sin(t);
+  let cosr = safe_cos(t);
   let r = (w * atan2(p.x, p.y)) / PI;
   return vec2f((sinr + cosadd) * r, (cosr + sinadd) * r);
 }
@@ -493,13 +531,13 @@ fn var_disc2(p: vec2f, w: f32, rot: f32, twist: f32) -> vec2f {
 // ---------------------------------------------------------------------
 
 // var_exponential — flam3 var18_exponential (variations.c:452). No precalc flag.
-//   dx = w * exp(tx - 1);  dy = PI * ty;  out = dx * (cos(dy), sin(dy))
+//   dx = w * exp(tx - 1);  dy = PI * ty;  out = dx * (safe_cos(dy), safe_sin(dy))
 // exp(tx-1) is unbounded as tx grows; for tx ≳ 24 the output exceeds the 1e10
 // bad-value threshold and the chaos-game retry path reseeds — matches flam3.
 fn var_exponential(p: vec2f, w: f32) -> vec2f {
   let dx = w * exp(p.x - 1.0);
   let dy = PI * p.y;
-  return vec2f(dx * cos(dy), dx * sin(dy));
+  return vec2f(dx * safe_cos(dy), dx * safe_sin(dy));
 }
 
 // var_power — flam3 var19_power (variations.c:472). Uses precalc_angles_flag:
@@ -516,27 +554,27 @@ fn var_power(p: vec2f, w: f32) -> vec2f {
 }
 
 // var_cosine — flam3 var20_cosine (variations.c:489). No precalc flag.
-//   out = w * (cos(PI*tx) * cosh(ty), -sin(PI*tx) * sinh(ty))
+//   out = w * (safe_cos(PI*tx) * cosh(ty), -safe_sin(PI*tx) * sinh(ty))
 fn var_cosine(p: vec2f, w: f32) -> vec2f {
   let a = p.x * PI;
-  return w * vec2f(cos(a) * cosh(p.y), -sin(a) * sinh(p.y));
+  return w * vec2f(safe_cos(a) * cosh(p.y), -safe_sin(a) * sinh(p.y));
 }
 
 // var_tangent — flam3 var42_tangent (variations.c:885). No precalc flag.
-//   out = w * (sin(tx) / cos(ty), tan(ty))
-// cos(ty) ≈ 0 yields ±Inf; the chaos-game bad-value check reseeds — matches flam3.
+//   out = w * (safe_sin(tx) / safe_cos(ty), safe_tan(ty))
+// safe_cos(ty) ≈ 0 yields ±Inf; the chaos-game bad-value check reseeds — matches flam3.
 fn var_tangent(p: vec2f, w: f32) -> vec2f {
-  return w * vec2f(sin(p.x) / cos(p.y), tan(p.y));
+  return w * vec2f(safe_sin(p.x) / safe_cos(p.y), safe_tan(p.y));
 }
 
 // var_secant2 — flam3 var46_secant2 (variations.c:976). Uses precalc_sqrt only.
 // Non-standard weight handling per flam3 comment: weight is BOTH folded into r
-// (= w * length(p)) before cos AND multiplied onto the output. cos(r) ≈ 0 at
+// (= w * length(p)) before cos AND multiplied onto the output. safe_cos(r) ≈ 0 at
 // r = π/2 + kπ yields ±Inf which the chaos-game bad-value check reseeds —
 // matches flam3 (flam3 also does not guard this).
 fn var_secant2(p: vec2f, w: f32) -> vec2f {
   let r = w * length(p);
-  let cr = cos(r);
+  let cr = safe_cos(r);
   let icr = 1.0 / cr;
   let y = select(w * (icr - 1.0), w * (icr + 1.0), cr < 0.0);
   return vec2f(w * p.x, y);
@@ -591,7 +629,7 @@ fn var_fan(p: vec2f, w: f32, a0: vec4f, a1: vec4f) -> vec2f {
   let r = w * length(p);
   let t = (phi + dy) - dx * trunc((phi + dy) / dx);
   let a = select(phi + dx2, phi - dx2, t > dx2);
-  return vec2f(r * cos(a), r * sin(a));
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
 }
 
 // var_rings2 — flam3 var26_rings2 (variations.c:640). 1 param (rings2_val).
@@ -616,7 +654,7 @@ fn var_fan2(p: vec2f, w: f32, fx: f32, fy: f32) -> vec2f {
   let dx2 = 0.5 * dx;
   let t = phi + dy - dx * trunc((phi + dy) / dx);
   let a = select(phi + dx2, phi - dx2, t > dx2);
-  return vec2f(r * sin(a), r * cos(a));
+  return vec2f(r * safe_sin(a), r * safe_cos(a));
 }
 
 // var_perspective — flam3 var30_perspective (variations.c:687). 2 params
@@ -626,8 +664,8 @@ fn var_fan2(p: vec2f, w: f32, fx: f32, fy: f32) -> vec2f {
 // kernel's own div + the chaos loop's overall trig cost.
 fn var_perspective(p: vec2f, w: f32, angle: f32, dist: f32) -> vec2f {
   let half_pi_angle = angle * (PI * 0.5);
-  let vsin = sin(half_pi_angle);
-  let vfcos = dist * cos(half_pi_angle);
+  let vsin = safe_sin(half_pi_angle);
+  let vfcos = dist * safe_cos(half_pi_angle);
   let t = 1.0 / (dist - p.y * vsin);
   return w * vec2f(dist * p.x * t, vfcos * p.y * t);
 }
@@ -682,7 +720,7 @@ fn var_blob(p: vec2f, w: f32, low: f32, high: f32, waves: f32) -> vec2f {
   let sina = p.x / r_eps;
   let cosa = p.y / r_eps;
   let a = atan2(p.x, p.y); // swapped (atan_xy)
-  let r = r0 * (low + (high - low) * (0.5 + 0.5 * sin(waves * a)));
+  let r = r0 * (low + (high - low) * (0.5 + 0.5 * safe_sin(waves * a)));
   return w * r * vec2f(sina, cosa);
 }
 
@@ -702,7 +740,7 @@ fn var_ngon(p: vec2f, w: f32, sides: f32, power: f32, circle: f32, corners: f32)
   let b = TAU / sides;
   var phi = theta - b * floor(theta / b);
   if (phi > b * 0.5) { phi = phi - b; }
-  let amp = (corners * (1.0 / (cos(phi) + EPS) - 1.0) + circle) / (r_factor + EPS);
+  let amp = (corners * (1.0 / (safe_cos(phi) + EPS) - 1.0) + circle) / (r_factor + EPS);
   return w * amp * p;
 }
 
@@ -716,7 +754,7 @@ fn var_wedge(p: vec2f, w: f32, angle: f32, hole: f32, count: f32, swirl: f32) ->
   let comp_fac = 1.0 - angle * count * ONE_OVER_PI * 0.5;
   a = a * comp_fac + c * angle;
   let r = w * (r0 + hole);
-  return vec2f(r * cos(a), r * sin(a));
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
 }
 
 // var_cpow — flam3 var59_cpow (variations.c:1291). 3 params (cpow_r, cpow_i,
@@ -730,7 +768,7 @@ fn var_wedge(p: vec2f, w: f32, angle: f32, hole: f32, count: f32, swirl: f32) ->
 // statistically identical for the chaos-game renderer. The TS reference impl
 // takes randBranch directly from the caller so the harness sweeps all n values.
 //
-// At p=0: sumsq=0 → lnr=-Inf → ang=±Inf (when vd≠0) → sin/cos(±Inf)=NaN; or
+// At p=0: sumsq=0 → lnr=-Inf → ang=±Inf (when vd≠0) → sin/safe_cos(±Inf)=NaN; or
 // m=0 when vc<0; either way the bad-value check reseeds.
 fn var_cpow(p: vec2f, w: f32, cpow_r: f32, cpow_i: f32, cpow_power: f32, wi: u32) -> vec2f {
   let a = atan2(p.y, p.x);
@@ -742,7 +780,7 @@ fn var_cpow(p: vec2f, w: f32, cpow_r: f32, cpow_i: f32, cpow_power: f32, wi: u32
   let n = floor(rand01(wi) * abs(cpow_power));
   let ang = vc * a + vd * lnr + va * n;
   let m = w * exp(vc * lnr - vd * a);
-  return vec2f(m * cos(ang), m * sin(ang));
+  return vec2f(m * safe_cos(ang), m * safe_sin(ang));
 }
 
 // var_curve — flam3 var60_curve (variations.c:1312). 4 params (curve_xamp,
@@ -789,11 +827,11 @@ fn var_rectangles(p: vec2f, w: f32, rx: f32, ry: f32) -> vec2f {
 // ---------------------------------------------------------------------
 
 // var_noise — flam3 var31_noise (variations.c:696). 0 params + 2 rand calls.
-//   tmpr = rand0 * 2π;  r = w * rand1;  out = (tx, ty) * r * (cos(tmpr), sin(tmpr))
+//   tmpr = rand0 * 2π;  r = w * rand1;  out = (tx, ty) * r * (safe_cos(tmpr), safe_sin(tmpr))
 fn var_noise(p: vec2f, w: f32, wi: u32) -> vec2f {
   let tmpr = rand01(wi) * TAU;
   let r = w * rand01(wi);
-  return vec2f(p.x * r * cos(tmpr), p.y * r * sin(tmpr));
+  return vec2f(p.x * r * safe_cos(tmpr), p.y * r * safe_sin(tmpr));
 }
 
 // var_blur — flam3 var34_blur (variations.c:746). 0 params + 2 rand calls.
@@ -801,7 +839,7 @@ fn var_noise(p: vec2f, w: f32, wi: u32) -> vec2f {
 fn var_blur(p: vec2f, w: f32, wi: u32) -> vec2f {
   let tmpr = rand01(wi) * TAU;
   let r = w * rand01(wi);
-  return vec2f(r * cos(tmpr), r * sin(tmpr));
+  return vec2f(r * safe_cos(tmpr), r * safe_sin(tmpr));
 }
 
 // var_gaussian_blur — flam3 var35_gaussian (variations.c:760). 0 params +
@@ -821,30 +859,30 @@ fn var_gaussian_blur(p: vec2f, w: f32, wi: u32) -> vec2f {
   let r2 = rand01(wi);
   let r3 = rand01(wi);
   let r = w * (r0 + r1 + r2 + r3 - 2.0);
-  return vec2f(r * cos(ang), r * sin(ang));
+  return vec2f(r * safe_cos(ang), r * safe_sin(ang));
 }
 
 // var_arch — flam3 var41_arch (variations.c:857). 0 params + 1 rand call.
-// Non-standard weight handling (flam3 comment). cos(ang) ≈ 0 produces ±Inf
+// Non-standard weight handling (flam3 comment). safe_cos(ang) ≈ 0 produces ±Inf
 // which the chaos-game retry path reseeds — matches flam3.
 fn var_arch(p: vec2f, w: f32, wi: u32) -> vec2f {
   let ang = rand01(wi) * w * PI;
-  let sinr = sin(ang);
-  let cosr = cos(ang);
+  let sinr = safe_sin(ang);
+  let cosr = safe_cos(ang);
   return vec2f(w * sinr, w * (sinr * sinr) / cosr);
 }
 
 // var_radial_blur — flam3 var36_radial_blur (variations.c:775). 1 param
 // (radial_blur_angle) + 4 rand calls. flam3 precomputes
-// `radialBlur_spinvar = sin(angle * π/2)` and `radialBlur_zoomvar = cos(angle * π/2)`
+// `radialBlur_spinvar = safe_sin(angle * π/2)` and `radialBlur_zoomvar = safe_cos(angle * π/2)`
 // per-xform; pyr3 inlines (disc2 / perspective precedent).
 //
 // Same WGSL eval-order guard as gaussian_blur — captured `let` bindings
 // force left-to-right ISAAC stream order.
 fn var_radial_blur(p: vec2f, w: f32, angle: f32, wi: u32) -> vec2f {
   let half_pi_angle = angle * (PI * 0.5);
-  let spinvar = sin(half_pi_angle);
-  let zoomvar = cos(half_pi_angle);
+  let spinvar = safe_sin(half_pi_angle);
+  let zoomvar = safe_cos(half_pi_angle);
   let r0 = rand01(wi);
   let r1 = rand01(wi);
   let r2 = rand01(wi);
@@ -852,8 +890,8 @@ fn var_radial_blur(p: vec2f, w: f32, angle: f32, wi: u32) -> vec2f {
   let rndG = w * (r0 + r1 + r2 + r3 - 2.0);
   let ra = length(p);
   let tmpa = atan2(p.y, p.x) + spinvar * rndG;
-  let sa = sin(tmpa);
-  let ca = cos(tmpa);
+  let sa = safe_sin(tmpa);
+  let ca = safe_cos(tmpa);
   let rz = zoomvar * rndG - 1.0;
   return vec2f(ra * ca + rz * p.x, ra * sa + rz * p.y);
 }
@@ -874,7 +912,7 @@ fn var_juliascope(p: vec2f, w: f32, power: f32, dist: f32, wi: u32) -> vec2f {
     (t_rnd & 1) == 0,
   );
   let r = w * pow(sumsq, dist / power / 2.0);
-  return vec2f(r * cos(tmpr), r * sin(tmpr));
+  return vec2f(r * safe_cos(tmpr), r * safe_sin(tmpr));
 }
 
 // var_square — flam3 var43_square (variations.c:900). 0 params + 2 rand calls.
@@ -894,8 +932,8 @@ fn var_rays(p: vec2f, w: f32, wi: u32) -> vec2f {
   let ang = w * rand01(wi) * PI;
   let sumsq = dot(p, p);
   let r = w / (sumsq + EPS);
-  let tanr = w * tan(ang) * r;
-  return vec2f(tanr * cos(p.x), tanr * sin(p.y));
+  let tanr = w * safe_tan(ang) * r;
+  return vec2f(tanr * safe_cos(p.x), tanr * safe_sin(p.y));
 }
 
 // var_blade — flam3 var45_blade (variations.c:946). 0 params + 1 rand call.
@@ -903,8 +941,8 @@ fn var_rays(p: vec2f, w: f32, wi: u32) -> vec2f {
 // that's flam3's actual behavior at lines 971-972, not a typo.
 fn var_blade(p: vec2f, w: f32, wi: u32) -> vec2f {
   let r = rand01(wi) * w * length(p);
-  let sinr = sin(r);
-  let cosr = cos(r);
+  let sinr = safe_sin(r);
+  let cosr = safe_cos(r);
   return vec2f(w * p.x * (cosr + sinr), w * p.x * (cosr - sinr));
 }
 
@@ -914,8 +952,8 @@ fn var_blade(p: vec2f, w: f32, wi: u32) -> vec2f {
 // and y output use `p.x` (intentional per flam3).
 fn var_twintrian(p: vec2f, w: f32, wi: u32) -> vec2f {
   let r = rand01(wi) * w * length(p);
-  let sinr = sin(r);
-  let cosr = cos(r);
+  let sinr = safe_sin(r);
+  let cosr = safe_cos(r);
   var diff = log(sinr * sinr) / LN10 + cosr; // log10 = ln / ln(10)
   // flam3 private.h:22 badvalue check.
   if (diff != diff || diff > 1e10 || diff < -1e10) { diff = -30.0; }
@@ -931,7 +969,7 @@ fn var_twintrian(p: vec2f, w: f32, wi: u32) -> vec2f {
 
 fn var_exp(p: vec2f, w: f32) -> vec2f {
   let e = exp(p.x);
-  return w * e * vec2f(cos(p.y), sin(p.y));
+  return w * e * vec2f(safe_cos(p.y), safe_sin(p.y));
 }
 
 fn var_log(p: vec2f, w: f32) -> vec2f {
@@ -940,59 +978,59 @@ fn var_log(p: vec2f, w: f32) -> vec2f {
 }
 
 fn var_sin(p: vec2f, w: f32) -> vec2f {
-  return w * vec2f(sin(p.x) * cosh(p.y), cos(p.x) * sinh(p.y));
+  return w * vec2f(safe_sin(p.x) * cosh(p.y), safe_cos(p.x) * sinh(p.y));
 }
 
 fn var_cos(p: vec2f, w: f32) -> vec2f {
-  return w * vec2f(cos(p.x) * cosh(p.y), -sin(p.x) * sinh(p.y));
+  return w * vec2f(safe_cos(p.x) * cosh(p.y), -safe_sin(p.x) * sinh(p.y));
 }
 
 fn var_tan(p: vec2f, w: f32) -> vec2f {
-  let den = 1.0 / (cos(2.0 * p.x) + cosh(2.0 * p.y));
-  return w * den * vec2f(sin(2.0 * p.x), sinh(2.0 * p.y));
+  let den = 1.0 / (safe_cos(2.0 * p.x) + cosh(2.0 * p.y));
+  return w * den * vec2f(safe_sin(2.0 * p.x), sinh(2.0 * p.y));
 }
 
 fn var_sec(p: vec2f, w: f32) -> vec2f {
-  let den = 2.0 / (cos(2.0 * p.x) + cosh(2.0 * p.y));
-  return w * den * vec2f(cos(p.x) * cosh(p.y), sin(p.x) * sinh(p.y));
+  let den = 2.0 / (safe_cos(2.0 * p.x) + cosh(2.0 * p.y));
+  return w * den * vec2f(safe_cos(p.x) * cosh(p.y), safe_sin(p.x) * sinh(p.y));
 }
 
 fn var_csc(p: vec2f, w: f32) -> vec2f {
-  let den = 2.0 / (cosh(2.0 * p.y) - cos(2.0 * p.x));
-  return w * den * vec2f(sin(p.x) * cosh(p.y), -cos(p.x) * sinh(p.y));
+  let den = 2.0 / (cosh(2.0 * p.y) - safe_cos(2.0 * p.x));
+  return w * den * vec2f(safe_sin(p.x) * cosh(p.y), -safe_cos(p.x) * sinh(p.y));
 }
 
 fn var_cot(p: vec2f, w: f32) -> vec2f {
-  let den = 1.0 / (cosh(2.0 * p.y) - cos(2.0 * p.x));
-  return w * den * vec2f(sin(2.0 * p.x), -sinh(2.0 * p.y));
+  let den = 1.0 / (cosh(2.0 * p.y) - safe_cos(2.0 * p.x));
+  return w * den * vec2f(safe_sin(2.0 * p.x), -sinh(2.0 * p.y));
 }
 
 fn var_sinh(p: vec2f, w: f32) -> vec2f {
-  return w * vec2f(sinh(p.x) * cos(p.y), cosh(p.x) * sin(p.y));
+  return w * vec2f(sinh(p.x) * safe_cos(p.y), cosh(p.x) * safe_sin(p.y));
 }
 
 fn var_cosh(p: vec2f, w: f32) -> vec2f {
-  return w * vec2f(cosh(p.x) * cos(p.y), sinh(p.x) * sin(p.y));
+  return w * vec2f(cosh(p.x) * safe_cos(p.y), sinh(p.x) * safe_sin(p.y));
 }
 
 fn var_tanh(p: vec2f, w: f32) -> vec2f {
-  let den = 1.0 / (cos(2.0 * p.y) + cosh(2.0 * p.x));
-  return w * den * vec2f(sinh(2.0 * p.x), sin(2.0 * p.y));
+  let den = 1.0 / (safe_cos(2.0 * p.y) + cosh(2.0 * p.x));
+  return w * den * vec2f(sinh(2.0 * p.x), safe_sin(2.0 * p.y));
 }
 
 fn var_sech(p: vec2f, w: f32) -> vec2f {
-  let den = 2.0 / (cos(2.0 * p.y) + cosh(2.0 * p.x));
-  return w * den * vec2f(cos(p.y) * cosh(p.x), -sin(p.y) * sinh(p.x));
+  let den = 2.0 / (safe_cos(2.0 * p.y) + cosh(2.0 * p.x));
+  return w * den * vec2f(safe_cos(p.y) * cosh(p.x), -safe_sin(p.y) * sinh(p.x));
 }
 
 fn var_csch(p: vec2f, w: f32) -> vec2f {
-  let den = 2.0 / (cosh(2.0 * p.x) - cos(2.0 * p.y));
-  return w * den * vec2f(sinh(p.x) * cos(p.y), -cosh(p.x) * sin(p.y));
+  let den = 2.0 / (cosh(2.0 * p.x) - safe_cos(2.0 * p.y));
+  return w * den * vec2f(sinh(p.x) * safe_cos(p.y), -cosh(p.x) * safe_sin(p.y));
 }
 
 fn var_coth(p: vec2f, w: f32) -> vec2f {
-  let den = 1.0 / (cosh(2.0 * p.x) - cos(2.0 * p.y));
-  return w * den * vec2f(sinh(2.0 * p.x), sin(2.0 * p.y));
+  let den = 1.0 / (cosh(2.0 * p.x) - safe_cos(2.0 * p.y));
+  return w * den * vec2f(sinh(2.0 * p.x), safe_sin(2.0 * p.y));
 }
 
 
@@ -1021,8 +1059,8 @@ fn var_edisc(p: vec2f, w: f32) -> vec2f {
   let a1 = log(xmax + sqrt(max(xmax - 1.0, 0.0)));
   let a2 = -acos(clamp(p.x / xmax, -1.0, 1.0));
   let wn = w / 11.57034632;
-  let csv = cos(a1);
-  let snv = select(sin(a1), -sin(a1), p.y > 0.0);
+  let csv = safe_cos(a1);
+  let snv = select(safe_sin(a1), -safe_sin(a1), p.y > 0.0);
   let snhu = sinh(a2);
   let cshu = cosh(a2);
   return vec2f(wn * cshu * csv, wn * snhu * snv);
@@ -1051,8 +1089,8 @@ fn var_elliptic(p: vec2f, w: f32) -> vec2f {
 fn var_foci(p: vec2f, w: f32) -> vec2f {
   let expx = exp(p.x) * 0.5;
   let expnx = 0.25 / expx;
-  let tmp = w / (expx + expnx - cos(p.y));
-  return vec2f(tmp * (expx - expnx), tmp * sin(p.y));
+  let tmp = w / (expx + expnx - safe_cos(p.y));
+  return vec2f(tmp * (expx - expnx), tmp * safe_sin(p.y));
 }
 
 fn var_loonie(p: vec2f, w: f32) -> vec2f {
@@ -1124,13 +1162,13 @@ fn var_escher(p: vec2f, w: f32, beta: f32) -> vec2f {
   let a = atan2(p.y, p.x);
   let sumsq = dot(p, p);
   let lnr = 0.5 * log(sumsq);
-  let seb = sin(beta);
-  let ceb = cos(beta);
+  let seb = safe_sin(beta);
+  let ceb = safe_cos(beta);
   let vc = 0.5 * (1.0 + ceb);
   let vd = 0.5 * seb;
   let m = w * exp(vc * lnr - vd * a);
   let n = vc * a + vd * lnr;
-  return vec2f(m * cos(n), m * sin(n));
+  return vec2f(m * safe_cos(n), m * safe_sin(n));
 }
 
 // var_modulus — flam3 var68_modulus (variations.c:1498). 2 params.
@@ -1151,10 +1189,10 @@ fn var_modulus(p: vec2f, w: f32, mx: f32, my: f32) -> vec2f {
 }
 
 // var_split — flam3 var74_split (variations.c:1603). 2 params.
-// Note flam3's swap: output y reads cos(tx*xsize*π), output x reads cos(ty*ysize*π).
+// Note flam3's swap: output y reads safe_cos(tx*xsize*π), output x reads safe_cos(ty*ysize*π).
 fn var_split(p: vec2f, w: f32, xs: f32, ys: f32) -> vec2f {
-  let outY = select(-w * p.y, w * p.y, cos(p.x * xs * PI) >= 0.0);
-  let outX = select(-w * p.x, w * p.x, cos(p.y * ys * PI) >= 0.0);
+  let outY = select(-w * p.y, w * p.y, safe_cos(p.x * xs * PI) >= 0.0);
+  let outX = select(-w * p.x, w * p.x, safe_cos(p.y * ys * PI) >= 0.0);
   return vec2f(outX, outY);
 }
 
@@ -1185,7 +1223,7 @@ fn var_whorl(p: vec2f, w: f32, inside: f32, outside: f32) -> vec2f {
     baseAng + inside / (w - r),
     r < w,
   );
-  return vec2f(w * r * cos(a), w * r * sin(a));
+  return vec2f(w * r * safe_cos(a), w * r * safe_sin(a));
 }
 
 // var_flux — flam3 var97_flux (variations.c:1911). 1 param (flux_spread).
@@ -1196,7 +1234,7 @@ fn var_flux(p: vec2f, w: f32, spread: f32) -> vec2f {
   let tysq = p.y * p.y;
   let avgr = w * (2.0 + spread) * sqrt(sqrt(tysq + xpw * xpw) / sqrt(tysq + xmw * xmw));
   let avga = (atan2(p.y, xmw) - atan2(p.y, xpw)) * 0.5;
-  return vec2f(avgr * cos(avga), avgr * sin(avga));
+  return vec2f(avgr * safe_cos(avga), avgr * safe_sin(avga));
 }
 
 
@@ -1206,8 +1244,8 @@ fn var_flux(p: vec2f, w: f32, spread: f32) -> vec2f {
 
 fn var_popcorn2(p: vec2f, w: f32, px: f32, py: f32, pc: f32) -> vec2f {
   return w * vec2f(
-    p.x + px * sin(tan(p.y * pc)),
-    p.y + py * sin(tan(p.x * pc)),
+    p.x + px * safe_sin(safe_tan(p.y * pc)),
+    p.y + py * safe_sin(safe_tan(p.x * pc)),
   );
 }
 
@@ -1219,22 +1257,22 @@ fn var_lazysusan(p: vec2f, w: f32, lx: f32, ly: f32, spin: f32, twist: f32, spac
   if (r0 < w) {
     let a = atan2(y, x) + spin + twist * (w - r0);
     let r = w * r0;
-    return vec2f(r * cos(a) + lx, r * sin(a) - ly);
+    return vec2f(r * safe_cos(a) + lx, r * safe_sin(a) - ly);
   }
   let r = w * (1.0 + space / r0);
   return vec2f(r * x + lx, r * y - ly);
 }
 
 fn var_waves2(p: vec2f, w: f32, sx: f32, fx: f32, sy: f32, fy: f32) -> vec2f {
-  return w * vec2f(p.x + sx * sin(p.y * fx), p.y + sy * sin(p.x * fy));
+  return w * vec2f(p.x + sx * safe_sin(p.y * fx), p.y + sy * safe_sin(p.x * fy));
 }
 
 // flam3 uses `p1 -=` inside the envelope (|ty|<=t).
 fn var_oscope(p: vec2f, w: f32, freq: f32, amp: f32, damping: f32, sep: f32) -> vec2f {
   let tpf = TAU * freq;
   let t = select(
-    amp * exp(-abs(p.x) * damping) * cos(tpf * p.x) + sep,
-    amp * cos(tpf * p.x) + sep,
+    amp * exp(-abs(p.x) * damping) * safe_cos(tpf * p.x) + sep,
+    amp * safe_cos(tpf * p.x) + sep,
     damping == 0.0,
   );
   if (abs(p.y) <= t) { return vec2f(w * p.x, -w * p.y); }
@@ -1260,8 +1298,8 @@ fn var_separation(p: vec2f, w: f32, sx: f32, sxi: f32, sy: f32, syi: f32) -> vec
 // 4 params (freq, ww=auger_weight, scale, sym). ww is a kernel param, distinct
 // from the kernel's `w` weight scalar.
 fn var_auger(p: vec2f, w: f32, freq: f32, ww: f32, scale: f32, sym: f32) -> vec2f {
-  let s = sin(freq * p.x);
-  let t = sin(freq * p.y);
+  let s = safe_sin(freq * p.x);
+  let t = safe_sin(freq * p.y);
   let dy = p.y + ww * (scale * s * 0.5 + abs(p.y) * s);
   let dx = p.x + ww * (scale * t * 0.5 + abs(p.x) * t);
   return vec2f(
@@ -1280,7 +1318,7 @@ fn var_wedge_sph(p: vec2f, w: f32, angle: f32, hole: f32, count: f32, swirl: f32
   let comp_fac = 1.0 - angle * count * ONE_OVER_PI * 0.5;
   a = a * comp_fac + c * angle;
   let r = w * (r_inv + hole);
-  return vec2f(r * cos(a), r * sin(a));
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
 }
 
 
@@ -1298,8 +1336,8 @@ fn var_super_shape(p: vec2f, w: f32, rnd: f32, m: f32, n1: f32, n2: f32, n3: f32
   let pneg1_n1 = -1.0 / n1;
   let r0 = length(p);
   let theta = pm_4 * atan2(p.y, p.x) + PI * 0.25;
-  let st = sin(theta);
-  let ct = cos(theta);
+  let st = safe_sin(theta);
+  let ct = safe_cos(theta);
   let t1 = pow(abs(ct), n2);
   let t2 = pow(abs(st), n3);
   let r = w * ((rnd * rand01(wi) + (1.0 - rnd) * r0) - holes) * pow(t1 + t2, pneg1_n1) / r0;
@@ -1310,7 +1348,7 @@ fn var_super_shape(p: vec2f, w: f32, rnd: f32, m: f32, n1: f32, n2: f32, n3: f32
 fn var_flower(p: vec2f, w: f32, petals: f32, holes: f32, wi: u32) -> vec2f {
   let theta = atan2(p.y, p.x);
   let r0 = length(p);
-  let r = w * (rand01(wi) - holes) * cos(petals * theta) / r0;
+  let r = w * (rand01(wi) - holes) * safe_cos(petals * theta) / r0;
   return r * p;
 }
 
@@ -1327,8 +1365,8 @@ fn var_conic(p: vec2f, w: f32, ecc: f32, holes: f32, wi: u32) -> vec2f {
 // (WGSL §10.3 doesn't guarantee operand-eval order for binary ops).
 fn var_parabola(p: vec2f, w: f32, height: f32, width: f32, wi: u32) -> vec2f {
   let r = length(p);
-  let sr = sin(r);
-  let cr = cos(r);
+  let sr = safe_sin(r);
+  let cr = safe_cos(r);
   let r0 = rand01(wi);
   let r1 = rand01(wi);
   return vec2f(
@@ -1345,7 +1383,7 @@ fn var_pie(p: vec2f, w: f32, slices: f32, rotation: f32, thickness: f32, wi: u32
   let sl = trunc(r0 * slices + 0.5);
   let a = rotation + TAU * (sl + r1 * thickness) / slices;
   let r = w * r2;
-  return vec2f(r * cos(a), r * sin(a));
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
 }
 
 // boarders — flam3 var56_boarders (variations.c:1199). 0 params + 1 RNG.
@@ -1408,7 +1446,7 @@ fn var_wedge_julia(p: vec2f, w: f32, angle: f32, count: f32, power: f32, dist: f
   var a = (atan2(p.y, p.x) + TAU * n) / power;
   let c = floor((count * a + PI) / PI * 0.5);
   a = a * cf + c * angle;
-  return vec2f(r * cos(a), r * sin(a));
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
 }
 
 // ---------------------------------------------------------------------

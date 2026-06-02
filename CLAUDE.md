@@ -190,9 +190,23 @@ The 4 remaining tier-2 fixtures (`248.23554` R≈6.4, `244.82986` R≈8.9,
 `coverage.248.02226` R≈5.7, `244.42746` R≈5.3) have **non-jitter
 residuals** — they were unchanged by the scale-relative mechanism, which
 is the empirical proof that their divergence is upstream/orthogonal to
-the chaos-game perturbation. Each needs its own diagnosis (the
-`electricsheep.248.25703` case in #64 is one such example; the others are
-not yet filed). Historical lineage: **PYR3-056** (v0.36 DE-norm fix)
+the chaos-game perturbation. Each needs its own diagnosis. The
+`electricsheep.248.25703` case (filed in #64) was **RESOLVED in #72**
+(now tier-1, R≈2.16, added to the parity rig as `248.25703`) — and its
+cause was NOT a tier-2-style residual but the **Dawn f32 trig range
+cliff**: Dawn's f32 `sin`/`cos` return exactly 0 for |arg| ≳ 1e7
+(accurate only below ~5e6; spec-permitted, not a Dawn bug). `var_waves`
+with degenerate coefs (`c=f=0`) computes `sin(p·1e10)` → 0 → waves
+degenerates to the identity transform → 3× attractor-coverage collapse →
+dark/sharp at high gamma. Fixed by `safe_sin`/`safe_cos`/`safe_tan` in
+`chaos.wgsl` (native trig below `SIN_SAFE_MAX=1e6`, deterministic
+hash-spread above), applied to all non-angle-bounded variation trig.
+**For any new WGSL `sin`/`cos`/`tan` of a coord / radius / r² /
+coef-scaled value (anything not freshly `atan2`'d into [-π,π]), route it
+through `safe_*`** (and test with RUNTIME args — constant trig args get
+compiler-folded, masking the cliff). The other 4 tier-2 fixtures are not
+waves-degenerate; their residuals remain per-fixture-unfiled. Historical
+lineage: **PYR3-056** (v0.36 DE-norm fix)
 collapsed the original wave of outliers; #43 (this commit) collapsed the
 jitter-sensitive subset; what's left needs per-fixture investigation.
 (`HISTORY.md` v0.19 records the original f32-floor rationale as a frozen
