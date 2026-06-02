@@ -33,7 +33,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { meanAbsDiffRgba, perChannelDrift, perRegionDrift } from './compare';
-import { renderDiffPng } from './diff-image';
+import { nearestDownscale, renderDiffPng } from './diff-image';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -179,6 +179,39 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
       // Give vite a beat to release the port for the next run
       await new Promise((r) => setTimeout(r, 300));
     }
+
+    // #28: top-N divergence summary. Sorted by max(R, R_FE_g, R_BE_g) desc
+    // so the most-anomalous fixtures surface first. Record-only — no gate.
+    // process.stderr.write bypasses vitest's stdout capture (which swallows
+    // test-internal console.log by default); also writes to a stable file
+    // so the summary is queryable after the run.
+    if (!existsSync(RESULTS_PATH)) return;
+    const rows = readFileSync(RESULTS_PATH, 'utf8')
+      .split('\n')
+      .filter((s) => s.length > 0)
+      .map((s) => JSON.parse(s) as {
+        fixture: string;
+        R: number;
+        R_FE_golden?: number;
+        R_BE_golden?: number;
+      });
+    if (rows.length === 0) return;
+    rows.sort((a, b) => {
+      const ma = Math.max(a.R, a.R_FE_golden ?? 0, a.R_BE_golden ?? 0);
+      const mb = Math.max(b.R, b.R_FE_golden ?? 0, b.R_BE_golden ?? 0);
+      return mb - ma;
+    });
+    const f = (n: number | undefined): string => (n === undefined ? '    -' : n.toFixed(2).padStart(5));
+    const topN = Math.min(10, rows.length);
+    const lines: string[] = [];
+    lines.push(`\n#28 — top ${topN} divergent fixtures (sorted by max R across 3 pairings):`);
+    lines.push(`  fixture                       R(FE,BE) R(FE,g) R(BE,g)`);
+    for (const r of rows.slice(0, topN)) {
+      lines.push(`  ${r.fixture.padEnd(28)}  ${f(r.R)}   ${f(r.R_FE_golden)}   ${f(r.R_BE_golden)}`);
+    }
+    const summary = lines.join('\n') + '\n';
+    process.stderr.write(summary);
+    writeFileSync(join(REPO_ROOT, '.remember', 'tmp', 'pyr3-3way-summary.txt'), summary);
   });
 
   for (const fixture of fixtures) {
@@ -286,6 +319,24 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
         const channel = perChannelDrift(feRgba, beRgba);
         const region = perRegionDrift(feRgba, beRgba, w, h);
 
+        // #28: 3-way R values — FE-vs-golden and BE-vs-golden alongside the
+        // existing R(FE,BE). Surfaces engine-drift geometry: which engine is
+        // closer to flam3-C, where the two pyr3 engines disagree regardless
+        // of golden alignment. Record-only — no gate, no diff PNG, no HTML.
+        // (User pivoted away from a verify HTML — ad-hoc investigation pages
+        // get built on-demand for specific divergences.)
+        const goldenPng = PNG.sync.read(readFileSync(join(fixture.dir, 'golden.png')));
+        const goldenNative = new Uint8Array(
+          goldenPng.data.buffer,
+          goldenPng.data.byteOffset,
+          goldenPng.data.byteLength,
+        );
+        const goldenQuick = goldenPng.width === w && goldenPng.height === h
+          ? goldenNative
+          : nearestDownscale(goldenNative, goldenPng.width, goldenPng.height, w, h);
+        const R_FE_g = meanAbsDiffRgba(feRgba, goldenQuick);
+        const R_BE_g = meanAbsDiffRgba(beRgba, goldenQuick);
+
         // 5. Persist the FE render + diff for the eyeball gallery.
         const feOutPath = join(fixture.dir, 'pyr3-fe-be-fe.png');
         const fePng = new PNG({ width: w, height: h });
@@ -298,7 +349,7 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
         const diffRel = `fixtures/flam3-goldens/${fixture.id}/fe-be-diff.png`;
         // eslint-disable-next-line no-console
         console.log(
-          `[${fixture.id}] R(FE,BE)=${f(R)}  ` +
+          `[${fixture.id}] R(FE,BE)=${f(R)}  R(FE,g)=${f(R_FE_g)}  R(BE,g)=${f(R_BE_g)}  ` +
             `perChannel(r=${f(channel.r)} g=${f(channel.g)} b=${f(channel.b)})  ` +
             `perRegion(tl=${f(region.qTl)} tr=${f(region.qTr)} bl=${f(region.qBl)} br=${f(region.qBr)})  ` +
             `diff→ ${diffRel}`,
@@ -311,6 +362,8 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
             width: w,
             height: h,
             R,
+            R_FE_golden: R_FE_g,
+            R_BE_golden: R_BE_g,
             perChannel: channel,
             perRegion: region,
             feBeThresholdR: fixture.meta.feBeThresholdR ?? null,

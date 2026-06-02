@@ -28,3 +28,31 @@ export function renderDiffPng(
   png.data = out;
   return PNG.sync.write(png);
 }
+
+/** Nearest-neighbor RGBA downscale. Used to bring a higher-res golden onto
+ *  the quick-mode FE capture dims for R-compare; not visually pretty but
+ *  pixel-faithful enough to be a fair denominator. */
+export function nearestDownscale(
+  src: Uint8Array,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): Uint8Array {
+  const dst = new Uint8Array(dstW * dstH * 4);
+  const xRatio = srcW / dstW;
+  const yRatio = srcH / dstH;
+  for (let y = 0; y < dstH; y++) {
+    const srcY = Math.min(srcH - 1, Math.floor(y * yRatio));
+    for (let x = 0; x < dstW; x++) {
+      const srcX = Math.min(srcW - 1, Math.floor(x * xRatio));
+      const srcOff = (srcY * srcW + srcX) * 4;
+      const dstOff = (y * dstW + x) * 4;
+      dst[dstOff] = src[srcOff]!;
+      dst[dstOff + 1] = src[srcOff + 1]!;
+      dst[dstOff + 2] = src[srcOff + 2]!;
+      dst[dstOff + 3] = src[srcOff + 3]!;
+    }
+  }
+  return dst;
+}
