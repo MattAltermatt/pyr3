@@ -109,19 +109,24 @@ describe('writeGlobalQuality + readGlobalQuality round-trip', () => {
 
 describe('writeGlobalQuality — failure-safe', () => {
   it('does not throw when localStorage.setItem throws (Safari private / quota)', () => {
-    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('QuotaExceeded');
-    });
+    // Replace the stub's setItem with a throwing variant — environment-agnostic
+    // (CI runs Node 24 without happy-dom, so `Storage.prototype` isn't a global
+    // there; mutating the stub on globalThis works regardless).
+    const throwingStub: Storage = {
+      ...(globalThis as { localStorage: Storage }).localStorage,
+      setItem: () => { throw new Error('QuotaExceeded'); },
+    };
+    vi.stubGlobal('localStorage', throwingStub);
     expect(() => writeGlobalQuality({ kind: 'tier', tier: QUALITY_TIERS[0]! })).not.toThrow();
-    spy.mockRestore();
   });
 
   it('does not throw when localStorage.getItem throws', () => {
-    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('SecurityError');
-    });
+    const throwingStub: Storage = {
+      ...(globalThis as { localStorage: Storage }).localStorage,
+      getItem: () => { throw new Error('SecurityError'); },
+    };
+    vi.stubGlobal('localStorage', throwingStub);
     expect(() => readGlobalQuality()).not.toThrow();
     expect(readGlobalQuality()).toBeNull();
-    spy.mockRestore();
   });
 });
