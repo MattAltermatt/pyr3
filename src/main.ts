@@ -40,6 +40,7 @@ import {
 } from './load-intent';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
+import { readGlobalQuality, writeGlobalQuality } from './prefs';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
@@ -214,7 +215,11 @@ async function main(): Promise<void> {
   // nav + file loads (PYR3-050) — every load re-renders at this quality, not a
   // reset to Preview. The render-progress bar is the "this is heavy" signal.
   // Defaults to Preview so cold browsing stays fast until the user opts up.
-  let currentQuality: QualityRequest = { kind: 'tier', tier: DEFAULT_TIER };
+  // #53: persisted to localStorage so the choice survives page refreshes /
+  // bookmarks / cold links too. readGlobalQuality returns null on missing /
+  // malformed / shape-mismatched storage — caller falls back to DEFAULT_TIER.
+  let currentQuality: QualityRequest =
+    readGlobalQuality() ?? { kind: 'tier', tier: DEFAULT_TIER };
 
   // PYR3-018 FE parity sweep: pixel-readback hook (dev-only).
   // The canvas swap-chain texture is single-frame-presented and not
@@ -498,8 +503,10 @@ async function main(): Promise<void> {
   // share the math), the capability guard aborts when the histogram won't fit,
   // and the info-bar readout updates on completion. 4K is just the top tier.
   const renderQuality = async (req: QualityRequest): Promise<void> => {
-    // Remember this choice so it persists across the next corpus nav / load.
+    // Remember this choice so it persists across the next corpus nav / load,
+    // AND across page refreshes (#53 — localStorage-backed).
     currentQuality = req;
+    writeGlobalQuality(req);
     // Disable the ladder synchronously BEFORE the first await, so a double-tap
     // during the cancel/drain can't spawn a second concurrent render. The
     // renderInFlight flag (also set synchronously) gates corpus nav for #8.
