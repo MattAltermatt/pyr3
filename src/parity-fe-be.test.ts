@@ -65,6 +65,18 @@ interface Fixture {
   meta: FixtureMeta;
 }
 
+// #35: deterministic FE↔BE seed derived from the fixture id (FNV-1a 32-bit).
+// Stable across runs + across machines so R(FE,BE) reflects pure engine drift,
+// not Math.random() seed variance. Both engines render the same RNG sequence.
+function fixtureSeed(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 function discoverFixtures(): Fixture[] {
   const found: Fixture[] = [];
   for (const entry of readdirSync(FIXTURES_DIR, { withFileTypes: true })) {
@@ -177,7 +189,10 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
         if (!page) throw new Error('Playwright page not initialized');
 
         // 1. BE render via --quick (matches FE QUICK_MAX_DIM / QUICK_MAX_SPP /
-        //    QUICK_OVERSAMPLE preset; mirrors src/main.ts rerender math).
+        //    QUICK_OVERSAMPLE preset; mirrors src/main.ts rerender math). #35:
+        //    --seed pins BOTH engines to the same RNG sequence so R measures
+        //    only systematic engine drift, not Math.random() noise.
+        const seed = fixtureSeed(fixture.id);
         const bePath = join(fixture.dir, 'pyr3-fe-be-be.png');
         const result = spawnSync(
           'node',
@@ -188,6 +203,7 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
             './bin/wgsl-loader-register.mjs',
             'bin/pyr3-render.ts',
             '--preset', 'quick',
+            '--seed', String(seed),
             fixture.flam3Path,
             bePath,
           ],
@@ -218,8 +234,9 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
         //    before our fixture lands. Base64-shuttle rgba bytes back —
         //    Playwright's `evaluate` JSON-serializes typed arrays poorly.
         const flam3Text = readFileSync(fixture.flam3Path, 'utf8');
-        const capture = await page.evaluate(async (text) => {
+        const capture = await page.evaluate(async ({ text, seed: feSeed }) => {
           const w = window as unknown as {
+            __pyr3SetSeed: (n: number) => void;
             __pyr3LoadFlame: (t: string, label?: string) => Promise<void>;
             __pyr3CapturePixels: () => Promise<{
               width: number;
@@ -228,6 +245,9 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
               format: GPUTextureFormat;
             }>;
           };
+          // #35: pin the FE seed BEFORE __pyr3LoadFlame so the upcoming render
+          // uses it; BE was spawned with --seed of the same value.
+          w.__pyr3SetSeed(feSeed);
           await w.__pyr3LoadFlame(text, 'parity-fe-be.flam3');
           const c = await w.__pyr3CapturePixels();
           const u8 = new Uint8Array(c.rgba.buffer, c.rgba.byteOffset, c.rgba.byteLength);
@@ -239,7 +259,7 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
             bin += String.fromCharCode.apply(null, Array.from(u8.subarray(i, i + CHUNK)));
           }
           return { width: c.width, height: c.height, rgbaB64: btoa(bin) };
-        }, flam3Text);
+        }, { text: flam3Text, seed });
         const feRgba = new Uint8Array(Buffer.from(capture.rgbaB64, 'base64'));
 
         // 3. Dim alignment (BE follows genome's declared dims under

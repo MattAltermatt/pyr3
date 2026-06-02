@@ -197,7 +197,10 @@ async function main(): Promise<void> {
     }, 'image/png');
   };
 
-  const seed = (Math.random() * 0xffffffff) >>> 0;
+  // #35: `let` (not `const`) so the test rig's `__pyr3SetSeed` dev hook can
+  // pin the next render's seed for deterministic FE↔BE parity. All render
+  // callsites capture this binding, so the latest value is read at dispatch.
+  let seed = (Math.random() * 0xffffffff) >>> 0;
   let activeGenome: Genome = SPIRAL_GALAXY;
 
   let runHandle: RunHandle | null = null;
@@ -716,6 +719,15 @@ async function main(): Promise<void> {
   // awaits the orchestrator promise).
   let loadHookQueue: Promise<void> = Promise.resolve();
   if (import.meta.env.DEV) {
+    // #35: pin the session seed for deterministic FE↔BE parity. Call BEFORE
+    // __pyr3LoadFlame on each fixture so both engines render the same RNG
+    // sequence. Truncates to u32 and is sticky until the next call.
+    (window as unknown as {
+      __pyr3SetSeed?: (n: number) => void;
+    }).__pyr3SetSeed = (n: number) => {
+      seed = n >>> 0;
+    };
+
     (window as unknown as {
       __pyr3LoadFlame?: (text: string, label?: string) => Promise<void>;
     }).__pyr3LoadFlame = (text: string, label = 'test.flame') => {

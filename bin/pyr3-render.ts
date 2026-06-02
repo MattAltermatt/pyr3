@@ -34,6 +34,7 @@ async function main(): Promise<void> {
   let customLongEdge: number | null = null;
   let customQuality: number | null = null;
   let sampleInflate = 1;
+  let seedOverride: number | null = null;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -58,6 +59,17 @@ async function main(): Promise<void> {
       customQuality = n;
     } else if (a === '--max-dim') {
       maxDim = parsePositiveInt(rawArgs[++i], '--max-dim');
+    } else if (a === '--seed') {
+      // #35: deterministic seed for FE↔BE parity (test rig pins both sides to
+      // the same seed so R(FE,BE) measures only systematic engine drift).
+      // Accepts decimal or 0x-prefixed hex; truncates to u32.
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        console.error('--seed requires a non-negative integer (decimal or 0xHEX)');
+        process.exit(1);
+      }
+      seedOverride = (n >>> 0);
     } else if (a.startsWith('--sample-inflate=')) {
       // PYR3-029 probe: multiplies the `totalSamples` passed to
       // deriveCalibration, shrinking k2 by the same factor. Use to
@@ -160,11 +172,16 @@ async function main(): Promise<void> {
   // 4. Render.
   const t0 = Date.now();
   if (sampleInflate === 1) {
-    renderer.render({ genome, outputView: texture.createView(), forceDeOff });
+    renderer.render({
+      genome,
+      outputView: texture.createView(),
+      forceDeOff,
+      seed: seedOverride ?? undefined,
+    });
   } else {
     // PYR3-029 probe path: same walker-sizing as renderer.render, then present
     // with INFLATED totalSamples so deriveCalibration shrinks k2 proportionally.
-    const seed = (Math.random() * 0xffffffff) >>> 0;
+    const seed = seedOverride ?? ((Math.random() * 0xffffffff) >>> 0);
     const targetSpp = genome.quality ?? 16;
     const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(targetSpp, width, height);
     console.log(`[pyr3-render] probe: sample-inflate=${sampleInflate} → totalSamples ${actualSamples} → ${actualSamples * sampleInflate}`);

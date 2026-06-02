@@ -5,11 +5,13 @@
 //
 //   thr = max(R across runs) * mulHeadroom + addHeadroom
 //
-// mulHeadroom = 1.5, addHeadroom = 2.0 — accommodates Math.random() seed
-// variance + GPU non-associativity drift across FE/BE on the same machine
-// (the determinism contract per pyr3/CLAUDE.md is "approximately equal,
-// not byte-identical"). Calibration is a one-shot — re-run when the
-// engine changes substantively.
+// #35: with deterministic seeding now in the test rig (FE __pyr3SetSeed +
+// BE --seed), R(FE,BE) is purely engine drift, not Math.random() noise.
+// Tightened from the prior mulHeadroom=1.5 + addHeadroom=2.0 (which
+// reserved headroom for seed variance) to 1.1 + 1.0 — small constant
+// headroom left for GPU non-associativity across FE/BE on the same
+// machine (per pyr3/CLAUDE.md: "approximately equal, not byte-identical").
+// Re-run calibration after this change to lock in the new thresholds.
 //
 // Writes the threshold into each fixture's meta.json `feBeThresholdR`
 // field. Logs a summary table.
@@ -23,8 +25,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const FIXTURES_DIR = join(REPO_ROOT, 'fixtures', 'flam3-goldens');
-const MUL_HEADROOM = 1.5;
-const ADD_HEADROOM = 2.0;
+const MUL_HEADROOM = 1.1;
+const ADD_HEADROOM = 1.0;
 
 const logFiles = process.argv.slice(2);
 if (logFiles.length === 0) {
