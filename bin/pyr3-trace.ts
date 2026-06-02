@@ -17,23 +17,17 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Window } from 'happy-dom';
-import { create, globals } from 'webgpu';
 
-import { sniffKind } from '../src/loader';
-import { parseFlame } from '../src/flame-import';
-import { genomeFromJson } from '../src/serialize';
 import { createChaosPass } from '../src/chaos';
 import { type Genome } from '../src/genome';
 import { ISAAC_STATE_U32 } from '../src/isaac';
+import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
 
 const FUSE = 200;
 const TRACE_ENTRIES = 1000;
 const TRACE_FLOATS_PER_ENTRY = 16;
 
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
-Object.assign(globalThis, globals);
+installWebGPUHost();
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -54,9 +48,7 @@ async function main(): Promise<void> {
   const inputPath = resolve(flamePath);
 
   const text = readFileSync(inputPath, 'utf8');
-  const kind = sniffKind(inputPath, text);
-  const genome: Genome =
-    kind === 'flame' ? parseFlame(text).genome : genomeFromJson(JSON.parse(text));
+  const genome: Genome = parseGenomeText(text, inputPath).genome;
 
   const width = genome.size?.width ?? 1024;
   const height = genome.size?.height ?? 1024;
@@ -64,15 +56,7 @@ async function main(): Promise<void> {
 
   console.error(`[pyr3-trace] genome="${genome.name}" ${width}×${height}`);
 
-  const navigator = { gpu: create([]) };
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) throw new Error('pyr3-trace: no GPU adapter');
-  const device = await adapter.requestDevice({
-    requiredLimits: {
-      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
-      maxBufferSize: adapter.limits.maxBufferSize,
-    },
-  });
+  const device = await acquireDawnDevice('pyr3-trace');
 
   // Single walker, 1200 iters (fuse + 1000 post-fuse for the trace window).
   const chaos = createChaosPass(device, {

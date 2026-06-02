@@ -36,8 +36,6 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
-import { Window } from 'happy-dom';
-import { create, globals } from 'webgpu';
 
 import { parseFlame } from '../src/flame-import';
 import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
@@ -58,12 +56,9 @@ import {
   histogramCoverage,
   meanLuminance,
 } from './bake-stats';
+import { installWebGPUHost, acquireDawnDevice } from './host';
 
-// ── Browser-API shims so engine modules import cleanly under Node ───────
-
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
-Object.assign(globalThis, globals);
+installWebGPUHost();
 
 // ── Arg parsing ─────────────────────────────────────────────────────────
 
@@ -327,23 +322,7 @@ async function main(): Promise<void> {
   const height = tier.longEdge;
   const format = 'rgba8unorm' as const;
 
-  const navigator = { gpu: create([]) };
-  const adapter = await navigator.gpu.requestAdapter();
-  if (adapter === null) {
-    console.error('pyr3-bake: no GPU adapter from Dawn');
-    process.exit(1);
-  }
-  const device = await adapter.requestDevice({
-    requiredLimits: {
-      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
-      maxBufferSize: adapter.limits.maxBufferSize,
-    },
-  });
-  void device.lost.then((info) => {
-    if (info.reason === 'destroyed') return;
-    console.error(`pyr3-bake: WebGPU device lost (${info.reason ?? 'unknown'}): ${info.message}`);
-    process.exitCode = 1;
-  });
+  const device = await acquireDawnDevice('pyr3-bake');
 
   const renderer = createRenderer(device, format, {
     width,

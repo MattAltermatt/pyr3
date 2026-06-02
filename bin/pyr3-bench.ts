@@ -27,17 +27,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Window } from 'happy-dom';
-import { create, globals } from 'webgpu';
 
 import { genomeFromJson } from '../src/serialize';
 import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
 import { type Genome } from '../src/genome';
+import { installWebGPUHost, acquireDawnDevice } from './host';
 
-// happy-dom + WebGPU globals shim, same as pyr3-render.ts.
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
-Object.assign(globalThis, globals);
+installWebGPUHost();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
@@ -286,16 +282,7 @@ async function main(): Promise<void> {
 
   // Acquire Dawn device once. Re-build the renderer per scenario (since
   // canvas size / oversample / filter radius can vary).
-  const navigator = { gpu: create([]) };
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) throw new Error('pyr3-bench: no GPU adapter from Dawn');
-  const limits = adapter.limits;
-  const device = await adapter.requestDevice({
-    requiredLimits: {
-      maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
-      maxBufferSize: limits.maxBufferSize,
-    },
-  });
+  const device = await acquireDawnDevice('pyr3-bench');
 
   const results: ScenarioResult[] = [];
   for (const scenario of SCENARIOS) {

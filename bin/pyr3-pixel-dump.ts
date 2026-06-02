@@ -20,44 +20,34 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Window } from 'happy-dom';
-import { create, globals } from 'webgpu';
 
-import { sniffKind } from '../src/loader';
-import { parseFlame } from '../src/flame-import';
-import { genomeFromJson } from '../src/serialize';
 import { createChaosPass, HIST_CHANNELS } from '../src/chaos';
 import { type Genome } from '../src/genome';
+import { computeDispatch, DEFAULT_SPP, MIN_ITERS_PER_WALKER } from '../src/renderer';
+import { installWebGPUHost, acquireDawnDevice, parseGenomeText, parsePositiveInt } from './host';
 
-const TARGET_WALKERS = 1024;
-const MIN_ITERS_PER_WALKER = 4096;
-const MAX_ITERS_PER_WALKER = 1048576;
-const MAX_WALKERS = 65535 * 64;
-const DEFAULT_SPP = 16;
 const FUSE = 200;
 const INIT_WALKERS = 4096;
 const INIT_ITERS = MIN_ITERS_PER_WALKER;
 
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
-Object.assign(globalThis, globals);
+installWebGPUHost();
 
 async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
   const args: string[] = [];
   let quick = false;
   let maxDim: number | null = null;
-  let walkersOverride: number | null = null;
+  let walkersOverride: number | undefined;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--quick') quick = true;
     else if (a === '--max-dim') {
-      maxDim = Math.max(1, Math.floor(Number(rawArgs[++i])));
+      maxDim = parsePositiveInt(rawArgs[++i], '--max-dim');
     } else if (a.startsWith('--walkers=')) {
       // PYR3-029 Phase 4 probe: override the parallel walker count.
-      // Total iter budget is preserved (iters-per-walker grows
-      // proportionally), so this isolates the parallelism dimension.
-      walkersOverride = Math.max(1, Math.floor(Number(a.slice('--walkers='.length))));
+      // Total iter budget is preserved (iters-per-walker grows proportionally),
+      // so this isolates the parallelism dimension.
+      walkersOverride = parsePositiveInt(a.slice('--walkers='.length), '--walkers');
     } else args.push(a);
   }
   if (args.length < 2) {
@@ -68,8 +58,7 @@ async function main(): Promise<void> {
   const outPath = resolve(args[1]!);
 
   const text = readFileSync(inputPath, 'utf8');
-  const kind = sniffKind(inputPath, text);
-  let genome: Genome = kind === 'flame' ? parseFlame(text).genome : genomeFromJson(JSON.parse(text));
+  let genome: Genome = parseGenomeText(text, inputPath).genome;
 
   const longEdgeCap = maxDim ?? (quick ? 1024 : null);
   if (longEdgeCap !== null) {
@@ -102,35 +91,19 @@ async function main(): Promise<void> {
     `[pyr3-pixel-dump] genome="${genome.name}" ${width}×${height} super=${superW}×${superH}`,
   );
 
-  const navigator = { gpu: create([]) };
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) throw new Error('pyr3-pixel-dump: no GPU adapter from Dawn');
-  const limits = adapter.limits;
-  const device = await adapter.requestDevice({
-    requiredLimits: {
-      maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
-      maxBufferSize: limits.maxBufferSize,
-    },
-  });
+  const device = await acquireDawnDevice('pyr3-pixel-dump');
 
+  // With --walkers, the user owns the walker count; iters-per-walker scales to
+  // keep total budget constant. The override may push iters past
+  // MAX_ITERS_PER_WALKER (macOS Metal TDR risk at very low walker counts × very
+  // high quality) — the probe accepts that risk explicitly.
   const targetSpp = genome.quality ?? DEFAULT_SPP;
-  const targetSamples = Math.round(targetSpp * width * height);
-  let dispatchWalkers = walkersOverride ?? TARGET_WALKERS;
-  let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
-  if (walkersOverride === null) {
-    // Default sizing — respect MIN/MAX bounds.
-    if (dispatchIters < MIN_ITERS_PER_WALKER) {
-      dispatchIters = MIN_ITERS_PER_WALKER;
-      dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
-    } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
-      dispatchIters = MAX_ITERS_PER_WALKER;
-      dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
-    }
-  }
-  // With override, the user owns the walker count; iters-per-walker scales to keep total
-  // budget constant. The override may push iters past MAX_ITERS_PER_WALKER (potential
-  // macOS Metal TDR risk at very small walker counts × very high quality) — the probe
-  // accepts that risk explicitly.
+  const { dispatchWalkers, dispatchIters } = computeDispatch(
+    targetSpp,
+    width,
+    height,
+    walkersOverride,
+  );
   console.error(`[pyr3-pixel-dump] dispatch walkers=${dispatchWalkers} iters=${dispatchIters}`);
 
   const chaos = createChaosPass(device, {

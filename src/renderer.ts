@@ -30,9 +30,9 @@ const WALKERS = 4096;
 // produced 231k pre-converged trajectories that left visible structure in
 // dark regions of the canvas. See `npm run render` t36 fixture: mean abs
 // diff vs flam3 dropped 1.41 → 0.50 with 1024 walkers × 1M iters.
-const TARGET_WALKERS = 1024;
-const MIN_ITERS_PER_WALKER = 4096;
-const MAX_ITERS_PER_WALKER = 1048576; // 2^20, keeps single-thread GPU runtime safely under macOS Metal's TDR.
+export const TARGET_WALKERS = 1024;
+export const MIN_ITERS_PER_WALKER = 4096;
+export const MAX_ITERS_PER_WALKER = 1048576; // 2^20, keeps single-thread GPU runtime safely under macOS Metal's TDR.
 const ITERS_PER_WALKER = MIN_ITERS_PER_WALKER; // chaos.ts pipeline init default
 // Fuse: per-walker warm-up iterations skipped before splatting. flam3 uses
 // ~200; pyr3's previous 20 left walkers polluting the background with
@@ -41,10 +41,41 @@ const FUSE = 200;
 // Phase 9-cal-B: pyr3-default samples-per-pixel when Genome.quality is undefined.
 // Matches the legacy WALKERS × ITERS_PER_WALKER / RENDER_SIZE² = 16 spp budget
 // at the previous 1024² canvas.
-const DEFAULT_SPP = 16;
+export const DEFAULT_SPP = 16;
 // WebGPU limit on workgroups per dimension (typically 65535). Cap walkers so we
 // never exceed it; if quality demands more samples, iters_per_walker grows instead.
-const MAX_WALKERS = 65535 * 64;
+export const MAX_WALKERS = 65535 * 64;
+
+/**
+ * Walker-pool sizing for a chaos-game render: prefer ~TARGET_WALKERS walkers
+ * with iters-per-walker scaled to land `targetSpp × width × height` total
+ * samples, then bound iters to [MIN_ITERS_PER_WALKER, MAX_ITERS_PER_WALKER]
+ * (adjusting walker count to keep the budget). With `walkersOverride`, the
+ * caller pins the walker count; MIN/MAX bounds are skipped (caller-owned
+ * tradeoff). Returns the chosen (walkers, iters, actualSamples).
+ */
+export function computeDispatch(
+  targetSpp: number,
+  width: number,
+  height: number,
+  walkersOverride?: number,
+): { dispatchWalkers: number; dispatchIters: number; actualSamples: number } {
+  const targetSamples = Math.round(targetSpp * width * height);
+  let dispatchWalkers = walkersOverride ?? TARGET_WALKERS;
+  let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
+  if (walkersOverride === undefined) {
+    if (dispatchIters < MIN_ITERS_PER_WALKER) {
+      dispatchIters = MIN_ITERS_PER_WALKER;
+      dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
+    } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
+      dispatchIters = MAX_ITERS_PER_WALKER;
+      dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
+    }
+  } else {
+    dispatchIters = Math.max(1, dispatchIters);
+  }
+  return { dispatchWalkers, dispatchIters, actualSamples: dispatchWalkers * dispatchIters };
+}
 
 export interface RendererOptions {
   width: number;
@@ -176,23 +207,12 @@ export function createRenderer(
       const genome = req.genome;
       const seed = req.seed ?? ((Math.random() * 0xffffffff) >>> 0);
 
-      // Walker-pool sizing: prefer ~TARGET_WALKERS walkers with iters scaled
-      // to land `quality × N_pixels` total samples. If targetSamples
-      // demand fewer iters per walker than MIN_ITERS_PER_WALKER, drop
-      // walker count instead. If iters would exceed MAX_ITERS_PER_WALKER
-      // (huge quality), cap iters and grow walkers.
       const targetSpp = genome.quality ?? DEFAULT_SPP;
-      const targetSamples = Math.round(targetSpp * pipelines.width * pipelines.height);
-      let dispatchWalkers = TARGET_WALKERS;
-      let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
-      if (dispatchIters < MIN_ITERS_PER_WALKER) {
-        dispatchIters = MIN_ITERS_PER_WALKER;
-        dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
-      } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
-        dispatchIters = MAX_ITERS_PER_WALKER;
-        dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
-      }
-      const actualSamples = dispatchWalkers * dispatchIters;
+      const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(
+        targetSpp,
+        pipelines.width,
+        pipelines.height,
+      );
 
       renderer.reset(genome);
       renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters });

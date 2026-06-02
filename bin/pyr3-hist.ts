@@ -19,32 +19,19 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Window } from 'happy-dom';
-import { create, globals } from 'webgpu';
 
-import { sniffKind } from '../src/loader';
-import { parseFlame } from '../src/flame-import';
-import { genomeFromJson } from '../src/serialize';
 import { createChaosPass, HIST_CHANNELS } from '../src/chaos';
 import { type Genome } from '../src/genome';
 import { packIsaacStates } from '../src/isaac';
+import { computeDispatch, DEFAULT_SPP, MIN_ITERS_PER_WALKER } from '../src/renderer';
+import { installWebGPUHost, acquireDawnDevice, parseGenomeText, parsePositiveInt } from './host';
 
-// Walker-sizing constants — mirror src/renderer.ts so this diagnostic
-// uses the IDENTICAL dispatch profile as `npm run render`. Diverging
-// would invalidate the comparison.
-const TARGET_WALKERS = 1024;
-const MIN_ITERS_PER_WALKER = 4096;
-const MAX_ITERS_PER_WALKER = 1048576;
-const MAX_WALKERS = 65535 * 64;
-const DEFAULT_SPP = 16;
 const FUSE = 200;
 // Initial chaos-pass config; dispatch overrides via opts.
 const INIT_WALKERS = 4096;
 const INIT_ITERS = MIN_ITERS_PER_WALKER;
 
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
-Object.assign(globalThis, globals);
+installWebGPUHost();
 
 async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
@@ -56,13 +43,7 @@ async function main(): Promise<void> {
     if (a === '--quick') {
       quick = true;
     } else if (a === '--max-dim') {
-      const v = rawArgs[++i];
-      const n = v === undefined ? NaN : Number(v);
-      if (!Number.isFinite(n) || n < 1) {
-        console.error('--max-dim requires a positive integer argument');
-        process.exit(1);
-      }
-      maxDim = Math.max(1, Math.floor(n));
+      maxDim = parsePositiveInt(rawArgs[++i], '--max-dim');
     } else {
       args.push(a);
     }
@@ -75,13 +56,7 @@ async function main(): Promise<void> {
 
   // Load genome (same path as pyr3-render).
   const text = readFileSync(inputPath, 'utf8');
-  const kind = sniffKind(inputPath, text);
-  let genome: Genome;
-  if (kind === 'flame') {
-    genome = parseFlame(text).genome;
-  } else {
-    genome = genomeFromJson(JSON.parse(text));
-  }
+  let genome: Genome = parseGenomeText(text, inputPath).genome;
 
   const QUICK_FE_MAX_DIM = 1024;
   const QUICK_FE_MAX_SPP = 16;
@@ -122,39 +97,24 @@ async function main(): Promise<void> {
   );
 
   // Acquire Dawn device.
-  const navigator = { gpu: create([]) };
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) throw new Error('pyr3-hist: no GPU adapter from Dawn');
-  const limits = adapter.limits;
-  const device = await adapter.requestDevice({
-    requiredLimits: {
-      maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
-      maxBufferSize: limits.maxBufferSize,
-    },
-  });
+  const device = await acquireDawnDevice('pyr3-hist');
   void packIsaacStates; // touch to ensure import survives tree-shake (used transitively)
 
-  // Walker-sizing — identical to renderer.render() so the histogram
-  // reflects the same dispatch profile a normal render produces.
+  // Walker-sizing — identical to renderer.render() so the histogram reflects
+  // the same dispatch profile a normal render produces. Diagnostic override
+  // (PYR3-034): `--walkers N` pins walker count for sweep-vs-coverage probes.
+  const walkersArgIdx = process.argv.indexOf('--walkers');
+  const walkersOverride =
+    walkersArgIdx >= 0 && process.argv[walkersArgIdx + 1] !== undefined
+      ? parsePositiveInt(process.argv[walkersArgIdx + 1], '--walkers')
+      : undefined;
   const targetSpp = genome.quality ?? DEFAULT_SPP;
-  const targetSamples = Math.round(targetSpp * width * height);
-  let dispatchWalkers = TARGET_WALKERS;
-  let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
-  if (dispatchIters < MIN_ITERS_PER_WALKER) {
-    dispatchIters = MIN_ITERS_PER_WALKER;
-    dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
-  } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
-    dispatchIters = MAX_ITERS_PER_WALKER;
-    dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
-  }
-  // Diagnostic override (PYR3-034): force a walker count, keep ~same sample
-  // budget by recomputing iters. Lets us sweep walkers vs coverage.
-  const walkersArg = process.argv.indexOf('--walkers');
-  if (walkersArg >= 0 && process.argv[walkersArg + 1]) {
-    dispatchWalkers = parseInt(process.argv[walkersArg + 1]!, 10);
-    dispatchIters = Math.max(1, Math.ceil(targetSamples / dispatchWalkers));
-  }
-  const actualSamples = dispatchWalkers * dispatchIters;
+  const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(
+    targetSpp,
+    width,
+    height,
+    walkersOverride,
+  );
   console.error(
     `[pyr3-hist] dispatch walkers=${dispatchWalkers} iters=${dispatchIters} samples=${actualSamples}`,
   );

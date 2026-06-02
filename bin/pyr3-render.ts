@@ -10,14 +10,9 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, basename, extname } from 'node:path';
-import { Window } from 'happy-dom';
-import { create, globals } from 'webgpu';
 import { PNG } from 'pngjs';
 
-import { sniffKind } from '../src/loader';
-import { parseFlame } from '../src/flame-import';
-import { genomeFromJson } from '../src/serialize';
-import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
+import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch } from '../src/renderer';
 import { type Genome } from '../src/genome';
 import {
   applyPreset,
@@ -26,15 +21,9 @@ import {
   QUALITY_NAMES,
   type PresetSpec,
 } from '../src/presets';
+import { installWebGPUHost, acquireDawnDevice, parseGenomeText, parsePositiveInt } from './host';
 
-// happy-dom shim — pyr3's flame-import.ts uses DOMParser which is
-// browser-only. Borrow happy-dom's instance and stamp it onto globalThis.
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
-
-// Stamp WebGPU constants (GPUBufferUsage etc.) onto globalThis. The pyr3
-// shaders + buffer creation reference these globals — same as the browser.
-Object.assign(globalThis, globals);
+installWebGPUHost();
 
 async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
@@ -58,13 +47,7 @@ async function main(): Promise<void> {
       }
       presetSpec = spec;
     } else if (a === '--long-edge') {
-      const v = rawArgs[++i];
-      const n = v === undefined ? NaN : Number(v);
-      if (!Number.isFinite(n) || n < 1) {
-        console.error('--long-edge requires a positive integer argument');
-        process.exit(1);
-      }
-      customLongEdge = Math.max(1, Math.floor(n));
+      customLongEdge = parsePositiveInt(rawArgs[++i], '--long-edge');
     } else if (a === '--quality') {
       const v = rawArgs[++i];
       const n = v === undefined ? NaN : Number(v);
@@ -74,13 +57,7 @@ async function main(): Promise<void> {
       }
       customQuality = n;
     } else if (a === '--max-dim') {
-      const v = rawArgs[++i];
-      const n = v === undefined ? NaN : Number(v);
-      if (!Number.isFinite(n) || n < 1) {
-        console.error('--max-dim requires a positive integer argument');
-        process.exit(1);
-      }
-      maxDim = Math.max(1, Math.floor(n));
+      maxDim = parsePositiveInt(rawArgs[++i], '--max-dim');
     } else if (a.startsWith('--sample-inflate=')) {
       // PYR3-029 probe: multiplies the `totalSamples` passed to
       // deriveCalibration, shrinking k2 by the same factor. Use to
@@ -116,17 +93,9 @@ async function main(): Promise<void> {
 
   // 1. Load genome.
   const text = readFileSync(inputPath, 'utf8');
-  const kind = sniffKind(inputPath, text);
-  let genome: Genome;
-  let dropped = 0, ignored = 0;
-  if (kind === 'flame') {
-    const result = parseFlame(text);
-    genome = result.genome;
-    dropped = result.report.droppedVariations.length;
-    ignored = result.report.ignoredFields.length;
-  } else {
-    genome = genomeFromJson(JSON.parse(text));
-  }
+  const parsed = parseGenomeText(text, inputPath);
+  let genome: Genome = parsed.genome;
+  const { kind, dropped, ignored } = parsed;
 
   // Preset application (v0.20+). `--preset quick` mirrors src/main.ts
   // rerender() (FE QUICK_MAX_DIM / QUICK_MAX_SPP / QUICK_OVERSAMPLE) for
@@ -172,27 +141,7 @@ async function main(): Promise<void> {
   );
 
   // 2. Acquire Dawn device.
-  const navigator = { gpu: create([]) };
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) throw new Error('pyr3-render: no GPU adapter from Dawn');
-  // Match the browser's required-limits path so flames using huge histograms
-  // (supersample=4 on 800×592 → 121MB) don't blow past defaults.
-  const limits = adapter.limits;
-  const device = await adapter.requestDevice({
-    requiredLimits: {
-      maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
-      maxBufferSize: limits.maxBufferSize,
-    },
-  });
-  // PYR3-069: surface device loss instead of producing a silent blank/garbage
-  // PNG. `reason === 'destroyed'` is the normal end-of-process teardown path.
-  void device.lost.then((info) => {
-    if (info.reason === 'destroyed') return;
-    console.error(
-      `pyr3-render: WebGPU device lost (${info.reason || 'unknown'}): ${info.message}`,
-    );
-    process.exitCode = 1;
-  });
+  const device = await acquireDawnDevice('pyr3-render');
 
   // 3. Build renderer + offscreen texture.
   // Use rgba8unorm (no sRGB conversion in the pipeline — pyr3's fragment
@@ -213,28 +162,11 @@ async function main(): Promise<void> {
   if (sampleInflate === 1) {
     renderer.render({ genome, outputView: texture.createView(), forceDeOff });
   } else {
-    // PYR3-029 probe path: reset + iterate (using the same walker-sizing
-    // formula as renderer.render) + present with INFLATED totalSamples so
-    // deriveCalibration shrinks k2 proportionally. Mirrors renderer.ts
-    // lines 162-186.
-    const TARGET_WALKERS = 1024;
-    const MIN_ITERS_PER_WALKER = 4096;
-    const MAX_ITERS_PER_WALKER = 1048576;
-    const MAX_WALKERS = 65535 * 64;
-    const DEFAULT_SPP = 16;
+    // PYR3-029 probe path: same walker-sizing as renderer.render, then present
+    // with INFLATED totalSamples so deriveCalibration shrinks k2 proportionally.
     const seed = (Math.random() * 0xffffffff) >>> 0;
-    const targetSpp = genome.quality ?? DEFAULT_SPP;
-    const targetSamples = Math.round(targetSpp * width * height);
-    let dispatchWalkers = TARGET_WALKERS;
-    let dispatchIters = Math.ceil(targetSamples / dispatchWalkers);
-    if (dispatchIters < MIN_ITERS_PER_WALKER) {
-      dispatchIters = MIN_ITERS_PER_WALKER;
-      dispatchWalkers = Math.max(1, Math.ceil(targetSamples / dispatchIters));
-    } else if (dispatchIters > MAX_ITERS_PER_WALKER) {
-      dispatchIters = MAX_ITERS_PER_WALKER;
-      dispatchWalkers = Math.min(MAX_WALKERS, Math.ceil(targetSamples / dispatchIters));
-    }
-    const actualSamples = dispatchWalkers * dispatchIters;
+    const targetSpp = genome.quality ?? 16;
+    const { dispatchWalkers, dispatchIters, actualSamples } = computeDispatch(targetSpp, width, height);
     console.log(`[pyr3-render] probe: sample-inflate=${sampleInflate} → totalSamples ${actualSamples} → ${actualSamples * sampleInflate}`);
     renderer.reset(genome);
     renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters });
