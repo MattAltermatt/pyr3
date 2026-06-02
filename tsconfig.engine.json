@@ -1,0 +1,52 @@
+// #15: engine-only tsconfig — drops `DOM` lib + `vite/client` types so a
+// browser global inside an engine kernel (chaos, density, calibration, etc.)
+// becomes a compile error. The seam ("single engine, two consumers") was
+// previously enforced by grep only; this catches violations at typecheck.
+//
+// Strategy: explicit kernel WHITELIST (the canonical compute path + data
+// model + serialization). Files NOT listed below are either FE/BE host
+// layers (DOM, navigator, requestAnimationFrame, `import.meta.env`, etc.)
+// or middle-tier shims that transitively import host code. They typecheck
+// in the base tsconfig.json which keeps DOM + vite/client.
+//
+// Ambient `*.wgsl?raw` module declaration is shared via src/wgsl-modules.d.ts.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["@webgpu/types"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/calibration.ts",
+    "src/chaos.ts",
+    "src/compare.ts",
+    "src/density.ts",
+    "src/diff-image.ts",
+    "src/feature-score.ts",
+    "src/flam3-palettes-data.ts",
+    "src/flam3-palettes.ts",
+    "src/genome.ts",
+    "src/isaac.ts",
+    "src/palette.ts",
+    "src/presets.ts",
+    "src/renderer.ts",
+    "src/serialize.ts",
+    "src/spatial-filter.ts",
+    "src/symmetry.ts",
+    "src/tonemap.ts",
+    "src/variations.ts",
+    "src/visualize.ts",
+    "src/wgsl-modules.d.ts"
+  ]
+}

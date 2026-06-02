@@ -32,9 +32,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Covers both the src engine/viewer (tsconfig.json) and the bin/ CLI seam
-      # (tsconfig.bin.json) — the latter was previously unguarded.
-      - name: Typecheck (src + bin)
+      # Covers the src engine/viewer (tsconfig.json), the bin/ CLI seam
+      # (tsconfig.bin.json), AND the engine-only no-DOM tsconfig
+      # (tsconfig.engine.json, #15). The last one fails the build if any
+      # kernel module ever references a browser global — enforces the
+      # "single engine, two consumers" seam at compile time.
+      - name: Typecheck (src + bin + engine)
         run: npm run typecheck
 
       - name: Unit tests
