@@ -44,7 +44,7 @@ import { readGlobalQuality, writeGlobalQuality } from './prefs';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
-import { resolveWalkerJitter } from './walker-jitter';
+import { DEFAULT_WALKER_JITTER, resolveWalkerJitter } from './walker-jitter';
 import {
   mountBar,
   mountGalleryBar,
@@ -99,11 +99,19 @@ function corpusTitleLabel(gen: number, id: number): string {
 async function main(): Promise<void> {
   const webgpu = await checkWebGPU();
 
-  // #65 Tier 1 — resolve walker-jitter for this session from `?jitter=<amp>`
-  // (e.g. `?jitter=1e-20`), falling back to DEFAULT_WALKER_JITTER (1e-10).
-  // `let` because the dev hook below mutates it for ad-hoc sweeps without
-  // a page reload (matches the existing __pyr3Bench / __pyr3Decoupled idiom).
-  let currentWalkerJitter = resolveWalkerJitter(window.location.search);
+  // #65 Tier 1 — walker-jitter knob, gated to DEV.
+  //
+  // Production builds always use DEFAULT_WALKER_JITTER (1e-10) — no magic URL
+  // knob floating in the user-facing surface area. `npm run dev` exposes both
+  // the `?jitter=<amp>` URL parser (handy for shareable repro links during
+  // investigations) AND the `__pyr3SetJitter(amp)` console hook (hot-swap
+  // without page reload). The BE CLI `--jitter` flag is independent of this
+  // gate (always available; not user-facing).
+  //
+  // `let` so the dev hook can mutate it for ad-hoc sweeps.
+  let currentWalkerJitter = import.meta.env.DEV
+    ? resolveWalkerJitter(window.location.search)
+    : DEFAULT_WALKER_JITTER;
   if (import.meta.env.DEV) {
     (window as unknown as {
       __pyr3SetJitter?: (amp: number) => number;
