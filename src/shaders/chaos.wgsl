@@ -875,8 +875,13 @@ fn var_juliascope(p: vec2f, w: f32, power: f32, dist: f32, wi: u32) -> vec2f {
 
 // var_square — flam3 var43_square (variations.c:900). 0 params + 2 rand calls.
 // Generates a point in [-w/2, w/2]² independent of input position.
+//
+// Same WGSL §10.3 eval-order guard as gaussian_blur/radial_blur — captured
+// `let` bindings force left-to-right ISAAC stream order.
 fn var_square(p: vec2f, w: f32, wi: u32) -> vec2f {
-  return vec2f(w * (rand01(wi) - 0.5), w * (rand01(wi) - 0.5));
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  return vec2f(w * (r0 - 0.5), w * (r1 - 0.5));
 }
 
 // var_rays — flam3 var44_rays (variations.c:915). 0 params + 1 rand call.
@@ -1587,11 +1592,13 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   // Restore the random color seed to match the real render path; with
   // color_speed=0 each walker keeps a random palette index for life, so
   // hits spread across the full palette (≈ palette mean) like flam3.
-  var p = vec3f(
-    rand_11(walker_id),
-    rand_11(walker_id),
-    rand01(walker_id),
-  );
+  //
+  // WGSL §10.3 eval-order guard — captured `let` bindings force flam3's
+  // left-to-right ISAAC draw order (x, y, color).
+  let init_x = rand_11(walker_id);
+  let init_y = rand_11(walker_id);
+  let init_z = rand01(walker_id);
+  var p = vec3f(init_x, init_y, init_z);
 
   // Phase 9-rotate: hoist cos/sin outside the iter loop. rotation_rad is uniform —
   // recomputing per iter would cost ~16M transcendental evals per frame for nothing.
@@ -1700,7 +1707,12 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     if (is_bad) {
       // Matches flam3 variations.c:2455-2456 — uses flam3_random_isaac_11
       // (symmetric [-1, 1]). PYR3-029 Phase 5 RNG-transform fix.
-      pv = vec2f(rand_11(walker_id), rand_11(walker_id));
+      //
+      // WGSL §10.3 eval-order guard — captured `let` bindings force flam3's
+      // left-to-right ISAAC draw order on the reseed.
+      let reseed_x = rand_11(walker_id);
+      let reseed_y = rand_11(walker_id);
+      pv = vec2f(reseed_x, reseed_y);
       consec_bad = consec_bad + 1u;
     } else {
       consec_bad = 0u;
