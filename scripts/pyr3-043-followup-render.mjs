@@ -28,12 +28,19 @@ function renderFlam3(flamePath, goldenOut, isaacSeed) {
   if (existsSync(goldenOut)) return { cached: true, ms: 0 };
   const t0 = Date.now();
   // ESF animation files contain N concatenated <flame> blocks with no root
-  // wrapping; libxml2 (flam3-render) rejects them with "Extra content at the
-  // end of the document". Wrap in <flames>...</flames> via a temp file so
-  // flam3-render parses + renders the first flame. Single-flame files survive
-  // the wrap unchanged.
+  // wrapping. Two problems to solve:
+  //  1) libxml2 rejects the missing root ("Extra content at the end of the
+  //     document"). Wrap in <flames>...</flames>.
+  //  2) When flam3-render sees multiple <flame> elements with `time` attrs +
+  //     `temporal_filter`, it MOTION-BLURS across the keyframes (renders an
+  //     interpolated composite, not the first frame). That makes its output
+  //     fundamentally different from pyr3 — which always renders one frame.
+  //     Fix: extract ONLY the first <flame>...</flame> block. flam3 then
+  //     renders just that single frame, apples-to-apples with pyr3.
   const xml = readFileSync(flamePath, 'utf8');
-  const wrapped = `<flames>\n${xml}\n</flames>\n`;
+  const m = xml.match(/<flame[\s\S]*?<\/flame>/);
+  if (!m) throw new Error(`no <flame>...</flame> block found in ${flamePath}`);
+  const wrapped = `<flames>\n${m[0]}\n</flames>\n`;
   const tmpPath = join(tmpdir(), `pyr3-043-followup-${isaacSeed}-${Date.now()}.flam3`);
   writeFileSync(tmpPath, wrapped);
   const r = spawnSync(FLAM3_BIN, [], {
