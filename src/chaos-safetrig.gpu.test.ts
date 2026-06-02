@@ -91,19 +91,22 @@ fn main() {
     const o = Array.from(new Float32Array(rb.getMappedRange().slice(0)));
     rb.unmap(); buf.destroy(); rb.destroy();
 
+    const [rawSinBig, safeSinBig, rawCosBig, safeCosBig, safeSinSmall, sinSmall, safeCosSmall, cosSmall] =
+      o as [number, number, number, number, number, number, number, number];
+
     // Dawn's raw f32 trig cliffs to 0 for the huge argument (the documented bug).
-    expect(o[0]).toBe(0);
-    expect(o[2]).toBe(0);
+    expect(rawSinBig).toBe(0);
+    expect(rawCosBig).toBe(0);
     // safe_* recover a bounded, non-zero spread.
-    expect(Math.abs(o[1])).toBeGreaterThan(0);
-    expect(Math.abs(o[1])).toBeLessThanOrEqual(1);
-    expect(Math.abs(o[3])).toBeGreaterThan(0);
-    expect(Math.abs(o[3])).toBeLessThanOrEqual(1);
+    expect(Math.abs(safeSinBig)).toBeGreaterThan(0);
+    expect(Math.abs(safeSinBig)).toBeLessThanOrEqual(1);
+    expect(Math.abs(safeCosBig)).toBeGreaterThan(0);
+    expect(Math.abs(safeCosBig)).toBeLessThanOrEqual(1);
     // safe_sin/safe_cos of the SAME huge arg share one hashed angle → (sin,cos)
     // stays a consistent unit-circle pair.
-    expect(o[1] * o[1] + o[3] * o[3]).toBeCloseTo(1, 4);
+    expect(safeSinBig * safeSinBig + safeCosBig * safeCosBig).toBeCloseTo(1, 4);
     // Below the threshold safe_* are exactly the native trig (faithful path).
-    expect(o[4]).toBe(o[5]);
-    expect(o[6]).toBe(o[7]);
+    expect(safeSinSmall).toBe(sinSmall);
+    expect(safeCosSmall).toBe(cosSmall);
   });
 });
