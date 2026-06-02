@@ -24,20 +24,11 @@
 // "baseline" row is Spiral Galaxy with every opted-in v1.0 feature OFF — the
 // closest analog to v0.1's render path.
 
-import { readFileSync } from 'node:fs';
-import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { genomeFromJson } from '../src/serialize';
 import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
-import { type Genome } from '../src/genome';
+import { type Genome, SPIRAL_GALAXY } from '../src/genome';
 import { installWebGPUHost, acquireDawnDevice } from './host';
 
 installWebGPUHost();
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..');
-const SPIRAL_PATH = join(REPO_ROOT, 'examples', 'spiral-galaxy.pyr3.json');
 
 interface Scenario {
   name: string;
@@ -276,9 +267,9 @@ async function main(): Promise<void> {
     `[pyr3-bench] warmup=${warmup} iters=${iters} scenarios=${SCENARIOS.length}`,
   );
 
-  // Load base Spiral Galaxy.
-  const baseText = readFileSync(SPIRAL_PATH, 'utf8');
-  const base = genomeFromJson(JSON.parse(baseText));
+  // Base genome: canonical Spiral Galaxy (pyr3's v0.1 hero flame, source-of-truth
+  // in src/genome.ts — no fixture file dependency, so the bench can't rot again).
+  const base = SPIRAL_GALAXY;
 
   // Acquire Dawn device once. Re-build the renderer per scenario (since
   // canvas size / oversample / filter radius can vary).
