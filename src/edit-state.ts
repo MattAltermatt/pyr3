@@ -29,6 +29,8 @@ export function pathLane(path: string): Lane {
   if (path === 'oversample') return 'rebuild';
   if (path === 'spatialFilter.radius') return 'rebuild';
   if (path === 'palette' || path.startsWith('palette.')) return 'slow';
+  // genome.paletteMode (top-level, flam3 spec — scatter-time sampling)
+  if (path === 'paletteMode') return 'slow';
   if (path.startsWith('xforms') || path.startsWith('finalxform')) return 'slow';
   if (path === 'scale' || path === 'cx' || path === 'cy' || path === 'rotate') return 'slow';
   if (path.startsWith('symmetry')) return 'slow';

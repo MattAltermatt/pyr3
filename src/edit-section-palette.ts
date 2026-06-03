@@ -164,12 +164,21 @@ export const paletteSection: SectionMount = {
     host.appendChild(hueRow);
 
     // ── Mode row ───────────────────────────────────────────────────────────
+    // Writes genome.paletteMode (top-level, flam3 spec) — controls per-scatter
+    // sampling: 'step' uses palette[floor(idx)] verbatim (flam3 default);
+    // 'linear' lerps between adjacent LUT entries by color_index fractional
+    // part. Subtle effect with a 256-entry LUT but matches flam3 behavior.
+    // (pyr3 also has palette.mode for LUT-bake-time stop interpolation; left
+    // unexposed here — flam3's scatter-time mode is the canonical knob.)
     const modeRow = document.createElement('div');
     modeRow.className = 'pyr3-edit-palette-mode-row';
     modeRow.style.display = 'flex';
     modeRow.style.alignItems = 'center';
     modeRow.style.gap = '8px';
     modeRow.style.marginTop = '6px';
+    modeRow.title = 'palette_mode (flam3): how the chaos game samples color.\n'
+      + 'step (default) — each hit uses one LUT entry verbatim (faint banding).\n'
+      + 'linear — each hit lerps between adjacent LUT entries (smoother color transitions).';
 
     const modeLabelTxt = document.createElement('span');
     modeLabelTxt.textContent = 'mode';
@@ -279,8 +288,14 @@ export const paletteSection: SectionMount = {
     }
 
     function setMode(mode: PaletteMode): void {
-      state.genome.palette.mode = mode;
-      onChange('palette.mode');
+      // Write the flam3-spec top-level paletteMode (chaos scatter-time sampling).
+      // Omit when 'step' since that's flam3 default — keeps round-trip clean.
+      if (mode === 'step') {
+        delete state.genome.paletteMode;
+      } else {
+        state.genome.paletteMode = mode;
+      }
+      onChange('paletteMode');
     }
 
     // ── Wire events ─────────────────────────────────────────────────────────
@@ -312,7 +327,8 @@ export const paletteSection: SectionMount = {
     const initialHue = state.genome.palette.hue ?? 0;
     hueSlider.value = String(initialHue);
     hueNumber.value = String(initialHue);
-    const initialMode = state.genome.palette.mode ?? 'linear';
+    // Default to flam3's 'step' when paletteMode is unset.
+    const initialMode = state.genome.paletteMode ?? 'step';
     linearRadio.input.checked = initialMode === 'linear';
     stepRadio.input.checked = initialMode === 'step';
   },

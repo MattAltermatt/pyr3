@@ -34,6 +34,10 @@ describe('pathLane', () => {
     expect(pathLane('palette.mode')).toBe('slow');
   });
 
+  it('maps genome.paletteMode (flam3 spec scatter-time mode) to slow', () => {
+    expect(pathLane('paletteMode')).toBe('slow');
+  });
+
   it('maps tonemap / density / background / meta to fast (present-only)', () => {
     expect(pathLane('tonemap.brightness')).toBe('fast');
     expect(pathLane('tonemap.gamma')).toBe('fast');

@@ -82,12 +82,12 @@ describe('paletteSection — DOM smoke', () => {
     expect(label.textContent).toBe(`flame #${noNameIdx}`);
   });
 
-  it('initial mode radio reflects palette.mode (default linear when undefined)', () => {
+  it('initial mode radio reflects genome.paletteMode (default step — flam3 spec)', () => {
     const { host } = mount();
     const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
     const step = host.querySelector('.pyr3-edit-palette-mode-step') as HTMLInputElement;
-    expect(linear.checked).toBe(true);
-    expect(step.checked).toBe(false);
+    expect(step.checked).toBe(true);
+    expect(linear.checked).toBe(false);
   });
 });
 
@@ -190,23 +190,44 @@ describe('paletteSection — hue mutation', () => {
   });
 });
 
-describe('paletteSection — mode radio', () => {
-  it('clicking step radio writes palette.mode=step + fires onChange("palette.mode")', () => {
-    const { host, state, onChange } = mount();
+describe('paletteSection — mode radio (flam3 paletteMode)', () => {
+  it('initial mode reflects genome.paletteMode (default step when unset)', () => {
+    const { host } = mount();
+    const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
     const step = host.querySelector('.pyr3-edit-palette-mode-step') as HTMLInputElement;
-    step.checked = true;
-    step.dispatchEvent(new Event('change'));
-    expect(state.genome.palette.mode).toBe('step');
-    expect(onChange).toHaveBeenCalledWith('palette.mode');
+    expect(step.checked).toBe(true);
+    expect(linear.checked).toBe(false);
   });
 
-  it('clicking linear radio writes palette.mode=linear', () => {
-    const { host, state } = mount();
-    state.genome.palette.mode = 'step';
+  it('clicking linear writes genome.paletteMode=linear + fires onChange("paletteMode")', () => {
+    const { host, state, onChange } = mount();
     const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
     linear.checked = true;
     linear.dispatchEvent(new Event('change'));
-    expect(state.genome.palette.mode).toBe('linear');
+    expect(state.genome.paletteMode).toBe('linear');
+    expect(onChange).toHaveBeenCalledWith('paletteMode');
+  });
+
+  it('clicking step REMOVES genome.paletteMode (step is flam3 default — omit for clean round-trip)', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    state.genome.palette = { name: 'flame #100', stops: state.genome.palette.stops };
+    state.genome.paletteMode = 'linear';
+    const onChange = vi.fn();
+    paletteSection.build(host, state, onChange);
+    const step = host.querySelector('.pyr3-edit-palette-mode-step') as HTMLInputElement;
+    step.checked = true;
+    step.dispatchEvent(new Event('change'));
+    expect(state.genome.paletteMode).toBeUndefined();
+    expect(onChange).toHaveBeenCalledWith('paletteMode');
+  });
+
+  it('mode row carries a tooltip explaining step vs linear', () => {
+    const { host } = mount();
+    const row = host.querySelector('.pyr3-edit-palette-mode-row') as HTMLElement;
+    expect(row.title).toMatch(/flam3/);
+    expect(row.title).toMatch(/step/);
+    expect(row.title).toMatch(/linear/);
   });
 });
 
