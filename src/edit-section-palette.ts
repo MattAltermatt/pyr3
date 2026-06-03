@@ -177,8 +177,8 @@ export const paletteSection: SectionMount = {
     modeRow.style.gap = '8px';
     modeRow.style.marginTop = '6px';
     modeRow.title = 'How colors blend across the flame.\n'
-      + 'Step — colors stay distinct (a touch more banded).\n'
-      + 'Linear — colors blend smoothly into each other.';
+      + 'Linear — colors blend smoothly into each other.\n'
+      + 'Step — colors stay distinct (a touch more banded).';
 
     const modeLabelTxt = document.createElement('span');
     modeLabelTxt.textContent = 'mode';
