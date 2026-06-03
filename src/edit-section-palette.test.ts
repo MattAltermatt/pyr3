@@ -132,14 +132,29 @@ describe('paletteSection — arrow stepping', () => {
     expect(state.genome.palette.name).toBe('flame #0');
   });
 
-  it('arrow click preserves existing hue + mode on the new palette object', () => {
+  it('arrow click RESETS hue to 0 on new palette (mode is preserved)', () => {
     const { host, state } = mount();
     state.genome.palette.hue = 90;
     state.genome.palette.mode = 'step';
     const next = host.querySelector('.pyr3-edit-palette-next') as HTMLButtonElement;
     next.click();
-    expect(state.genome.palette.hue).toBe(90);
+    expect(state.genome.palette.hue).toBeUndefined();
     expect(state.genome.palette.mode).toBe('step');
+    // Hue widgets reset to 0 too
+    const slider = host.querySelector('.pyr3-edit-palette-hue-slider') as HTMLInputElement;
+    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLInputElement;
+    expect(slider.value).toBe('0');
+    expect(number.value).toBe('0');
+  });
+
+  it('picker cell click also resets hue', () => {
+    const { host, state } = mount();
+    state.genome.palette.hue = 180;
+    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
+    strip.click();
+    const cells = document.querySelectorAll<HTMLElement>('.pyr3-edit-palette-picker-cell');
+    cells[10]!.click();
+    expect(state.genome.palette.hue).toBeUndefined();
   });
 });
 

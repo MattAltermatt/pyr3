@@ -252,14 +252,19 @@ export const paletteSection: SectionMount = {
       const wrapped = ((idx % FLAM3_PALETTE_COUNT) + FLAM3_PALETTE_COUNT) % FLAM3_PALETTE_COUNT;
       paletteIdx = wrapped;
       const fresh = paletteAtIndex(wrapped);
-      // Preserve current hue + mode through the swap.
+      // Picking a new palette resets hue to 0 (the chosen palette is the
+      // user's reference point; old hue rotation would silently re-cast it).
+      // Mode is preserved because it's a stylistic preference (smooth vs
+      // banded LUT) independent of which palette you picked.
       const existing = state.genome.palette;
       state.genome.palette = {
         name: fresh.name,
         stops: fresh.stops,
-        ...(existing.hue !== undefined ? { hue: existing.hue } : {}),
         ...(existing.mode !== undefined ? { mode: existing.mode } : {}),
       };
+      // Sync the hue widgets to 0.
+      hueSlider.value = '0';
+      hueNumber.value = '0';
       refreshStrip();
       onChange('palette');
     }
