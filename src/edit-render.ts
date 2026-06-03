@@ -13,9 +13,20 @@ import { type Renderer, DEFAULT_SPP, computeDispatch } from './renderer';
 import { type Genome } from './genome';
 import { type Lane } from './edit-state';
 
-// Quick-mode samples-per-pixel — matches /v1/evolve's quick-mode budget so the
-// editor's live preview re-iterates within a few hundred ms on a real GPU.
-export const QUICK_MODE_SPP = 16;
+// Default preview samples-per-pixel when genome.quality is unset. The editor
+// honors genome.quality directly so a user-picked "quality 50" in the Render
+// section is the spp the live preview re-iterates at. Capped via clamp() for
+// interactivity (very high quality + large dims = slow).
+export const PREVIEW_DEFAULT_SPP = 50;
+export const PREVIEW_MAX_SPP = 200;
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function previewSpp(genome: Genome): number {
+  return clamp(genome.quality ?? PREVIEW_DEFAULT_SPP, 1, PREVIEW_MAX_SPP);
+}
 
 export interface EditRenderer {
   applyLane(
@@ -90,11 +101,11 @@ export function createEditRenderer(
       switch (lane) {
         case 'rebuild':
           opts.resize?.(superW, superH);
-          lastSamples = reseed(genome, seed, superW, superH, QUICK_MODE_SPP);
+          lastSamples = reseed(genome, seed, superW, superH, previewSpp(genome));
           present(genome, outputView, lastSamples);
           break;
         case 'slow':
-          lastSamples = reseed(genome, seed, superW, superH, QUICK_MODE_SPP);
+          lastSamples = reseed(genome, seed, superW, superH, previewSpp(genome));
           present(genome, outputView, lastSamples);
           break;
         case 'fast':
@@ -102,7 +113,7 @@ export function createEditRenderer(
           if (lastSamples === 0) {
             // No prior iterate — fall back to a quick reseed so we have
             // pixels to tone.
-            lastSamples = reseed(genome, seed, superW, superH, QUICK_MODE_SPP);
+            lastSamples = reseed(genome, seed, superW, superH, previewSpp(genome));
           }
           present(genome, outputView, lastSamples);
           break;
@@ -110,7 +121,7 @@ export function createEditRenderer(
     },
 
     fullRender(genome, seed, outputView, superW, superH): void {
-      lastSamples = reseed(genome, seed, superW, superH, QUICK_MODE_SPP);
+      lastSamples = reseed(genome, seed, superW, superH, previewSpp(genome));
       present(genome, outputView, lastSamples);
     },
 

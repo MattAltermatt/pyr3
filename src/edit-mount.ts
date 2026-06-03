@@ -95,9 +95,17 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     }
   }
 
+  // Apply editor defaults to fields the user hasn't set yet. Files opened
+  // with their own values keep them.
+  function applyEditorDefaults(genome: Genome): void {
+    if (genome.size === undefined) genome.size = { width: 1920, height: 1080 };
+    if (genome.quality === undefined) genome.quality = 50;
+  }
+
   // Initial genome + state.
   const initialGenome = generateRandomGenome();
   applyDefaultNick(initialGenome);
+  applyEditorDefaults(initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
   state.preview = preview;
@@ -125,29 +133,36 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   canvas.width = initialDims.width;
   canvas.height = initialDims.height;
   const renderer: Renderer = createRenderer(opts.device, opts.format, initialDims);
-  const editRenderer: EditRenderer = createEditRenderer(renderer, {
-    resize: (w, h) => {
-      // Recompute filter from the genome (oversample is fixed at 1 above).
-      canvas.width = w;
-      canvas.height = h;
-      renderer.resize({
-        width: w,
-        height: h,
-        oversample: 1,
-        filterRadius: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
-      });
-    },
-  });
+  // editRenderer's own resize callback is intentionally omitted — the lane
+  // scheduler below handles resize externally so we can grab the swapchain
+  // texture view AFTER the canvas dimensions change (the view is bound to
+  // the texture at the time getCurrentTexture() is called; grabbing it
+  // before a resize writes into the OLD texture).
+  const editRenderer: EditRenderer = createEditRenderer(renderer);
 
-  // Lane scheduler — each fire grabs a fresh swapchain texture view and
-  // hands it to the editRenderer. dims come from genome so Render-section
-  // edits (W×H, filter) propagate through rebuild lane to the preview.
-  // Every fire also notifies the host so the top bar's dims/name readout
-  // stays in sync.
+  // Lane scheduler. For rebuild, do the canvas + renderer resize FIRST, then
+  // grab a fresh texture view, then run reseed + present. Other lanes just
+  // pass the current view through.
   const scheduler: LaneScheduler = createLaneScheduler((lane, _paths) => {
     const d = effectiveDims();
-    const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane(lane, state.genome, state.seed, view, d.width, d.height);
+    if (lane === 'rebuild') {
+      if (d.width !== canvas.width || d.height !== canvas.height) {
+        canvas.width = d.width;
+        canvas.height = d.height;
+      }
+      renderer.resize({
+        width: d.width,
+        height: d.height,
+        oversample: d.oversample,
+        filterRadius: d.filterRadius,
+      });
+      const view = ctx.getCurrentTexture().createView();
+      // Treat as slow lane from here — resize already happened above.
+      editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
+    } else {
+      const view = ctx.getCurrentTexture().createView();
+      editRenderer.applyLane(lane, state.genome, state.seed, view, d.width, d.height);
+    }
     opts.onStateChange?.(state);
   });
 
@@ -170,21 +185,27 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     state.genome = genome;
     if (seed !== undefined) state.seed = seed;
     rebuildPanel();
-    // Rebuild lane in case the new genome has a different size / filter.
+    // Resize-first if dims changed, then fresh view, then reseed.
     const d = effectiveDims();
     if (d.width !== canvas.width || d.height !== canvas.height) {
-      const view = ctx.getCurrentTexture().createView();
-      editRenderer.applyLane('rebuild', state.genome, state.seed, view, d.width, d.height);
-    } else {
-      const view = ctx.getCurrentTexture().createView();
-      editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
+      canvas.width = d.width;
+      canvas.height = d.height;
+      renderer.resize({
+        width: d.width,
+        height: d.height,
+        oversample: d.oversample,
+        filterRadius: d.filterRadius,
+      });
     }
+    const view = ctx.getCurrentTexture().createView();
+    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
     opts.onStateChange?.(state);
   }
 
   function handleReroll(): void {
     const fresh = generateRandomGenome();
     applyDefaultNick(fresh);
+    applyEditorDefaults(fresh);
     const freshSeed = (Math.random() * 0xffffffff) >>> 0;
     applyNewGenome(fresh, freshSeed);
   }
@@ -202,6 +223,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         const parsed = JSON.parse(text);
         const genome = genomeFromJson(parsed);
         applyDefaultNick(genome);
+        applyEditorDefaults(genome);
         applyNewGenome(genome);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

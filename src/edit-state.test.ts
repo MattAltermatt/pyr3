@@ -38,6 +38,10 @@ describe('pathLane', () => {
     expect(pathLane('paletteMode')).toBe('slow');
   });
 
+  it('maps quality to slow (spp re-iterates)', () => {
+    expect(pathLane('quality')).toBe('slow');
+  });
+
   it('maps tonemap / density / background / meta to fast (present-only)', () => {
     expect(pathLane('tonemap.brightness')).toBe('fast');
     expect(pathLane('tonemap.gamma')).toBe('fast');

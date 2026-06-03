@@ -154,6 +154,9 @@ export const renderSection: SectionMount = {
     osRow.style.alignItems = 'center';
     osRow.style.gap = '6px';
     osRow.style.marginTop = '6px';
+    osRow.title = 'Render at a larger size internally, then shrink to the final size.\n'
+      + 'Higher = smoother edges, less jagged lines — but slower and uses more memory.\n'
+      + '1× = render at exact size. 2× / 4× = render 2× / 4× wider+taller internally.';
     const osLabel = document.createElement('span');
     osLabel.textContent = 'oversample';
     osLabel.style.width = '70px';
@@ -175,6 +178,9 @@ export const renderSection: SectionMount = {
     frRow.style.alignItems = 'center';
     frRow.style.gap = '6px';
     frRow.style.marginTop = '6px';
+    frRow.title = 'How much to soften the flame.\n'
+      + 'Bigger = softer, more glowy. Smaller = sharper, crisper lines.\n'
+      + '0.5 is a balanced default.';
     const frLabel = document.createElement('span');
     frLabel.textContent = 'filter rad';
     frLabel.style.width = '70px';
@@ -194,6 +200,10 @@ export const renderSection: SectionMount = {
     fsRow.style.alignItems = 'center';
     fsRow.style.gap = '6px';
     fsRow.style.marginTop = '6px';
+    fsRow.title = 'The shape of that softening blur.\n'
+      + 'Gaussian is a soft, round glow (best default).\n'
+      + 'Other shapes (box, triangle, lanczos…) give slightly different feels —\n'
+      + 'mostly invisible at small filter radius, more visible at large radius.';
     const fsLabel = document.createElement('span');
     fsLabel.textContent = 'filter shape';
     fsLabel.style.width = '70px';
