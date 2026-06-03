@@ -170,6 +170,12 @@ export interface EditBarHandle {
   /** Update the dimensions readout (after Render-section edits or open). Pass
    *  null for "auto" (no explicit size; saved at preview dims). */
   setDimensions(dims: { width: number; height: number } | null): void;
+  /** Show the rendering-in-flight tier3 panel under the bar. Mirrors the
+   *  viewer's mountBar showProgress; same DOM + CSS classes. The editor's
+   *  render is single-dispatch (no incremental progress), so callers pass
+   *  percent=1.0 + a label like "rendering 1920×1080 · q50". */
+  showProgress(label: string): void;
+  hideProgress(): void;
   destroy(): void;
 }
 
@@ -243,6 +249,10 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   infoRow.append(infoLeft, infoRight);
   root.append(infoRow);
 
+  // Lazy-built tier3 progress panel (same structure as mountBar's). Pinned
+  // under the bar via `position: absolute; top: 100%`.
+  let editTier3: Tier3 | null = null;
+
   return {
     setMeta(meta) {
       // Only overwrite the input if the user isn't currently focused there
@@ -257,7 +267,34 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     setDimensions(d) {
       dims.textContent = d ? `${d.width}×${d.height}` : 'auto';
     },
+    showProgress(label) {
+      if (!editTier3) {
+        editTier3 = buildTier3();
+        // Editor renders are single-dispatch — hide the cancel button +
+        // "Why so long?" link (they're viewer-specific affordances). Hide the
+        // pct text too since we don't have real progress.
+        editTier3.cancel.style.display = 'none';
+        editTier3.pct.style.display = 'none';
+        const why = editTier3.row.querySelector('.pyr3-tier3-why') as HTMLElement | null;
+        if (why) why.style.display = 'none';
+        editTier3.eta.style.display = 'none';
+        root.append(editTier3.row);
+      }
+      editTier3.label.textContent = label;
+      // Full bar = "in progress" (no incremental progress available).
+      editTier3.fill.style.width = '100%';
+    },
+    hideProgress() {
+      if (editTier3) {
+        editTier3.row.remove();
+        editTier3 = null;
+      }
+    },
     destroy(): void {
+      if (editTier3) {
+        editTier3.row.remove();
+        editTier3 = null;
+      }
       root.replaceChildren();
       root.classList.remove('pyr3-bar-root');
     },

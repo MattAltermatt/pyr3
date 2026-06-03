@@ -275,6 +275,8 @@ async function main(): Promise<void> {
         const currentNick = state.genome.nick ?? '';
         persistNick(currentNick);
       },
+      onProgressShow: (label) => editBar.showProgress(label),
+      onProgressHide: () => editBar.hideProgress(),
     });
     editorRef = editor;
     return;

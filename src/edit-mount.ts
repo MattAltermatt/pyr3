@@ -47,6 +47,12 @@ export interface MountEditPageOpts {
    *  the host can sync external chrome (e.g. /v1/edit's top bar) with the
    *  current name + dimensions. */
   onStateChange?: (state: EditState) => void;
+  /** Fires when a render is in flight — host typically wires this to the
+   *  edit bar's tier3 progress panel (same one the viewer uses). label is a
+   *  pre-formatted readable string like "rendering 1920×1080 · q50". */
+  onProgressShow?: (label: string) => void;
+  /** Fires when the in-flight render completes. */
+  onProgressHide?: () => void;
 }
 
 export interface EditPageHandle {
@@ -65,7 +71,9 @@ const DEFAULT_PREVIEW = { width: 512, height: 512 };
 export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const preview = opts.previewSize ?? DEFAULT_PREVIEW;
 
-  // Build root layout: panel left, canvas right.
+  // Build root layout: panel left, canvas right. Render-in-flight signal is
+  // the page-level bar's tier3 progress panel (same one the viewer uses);
+  // wired below via `opts.onProgressShow` / `onProgressHide` callbacks.
   opts.root.replaceChildren();
   opts.root.classList.add('pyr3-edit-root');
   const panelHost = document.createElement('div');
@@ -75,14 +83,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   canvas.width = preview.width;
   canvas.height = preview.height;
   canvasHost.appendChild(canvas);
-  // Render-in-flight badge — overlay on the canvas corner. Shown the moment
-  // an edit gets scheduled, hidden when the GPU work completes (await
-  // device.queue.onSubmittedWorkDone()).
-  const busyBadge = document.createElement('div');
-  busyBadge.className = 'pyr3-edit-busy-badge';
-  busyBadge.textContent = '⏳ rendering…';
-  busyBadge.style.display = 'none';
-  canvasHost.appendChild(busyBadge);
   opts.root.append(panelHost, canvasHost);
 
   // WebGPU context on the editor canvas. Assigned to a non-null local so
@@ -148,18 +148,20 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // before a resize writes into the OLD texture).
   const editRenderer: EditRenderer = createEditRenderer(renderer);
 
-  // Busy-badge tracking: a monotonically-incrementing ticket lets a finishing
-  // fire decide whether MORE work was scheduled while it was awaiting the
-  // GPU. If yes (newer ticket exists), don't hide — leave the badge up until
-  // the LAST fire's await resolves.
+  // Busy-progress tracking: a monotonically-incrementing ticket lets a
+  // finishing fire decide whether MORE work was scheduled while it was
+  // awaiting the GPU. If yes (newer ticket exists), don't hide — leave the
+  // progress panel up until the LAST fire's await resolves.
   let inflightTicket = 0;
   function showBusy(): void {
     inflightTicket++;
-    busyBadge.style.display = 'block';
+    const d = effectiveDims();
+    const spp = state.genome.quality ?? 50;
+    opts.onProgressShow?.(`rendering ${d.width}×${d.height} · q${spp}`);
   }
   async function awaitGpuThenMaybeHide(myTicket: number): Promise<void> {
     await opts.device.queue.onSubmittedWorkDone();
-    if (inflightTicket === myTicket) busyBadge.style.display = 'none';
+    if (inflightTicket === myTicket) opts.onProgressHide?.();
   }
 
   // Lane scheduler. For rebuild, do the canvas + renderer resize FIRST, then
