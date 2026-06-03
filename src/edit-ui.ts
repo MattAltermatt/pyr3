@@ -35,8 +35,7 @@ export function mountEditUi(
   host.replaceChildren();
   host.classList.add('pyr3-edit-panel');
 
-  // ── Top bar (panel-internal): action buttons only. The editable flame
-  // name + nick live in the page-level #pyr3-bar (mountEditBar in ui-bar.ts).
+  // ── Action buttons card (no name/nick — those have their own card below) ─
   const topbar = document.createElement('div');
   topbar.className = 'pyr3-edit-topbar';
 
@@ -50,6 +49,41 @@ export function mountEditUi(
   topbar.appendChild(buttonRow);
 
   host.appendChild(topbar);
+
+  // ── Identity card: editable flame name + nick (also mirrored in the
+  // page-level chrome bar — both surfaces stay in sync via the bar's setMeta
+  // + onChange path). Its own card, not bundled with the action buttons.
+  const identityCard = document.createElement('div');
+  identityCard.className = 'pyr3-edit-topbar pyr3-edit-identity';
+
+  const nameRow = document.createElement('div');
+  nameRow.className = 'pyr3-edit-named';
+  nameRow.append(document.createTextNode('name '));
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = state.genome.name;
+  nameInput.className = 'pyr3-edit-text';
+  nameInput.addEventListener('input', () => {
+    state.genome.name = nameInput.value;
+    callbacks.onChange('name');
+  });
+  nameRow.append(nameInput);
+
+  const nickRow = document.createElement('div');
+  nickRow.className = 'pyr3-edit-named';
+  nickRow.append(document.createTextNode('nick '));
+  const nickInput = document.createElement('input');
+  nickInput.type = 'text';
+  nickInput.value = state.genome.nick ?? '';
+  nickInput.className = 'pyr3-edit-text';
+  nickInput.addEventListener('input', () => {
+    state.genome.nick = nickInput.value || undefined;
+    callbacks.onChange('nick');
+  });
+  nickRow.append(nickInput);
+
+  identityCard.append(nameRow, nickRow);
+  host.appendChild(identityCard);
 
   // ── Section accordion ─────────────────────────────────────────────────
   const sectionEls: HTMLElement[] = [];
@@ -88,6 +122,7 @@ export function mountEditUi(
     destroy(): void {
       for (const el of sectionEls) el.remove();
       topbar.remove();
+      identityCard.remove();
     },
   };
 }

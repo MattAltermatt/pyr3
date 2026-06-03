@@ -29,13 +29,41 @@ function makeSections(keys: SectionKey[]): SectionMount[] {
 }
 
 describe('mountEditUi shell', () => {
-  it('renders the action-button row (name + nick moved to page-level bar)', () => {
+  it('renders 4 action buttons + a separate identity card with name+nick inputs', () => {
     const host = document.createElement('div');
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     mountEditUi(host, state, [], { onChange: () => {} });
-    // No name/nick inputs in the panel anymore; only the 4 action buttons.
-    expect(host.querySelectorAll('.pyr3-edit-text').length).toBe(0);
     expect(host.querySelectorAll('.pyr3-edit-btn').length).toBe(4);
+    expect(host.querySelectorAll('.pyr3-edit-text').length).toBe(2);
+    // Action buttons and identity card are separate cards.
+    expect(host.querySelectorAll('.pyr3-edit-topbar').length).toBe(2);
+  });
+
+  it('identity card name input writes to genome + fires onChange("name")', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    const onChange = vi.fn();
+    mountEditUi(host, state, [], { onChange });
+    const nameInput = host.querySelectorAll('.pyr3-edit-text')[0] as HTMLInputElement;
+    nameInput.value = 'Phoenix';
+    nameInput.dispatchEvent(new Event('input'));
+    expect(state.genome.name).toBe('Phoenix');
+    expect(onChange).toHaveBeenCalledWith('name');
+  });
+
+  it('identity card nick input writes optional field; empty → undefined', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    const onChange = vi.fn();
+    mountEditUi(host, state, [], { onChange });
+    const nickInput = host.querySelectorAll('.pyr3-edit-text')[1] as HTMLInputElement;
+    nickInput.value = 'matt';
+    nickInput.dispatchEvent(new Event('input'));
+    expect(state.genome.nick).toBe('matt');
+    nickInput.value = '';
+    nickInput.dispatchEvent(new Event('input'));
+    expect(state.genome.nick).toBeUndefined();
+    expect(onChange).toHaveBeenCalledWith('nick');
   });
 
   it('renders 7 section headers when 7 sections are passed', () => {
