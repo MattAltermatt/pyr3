@@ -1,0 +1,50 @@
+# pyr3 — keyboard + modifier-key bindings
+
+Living index of every modifier-key interaction in pyr3. When a binding is
+designed but not yet shipped, the **status** column says `planned`; it
+flips to `shipped` when the code lands. Update this file in the same PR
+as any new binding.
+
+## /v1/edit — canvas
+
+| Binding                  | Behavior                                                    | Status   |
+| ------------------------ | ----------------------------------------------------------- | -------- |
+| left-drag on flame       | Pan — cx / cy follow the cursor                             | shipped  |
+| wheel on flame           | Zoom — cursor-anchored; up = in, down = out                 | shipped  |
+
+## /v1/edit — xforms section
+
+| Binding                       | Behavior                                                | Status   |
+| ----------------------------- | ------------------------------------------------------- | -------- |
+| click `active` checkbox       | Toggle this xform on / off — instant A/B render        | planned  |
+| **shift-click** `active`      | Solo — turn off all OTHER xforms, leave this one on    | planned  |
+| click variation `active`      | Toggle that variation in the chain on / off            | planned  |
+| **shift-click** variation `active` | Solo — turn off all other variations in this xform | planned  |
+| click `shape preset` button   | Overwrite the 5 decomposed fields with the preset      | planned  |
+
+## /v1/edit — scrubby number inputs (planned — see [#105](https://github.com/MattAltermatt/pyr3/issues/105))
+
+| Binding              | Behavior                                                   | Status   |
+| -------------------- | ---------------------------------------------------------- | -------- |
+| left-drag on field   | Scrub value proportional to horizontal drag distance       | planned  |
+| **shift-drag**       | Coarser step (~10× the default)                            | planned  |
+| **ctrl/alt-drag**    | Finer step (~0.1× the default)                             | planned  |
+| double-click         | Enter text-input mode (native input behavior)              | planned  |
+| up / down arrow      | Step ±1 (native input behavior)                            | planned  |
+
+## /v1/viewer (gallery + showcase)
+
+Currently keyless. Add bindings as they're introduced.
+
+---
+
+## Discoverability checklist
+
+When a new modifier-key binding lands:
+
+1. Add the row above with `status: shipped`.
+2. Add a `title=…` tooltip to the affordance describing the modifier
+   (e.g. `click: toggle · shift-click: solo`).
+3. If the binding is hidden behind a non-obvious trigger (no visible
+   control), add it to the editor's `?` help modal — TBD when that
+   modal ships.
