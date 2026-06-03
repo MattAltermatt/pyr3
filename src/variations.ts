@@ -170,165 +170,19 @@ export interface Variation {
 
 // Builder helpers — concise spec at genome-construction time.
 export const linear = (weight = 1): Variation => ({ index: V.linear, weight });
-export const sinusoidal = (weight = 1): Variation => ({ index: V.sinusoidal, weight });
 export const spherical = (weight = 1): Variation => ({ index: V.spherical, weight });
-export const swirl = (weight = 1): Variation => ({ index: V.swirl, weight });
-export const horseshoe = (weight = 1): Variation => ({ index: V.horseshoe, weight });
-export const polar = (weight = 1): Variation => ({ index: V.polar, weight });
-export const handkerchief = (weight = 1): Variation => ({ index: V.handkerchief, weight });
-export const heart = (weight = 1): Variation => ({ index: V.heart, weight });
-export const disc = (weight = 1): Variation => ({ index: V.disc, weight });
-export const spiral = (weight = 1): Variation => ({ index: V.spiral, weight });
-export const hyperbolic = (weight = 1): Variation => ({ index: V.hyperbolic, weight });
-export const diamond = (weight = 1): Variation => ({ index: V.diamond, weight });
-export const ex = (weight = 1): Variation => ({ index: V.ex, weight });
-export const julia = (weight = 1): Variation => ({ index: V.julia, weight });
 export const julian = (weight = 1, power = 2, dist = 1): Variation => ({
   index: V.julian,
   weight,
   param0: power,
   param1: dist,
 });
-export const bent = (weight = 1): Variation => ({ index: V.bent, weight });
-export const waves = (weight = 1): Variation => ({ index: V.waves, weight });
-export const fisheye = (weight = 1): Variation => ({ index: V.fisheye, weight });
-export const popcorn = (weight = 1): Variation => ({ index: V.popcorn, weight });
-export const eyefish = (weight = 1): Variation => ({ index: V.eyefish, weight });
-export const bubble = (weight = 1): Variation => ({ index: V.bubble, weight });
-export const cylinder = (weight = 1): Variation => ({ index: V.cylinder, weight });
-export const disc2 = (weight = 1, rot = 0, twist = 0): Variation => ({
-  index: V.disc2,
-  weight,
-  param0: rot,
-  param1: twist,
-});
-export const pdj = (weight = 1, a = 0, b = 0, c = 0, d = 0): Variation => ({
-  index: V.pdj,
-  weight,
-  param0: a,
-  param1: b,
-  param2: c,
-  param3: d,
-});
-export const exponential = (weight = 1): Variation => ({ index: V.exponential, weight });
-export const power = (weight = 1): Variation => ({ index: V.power, weight });
-export const cosine = (weight = 1): Variation => ({ index: V.cosine, weight });
-export const tangent = (weight = 1): Variation => ({ index: V.tangent, weight });
-export const secant2 = (weight = 1): Variation => ({ index: V.secant2, weight });
-export const cross = (weight = 1): Variation => ({ index: V.cross, weight });
 // Batch B builders. rings/fan read affine (no params); rings2/fan2/perspective/
 // bipolar/curl/rectangles consume the existing 2-param seam.
-export const rings = (weight = 1): Variation => ({ index: V.rings, weight });
-export const fan = (weight = 1): Variation => ({ index: V.fan, weight });
-export const rings2 = (weight = 1, val = 0): Variation => ({
-  index: V.rings2,
-  weight,
-  param0: val,
-});
-export const fan2 = (weight = 1, x = 0, y = 0): Variation => ({
-  index: V.fan2,
-  weight,
-  param0: x,
-  param1: y,
-});
-export const perspective = (weight = 1, angle = 0, dist = 1): Variation => ({
-  index: V.perspective,
-  weight,
-  param0: angle,
-  param1: dist,
-});
-export const bipolar = (weight = 1, shift = 0): Variation => ({
-  index: V.bipolar,
-  weight,
-  param0: shift,
-});
-export const curl = (weight = 1, c1 = 0, c2 = 0): Variation => ({
-  index: V.curl,
-  weight,
-  param0: c1,
-  param1: c2,
-});
-export const rectangles = (weight = 1, x = 0, y = 0): Variation => ({
-  index: V.rectangles,
-  weight,
-  param0: x,
-  param1: y,
-});
 // Batch C builders. All consume vars_extra. param order matches the
 // VARIATION_PARAMS registry in src/serialize.ts (sets positional → named map).
-export const blob = (weight = 1, low = 0, high = 1, waves = 1): Variation => ({
-  index: V.blob,
-  weight,
-  param0: low,
-  param1: high,
-  param2: waves,
-});
-export const ngon = (weight = 1, sides = 5, power = 3, circle = 1, corners = 2): Variation => ({
-  index: V.ngon,
-  weight,
-  param0: sides,
-  param1: power,
-  param2: circle,
-  param3: corners,
-});
-export const wedge = (weight = 1, angle = 0, hole = 0, count = 1, swirl = 0): Variation => ({
-  index: V.wedge,
-  weight,
-  param0: angle,
-  param1: hole,
-  param2: count,
-  param3: swirl,
-});
-export const cpow = (weight = 1, r = 1, i = 0, power = 1): Variation => ({
-  index: V.cpow,
-  weight,
-  param0: r,
-  param1: i,
-  param2: power,
-});
-export const curve = (weight = 1, xamp = 0, yamp = 0, xlength = 1, ylength = 1): Variation => ({
-  index: V.curve,
-  weight,
-  param0: xamp,
-  param1: yamp,
-  param2: xlength,
-  param3: ylength,
-});
 // Batch D builders.
-export const noise = (weight = 1): Variation => ({ index: V.noise, weight });
-export const blur = (weight = 1): Variation => ({ index: V.blur, weight });
-export const gaussian_blur = (weight = 1): Variation => ({ index: V.gaussian_blur, weight });
-export const arch = (weight = 1): Variation => ({ index: V.arch, weight });
-export const radial_blur = (weight = 1, angle = 0): Variation => ({
-  index: V.radial_blur,
-  weight,
-  param0: angle,
-});
-export const juliascope = (weight = 1, power = 2, dist = 1): Variation => ({
-  index: V.juliascope,
-  weight,
-  param0: power,
-  param1: dist,
-});
-export const square = (weight = 1): Variation => ({ index: V.square, weight });
-export const rays = (weight = 1): Variation => ({ index: V.rays, weight });
-export const blade = (weight = 1): Variation => ({ index: V.blade, weight });
-export const twintrian = (weight = 1): Variation => ({ index: V.twintrian, weight });
 // Batch E builders — all 0-param transcendentals.
-export const exp_ = (weight = 1): Variation => ({ index: V.exp, weight });
-export const log_ = (weight = 1): Variation => ({ index: V.log, weight });
-export const sin_ = (weight = 1): Variation => ({ index: V.sin, weight });
-export const cos_ = (weight = 1): Variation => ({ index: V.cos, weight });
-export const tan_ = (weight = 1): Variation => ({ index: V.tan, weight });
-export const sec = (weight = 1): Variation => ({ index: V.sec, weight });
-export const csc = (weight = 1): Variation => ({ index: V.csc, weight });
-export const cot = (weight = 1): Variation => ({ index: V.cot, weight });
-export const sinh_ = (weight = 1): Variation => ({ index: V.sinh, weight });
-export const cosh_ = (weight = 1): Variation => ({ index: V.cosh, weight });
-export const tanh_ = (weight = 1): Variation => ({ index: V.tanh, weight });
-export const sech = (weight = 1): Variation => ({ index: V.sech, weight });
-export const csch = (weight = 1): Variation => ({ index: V.csch, weight });
-export const coth = (weight = 1): Variation => ({ index: V.coth, weight });
 
 export const MAX_VARIATIONS_PER_XFORM = 8;
 
@@ -1346,13 +1200,6 @@ export function ts_var_coth(i: VarInput): VarOutput {
 }
 
 // Batch F builders (all 0-param).
-export const butterfly = (weight = 1): Variation => ({ index: V.butterfly, weight });
-export const edisc = (weight = 1): Variation => ({ index: V.edisc, weight });
-export const elliptic = (weight = 1): Variation => ({ index: V.elliptic, weight });
-export const foci = (weight = 1): Variation => ({ index: V.foci, weight });
-export const loonie = (weight = 1): Variation => ({ index: V.loonie, weight });
-export const polar2 = (weight = 1): Variation => ({ index: V.polar2, weight });
-export const scry = (weight = 1): Variation => ({ index: V.scry, weight });
 
 // =====================================================================
 // Phase 9b Batch F — 0-param non-RNG kernels.
@@ -1457,15 +1304,6 @@ export function ts_var_scry(i: VarInput): VarOutput {
 }
 
 // Batch G builders.
-export const bent2 = (weight = 1, x = 1, y = 1): Variation => ({ index: V.bent2, weight, param0: x, param1: y });
-export const cell = (weight = 1, size = 1): Variation => ({ index: V.cell, weight, param0: size });
-export const escher = (weight = 1, beta = 0): Variation => ({ index: V.escher, weight, param0: beta });
-export const modulus = (weight = 1, x = 1, y = 1): Variation => ({ index: V.modulus, weight, param0: x, param1: y });
-export const split = (weight = 1, xsize = 0, ysize = 0): Variation => ({ index: V.split, weight, param0: xsize, param1: ysize });
-export const splits = (weight = 1, x = 0, y = 0): Variation => ({ index: V.splits, weight, param0: x, param1: y });
-export const stripes = (weight = 1, space = 0, warp = 0): Variation => ({ index: V.stripes, weight, param0: space, param1: warp });
-export const whorl = (weight = 1, inside = 0, outside = 0): Variation => ({ index: V.whorl, weight, param0: inside, param1: outside });
-export const flux = (weight = 1, spread = 0): Variation => ({ index: V.flux, weight, param0: spread });
 
 // =====================================================================
 // Phase 9b Batch G — 1-2 param non-RNG kernels.
@@ -1600,13 +1438,6 @@ export function ts_var_flux(i: VarInput): VarOutput {
 }
 
 // Batch H builders.
-export const popcorn2 = (weight = 1, x = 0, y = 0, c = 0): Variation => ({ index: V.popcorn2, weight, param0: x, param1: y, param2: c });
-export const lazysusan = (weight = 1, x = 0, y = 0, spin = 0, twist = 0, space = 0): Variation => ({ index: V.lazysusan, weight, param0: x, param1: y, param2: spin, param3: twist, param4: space });
-export const waves2 = (weight = 1, scalex = 0, freqx = 0, scaley = 0, freqy = 0): Variation => ({ index: V.waves2, weight, param0: scalex, param1: freqx, param2: scaley, param3: freqy });
-export const oscilloscope = (weight = 1, frequency = 0, amplitude = 0, damping = 0, separation = 0): Variation => ({ index: V.oscilloscope, weight, param0: frequency, param1: amplitude, param2: damping, param3: separation });
-export const separation = (weight = 1, x = 0, xinside = 0, y = 0, yinside = 0): Variation => ({ index: V.separation, weight, param0: x, param1: xinside, param2: y, param3: yinside });
-export const auger = (weight = 1, freq = 0, w = 0, scale = 0, sym = 0): Variation => ({ index: V.auger, weight, param0: freq, param1: w, param2: scale, param3: sym });
-export const wedge_sph = (weight = 1, angle = 0, hole = 0, count = 1, swirl = 0): Variation => ({ index: V.wedge_sph, weight, param0: angle, param1: hole, param2: count, param3: swirl });
 
 // =====================================================================
 // Phase 9b Batch H — 3-4-param non-RNG kernels.
@@ -1734,13 +1565,6 @@ export function ts_var_wedge_sph(i: VarInput): VarOutput {
 }
 
 // Batch I builders. RNG-using; smoke-tested except wedge_julia (discrete-branch).
-export const super_shape = (weight = 1, rnd = 0, m = 0, n1 = 1, n2 = 1, n3 = 1, holes = 0): Variation => ({ index: V.super_shape, weight, param0: rnd, param1: m, param2: n1, param3: n2, param4: n3, param5: holes });
-export const flower = (weight = 1, petals = 0, holes = 0): Variation => ({ index: V.flower, weight, param0: petals, param1: holes });
-export const conic = (weight = 1, eccentricity = 0, holes = 0): Variation => ({ index: V.conic, weight, param0: eccentricity, param1: holes });
-export const parabola = (weight = 1, height = 0, width = 0): Variation => ({ index: V.parabola, weight, param0: height, param1: width });
-export const pie = (weight = 1, slices = 1, rotation = 0, thickness = 0.5): Variation => ({ index: V.pie, weight, param0: slices, param1: rotation, param2: thickness });
-export const boarders = (weight = 1): Variation => ({ index: V.boarders, weight });
-export const wedge_julia = (weight = 1, angle = 0, count = 1, power = 2, dist = 1): Variation => ({ index: V.wedge_julia, weight, param0: angle, param1: count, param2: power, param3: dist });
 
 
 // =====================================================================
@@ -1875,7 +1699,6 @@ export function ts_var_wedge_julia(i: VarInput): VarOutput {
 }
 
 // Batch J builder.
-export const pre_blur = (weight = 1): Variation => ({ index: V.pre_blur, weight });
 
 // =====================================================================
 // Phase 9b Batch J — pre_blur (flam3 var67_pre_blur, variations.c:1480).
@@ -1902,18 +1725,6 @@ export function ts_var_pre_blur(i: VarInput): VarOutput {
 
 // Batch K builder. mobius has 8 params — first kernel to consume the
 // vars_extra2 slot (param6, param7).
-export const mobius = (weight = 1, re_a = 1, im_a = 0, re_b = 0, im_b = 0, re_c = 0, im_c = 0, re_d = 1, im_d = 0): Variation => ({
-  index: V.mobius,
-  weight,
-  param0: re_a,
-  param1: im_a,
-  param2: re_b,
-  param3: im_b,
-  param4: re_c,
-  param5: im_c,
-  param6: re_d,
-  param7: im_d,
-});
 
 // =====================================================================
 // Phase 9b Batch K — mobius (flam3 var98_mobius, variations.c:1923).
