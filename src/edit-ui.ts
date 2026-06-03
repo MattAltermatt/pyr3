@@ -35,27 +35,23 @@ export function mountEditUi(
   host.replaceChildren();
   host.classList.add('pyr3-edit-panel');
 
-  // ── Action buttons card (no name/nick — those have their own card below) ─
+  // ── Single header card: open/save → divider → name/nick → divider →
+  // reroll/render PNG. One card, three segments separated by hr dividers.
   const topbar = document.createElement('div');
   topbar.className = 'pyr3-edit-topbar';
 
-  const buttonRow = document.createElement('div');
-  buttonRow.className = 'pyr3-edit-buttons';
-  const rerollBtn = makeButton('🎲 reroll', () => callbacks.onReroll?.());
-  const openBtn = makeButton('📂 open', () => callbacks.onOpenFile?.());
-  const saveBtn = makeButton('💾 save', () => callbacks.onSaveFile?.());
-  const pngBtn = makeButton('🖼️ render PNG', () => callbacks.onRenderPng?.());
-  buttonRow.append(rerollBtn, openBtn, saveBtn, pngBtn);
-  topbar.appendChild(buttonRow);
+  // Segment 1: Open + Save
+  const openSaveRow = document.createElement('div');
+  openSaveRow.className = 'pyr3-edit-buttons';
+  openSaveRow.append(
+    makeButton('📂 open', () => callbacks.onOpenFile?.()),
+    makeButton('💾 save', () => callbacks.onSaveFile?.()),
+  );
+  topbar.appendChild(openSaveRow);
 
-  host.appendChild(topbar);
+  topbar.appendChild(makeDivider());
 
-  // ── Identity card: editable flame name + nick (also mirrored in the
-  // page-level chrome bar — both surfaces stay in sync via the bar's setMeta
-  // + onChange path). Its own card, not bundled with the action buttons.
-  const identityCard = document.createElement('div');
-  identityCard.className = 'pyr3-edit-topbar pyr3-edit-identity';
-
+  // Segment 2: name + nick
   const nameRow = document.createElement('div');
   nameRow.className = 'pyr3-edit-named';
   nameRow.append(document.createTextNode('name '));
@@ -68,6 +64,7 @@ export function mountEditUi(
     callbacks.onChange('name');
   });
   nameRow.append(nameInput);
+  topbar.appendChild(nameRow);
 
   const nickRow = document.createElement('div');
   nickRow.className = 'pyr3-edit-named';
@@ -81,9 +78,20 @@ export function mountEditUi(
     callbacks.onChange('nick');
   });
   nickRow.append(nickInput);
+  topbar.appendChild(nickRow);
 
-  identityCard.append(nameRow, nickRow);
-  host.appendChild(identityCard);
+  topbar.appendChild(makeDivider());
+
+  // Segment 3: reroll + render PNG
+  const rerollPngRow = document.createElement('div');
+  rerollPngRow.className = 'pyr3-edit-buttons';
+  rerollPngRow.append(
+    makeButton('🎲 reroll', () => callbacks.onReroll?.()),
+    makeButton('🖼️ render PNG', () => callbacks.onRenderPng?.()),
+  );
+  topbar.appendChild(rerollPngRow);
+
+  host.appendChild(topbar);
 
   // ── Section accordion ─────────────────────────────────────────────────
   const sectionEls: HTMLElement[] = [];
@@ -122,9 +130,14 @@ export function mountEditUi(
     destroy(): void {
       for (const el of sectionEls) el.remove();
       topbar.remove();
-      identityCard.remove();
     },
   };
+}
+
+function makeDivider(): HTMLHRElement {
+  const hr = document.createElement('hr');
+  hr.className = 'pyr3-edit-divider';
+  return hr;
 }
 
 function makeButton(label: string, onClick: () => void): HTMLButtonElement {
@@ -199,6 +212,11 @@ const EDIT_CSS = `
   min-width: 0;
 }
 .pyr3-edit-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.pyr3-edit-divider {
+  border: 0;
+  border-top: 1px solid var(--bar-border, #2a2a30);
+  margin: 4px 0;
+}
 .pyr3-edit-btn {
   background: var(--bar-bg-2, #1a1a20);
   color: var(--text, #ddd);

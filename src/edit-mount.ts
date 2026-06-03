@@ -38,6 +38,11 @@ export interface MountEditPageOpts {
   sections: SectionMount[];
   /** Preview size for the editor's canvas. Defaults to 512×512. */
   previewSize?: { width: number; height: number };
+  /** Author nick to seed into any fresh genome (random seed / reroll). Read
+   *  by the host from localStorage so the user's nick persists across
+   *  sessions. Files opened with their own nick keep that nick — defaultNick
+   *  only fills in when genome.nick is undefined. */
+  defaultNick?: string;
   /** Fires on init + after every genome change (lane fire / reroll / open) so
    *  the host can sync external chrome (e.g. /v1/edit's top bar) with the
    *  current name + dimensions. */
@@ -81,8 +86,18 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const ctx: GPUCanvasContext = ctxOrNull;
   ctx.configure({ device: opts.device, format: opts.format, alphaMode: 'opaque' });
 
+  // Apply defaultNick to a genome iff the genome has no nick. Files opened
+  // with their own nick keep that nick; random / rerolled / nick-less .pyr3.json
+  // get the user's saved nick stamped in.
+  function applyDefaultNick(genome: Genome): void {
+    if (genome.nick === undefined && opts.defaultNick) {
+      genome.nick = opts.defaultNick;
+    }
+  }
+
   // Initial genome + state.
   const initialGenome = generateRandomGenome();
+  applyDefaultNick(initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
   state.preview = preview;
@@ -138,6 +153,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
 
   function handleReroll(): void {
     const fresh = generateRandomGenome();
+    applyDefaultNick(fresh);
     const freshSeed = (Math.random() * 0xffffffff) >>> 0;
     applyNewGenome(fresh, freshSeed);
   }
@@ -154,6 +170,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         const text = await file.text();
         const parsed = JSON.parse(text);
         const genome = genomeFromJson(parsed);
+        applyDefaultNick(genome);
         applyNewGenome(genome);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

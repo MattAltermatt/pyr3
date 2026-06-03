@@ -8,6 +8,7 @@
 
 import { type ColorStop } from './palette';
 import { FLAM3_PALETTE_COUNT, FLAM3_PALETTES_B64 } from './flam3-palettes-data';
+import { FLAM3_PALETTE_NAMES } from './flam3-palette-names';
 
 const STRIDE = 256 * 3; // bytes per palette (256 RGB triples)
 
@@ -42,3 +43,14 @@ export function getLibraryStops(index: number): ColorStop[] | null {
 }
 
 export { FLAM3_PALETTE_COUNT };
+
+/** Library-palette name lookup (701 entries, auto-generated from flam3-palettes.xml).
+ *  Returns null when `index` is not a valid library index, or when the entry
+ *  is unnamed ('no-name' in the source XML — surfaces as null so callers can
+ *  fall back to a numeric label). */
+export function getLibraryPaletteName(index: number): string | null {
+  if (!Number.isInteger(index) || index < 0 || index >= FLAM3_PALETTE_COUNT) return null;
+  const name = FLAM3_PALETTE_NAMES[index];
+  if (!name || name === 'no-name') return null;
+  return name;
+}

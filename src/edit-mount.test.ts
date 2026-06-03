@@ -29,14 +29,17 @@ function makeSections(keys: SectionKey[]): SectionMount[] {
 }
 
 describe('mountEditUi shell', () => {
-  it('renders 4 action buttons + a separate identity card with name+nick inputs', () => {
+  it('renders 1 header card: open+save / divider / name+nick / divider / reroll+png', () => {
     const host = document.createElement('div');
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     mountEditUi(host, state, [], { onChange: () => {} });
+    // 4 buttons (open, save, reroll, render PNG) across 2 button rows
     expect(host.querySelectorAll('.pyr3-edit-btn').length).toBe(4);
+    // 2 inputs (name, nick) in the middle segment
     expect(host.querySelectorAll('.pyr3-edit-text').length).toBe(2);
-    // Action buttons and identity card are separate cards.
-    expect(host.querySelectorAll('.pyr3-edit-topbar').length).toBe(2);
+    // Single topbar card with 2 dividers
+    expect(host.querySelectorAll('.pyr3-edit-topbar').length).toBe(1);
+    expect(host.querySelectorAll('.pyr3-edit-divider').length).toBe(2);
   });
 
   it('identity card name input writes to genome + fires onChange("name")', () => {

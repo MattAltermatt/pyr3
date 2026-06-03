@@ -215,12 +215,30 @@ async function main(): Promise<void> {
     // the bar handle first so we can pass onStateChange to the editor).
     let editorRef: { setName(n: string): void; setNick(n: string): void } | null = null;
 
+    // Persisted author nick — read on entry, written on every change so a
+    // session-fresh genome (random seed / reroll) inherits the user's saved
+    // nick automatically.
+    const NICK_STORAGE_KEY = 'pyr3.edit.nick';
+    const savedNick = (() => {
+      try { return localStorage.getItem(NICK_STORAGE_KEY) || ''; }
+      catch { return ''; }
+    })();
+    const persistNick = (nick: string): void => {
+      try {
+        if (nick) localStorage.setItem(NICK_STORAGE_KEY, nick);
+        else localStorage.removeItem(NICK_STORAGE_KEY);
+      } catch { /* localStorage disabled — silently no-op */ }
+    };
+
     const { mountEditBar } = await import('./ui-bar');
     const barRoot = document.getElementById('pyr3-bar')!;
     const editBar = mountEditBar(barRoot, {
       webgpu,
       onNameChange: (name) => editorRef?.setName(name),
-      onNickChange: (nick) => editorRef?.setNick(nick),
+      onNickChange: (nick) => {
+        editorRef?.setNick(nick);
+        persistNick(nick);
+      },
     });
 
     const { mountEditPage } = await import('./edit-mount');
@@ -235,6 +253,7 @@ async function main(): Promise<void> {
       root: editRoot,
       device: editDevice,
       format: editFormat,
+      defaultNick: savedNick,
       sections: [
         paletteSection,
         viewportSection,
@@ -250,6 +269,11 @@ async function main(): Promise<void> {
           authorNick: state.genome.nick,
         });
         editBar.setDimensions(state.genome.size ?? null);
+        // Mirror panel-internal nick edits to localStorage too (the bar's
+        // onNickChange path covers the bar input; this covers the panel's
+        // identity-card nick input).
+        const currentNick = state.genome.nick ?? '';
+        persistNick(currentNick);
       },
     });
     editorRef = editor;

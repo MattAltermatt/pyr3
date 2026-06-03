@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
 //
 // Unit tests for the /v1/edit palette section. Covers DOM smoke, ◀/▶ arrow
-// cycling, hue slider/number mutation, mode radio toggling, and popover open/
-// close + cell-click selection. All under happy-dom (no GPU).
+// cycling, hue slider/number mutation, mode radio toggling, and full 3-col
+// 701-cell picker open/close/select + live name search. All under happy-dom
+// (no GPU).
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { paletteSection } from './edit-section-palette';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
-import { FLAM3_PALETTE_COUNT } from './flam3-palettes';
+import { FLAM3_PALETTE_COUNT, getLibraryPaletteName } from './flam3-palettes';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -32,6 +33,11 @@ function mount() {
   return { host, state, onChange };
 }
 
+afterEach(() => {
+  // Pickers mount on document.body; clean between tests so they don't bleed.
+  document.querySelectorAll('.pyr3-edit-palette-picker').forEach((p) => p.remove());
+});
+
 describe('paletteSection — DOM smoke', () => {
   it('renders strip, ◀/▶ arrows, hue slider, hue number, mode radios', () => {
     const { host } = mount();
@@ -44,10 +50,36 @@ describe('paletteSection — DOM smoke', () => {
     expect(host.querySelector('.pyr3-edit-palette-mode-step')).toBeTruthy();
   });
 
-  it('initial label matches palette name', () => {
+  it('strip row is a single flex row (◀ / strip / ▶ same line)', () => {
+    const { host } = mount();
+    const row = host.querySelector('.pyr3-edit-palette-strip-row') as HTMLElement;
+    expect(row.style.display).toBe('flex');
+  });
+
+  it('label shows "<name> · flame #N" when palette idx is named', () => {
     const { host } = mount();
     const label = host.querySelector('.pyr3-edit-palette-label') as HTMLElement;
-    expect(label.textContent).toBe('flame #100');
+    const name = getLibraryPaletteName(100);
+    if (name) {
+      expect(label.textContent).toBe(`${name} · flame #100`);
+    } else {
+      expect(label.textContent).toBe('flame #100');
+    }
+  });
+
+  it('label falls back to "flame #N" when palette idx is unnamed (no-name)', () => {
+    // Find an idx whose name resolves to null (no-name in the source XML).
+    let noNameIdx = -1;
+    for (let i = 0; i < FLAM3_PALETTE_COUNT; i++) {
+      if (getLibraryPaletteName(i) === null) { noNameIdx = i; break; }
+    }
+    if (noNameIdx < 0) return; // skip if every entry is named
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    state.genome.palette = { name: `flame #${noNameIdx}`, stops: state.genome.palette.stops };
+    paletteSection.build(host, state, vi.fn());
+    const label = host.querySelector('.pyr3-edit-palette-label') as HTMLElement;
+    expect(label.textContent).toBe(`flame #${noNameIdx}`);
   });
 
   it('initial mode radio reflects palette.mode (default linear when undefined)', () => {
@@ -81,7 +113,9 @@ describe('paletteSection — arrow stepping', () => {
     const next = host.querySelector('.pyr3-edit-palette-next') as HTMLButtonElement;
     next.click();
     const label = host.querySelector('.pyr3-edit-palette-label') as HTMLElement;
-    expect(label.textContent).toBe('flame #101');
+    const name = getLibraryPaletteName(101);
+    const expected = name ? `${name} · flame #101` : 'flame #101';
+    expect(label.textContent).toBe(expected);
   });
 
   it('arrow stepping wraps around at FLAM3_PALETTE_COUNT boundary', () => {
@@ -153,7 +187,6 @@ describe('paletteSection — mode radio', () => {
 
   it('clicking linear radio writes palette.mode=linear', () => {
     const { host, state } = mount();
-    // Pre-set to step so the change to linear is a real toggle.
     state.genome.palette.mode = 'step';
     const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
     linear.checked = true;
@@ -162,38 +195,71 @@ describe('paletteSection — mode radio', () => {
   });
 });
 
-describe('paletteSection — popover picker', () => {
-  it('clicking the strip opens the popover with neighbour cells', () => {
+describe('paletteSection — full picker (3-col grid + search + footer)', () => {
+  it('clicking the strip opens the picker on document.body with all 701 cells', () => {
     const { host } = mount();
-    expect(host.querySelector('.pyr3-edit-palette-popover')).toBeNull();
+    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
     const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
     strip.click();
-    const pop = host.querySelector('.pyr3-edit-palette-popover');
-    expect(pop).toBeTruthy();
-    const cells = host.querySelectorAll('.pyr3-edit-palette-popover-cell');
-    expect(cells.length).toBe(30);
+    const picker = document.querySelector('.pyr3-edit-palette-picker');
+    expect(picker).toBeTruthy();
+    const cells = document.querySelectorAll('.pyr3-edit-palette-picker-cell');
+    expect(cells.length).toBe(FLAM3_PALETTE_COUNT);
   });
 
-  it('clicking the strip a second time closes the popover (toggle)', () => {
+  it('each cell carries idx, name, and a #N number', () => {
     const { host } = mount();
     const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
     strip.click();
-    expect(host.querySelector('.pyr3-edit-palette-popover')).toBeTruthy();
-    strip.click();
-    expect(host.querySelector('.pyr3-edit-palette-popover')).toBeNull();
+    const first = document.querySelector('.pyr3-edit-palette-picker-cell') as HTMLElement;
+    expect(first.dataset['paletteIdx']).toBe('0');
+    expect(first.querySelector('.pyr3-edit-palette-picker-cell-name')).toBeTruthy();
+    expect(first.querySelector('.pyr3-edit-palette-picker-cell-num')?.textContent).toBe('#0');
   });
 
-  it('clicking a popover cell sets the palette index + closes the popover', () => {
+  it('clicking a picker cell sets the palette index + closes the picker', () => {
     const { host, state, onChange } = mount();
     const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
     strip.click();
-    const cells = host.querySelectorAll<HTMLElement>('.pyr3-edit-palette-popover-cell');
-    // Pick a cell with a known idx attribute.
+    const cells = document.querySelectorAll<HTMLElement>('.pyr3-edit-palette-picker-cell');
     const target = cells[5]!;
-    const idx = Number(target.getAttribute('data-palette-idx'));
+    const idx = Number(target.dataset['paletteIdx']);
     target.click();
     expect(state.genome.palette.name).toBe(`flame #${idx}`);
     expect(onChange).toHaveBeenCalledWith('palette');
-    expect(host.querySelector('.pyr3-edit-palette-popover')).toBeNull();
+    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
+  });
+
+  it('clicking the strip a second time closes the picker (toggle)', () => {
+    const { host } = mount();
+    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
+    strip.click();
+    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeTruthy();
+    strip.click();
+    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
+  });
+
+  it('search filters cells live, updates the footer count', () => {
+    const { host } = mount();
+    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
+    strip.click();
+    const search = document.querySelector('.pyr3-edit-palette-picker-search input') as HTMLInputElement;
+    search.value = 'sky-flesh';
+    search.dispatchEvent(new Event('input'));
+    const visibleCells = [...document.querySelectorAll<HTMLElement>('.pyr3-edit-palette-picker-cell')]
+      .filter((c) => c.style.display !== 'none');
+    expect(visibleCells.length).toBeGreaterThan(0);
+    expect(visibleCells.length).toBeLessThan(FLAM3_PALETTE_COUNT);
+    const countEl = document.querySelector('.pyr3-edit-palette-picker-footer span') as HTMLElement;
+    expect(countEl.textContent).toMatch(/\d+ \/ \d+ match/);
+  });
+
+  it('Escape key closes the picker', () => {
+    const { host } = mount();
+    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
+    strip.click();
+    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeTruthy();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
   });
 });
