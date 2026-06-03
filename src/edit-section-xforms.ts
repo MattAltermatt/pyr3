@@ -13,7 +13,7 @@
 // 3-7 cards on a typical seed; no need for surgical DOM diffing).
 
 import { type SectionMount } from './edit-ui';
-import { type EditState } from './edit-state';
+import { type EditState, snapshotForSolo, restoreFromSolo } from './edit-state';
 import { type Xform } from './genome';
 import { type Variation, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM } from './variations';
 import { VARIATION_PARAMS, PARAM_KEYS } from './serialize';
@@ -122,13 +122,13 @@ function makeIconButton(label: string, onClick: () => void): HTMLButtonElement {
 // weight + 🗑️ + per-kind param inputs). The param-row sub-container is
 // rebuilt in place on kind change.
 function buildVariationRow(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   state: EditState,
   xform: Xform,
   xformIndex: number,
   varIndex: number,
   onChange: (path: string) => void,
   removeSelf: () => void,
+  rebuildSection?: () => void,
 ): HTMLDivElement {
   const v = xform.variations[varIndex]!;
 
@@ -144,10 +144,25 @@ function buildVariationRow(
   activeCbx.checked = v.active !== false;
   activeCbx.title = 'Click to toggle. Shift-click to solo within this xform.';
   activeCbx.addEventListener('click', (ev) => {
-    if ((ev as MouseEvent).shiftKey) {
-      // TODO(Task 10): shift-click solo within this xform — snapshot the
-      // other variations' active flags, flip them inactive, and restore on
-      // a second shift-click. For now, fall through to plain toggle.
+    const me = ev as MouseEvent;
+    if (me.shiftKey) {
+      me.preventDefault();
+      me.stopPropagation();
+      state.soloVariationSnapshot = state.soloVariationSnapshot ?? {};
+      const existing = state.soloVariationSnapshot[xformIndex];
+      if (existing && existing.targetIndex === varIndex) {
+        restoreFromSolo(xform.variations, existing);
+        delete state.soloVariationSnapshot[xformIndex];
+      } else {
+        if (existing) restoreFromSolo(xform.variations, existing);
+        state.soloVariationSnapshot[xformIndex] = snapshotForSolo(xform.variations, varIndex);
+        for (let i = 0; i < xform.variations.length; i++) {
+          if (i !== varIndex) xform.variations[i]!.active = false;
+        }
+      }
+      onChange(`xforms.${xformIndex}.variations.solo`);
+      rebuildSection?.();
+      return;
     }
     v.active = activeCbx.checked ? undefined : false;
     onChange(`xforms.${xformIndex}.variations.${varIndex}.active`);
@@ -483,6 +498,7 @@ function buildXformCard(
 
   const card = document.createElement('div');
   card.className = 'pyr3-edit-xform-card';
+  if (xform.active === false) card.classList.add('pyr3-edit-xform-inactive');
 
   // ── Header (always visible) ──────────────────────────────────────────
   const header = document.createElement('div');
@@ -524,9 +540,55 @@ function buildXformCard(
     rebuildSection();
   });
   delBtn.disabled = totalXforms <= 1;
+  delBtn.classList.add('pyr3-edit-xform-del');
   delBtn.addEventListener('click', (e) => e.stopPropagation());
 
-  header.append(chev, titleSpan, weightLabel, weightInput, delBtn);
+  // ── Active checkbox (with shift-click solo) ──
+  const activeCbx = document.createElement('input');
+  activeCbx.type = 'checkbox';
+  activeCbx.className = 'pyr3-edit-xform-active';
+  activeCbx.checked = xform.active !== false;
+  activeCbx.title = 'Click to toggle this xform. Shift-click to solo (turn off all others).';
+  activeCbx.addEventListener('click', (ev) => {
+    const me = ev as MouseEvent;
+    me.stopPropagation(); // don't toggle collapse
+    if (me.shiftKey) {
+      me.preventDefault();
+      if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === xformIndex) {
+        restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+        state.soloXformSnapshot = undefined;
+      } else {
+        if (state.soloXformSnapshot) {
+          restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+        }
+        state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, xformIndex);
+        for (let i = 0; i < state.genome.xforms.length; i++) {
+          if (i !== xformIndex) state.genome.xforms[i]!.active = false;
+        }
+        // Ensure the soloed xform is active.
+        xform.active = undefined;
+      }
+      onChange(`xforms.${xformIndex}.solo`);
+      rebuildSection();
+      return;
+    }
+    xform.active = activeCbx.checked ? undefined : false;
+    card.classList.toggle('pyr3-edit-xform-inactive', xform.active === false);
+    onChange(`xforms.${xformIndex}.active`);
+  });
+
+  // ── Duplicate icon ──
+  const dupBtn = makeIconButton('⎘', () => {
+    const clone: Xform = JSON.parse(JSON.stringify(xform));
+    state.genome.xforms.splice(xformIndex + 1, 0, clone);
+    onChange(`xforms.${xformIndex}.duplicated`);
+    rebuildSection();
+  });
+  dupBtn.title = 'Clone this xform with the same affine, color, and variations.';
+  dupBtn.classList.add('pyr3-edit-xform-dup');
+  dupBtn.addEventListener('click', (e) => e.stopPropagation());
+
+  header.append(chev, titleSpan, weightLabel, weightInput, activeCbx, dupBtn, delBtn);
   card.appendChild(header);
 
   // ── Body (collapsible) ───────────────────────────────────────────────
@@ -662,7 +724,7 @@ function buildXformCard(
       xform.variations.splice(j, 1);
       onChange(`xforms.${xformIndex}.variations.${j}.removed`);
       rebuildSection();
-    });
+    }, rebuildSection);
     varList.appendChild(row);
   }
   body.appendChild(varList);

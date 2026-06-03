@@ -91,7 +91,7 @@ describe('xformsSection — header weight + delete', () => {
     expect(initial).toBeGreaterThan(1);
     const card1 = cards(host)[1]!;
     const delBtn = card1.querySelector(
-      '.pyr3-edit-xform-header .pyr3-edit-icon-btn',
+      '.pyr3-edit-xform-header .pyr3-edit-xform-del',
     ) as HTMLButtonElement;
     delBtn.click();
     expect(state.genome.xforms.length).toBe(initial - 1);
@@ -106,7 +106,7 @@ describe('xformsSection — header weight + delete', () => {
     const { host } = mount(genome);
     const card0 = cards(host)[0]!;
     const delBtn = card0.querySelector(
-      '.pyr3-edit-xform-header .pyr3-edit-icon-btn',
+      '.pyr3-edit-xform-header .pyr3-edit-xform-del',
     ) as HTMLButtonElement;
     expect(delBtn.disabled).toBe(true);
   });
@@ -463,5 +463,49 @@ describe('xforms section v2 — variation rows', () => {
     // Picker mounted, but no new variation appended yet.
     expect(document.querySelector('.pyr3-var-picker')).toBeTruthy();
     expect(state.genome.xforms[0]!.variations.length).toBe(originalLen);
+  });
+});
+
+describe('xforms section v2 — header active + solo', () => {
+  it('renders an active checkbox in the card header', () => {
+    const { host } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    expect(card.querySelector('.pyr3-edit-xform-active')).toBeTruthy();
+  });
+
+  it('plain click toggles xform.active', () => {
+    const { host, state } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const cbx = card.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
+    cbx.click();
+    expect(state.genome.xforms[0]!.active).toBe(false);
+  });
+
+  it('shift-click activates solo: all others go inactive', () => {
+    const { host, state } = mount();
+    expect(state.genome.xforms.length).toBeGreaterThanOrEqual(3);
+    const firstCard = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const cbx = firstCard.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
+    cbx.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
+    for (let i = 1; i < state.genome.xforms.length; i++) {
+      expect(state.genome.xforms[i]!.active).toBe(false);
+    }
+    expect(state.genome.xforms[0]!.active).not.toBe(false);
+    expect(state.soloXformSnapshot).toBeTruthy();
+  });
+
+  it('shift-click same checkbox again restores the snapshot', () => {
+    const { host, state } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const cbx = card.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
+    cbx.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
+    // After rebuild, query the (new) checkbox.
+    const card2 = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const cbx2 = card2.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
+    cbx2.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
+    for (const xf of state.genome.xforms.slice(1)) {
+      expect(xf.active).not.toBe(false);
+    }
+    expect(state.soloXformSnapshot).toBeUndefined();
   });
 });

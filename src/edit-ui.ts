@@ -253,4 +253,7 @@ const EDIT_CSS = `
 .pyr3-edit-chev { color: var(--text-dim, #888); width: 10px; display: inline-block; }
 .pyr3-edit-section-title { font-weight: 600; letter-spacing: 0.04em; font-size: 11px; text-transform: uppercase; }
 .pyr3-edit-section-body { padding: 8px; }
+.pyr3-edit-xform-inactive { opacity: 0.55; }
+.pyr3-edit-xform-inactive .pyr3-edit-xform-active { opacity: 1; }
+.pyr3-edit-var-row.pyr3-edit-var-inactive { opacity: 0.55; }
 `;
