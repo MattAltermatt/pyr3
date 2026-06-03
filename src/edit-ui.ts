@@ -186,8 +186,13 @@ const EDIT_CSS = `
   position: relative;
 }
 .pyr3-edit-canvas-host canvas {
-  max-width: 100%;
-  max-height: 100%;
+  /* width:100% + height:100% + object-fit:contain together let the canvas
+     scale UP from a small intrinsic size (the live preview at e.g. 384×216)
+     to fill the available area while preserving aspect, AND scale DOWN
+     from a large intrinsic size (the settled render at 1920×1080) without
+     overflowing. max-width:100% alone only caps; doesn't scale up. */
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   display: block;
 }
