@@ -32,6 +32,7 @@ export type LoadIntent =
   | { kind: 'gen-list' }
   | { kind: 'gen-browse'; gen: number }
   | { kind: 'gallery'; page: number; filter: FilterSpec }
+  | { kind: 'edit' }
   | { kind: 'custom-reserved' }
   | { kind: 'default' };
 
@@ -103,6 +104,12 @@ export function parseLoadIntent(input: string): LoadIntent | null {
         return { kind: 'custom-reserved' };
       }
       // /v1/flame with nothing after — fall through
+    } else if (sub === 'edit') {
+      // /v1/edit — single-flame editor page (spec 2026-06-03-flame-editor-v1-design.md)
+      if (parts.length === 2) {
+        return { kind: 'edit' };
+      }
+      // Malformed (/v1/edit/anything) — fall through to default
     } else if (sub === 'gallery') {
       const filter = parseFilterSpec(new URLSearchParams(search));
       // /v1/gallery → page 1 (canonical default — no /p/1 suffix)

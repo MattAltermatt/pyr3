@@ -267,6 +267,25 @@ describe('parseLoadIntent — gallery filter', () => {
   });
 });
 
+// ── /v1/edit grammar ─────────────────────────────────────────────────────
+// Single-flame editor route — bare /v1/edit only; anything deeper falls
+// through to default per the spec's "v1 single-page" scope.
+
+describe('parseLoadIntent – /v1/edit grammar', () => {
+  it('parses /v1/edit', () => {
+    expect(p('/v1/edit')).toEqual({ kind: 'edit' });
+  });
+
+  it('parses /v1/edit/ (trailing slash)', () => {
+    expect(p('/v1/edit/')).toEqual({ kind: 'edit' });
+  });
+
+  it('/v1/edit/anything → default (deeper paths not yet defined)', () => {
+    expect(p('/v1/edit/foo')).toEqual({ kind: 'default' });
+    expect(p('/v1/edit/sub/path')).toEqual({ kind: 'default' });
+  });
+});
+
 describe('galleryUrl — filter round-trip', () => {
   it('default filter → bare /v1/gallery', () => {
     expect(galleryUrl(1)).toMatch(/v1\/gallery$/);

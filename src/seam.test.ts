@@ -58,6 +58,8 @@ const SEAM_EXEMPT = new Set<string>([
   'parity.test.ts',       // test file
   'parity-fe-be.test.ts', // test file
   'render-orchestrator.ts', // orchestrator pulls rAF when available — see below
+  'edit-mount.ts',        // /v1/edit page mount — owns canvas + DOM
+  'edit-ui.ts',           // /v1/edit panel shell — DOM-mounting
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND

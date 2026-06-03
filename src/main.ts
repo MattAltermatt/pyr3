@@ -8,7 +8,7 @@
 import { loadAvail, neighbors } from './avail-client';
 import { loadGensManifest, resolveCorpusNeighbors } from './corpus-bounds';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
-import { initDevice, showError } from './device';
+import { acquireGpu, initDevice, showError } from './device';
 import { parseFlame } from './flame-import';
 import {
   clampGalleryPage,
@@ -192,6 +192,53 @@ async function main(): Promise<void> {
     console.warn(`pyr3: WebGPU unavailable (reason=${webgpu.reason}${detail})`);
     mountWebGPUFallback();
     bar.setBusy(true);
+    return;
+  }
+
+  // /v1/edit short-circuits the viewer setup — the editor owns its own bar,
+  // canvas, and renderer. We acquire the GPU then hand off; the rest of
+  // main() (viewer renderer, gallery dispatch, corpus nav) doesn't run.
+  const initialIntent = parseLoadIntent(window.location.pathname + window.location.search);
+  if (initialIntent?.kind === 'edit') {
+    const { device: editDevice, format: editFormat } = await acquireGpu();
+    const editRoot = document.getElementById('pyr3-edit');
+    if (!editRoot) {
+      console.error('pyr3: #pyr3-edit missing from index.html — editor cannot mount');
+      return;
+    }
+    editRoot.hidden = false;
+    document.body.classList.add('pyr3-edit-mode');
+    const { mountEditPage } = await import('./edit-mount');
+    // Placeholder sections for Task 2.1 — empty bodies with "wired in
+    // Task 3.x" hints. Each real section module replaces its entry as
+    // Tasks 3.1-3.4 land.
+    const placeholderSections = (
+      [
+        ['palette', '🎨 PALETTE'],
+        ['viewport', '📐 VIEWPORT'],
+        ['xforms', '🧬 XFORMS'],
+        ['final', '🔚 FINAL XFORM'],
+        ['global', '🌐 GLOBAL'],
+        ['density', '💫 DENSITY EMITTER'],
+        ['render', '🎚️ RENDER'],
+      ] as const
+    ).map(([key, title]) => ({
+      key,
+      title,
+      build: (host: HTMLElement) => {
+        const note = document.createElement('div');
+        note.style.color = 'var(--text-dim, #888)';
+        note.style.fontSize = '11px';
+        note.textContent = '(wired in a later task)';
+        host.appendChild(note);
+      },
+    }));
+    mountEditPage({
+      root: editRoot,
+      device: editDevice,
+      format: editFormat,
+      sections: placeholderSections,
+    });
     return;
   }
 
@@ -1428,6 +1475,13 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       // — log loudly + paint welcome as a safe fallback so the page isn't
       // blank, but treat it as a bug to fix.
       console.error(`pyr3: gallery intent reached resolveLoadIntent — dispatch order broken (page ${intent.page})`);
+      return fetchAsFile(WELCOME_FLAME_URL);
+    case 'edit':
+      // /v1/edit dispatches via mountEditPage() BEFORE this function is
+      // called (see the early-dispatch block at the top of main()). Reaching
+      // here is a routing bug — log + paint welcome as a safe fallback so
+      // the page isn't blank.
+      console.error('pyr3: edit intent reached resolveLoadIntent — dispatch order broken');
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':
       // Bare root is handled directly in main() (replaceState root-forward +

@@ -44,6 +44,25 @@
       }
       #pyr3-gallery[hidden] { display: none; }
 
+      /* /v1/edit surface — same sibling-of-canvas pattern as #pyr3-gallery.
+         Edit mode hides the viewer canvas + bar and takes over the whole
+         viewport area. */
+      #pyr3-edit {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+      #pyr3-edit[hidden] { display: none; }
+      body.pyr3-edit-mode #pyr3-bar { display: none; }
+      body.pyr3-edit-mode #pyr3-canvas-zone {
+        /* In edit mode the canvas-zone fills the whole viewport (no top bar). */
+      }
+      body.pyr3-edit-mode #pyr3-canvas,
+      body.pyr3-edit-mode #pyr3-firstpaint,
+      body.pyr3-edit-mode #pyr3-gallery,
+      body.pyr3-edit-mode #pyr3-fallback,
+      body.pyr3-edit-mode #pyr3-missing { display: none !important; }
+
       /* First-paint cue: a quiet "dreaming…" in the canvas zone on cold
          load, cleared once the first flame paints. Not an overlay on a
          rendered flame — there is none yet at first paint. */
@@ -217,6 +236,7 @@
         <div id="pyr3-firstpaint">dreaming…</div>
         <div id="pyr3-fallback" hidden></div>
         <div id="pyr3-gallery" hidden></div>
+        <div id="pyr3-edit" hidden></div>
       </main>
     </div>
     <div id="pyr3-error" role="alert"></div>

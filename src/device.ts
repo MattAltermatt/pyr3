@@ -8,11 +8,18 @@ export interface PyrDevice {
   adapter: GPUAdapter;
 }
 
-export async function initDevice(canvasId: string): Promise<PyrDevice> {
-  const canvas = document.getElementById(canvasId);
-  if (!(canvas instanceof HTMLCanvasElement)) {
-    throw new Error(`pyr3: #${canvasId} is not a <canvas>`);
-  }
+export interface PyrGpu {
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  adapter: GPUAdapter;
+}
+
+/** Acquire device + adapter + preferred canvas format WITHOUT binding to a
+ *  specific canvas. Useful when the caller owns canvases dynamically (the
+ *  /v1/edit editor creates its own canvas inside its mounted panel). The
+ *  device-lost handler attaches to the global #pyr3-error overlay, same as
+ *  initDevice. */
+export async function acquireGpu(): Promise<PyrGpu> {
   if (!navigator.gpu) {
     throw new Error(
       'pyr3: WebGPU not available in this browser.\n' +
@@ -48,9 +55,18 @@ export async function initDevice(canvasId: string): Promise<PyrDevice> {
       el.classList.add('visible');
     }
   });
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  return { device, format, adapter };
+}
+
+export async function initDevice(canvasId: string): Promise<PyrDevice> {
+  const canvas = document.getElementById(canvasId);
+  if (!(canvas instanceof HTMLCanvasElement)) {
+    throw new Error(`pyr3: #${canvasId} is not a <canvas>`);
+  }
+  const { device, format, adapter } = await acquireGpu();
   const context = canvas.getContext('webgpu');
   if (!context) throw new Error('pyr3: getContext("webgpu") returned null');
-  const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: 'opaque' });
   return { device, context, format, canvas, adapter };
 }
