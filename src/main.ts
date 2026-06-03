@@ -196,8 +196,9 @@ async function main(): Promise<void> {
   }
 
   // /v1/edit short-circuits the viewer setup — the editor owns its own bar,
-  // canvas, and renderer. We acquire the GPU then hand off; the rest of
-  // main() (viewer renderer, gallery dispatch, corpus nav) doesn't run.
+  // canvas, and renderer. We mount the slim /v1/edit chrome bar (mountEditBar)
+  // into #pyr3-bar; the rest of main() (viewer renderer, gallery dispatch,
+  // corpus nav) doesn't run.
   const initialIntent = parseLoadIntent(window.location.pathname + window.location.search);
   if (initialIntent?.kind === 'edit') {
     const { device: editDevice, format: editFormat } = await acquireGpu();
@@ -208,6 +209,20 @@ async function main(): Promise<void> {
     }
     editRoot.hidden = false;
     document.body.classList.add('pyr3-edit-mode');
+
+    // Forwarding refs: the bar's onNameChange / onNickChange need to call the
+    // editor's setName / setNick, but the editor doesn't exist yet (we need
+    // the bar handle first so we can pass onStateChange to the editor).
+    let editorRef: { setName(n: string): void; setNick(n: string): void } | null = null;
+
+    const { mountEditBar } = await import('./ui-bar');
+    const barRoot = document.getElementById('pyr3-bar')!;
+    const editBar = mountEditBar(barRoot, {
+      webgpu,
+      onNameChange: (name) => editorRef?.setName(name),
+      onNickChange: (nick) => editorRef?.setNick(nick),
+    });
+
     const { mountEditPage } = await import('./edit-mount');
     const { paletteSection } = await import('./edit-section-palette');
     const { viewportSection } = await import('./edit-section-viewport');
@@ -216,7 +231,7 @@ async function main(): Promise<void> {
     const { globalSection } = await import('./edit-section-global');
     const { densitySection } = await import('./edit-section-density');
     const { renderSection } = await import('./edit-section-render');
-    mountEditPage({
+    const editor = mountEditPage({
       root: editRoot,
       device: editDevice,
       format: editFormat,
@@ -229,7 +244,15 @@ async function main(): Promise<void> {
         densitySection,
         renderSection,
       ],
+      onStateChange: (state) => {
+        editBar.setMeta({
+          flameName: state.genome.name,
+          authorNick: state.genome.nick,
+        });
+        editBar.setDimensions(state.genome.size ?? null);
+      },
     });
+    editorRef = editor;
     return;
   }
 

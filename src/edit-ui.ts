@@ -35,32 +35,10 @@ export function mountEditUi(
   host.replaceChildren();
   host.classList.add('pyr3-edit-panel');
 
-  // ── Top bar ───────────────────────────────────────────────────────────
+  // ── Top bar (panel-internal): action buttons only. The editable flame
+  // name + nick live in the page-level #pyr3-bar (mountEditBar in ui-bar.ts).
   const topbar = document.createElement('div');
   topbar.className = 'pyr3-edit-topbar';
-
-  const namedRow = document.createElement('div');
-  namedRow.className = 'pyr3-edit-named';
-  const nameLabel = document.createTextNode('name ');
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.value = state.genome.name;
-  nameInput.className = 'pyr3-edit-text';
-  nameInput.addEventListener('input', () => {
-    state.genome.name = nameInput.value;
-    callbacks.onChange('name');
-  });
-  const nickLabel = document.createTextNode(' nick ');
-  const nickInput = document.createElement('input');
-  nickInput.type = 'text';
-  nickInput.value = state.genome.nick ?? '';
-  nickInput.className = 'pyr3-edit-text';
-  nickInput.addEventListener('input', () => {
-    state.genome.nick = nickInput.value || undefined;
-    callbacks.onChange('nick');
-  });
-  namedRow.append(nameLabel, nameInput, nickLabel, nickInput);
-  topbar.appendChild(namedRow);
 
   const buttonRow = document.createElement('div');
   buttonRow.className = 'pyr3-edit-buttons';

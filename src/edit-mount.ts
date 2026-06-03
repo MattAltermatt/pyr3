@@ -38,6 +38,10 @@ export interface MountEditPageOpts {
   sections: SectionMount[];
   /** Preview size for the editor's canvas. Defaults to 512×512. */
   previewSize?: { width: number; height: number };
+  /** Fires on init + after every genome change (lane fire / reroll / open) so
+   *  the host can sync external chrome (e.g. /v1/edit's top bar) with the
+   *  current name + dimensions. */
+  onStateChange?: (state: EditState) => void;
 }
 
 export interface EditPageHandle {
@@ -45,6 +49,10 @@ export interface EditPageHandle {
   /** Test/inspection hook — exposes the live EditState so a host can grab
    *  the current genome. */
   readonly state: EditState;
+  /** Programmatic state mutators — let a host wire the top bar's editable
+   *  flame name / nick back into the editor state. */
+  setName(name: string): void;
+  setNick(nick: string): void;
 }
 
 const DEFAULT_PREVIEW = { width: 512, height: 512 };
@@ -96,10 +104,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   });
 
   // Lane scheduler — each fire grabs a fresh swapchain texture view and
-  // hands it to the editRenderer.
+  // hands it to the editRenderer. Every fire also notifies the host so the
+  // top bar's dims/name readout stays in sync.
   const scheduler: LaneScheduler = createLaneScheduler((lane, _paths) => {
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane(lane, state.genome, state.seed, view, preview.width, preview.height);
+    opts.onStateChange?.(state);
   });
 
   // Replace the whole panel + force a slow-lane reseed. Used by reroll + open.
@@ -123,6 +133,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     rebuildPanel();
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane('slow', state.genome, state.seed, view, preview.width, preview.height);
+    opts.onStateChange?.(state);
   }
 
   function handleReroll(): void {
@@ -237,9 +248,18 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   rebuildPanel();
   const view0 = ctx.getCurrentTexture().createView();
   editRenderer.fullRender(state.genome, state.seed, view0, preview.width, preview.height);
+  opts.onStateChange?.(state);
 
   return {
     state,
+    setName(name: string): void {
+      state.genome.name = name;
+      scheduler.schedule({ lane: pathLane('name'), path: 'name' });
+    },
+    setNick(nick: string): void {
+      state.genome.nick = nick || undefined;
+      scheduler.schedule({ lane: pathLane('nick'), path: 'nick' });
+    },
     destroy(): void {
       scheduler.cancel();
       ui?.destroy();

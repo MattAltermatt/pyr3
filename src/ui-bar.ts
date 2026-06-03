@@ -151,6 +151,119 @@ const OCTOCAT_PATH =
 
 let stylesInjected = false;
 
+/** Edit-mode bar (#102): a slim variant of the viewer's chrome row used by
+ *  `/v1/edit`. Same wordmark / version / nav links / WebGPU pill / octocat
+ *  CTAs, with an EDITABLE flame-name input and a live dimensions readout in
+ *  place of the viewer's static meta. No quality ladder / Open / Save row —
+ *  those affordances live in the editor's left panel. */
+export interface EditBarOpts {
+  webgpu: WebGPUStatus;
+  /** Fires when the user edits the flame-name input. */
+  onNameChange: (name: string) => void;
+  /** Fires when the user edits the nick input. Empty string → clear. */
+  onNickChange: (nick: string) => void;
+}
+
+export interface EditBarHandle {
+  /** Update the flame name + nick display (after open / reroll). */
+  setMeta(meta: BarMeta): void;
+  /** Update the dimensions readout (after Render-section edits or open). Pass
+   *  null for "auto" (no explicit size; saved at preview dims). */
+  setDimensions(dims: { width: number; height: number } | null): void;
+  destroy(): void;
+}
+
+export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandle {
+  injectStylesOnce();
+  root.replaceChildren();
+  root.classList.add('pyr3-bar-root');
+
+  const infoRow = el('div', 'pyr3-bar-info');
+  const infoLeft = el('div', 'pyr3-zone-left');
+
+  const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
+  wordmark.href = import.meta.env.BASE_URL;
+  const mark = document.createElement('img');
+  mark.className = 'pyr3-bar-mark';
+  mark.src = FLAME_MARK_URI;
+  mark.alt = '';
+  wordmark.append(mark, document.createTextNode('pyr3'));
+
+  const version = el('span', 'pyr3-bar-version');
+  version.textContent = `v${__PYR3_VERSION__}`;
+
+  const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  about.href = `${import.meta.env.BASE_URL}help/about.html`;
+  about.textContent = 'about';
+
+  const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  showcase.href = `${import.meta.env.BASE_URL}showcase/`;
+  showcase.textContent = 'showcase';
+
+  const gallery = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
+  gallery.href = galleryUrl(1);
+  gallery.textContent = 'gallery';
+
+  // Flame name — editable text input styled to feel like the viewer's bold
+  // metaName label. width:auto so it grows with the typed name.
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'pyr3-bar-name-input';
+  nameInput.placeholder = 'flame name';
+  nameInput.addEventListener('input', () => opts.onNameChange(nameInput.value));
+
+  // Nick — small, after the name with "by" prefix. Always rendered; empty
+  // value reads as "no nick set".
+  const nickPrefix = el('span', 'pyr3-bar-meta-author');
+  nickPrefix.textContent = 'by';
+  const nickInput = document.createElement('input');
+  nickInput.type = 'text';
+  nickInput.className = 'pyr3-bar-nick-input';
+  nickInput.placeholder = 'nick';
+  nickInput.addEventListener('input', () => opts.onNickChange(nickInput.value));
+
+  // Dimensions — read-only label · `1920×1080` or `auto`.
+  const dimsSep = sep();
+  const dims = el('span', 'pyr3-bar-quality');
+
+  infoLeft.append(
+    wordmark, version,
+    sep(), about, sep(), showcase, sep(), gallery,
+    sep(), nameInput,
+    nickPrefix, nickInput,
+    dimsSep, dims,
+  );
+
+  const infoRight = el('div', 'pyr3-zone-right');
+  const webgpuChip = buildWebGPUChip(opts.webgpu);
+  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
+  const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
+  infoRight.append(webgpuChip, forkCta, sheepCta);
+
+  infoRow.append(infoLeft, infoRight);
+  root.append(infoRow);
+
+  return {
+    setMeta(meta) {
+      // Only overwrite the input if the user isn't currently focused there
+      // (otherwise typing gets clobbered by a state-change echo).
+      if (document.activeElement !== nameInput) {
+        nameInput.value = meta.flameName || '';
+      }
+      if (document.activeElement !== nickInput) {
+        nickInput.value = meta.authorNick ?? '';
+      }
+    },
+    setDimensions(d) {
+      dims.textContent = d ? `${d.width}×${d.height}` : 'auto';
+    },
+    destroy(): void {
+      root.replaceChildren();
+      root.classList.remove('pyr3-bar-root');
+    },
+  };
+}
+
 export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   injectStylesOnce();
   root.replaceChildren();
@@ -801,6 +914,42 @@ const BAR_CSS = `
 }
 .pyr3-bar-info-gallery .pyr3-zone-right { justify-content: flex-end; }
 .pyr3-bar-version { color: var(--text-dim); font-size: 10px; font-weight: 400; white-space: nowrap; }
+/* /v1/edit bar: editable flame name. Styled to match the viewer's bold
+   metaName but accepts focus + typing. Auto-sizes via field-sizing where
+   supported; falls back to a fixed character width. */
+.pyr3-bar-name-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text);
+  font: 600 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
+  padding: 2px 6px;
+  min-width: 12ch;
+  field-sizing: content;
+}
+.pyr3-bar-name-input:hover { border-color: var(--bar-border); }
+.pyr3-bar-name-input:focus {
+  outline: none;
+  background: var(--bar-bg-3);
+  border-color: var(--accent-border);
+}
+.pyr3-bar-nick-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font: 400 11px ui-sans-serif, system-ui, -apple-system, sans-serif;
+  padding: 1px 5px;
+  min-width: 6ch;
+  field-sizing: content;
+}
+.pyr3-bar-nick-input:hover { border-color: var(--bar-border); }
+.pyr3-bar-nick-input:focus {
+  outline: none;
+  background: var(--bar-bg-3);
+  border-color: var(--accent-border);
+  color: var(--text);
+}
 .pyr3-bar-variations {
   color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;

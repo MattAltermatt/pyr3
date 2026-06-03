@@ -29,12 +29,13 @@ function makeSections(keys: SectionKey[]): SectionMount[] {
 }
 
 describe('mountEditUi shell', () => {
-  it('renders the top bar with name + nick inputs', () => {
+  it('renders the action-button row (name + nick moved to page-level bar)', () => {
     const host = document.createElement('div');
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     mountEditUi(host, state, [], { onChange: () => {} });
-    const inputs = host.querySelectorAll('.pyr3-edit-text');
-    expect(inputs.length).toBe(2);
+    // No name/nick inputs in the panel anymore; only the 4 action buttons.
+    expect(host.querySelectorAll('.pyr3-edit-text').length).toBe(0);
+    expect(host.querySelectorAll('.pyr3-edit-btn').length).toBe(4);
   });
 
   it('renders 7 section headers when 7 sections are passed', () => {
@@ -67,33 +68,6 @@ describe('mountEditUi shell', () => {
     expect(state.sectionCollapse.palette).toBe(false);
     expect(chev.textContent).toBe('▼');
     expect(body.style.display).toBe('block');
-  });
-
-  it('name input writes back to genome + fires onChange("name")', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    const onChange = vi.fn();
-    mountEditUi(host, state, [], { onChange });
-    const nameInput = host.querySelectorAll('.pyr3-edit-text')[0] as HTMLInputElement;
-    nameInput.value = 'Phoenix';
-    nameInput.dispatchEvent(new Event('input'));
-    expect(state.genome.name).toBe('Phoenix');
-    expect(onChange).toHaveBeenCalledWith('name');
-  });
-
-  it('nick input writes optional field; empty → undefined; fires onChange("nick")', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    const onChange = vi.fn();
-    mountEditUi(host, state, [], { onChange });
-    const nickInput = host.querySelectorAll('.pyr3-edit-text')[1] as HTMLInputElement;
-    nickInput.value = 'matt';
-    nickInput.dispatchEvent(new Event('input'));
-    expect(state.genome.nick).toBe('matt');
-    nickInput.value = '';
-    nickInput.dispatchEvent(new Event('input'));
-    expect(state.genome.nick).toBeUndefined();
-    expect(onChange).toHaveBeenCalledWith('nick');
   });
 
   it('passes the build callback the section body host + state + onChange', () => {

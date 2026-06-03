@@ -53,10 +53,9 @@
         overflow: hidden;
       }
       #pyr3-edit[hidden] { display: none; }
-      body.pyr3-edit-mode #pyr3-bar { display: none; }
-      body.pyr3-edit-mode #pyr3-canvas-zone {
-        /* In edit mode the canvas-zone fills the whole viewport (no top bar). */
-      }
+      /* In edit mode the standard viewer chrome elements are hidden — the
+         editor mounts its own bar (mountEditBar) into #pyr3-bar and takes
+         over the canvas zone. */
       body.pyr3-edit-mode #pyr3-canvas,
       body.pyr3-edit-mode #pyr3-firstpaint,
       body.pyr3-edit-mode #pyr3-gallery,
