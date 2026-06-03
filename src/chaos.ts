@@ -7,10 +7,8 @@ import {
   type Genome,
   MAX_XFORMS,
   packXforms,
-  packXaos,
   packXformDistrib,
   totalWeight,
-  XAOS_BYTES,
   XFORM_BYTES,
   XFORM_DISTRIB_BYTES,
 } from './genome';
@@ -118,12 +116,6 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
-  const xaosBuffer = device.createBuffer({
-    label: 'pyr3.chaos.xaos',
-    size: XAOS_BYTES,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
-
   // ISAAC state buffer: one ISAAC stream per walker, sized for the configured
   // walker pool. Re-uploaded on every dispatch with fresh seeds. 36 u32 per
   // walker × MAX_WALKERS budget — at 1024 walkers × 144 bytes = 144 KB.
@@ -212,7 +204,6 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       uniforms.destroy();
       xforms.destroy();
       paletteBuffer.destroy();
-      xaosBuffer.destroy();
       isaacBuffer.destroy();
       traceBuffer.destroy();
       xformDistribBuffer.destroy();
@@ -223,8 +214,7 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // Returns same reference when no symmetry; otherwise a non-mutating clone.
       const g = expandGenomeForGPU(genome);
       device.queue.writeBuffer(xforms, 0, packXforms(g));
-      device.queue.writeBuffer(xaosBuffer, 0, packXaos(g)); // Phase 9d
-      device.queue.writeBuffer(xformDistribBuffer, 0, packXformDistrib(g)); // Phase 5c
+      device.queue.writeBuffer(xformDistribBuffer, 0, packXformDistrib(g)); // Phase 5c (xaos baked in host-side)
 
       // Phase 9-cal-B: dispatch walker count + iters-per-walker can be
       // overridden per-frame to scale with Genome.quality. Defaults match

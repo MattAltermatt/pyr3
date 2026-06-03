@@ -373,28 +373,6 @@ export function distinctVariationNames(genome: Genome): string[] {
     .map(([name]) => name);
 }
 
-// Phase 9d: pack the xaos matrix as MAX_XFORMS × MAX_XFORMS row-major flat
-// f32 array. Default 1.0 everywhere (uniform pick — matches pre-9d behavior).
-// Per-xform `xform.xaos[j]` overlays row `i`, column `j` if defined; trailing
-// missing entries stay 1.0 per flam3's `<xform chaos="...">` shorthand.
-export const XAOS_FLOATS = MAX_XFORMS * MAX_XFORMS;
-export const XAOS_BYTES = XAOS_FLOATS * 4;
-
-export function packXaos(genome: Genome): ArrayBuffer {
-  const ab = new ArrayBuffer(XAOS_BYTES);
-  const buf = new Float32Array(ab);
-  buf.fill(1.0);
-  for (let i = 0; i < genome.xforms.length; i++) {
-    const x = genome.xforms[i];
-    if (!x?.xaos) continue;
-    const row = i * MAX_XFORMS;
-    for (let j = 0; j < x.xaos.length && j < MAX_XFORMS; j++) {
-      buf[row + j] = x.xaos[j] ?? 1.0;
-    }
-  }
-  return ab;
-}
-
 // PYR3-029 Phase 5c — flam3-canonical xform-pick distribution table.
 // flam3 (flam3.c:200-256) precomputes a 16384-entry table per "previous
 // xform" row so chain runtime is a single masked-index lookup.
