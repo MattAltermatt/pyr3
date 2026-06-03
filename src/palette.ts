@@ -186,14 +186,3 @@ export function packPalette(p: Palette): ArrayBuffer {
   return ab;
 }
 
-/** Runtime-cycleable palette library. PYRE is index 0 so the initial render
- *  matches the v0.1 / Phase 3 baseline. Phase 4b move: `genome.palette` is
- *  the active palette; this list is just the developer-side preset source for
- *  the P-key cycle in `main.ts`. */
-export const PALETTE_LIBRARY: Palette[] = [
-  PYRE_PALETTE,
-  DEEPSEA,
-  BONE,
-  VIRIDIS,
-  MAGMA,
-];

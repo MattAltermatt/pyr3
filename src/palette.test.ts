@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  paletteFromStops,
-  bakeLUT,
-  rotateHueRGB,
-  PALETTE_SIZE,
-  PALETTE_LIBRARY,
-  PYRE_PALETTE,
-  DEEPSEA,
-  BONE,
-  VIRIDIS,
-  MAGMA,
-} from './palette';
+import { paletteFromStops, bakeLUT, rotateHueRGB, PALETTE_SIZE } from './palette';
 
 describe('bakeLUT', () => {
   it('matches first stop exactly at LUT entry 0', () => {
@@ -100,26 +89,6 @@ describe('paletteFromStops', () => {
     const reparsed = JSON.parse(JSON.stringify(original)) as typeof original;
     expect(reparsed.name).toBe(original.name);
     expect(reparsed.stops).toEqual(original.stops);
-  });
-});
-
-describe('PALETTE_LIBRARY', () => {
-  it('orders PYRE first so initial render matches v0.1 baseline', () => {
-    expect(PALETTE_LIBRARY[0]).toBe(PYRE_PALETTE);
-  });
-
-  it('contains exactly the 5 light-slice palettes in the agreed order', () => {
-    expect(PALETTE_LIBRARY.length).toBe(5);
-    expect(PALETTE_LIBRARY[0]).toBe(PYRE_PALETTE);
-    expect(PALETTE_LIBRARY[1]).toBe(DEEPSEA);
-    expect(PALETTE_LIBRARY[2]).toBe(BONE);
-    expect(PALETTE_LIBRARY[3]).toBe(VIRIDIS);
-    expect(PALETTE_LIBRARY[4]).toBe(MAGMA);
-  });
-
-  it('every entry has a unique name', () => {
-    const names = PALETTE_LIBRARY.map((p) => p.name);
-    expect(new Set(names).size).toBe(names.length);
   });
 });
 
