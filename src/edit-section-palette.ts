@@ -176,9 +176,9 @@ export const paletteSection: SectionMount = {
     modeRow.style.alignItems = 'center';
     modeRow.style.gap = '8px';
     modeRow.style.marginTop = '6px';
-    modeRow.title = 'palette_mode (flam3): how the chaos game samples color.\n'
-      + 'step (default) — each hit uses one LUT entry verbatim (faint banding).\n'
-      + 'linear — each hit lerps between adjacent LUT entries (smoother color transitions).';
+    modeRow.title = 'How colors blend across the flame.\n'
+      + 'Step — colors stay distinct (a touch more banded).\n'
+      + 'Linear — colors blend smoothly into each other.';
 
     const modeLabelTxt = document.createElement('span');
     modeLabelTxt.textContent = 'mode';

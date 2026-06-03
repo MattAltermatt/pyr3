@@ -222,12 +222,12 @@ describe('paletteSection — mode radio (flam3 paletteMode)', () => {
     expect(onChange).toHaveBeenCalledWith('paletteMode');
   });
 
-  it('mode row carries a tooltip explaining step vs linear', () => {
+  it('mode row carries a plain-language tooltip explaining step vs linear', () => {
     const { host } = mount();
     const row = host.querySelector('.pyr3-edit-palette-mode-row') as HTMLElement;
-    expect(row.title).toMatch(/flam3/);
-    expect(row.title).toMatch(/step/);
-    expect(row.title).toMatch(/linear/);
+    expect(row.title.length).toBeGreaterThan(0);
+    expect(row.title.toLowerCase()).toMatch(/step/);
+    expect(row.title.toLowerCase()).toMatch(/linear/);
   });
 });
 
