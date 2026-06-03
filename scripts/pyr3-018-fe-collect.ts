@@ -12,7 +12,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { meanAbsDiffRgba, perChannelDrift, perRegionDrift } from '../src/compare';
-import { nearestDownscale, renderDiffPng } from '../src/diff-image';
+import { nearestDownscale, renderDiffPng } from './parity-diff-image';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 

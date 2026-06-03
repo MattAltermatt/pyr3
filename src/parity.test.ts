@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { meanAbsDiffRgba, perChannelDrift, perRegionDrift } from './compare';
-import { renderDiffPng } from './diff-image';
+import { renderDiffPng } from '../scripts/parity-diff-image';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

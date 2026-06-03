@@ -15,7 +15,15 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022"],
+    // ES2022 + WebWorker lib: WebWorker provides the cross-environment runtime
+    // globals legitimately used by engine modules (TextEncoder, TextDecoder,
+    // atob, btoa — all available in both browser AND Node, NOT browser-only).
+    // Excludes window/document/navigator (which would defeat the engine seam).
+    // Previously these globals typechecked only because src/diff-image.ts in the
+    // whitelist transitively pulled @types/pngjs → @types/node, masking that
+    // ES2022 alone lacks them. #93 moved diff-image.ts out of src/, so this lib
+    // now carries them explicitly.
+    "lib": ["ES2022", "WebWorker"],
     "types": ["@webgpu/types"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -32,7 +40,6 @@
     "src/chaos.ts",
     "src/compare.ts",
     "src/density.ts",
-    "src/diff-image.ts",
     "src/feature-score.ts",
     "src/flam3-palettes-data.ts",
     "src/flam3-palettes.ts",
