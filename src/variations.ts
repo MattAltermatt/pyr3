@@ -166,6 +166,9 @@ export interface Variation {
   // slot used, 2 reserved for future >8-param kernels).
   param6?: number;
   param7?: number;
+  /** Editor-only on/off toggle. When `false`, the packer zeros this
+   *  variation's weight in the chain. Default: undefined = active. */
+  active?: boolean;
 }
 
 // Builder helpers — concise spec at genome-construction time.

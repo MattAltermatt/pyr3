@@ -52,6 +52,10 @@ export interface Xform {
   // pre-affine fields above (a, b, c, d, e, f). Trajectory continues from
   // the post'd point.
   post?: { a: number; b: number; c: number; d: number; e: number; f: number };
+  /** Editor-only on/off toggle. When `false`, the packer at GPU upload
+   *  time zeros this xform's weight so the chaos game skips it without
+   *  losing the user's authored weight. Default: undefined = active. */
+  active?: boolean;
 }
 
 export interface Genome {

@@ -19,20 +19,43 @@ const round6 = (x: number): number => Math.round(x * ROUND6) / ROUND6;
  *  Genome with symmetry xforms appended and `symmetry` cleared (defensive
  *  against accidental double-expansion). The input `genome` is never mutated. */
 export function expandGenomeForGPU(genome: Genome): Genome {
-  if (!genome.symmetry) return genome;
-  const extras = generateSymmetryXforms(genome.symmetry);
-  if (extras.length === 0) return genome;
-  const total = genome.xforms.length + extras.length;
+  // Active-state zeroing pre-pass. Returns the same genome reference when
+  // every xform / variation is active (fast path). Otherwise returns a
+  // new genome with inactive entries' weights packed as 0. The user's
+  // authored weights in the input genome stay untouched.
+  let working = genome;
+  const needsZeroing =
+    genome.xforms.some(
+      x => x.active === false || x.variations.some(v => v.active === false),
+    );
+  if (needsZeroing) {
+    working = {
+      ...genome,
+      xforms: genome.xforms.map(x => ({
+        ...x,
+        weight: x.active === false ? 0 : x.weight,
+        variations: x.variations.map(v => ({
+          ...v,
+          weight: v.active === false ? 0 : v.weight,
+        })),
+      })),
+    };
+  }
+
+  if (!working.symmetry) return working;
+  const extras = generateSymmetryXforms(working.symmetry);
+  if (extras.length === 0) return working;
+  const total = working.xforms.length + extras.length;
   if (total > MAX_XFORMS) {
     throw new Error(
       `pyr3: symmetry expansion exceeds MAX_XFORMS (${MAX_XFORMS}): ` +
-        `${genome.xforms.length} source + ${extras.length} generated = ${total}. ` +
+        `${working.xforms.length} source + ${extras.length} generated = ${total}. ` +
         `Reduce source xforms or symmetry n.`,
     );
   }
   return {
-    ...genome,
-    xforms: [...genome.xforms, ...extras],
+    ...working,
+    xforms: [...working.xforms, ...extras],
     symmetry: undefined,
   };
 }

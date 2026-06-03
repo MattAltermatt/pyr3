@@ -711,6 +711,50 @@ describe.skip('examples/spiral-galaxy-de.pyr3.json fixture', () => {
   });
 });
 
+describe('active round-trip', () => {
+  // Helper: structured-clone SPIRAL_GALAXY so each test gets a fresh fixture.
+  function makeMinimalGenome(): Genome {
+    return JSON.parse(JSON.stringify(SPIRAL_GALAXY)) as Genome;
+  }
+
+  it('omits xform.active when undefined or true', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.active = undefined;
+    g.xforms[1]!.active = true;
+    const json = genomeToJson(g);
+    expect(json.xforms[0]).not.toHaveProperty('active');
+    expect(json.xforms[1]).not.toHaveProperty('active');
+  });
+
+  it('emits xform.active=false', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.active = false;
+    const json = genomeToJson(g);
+    expect(json.xforms[0]).toMatchObject({ active: false });
+  });
+
+  it('round-trips active=false through fromJson', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.active = false;
+    const g2 = genomeFromJson(genomeToJson(g));
+    expect(g2.xforms[0]!.active).toBe(false);
+  });
+
+  it('omits variation.active when undefined or true', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.variations[0]!.active = true;
+    const json = genomeToJson(g);
+    expect(json.xforms[0]!.variations[0] ?? {}).not.toHaveProperty('active');
+  });
+
+  it('round-trips variation.active=false', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.variations[0]!.active = false;
+    const g2 = genomeFromJson(genomeToJson(g));
+    expect(g2.xforms[0]!.variations[0]!.active).toBe(false);
+  });
+});
+
 describe('variation param-table coupling (PYR3-069 invariant)', () => {
   it('no variation declares more params than there are PARAM_KEYS slots', () => {
     for (const [arm, params] of Object.entries(VARIATION_PARAMS)) {

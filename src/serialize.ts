@@ -81,12 +81,16 @@ export interface Pyr3JsonXform {
   xaos?: number[];
   /** Phase 9c — per-xform post-affine. Omitted when undefined (no post). */
   post?: { a: number; b: number; c: number; d: number; e: number; f: number };
+  /** Editor-only on/off toggle. Omitted unless explicitly false. */
+  active?: boolean;
 }
 
 export interface Pyr3JsonVariation {
   name: string;
   weight: number;
   params?: Record<string, number>;
+  /** Editor-only on/off toggle. Omitted unless explicitly false. */
+  active?: boolean;
 }
 
 /** Per-variation positional-param schema. Each entry maps variation name →
@@ -285,6 +289,7 @@ function xformToJson(x: Xform): Pyr3JsonXform {
     // collapses for canonical form.
     out.post = { a: x.post.a, b: x.post.b, c: x.post.c, d: x.post.d, e: x.post.e, f: x.post.f };
   }
+  if (x.active === false) out.active = false;
   return out;
 }
 
@@ -310,6 +315,7 @@ function variationToJson(v: Variation): Pyr3JsonVariation {
     }
     out.params = params;
   }
+  if (v.active === false) out.active = false;
   return out;
 }
 
@@ -533,6 +539,7 @@ function parseXformBody(j: unknown, path: string, isFinal: boolean): Xform {
       f: expectNumber(p['f'], `${path}.post.f`),
     };
   }
+  if (o['active'] === false) out.active = false;
   return out;
 }
 
@@ -567,6 +574,7 @@ function variationFromJson(j: unknown, path: string): Variation {
       }
     }
   }
+  if (o['active'] === false) out.active = false;
   return out;
 }
 

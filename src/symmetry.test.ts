@@ -112,3 +112,40 @@ describe('expandGenomeForGPU', () => {
     expect(() => expandGenomeForGPU(g)).toThrow(/MAX_XFORMS/);
   });
 });
+
+describe('expandGenomeForGPU — inactive zeroing', () => {
+  function makeMinimalGenome(): Genome {
+    return JSON.parse(JSON.stringify(SPIRAL_GALAXY)) as Genome;
+  }
+
+  it('zeros packed weight when xform.active === false', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.weight = 0.75;
+    g.xforms[0]!.active = false;
+    const packed = expandGenomeForGPU(g);
+    expect(packed.xforms[0]!.weight).toBe(0);
+    // Original genome untouched
+    expect(g.xforms[0]!.weight).toBe(0.75);
+  });
+
+  it('preserves weight when xform.active === undefined or true', () => {
+    const g = makeMinimalGenome();
+    g.xforms[0]!.weight = 0.5;
+    g.xforms[0]!.active = true;
+    g.xforms[1]!.weight = 0.5;
+    g.xforms[1]!.active = undefined;
+    const packed = expandGenomeForGPU(g);
+    expect(packed.xforms[0]!.weight).toBe(0.5);
+    expect(packed.xforms[1]!.weight).toBe(0.5);
+  });
+
+  it('zeros variation weight when variation.active === false', () => {
+    const g = makeMinimalGenome();
+    const xf = g.xforms[0]!;
+    xf.variations[0]!.weight = 0.8;
+    xf.variations[0]!.active = false;
+    const packed = expandGenomeForGPU(g);
+    expect(packed.xforms[0]!.variations[0]!.weight).toBe(0);
+    expect(g.xforms[0]!.variations[0]!.weight).toBe(0.8);
+  });
+});
