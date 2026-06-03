@@ -25,6 +25,7 @@ import {
 } from './affine-decompose';
 import { attachXformViz } from './edit-xform-viz';
 import { SHAPE_PRESETS } from './edit-xform-presets';
+import { openVariationPicker } from './edit-variation-picker';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -117,9 +118,12 @@ function makeIconButton(label: string, onClick: () => void): HTMLButtonElement {
   return b;
 }
 
-// Build one variation row (kind select + weight + 🗑️ + per-kind param inputs).
-// The param-row sub-container is rebuilt in place on kind change.
+// Build one variation row (active checkbox + kind picker-trigger button +
+// weight + 🗑️ + per-kind param inputs). The param-row sub-container is
+// rebuilt in place on kind change.
 function buildVariationRow(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  state: EditState,
   xform: Xform,
   xformIndex: number,
   varIndex: number,
@@ -134,18 +138,50 @@ function buildVariationRow(
   const headerRow = document.createElement('div');
   headerRow.className = 'pyr3-edit-var-header';
 
-  const select = document.createElement('select');
-  select.className = 'pyr3-edit-select';
-  const sortedNames = Object.entries(VARIATION_NAMES).sort(
-    (a, b) => Number(a[0]) - Number(b[0]),
-  );
-  for (const [idxStr, name] of sortedNames) {
-    const opt = document.createElement('option');
-    opt.value = idxStr;
-    opt.textContent = name;
-    select.appendChild(opt);
-  }
-  select.value = String(v.index);
+  const activeCbx = document.createElement('input');
+  activeCbx.type = 'checkbox';
+  activeCbx.className = 'pyr3-edit-var-active';
+  activeCbx.checked = v.active !== false;
+  activeCbx.title = 'Click to toggle. Shift-click to solo within this xform.';
+  activeCbx.addEventListener('click', (ev) => {
+    if ((ev as MouseEvent).shiftKey) {
+      // TODO(Task 10): shift-click solo within this xform — snapshot the
+      // other variations' active flags, flip them inactive, and restore on
+      // a second shift-click. For now, fall through to plain toggle.
+    }
+    v.active = activeCbx.checked ? undefined : false;
+    onChange(`xforms.${xformIndex}.variations.${varIndex}.active`);
+  });
+
+  const kindBtn = document.createElement('button');
+  kindBtn.type = 'button';
+  kindBtn.className = 'pyr3-edit-var-kind-btn';
+  kindBtn.textContent = VARIATION_NAMES[v.index] ?? `var${v.index}`;
+  kindBtn.title = 'Click to pick a different variation kind.';
+  kindBtn.addEventListener('click', () => {
+    const initialIndex = v.index;
+    openVariationPicker({
+      host: document.body,
+      initialIndex,
+      onPreview: (idx) => {
+        v.index = idx as Variation['index'];
+        // Reset params on kind change.
+        (v as unknown as Record<string, unknown>)['param0'] = undefined;
+        (v as unknown as Record<string, unknown>)['param1'] = undefined;
+        (v as unknown as Record<string, unknown>)['param2'] = undefined;
+        kindBtn.textContent = VARIATION_NAMES[idx] ?? `var${idx}`;
+        onChange(`xforms.${xformIndex}.variations.${varIndex}.index`);
+      },
+      onCommit: () => {
+        // No-op; the live previews already wrote final state.
+      },
+      onCancel: () => {
+        v.index = initialIndex as Variation['index'];
+        kindBtn.textContent = VARIATION_NAMES[initialIndex] ?? `var${initialIndex}`;
+        onChange(`xforms.${xformIndex}.variations.${varIndex}.index`);
+      },
+    });
+  });
 
   const weightInput = makeNumberInput(
     v.weight,
@@ -158,7 +194,7 @@ function buildVariationRow(
 
   const delBtn = makeIconButton('🗑️', () => removeSelf());
 
-  headerRow.append(select, weightInput, delBtn);
+  headerRow.append(activeCbx, kindBtn, weightInput, delBtn);
   wrap.appendChild(headerRow);
 
   // Param row — labels + inputs per VARIATION_PARAMS[kind]. Rebuilt on
@@ -186,13 +222,6 @@ function buildVariationRow(
     }
   };
   renderParams();
-
-  select.addEventListener('change', () => {
-    const newIdx = Number(select.value) as Variation['index'];
-    v.index = newIdx;
-    onChange(`xforms.${xformIndex}.variations.${varIndex}.index`);
-    renderParams();
-  });
 
   return wrap;
 }
@@ -592,17 +621,43 @@ function buildXformCard(
   varHeader.className = 'pyr3-edit-var-header-row';
   const addVarBtn = makeIconButton('+ var', () => {
     if (xform.variations.length >= MAX_VARIATIONS_PER_XFORM) return;
-    xform.variations.push({ index: V.linear, weight: 1 });
-    onChange(`xforms.${xformIndex}.variations.${xform.variations.length - 1}.added`);
-    rebuildSection();
+    // Open picker. New row is appended only when user picks (onPreview).
+    let inserted = false;
+    openVariationPicker({
+      host: document.body,
+      initialIndex: V.linear,
+      onPreview: (idx) => {
+        if (!inserted) {
+          xform.variations.push({ index: idx as Variation['index'], weight: 1 });
+          inserted = true;
+          rebuildSection();
+        } else {
+          xform.variations[xform.variations.length - 1]!.index =
+            idx as Variation['index'];
+          onChange(
+            `xforms.${xformIndex}.variations.${xform.variations.length - 1}.index`,
+          );
+        }
+      },
+      onCommit: () => {
+        onChange(`xforms.${xformIndex}.variations.added`);
+      },
+      onCancel: () => {
+        if (inserted) {
+          xform.variations.pop();
+          rebuildSection();
+        }
+      },
+    });
   });
+  addVarBtn.classList.add('pyr3-edit-var-add');
   varHeader.appendChild(addVarBtn);
   body.appendChild(varHeader);
 
   const varList = document.createElement('div');
   varList.className = 'pyr3-edit-var-list';
   for (let j = 0; j < xform.variations.length; j++) {
-    const row = buildVariationRow(xform, xformIndex, j, onChange, () => {
+    const row = buildVariationRow(state, xform, xformIndex, j, onChange, () => {
       if (xform.variations.length <= 1) return;
       xform.variations.splice(j, 1);
       onChange(`xforms.${xformIndex}.variations.${j}.removed`);

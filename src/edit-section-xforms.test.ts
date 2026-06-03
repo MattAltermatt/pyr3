@@ -336,24 +336,23 @@ describe('xformsSection — variations chain', () => {
   });
 
   it('linear kind has no params; julian kind shows power + dist labels', () => {
-    const genome = generateRandomGenome(seededRng(1));
-    genome.xforms[0]!.variations = [{ index: V.linear, weight: 1 }];
-    const { host, state, onChange } = mount(genome);
-    const card0 = cards(host)[0]!;
-    const row0 = card0.querySelector('.pyr3-edit-var-row') as HTMLElement;
-    let paramRow = row0.querySelector('.pyr3-edit-var-params') as HTMLElement;
-    expect(paramRow.children.length).toBe(0);
+    // linear → no params
+    const g1 = generateRandomGenome(seededRng(1));
+    g1.xforms[0]!.variations = [{ index: V.linear, weight: 1 }];
+    const { host: host1 } = mount(g1);
+    const row1 = cards(host1)[0]!.querySelector('.pyr3-edit-var-row') as HTMLElement;
+    const paramRow1 = row1.querySelector('.pyr3-edit-var-params') as HTMLElement;
+    expect(paramRow1.children.length).toBe(0);
 
-    // Flip to julian.
-    const select = row0.querySelector('.pyr3-edit-select') as HTMLSelectElement;
-    select.value = String(V.julian);
-    select.dispatchEvent(new Event('change'));
-    expect(state.genome.xforms[0]!.variations[0]!.index).toBe(V.julian);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.index');
-    paramRow = row0.querySelector('.pyr3-edit-var-params') as HTMLElement;
-    // julian has power + dist → 2 labeled fields.
-    expect(paramRow.children.length).toBe(2);
-    const labels = [...paramRow.querySelectorAll('.pyr3-edit-field-label')].map((e) =>
+    // julian → power + dist labels (kind initialised via genome rather than
+    // the picker; the picker UI is exercised by edit-variation-picker.test.ts).
+    const g2 = generateRandomGenome(seededRng(1));
+    g2.xforms[0]!.variations = [{ index: V.julian, weight: 1 }];
+    const { host: host2 } = mount(g2);
+    const row2 = cards(host2)[0]!.querySelector('.pyr3-edit-var-row') as HTMLElement;
+    const paramRow2 = row2.querySelector('.pyr3-edit-var-params') as HTMLElement;
+    expect(paramRow2.children.length).toBe(2);
+    const labels = [...paramRow2.querySelectorAll('.pyr3-edit-field-label')].map((e) =>
       (e.textContent ?? '').trim(),
     );
     expect(labels).toEqual(['power', 'dist']);
@@ -432,5 +431,37 @@ describe('xformsSection — per-xform collapse', () => {
     expect(state.xformCollapse[0]).toBe(false);
     expect(chev.textContent).toBe('▼');
     expect(body.style.display).toBe('block');
+  });
+});
+
+describe('xforms section v2 — variation rows', () => {
+  it('replaces kind <select> with a picker-trigger button', () => {
+    const { host } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    // Old <select> should be gone.
+    expect(card.querySelector('.pyr3-edit-var-row select')).toBeNull();
+    // New picker-trigger button present.
+    expect(card.querySelector('.pyr3-edit-var-kind-btn')).toBeTruthy();
+  });
+
+  it('per-row active checkbox toggles variation.active', () => {
+    const { host, state, onChange } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const cbx = card.querySelector('.pyr3-edit-var-active') as HTMLInputElement;
+    expect(cbx.checked).toBe(true);
+    cbx.click();
+    expect(state.genome.xforms[0]!.variations[0]!.active).toBe(false);
+    expect(onChange).toHaveBeenCalledWith(expect.stringContaining('variations.0.active'));
+  });
+
+  it('+ var button opens the variation picker (no auto-insert)', () => {
+    const { host, state } = mount();
+    const originalLen = state.genome.xforms[0]!.variations.length;
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const addBtn = card.querySelector('.pyr3-edit-var-add') as HTMLButtonElement;
+    addBtn.click();
+    // Picker mounted, but no new variation appended yet.
+    expect(document.querySelector('.pyr3-var-picker')).toBeTruthy();
+    expect(state.genome.xforms[0]!.variations.length).toBe(originalLen);
   });
 });
