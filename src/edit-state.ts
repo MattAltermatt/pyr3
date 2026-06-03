@@ -17,10 +17,18 @@ export type Lane = 'fast' | 'slow' | 'rebuild';
 // 'palette.hue', 'size.width'. Unknown paths fall through to 'fast' (the cheapest
 // lane) — that's the safe default because at worst it costs an extra present(),
 // not a chaos re-iterate.
+//
+// Palette caveat: chaos.wgsl reads the palette LUT *during iteration* and
+// scatters already-coloured RGB into the histogram (see chaos.wgsl line 1957+).
+// So palette swaps / hue / mode all force a slow-lane re-iterate — re-running
+// visualize alone against an old-palette histogram leaves the colours stale.
+// If we ever store color-INDEX in the histogram and apply palette at visualize
+// time, palette.* can move back to fast lane.
 export function pathLane(path: string): Lane {
   if (path === 'size.width' || path === 'size.height') return 'rebuild';
   if (path === 'oversample') return 'rebuild';
   if (path === 'spatialFilter.radius') return 'rebuild';
+  if (path === 'palette' || path.startsWith('palette.')) return 'slow';
   if (path.startsWith('xforms') || path.startsWith('finalxform')) return 'slow';
   if (path === 'scale' || path === 'cx' || path === 'cy' || path === 'rotate') return 'slow';
   if (path.startsWith('symmetry')) return 'slow';

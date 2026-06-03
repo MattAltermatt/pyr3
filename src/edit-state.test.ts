@@ -28,10 +28,13 @@ describe('pathLane', () => {
     expect(pathLane('symmetry.n')).toBe('slow');
   });
 
-  it('maps palette / tonemap / density / background / meta to fast', () => {
-    expect(pathLane('palette')).toBe('fast');
-    expect(pathLane('palette.hue')).toBe('fast');
-    expect(pathLane('palette.mode')).toBe('fast');
+  it('maps palette (swap/hue/mode) to slow — chaos.wgsl bakes palette RGB into the histogram', () => {
+    expect(pathLane('palette')).toBe('slow');
+    expect(pathLane('palette.hue')).toBe('slow');
+    expect(pathLane('palette.mode')).toBe('slow');
+  });
+
+  it('maps tonemap / density / background / meta to fast (present-only)', () => {
     expect(pathLane('tonemap.brightness')).toBe('fast');
     expect(pathLane('tonemap.gamma')).toBe('fast');
     expect(pathLane('tonemap.vibrancy')).toBe('fast');
