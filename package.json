@@ -6,7 +6,7 @@
   "description": "Fractal flame renderer in TypeScript + WebGPU — browser viewer and headless CLI from one engine. flam3 lineage.",
   "license": "GPL-3.0-or-later",
   "engines": {
-    "node": ">=20"
+    "node": ">=26"
   },
   "scripts": {
     "dev": "vite",
