@@ -22,6 +22,7 @@ import { createEditRenderer, type EditRenderer } from './edit-render';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import { genomeToJson, genomeFromJson } from './serialize';
 import { type Genome } from './genome';
+import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 
 export interface MountEditPageOpts {
   /** Root container the editor takes over (replaceChildren). The caller
@@ -289,27 +290,79 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     await awaitGpuThenMaybeHide(myTicket);
   });
 
+  // Common path-change handler — used by both UI sections and the canvas
+  // pan/zoom listener. Schedules the right lane and arms the settle timer
+  // for slow / rebuild edits.
+  function onPathChange(path: string): void {
+    const lane = pathLane(path);
+    scheduler.schedule({ lane, path });
+    // Slow + rebuild → restart the settle timer for the eventual
+    // full-quality render. Fast lane (tonemap/density/background) just
+    // re-presents and doesn't need a settle.
+    if (lane === 'slow' || lane === 'rebuild') {
+      scheduleSettle();
+    }
+  }
+
   // Replace the whole panel + force a slow-lane reseed. Used by reroll + open.
   let ui: EditUiHandle;
   function rebuildPanel(): void {
     ui?.destroy();
     ui = mountEditUi(panelHost, state, opts.sections, {
-      onChange: (path: string) => {
-        const lane = pathLane(path);
-        scheduler.schedule({ lane, path });
-        // Slow + rebuild → restart the settle timer for the eventual
-        // full-quality render. Fast lane (tonemap/density/background) just
-        // re-presents and doesn't need a settle.
-        if (lane === 'slow' || lane === 'rebuild') {
-          scheduleSettle();
-        }
-      },
+      onChange: onPathChange,
       onReroll: handleReroll,
       onOpenFile: handleOpenFile,
       onSaveFile: handleSaveFile,
       onRenderPng: handleRenderPng,
     });
   }
+
+  // Live render loop for continuous interactions (pan / zoom). The lane
+  // scheduler debounces by 80ms — fine for keystrokes (natural pauses), but
+  // a continuous mouse drag fires every 16ms and would reset the debounce
+  // indefinitely, so the user sees no live feedback until they let go. The
+  // loop below renders one frame at a time (max one in-flight) and chains
+  // the next one only after the GPU finishes — so pan/zoom feels smooth at
+  // whatever fps the GPU can sustain for live dims.
+  let liveInFlight = false;
+  let liveDirty = false;
+  async function requestLiveRender(): Promise<void> {
+    if (liveInFlight) {
+      liveDirty = true; // mark for re-render after current frame finishes
+      return;
+    }
+    liveInFlight = true;
+    do {
+      liveDirty = false;
+      inflightTicket++;
+      ensureLiveDims();
+      const view = ctx.getCurrentTexture().createView();
+      const w = canvas.width;
+      const h = canvas.height;
+      const genome = liveAdjustedGenome();
+      editRenderer.applyLane('slow', genome, state.seed, view, w, h);
+      opts.onStateChange?.(state);
+      await opts.device.queue.onSubmittedWorkDone();
+    } while (liveDirty);
+    liveInFlight = false;
+  }
+
+  // Canvas pan + zoom — left-drag = cx/cy, wheel = scale. The viewport-
+  // section inputs sync via the 'pyr3:viewport-changed' event below so the
+  // displayed cx/cy/scale stay current as the user drags. Live render fires
+  // continuously while the user interacts; the settle timer kicks the final
+  // full-quality render 150ms after the last input.
+  const panZoom: PanZoomHandle = attachPanZoom(canvas, state, {
+    onViewportChange: () => {
+      // Notify any DOM listeners (the viewport section's inputs) that the
+      // viewport mutated externally so they can re-sync their .value. The
+      // viewport section listens at document level + self-removes when its
+      // host detaches (next rebuildPanel) so this stays leak-free.
+      document.dispatchEvent(new CustomEvent('pyr3:viewport-changed'));
+      void requestLiveRender();
+      scheduleSettle();
+    },
+  });
 
   async function applyNewGenome(genome: Genome, seed?: number): Promise<void> {
     state.genome = genome;
@@ -464,6 +517,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       scheduler.schedule({ lane: pathLane('nick'), path: 'nick' });
     },
     destroy(): void {
+      panZoom.destroy();
       scheduler.cancel();
       ui?.destroy();
       renderer.destroy();

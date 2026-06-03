@@ -1,21 +1,22 @@
 // pyr3 — /v1/edit viewport section.
 //
-// Four number inputs (scale, cx, cy, rotate) each paired with ◀/▶ stepper
-// buttons. Click = ±1, shift-click = ±10, ctrl-click = ±0.1 (matches the
-// evolve viewport-card UX).
+// Four number inputs (scale, cx, cy, rotate) plus a 🎯 fit button at the top.
+// Number inputs use the browser's native up/down spinners — no custom ◀/▶
+// steppers (those were redundant alongside the built-in spinner UI).
 //
 // `rotate` is optional on the Genome — we display 0 when undefined and only
 // write back to state when the value is non-zero (cleaner JSON round-trip:
 // the field stays absent for "no rotation" flames).
 //
-// onChange paths (slow lane per pathLane in src/edit-state.ts):
-//   - scale  → onChange('scale')
-//   - cx     → onChange('cx')
-//   - cy     → onChange('cy')
-//   - rotate → onChange('rotate')
+// 🎯 fit runs a CPU chaos sampler (src/edit-fit-viewport.ts) to compute the
+// (cx, cy, scale) that frames the entire flame in the genome's render dims
+// (or the preview dims when genome.size is unset). Updates state + inputs
+// in one shot; the slow-lane scheduler picks up the three onChange calls
+// and coalesces them into one re-iterate.
 
 import { type SectionMount } from './edit-ui';
 import { type EditState } from './edit-state';
+import { computeFitViewport } from './edit-fit-viewport';
 
 type ViewportField = 'scale' | 'cx' | 'cy' | 'rotate';
 
@@ -58,13 +59,15 @@ const FIELDS: readonly FieldSpec[] = [
   },
 ];
 
-/** Compute the stepper delta from a MouseEvent's modifier keys.
- *  shift = ±10 · ctrl/meta = ±0.1 · plain = ±1. `direction` is +1 or -1. */
-export function stepperDelta(ev: MouseEvent, direction: 1 | -1): number {
-  let magnitude = 1;
-  if (ev.shiftKey) magnitude = 10;
-  else if (ev.ctrlKey || ev.metaKey) magnitude = 0.1;
-  return magnitude * direction;
+/** Resolve the canvas dims used as the target for fit. Prefers genome.size
+ *  (the final render dim — what the user actually cares about framing),
+ *  falls back to state.preview when size is unset. */
+function fitCanvasDims(state: EditState): { width: number; height: number } {
+  const size = state.genome.size;
+  if (size && size.width > 0 && size.height > 0) {
+    return { width: size.width, height: size.height };
+  }
+  return { width: state.preview.width, height: state.preview.height };
 }
 
 export const viewportSection: SectionMount = {
@@ -73,12 +76,29 @@ export const viewportSection: SectionMount = {
   build(host, state, onChange) {
     host.classList.add('pyr3-edit-section-viewport');
 
+    // Fit button — top of the section. Matches the editor's canonical
+    // pyr3-edit-btn style (same as 🖼️ render PNG / 🎲 reroll / 📂 open).
+    const fitRow = document.createElement('div');
+    fitRow.className = 'pyr3-edit-buttons';
+    fitRow.style.marginBottom = '6px';
+    const fitBtn = document.createElement('button');
+    fitBtn.type = 'button';
+    fitBtn.className = 'pyr3-edit-btn pyr3-edit-viewport-fit';
+    fitBtn.textContent = '🎯 fit';
+    fitBtn.title = 'Move cx / cy / scale so the entire flame fits inside the render area';
+    fitRow.appendChild(fitBtn);
+    host.appendChild(fitRow);
+
+    // Track each row's input so the fit button can sync displayed values
+    // after rewriting state.
+    const inputs: Partial<Record<ViewportField, HTMLInputElement>> = {};
+
     for (const spec of FIELDS) {
       const row = document.createElement('div');
       row.className = `pyr3-edit-viewport-row pyr3-edit-viewport-${spec.key}`;
       row.style.display = 'flex';
       row.style.alignItems = 'center';
-      row.style.gap = '4px';
+      row.style.gap = '6px';
       row.style.marginBottom = '4px';
 
       const label = document.createElement('span');
@@ -88,12 +108,6 @@ export const viewportSection: SectionMount = {
       label.style.fontSize = '11px';
       label.style.color = 'var(--text-dim, #888)';
 
-      const prevBtn = document.createElement('button');
-      prevBtn.type = 'button';
-      prevBtn.className = `pyr3-edit-viewport-stepper pyr3-edit-viewport-${spec.key}-prev`;
-      prevBtn.textContent = '◀';
-      prevBtn.title = 'click: -1 · shift: -10 · ctrl: -0.1';
-
       const input = document.createElement('input');
       input.type = 'number';
       input.step = 'any';
@@ -101,25 +115,10 @@ export const viewportSection: SectionMount = {
       input.style.flex = '1 1 auto';
       input.style.minWidth = '0';
       input.value = String(spec.read(state));
+      inputs[spec.key] = input;
 
-      const nextBtn = document.createElement('button');
-      nextBtn.type = 'button';
-      nextBtn.className = `pyr3-edit-viewport-stepper pyr3-edit-viewport-${spec.key}-next`;
-      nextBtn.textContent = '▶';
-      nextBtn.title = 'click: +1 · shift: +10 · ctrl: +0.1';
-
-      row.append(label, prevBtn, input, nextBtn);
+      row.append(label, input);
       host.appendChild(row);
-
-      function commit(next: number): void {
-        if (!Number.isFinite(next)) return;
-        spec.write(state, next);
-        // Keep the input synced (stepper writes don't trip an `input` event,
-        // and we round to 6 decimals to avoid showing 0.30000000000000004).
-        const rounded = Math.round(next * 1e6) / 1e6;
-        input.value = String(rounded);
-        onChange(spec.key);
-      }
 
       input.addEventListener('input', () => {
         const n = Number(input.value);
@@ -127,13 +126,55 @@ export const viewportSection: SectionMount = {
         spec.write(state, n);
         onChange(spec.key);
       });
-
-      prevBtn.addEventListener('click', (ev) => {
-        commit(spec.read(state) + stepperDelta(ev as MouseEvent, -1));
-      });
-      nextBtn.addEventListener('click', (ev) => {
-        commit(spec.read(state) + stepperDelta(ev as MouseEvent, 1));
-      });
     }
+
+    // When the canvas pan/zoom listener (src/edit-canvas-nav.ts) mutates
+    // cx/cy/scale outside the panel, the inputs would otherwise show stale
+    // values. edit-mount fires 'pyr3:viewport-changed' on panelHost; we
+    // listen at document level so the dispatch site doesn't need to know
+    // about the panel layout. The listener self-removes once the section's
+    // host is detached (next rebuildPanel), so accumulated rerolls don't
+    // leak listeners.
+    function syncInputsFromState(): void {
+      if (!host.isConnected) {
+        document.removeEventListener('pyr3:viewport-changed', syncInputsFromState as EventListener);
+        return;
+      }
+      if (inputs.scale) inputs.scale.value = String(Math.round(state.genome.scale * 1e6) / 1e6);
+      if (inputs.cx) inputs.cx.value = String(Math.round(state.genome.cx * 1e6) / 1e6);
+      if (inputs.cy) inputs.cy.value = String(Math.round(state.genome.cy * 1e6) / 1e6);
+      if (inputs.rotate) inputs.rotate.value = String(state.genome.rotate ?? 0);
+    }
+    document.addEventListener('pyr3:viewport-changed', syncInputsFromState as EventListener);
+
+    fitBtn.addEventListener('click', () => {
+      const dims = fitCanvasDims(state);
+      const fit = computeFitViewport(state.genome, dims.width, dims.height);
+      if (!fit) {
+        // No-op for degenerate genomes (empty xforms, all-zero weights,
+        // singleton-attractor). Surface a tiny visual nudge so the click
+        // doesn't feel ignored. (Guard for happy-dom / test envs which
+        // don't implement WAAPI .animate.)
+        if (typeof fitBtn.animate === 'function') {
+          fitBtn.animate(
+            [{ background: '#3a2a2a' }, { background: '' }],
+            { duration: 350 },
+          );
+        }
+        return;
+      }
+      const rounded = (n: number): number => Math.round(n * 1e6) / 1e6;
+      state.genome.scale = rounded(fit.scale);
+      state.genome.cx = rounded(fit.cx);
+      state.genome.cy = rounded(fit.cy);
+      if (inputs.scale) inputs.scale.value = String(state.genome.scale);
+      if (inputs.cx) inputs.cx.value = String(state.genome.cx);
+      if (inputs.cy) inputs.cy.value = String(state.genome.cy);
+      // Schedule the slow-lane fire on each path; the lane scheduler dedups
+      // them into a single re-iterate.
+      onChange('scale');
+      onChange('cx');
+      onChange('cy');
+    });
   },
 };

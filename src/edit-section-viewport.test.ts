@@ -1,11 +1,9 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the /v1/edit viewport section. Covers DOM smoke, per-field
-// number-input mutation + onChange path, and ◀/▶ stepper deltas (plain / shift
-// / ctrl).
+// Unit tests for the /v1/edit viewport section.
 
 import { describe, expect, it, vi } from 'vitest';
-import { viewportSection, stepperDelta } from './edit-section-viewport';
+import { viewportSection } from './edit-section-viewport';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 
@@ -23,11 +21,13 @@ function seededRng(seed: number): () => number {
 function mount() {
   const host = document.createElement('div');
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-  // Pin known starting values so stepper-delta tests have stable arithmetic.
+  // Pin known starting values for deterministic input-value assertions.
   state.genome.scale = 200;
   state.genome.cx = 0;
   state.genome.cy = 0;
   state.genome.rotate = undefined;
+  // Pin render dims so fit() targets a known canvas size.
+  state.genome.size = { width: 1920, height: 1080 };
   const onChange = vi.fn();
   viewportSection.build(host, state, onChange);
   return { host, state, onChange };
@@ -43,9 +43,26 @@ describe('viewportSection — DOM smoke', () => {
     expect(host.querySelectorAll('.pyr3-edit-viewport-input').length).toBe(4);
   });
 
-  it('renders 8 stepper buttons (4 fields × ◀ / ▶)', () => {
+  it('renders a 🎯 fit button at the top of the section', () => {
     const { host } = mount();
-    expect(host.querySelectorAll('.pyr3-edit-viewport-stepper').length).toBe(8);
+    const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    expect(btn.textContent).toContain('fit');
+    // The fit button should sit above the field rows so users see the
+    // action affordance before the inputs.
+    const firstRow = host.firstElementChild as HTMLElement;
+    expect(firstRow.querySelector('.pyr3-edit-viewport-fit')).toBe(btn);
+  });
+
+  it('matches the canonical pyr3-edit-btn style (same as render PNG / reroll)', () => {
+    const { host } = mount();
+    const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
+    expect(btn.classList.contains('pyr3-edit-btn')).toBe(true);
+  });
+
+  it('does NOT render the legacy ◀ / ▶ stepper buttons', () => {
+    const { host } = mount();
+    expect(host.querySelectorAll('.pyr3-edit-viewport-stepper').length).toBe(0);
   });
 
   it('initial input values reflect genome (rotate=undefined shows as 0)', () => {
@@ -106,73 +123,38 @@ describe('viewportSection — input mutation', () => {
   });
 });
 
-describe('viewportSection — stepper buttons', () => {
-  it('plain ▶ click adds 1', () => {
+describe('viewportSection — 🎯 fit button', () => {
+  it('rewrites scale + cx + cy + fires onChange three times', () => {
     const { host, state, onChange } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-scale-next') as HTMLButtonElement;
+    const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(state.genome.scale).toBe(201);
+    // Fit on a contractive-affine random genome should yield finite values.
+    expect(Number.isFinite(state.genome.scale)).toBe(true);
+    expect(state.genome.scale).toBeGreaterThan(0);
+    expect(Number.isFinite(state.genome.cx)).toBe(true);
+    expect(Number.isFinite(state.genome.cy)).toBe(true);
     expect(onChange).toHaveBeenCalledWith('scale');
+    expect(onChange).toHaveBeenCalledWith('cx');
+    expect(onChange).toHaveBeenCalledWith('cy');
   });
 
-  it('plain ◀ click subtracts 1', () => {
+  it('syncs the visible input values after fitting', () => {
     const { host, state } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-scale-prev') as HTMLButtonElement;
+    const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
+    const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLInputElement;
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(state.genome.scale).toBe(199);
+    expect(scale.value).toBe(String(state.genome.scale));
   });
 
-  it('shift-click ▶ adds 10', () => {
-    const { host, state } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-scale-next') as HTMLButtonElement;
-    btn.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
-    expect(state.genome.scale).toBe(210);
-  });
-
-  it('shift-click ◀ subtracts 10', () => {
-    const { host, state } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-scale-prev') as HTMLButtonElement;
-    btn.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
-    expect(state.genome.scale).toBe(190);
-  });
-
-  it('ctrl-click ▶ adds 0.1', () => {
-    const { host, state } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-cx-next') as HTMLButtonElement;
-    btn.dispatchEvent(new MouseEvent('click', { ctrlKey: true, bubbles: true }));
-    expect(state.genome.cx).toBeCloseTo(0.1, 10);
-  });
-
-  it('meta-click ◀ subtracts 0.1 (mac modifier)', () => {
-    const { host, state } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-cy-prev') as HTMLButtonElement;
-    btn.dispatchEvent(new MouseEvent('click', { metaKey: true, bubbles: true }));
-    expect(state.genome.cy).toBeCloseTo(-0.1, 10);
-  });
-
-  it('stepper writes also update the input value', () => {
-    const { host } = mount();
-    const btn = host.querySelector('.pyr3-edit-viewport-scale-next') as HTMLButtonElement;
+  it('does NOT fire onChange when the genome has no xforms (degenerate)', () => {
+    const { host, state, onChange } = mount();
+    state.genome.xforms = [];
+    const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    const input = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLInputElement;
-    expect(input.value).toBe('201');
-  });
-});
-
-describe('stepperDelta helper', () => {
-  it('plain click → ±1', () => {
-    expect(stepperDelta(new MouseEvent('click'), 1)).toBe(1);
-    expect(stepperDelta(new MouseEvent('click'), -1)).toBe(-1);
-  });
-  it('shift click → ±10', () => {
-    expect(stepperDelta(new MouseEvent('click', { shiftKey: true }), 1)).toBe(10);
-    expect(stepperDelta(new MouseEvent('click', { shiftKey: true }), -1)).toBe(-10);
-  });
-  it('ctrl click → ±0.1', () => {
-    expect(stepperDelta(new MouseEvent('click', { ctrlKey: true }), 1)).toBeCloseTo(0.1, 10);
-    expect(stepperDelta(new MouseEvent('click', { ctrlKey: true }), -1)).toBeCloseTo(-0.1, 10);
-  });
-  it('shift takes precedence over ctrl', () => {
-    expect(stepperDelta(new MouseEvent('click', { shiftKey: true, ctrlKey: true }), 1)).toBe(10);
+    expect(onChange).not.toHaveBeenCalled();
+    // Genome state should be untouched.
+    expect(state.genome.scale).toBe(200);
+    expect(state.genome.cx).toBe(0);
+    expect(state.genome.cy).toBe(0);
   });
 });
