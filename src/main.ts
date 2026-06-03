@@ -209,35 +209,26 @@ async function main(): Promise<void> {
     editRoot.hidden = false;
     document.body.classList.add('pyr3-edit-mode');
     const { mountEditPage } = await import('./edit-mount');
-    // Placeholder sections for Task 2.1 — empty bodies with "wired in
-    // Task 3.x" hints. Each real section module replaces its entry as
-    // Tasks 3.1-3.4 land.
-    const placeholderSections = (
-      [
-        ['palette', '🎨 PALETTE'],
-        ['viewport', '📐 VIEWPORT'],
-        ['xforms', '🧬 XFORMS'],
-        ['final', '🔚 FINAL XFORM'],
-        ['global', '🌐 GLOBAL'],
-        ['density', '💫 DENSITY EMITTER'],
-        ['render', '🎚️ RENDER'],
-      ] as const
-    ).map(([key, title]) => ({
-      key,
-      title,
-      build: (host: HTMLElement) => {
-        const note = document.createElement('div');
-        note.style.color = 'var(--text-dim, #888)';
-        note.style.fontSize = '11px';
-        note.textContent = '(wired in a later task)';
-        host.appendChild(note);
-      },
-    }));
+    const { paletteSection } = await import('./edit-section-palette');
+    const { viewportSection } = await import('./edit-section-viewport');
+    const { xformsSection } = await import('./edit-section-xforms');
+    const { finalSection } = await import('./edit-section-final');
+    const { globalSection } = await import('./edit-section-global');
+    const { densitySection } = await import('./edit-section-density');
+    const { renderSection } = await import('./edit-section-render');
     mountEditPage({
       root: editRoot,
       device: editDevice,
       format: editFormat,
-      sections: placeholderSections,
+      sections: [
+        paletteSection,
+        viewportSection,
+        xformsSection,
+        finalSection,
+        globalSection,
+        densitySection,
+        renderSection,
+      ],
     });
     return;
   }

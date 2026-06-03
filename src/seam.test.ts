@@ -60,6 +60,13 @@ const SEAM_EXEMPT = new Set<string>([
   'render-orchestrator.ts', // orchestrator pulls rAF when available — see below
   'edit-mount.ts',        // /v1/edit page mount — owns canvas + DOM
   'edit-ui.ts',           // /v1/edit panel shell — DOM-mounting
+  'edit-section-palette.ts',  // /v1/edit section — DOM-mounting
+  'edit-section-viewport.ts', // /v1/edit section — DOM-mounting
+  'edit-section-xforms.ts',   // /v1/edit section — DOM-mounting
+  'edit-section-final.ts',    // /v1/edit section — DOM-mounting
+  'edit-section-global.ts',   // /v1/edit section — DOM-mounting
+  'edit-section-density.ts',  // /v1/edit section — DOM-mounting
+  'edit-section-render.ts',   // /v1/edit section — DOM-mounting
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
