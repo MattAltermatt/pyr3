@@ -154,7 +154,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // full-dims render replaces it. Fast-lane edits (tonemap/density) stay on
   // whatever canvas is currently mounted.
   const LIVE_MAX_LONG_EDGE = 384;
-  const SETTLE_DELAY_MS = 1500;
+  // Quiet time after the user's last edit before the full-dim/quality render
+  // kicks off. 150ms is on the snappy end of typical editor norms (Lightroom
+  // / Affinity sit around 200-300ms, Photoshop preview around 100ms).
+  const SETTLE_DELAY_MS = 150;
   const BAR_DELAY_MS = 500;
 
   function liveDimsFor(full: { width: number; height: number }): { width: number; height: number } {
