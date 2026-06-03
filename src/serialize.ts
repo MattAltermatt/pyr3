@@ -492,48 +492,14 @@ export function genomeFromJson(j: unknown): Genome {
   return base;
 }
 
-function finalxformFromJson(j: unknown, path: string): Xform {
+// #86 — single canonical parse path for both xform and finalxform.
+// PYR3-060 root cause: when these two parsers were maintained separately,
+// finalxform silently dropped `opacity` on .pyr3.json re-import — exactly
+// the bug-class an `isFinal` flag prevents by construction. Only two fields
+// differ: finalxforms have no `weight` (pinned to 0) and no `xaos`.
+function parseXformBody(j: unknown, path: string, isFinal: boolean): Xform {
   const o = expectObject(j, path);
-  const color = expectNumber(o['color'], `${path}.color`);
-  const colorSpeed = expectNumber(o['colorSpeed'], `${path}.colorSpeed`);
-  const aff = expectObject(o['affine'], `${path}.affine`);
-  const a = expectNumber(aff['a'], `${path}.affine.a`);
-  const b = expectNumber(aff['b'], `${path}.affine.b`);
-  const c = expectNumber(aff['c'], `${path}.affine.c`);
-  const d = expectNumber(aff['d'], `${path}.affine.d`);
-  const e = expectNumber(aff['e'], `${path}.affine.e`);
-  const f = expectNumber(aff['f'], `${path}.affine.f`);
-  const varsRaw = expectArray(o['variations'], `${path}.variations`);
-  const variations: Variation[] = varsRaw.map((v, i) =>
-    variationFromJson(v, `${path}.variations[${i}]`),
-  );
-  const out: Xform = { weight: 0, color, colorSpeed, a, b, c, d, e, f, variations };
-  // PYR3-060: mirror xformFromJson's opacity read — finalxform opacity is
-  // serialized (xformToJson) and genuinely honored by the engine (the final
-  // lens deposit is gated on color_params.z, chaos.wgsl), so dropping it here
-  // silently brightened any finalxform with opacity != 1.0 on .pyr3.json
-  // re-import.
-  if (o['opacity'] !== undefined) {
-    const op = expectNumber(o['opacity'], `${path}.opacity`);
-    if (op !== 1.0) out.opacity = op;
-  }
-  if (o['post'] !== undefined) {
-    const p = expectObject(o['post'], `${path}.post`);
-    out.post = {
-      a: expectNumber(p['a'], `${path}.post.a`),
-      b: expectNumber(p['b'], `${path}.post.b`),
-      c: expectNumber(p['c'], `${path}.post.c`),
-      d: expectNumber(p['d'], `${path}.post.d`),
-      e: expectNumber(p['e'], `${path}.post.e`),
-      f: expectNumber(p['f'], `${path}.post.f`),
-    };
-  }
-  return out;
-}
-
-function xformFromJson(j: unknown, path: string): Xform {
-  const o = expectObject(j, path);
-  const weight = expectNumber(o['weight'], `${path}.weight`);
+  const weight = isFinal ? 0 : expectNumber(o['weight'], `${path}.weight`);
   const color = expectNumber(o['color'], `${path}.color`);
   const colorSpeed = expectNumber(o['colorSpeed'], `${path}.colorSpeed`);
   const aff = expectObject(o['affine'], `${path}.affine`);
@@ -552,7 +518,7 @@ function xformFromJson(j: unknown, path: string): Xform {
     const op = expectNumber(o['opacity'], `${path}.opacity`);
     if (op !== 1.0) out.opacity = op;
   }
-  if (o['xaos'] !== undefined) {
+  if (!isFinal && o['xaos'] !== undefined) {
     const arr = expectArray(o['xaos'], `${path}.xaos`);
     out.xaos = arr.map((v, i) => expectNumber(v, `${path}.xaos[${i}]`));
   }
@@ -568,6 +534,14 @@ function xformFromJson(j: unknown, path: string): Xform {
     };
   }
   return out;
+}
+
+function finalxformFromJson(j: unknown, path: string): Xform {
+  return parseXformBody(j, path, true);
+}
+
+function xformFromJson(j: unknown, path: string): Xform {
+  return parseXformBody(j, path, false);
 }
 
 function variationFromJson(j: unknown, path: string): Variation {

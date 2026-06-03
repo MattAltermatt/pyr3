@@ -184,6 +184,31 @@ describe('finalxform round-trip', () => {
     expect(loaded.finalxform!.weight).toBe(0);
   });
 
+  // #86: with the two parsers unified into parseXformBody(isFinal), the
+  // canonical guarantee is "finalxform accepts everything xform does, except
+  // weight (pinned to 0) and xaos (skipped)". This pin catches future drift
+  // of the unified parser back into the bug class that produced PYR3-060.
+  it('finalxform parsing accepts everything xform does, except weight + xaos (#86)', () => {
+    const baseXformJson = genomeToJson(SPIRAL_GALAXY).xforms[0]!;
+    // The first SPIRAL_GALAXY xform carries: weight, color, colorSpeed,
+    // affine, variations, and (optionally) opacity/xaos/post. Strip weight
+    // (the only finalxform-forbidden field that's required on regular xforms)
+    // and feed it to the finalxform parser via a synthetic genome.
+    const { weight: _weight, xaos: _xaos, ...finalxformShape } = baseXformJson;
+    const synthetic = {
+      ...genomeToJson(SPIRAL_GALAXY),
+      finalxform: finalxformShape,
+    };
+    const loaded = genomeFromJson(synthetic);
+    expect(loaded.finalxform).toBeDefined();
+    expect(loaded.finalxform!.weight).toBe(0); // pinned
+    expect(loaded.finalxform!.color).toBe(baseXformJson.color);
+    expect(loaded.finalxform!.colorSpeed).toBe(baseXformJson.colorSpeed);
+    expect(loaded.finalxform!.a).toBe(baseXformJson.affine.a);
+    expect(loaded.finalxform!.variations.length).toBe(baseXformJson.variations.length);
+    expect(loaded.finalxform!.xaos).toBeUndefined(); // ignored on finalxform
+  });
+
   it('throws with a path-anchored message on malformed finalxform', () => {
     const bad = {
       ...genomeToJson(SPIRAL_GALAXY),
