@@ -185,6 +185,27 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     return true;
   }
 
+  /** Return a copy of the live genome with scale divided proportionally so the
+   *  flame fills the same fraction of the canvas in live mode as in settled
+   *  mode. `genome.scale` is pixels-per-world-unit, so dropping canvas width
+   *  from 1920→384 without also dropping scale by 5× would make the flame
+   *  visually 5× bigger (overflow). filter radius is also in output px so it
+   *  benefits from the same proportional drop. */
+  function liveAdjustedGenome(): Genome {
+    const full = effectiveDims();
+    const live = liveDimsFor(full);
+    if (live.width === full.width) return state.genome; // no shrink needed
+    const ratio = full.width / live.width;
+    const adjusted: Genome = { ...state.genome, scale: state.genome.scale / ratio };
+    if (state.genome.spatialFilter) {
+      adjusted.spatialFilter = {
+        ...state.genome.spatialFilter,
+        radius: state.genome.spatialFilter.radius / ratio,
+      };
+    }
+    return adjusted;
+  }
+
   function ensureSettledDims(): boolean {
     const d = effectiveDims();
     if (d.width === canvas.width && d.height === canvas.height && !isLive) return false;
@@ -246,7 +267,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   }
 
   // Lane scheduler. Slow + rebuild lanes now render at LIVE dims (fast). The
-  // settle timer (separate) handles the full-quality render.
+  // settle timer (separate) handles the full-quality render at full dims.
   const scheduler: LaneScheduler = createLaneScheduler(async (lane, _paths) => {
     inflightTicket++;
     const myTicket = inflightTicket;
@@ -256,8 +277,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const view = ctx.getCurrentTexture().createView();
     const w = canvas.width;
     const h = canvas.height;
-    // Slow + rebuild both reseed at current (live) dims; fast just presents.
-    editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, state.genome, state.seed, view, w, h);
+    // Slow + rebuild both reseed at current (live) dims with a scale-adjusted
+    // genome so the framing matches what the settled render will show.
+    // Fast lane re-presents the existing histogram, no scale adjustment.
+    const genome = (lane === 'slow' || lane === 'rebuild') ? liveAdjustedGenome() : state.genome;
+    editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, genome, state.seed, view, w, h);
     opts.onStateChange?.(state);
     await awaitGpuThenMaybeHide(myTicket);
   });
