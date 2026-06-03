@@ -88,8 +88,11 @@ export interface Clock {
 
 export const DEFAULT_DEBOUNCE_MS: Record<Lane, number> = {
   fast: 16,
-  slow: 100,
-  rebuild: 200,
+  // 500ms gives the user a beat to keep typing / clicking arrows without
+  // queuing a separate render per keystroke. The render-busy badge on the
+  // canvas covers the silence so the wait is visible (mounted by edit-mount).
+  slow: 500,
+  rebuild: 500,
 };
 
 export interface LaneScheduler {

@@ -102,34 +102,31 @@ describe('createLaneScheduler', () => {
     const clock = fakeClock();
     const onFire = vi.fn();
     const s = createLaneScheduler(onFire, { clock });
-    s.schedule({ lane: 'fast', path: 'palette.hue' });
     s.schedule({ lane: 'fast', path: 'tonemap.gamma' });
+    s.schedule({ lane: 'fast', path: 'background' });
     clock.advance(15);
     expect(onFire).not.toHaveBeenCalled();
     clock.advance(2); // total 17 — past the 16ms fast debounce
     expect(onFire).toHaveBeenCalledTimes(1);
     const [lane, paths] = onFire.mock.calls[0]!;
     expect(lane).toBe('fast');
-    expect(paths).toEqual(expect.arrayContaining(['palette.hue', 'tonemap.gamma']));
+    expect(paths).toEqual(expect.arrayContaining(['tonemap.gamma', 'background']));
   });
 
-  it('runs the three lanes on independent timers', () => {
+  it('runs the three lanes on independent timers (fast=16ms, slow=500ms, rebuild=500ms)', () => {
     const clock = fakeClock();
     const onFire = vi.fn();
     const s = createLaneScheduler(onFire, { clock });
-    s.schedule({ lane: 'fast', path: 'palette.hue' });
+    s.schedule({ lane: 'fast', path: 'tonemap.gamma' });
     s.schedule({ lane: 'slow', path: 'xforms.0.weight' });
     s.schedule({ lane: 'rebuild', path: 'size.width' });
 
     clock.advance(20);
-    expect(onFire).toHaveBeenCalledWith('fast', ['palette.hue']);
+    expect(onFire).toHaveBeenCalledWith('fast', ['tonemap.gamma']);
     expect(onFire).toHaveBeenCalledTimes(1);
 
-    clock.advance(100); // total 120 — past slow's 100ms
+    clock.advance(500); // total 520 — past slow's 500ms AND rebuild's 500ms
     expect(onFire).toHaveBeenCalledWith('slow', ['xforms.0.weight']);
-    expect(onFire).toHaveBeenCalledTimes(2);
-
-    clock.advance(100); // total 220 — past rebuild's 200ms
     expect(onFire).toHaveBeenCalledWith('rebuild', ['size.width']);
     expect(onFire).toHaveBeenCalledTimes(3);
   });
@@ -172,12 +169,12 @@ describe('createLaneScheduler', () => {
     const clock = fakeClock();
     const onFire = vi.fn();
     const s = createLaneScheduler(onFire, { clock });
-    s.schedule({ lane: 'fast', path: 'palette.hue' });
-    s.schedule({ lane: 'fast', path: 'palette.hue' });
-    s.schedule({ lane: 'fast', path: 'palette.hue' });
+    s.schedule({ lane: 'fast', path: 'tonemap.gamma' });
+    s.schedule({ lane: 'fast', path: 'tonemap.gamma' });
+    s.schedule({ lane: 'fast', path: 'tonemap.gamma' });
     clock.advance(20);
     expect(onFire).toHaveBeenCalledTimes(1);
-    expect(onFire).toHaveBeenCalledWith('fast', ['palette.hue']);
+    expect(onFire).toHaveBeenCalledWith('fast', ['tonemap.gamma']);
   });
 });
 

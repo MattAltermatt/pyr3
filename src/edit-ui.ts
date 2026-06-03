@@ -183,12 +183,28 @@ const EDIT_CSS = `
   justify-content: center;
   background: var(--bg, #0a0a0c);
   overflow: hidden;
+  position: relative;
 }
 .pyr3-edit-canvas-host canvas {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   display: block;
+}
+.pyr3-edit-busy-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--bar-bg-1, #15151a);
+  color: var(--accent, #ff8c1a);
+  border: 1px solid var(--accent-border, #884a1a);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font: 500 11px ui-sans-serif, system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.04em;
+  z-index: 50;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 .pyr3-edit-topbar {
   background: var(--bar-bg-1, #15151a);

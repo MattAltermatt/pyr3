@@ -75,6 +75,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   canvas.width = preview.width;
   canvas.height = preview.height;
   canvasHost.appendChild(canvas);
+  // Render-in-flight badge — overlay on the canvas corner. Shown the moment
+  // an edit gets scheduled, hidden when the GPU work completes (await
+  // device.queue.onSubmittedWorkDone()).
+  const busyBadge = document.createElement('div');
+  busyBadge.className = 'pyr3-edit-busy-badge';
+  busyBadge.textContent = '⏳ rendering…';
+  busyBadge.style.display = 'none';
+  canvasHost.appendChild(busyBadge);
   opts.root.append(panelHost, canvasHost);
 
   // WebGPU context on the editor canvas. Assigned to a non-null local so
@@ -140,10 +148,24 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // before a resize writes into the OLD texture).
   const editRenderer: EditRenderer = createEditRenderer(renderer);
 
+  // Busy-badge tracking: a monotonically-incrementing ticket lets a finishing
+  // fire decide whether MORE work was scheduled while it was awaiting the
+  // GPU. If yes (newer ticket exists), don't hide — leave the badge up until
+  // the LAST fire's await resolves.
+  let inflightTicket = 0;
+  function showBusy(): void {
+    inflightTicket++;
+    busyBadge.style.display = 'block';
+  }
+  async function awaitGpuThenMaybeHide(myTicket: number): Promise<void> {
+    await opts.device.queue.onSubmittedWorkDone();
+    if (inflightTicket === myTicket) busyBadge.style.display = 'none';
+  }
+
   // Lane scheduler. For rebuild, do the canvas + renderer resize FIRST, then
   // grab a fresh texture view, then run reseed + present. Other lanes just
   // pass the current view through.
-  const scheduler: LaneScheduler = createLaneScheduler((lane, _paths) => {
+  const scheduler: LaneScheduler = createLaneScheduler(async (lane, _paths) => {
     const d = effectiveDims();
     if (lane === 'rebuild') {
       if (d.width !== canvas.width || d.height !== canvas.height) {
@@ -164,6 +186,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       editRenderer.applyLane(lane, state.genome, state.seed, view, d.width, d.height);
     }
     opts.onStateChange?.(state);
+    await awaitGpuThenMaybeHide(inflightTicket);
   });
 
   // Replace the whole panel + force a slow-lane reseed. Used by reroll + open.
@@ -172,6 +195,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     ui?.destroy();
     ui = mountEditUi(panelHost, state, opts.sections, {
       onChange: (path: string) => {
+        // Show the badge the moment any edit comes in — covers the
+        // debounce-wait silence so the user sees "I'm working on it"
+        // immediately, not after a 500ms gap.
+        showBusy();
         scheduler.schedule({ lane: pathLane(path), path });
       },
       onReroll: handleReroll,
@@ -181,10 +208,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     });
   }
 
-  function applyNewGenome(genome: Genome, seed?: number): void {
+  async function applyNewGenome(genome: Genome, seed?: number): Promise<void> {
     state.genome = genome;
     if (seed !== undefined) state.seed = seed;
     rebuildPanel();
+    showBusy();
+    const myTicket = inflightTicket;
     // Resize-first if dims changed, then fresh view, then reseed.
     const d = effectiveDims();
     if (d.width !== canvas.width || d.height !== canvas.height) {
@@ -200,6 +229,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
     opts.onStateChange?.(state);
+    await awaitGpuThenMaybeHide(myTicket);
   }
 
   function handleReroll(): void {
@@ -316,9 +346,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
 
   // Initial mount + first paint.
   rebuildPanel();
+  showBusy();
   const view0 = ctx.getCurrentTexture().createView();
   editRenderer.fullRender(state.genome, state.seed, view0, initialDims.width, initialDims.height);
   opts.onStateChange?.(state);
+  // Fire-and-forget — don't block mount return.
+  void awaitGpuThenMaybeHide(inflightTicket);
 
   return {
     state,
