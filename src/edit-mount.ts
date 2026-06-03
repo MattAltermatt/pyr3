@@ -148,47 +148,118 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // before a resize writes into the OLD texture).
   const editRenderer: EditRenderer = createEditRenderer(renderer);
 
-  // Busy-progress tracking: a monotonically-incrementing ticket lets a
-  // finishing fire decide whether MORE work was scheduled while it was
-  // awaiting the GPU. If yes (newer ticket exists), don't hide — leave the
-  // progress panel up until the LAST fire's await resolves.
-  let inflightTicket = 0;
-  function showBusy(): void {
-    inflightTicket++;
+  // Apophysis-style live/settled split. While the user is actively editing
+  // (slider drag, keystrokes, rapid clicks) we render at a downsized "live"
+  // canvas so feedback is snappy. After SETTLE_DELAY_MS of quiet, a single
+  // full-dims render replaces it. Fast-lane edits (tonemap/density) stay on
+  // whatever canvas is currently mounted.
+  const LIVE_MAX_LONG_EDGE = 384;
+  const SETTLE_DELAY_MS = 1500;
+  const BAR_DELAY_MS = 500;
+
+  function liveDimsFor(full: { width: number; height: number }): { width: number; height: number } {
+    const longEdge = Math.max(full.width, full.height);
+    if (longEdge <= LIVE_MAX_LONG_EDGE) return { width: full.width, height: full.height };
+    const ratio = LIVE_MAX_LONG_EDGE / longEdge;
+    return {
+      width: Math.max(1, Math.round(full.width * ratio)),
+      height: Math.max(1, Math.round(full.height * ratio)),
+    };
+  }
+
+  let isLive = false;
+  function ensureLiveDims(): boolean {
+    const full = effectiveDims();
+    const live = liveDimsFor(full);
+    if (live.width === canvas.width && live.height === canvas.height) {
+      isLive = full.width !== canvas.width || full.height !== canvas.height;
+      return false; // no resize needed
+    }
+    canvas.width = live.width;
+    canvas.height = live.height;
+    renderer.resize({
+      width: live.width, height: live.height,
+      oversample: 1, filterRadius: full.filterRadius,
+    });
+    isLive = true;
+    return true;
+  }
+
+  function ensureSettledDims(): boolean {
     const d = effectiveDims();
-    const spp = state.genome.quality ?? 50;
-    opts.onProgressShow?.(`rendering ${d.width}×${d.height} · q${spp}`);
+    if (d.width === canvas.width && d.height === canvas.height && !isLive) return false;
+    canvas.width = d.width;
+    canvas.height = d.height;
+    renderer.resize({
+      width: d.width, height: d.height,
+      oversample: d.oversample, filterRadius: d.filterRadius,
+    });
+    isLive = false;
+    return true;
+  }
+
+  // Progress-bar gating: only appears for renders that actually take >500ms.
+  // setTimeout schedules the show; render completion cancels it. Quick
+  // renders never trigger the bar — no flicker on fast tweaks.
+  let inflightTicket = 0;
+  let barShowTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleBarShow(label: string): void {
+    if (barShowTimer !== null) clearTimeout(barShowTimer);
+    barShowTimer = setTimeout(() => {
+      barShowTimer = null;
+      opts.onProgressShow?.(label);
+    }, BAR_DELAY_MS);
+  }
+  function cancelBarShowAndHide(): void {
+    if (barShowTimer !== null) {
+      clearTimeout(barShowTimer);
+      barShowTimer = null;
+    }
+    opts.onProgressHide?.();
   }
   async function awaitGpuThenMaybeHide(myTicket: number): Promise<void> {
     await opts.device.queue.onSubmittedWorkDone();
-    if (inflightTicket === myTicket) opts.onProgressHide?.();
+    if (inflightTicket === myTicket) cancelBarShowAndHide();
   }
 
-  // Lane scheduler. For rebuild, do the canvas + renderer resize FIRST, then
-  // grab a fresh texture view, then run reseed + present. Other lanes just
-  // pass the current view through.
-  const scheduler: LaneScheduler = createLaneScheduler(async (lane, _paths) => {
+  // Settle timer — fires SETTLE_DELAY_MS after the last slow/rebuild edit
+  // with a full-dims render. Cleared on every new edit.
+  let settleTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleSettle(): void {
+    if (settleTimer !== null) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      void runSettledRender();
+    }, SETTLE_DELAY_MS);
+  }
+  async function runSettledRender(): Promise<void> {
+    inflightTicket++;
+    const myTicket = inflightTicket;
+    ensureSettledDims();
     const d = effectiveDims();
-    if (lane === 'rebuild') {
-      if (d.width !== canvas.width || d.height !== canvas.height) {
-        canvas.width = d.width;
-        canvas.height = d.height;
-      }
-      renderer.resize({
-        width: d.width,
-        height: d.height,
-        oversample: d.oversample,
-        filterRadius: d.filterRadius,
-      });
-      const view = ctx.getCurrentTexture().createView();
-      // Treat as slow lane from here — resize already happened above.
-      editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
-    } else {
-      const view = ctx.getCurrentTexture().createView();
-      editRenderer.applyLane(lane, state.genome, state.seed, view, d.width, d.height);
-    }
+    const spp = state.genome.quality ?? 50;
+    scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
+    const view = ctx.getCurrentTexture().createView();
+    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
     opts.onStateChange?.(state);
-    await awaitGpuThenMaybeHide(inflightTicket);
+    await awaitGpuThenMaybeHide(myTicket);
+  }
+
+  // Lane scheduler. Slow + rebuild lanes now render at LIVE dims (fast). The
+  // settle timer (separate) handles the full-quality render.
+  const scheduler: LaneScheduler = createLaneScheduler(async (lane, _paths) => {
+    inflightTicket++;
+    const myTicket = inflightTicket;
+    if (lane === 'slow' || lane === 'rebuild') {
+      ensureLiveDims();
+    }
+    const view = ctx.getCurrentTexture().createView();
+    const w = canvas.width;
+    const h = canvas.height;
+    // Slow + rebuild both reseed at current (live) dims; fast just presents.
+    editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, state.genome, state.seed, view, w, h);
+    opts.onStateChange?.(state);
+    await awaitGpuThenMaybeHide(myTicket);
   });
 
   // Replace the whole panel + force a slow-lane reseed. Used by reroll + open.
@@ -197,11 +268,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     ui?.destroy();
     ui = mountEditUi(panelHost, state, opts.sections, {
       onChange: (path: string) => {
-        // Show the badge the moment any edit comes in — covers the
-        // debounce-wait silence so the user sees "I'm working on it"
-        // immediately, not after a 500ms gap.
-        showBusy();
-        scheduler.schedule({ lane: pathLane(path), path });
+        const lane = pathLane(path);
+        scheduler.schedule({ lane, path });
+        // Slow + rebuild → restart the settle timer for the eventual
+        // full-quality render. Fast lane (tonemap/density/background) just
+        // re-presents and doesn't need a settle.
+        if (lane === 'slow' || lane === 'rebuild') {
+          scheduleSettle();
+        }
       },
       onReroll: handleReroll,
       onOpenFile: handleOpenFile,
@@ -214,20 +288,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     state.genome = genome;
     if (seed !== undefined) state.seed = seed;
     rebuildPanel();
-    showBusy();
+    inflightTicket++;
     const myTicket = inflightTicket;
-    // Resize-first if dims changed, then fresh view, then reseed.
+    // Open / reroll always renders at SETTLED dims with the bar gated by
+    // BAR_DELAY_MS — these are "intentional, full" renders, not drags.
+    ensureSettledDims();
     const d = effectiveDims();
-    if (d.width !== canvas.width || d.height !== canvas.height) {
-      canvas.width = d.width;
-      canvas.height = d.height;
-      renderer.resize({
-        width: d.width,
-        height: d.height,
-        oversample: d.oversample,
-        filterRadius: d.filterRadius,
-      });
-    }
+    const spp = state.genome.quality ?? 50;
+    scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
     opts.onStateChange?.(state);
@@ -346,13 +414,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     }
   }
 
-  // Initial mount + first paint.
+  // Initial mount + first paint. Same "settled" path as open/reroll.
   rebuildPanel();
-  showBusy();
+  inflightTicket++;
+  {
+    const spp = state.genome.quality ?? 50;
+    scheduleBarShow(`rendering ${initialDims.width}×${initialDims.height} · q${spp}`);
+  }
   const view0 = ctx.getCurrentTexture().createView();
   editRenderer.fullRender(state.genome, state.seed, view0, initialDims.width, initialDims.height);
   opts.onStateChange?.(state);
-  // Fire-and-forget — don't block mount return.
   void awaitGpuThenMaybeHide(inflightTicket);
 
   return {

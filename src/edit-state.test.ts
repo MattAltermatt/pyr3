@@ -113,7 +113,7 @@ describe('createLaneScheduler', () => {
     expect(paths).toEqual(expect.arrayContaining(['tonemap.gamma', 'background']));
   });
 
-  it('runs the three lanes on independent timers (fast=16ms, slow=500ms, rebuild=500ms)', () => {
+  it('runs the three lanes on independent timers (fast=16ms, slow=80ms, rebuild=80ms)', () => {
     const clock = fakeClock();
     const onFire = vi.fn();
     const s = createLaneScheduler(onFire, { clock });
@@ -125,7 +125,7 @@ describe('createLaneScheduler', () => {
     expect(onFire).toHaveBeenCalledWith('fast', ['tonemap.gamma']);
     expect(onFire).toHaveBeenCalledTimes(1);
 
-    clock.advance(500); // total 520 — past slow's 500ms AND rebuild's 500ms
+    clock.advance(80); // total 100 — past slow's 80ms AND rebuild's 80ms
     expect(onFire).toHaveBeenCalledWith('slow', ['xforms.0.weight']);
     expect(onFire).toHaveBeenCalledWith('rebuild', ['size.width']);
     expect(onFire).toHaveBeenCalledTimes(3);

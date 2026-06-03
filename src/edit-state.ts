@@ -88,11 +88,13 @@ export interface Clock {
 
 export const DEFAULT_DEBOUNCE_MS: Record<Lane, number> = {
   fast: 16,
-  // 500ms gives the user a beat to keep typing / clicking arrows without
-  // queuing a separate render per keystroke. The render-busy badge on the
-  // canvas covers the silence so the wait is visible (mounted by edit-mount).
-  slow: 500,
-  rebuild: 500,
+  // Short debounce so the live (small-canvas) preview keeps up with slider
+  // drags & rapid keystrokes — the editor's Apophysis-style live/settled
+  // split (in edit-mount.ts) renders each slow-lane fire at downsized dims
+  // for snappy feedback. A separate 1500ms settle timer kicks the final
+  // full-dim/quality render once the user stops fiddling.
+  slow: 80,
+  rebuild: 80,
 };
 
 export interface LaneScheduler {
