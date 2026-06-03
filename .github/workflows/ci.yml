@@ -14,6 +14,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least-privilege — CI only reads source. Mirrors deploy.yml's explicit block
+# (#96) so a future workflow-permission flip can't silently widen this gate.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
