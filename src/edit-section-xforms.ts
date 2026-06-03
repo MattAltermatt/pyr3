@@ -17,6 +17,14 @@ import { type EditState } from './edit-state';
 import { type Xform } from './genome';
 import { type Variation, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM } from './variations';
 import { VARIATION_PARAMS, PARAM_KEYS } from './serialize';
+import {
+  decomposedToRaw,
+  rawToDecomposed,
+  type RawAffine,
+  type DecomposedAffine,
+} from './affine-decompose';
+import { attachXformViz } from './edit-xform-viz';
+import { SHAPE_PRESETS } from './edit-xform-presets';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -189,6 +197,249 @@ function buildVariationRow(
   return wrap;
 }
 
+// Tooltip strings — short, plain-English, < 80 chars.
+const AFFINE_TOOLTIPS: Record<string, string> = {
+  scaleX: 'How much this xform stretches the X dimension. <1 shrinks, >1 grows.',
+  scaleY: 'How much this xform stretches the Y dimension.',
+  rotation: 'CCW rotation in degrees, around the position point.',
+  positionX: "Horizontal offset — where this xform 'lives' along the X axis.",
+  positionY: 'Vertical offset.',
+  shear: 'Skew along the X axis. 0 = no skew.',
+  rawMatrix: 'Direct entry of the 2x2 affine matrix.',
+};
+
+type AffineLens = 'pre' | 'post';
+
+// Builds the decomposed-affine UI (5 fields + viz + presets + shear fold +
+// raw fold) inside `parent`. Used by both pre- and post-affine. The
+// genome's authoritative a..f stays the source of truth — the decomposed
+// view recomposes on every edit.
+function buildDecomposedAffineBlock(
+  parent: HTMLElement,
+  xform: Xform,
+  xformIndex: number,
+  onChange: (path: string) => void,
+  lens: AffineLens,
+): void {
+  // Source-of-truth getter / setter against xform.{a..f} or xform.post.{a..f}.
+  const getRaw = (): RawAffine => {
+    if (lens === 'pre') return { a: xform.a, b: xform.b, c: xform.c, d: xform.d, e: xform.e, f: xform.f };
+    if (!xform.post) return { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 };
+    return { ...xform.post };
+  };
+  const setRaw = (r: RawAffine): void => {
+    if (lens === 'pre') {
+      xform.a = r.a; xform.b = r.b; xform.c = r.c;
+      xform.d = r.d; xform.e = r.e; xform.f = r.f;
+      return;
+    }
+    if (!xform.post) xform.post = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 };
+    xform.post.a = r.a; xform.post.b = r.b; xform.post.c = r.c;
+    xform.post.d = r.d; xform.post.e = r.e; xform.post.f = r.f;
+  };
+  const pathBase = lens === 'pre' ? `xforms.${xformIndex}` : `xforms.${xformIndex}.post`;
+
+  // Container
+  const block = document.createElement('div');
+  block.className = lens === 'pre' ? 'pyr3-edit-aff-block' : 'pyr3-edit-aff-block pyr3-edit-aff-post';
+  parent.appendChild(block);
+
+  // Two-column layout: decomposed fields on left, viz canvas on right.
+  const fieldsCol = document.createElement('div');
+  fieldsCol.className = 'pyr3-edit-aff-fields';
+  const vizCol = document.createElement('div');
+  vizCol.className = 'pyr3-edit-aff-viz-col';
+  const vizCanvas = document.createElement('canvas');
+  vizCanvas.className = 'pyr3-edit-aff-viz';
+  vizCanvas.width = 120;
+  vizCanvas.height = 120;
+  vizCol.appendChild(vizCanvas);
+  block.append(fieldsCol, vizCol);
+
+  const viz = attachXformViz(vizCanvas, getRaw);
+
+  const RAD = Math.PI / 180;
+  const initial = rawToDecomposed(getRaw());
+
+  // Cache the 5 decomposed-field inputs so preset clicks can refresh values.
+  const decomposedInputs: Partial<Record<keyof DecomposedAffine, HTMLInputElement>> = {};
+
+  function bindDecomposed(
+    field: keyof DecomposedAffine,
+    label: string,
+    initialValue: number,
+    unit?: string,
+  ): HTMLInputElement {
+    const wrap = document.createElement('div');
+    wrap.className = `pyr3-edit-field pyr3-edit-aff-${field}`;
+    const lbl = document.createElement('label');
+    lbl.className = 'pyr3-edit-field-label';
+    lbl.textContent = label;
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.className = 'pyr3-edit-num';
+    inp.step = 'any';
+    inp.value = field === 'rotation' ? String(initialValue / RAD) : String(initialValue);
+    inp.title = AFFINE_TOOLTIPS[field] ?? '';
+    wrap.append(lbl, inp);
+    if (unit) {
+      const u = document.createElement('span');
+      u.className = 'pyr3-edit-unit';
+      u.textContent = unit;
+      wrap.appendChild(u);
+    }
+    fieldsCol.appendChild(wrap);
+
+    inp.addEventListener('input', () => {
+      const n = Number(inp.value);
+      if (!Number.isFinite(n)) return;
+      const dec = rawToDecomposed(getRaw());
+      const val = field === 'rotation' ? n * RAD : n;
+      const next: DecomposedAffine = { ...dec, [field]: val };
+      setRaw(decomposedToRaw(next));
+      viz.draw();
+      refreshRawInputs();
+      onChange(`${pathBase}.${field}`);
+    });
+    decomposedInputs[field] = inp;
+    return inp;
+  }
+
+  bindDecomposed('scaleX', 'scale x', initial.scaleX);
+  bindDecomposed('scaleY', 'scale y', initial.scaleY);
+  bindDecomposed('rotation', 'rotation', initial.rotation, '°');
+  bindDecomposed('positionX', 'position x', initial.positionX);
+  bindDecomposed('positionY', 'position y', initial.positionY);
+
+  // ── Shape-presets fold-up ─────────────────────────────────────────
+  const presetsWrap = document.createElement('div');
+  presetsWrap.className = 'pyr3-edit-aff-presets';
+  const presetsDet = document.createElement('details');
+  const presetsSum = document.createElement('summary');
+  presetsSum.textContent = 'shape presets';
+  presetsDet.appendChild(presetsSum);
+  const presetsGrid = document.createElement('div');
+  presetsGrid.className = 'pyr3-edit-preset-grid';
+  for (const p of SHAPE_PRESETS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pyr3-edit-preset';
+    btn.dataset['preset'] = p.key;
+    btn.textContent = p.label;
+    btn.title = `Set the affine to ${p.label}.`;
+    btn.addEventListener('click', () => {
+      const dec = rawToDecomposed(getRaw());
+      const next = p.apply({ positionX: dec.positionX, positionY: dec.positionY });
+      setRaw(decomposedToRaw(next));
+      viz.draw();
+      // Refresh the visible decomposed input values from the new state.
+      for (const f of ['scaleX', 'scaleY', 'rotation', 'positionX', 'positionY'] as const) {
+        const el = decomposedInputs[f];
+        if (!el) continue;
+        const v = f === 'rotation' ? next.rotation / RAD : next[f];
+        el.value = String(v);
+      }
+      // Shear is part of the preset; reflect into the shear input + auto-open
+      // if the preset introduced a non-zero shear.
+      if (shearInp) shearInp.value = String(next.shear);
+      if (shearFold && Math.abs(next.shear) > 1e-9) shearFold.open = true;
+      refreshRawInputs();
+      onChange(`${pathBase}.preset`);
+    });
+    presetsGrid.appendChild(btn);
+  }
+  presetsDet.appendChild(presetsGrid);
+  presetsWrap.appendChild(presetsDet);
+  block.appendChild(presetsWrap);
+
+  // ── Shear fold-up (auto-opens if shear !== 0) ─────────────────────
+  const shearFold = document.createElement('details');
+  shearFold.className = 'pyr3-edit-aff-shear-fold';
+  const shearSum = document.createElement('summary');
+  shearSum.textContent = 'shear';
+  shearFold.appendChild(shearSum);
+  if (Math.abs(initial.shear) > 1e-9) shearFold.open = true;
+  const shearWrap = document.createElement('div');
+  shearWrap.className = 'pyr3-edit-field pyr3-edit-aff-shear';
+  const shearLbl = document.createElement('label');
+  shearLbl.className = 'pyr3-edit-field-label';
+  shearLbl.textContent = 'shear';
+  const shearInp = document.createElement('input');
+  shearInp.type = 'number';
+  shearInp.className = 'pyr3-edit-num';
+  shearInp.step = 'any';
+  shearInp.value = String(initial.shear);
+  shearInp.title = AFFINE_TOOLTIPS.shear ?? '';
+  shearInp.addEventListener('input', () => {
+    const n = Number(shearInp.value);
+    if (!Number.isFinite(n)) return;
+    const dec = rawToDecomposed(getRaw());
+    setRaw(decomposedToRaw({ ...dec, shear: n }));
+    viz.draw();
+    refreshRawInputs();
+    onChange(`${pathBase}.shear`);
+  });
+  shearWrap.append(shearLbl, shearInp);
+  shearFold.appendChild(shearWrap);
+  block.appendChild(shearFold);
+
+  // ── Raw matrix fold-up ────────────────────────────────────────────
+  const rawFold = document.createElement('details');
+  rawFold.className = 'pyr3-edit-aff-raw-fold';
+  const rawSum = document.createElement('summary');
+  rawSum.textContent = 'raw matrix';
+  rawFold.appendChild(rawSum);
+  const rawGrid = document.createElement('div');
+  rawGrid.className = 'pyr3-edit-raw-grid';
+  const rawInputs: Partial<Record<'a' | 'b' | 'c' | 'd' | 'e' | 'f', HTMLInputElement>> = {};
+  for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+    const wrap = document.createElement('div');
+    wrap.className = `pyr3-edit-field pyr3-edit-aff-raw-${key}`;
+    const lbl = document.createElement('label');
+    lbl.className = 'pyr3-edit-field-label';
+    lbl.textContent = key;
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.className = 'pyr3-edit-num';
+    inp.step = 'any';
+    inp.value = String(getRaw()[key]);
+    inp.title = AFFINE_TOOLTIPS.rawMatrix ?? '';
+    inp.addEventListener('input', () => {
+      const n = Number(inp.value);
+      if (!Number.isFinite(n)) return;
+      const raw = getRaw();
+      raw[key] = n;
+      setRaw(raw);
+      viz.draw();
+      // Mirror the change into the decomposed inputs so they stay in sync.
+      const dec = rawToDecomposed(raw);
+      if (decomposedInputs.scaleX) decomposedInputs.scaleX.value = String(dec.scaleX);
+      if (decomposedInputs.scaleY) decomposedInputs.scaleY.value = String(dec.scaleY);
+      if (decomposedInputs.rotation) decomposedInputs.rotation.value = String(dec.rotation / RAD);
+      if (decomposedInputs.positionX) decomposedInputs.positionX.value = String(dec.positionX);
+      if (decomposedInputs.positionY) decomposedInputs.positionY.value = String(dec.positionY);
+      shearInp.value = String(dec.shear);
+      onChange(`${pathBase}.${key}`);
+    });
+    wrap.append(lbl, inp);
+    rawGrid.appendChild(wrap);
+    rawInputs[key] = inp;
+  }
+  rawFold.appendChild(rawGrid);
+  block.appendChild(rawFold);
+
+  function refreshRawInputs(): void {
+    const raw = getRaw();
+    for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+      const el = rawInputs[key];
+      if (el) el.value = String(raw[key]);
+    }
+  }
+
+  // Initial paint of the viz.
+  viz.draw();
+}
+
 // Build one xform card (header + collapsible body). The card is the unit
 // the section body re-renders on add/remove; the body within the card is
 // the unit the per-xform collapse toggles.
@@ -294,96 +545,43 @@ function buildXformCard(
   );
   body.appendChild(makeLabeledField('opacity ', opacitySlider));
 
-  // affine label + 2 rows of 3 inputs (a b c / d e f).
+  // ── Affine (decomposed) ────────────────────────────────────────────
   body.appendChild(makeSectionLabel('affine'));
-  const affineRow1 = document.createElement('div');
-  affineRow1.className = 'pyr3-edit-affine-row';
-  for (const key of ['a', 'b', 'c'] as const) {
-    const inp = makeNumberInput(
-      xform[key],
-      (n) => {
-        xform[key] = n;
-        onChange(`xforms.${xformIndex}.${key}`);
-      },
-      { step: 0.01, width: '64px' },
-    );
-    affineRow1.appendChild(makeLabeledField(`${key} `, inp));
-  }
-  body.appendChild(affineRow1);
+  buildDecomposedAffineBlock(body, xform, xformIndex, onChange, 'pre');
 
-  const affineRow2 = document.createElement('div');
-  affineRow2.className = 'pyr3-edit-affine-row';
-  for (const key of ['d', 'e', 'f'] as const) {
-    const inp = makeNumberInput(
-      xform[key],
-      (n) => {
-        xform[key] = n;
-        onChange(`xforms.${xformIndex}.${key}`);
-      },
-      { step: 0.01, width: '64px' },
-    );
-    affineRow2.appendChild(makeLabeledField(`${key} `, inp));
-  }
-  body.appendChild(affineRow2);
-
-  // post-transform checkbox + 6 inputs (disabled when checkbox off).
+  // ── Post-transform (decomposed, behind a "use post-transform" check) ──
   body.appendChild(makeSectionLabel('post-transform'));
   const postWrap = document.createElement('div');
   postWrap.className = 'pyr3-edit-post-wrap';
 
   const postCheckbox = document.createElement('input');
   postCheckbox.type = 'checkbox';
-  postCheckbox.className = 'pyr3-edit-checkbox';
+  postCheckbox.className = 'pyr3-edit-checkbox pyr3-edit-post-toggle';
   postCheckbox.checked = xform.post !== undefined;
-  postWrap.appendChild(makeLabeledField('active ', postCheckbox));
+  postCheckbox.title = 'Apply a second affine AFTER the variation chain.';
+  postWrap.appendChild(makeLabeledField('use post-transform ', postCheckbox));
 
-  // Two rows of 3 post inputs.
-  const postRow1 = document.createElement('div');
-  postRow1.className = 'pyr3-edit-affine-row';
-  const postRow2 = document.createElement('div');
-  postRow2.className = 'pyr3-edit-affine-row';
+  // Container that mounts the decomposed post-block when active.
+  const postBlockHost = document.createElement('div');
+  postBlockHost.className = 'pyr3-edit-post-block-host';
+  postWrap.appendChild(postBlockHost);
 
-  const postKeyOrder: Array<'a' | 'b' | 'c' | 'd' | 'e' | 'f'> = ['a', 'b', 'c', 'd', 'e', 'f'];
-  const postInputs: Record<'a' | 'b' | 'c' | 'd' | 'e' | 'f', HTMLInputElement> = {} as Record<
-    'a' | 'b' | 'c' | 'd' | 'e' | 'f',
-    HTMLInputElement
-  >;
-
-  for (const key of postKeyOrder) {
-    const initial = xform.post ? xform.post[key] : (key === 'a' || key === 'e' ? 1 : 0);
-    const inp = makeNumberInput(
-      initial,
-      (n) => {
-        if (!xform.post) return; // disabled commits are no-ops
-        xform.post[key] = n;
-        onChange(`xforms.${xformIndex}.post.${key}`);
-      },
-      { step: 0.01, width: '64px' },
-    );
-    inp.disabled = !postCheckbox.checked;
-    postInputs[key] = inp;
-    const target = (key === 'a' || key === 'b' || key === 'c') ? postRow1 : postRow2;
-    target.appendChild(makeLabeledField(`${key} `, inp));
+  function mountPostBlock(): void {
+    postBlockHost.replaceChildren();
+    if (xform.post !== undefined) {
+      buildDecomposedAffineBlock(postBlockHost, xform, xformIndex, onChange, 'post');
+    }
   }
-  postWrap.appendChild(postRow1);
-  postWrap.appendChild(postRow2);
+  mountPostBlock();
 
   postCheckbox.addEventListener('change', () => {
     if (postCheckbox.checked) {
       xform.post = makeIdentityPost();
-      for (const key of postKeyOrder) {
-        postInputs[key].disabled = false;
-        postInputs[key].value = String(xform.post[key]);
-      }
     } else {
       xform.post = undefined;
-      for (const key of postKeyOrder) {
-        postInputs[key].disabled = true;
-      }
     }
-    // Conventionally one path per toggle — the importer-side cares about
-    // identity-or-undefined, not per-component. Use `.post` as the path.
     onChange(`xforms.${xformIndex}.post`);
+    mountPostBlock();
   });
 
   body.appendChild(postWrap);
@@ -588,4 +786,53 @@ const XFORM_CSS = `
   border-color: var(--accent-border, #884a1a);
 }
 .pyr3-edit-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pyr3-edit-aff-block {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.pyr3-edit-aff-fields { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; }
+.pyr3-edit-aff-viz-col { flex: 0 0 auto; }
+canvas.pyr3-edit-aff-viz {
+  background: var(--bar-bg-3, #0f0f13);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 2px;
+  display: block;
+}
+.pyr3-edit-unit { color: var(--text-dim, #888); font-size: 10px; margin-left: 2px; }
+.pyr3-edit-aff-presets details > summary,
+.pyr3-edit-aff-shear-fold > summary,
+.pyr3-edit-aff-raw-fold > summary {
+  color: var(--text-dim, #888);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 0;
+  user-select: none;
+}
+.pyr3-edit-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin-top: 3px;
+}
+.pyr3-edit-preset {
+  background: var(--bar-bg-2, #1a1a20);
+  color: var(--text, #ddd);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.pyr3-edit-preset:hover {
+  background: var(--accent-soft, rgba(255, 140, 26, 0.18));
+  border-color: var(--accent-border, #884a1a);
+}
+.pyr3-edit-raw-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  margin-top: 3px;
+}
 `;

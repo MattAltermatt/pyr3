@@ -165,93 +165,153 @@ describe('xformsSection — color / colorSpeed / opacity', () => {
   });
 });
 
-describe('xformsSection — affine pre-transform', () => {
-  it('each of a/b/c/d/e/f writes the genome and emits the dotted path', () => {
-    const { host, state, onChange } = mount(1);
-    const card0 = cards(host)[0]!;
-    const rows = card0.querySelectorAll('.pyr3-edit-affine-row');
-    // First two affine rows are pre-transform (then 2 more for post).
-    const preRow1 = rows[0]!; // a, b, c
-    const preRow2 = rows[1]!; // d, e, f
-    const inputs1 = preRow1.querySelectorAll('.pyr3-edit-num');
-    const inputs2 = preRow2.querySelectorAll('.pyr3-edit-num');
+describe('xforms section v2 — affine block', () => {
+  it('renders 5 decomposed fields (scale x/y, rotation, position x/y)', () => {
+    const { host } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    expect(card.querySelector('.pyr3-edit-aff-scaleX')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-scaleY')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-rotation')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-positionX')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-positionY')).toBeTruthy();
+  });
 
-    fireInput(inputs1[0] as HTMLInputElement, '1.5');
+  it('renders a mini affine viz canvas in each expanded card', () => {
+    const { host } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    expect(card.querySelector('canvas.pyr3-edit-aff-viz')).toBeTruthy();
+  });
+
+  it('renders shape-presets / shear / raw-matrix fold-ups', () => {
+    const { host } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    expect(card.querySelector('.pyr3-edit-aff-presets')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-shear-fold')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-raw-fold')).toBeTruthy();
+  });
+
+  it('editing rotation writes back to a/b/c/d/e/f via decomposedToRaw', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    const xf = genome.xforms[0]!;
+    xf.a = 1; xf.b = 0; xf.c = 0; xf.d = 0; xf.e = 1; xf.f = 0;
+    const { host, state, onChange } = mount(genome);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const rotInput = card.querySelector('.pyr3-edit-aff-rotation input') as HTMLInputElement;
+    rotInput.value = '90';
+    rotInput.dispatchEvent(new Event('input'));
+    const out = state.genome.xforms[0]!;
+    expect(out.a).toBeCloseTo(0, 6);
+    expect(out.b).toBeCloseTo(-1, 6);
+    expect(out.d).toBeCloseTo(1, 6);
+    expect(out.e).toBeCloseTo(0, 6);
+    expect(onChange).toHaveBeenCalled();
+  });
+
+  it('preset click overwrites the 5 decomposed fields', () => {
+    const { host, state } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const presetsDet = card.querySelector(
+      '.pyr3-edit-aff-presets details',
+    ) as HTMLDetailsElement;
+    presetsDet.open = true;
+    const flipY = card.querySelector(
+      '.pyr3-edit-preset[data-preset="flip-y"]',
+    ) as HTMLButtonElement;
+    flipY.click();
+    const xf = state.genome.xforms[0]!;
+    expect(xf.e).toBeCloseTo(-1, 6);
+    expect(xf.a).toBeCloseTo(1, 6);
+  });
+
+  it('shear fold-up auto-opens when the genome contains a non-zero shear matrix', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    // Build a shear-y matrix: a=1, b=0.5, d=0, e=1 → shear = 0.5
+    genome.xforms[0]!.a = 1;
+    genome.xforms[0]!.b = 0.5;
+    genome.xforms[0]!.d = 0;
+    genome.xforms[0]!.e = 1;
+    const { host } = mount(genome);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const shearFold = card.querySelector(
+      '.pyr3-edit-aff-shear-fold',
+    ) as HTMLDetailsElement;
+    expect(shearFold.open).toBe(true);
+  });
+
+  it('raw-matrix fold-up edit writes a/b/c/d/e/f', () => {
+    const { host, state, onChange } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const rawFold = card.querySelector(
+      '.pyr3-edit-aff-raw-fold',
+    ) as HTMLDetailsElement;
+    rawFold.open = true;
+    const aInput = card.querySelector(
+      '.pyr3-edit-aff-raw-a input',
+    ) as HTMLInputElement;
+    aInput.value = '1.5';
+    aInput.dispatchEvent(new Event('input'));
     expect(state.genome.xforms[0]!.a).toBeCloseTo(1.5, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.a');
-
-    fireInput(inputs1[1] as HTMLInputElement, '-0.5');
-    expect(state.genome.xforms[0]!.b).toBeCloseTo(-0.5, 6);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.b');
-
-    fireInput(inputs1[2] as HTMLInputElement, '0.25');
-    expect(state.genome.xforms[0]!.c).toBeCloseTo(0.25, 6);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.c');
-
-    fireInput(inputs2[0] as HTMLInputElement, '0.9');
-    expect(state.genome.xforms[0]!.d).toBeCloseTo(0.9, 6);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.d');
-
-    fireInput(inputs2[1] as HTMLInputElement, '-1.1');
-    expect(state.genome.xforms[0]!.e).toBeCloseTo(-1.1, 6);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.e');
-
-    fireInput(inputs2[2] as HTMLInputElement, '0.05');
-    expect(state.genome.xforms[0]!.f).toBeCloseTo(0.05, 6);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.f');
   });
 });
 
-describe('xformsSection — post-transform toggle', () => {
-  it('checking the post toggle initialises identity post + enables inputs', () => {
-    const { host, state, onChange } = mount(1);
-    const card0 = cards(host)[0]!;
+describe('xforms section v2 — post-transform', () => {
+  it('post checkbox is unchecked when xform.post is undefined; no decomposed block', () => {
+    const { host, state } = mount(1);
     expect(state.genome.xforms[0]!.post).toBeUndefined();
-    const postCheckbox = card0.querySelector('.pyr3-edit-checkbox') as HTMLInputElement;
-    postCheckbox.checked = true;
-    postCheckbox.dispatchEvent(new Event('change'));
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    expect(postToggle.checked).toBe(false);
+    // No post decomposed block mounted yet.
+    expect(card.querySelector('.pyr3-edit-aff-post')).toBeNull();
+  });
+
+  it('checking the post toggle instantiates identity post + mounts decomposed block', () => {
+    const { host, state, onChange } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    postToggle.checked = true;
+    postToggle.dispatchEvent(new Event('change'));
     expect(state.genome.xforms[0]!.post).toEqual({
       a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
     });
     expect(onChange).toHaveBeenCalledWith('xforms.0.post');
-    // Post inputs (rows 3 + 4) should be enabled now.
-    const rows = card0.querySelectorAll('.pyr3-edit-affine-row');
-    const postRow1Inputs = rows[2]!.querySelectorAll(
-      '.pyr3-edit-num',
-    ) as NodeListOf<HTMLInputElement>;
-    expect(postRow1Inputs[0]!.disabled).toBe(false);
+    expect(card.querySelector('.pyr3-edit-aff-post')).toBeTruthy();
   });
 
-  it('unchecking sets post = undefined + disables inputs', () => {
+  it('unchecking the post toggle clears xform.post + removes decomposed block', () => {
     const genome = generateRandomGenome(seededRng(1));
     genome.xforms[0]!.post = { a: 2, b: 0, c: 0, d: 0, e: 2, f: 0 };
     const { host, state, onChange } = mount(genome);
-    const card0 = cards(host)[0]!;
-    const postCheckbox = card0.querySelector('.pyr3-edit-checkbox') as HTMLInputElement;
-    expect(postCheckbox.checked).toBe(true);
-    postCheckbox.checked = false;
-    postCheckbox.dispatchEvent(new Event('change'));
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    expect(postToggle.checked).toBe(true);
+    expect(card.querySelector('.pyr3-edit-aff-post')).toBeTruthy();
+    postToggle.checked = false;
+    postToggle.dispatchEvent(new Event('change'));
     expect(state.genome.xforms[0]!.post).toBeUndefined();
     expect(onChange).toHaveBeenCalledWith('xforms.0.post');
-    const rows = card0.querySelectorAll('.pyr3-edit-affine-row');
-    const postRow1Inputs = rows[2]!.querySelectorAll(
-      '.pyr3-edit-num',
-    ) as NodeListOf<HTMLInputElement>;
-    expect(postRow1Inputs[0]!.disabled).toBe(true);
+    expect(card.querySelector('.pyr3-edit-aff-post')).toBeNull();
   });
 
-  it('post-input edits write genome.xforms[i].post.<key>', () => {
+  it('post decomposed edit writes xforms.${i}.post.<field>', () => {
     const genome = generateRandomGenome(seededRng(1));
     genome.xforms[0]!.post = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 };
     const { host, state, onChange } = mount(genome);
-    const card0 = cards(host)[0]!;
-    const rows = card0.querySelectorAll('.pyr3-edit-affine-row');
-    const postRow1Inputs = rows[2]!.querySelectorAll(
-      '.pyr3-edit-num',
-    ) as NodeListOf<HTMLInputElement>;
-    fireInput(postRow1Inputs[0]!, '3.25');
-    expect(state.genome.xforms[0]!.post!.a).toBeCloseTo(3.25, 6);
-    expect(onChange).toHaveBeenCalledWith('xforms.0.post.a');
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const postBlock = card.querySelector('.pyr3-edit-aff-post') as HTMLElement;
+    const rotInput = postBlock.querySelector(
+      '.pyr3-edit-aff-rotation input',
+    ) as HTMLInputElement;
+    rotInput.value = '90';
+    rotInput.dispatchEvent(new Event('input'));
+    // 90° rotation on identity → a≈0, b≈-1, d≈1, e≈0
+    const post = state.genome.xforms[0]!.post!;
+    expect(post.a).toBeCloseTo(0, 6);
+    expect(post.b).toBeCloseTo(-1, 6);
+    expect(post.d).toBeCloseTo(1, 6);
+    expect(post.e).toBeCloseTo(0, 6);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.post.rotation');
   });
 });
 
