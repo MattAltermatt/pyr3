@@ -16,11 +16,14 @@ as any new binding.
 
 | Binding                       | Behavior                                                | Status   |
 | ----------------------------- | ------------------------------------------------------- | -------- |
-| click `active` checkbox       | Toggle this xform on / off — instant A/B render        | planned  |
-| **shift-click** `active`      | Solo — turn off all OTHER xforms, leave this one on    | planned  |
-| click variation `active`      | Toggle that variation in the chain on / off            | planned  |
-| **shift-click** variation `active` | Solo — turn off all other variations in this xform | planned  |
-| click `shape preset` button   | Overwrite the 5 decomposed fields with the preset      | planned  |
+| click `active` checkbox       | Toggle this xform on / off — instant A/B render        | shipped  |
+| **shift-click** `active`      | Solo — turn off all OTHER xforms, leave this one on    | shipped  |
+| click variation `active`      | Toggle that variation in the chain on / off            | shipped  |
+| **shift-click** variation `active` | Solo — turn off all other variations in this xform | shipped  |
+| click `shape preset` button   | Overwrite the 5 decomposed fields with the preset      | shipped  |
+| click variation `kind` button | Opens the variation picker modal                       | shipped  |
+| click `+ var` button          | Opens the picker; row appended on first preview        | shipped  |
+| click `⎘` (duplicate)         | Clone this xform inline below                          | shipped  |
 
 ## /v1/edit — scrubby number inputs (planned — see [#105](https://github.com/MattAltermatt/pyr3/issues/105))
 

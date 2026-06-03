@@ -134,6 +134,7 @@ function buildVariationRow(
 
   const wrap = document.createElement('div');
   wrap.className = 'pyr3-edit-var-row';
+  if (v.active === false) wrap.classList.add('pyr3-edit-var-inactive');
 
   const headerRow = document.createElement('div');
   headerRow.className = 'pyr3-edit-var-header';
@@ -165,6 +166,7 @@ function buildVariationRow(
       return;
     }
     v.active = activeCbx.checked ? undefined : false;
+    wrap.classList.toggle('pyr3-edit-var-inactive', v.active === false);
     onChange(`xforms.${xformIndex}.variations.${varIndex}.active`);
   });
 
@@ -206,8 +208,10 @@ function buildVariationRow(
     },
     { step: 0.01, width: '64px' },
   );
+  weightInput.title = "Strength of this variation's contribution. The chain sums weighted contributions.";
 
   const delBtn = makeIconButton('🗑️', () => removeSelf());
+  delBtn.title = 'Remove this variation from the chain.';
 
   headerRow.append(activeCbx, kindBtn, weightInput, delBtn);
   wrap.appendChild(headerRow);
@@ -525,6 +529,7 @@ function buildXformCard(
     },
     { step: 0.01, width: '64px' },
   );
+  weightInput.title = 'Relative chance this xform gets picked each chaos-game step. Higher = more contribution.';
   // Stop click on the weight input from toggling collapse.
   weightInput.addEventListener('click', (e) => e.stopPropagation());
 
@@ -541,6 +546,7 @@ function buildXformCard(
   });
   delBtn.disabled = totalXforms <= 1;
   delBtn.classList.add('pyr3-edit-xform-del');
+  delBtn.title = 'Remove this xform from the genome.';
   delBtn.addEventListener('click', (e) => e.stopPropagation());
 
   // ── Active checkbox (with shift-click solo) ──
@@ -603,47 +609,24 @@ function buildXformCard(
     body.style.display = nowCollapsed ? 'none' : 'block';
   });
 
-  // color slider + label
-  const colorSlider = makeSliderInput(
-    xform.color,
-    (n) => {
-      xform.color = n;
-      onChange(`xforms.${xformIndex}.color`);
-    },
-    { min: 0, max: 1, step: 0.001 },
-  );
-  body.appendChild(makeLabeledField('color ', colorSlider));
+  // Body section order (spec Decision 7): shape → math → color → mixing.
+  //   1. Affine        — the xform's geometric core
+  //   2. Variations    — the math chain that warps space after the affine
+  //   3. Post-affine   — optional second affine, applied after variations
+  //   4. Color         — color / colorSpeed / opacity (deposit properties)
+  //   5. Xaos          — per-source mixing weights (only when totalXforms > 1)
 
-  // colorSpeed number
-  const colorSpeedInput = makeNumberInput(
-    xform.colorSpeed,
-    (n) => {
-      xform.colorSpeed = n;
-      onChange(`xforms.${xformIndex}.colorSpeed`);
-    },
-    { step: 0.01, width: '64px' },
-  );
-  body.appendChild(makeLabeledField('colorSpeed ', colorSpeedInput));
-
-  // opacity slider
-  const opacitySlider = makeSliderInput(
-    xform.opacity ?? 1,
-    (n) => {
-      xform.opacity = n;
-      onChange(`xforms.${xformIndex}.opacity`);
-    },
-    { min: 0, max: 1, step: 0.001 },
-  );
-  body.appendChild(makeLabeledField('opacity ', opacitySlider));
-
-  // ── Affine (decomposed) ────────────────────────────────────────────
+  // ── 1. Affine (decomposed) ─────────────────────────────────────────
   body.appendChild(makeSectionLabel('affine'));
   buildDecomposedAffineBlock(body, xform, xformIndex, onChange, 'pre');
 
-  // ── Post-transform (decomposed, behind a "use post-transform" check) ──
-  body.appendChild(makeSectionLabel('post-transform'));
+  // ── 3. Post-transform header sits below variations (see below). ────
+  // (The post-transform block construction stays here so refs are in scope;
+  //  we mount it into the body AFTER variations.)
   const postWrap = document.createElement('div');
   postWrap.className = 'pyr3-edit-post-wrap';
+  // (post-transform header label is appended into the body below variations.)
+  postWrap.appendChild(makeSectionLabel('post-transform'));
 
   const postCheckbox = document.createElement('input');
   postCheckbox.type = 'checkbox';
@@ -675,9 +658,7 @@ function buildXformCard(
     mountPostBlock();
   });
 
-  body.appendChild(postWrap);
-
-  // variations label + add button + list of variation rows.
+  // ── 2. Variations chain (before post per spec body order) ──────────
   body.appendChild(makeSectionLabel('variations'));
   const varHeader = document.createElement('div');
   varHeader.className = 'pyr3-edit-var-header-row';
@@ -713,6 +694,7 @@ function buildXformCard(
     });
   });
   addVarBtn.classList.add('pyr3-edit-var-add');
+  addVarBtn.title = 'Add a variation to this xform — opens the variation picker.';
   varHeader.appendChild(addVarBtn);
   body.appendChild(varHeader);
 
@@ -729,7 +711,48 @@ function buildXformCard(
   }
   body.appendChild(varList);
 
-  // xaos row — one number input per OTHER xform.
+  // ── 3. Post-affine (the postWrap was built above; append it here) ──
+  body.appendChild(postWrap);
+
+  // ── 4. Color block (color slider, colorSpeed, opacity slider) ──────
+  body.appendChild(makeSectionLabel('color'));
+  const colorSlider = makeSliderInput(
+    xform.color,
+    (n) => {
+      xform.color = n;
+      onChange(`xforms.${xformIndex}.color`);
+    },
+    { min: 0, max: 1, step: 0.001 },
+  );
+  colorSlider.title = 'Where this xform pulls toward on the palette gradient (0 = left, 1 = right).';
+  colorSlider.classList.add('pyr3-edit-color-slider');
+  body.appendChild(makeLabeledField('color ', colorSlider));
+
+  const colorSpeedInput = makeNumberInput(
+    xform.colorSpeed,
+    (n) => {
+      xform.colorSpeed = n;
+      onChange(`xforms.${xformIndex}.colorSpeed`);
+    },
+    { step: 0.01, width: '64px' },
+  );
+  colorSpeedInput.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
+  colorSpeedInput.classList.add('pyr3-edit-color-speed');
+  body.appendChild(makeLabeledField('colorSpeed ', colorSpeedInput));
+
+  const opacitySlider = makeSliderInput(
+    xform.opacity ?? 1,
+    (n) => {
+      xform.opacity = n;
+      onChange(`xforms.${xformIndex}.opacity`);
+    },
+    { min: 0, max: 1, step: 0.001 },
+  );
+  opacitySlider.title = "Visibility of this xform's deposits. 0 = ghostly, 1 = full.";
+  opacitySlider.classList.add('pyr3-edit-opacity-slider');
+  body.appendChild(makeLabeledField('opacity ', opacitySlider));
+
+  // ── 5. Xaos row — one number input per OTHER xform. ────────────────
   if (totalXforms > 1) {
     body.appendChild(makeSectionLabel('xaos →'));
     const xaosRow = document.createElement('div');
@@ -749,6 +772,7 @@ function buildXformCard(
         },
         { step: 0.01, min: 0, width: '56px' },
       );
+      inp.title = `Per-source bias: how likely THIS xform is picked AFTER xform ${k + 1}. 1 = neutral, 0 = forbidden.`;
       xaosRow.appendChild(makeLabeledField(`→xf${k + 1} `, inp));
     }
     body.appendChild(xaosRow);

@@ -146,19 +146,15 @@ describe('xformsSection — color / colorSpeed / opacity', () => {
   it('colorSpeed number + opacity slider write their respective paths', () => {
     const { host, state, onChange } = mount(1);
     const card0 = cards(host)[0]!;
-    // Body field order is: color slider, colorSpeed number, opacity slider,
-    // then affine rows. Grab the colorSpeed number input directly.
-    const body = card0.querySelector('.pyr3-edit-xform-body') as HTMLElement;
-    const bodyNumberInputs = body.querySelectorAll('.pyr3-edit-num');
-    // First body number input is colorSpeed.
-    const colorSpeedInput = bodyNumberInputs[0] as HTMLInputElement;
+    // Body section order (v2): affine → variations → post → color → xaos.
+    // Target the color/opacity controls by their stable classes rather than
+    // by index, so future reorders don't break this test.
+    const colorSpeedInput = card0.querySelector('.pyr3-edit-color-speed') as HTMLInputElement;
     fireInput(colorSpeedInput, '0.31');
     expect(state.genome.xforms[0]!.colorSpeed).toBeCloseTo(0.31, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.colorSpeed');
 
-    // Opacity is the SECOND slider in the body (first is color).
-    const sliders = body.querySelectorAll('.pyr3-edit-slider');
-    const opacitySlider = sliders[1] as HTMLInputElement;
+    const opacitySlider = card0.querySelector('.pyr3-edit-opacity-slider') as HTMLInputElement;
     fireInput(opacitySlider, '0.7');
     expect(state.genome.xforms[0]!.opacity).toBeCloseTo(0.7, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.opacity');

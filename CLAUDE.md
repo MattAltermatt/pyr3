@@ -129,6 +129,31 @@ v0.1):
 
 Any code that breaks this seam should be loudly questioned before landing.
 
+## Editor affine decomposition (`/v1/edit` xforms v2)
+
+The xforms section presents each xform's affine pre-transform as 5 plain
+fields (scale x, scale y, rotation in degrees, position x, position y)
+plus optional shear, with the raw `a..f` matrix tucked into a fold-up.
+The genome's source of truth stays the raw `a..f` matrix on `Xform`;
+`src/affine-decompose.ts` provides forward (`decomposedToRaw`) + inverse
+(`rawToDecomposed`) maps that recompose on every edit.
+
+Composition order is QR: shear → scale → rotate → translate.
+Canonical sign: `scale_x ≥ 0` (positive); a flipped orientation shows up
+as `scale_y < 0`. Editing one view (raw or decomposed) live-syncs the
+other. Open file with `shear ≠ 0` → the shear fold-up auto-expands so
+the user doesn't miss it. Same treatment is applied to the optional
+post-affine when "use post-transform" is checked.
+
+The picker for variation kinds (`src/edit-variation-picker.ts`) is the
+"fitting-room" modal: tile-click previews live, apply commits, revert
+restores the snapshot while keeping the picker open. `Xform.active` and
+`Variation.active` are optional booleans (undefined = active); the
+packer (`src/symmetry.ts:expandGenomeForGPU`) zeros packed weights when
+`active === false` — no shader change. Shift-click on the active
+checkbox solos; `state.soloXformSnapshot` / `soloVariationSnapshot`
+hold the transient restore state (UI-only, never serialized).
+
 ## Verification expectations
 
 Per the global workflow:
