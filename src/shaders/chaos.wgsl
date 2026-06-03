@@ -84,10 +84,12 @@ struct Uniforms {
   // chaos_main bails those threads (see the guard below) so they can't run the
   // chaos loop against stale/zero RNG and atomicAdd bogus hits into the histogram.
   walker_count: u32,    // slot 14 (byte 56)
-  // #65 Tier 1: walker jitter amplitude is now a runtime parameter. Per-iter
-  // sub-ulp perturbation on the trajectory commit; see the jx/jy site below
-  // for the rationale. Default 1e-10 (shipped value from #6) — DEFAULT_WALKER_JITTER
-  // in src/chaos.ts. Setting 0 disables jitter (f32-collapse cliff returns).
+  // #65 Tier 1: walker jitter is a runtime parameter. Per-iter scale-relative
+  // perturbation on the trajectory commit (`local_mag * walker_jitter` since
+  // #43); see the jx/jy site below for the rationale. Default
+  // DEFAULT_WALKER_JITTER in src/chaos.ts — a dimensionless proportional
+  // factor, not an absolute amplitude. Setting 0 disables jitter
+  // (f32-collapse cliff returns).
   walker_jitter: f32,   // slot 15 (byte 60)
 };
 

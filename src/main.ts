@@ -101,8 +101,8 @@ async function main(): Promise<void> {
 
   // #65 Tier 1 — walker-jitter knob, gated to DEV.
   //
-  // Production builds always use DEFAULT_WALKER_JITTER (1e-10) — no magic URL
-  // knob floating in the user-facing surface area. `npm run dev` exposes both
+  // Production builds always use DEFAULT_WALKER_JITTER — no magic URL knob
+  // floating in the user-facing surface area. `npm run dev` exposes both
   // the `?jitter=<amp>` URL parser (handy for shareable repro links during
   // investigations) AND the `__pyr3SetJitter(amp)` console hook (hot-swap
   // without page reload). The BE CLI `--jitter` flag is independent of this

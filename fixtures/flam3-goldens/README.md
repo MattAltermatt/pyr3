@@ -1,6 +1,6 @@
 # Parity fixtures — Electric Sheep `.flame` genomes
 
-The 25 fixtures in this directory are the v1.0 BE-vs-flam3-C parity corpus (see
+The 26 fixtures in this directory are the BE-vs-flam3-C parity corpus (see
 [`CLAUDE.md`](../../CLAUDE.md) → "Determinism & R tolerance contract"). Each
 `<id>/` holds the source `<id>.flam3`, the flam3-C `golden.png`, the calibrated
 `meta.json` tier contract, and pyr3 render/diff PNGs (gitignored).
@@ -35,6 +35,7 @@ licenses depending on the contributor:
 | 248.04487 | sparky | — |
 | 248.11268 | sparky | — |
 | 248.23554 | fractalapple | — |
+| 248.25703 | fractalapple | — |
 | coverage.243.04616 | brood | electricsheep.org |
 | coverage.245.00381 | brood | electricsheep.org |
 | coverage.245.06687 | _(unattributed in source)_ | — |

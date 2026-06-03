@@ -94,8 +94,9 @@ export interface RenderRequest {
   seed?: number;
   /** Forces DE off regardless of genome.density. */
   forceDeOff?: boolean;
-  /** #65 Tier 1 — override walker-jitter amplitude for this render.
-   *  Defaults to DEFAULT_WALKER_JITTER (`src/chaos.ts`, 1e-10). */
+  /** #65 Tier 1 — override walker-jitter for this render. Defaults to
+   *  DEFAULT_WALKER_JITTER (`src/chaos.ts`); since #43 a scale-relative
+   *  proportional factor, not an absolute amplitude. */
   walkerJitter?: number;
 }
 

@@ -52,8 +52,8 @@ export interface OrchestratorOpts {
    *  (yield every chunk). Higher values reduce compositor-tick overhead
    *  at the cost of UI responsiveness between yields. PYR3-027 A/B knob. */
   yieldEveryNChunks?: number;
-  /** #65 Tier 1 — walker-jitter amplitude forwarded to renderer.iterate.
-   *  Default DEFAULT_WALKER_JITTER (1e-10). */
+  /** #65 Tier 1 — walker-jitter forwarded to renderer.iterate. Default
+   *  DEFAULT_WALKER_JITTER (a scale-relative proportional factor since #43). */
   walkerJitter?: number;
 }
 
@@ -96,8 +96,8 @@ export interface DecoupledOpts {
   /** Present with density-estimation OFF during refinement (cheap), then
    *  one full-quality DE present at the end. Default true. */
   cheapPreview?: boolean;
-  /** #65 Tier 1 — walker-jitter amplitude forwarded to renderer.iterate.
-   *  Default DEFAULT_WALKER_JITTER (1e-10). */
+  /** #65 Tier 1 — walker-jitter forwarded to renderer.iterate. Default
+   *  DEFAULT_WALKER_JITTER (a scale-relative proportional factor since #43). */
   walkerJitter?: number;
 }
 

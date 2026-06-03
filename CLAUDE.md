@@ -5,7 +5,7 @@
 ```bash
 npm install                     # one-time
 npm run dev                     # Vite dev server on :5173 (Chrome verify target)
-npm test                        # unit suite, ~2s wall, ~4800 passing (includes seam-invariant tests)
+npm test                        # unit suite, ~2s wall (includes seam-invariant tests)
 npm run test:parity             # 26-fixture BE-vs-flam3-C parity rig, ~91s wall
 npm run test:fe-be-smoke        # 3-fixture FE↔BE smoke (~90s) — run when the FE viewer changes
 npm run test:parity-fe-be       # FULL 26-fixture FE↔BE sweep, ~13min — PRE-RELEASE ONLY
@@ -64,7 +64,7 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   - `user.email = 1435066+MattAltermatt@users.noreply.github.com`
 - License: GPL-3.0-or-later (inherited from the flam3 lineage).
 - Spec location: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
-- Version source of truth: `package.json` (currently `1.0.0`). The showcase build reads it.
+- Version source of truth: `package.json`. The showcase build reads it.
 - Git tags: **the first tag is `v1.0.0`** (semver, matching `package.json`). The v0.x line is
   work-in-progress and is NOT tagged (no one wants v0.x tags of a WIP). At v1.0.0 and after,
   each ship bumps `package.json`, tags `git tag vX.Y.Z`, and cuts a GitHub Release (the ship
@@ -91,7 +91,7 @@ Short form:
 5. v1.0 ship gate (two gates, both must pass on the curated fixture set):
    - **BE parity vs flam3-C** (BE CLI renders match flam3-C
      `flam3-render-32bit-isaac qs=1` output at genome-native dims within
-     R tolerance) — the 25-fixture parity rig (`npm run test:parity`); an
+     R tolerance) — the 26-fixture parity rig (`npm run test:parity`); an
      optional 4K-resolution gate is deferred (`#34`)
    - **FE↔BE parity at quick-mode dims** (browser viewer renders match
      BE CLI for the same fixture at 1024 long-edge within R tolerance) —
@@ -168,7 +168,7 @@ tightened through Phase 3 cycles. Live thresholds in each
 `meta.json` carries `expectedR` (3-run mean R vs flam3-C on the current
 engine), `thresholdR = expectedR + 1.0`, and `tier: 1 | 2`. **Tier-1**
 fixtures have `expectedR < 5.0` — the healthy parity band where pyr3
-matches flam3-C within visual tolerance (21 of 25 fixtures). **Tier-2**
+matches flam3-C within visual tolerance (22 of 26 fixtures). **Tier-2**
 fixtures have `expectedR ≥ 5.0` (4 fixtures) and carry a `notes` field
 describing the residual. Both gates are equally load-bearing for the v1.0
 ship contract: a tier-2 regression past `thresholdR` means the residual

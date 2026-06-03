@@ -71,9 +71,9 @@ benchmarks).
 ## Parity & the contract
 
 pyr3 renders are **"similar but not the same" as flam3-C** — lineage-respectful, but pyr3
-exercises independent judgment where flam3's C-era constraints don't apply. **v1.0 ships when
-both the browser and CLI independently render fixtures within R-tolerance of flam3-C golden
-PNGs.** Both gates currently pass on the curated 25-fixture corpus:
+exercises independent judgment where flam3's C-era constraints don't apply. **v1.0 shipped
+when both the browser and CLI independently rendered fixtures within R-tolerance of flam3-C
+golden PNGs.** Both gates pass on the curated 26-fixture corpus:
 
 ```sh
 npm run test:parity         # BE: each render gated against its flam3-C golden (~90s, needs Dawn WebGPU)
@@ -82,15 +82,16 @@ npm run test:parity-fe-be   # FE↔BE: headless-WebGPU Playwright rig, browser v
 
 Each fixture in `fixtures/flam3-goldens/<id>/` carries `golden.png` (flam3-C output), the
 source `.flame`, and a `meta.json` with the calibrated tier contract: `expectedR` (measured R
-vs flam3-C), `thresholdR` (`= expectedR + 1.0`), and `tier`. **21 of 25 fixtures** sit in the
-**tier-1** healthy band (R < 5). The 4 **tier-2** fixtures (R ≥ 5) are a small residual of
-**GPU-f32 chaos-game spatial diffuseness** — the walker measure spreads slightly more than
-flam3-C's f64 path — minimized by the v0.36 walker-jitter tuning and tracked for a principled
-re-fuse fix in [#43](https://github.com/MattAltermatt/pyr3/issues/43). It is **not** the
-variation-kernel "f32 precision floor" earlier framings claimed: the v0.36 DE-normalization
-fix collapsed the old outliers back into tier-1, so the bulk of that gap was a bug, not a
-floor. The widest remaining fixture, `electricsheep.248.23554`, renders at R ≈ 11 (down from
-~24 before the jitter fix).
+vs flam3-C), `thresholdR` (`= expectedR + 1.0`), and `tier`. **22 of 26 fixtures** sit in the
+**tier-1** healthy band (R < 5). The 4 **tier-2** fixtures (R ≥ 5) have **non-jitter,
+per-fixture residuals** — each tracked individually rather than as a class. The widest
+remaining fixture, `electricsheep.244.82986`, renders at R ≈ 8.9. The historical
+chaos-game spatial-diffuseness story was retired in
+[#43](https://github.com/MattAltermatt/pyr3/issues/43) (2026-06-02), which replaced the
+static walker-jitter amplitude with a scale-relative proportional factor; this dropped
+`248.23554` from R ≈ 11 to R ≈ 6.4 without per-fixture tuning. The remaining tier-2
+residuals were unchanged by the rework, which is the empirical proof their divergence is
+upstream of the chaos-game perturbation.
 
 ## Lineage
 

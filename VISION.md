@@ -29,13 +29,13 @@ compiler constraints of its era — constraints pyr3 doesn't share on the modern
 If a downstream consumer wants 100% bit-faithful flam3 parity, that's a future feature flag,
 not the default.
 
-## 🎯 The v1.0 ship gate
+## 🎯 The v1.0 ship gate (passed)
 
-**Two gates, both green, on a curated 25-fixture set of Electric Sheep flames:**
+**Two gates, both green, on the curated 26-fixture set of Electric Sheep flames:**
 
 1. **BE parity vs flam3-C.** The headless CLI renders match
    `flam3-render-32bit-isaac qs=1` output within R tolerance at native
-   genome dims (the 25-fixture parity corpus). flam3-C is the canonical
+   genome dims (the 26-fixture parity corpus). flam3-C is the canonical
    lineage source of truth; the **2026-05-28 pivot replaced the
    prior reference renderer**. The predecessor port was close (R<5 vs flam3
    in most cases) but carried a port-specific offset that confounded
@@ -44,14 +44,17 @@ not the default.
    native-dim parity implies 4K; see issue #34.)
 2. **FE↔BE parity at quick-mode dims.** The browser viewer renders
    match the BE CLI for the same fixture at FE's supported dims
-   (1024 long-edge, 16 SPP) within R tolerance. FE is interactive only
-   — 4K is BE-exclusive per the v0.14 pivot.
+   (1024 long-edge, 16 SPP) within R tolerance. The FE quality tiers
+   now go all the way to 4K in-browser (added in v0.29); the parity
+   gate stays at quick-mode dims because it measures engine agreement,
+   not output size.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
-same" contract holds across engines too. **Both gates are green**, the repo
-is public, and the viewer is live at [pyr3.app](https://pyr3.app/) — stamping
-the `v1.0` tag (once its [milestone](https://github.com/MattAltermatt/pyr3/milestones)
-closes) is the remaining call.
+same" contract holds across engines too. Both gates went green for v1.0,
+and the v1.0–v1.4 line has shipped — the viewer is live at
+[pyr3.app](https://pyr3.app/), tagged releases are published, and the
+[milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
+tracks themed follow-on work.
 
 ## 🔥 Keep (the soul)
 
@@ -79,6 +82,11 @@ closes) is the remaining call.
   Electric Sheep flame; the viewer fetches that one chunk and renders it. Paste anywhere;
   always the same flame. (The legacy inline `?flame=<encoded>` codec was removed in v0.32,
   superseded by the corpus URL.)
+- **`/v1/evolve` — a lightweight Picbreeder-style creator surface.** A 3×3 grid of
+  mutated children around a center flame, with click-to-promote, lockable axes (palette,
+  variations, xforms, viewport), an inline structural inspector, and `.pyr3.json`
+  save/load. In flight on `feature/issue-73-evolve-page` as the first half-step toward
+  the deferred full editor.
 
 ## 🗃️ Explicitly defer
 

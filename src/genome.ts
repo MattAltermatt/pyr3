@@ -406,8 +406,9 @@ export function packXaos(genome: Genome): ArrayBuffer {
 // conditional on the previous xform.
 //
 // Matches flam3 `CHOOSE_XFORM_GRAIN`. 14 bits = 16384, fits in u16. We
-// store as u32 for WGSL ergonomics (no native u16). At 8 xforms × 16384 ×
-// 4 bytes = 512 KB worst case — well under WebGPU storage limits.
+// store as u32 for WGSL ergonomics (no native u16). At MAX_XFORMS=128
+// the table is (128+1) × 16384 × 4 = ~8 MB worst case — well under WebGPU
+// storage limits; #83 tracks the padding waste on small genomes.
 export const CHOOSE_XFORM_GRAIN = 16384;
 export const CHOOSE_XFORM_GRAIN_M1 = CHOOSE_XFORM_GRAIN - 1;
 export const XFORM_DISTRIB_BYTES = (MAX_XFORMS + 1) * CHOOSE_XFORM_GRAIN * 4;

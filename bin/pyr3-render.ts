@@ -74,13 +74,14 @@ async function main(): Promise<void> {
       }
       seedOverride = (n >>> 0);
     } else if (a === '--jitter') {
-      // #65 Tier 1 — override walker-jitter amplitude (default 1e-10, the
-      // shipped #6 value). 0 disables jitter (f32-collapse cliff returns);
-      // see src/shaders/chaos.wgsl for the rationale.
+      // #65 Tier 1 — override walker-jitter (defaults to DEFAULT_WALKER_JITTER;
+      // since #43 a scale-relative proportional factor, not an absolute
+      // amplitude). 0 disables jitter (f32-collapse cliff returns); see
+      // src/shaders/chaos.wgsl for the rationale.
       const v = rawArgs[++i];
       const n = v === undefined ? NaN : Number(v);
       if (!Number.isFinite(n) || n < 0) {
-        console.error('--jitter requires a non-negative number (e.g. 1e-10, 0)');
+        console.error('--jitter requires a non-negative number (e.g. 1e-7, 0)');
         process.exit(1);
       }
       walkerJitter = n;

@@ -46,10 +46,10 @@ export interface DispatchOpts {
   /** PYR3-029 Phase 5b — enable per-iter trace emission for walker 0, first
    *  1000 post-fuse iters. Caller reads `pass.traceBuffer` to retrieve. */
   traceMode?: boolean;
-  /** #65 Tier 1 — per-iter walker trajectory jitter amplitude. Default
-   *  DEFAULT_WALKER_JITTER (1e-10, the shipped #6 value); 0 disables jitter
-   *  (f32-collapse cliff returns). See chaos.wgsl `walker_jitter` for the
-   *  full rationale; #43 tracks the principled scale-relative replacement. */
+  /** #65 Tier 1 — per-iter walker trajectory jitter factor. Default
+   *  DEFAULT_WALKER_JITTER (a scale-relative proportional factor since #43);
+   *  0 disables jitter (f32-collapse cliff returns). See chaos.wgsl
+   *  `walker_jitter` for the full rationale. */
   walkerJitter?: number;
 }
 
@@ -153,7 +153,8 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
   });
 
   // PYR3-029 Phase 5c: flam3-canonical xform-pick distribution table.
-  // (MAX_XFORMS + 1) rows × 16384 entries × u32 = 528 KB worst case.
+  // (MAX_XFORMS + 1) rows × 16384 entries × u32 = ~8 MB worst case at
+  // MAX_XFORMS=128 (most genomes use ≤4 xforms; #83 tracks the padding).
   const xformDistribBuffer = device.createBuffer({
     label: 'pyr3.chaos.xform_distrib',
     size: XFORM_DISTRIB_BYTES,
