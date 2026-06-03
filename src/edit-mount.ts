@@ -5,8 +5,9 @@
 // mountEditUi. The renderer's histogram lives across edits — fast-lane edits
 // re-present without touching it; slow-lane edits reset + re-iterate.
 //
-// Top-bar action callbacks: 🎲 reroll / 📂 open / 💾 save wired here in Task 4.1.
-// 🖼️ render PNG is Task 4.2.
+// Top-bar action callbacks: 🎲 reroll / 📂 open / 💾 save wired here in Task 4.1;
+// 🖼️ render PNG wired in Task 4.2 (resizes editor canvas to configured dims,
+// renders at full quality, toBlobs + downloads, restores preview dims).
 
 import {
   createEditState,
@@ -112,7 +113,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       onReroll: handleReroll,
       onOpenFile: handleOpenFile,
       onSaveFile: handleSaveFile,
-      // onRenderPng → Task 4.2
+      onRenderPng: handleRenderPng,
     });
   }
 
@@ -153,6 +154,63 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     });
     document.body.appendChild(input);
     input.click();
+  }
+
+  async function handleRenderPng(): Promise<void> {
+    const targetW = state.genome.size?.width ?? 1024;
+    const targetH = state.genome.size?.height ?? 1024;
+    const oversample = state.genome.oversample ?? 1;
+    const filterRadius = state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+
+    const modal = showModal(opts.root, `Rendering at ${targetW}×${targetH}…`);
+    panelHost.setAttribute('data-busy', 'true');
+    // Yield once so the modal paints before the heavy resize+iterate.
+    await new Promise<void>((r) => setTimeout(r, 16));
+
+    try {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
+      const view = ctx.getCurrentTexture().createView();
+      editRenderer.fullRenderAt(state.genome, state.seed, targetW, targetH, view);
+
+      await new Promise<void>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('toBlob returned null — canvas was not snapshottable'));
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${slugify(state.genome.name)}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          resolve();
+        }, 'image/png');
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`pyr3-edit: render-PNG failed — ${msg}`);
+      showToast(panelHost, `Render failed: ${msg}`);
+    } finally {
+      // Restore preview dims + re-iterate so the editor canvas isn't stuck
+      // showing the high-res render at a downscaled blur.
+      canvas.width = preview.width;
+      canvas.height = preview.height;
+      renderer.resize({
+        width: preview.width,
+        height: preview.height,
+        oversample: 1,
+        filterRadius: DEFAULT_FILTER_RADIUS,
+      });
+      const view2 = ctx.getCurrentTexture().createView();
+      editRenderer.fullRender(state.genome, state.seed, view2, preview.width, preview.height);
+      panelHost.removeAttribute('data-busy');
+      modal.remove();
+    }
   }
 
   function handleSaveFile(): void {
@@ -206,4 +264,17 @@ function showToast(host: HTMLElement, message: string): void {
   `;
   host.appendChild(t);
   setTimeout(() => t.remove(), 4000);
+}
+
+function showModal(host: HTMLElement, message: string): HTMLElement {
+  const m = document.createElement('div');
+  m.textContent = message;
+  m.style.cssText = `
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.6); color: #ddd;
+    font-size: 14px; z-index: 200; pointer-events: all;
+  `;
+  host.appendChild(m);
+  return m;
 }
