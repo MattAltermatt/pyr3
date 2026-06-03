@@ -199,3 +199,26 @@ describe('createEditState', () => {
     expect(st.genome).toBe(g);
   });
 });
+
+import { snapshotForSolo, restoreFromSolo, type SoloSnapshot } from './edit-state';
+
+describe('snapshotForSolo / restoreFromSolo', () => {
+  it('snapshot captures prior active state per index', () => {
+    const items = [{ active: true }, { active: false }, { active: undefined as boolean | undefined }];
+    const snap = snapshotForSolo(items, 1);
+    // index 1 is the solo target; snapshot stores the OTHERS' prior state.
+    expect(snap.targetIndex).toBe(1);
+    expect(snap.others[0]).toBe(true);
+    expect(snap.others[2]).toBe(undefined);
+  });
+
+  it('restore writes the prior active values back', () => {
+    const items = [{ active: false }, { active: true }, { active: false }];
+    const snap: SoloSnapshot = { targetIndex: 1, others: { 0: undefined, 2: true } };
+    restoreFromSolo(items, snap);
+    expect(items[0]!.active).toBe(undefined);
+    expect(items[2]!.active).toBe(true);
+    // The target item is untouched by restore.
+    expect(items[1]!.active).toBe(true);
+  });
+});

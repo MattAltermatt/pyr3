@@ -60,6 +60,12 @@ export interface EditState {
   preview: { width: number; height: number };
   sectionCollapse: Record<SectionKey, boolean>;
   xformCollapse: Record<number, boolean>;
+  /** Transient solo state. Present when an xform / variation is currently
+   *  "soloed" via shift-click. Cleared when solo exits or the genome
+   *  changes. Not persisted to .pyr3.json. */
+  soloXformSnapshot?: SoloSnapshot;
+  /** Per-xform-index variation solo snapshot. Keyed by xform index. */
+  soloVariationSnapshot?: Record<number, SoloSnapshot>;
 }
 
 export function createEditState(genome: Genome, seed: number): EditState {
@@ -158,4 +164,30 @@ export function createLaneScheduler(
       }
     },
   };
+}
+
+/** Transient UI-only solo state. Captured when shift-click activates solo on
+ *  an xform / variation; restored when solo exits. */
+export interface SoloSnapshot {
+  targetIndex: number;
+  others: Record<number, boolean | undefined>;
+}
+
+/** Snapshot every item's `active` state EXCEPT the soloed index. Caller is
+ *  responsible for setting `targetIndex` items' active values to false
+ *  afterward. */
+export function snapshotForSolo(items: Array<{ active?: boolean }>, targetIndex: number): SoloSnapshot {
+  const others: Record<number, boolean | undefined> = {};
+  for (let i = 0; i < items.length; i++) {
+    if (i !== targetIndex) others[i] = items[i]!.active;
+  }
+  return { targetIndex, others };
+}
+
+/** Restore the prior `active` state captured in the snapshot. Idempotent. */
+export function restoreFromSolo(items: Array<{ active?: boolean }>, snap: SoloSnapshot): void {
+  for (const [idxStr, prev] of Object.entries(snap.others)) {
+    const i = Number(idxStr);
+    if (i >= 0 && i < items.length) items[i]!.active = prev;
+  }
 }
