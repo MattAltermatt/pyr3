@@ -102,28 +102,52 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const state = createEditState(initialGenome, initialSeed);
   state.preview = preview;
 
-  // Renderer + wrapper.
-  const renderer: Renderer = createRenderer(opts.device, opts.format, {
-    width: preview.width,
-    height: preview.height,
-    oversample: 1,
-    filterRadius: DEFAULT_FILTER_RADIUS,
-  });
-  const editRenderer: EditRenderer = createEditRenderer(renderer, {
-    resize: (w, h) => renderer.resize({
-      width: w,
-      height: h,
+  // Resolve render dims from genome — when the user picks a size preset in
+  // the Render section, the preview canvas re-sizes + re-iterates to match.
+  // Falls back to preview-default (512×512) when genome.size is unset.
+  // Oversample is capped at 1 for the live preview (oversample > 1 at full
+  // preset dims often blows past WebGPU storage-buffer limits; the
+  // 🖼️ render-PNG path uses the genome's actual oversample at save time).
+  function effectiveDims(): { width: number; height: number; oversample: number; filterRadius: number } {
+    const size = state.genome.size;
+    const width = (size?.width ?? 0) > 0 ? size!.width : preview.width;
+    const height = (size?.height ?? 0) > 0 ? size!.height : preview.height;
+    return {
+      width,
+      height,
       oversample: 1,
-      filterRadius: DEFAULT_FILTER_RADIUS,
-    }),
+      filterRadius: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
+    };
+  }
+
+  // Renderer + wrapper, sized to whatever the genome currently asks for.
+  const initialDims = effectiveDims();
+  canvas.width = initialDims.width;
+  canvas.height = initialDims.height;
+  const renderer: Renderer = createRenderer(opts.device, opts.format, initialDims);
+  const editRenderer: EditRenderer = createEditRenderer(renderer, {
+    resize: (w, h) => {
+      // Recompute filter from the genome (oversample is fixed at 1 above).
+      canvas.width = w;
+      canvas.height = h;
+      renderer.resize({
+        width: w,
+        height: h,
+        oversample: 1,
+        filterRadius: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
+      });
+    },
   });
 
   // Lane scheduler — each fire grabs a fresh swapchain texture view and
-  // hands it to the editRenderer. Every fire also notifies the host so the
-  // top bar's dims/name readout stays in sync.
+  // hands it to the editRenderer. dims come from genome so Render-section
+  // edits (W×H, filter) propagate through rebuild lane to the preview.
+  // Every fire also notifies the host so the top bar's dims/name readout
+  // stays in sync.
   const scheduler: LaneScheduler = createLaneScheduler((lane, _paths) => {
+    const d = effectiveDims();
     const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane(lane, state.genome, state.seed, view, preview.width, preview.height);
+    editRenderer.applyLane(lane, state.genome, state.seed, view, d.width, d.height);
     opts.onStateChange?.(state);
   });
 
@@ -146,8 +170,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     state.genome = genome;
     if (seed !== undefined) state.seed = seed;
     rebuildPanel();
-    const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane('slow', state.genome, state.seed, view, preview.width, preview.height);
+    // Rebuild lane in case the new genome has a different size / filter.
+    const d = effectiveDims();
+    if (d.width !== canvas.width || d.height !== canvas.height) {
+      const view = ctx.getCurrentTexture().createView();
+      editRenderer.applyLane('rebuild', state.genome, state.seed, view, d.width, d.height);
+    } else {
+      const view = ctx.getCurrentTexture().createView();
+      editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
+    }
     opts.onStateChange?.(state);
   }
 
@@ -264,7 +295,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // Initial mount + first paint.
   rebuildPanel();
   const view0 = ctx.getCurrentTexture().createView();
-  editRenderer.fullRender(state.genome, state.seed, view0, preview.width, preview.height);
+  editRenderer.fullRender(state.genome, state.seed, view0, initialDims.width, initialDims.height);
   opts.onStateChange?.(state);
 
   return {

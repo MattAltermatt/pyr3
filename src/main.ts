@@ -255,13 +255,13 @@ async function main(): Promise<void> {
       format: editFormat,
       defaultNick: savedNick,
       sections: [
+        renderSection,
         paletteSection,
         viewportSection,
         xformsSection,
         finalSection,
         globalSection,
         densitySection,
-        renderSection,
       ],
       onStateChange: (state) => {
         editBar.setMeta({
