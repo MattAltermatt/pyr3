@@ -43,10 +43,13 @@ const SEAM_EXEMPT = new Set<string>([
   'corpus-bounds.ts',     // same
   'chunk-fetch.ts',       // same
   'feature-index-client.ts', // same
+  'flame-import.ts',      // DOMParser-based XML parse; "document" appears only in a comment
+  'gallery-filter-ui.ts', // mounts DOM — #79 sibling gap to variation-picker
   'gallery-mount.ts',     // mounts DOM — fine to use document there
   'load-intent.ts',       // galleryUrl/corpusUrl read import.meta.env.BASE_URL
   'loader.ts',            // user-facing file loader, uses File API
   'ui-bar.ts',            // viewer bar — uses document
+  'variation-picker.ts',  // DOM-mounting variation picker (#79)
   'webgpu-check.ts',      // probes navigator.gpu — checking is its job
   'brotli.ts',            // platform-aware decoder probe (native vs wasm)
   'device.ts',            // viewer-side device acquisition uses navigator.gpu
@@ -57,15 +60,30 @@ const SEAM_EXEMPT = new Set<string>([
   'render-orchestrator.ts', // orchestrator pulls rAF when available — see below
 ]);
 
-// Banned patterns — direct runtime checks for the host environment.
-// These would fork the engine into "do X in browser, Y in node" at
-// runtime, which is exactly the seam we're protecting.
+// Banned patterns — direct runtime checks for the host environment AND
+// imports that wire engine code to one environment only. These would fork
+// the engine into "works in browser only" or "works in node only", which
+// is exactly the seam we're protecting.
+//
+// #80 extended the original "typeof X" / isNode / isBrowser set with:
+//   - process.env reads — node-only env access
+//   - `from 'node:*'` imports — node built-ins
+//   - `from 'pngjs' | 'happy-dom' | 'webgpu'` — node-only npm packages
+//     (engine code that needs these belongs in bin/ host or scripts/)
+//   - raw `document.` / `window.` references — browser-only globals; the
+//     property-access form (`document.foo`) catches real runtime uses
+//     while skipping bare "document" mentions inside comments/strings.
 const BANNED_PATTERNS: ReadonlyArray<{ pattern: RegExp; description: string }> = [
   { pattern: /typeof\s+window\s*[!=]==?\s*['"`]undefined['"`]/, description: 'typeof window check' },
   { pattern: /typeof\s+process\s*[!=]==?\s*['"`]undefined['"`]/, description: 'typeof process check' },
   { pattern: /typeof\s+document\s*[!=]==?\s*['"`]undefined['"`]/, description: 'typeof document check' },
   { pattern: /\bisNode\b/, description: 'isNode runtime branch' },
   { pattern: /\bisBrowser\b/, description: 'isBrowser runtime branch' },
+  { pattern: /\bprocess\.env\b/, description: 'process.env read (node-only)' },
+  { pattern: /from\s+['"]node:[^'"]+['"]/, description: "from 'node:*' import" },
+  { pattern: /from\s+['"](pngjs|happy-dom|webgpu)['"]/, description: 'node-only npm import' },
+  { pattern: /\bdocument\.[a-zA-Z_$]/, description: 'raw document.* (browser-only)' },
+  { pattern: /\bwindow\.[a-zA-Z_$]/, description: 'raw window.* (browser-only)' },
 ];
 
 function listEngineFiles(): string[] {
