@@ -36,7 +36,8 @@ function randomXform(rng: () => number): Xform {
     weight: 0.4 + rng() * 0.6,
     color: rng(),
     colorSpeed: 0.5,
-    opacity: 1,
+    // opacity left undefined — defaults to 1; the serializer round-trip drops
+    // explicit 1 values, so omitting here keeps save→reopen byte-identical.
     variations,
   };
 }
