@@ -354,6 +354,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       editRenderer.applyLane('slow', genome, state.seed, view, w, h);
       opts.onStateChange?.(state);
       await opts.device.queue.onSubmittedWorkDone();
+      // Yield to the browser's paint pipeline BEFORE starting the next
+      // render. Without this, a fast click stream chains GPU renders so
+      // tightly that each one overwrites the swapchain texture before the
+      // browser ever composites it — user sees no updates until the loop
+      // exits and the final frame paints. The rAF wait gives the
+      // compositor a slot per render, so each click produces a visible
+      // frame.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     } while (liveDirty);
     liveInFlight = false;
   }
