@@ -39,13 +39,18 @@ function typeInto(cell: HTMLElement, value: string): void {
   inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
+function activeCheckbox(host: HTMLElement): HTMLInputElement {
+  // The first checkbox is always the section-level "active" toggle.
+  return host.querySelector('input[type="checkbox"]') as HTMLInputElement;
+}
+
 function setupOn(): {
   host: HTMLDivElement;
   state: ReturnType<typeof createEditState>;
   onChange: ReturnType<typeof vi.fn>;
 } {
   const env = setupOff();
-  const check = env.host.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  const check = activeCheckbox(env.host);
   check.checked = true;
   check.dispatchEvent(new Event('change'));
   env.onChange.mockClear();
@@ -61,9 +66,9 @@ describe('finalSection — shell', () => {
 
   it('renders an active checkbox at the top of the body', () => {
     const { host } = setupOff();
-    const check = host.querySelector('input[type="checkbox"]');
+    const check = activeCheckbox(host);
     expect(check).not.toBeNull();
-    expect((check as HTMLInputElement).checked).toBe(false);
+    expect(check.checked).toBe(false);
   });
 
   it('checkbox starts checked when finalxform is already set', () => {
@@ -75,7 +80,7 @@ describe('finalSection — shell', () => {
       variations: [{ index: V.linear, weight: 1 }],
     };
     finalSection.build(host, state, () => {});
-    const check = host.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const check = activeCheckbox(host);
     expect(check.checked).toBe(true);
   });
 });
@@ -85,7 +90,7 @@ describe('finalSection — toggle behaviour', () => {
     const { host, state, onChange } = setupOff();
     expect(state.genome.finalxform).toBeUndefined();
 
-    const check = host.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const check = activeCheckbox(host);
     check.checked = true;
     check.dispatchEvent(new Event('change'));
 
@@ -110,7 +115,7 @@ describe('finalSection — toggle behaviour', () => {
     const { host, state, onChange } = setupOn();
     expect(state.genome.finalxform).toBeDefined();
 
-    const check = host.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const check = activeCheckbox(host);
     check.checked = false;
     check.dispatchEvent(new Event('change'));
 
@@ -121,7 +126,7 @@ describe('finalSection — toggle behaviour', () => {
   it('toggling off then on produces a fresh default (no stale prior state)', () => {
     const { host, state } = setupOn();
     state.genome.finalxform!.color = 0.9;
-    const check = host.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const check = activeCheckbox(host);
     check.checked = false;
     check.dispatchEvent(new Event('change'));
     check.checked = true;
@@ -130,122 +135,204 @@ describe('finalSection — toggle behaviour', () => {
   });
 });
 
-describe('finalSection — editable fields when active', () => {
-  it('color slider mutates finalxform.color and fires onChange', () => {
+describe('finalSection — v2 affine block', () => {
+  it('renders 5 decomposed fields + mini-viz canvas', () => {
+    const { host } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    expect(card.querySelector('.pyr3-edit-aff-scaleX')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-scaleY')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-rotation')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-positionX')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-positionY')).toBeTruthy();
+    expect(card.querySelector('canvas.pyr3-edit-aff-viz')).toBeTruthy();
+  });
+
+  it('renders shape-presets / shear / raw-matrix fold-ups', () => {
+    const { host } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    expect(card.querySelector('.pyr3-edit-aff-presets')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-shear-fold')).toBeTruthy();
+    expect(card.querySelector('.pyr3-edit-aff-raw-fold')).toBeTruthy();
+  });
+
+  it('editing rotation writes back to a/b/c/d/e/f via decomposedToRaw', () => {
     const { host, state, onChange } = setupOn();
-    const sliders = host.querySelectorAll('input[type="range"]');
-    // First slider is color
-    const colorSlider = sliders[0] as HTMLInputElement;
-    colorSlider.value = '0.72';
-    colorSlider.dispatchEvent(new Event('input'));
+    // Default finalxform is identity; rotating 90° should produce
+    // a≈0, b≈-1, d≈1, e≈0.
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const rotCell = card.querySelector('.pyr3-edit-aff-rotation .pyr3-edit-num') as HTMLElement;
+    typeInto(rotCell, '90');
+    const fx = state.genome.finalxform!;
+    expect(fx.a).toBeCloseTo(0, 5);
+    expect(fx.b).toBeCloseTo(-1, 5);
+    expect(fx.d).toBeCloseTo(1, 5);
+    expect(fx.e).toBeCloseTo(0, 5);
+    expect(onChange).toHaveBeenCalledWith('finalxform.rotation');
+  });
+
+  it('raw-matrix fold-up edit writes a..f via finalxform.<key>', () => {
+    const { host, state, onChange } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const rawFold = card.querySelector('.pyr3-edit-aff-raw-fold') as HTMLDetailsElement;
+    rawFold.open = true;
+    const aCell = card.querySelector('.pyr3-edit-aff-raw-a .pyr3-edit-num') as HTMLElement;
+    typeInto(aCell, '1.5');
+    expect(state.genome.finalxform!.a).toBeCloseTo(1.5, 5);
+    expect(onChange).toHaveBeenCalledWith('finalxform.a');
+  });
+
+  it('shear fold-up auto-opens when finalxform has a non-zero shear', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    state.genome.finalxform = {
+      a: 1, b: 0.5, c: 0, d: 0, e: 1, f: 0,
+      weight: 1, color: 0.5, colorSpeed: 0.5, opacity: 1,
+      variations: [{ index: V.linear, weight: 1 }],
+    };
+    finalSection.build(host, state, () => {});
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const shearFold = card.querySelector('.pyr3-edit-aff-shear-fold') as HTMLDetailsElement;
+    expect(shearFold.open).toBe(true);
+  });
+});
+
+describe('finalSection — color block', () => {
+  it('color slider mutates finalxform.color', () => {
+    const { host, state, onChange } = setupOn();
+    const slider = host.querySelector('.pyr3-edit-color-slider') as HTMLInputElement;
+    slider.value = '0.72';
+    slider.dispatchEvent(new Event('input'));
     expect(state.genome.finalxform!.color).toBeCloseTo(0.72, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.color');
   });
 
   it('opacity slider mutates finalxform.opacity', () => {
     const { host, state, onChange } = setupOn();
-    const sliders = host.querySelectorAll('input[type="range"]');
-    const opacitySlider = sliders[1] as HTMLInputElement;
-    opacitySlider.value = '0.4';
-    opacitySlider.dispatchEvent(new Event('input'));
+    const slider = host.querySelector('.pyr3-edit-opacity-slider') as HTMLInputElement;
+    slider.value = '0.4';
+    slider.dispatchEvent(new Event('input'));
     expect(state.genome.finalxform!.opacity).toBeCloseTo(0.4, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.opacity');
   });
 
-  it('every affine cell (a..f) mutates the right field', () => {
+  it('colorSpeed scrubby mutates finalxform.colorSpeed', () => {
     const { host, state, onChange } = setupOn();
-    const affineCells = host.querySelectorAll('.pyr3-edit-affine-cell');
-    expect(affineCells.length).toBeGreaterThanOrEqual(6);
-    const keys: Array<'a' | 'b' | 'c' | 'd' | 'e' | 'f'> = ['a', 'b', 'c', 'd', 'e', 'f'];
-    for (let i = 0; i < 6; i++) {
-      const cell = affineCells[i]!.querySelector('.pyr3-edit-num') as HTMLElement;
-      typeInto(cell, String(i + 0.5));
-      expect(state.genome.finalxform![keys[i]!]).toBeCloseTo(i + 0.5, 5);
-      expect(onChange).toHaveBeenCalledWith(`finalxform.${keys[i]!}`);
-    }
-  });
-
-  it('post-transform checkbox creates a default identity post matrix', () => {
-    const { host, state, onChange } = setupOn();
-    const checks = host.querySelectorAll('input[type="checkbox"]');
-    // checks[0] is active; checks[1] is post-transform
-    const postCheck = checks[1] as HTMLInputElement;
-    expect(state.genome.finalxform!.post).toBeUndefined();
-    postCheck.checked = true;
-    postCheck.dispatchEvent(new Event('change'));
-    expect(state.genome.finalxform!.post).toEqual({ a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 });
-    expect(onChange).toHaveBeenCalledWith('finalxform.post');
-
-    // Disabling clears the post
-    postCheck.checked = false;
-    postCheck.dispatchEvent(new Event('change'));
-    expect(state.genome.finalxform!.post).toBeUndefined();
-  });
-
-  it('post-transform inputs mutate finalxform.post fields after enable', () => {
-    const { host, state, onChange } = setupOn();
-    const checks = host.querySelectorAll('input[type="checkbox"]');
-    const postCheck = checks[1] as HTMLInputElement;
-    postCheck.checked = true;
-    postCheck.dispatchEvent(new Event('change'));
-
-    const allCells = host.querySelectorAll('.pyr3-edit-affine-cell');
-    // First 6 cells = pre-affine; next 6 = post-affine
-    expect(allCells.length).toBeGreaterThanOrEqual(12);
-    const postCCell = allCells[8]!.querySelector('.pyr3-edit-num') as HTMLElement;
-    typeInto(postCCell, '1.5');
-    expect(state.genome.finalxform!.post!.c).toBeCloseTo(1.5, 5);
-    expect(onChange).toHaveBeenCalledWith('finalxform.post.c');
-  });
-
-  it('colorSpeed number input mutates finalxform.colorSpeed', () => {
-    const { host, state, onChange } = setupOn();
-    // colorSpeed is the scrubby cell in the row labeled `colorSpeed`.
-    const rows = host.querySelectorAll('.pyr3-edit-row');
-    let csCell: HTMLElement | null = null;
-    for (const r of rows) {
-      const label = r.querySelector('.pyr3-edit-label');
-      if (label?.textContent === 'colorSpeed') {
-        csCell = r.querySelector('.pyr3-edit-num') as HTMLElement;
-        break;
-      }
-    }
-    expect(csCell).not.toBeNull();
-    typeInto(csCell!, '0.7');
+    const csCell = host.querySelector('.pyr3-edit-color-speed') as HTMLElement;
+    typeInto(csCell, '0.7');
     expect(state.genome.finalxform!.colorSpeed).toBeCloseTo(0.7, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.colorSpeed');
   });
+});
 
-  it('variation weight input mutates finalxform.variations[0].weight', () => {
+describe('finalSection — post-transform', () => {
+  it('post toggle is unchecked when post is undefined; no post block mounted', () => {
+    const { host, state } = setupOn();
+    expect(state.genome.finalxform!.post).toBeUndefined();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    expect(postToggle.checked).toBe(false);
+    expect(card.querySelector('.pyr3-edit-aff-post')).toBeNull();
+  });
+
+  it('checking the post toggle instantiates identity post + mounts decomposed block', () => {
     const { host, state, onChange } = setupOn();
-    const varRow = host.querySelector('.pyr3-edit-var');
-    expect(varRow).not.toBeNull();
-    const weightCell = varRow!.querySelector('.pyr3-edit-var-weight') as HTMLElement;
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    postToggle.checked = true;
+    postToggle.dispatchEvent(new Event('change'));
+    expect(state.genome.finalxform!.post).toEqual({ a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 });
+    expect(onChange).toHaveBeenCalledWith('finalxform.post');
+    expect(card.querySelector('.pyr3-edit-aff-post')).toBeTruthy();
+  });
+
+  it('unchecking the post toggle clears finalxform.post', () => {
+    const { host, state, onChange } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    postToggle.checked = true;
+    postToggle.dispatchEvent(new Event('change'));
+    postToggle.checked = false;
+    postToggle.dispatchEvent(new Event('change'));
+    expect(state.genome.finalxform!.post).toBeUndefined();
+    expect(onChange).toHaveBeenCalledWith('finalxform.post');
+  });
+
+  it('post decomposed edit writes finalxform.post.<field>', () => {
+    const { host, state, onChange } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
+    postToggle.checked = true;
+    postToggle.dispatchEvent(new Event('change'));
+    const postBlock = card.querySelector('.pyr3-edit-aff-post') as HTMLElement;
+    const rotCell = postBlock.querySelector('.pyr3-edit-aff-rotation .pyr3-edit-num') as HTMLElement;
+    typeInto(rotCell, '90');
+    const post = state.genome.finalxform!.post!;
+    expect(post.a).toBeCloseTo(0, 5);
+    expect(post.b).toBeCloseTo(-1, 5);
+    expect(post.d).toBeCloseTo(1, 5);
+    expect(post.e).toBeCloseTo(0, 5);
+    expect(onChange).toHaveBeenCalledWith('finalxform.post.rotation');
+  });
+});
+
+describe('finalSection — variations chain', () => {
+  it('renders one variation row per existing variation', () => {
+    const { host, state } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const rows = card.querySelectorAll('.pyr3-edit-var-row');
+    expect(rows.length).toBe(state.genome.finalxform!.variations.length);
+  });
+
+  it('variation weight write hits finalxform.variations.0.weight', () => {
+    const { host, state, onChange } = setupOn();
+    const row = host.querySelector('.pyr3-edit-var-row') as HTMLElement;
+    const weightCell = row.querySelector('.pyr3-edit-var-header .pyr3-edit-num') as HTMLElement;
     typeInto(weightCell, '0.42');
     expect(state.genome.finalxform!.variations[0]!.weight).toBeCloseTo(0.42, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.variations.0.weight');
   });
 
-  it('variation kind dropdown swaps the variation index and rebuilds the row', () => {
-    const { host, state, onChange } = setupOn();
-    const sel = host.querySelector('.pyr3-edit-var-kind') as HTMLSelectElement;
-    sel.value = String(V.spherical);
-    sel.dispatchEvent(new Event('change'));
-    expect(state.genome.finalxform!.variations[0]!.index).toBe(V.spherical);
-    expect(onChange).toHaveBeenCalledWith('finalxform.variations.0.index');
-    expect(VARIATION_NAMES[V.spherical]).toBe('spherical');
+  it('variation kind picker button shows the current variation name', () => {
+    const { host } = setupOn();
+    const btn = host.querySelector('.pyr3-edit-var-kind-btn') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    expect(btn.textContent).toBe(VARIATION_NAMES[V.linear]);
   });
 
-  it('+ var button adds a new variation', () => {
-    const { host, state, onChange } = setupOn();
-    expect(state.genome.finalxform!.variations.length).toBe(1);
-    const addBtn = [...host.querySelectorAll('button.pyr3-edit-btn')].find((b) =>
-      b.textContent === '+ var',
-    ) as HTMLButtonElement;
-    expect(addBtn).toBeDefined();
-    addBtn.click();
-    expect(state.genome.finalxform!.variations.length).toBe(2);
-    expect(onChange).toHaveBeenCalledWith('finalxform.variations.1');
+  it('julian kind shows power + dist param labels', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    state.genome.finalxform = {
+      a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+      weight: 1, color: 0.5, colorSpeed: 0.5, opacity: 1,
+      variations: [{ index: V.julian, weight: 1, param0: 2, param1: 1 }],
+    };
+    finalSection.build(host, state, () => {});
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const paramRow = card.querySelector('.pyr3-edit-var-params') as HTMLElement;
+    expect(paramRow.children.length).toBe(2);
+    const labels = [...paramRow.querySelectorAll('.pyr3-edit-field-label')].map((e) =>
+      (e.textContent ?? '').trim(),
+    );
+    expect(labels).toEqual(['power', 'dist']);
+  });
+
+  it('param edit writes finalxform.variations.0.param0', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    state.genome.finalxform = {
+      a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+      weight: 1, color: 0.5, colorSpeed: 0.5, opacity: 1,
+      variations: [{ index: V.julian, weight: 1, param0: 2, param1: 1 }],
+    };
+    const onChange = vi.fn();
+    finalSection.build(host, state, onChange);
+    document.body.appendChild(host);
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const paramCells = card.querySelectorAll('.pyr3-edit-var-params .pyr3-edit-num') as NodeListOf<HTMLElement>;
+    typeInto(paramCells[0]!, '5');
+    expect(state.genome.finalxform!.variations[0]!.param0).toBe(5);
+    expect(onChange).toHaveBeenCalledWith('finalxform.variations.0.param0');
   });
 });
 
