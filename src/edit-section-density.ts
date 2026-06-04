@@ -45,12 +45,34 @@ export const densitySection: SectionMount = {
       return state.genome.density;
     }
 
+    // Tooltips — plain-English what / effect on the picture, matching the
+    // render section's hover-hint pattern.
+    const TIPS = {
+      preset:
+        'Quick-start density-estimation defaults.\n'
+        + 'Crisp = small blur, sharp detail. Smooth = bigger blur, glowier output.\n'
+        + 'Flips to "custom" the moment any slider/value below is hand-tuned.',
+      maxRad:
+        'Maximum blur radius around each scatter point.\n'
+        + 'Higher = softer, glowier image. Lower = sharper, more granular.\n'
+        + 'At 0, density estimation is off (raw point cloud).',
+      minRad:
+        'Minimum blur radius — the floor for dense areas.\n'
+        + 'Dense regions use this; sparse regions blur up to maxRad.\n'
+        + 'Keep at or below maxRad.',
+      curve:
+        'How density maps to blur radius.\n'
+        + '< 1 = aggressive (sparse areas reach maxRad quickly).\n'
+        + '> 1 = gentle (only the sparsest areas get close to maxRad).',
+    };
+
     // ── Preset dropdown ─────────────────────────────────────────────────────
     const presetRow = document.createElement('div');
     presetRow.className = 'pyr3-edit-density-preset-row';
     presetRow.style.display = 'flex';
     presetRow.style.alignItems = 'center';
     presetRow.style.gap = '6px';
+    presetRow.title = TIPS.preset;
 
     const presetLabel = document.createElement('span');
     presetLabel.textContent = 'preset';
@@ -87,6 +109,7 @@ export const densitySection: SectionMount = {
       max: number,
       step: number,
       onScrub: (v: number) => void,
+      tip?: string,
     ): SliderPair {
       const row = document.createElement('div');
       row.className = `pyr3-edit-density-row ${cls}-row`;
@@ -94,6 +117,7 @@ export const densitySection: SectionMount = {
       row.style.alignItems = 'center';
       row.style.gap = '6px';
       row.style.marginTop = '6px';
+      if (tip !== undefined) row.title = tip;
 
       const lab = document.createElement('span');
       lab.textContent = labelText;
@@ -129,15 +153,15 @@ export const densitySection: SectionMount = {
     const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 0, 30, 0.5, (v) => {
       maxRadPair.slider.value = String(v);
       setField('maxRad', v);
-    });
+    }, TIPS.maxRad);
     const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 0, 30, 0.1, (v) => {
       minRadPair.slider.value = String(v);
       setField('minRad', v);
-    });
+    }, TIPS.minRad);
     const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 0.1, 2.0, 0.05, (v) => {
       curvePair.slider.value = String(v);
       setField('curve', v);
-    });
+    }, TIPS.curve);
 
     // ── State mutators ──────────────────────────────────────────────────────
 

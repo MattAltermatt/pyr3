@@ -107,50 +107,87 @@ export const globalSection: SectionMount = {
     const tmGet = <K extends keyof Tonemap>(k: K): Tonemap[K] =>
       state.genome.tonemap?.[k] ?? DEFAULT_TONEMAP[k];
 
+    // Tooltips — plain-English what / effect on the picture, matching the
+    // render section's hover-hint pattern.
+    const TIPS = {
+      brightness:
+        'Overall brightness of the whole flame.\n'
+        + 'Higher = brighter. Lower = darker.\n'
+        + 'Affects every pixel equally — different from per-xform color.',
+      gamma:
+        'Mid-tone curve.\n'
+        + 'Lower (<1) lifts midtones (brighter, washed).\n'
+        + 'Higher (>1) crushes midtones (darker, punchier).',
+      highlightPower:
+        'Compresses the brightest highlights.\n'
+        + 'Higher = stronger compression, more detail in bright cores.\n'
+        + 'Lower = highlights blow out to white earlier.',
+      gammaThreshold:
+        'Below this density level, gamma is applied differently to avoid noise.\n'
+        + 'Higher = more low-density pixels get the special treatment.\n'
+        + 'Leave at default unless you see noisy near-black regions.',
+      vibrancy:
+        'Color saturation lift.\n'
+        + '0 = grayscale. 1 = full original palette colors.\n'
+        + 'Mid values desaturate the palette without losing structure.',
+      background:
+        'Background color of the canvas.\n'
+        + 'Shown in unhit pixels and bleeds through translucent flame regions.',
+      symmetry:
+        'Add rotational or dihedral symmetry to the chaos game.\n'
+        + 'N = number of rotational copies. 6 = hexagonal, 2 = mirror.\n'
+        + 'Dihedral adds an extra mirror axis on top of the rotation.',
+    };
+
+    function appendRow(row: HTMLDivElement, tip: string): void {
+      row.title = tip;
+      host.appendChild(row);
+    }
+
     // ── brightness ───────────────────────────────────────────────────────
-    host.appendChild(labeledRow(
+    appendRow(labeledRow(
       'brightness',
       numberInput(tmGet('brightness'), (v) => {
         ensureTonemap(state).brightness = v;
         onChange('tonemap.brightness');
       }, { kind: 'generic', min: 0 }).el,
-    ));
+    ), TIPS.brightness);
 
     // ── gamma ────────────────────────────────────────────────────────────
-    host.appendChild(labeledRow(
+    appendRow(labeledRow(
       'gamma',
       numberInput(tmGet('gamma'), (v) => {
         ensureTonemap(state).gamma = v;
         onChange('tonemap.gamma');
       }, { kind: 'generic', min: 0 }).el,
-    ));
+    ), TIPS.gamma);
 
     // ── highlightPower ───────────────────────────────────────────────────
-    host.appendChild(labeledRow(
+    appendRow(labeledRow(
       'highlightPower',
       numberInput(tmGet('highlightPower'), (v) => {
         ensureTonemap(state).highlightPower = v;
         onChange('tonemap.highlightPower');
       }, { kind: 'generic' }).el,
-    ));
+    ), TIPS.highlightPower);
 
     // ── gammaThreshold ───────────────────────────────────────────────────
-    host.appendChild(labeledRow(
+    appendRow(labeledRow(
       'gammaThreshold',
       numberInput(tmGet('gammaThreshold'), (v) => {
         ensureTonemap(state).gammaThreshold = v;
         onChange('tonemap.gammaThreshold');
       }, { kind: 'generic', min: 0 }).el,
-    ));
+    ), TIPS.gammaThreshold);
 
     // ── vibrancy (0..1 slider) ───────────────────────────────────────────
-    host.appendChild(labeledRow(
+    appendRow(labeledRow(
       'vibrancy',
       sliderInput(tmGet('vibrancy'), 0, 1, 0.01, (v) => {
         ensureTonemap(state).vibrancy = v;
         onChange('tonemap.vibrancy');
       }),
-    ));
+    ), TIPS.vibrancy);
 
     // ── background color picker ──────────────────────────────────────────
     const bgInput = document.createElement('input');
@@ -161,11 +198,12 @@ export const globalSection: SectionMount = {
       state.genome.background = hexToRgb01(bgInput.value);
       onChange('background');
     });
-    host.appendChild(labeledRow('background', bgInput));
+    appendRow(labeledRow('background', bgInput), TIPS.background);
 
     // ── symmetry (active toggle + kind dropdown + n number) ──────────────
     const symRow = document.createElement('div');
     symRow.className = 'pyr3-edit-row pyr3-edit-symmetry';
+    symRow.title = TIPS.symmetry;
 
     const symLabel = document.createElement('span');
     symLabel.className = 'pyr3-edit-label';
