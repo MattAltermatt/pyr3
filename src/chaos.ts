@@ -11,6 +11,7 @@ import {
   totalWeight,
   XFORM_BYTES,
   XFORM_DISTRIB_BYTES,
+  XFORM_DISTRIB_FALLBACK_OFFSET,
 } from './genome';
 import { type Palette, packPalette, PALETTE_BYTES } from './palette';
 import { expandGenomeForGPU } from './symmetry';
@@ -145,8 +146,9 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
   });
 
   // PYR3-029 Phase 5c: flam3-canonical xform-pick distribution table.
-  // (MAX_XFORMS + 1) rows × 16384 entries × u32 = ~8 MB worst case at
-  // MAX_XFORMS=128 (most genomes use ≤4 xforms; #83 tracks the padding).
+  // (MAX_XFORMS + 1) rows × 16384 entries × u32 ≈ 8.5 MB worst case. Sized
+  // for arbitrary prev_xform indices; the host only ever populates the
+  // rows the current genome uses (see packXformDistrib + dispatch below).
   const xformDistribBuffer = device.createBuffer({
     label: 'pyr3.chaos.xform_distrib',
     size: XFORM_DISTRIB_BYTES,
@@ -214,7 +216,18 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // Returns same reference when no symmetry; otherwise a non-mutating clone.
       const g = expandGenomeForGPU(genome);
       device.queue.writeBuffer(xforms, 0, packXforms(g));
-      device.queue.writeBuffer(xformDistribBuffer, 0, packXformDistrib(g)); // Phase 5c (xaos baked in host-side)
+      // #83: pack ONLY the populated rows (numStd + 1 fallback) and write
+      // them at their final offsets. The unread gap rows in the GPU buffer
+      // are untouched between dispatches — saves ~95% of the writeBuffer
+      // traffic on typical genomes. (xaos is baked in host-side as of #78,
+      // so no separate xaosBuffer write here.)
+      const distrib = packXformDistrib(g); // Phase 5c
+      device.queue.writeBuffer(xformDistribBuffer, 0, distrib.prefix.buffer as ArrayBuffer);
+      device.queue.writeBuffer(
+        xformDistribBuffer,
+        XFORM_DISTRIB_FALLBACK_OFFSET,
+        distrib.fallback.buffer as ArrayBuffer,
+      );
 
       // Phase 9-cal-B: dispatch walker count + iters-per-walker can be
       // overridden per-frame to scale with Genome.quality. Defaults match

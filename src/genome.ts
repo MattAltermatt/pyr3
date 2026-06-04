@@ -384,23 +384,35 @@ export function distinctVariationNames(genome: Genome): string[] {
 // conditional on the previous xform.
 //
 // Matches flam3 `CHOOSE_XFORM_GRAIN`. 14 bits = 16384, fits in u16. We
-// store as u32 for WGSL ergonomics (no native u16). At MAX_XFORMS=128
-// the table is (128+1) × 16384 × 4 = ~8 MB worst case — well under WebGPU
-// storage limits; #83 tracks the padding waste on small genomes.
+// store as u32 for WGSL ergonomics (no native u16). GPU buffer is sized
+// (MAX_XFORMS + 1) * CHOOSE_XFORM_GRAIN * 4 ≈ 8.5 MB so any prev-xform
+// index (0..MAX_XFORMS) addresses it — but the shader only ever reads the
+// rows the current genome populates (0..numStd-1 + the fallback at
+// MAX_XFORMS), so the host packs ONLY those rows and writes them at the
+// matching offsets. Pre-#83 the packer allocated + uploaded the full
+// 8.5 MB on every dispatch even when ~5 rows were populated.
 export const CHOOSE_XFORM_GRAIN = 16384;
 export const CHOOSE_XFORM_GRAIN_M1 = CHOOSE_XFORM_GRAIN - 1;
 export const XFORM_DISTRIB_BYTES = (MAX_XFORMS + 1) * CHOOSE_XFORM_GRAIN * 4;
+/** Byte offset of the no-prior-xform fallback row inside the GPU buffer. */
+export const XFORM_DISTRIB_FALLBACK_OFFSET = MAX_XFORMS * CHOOSE_XFORM_GRAIN * 4;
 
-export function packXformDistrib(genome: Genome): ArrayBuffer {
-  const ab = new ArrayBuffer(XFORM_DISTRIB_BYTES);
-  const u32 = new Uint32Array(ab);
+export interface XformDistrib {
+  /** Rows 0..numStd-1 packed contiguously. Length = numStd * CHOOSE_XFORM_GRAIN. */
+  prefix: Uint32Array;
+  /** The single "no prior xform" fallback row (CHOOSE_XFORM_GRAIN entries). */
+  fallback: Uint32Array;
+}
+
+export function packXformDistrib(genome: Genome): XformDistrib {
   const numStd = genome.xforms.length; // excludes finalxform — pyr3 stores it at +1
-  // Row layout: rows 0..numStd-1 are the "previous xform = i" rows. We also
-  // populate row numStd as the no-xaos fallback (used when prev_xform == -1
-  // sentinel; matches flam3 lastxf=0 init since it indexes into row 0 of a
-  // never-xaos build, but pyr3 treats first-iter as "no xaos multiplier").
-  const buildRow = (rowIdx: number, xi: number): void => {
-    // Sum weights for this row (xaos-multiplied if xi >= 0).
+  const prefix = new Uint32Array(numStd * CHOOSE_XFORM_GRAIN);
+  const fallback = new Uint32Array(CHOOSE_XFORM_GRAIN);
+  // Row layout: rows 0..numStd-1 are the "previous xform = i" rows packed
+  // into `prefix`. The "no prior xform" sentinel row goes into `fallback`
+  // (matches flam3 lastxf=0 init since it indexes into row 0 of a never-xaos
+  // build, but pyr3 treats first-iter as "no xaos multiplier").
+  const buildRow = (out: Uint32Array, rowIdx: number, xi: number): void => {
     let drSum = 0;
     for (let i = 0; i < numStd; i++) {
       const w = genome.xforms[i]!.weight;
@@ -424,13 +436,11 @@ export function packXformDistrib(genome: Genome): ArrayBuffer {
         const m = xi >= 0 ? (genome.xforms[xi]?.xaos?.[j] ?? 1.0) : 1.0;
         t += (genome.xforms[j]?.weight ?? 0) * m;
       }
-      u32[rowBase + i] = j;
+      out[rowBase + i] = j;
       r += dr;
     }
   };
-  for (let i = 0; i < numStd; i++) buildRow(i, i);
-  // Row MAX_XFORMS-1 (or +1) is the "first iter / no prior xform" fallback row.
-  // Use the no-xaos distribution.
-  buildRow(MAX_XFORMS, -1);
-  return ab;
+  for (let i = 0; i < numStd; i++) buildRow(prefix, i, i);
+  buildRow(fallback, 0, -1);
+  return { prefix, fallback };
 }

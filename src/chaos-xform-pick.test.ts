@@ -6,7 +6,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHOOSE_XFORM_GRAIN,
-  MAX_XFORMS,
   packXformDistrib,
   type Genome,
   type Xform,
@@ -40,29 +39,26 @@ function makeGenome(weights: number[], xaos?: number[][]): Genome {
 describe('#16 — PYR3-029 #3: packXformDistrib (no xaos)', () => {
   it('two equal-weight xforms split the GRAIN evenly', () => {
     const genome = makeGenome([1, 1]);
-    const buf = new Uint32Array(packXformDistrib(genome));
+    const { prefix, fallback } = packXformDistrib(genome);
     // Row 0 (prev_xform = 0). With equal weights, the cumulative `r >= t`
     // scan in packXformDistrib flips j from 0 to 1 at index = GRAIN/2.
-    const row0 = buf.subarray(0, CHOOSE_XFORM_GRAIN);
+    const row0 = prefix.subarray(0, CHOOSE_XFORM_GRAIN);
     const half = CHOOSE_XFORM_GRAIN >>> 1;
     expect(row0[0]).toBe(0);
     expect(row0[half - 1]).toBe(0);
     expect(row0[half]).toBe(1);
     expect(row0[CHOOSE_XFORM_GRAIN - 1]).toBe(1);
 
-    // Fallback row (no prior xform sentinel) is at rowIdx = MAX_XFORMS.
-    const rowFallback = buf.subarray(
-      MAX_XFORMS * CHOOSE_XFORM_GRAIN,
-      (MAX_XFORMS + 1) * CHOOSE_XFORM_GRAIN,
-    );
-    expect(rowFallback[half - 1]).toBe(0);
-    expect(rowFallback[half]).toBe(1);
+    // Fallback row (no prior xform sentinel) lives in its own buffer now;
+    // chaos.ts writes it at offset MAX_XFORMS * GRAIN * 4 in the GPU buffer.
+    expect(fallback[half - 1]).toBe(0);
+    expect(fallback[half]).toBe(1);
   });
 
   it('asymmetric weights [3, 1] bias the GRAIN by the 3:1 ratio', () => {
     const genome = makeGenome([3, 1]);
-    const buf = new Uint32Array(packXformDistrib(genome));
-    const row0 = buf.subarray(0, CHOOSE_XFORM_GRAIN);
+    const { prefix } = packXformDistrib(genome);
+    const row0 = prefix.subarray(0, CHOOSE_XFORM_GRAIN);
     let count0 = 0, count1 = 0;
     for (let i = 0; i < CHOOSE_XFORM_GRAIN; i++) {
       if (row0[i] === 0) count0++;
@@ -75,13 +71,22 @@ describe('#16 — PYR3-029 #3: packXformDistrib (no xaos)', () => {
     expect(Math.abs(count1 - expected1)).toBeLessThanOrEqual(1);
     expect(count0 + count1).toBe(CHOOSE_XFORM_GRAIN);
   });
+
+  // #83 regression: pre-fix the packer always returned an 8.5 MB ArrayBuffer
+  // regardless of xform count. Now it sizes to the populated rows only.
+  it('packed prefix length matches numStd * CHOOSE_XFORM_GRAIN', () => {
+    const genome = makeGenome([1, 1, 1, 1, 1]);
+    const { prefix, fallback } = packXformDistrib(genome);
+    expect(prefix.length).toBe(5 * CHOOSE_XFORM_GRAIN);
+    expect(fallback.length).toBe(CHOOSE_XFORM_GRAIN);
+  });
 });
 
 describe('#16 — PYR3-029 #3: packXformDistrib (with xaos)', () => {
   it('xaos row 0 → [1, 1] preserves the unconditional 50/50 split', () => {
     const genome = makeGenome([1, 1], [[1, 1], [1, 1]]);
-    const buf = new Uint32Array(packXformDistrib(genome));
-    const row0 = buf.subarray(0, CHOOSE_XFORM_GRAIN);
+    const { prefix } = packXformDistrib(genome);
+    const row0 = prefix.subarray(0, CHOOSE_XFORM_GRAIN);
     const half = CHOOSE_XFORM_GRAIN >>> 1;
     expect(row0[half - 1]).toBe(0);
     expect(row0[half]).toBe(1);
@@ -92,12 +97,12 @@ describe('#16 — PYR3-029 #3: packXformDistrib (with xaos)', () => {
     // every slot in row 0 must point at fn 0. Row 1 uses xaos[1] = [1, 1]
     // (equal weights again).
     const genome = makeGenome([1, 1], [[1, 0], [1, 1]]);
-    const buf = new Uint32Array(packXformDistrib(genome));
-    const row0 = buf.subarray(0, CHOOSE_XFORM_GRAIN);
+    const { prefix } = packXformDistrib(genome);
+    const row0 = prefix.subarray(0, CHOOSE_XFORM_GRAIN);
     for (let i = 0; i < CHOOSE_XFORM_GRAIN; i++) {
       expect(row0[i]).toBe(0);
     }
-    const row1 = buf.subarray(CHOOSE_XFORM_GRAIN, 2 * CHOOSE_XFORM_GRAIN);
+    const row1 = prefix.subarray(CHOOSE_XFORM_GRAIN, 2 * CHOOSE_XFORM_GRAIN);
     const half = CHOOSE_XFORM_GRAIN >>> 1;
     expect(row1[half - 1]).toBe(0);
     expect(row1[half]).toBe(1);
