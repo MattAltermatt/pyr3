@@ -288,19 +288,22 @@ const EDIT_CSS = `
 .pyr3-edit-var-row.pyr3-edit-var-inactive { opacity: 0.55; }
 
 /* ── Variation picker modal (src/edit-variation-picker.ts) ───────── */
-/* No backdrop — the flame canvas stays visible behind. Centered floating
-   panel; <div> not <dialog> for happy-dom compat. */
+/* Docked to the right of the left edit panel — slides out alongside the
+   panel and overlays the flame canvas. Full viewport height, narrow
+   width holding 3 tiles per row. No backdrop — flame stays visible to
+   the right of the picker for live preview-as-you-click. */
 .pyr3-var-picker {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(720px, 96vw);
-  max-height: 86vh;
+  top: 0;
+  bottom: 0;
+  /* Anchored to the right edge of the left panel. The panel width is
+     pinned at 340px in the editor layout; if that ever becomes dynamic,
+     promote this to a CSS custom property updated from JS. */
+  left: 340px;
+  width: 340px;
   background: var(--bar-bg-1, #15151a);
-  border: 1px solid var(--bar-border, #2a2a30);
-  border-radius: 6px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  border-right: 1px solid var(--bar-border, #2a2a30);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -356,7 +359,9 @@ const EDIT_CSS = `
 .pyr3-var-section-label:first-child { margin-top: 0; }
 .pyr3-var-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  /* 3 tiles per row in the docked panel — fits the 340px-wide picker
+     comfortably (3 × ~96 + 2 × 6 gap + 28 padding ≈ 328). */
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 .pyr3-var-tile {
