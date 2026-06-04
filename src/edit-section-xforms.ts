@@ -26,6 +26,7 @@ import {
 import { attachXformViz } from './edit-xform-viz';
 import { SHAPE_PRESETS } from './edit-xform-presets';
 import { openVariationPicker } from './edit-variation-picker';
+import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -51,26 +52,25 @@ function makeIdentityPost(): NonNullable<Xform['post']> {
   return { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 };
 }
 
-// Numeric input that writes back via `commit(num)` on each `input` event.
-// `step` controls the spinner granularity; `min`/`max` are optional clamps.
+// Scrubby numeric cell that writes back via `commit(num)` on each scrub
+// step or text-mode commit. `kind` picks the per-field sensitivity floor;
+// `min`/`max` are optional clamps; `width` pins the cell width.
 function makeNumberInput(
   initial: number,
   commit: (val: number) => void,
-  opts: { step?: number; min?: number; max?: number; width?: string } = {},
-): HTMLInputElement {
-  const inp = document.createElement('input');
-  inp.type = 'number';
-  inp.className = 'pyr3-edit-num';
-  inp.value = String(initial);
-  if (opts.step !== undefined) inp.step = String(opts.step);
-  if (opts.min !== undefined) inp.min = String(opts.min);
-  if (opts.max !== undefined) inp.max = String(opts.max);
-  if (opts.width !== undefined) inp.style.width = opts.width;
-  inp.addEventListener('input', () => {
-    const n = Number(inp.value);
-    if (Number.isFinite(n)) commit(n);
+  opts: { kind?: FieldKind; minStep?: number; min?: number; max?: number; width?: string; format?: (v: number) => string } = {},
+): ScrubbyHandle {
+  const handle = scrubbyInput({
+    value: initial,
+    onInput: commit,
+    kind: opts.kind,
+    minStep: opts.minStep,
+    min: opts.min,
+    max: opts.max,
+    format: opts.format,
   });
-  return inp;
+  if (opts.width !== undefined) handle.el.style.width = opts.width;
+  return handle;
 }
 
 function makeSliderInput(
@@ -206,14 +206,15 @@ function buildVariationRow(
       v.weight = n;
       onChange(`xforms.${xformIndex}.variations.${varIndex}.weight`);
     },
-    { step: 0.01, width: '64px' },
+    { kind: 'weight', width: '64px' },
   );
-  weightInput.title = "Strength of this variation's contribution. The chain sums weighted contributions.";
+  weightInput.el.title = "Strength of this variation's contribution. The chain sums weighted contributions.";
+  weightInput.el.classList.add('pyr3-edit-var-weight');
 
   const delBtn = makeIconButton('🗑️', () => removeSelf());
   delBtn.title = 'Remove this variation from the chain.';
 
-  headerRow.append(activeCbx, kindBtn, weightInput, delBtn);
+  headerRow.append(activeCbx, kindBtn, weightInput.el, delBtn);
   wrap.appendChild(headerRow);
 
   // Param row — labels + inputs per VARIATION_PARAMS[kind]. Rebuilt on
@@ -234,9 +235,9 @@ function buildVariationRow(
           (v as unknown as Record<string, number>)[paramKey] = n;
           onChange(`xforms.${xformIndex}.variations.${varIndex}.${paramKey}`);
         },
-        { step: 0.01, width: '56px' },
+        { kind: 'generic', width: '56px' },
       );
-      const field = makeLabeledField(`${names[p]!} `, inp);
+      const field = makeLabeledField(`${names[p]!} `, inp.el);
       paramRow.appendChild(field);
     }
   };
@@ -313,27 +314,45 @@ function buildDecomposedAffineBlock(
   const RAD = Math.PI / 180;
   const initial = rawToDecomposed(getRaw());
 
-  // Cache the 5 decomposed-field inputs so preset clicks can refresh values.
-  const decomposedInputs: Partial<Record<keyof DecomposedAffine, HTMLInputElement>> = {};
+  // Cache the 5 decomposed-field scrubby handles so preset clicks + raw-
+  // matrix edits can refresh displayed values without re-triggering onInput.
+  const decomposedInputs: Partial<Record<keyof DecomposedAffine, ScrubbyHandle>> = {};
 
   function bindDecomposed(
     field: keyof DecomposedAffine,
     label: string,
     initialValue: number,
     unit?: string,
-  ): HTMLInputElement {
+  ): ScrubbyHandle {
     const wrap = document.createElement('div');
     wrap.className = `pyr3-edit-field pyr3-edit-aff-${field}`;
     const lbl = document.createElement('label');
     lbl.className = 'pyr3-edit-field-label';
     lbl.textContent = label;
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.className = 'pyr3-edit-num';
-    inp.step = 'any';
-    inp.value = field === 'rotation' ? String(initialValue / RAD) : String(initialValue);
-    inp.title = AFFINE_TOOLTIPS[field] ?? '';
-    wrap.append(lbl, inp);
+    // Display value: rotation stored as radians in DecomposedAffine, shown
+    // as degrees; everything else 1:1.
+    const displayInitial = field === 'rotation' ? initialValue / RAD : initialValue;
+    // Pick scrubby kind per field.
+    const kind: FieldKind =
+      field === 'rotation' ? 'rotation'
+      : field === 'scaleX' || field === 'scaleY' ? 'scale'
+      : 'position';
+    const handle = scrubbyInput({
+      value: displayInitial,
+      kind,
+      ariaLabel: label,
+      onInput: (n) => {
+        const dec = rawToDecomposed(getRaw());
+        const val = field === 'rotation' ? n * RAD : n;
+        const next: DecomposedAffine = { ...dec, [field]: val };
+        setRaw(decomposedToRaw(next));
+        viz.draw();
+        refreshRawInputs();
+        onChange(`${pathBase}.${field}`);
+      },
+    });
+    handle.el.title = AFFINE_TOOLTIPS[field] ?? '';
+    wrap.append(lbl, handle.el);
     if (unit) {
       const u = document.createElement('span');
       u.className = 'pyr3-edit-unit';
@@ -342,19 +361,8 @@ function buildDecomposedAffineBlock(
     }
     fieldsCol.appendChild(wrap);
 
-    inp.addEventListener('input', () => {
-      const n = Number(inp.value);
-      if (!Number.isFinite(n)) return;
-      const dec = rawToDecomposed(getRaw());
-      const val = field === 'rotation' ? n * RAD : n;
-      const next: DecomposedAffine = { ...dec, [field]: val };
-      setRaw(decomposedToRaw(next));
-      viz.draw();
-      refreshRawInputs();
-      onChange(`${pathBase}.${field}`);
-    });
-    decomposedInputs[field] = inp;
-    return inp;
+    decomposedInputs[field] = handle;
+    return handle;
   }
 
   bindDecomposed('scaleX', 'scale x', initial.scaleX);
@@ -386,14 +394,14 @@ function buildDecomposedAffineBlock(
       viz.draw();
       // Refresh the visible decomposed input values from the new state.
       for (const f of ['scaleX', 'scaleY', 'rotation', 'positionX', 'positionY'] as const) {
-        const el = decomposedInputs[f];
-        if (!el) continue;
+        const h = decomposedInputs[f];
+        if (!h) continue;
         const v = f === 'rotation' ? next.rotation / RAD : next[f];
-        el.value = String(v);
+        h.setValue(v);
       }
       // Shear is part of the preset; reflect into the shear input + auto-open
       // if the preset introduced a non-zero shear.
-      if (shearInp) shearInp.value = String(next.shear);
+      if (shearHandle) shearHandle.setValue(next.shear);
       if (shearFold && Math.abs(next.shear) > 1e-9) shearFold.open = true;
       refreshRawInputs();
       onChange(`${pathBase}.preset`);
@@ -416,22 +424,20 @@ function buildDecomposedAffineBlock(
   const shearLbl = document.createElement('label');
   shearLbl.className = 'pyr3-edit-field-label';
   shearLbl.textContent = 'shear';
-  const shearInp = document.createElement('input');
-  shearInp.type = 'number';
-  shearInp.className = 'pyr3-edit-num';
-  shearInp.step = 'any';
-  shearInp.value = String(initial.shear);
-  shearInp.title = AFFINE_TOOLTIPS.shear ?? '';
-  shearInp.addEventListener('input', () => {
-    const n = Number(shearInp.value);
-    if (!Number.isFinite(n)) return;
-    const dec = rawToDecomposed(getRaw());
-    setRaw(decomposedToRaw({ ...dec, shear: n }));
-    viz.draw();
-    refreshRawInputs();
-    onChange(`${pathBase}.shear`);
+  const shearHandle = scrubbyInput({
+    value: initial.shear,
+    kind: 'position',
+    ariaLabel: 'shear',
+    onInput: (n) => {
+      const dec = rawToDecomposed(getRaw());
+      setRaw(decomposedToRaw({ ...dec, shear: n }));
+      viz.draw();
+      refreshRawInputs();
+      onChange(`${pathBase}.shear`);
+    },
   });
-  shearWrap.append(shearLbl, shearInp);
+  shearHandle.el.title = AFFINE_TOOLTIPS.shear ?? '';
+  shearWrap.append(shearLbl, shearHandle.el);
   shearFold.appendChild(shearWrap);
   block.appendChild(shearFold);
 
@@ -443,39 +449,37 @@ function buildDecomposedAffineBlock(
   rawFold.appendChild(rawSum);
   const rawGrid = document.createElement('div');
   rawGrid.className = 'pyr3-edit-raw-grid';
-  const rawInputs: Partial<Record<'a' | 'b' | 'c' | 'd' | 'e' | 'f', HTMLInputElement>> = {};
+  const rawInputs: Partial<Record<'a' | 'b' | 'c' | 'd' | 'e' | 'f', ScrubbyHandle>> = {};
   for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
     const wrap = document.createElement('div');
     wrap.className = `pyr3-edit-field pyr3-edit-aff-raw-${key}`;
     const lbl = document.createElement('label');
     lbl.className = 'pyr3-edit-field-label';
     lbl.textContent = key;
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.className = 'pyr3-edit-num';
-    inp.step = 'any';
-    inp.value = String(getRaw()[key]);
-    inp.title = AFFINE_TOOLTIPS.rawMatrix ?? '';
-    inp.addEventListener('input', () => {
-      const n = Number(inp.value);
-      if (!Number.isFinite(n)) return;
-      const raw = getRaw();
-      raw[key] = n;
-      setRaw(raw);
-      viz.draw();
-      // Mirror the change into the decomposed inputs so they stay in sync.
-      const dec = rawToDecomposed(raw);
-      if (decomposedInputs.scaleX) decomposedInputs.scaleX.value = String(dec.scaleX);
-      if (decomposedInputs.scaleY) decomposedInputs.scaleY.value = String(dec.scaleY);
-      if (decomposedInputs.rotation) decomposedInputs.rotation.value = String(dec.rotation / RAD);
-      if (decomposedInputs.positionX) decomposedInputs.positionX.value = String(dec.positionX);
-      if (decomposedInputs.positionY) decomposedInputs.positionY.value = String(dec.positionY);
-      shearInp.value = String(dec.shear);
-      onChange(`${pathBase}.${key}`);
+    const handle = scrubbyInput({
+      value: getRaw()[key],
+      kind: 'position',
+      ariaLabel: `raw ${key}`,
+      onInput: (n) => {
+        const raw = getRaw();
+        raw[key] = n;
+        setRaw(raw);
+        viz.draw();
+        // Mirror the change into the decomposed inputs so they stay in sync.
+        const dec = rawToDecomposed(raw);
+        decomposedInputs.scaleX?.setValue(dec.scaleX);
+        decomposedInputs.scaleY?.setValue(dec.scaleY);
+        decomposedInputs.rotation?.setValue(dec.rotation / RAD);
+        decomposedInputs.positionX?.setValue(dec.positionX);
+        decomposedInputs.positionY?.setValue(dec.positionY);
+        shearHandle.setValue(dec.shear);
+        onChange(`${pathBase}.${key}`);
+      },
     });
-    wrap.append(lbl, inp);
+    handle.el.title = AFFINE_TOOLTIPS.rawMatrix ?? '';
+    wrap.append(lbl, handle.el);
     rawGrid.appendChild(wrap);
-    rawInputs[key] = inp;
+    rawInputs[key] = handle;
   }
   rawFold.appendChild(rawGrid);
   block.appendChild(rawFold);
@@ -483,8 +487,7 @@ function buildDecomposedAffineBlock(
   function refreshRawInputs(): void {
     const raw = getRaw();
     for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
-      const el = rawInputs[key];
-      if (el) el.value = String(raw[key]);
+      rawInputs[key]?.setValue(raw[key]);
     }
   }
 
@@ -531,11 +534,15 @@ function buildXformCard(
       xform.weight = n;
       onChange(`xforms.${xformIndex}.weight`);
     },
-    { step: 0.01, width: '64px' },
+    { kind: 'weight', min: 0, width: '64px' },
   );
-  weightInput.title = 'Relative chance this xform gets picked each chaos-game step. Higher = more contribution.';
-  // Stop click on the weight input from toggling collapse.
-  weightInput.addEventListener('click', (e) => e.stopPropagation());
+  weightInput.el.title = 'Relative chance this xform gets picked each chaos-game step. Higher = more contribution.';
+  // Stop pointer interactions on the weight input from toggling collapse —
+  // both `click` (dblclick → text mode) and `pointerdown` (start of a scrub
+  // drag) need to be silenced so the card-header collapse listener never
+  // sees them.
+  weightInput.el.addEventListener('click', (e) => e.stopPropagation());
+  weightInput.el.addEventListener('pointerdown', (e) => e.stopPropagation());
 
   const delBtn = makeIconButton('🗑️', () => {
     if (state.genome.xforms.length <= 1) return;
@@ -598,7 +605,7 @@ function buildXformCard(
   dupBtn.classList.add('pyr3-edit-xform-dup');
   dupBtn.addEventListener('click', (e) => e.stopPropagation());
 
-  header.append(chev, titleSpan, weightLabel, weightInput, activeCbx, dupBtn, delBtn);
+  header.append(chev, titleSpan, weightLabel, weightInput.el, activeCbx, dupBtn, delBtn);
   card.appendChild(header);
 
   // ── Body (collapsible) ───────────────────────────────────────────────
@@ -738,11 +745,11 @@ function buildXformCard(
       xform.colorSpeed = n;
       onChange(`xforms.${xformIndex}.colorSpeed`);
     },
-    { step: 0.01, width: '64px' },
+    { kind: 'color', min: 0, max: 1, width: '64px' },
   );
-  colorSpeedInput.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
-  colorSpeedInput.classList.add('pyr3-edit-color-speed');
-  body.appendChild(makeLabeledField('colorSpeed ', colorSpeedInput));
+  colorSpeedInput.el.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
+  colorSpeedInput.el.classList.add('pyr3-edit-color-speed');
+  body.appendChild(makeLabeledField('colorSpeed ', colorSpeedInput.el));
 
   const opacitySlider = makeSliderInput(
     xform.opacity ?? 1,
@@ -774,10 +781,10 @@ function buildXformCard(
           xform.xaos[k] = n;
           onChange(`xforms.${xformIndex}.xaos.${k}`);
         },
-        { step: 0.01, min: 0, width: '56px' },
+        { kind: 'weight', min: 0, width: '56px' },
       );
-      inp.title = `Per-source bias: how likely THIS xform is picked AFTER xform ${k + 1}. 1 = neutral, 0 = forbidden.`;
-      xaosRow.appendChild(makeLabeledField(`→xf${k + 1} `, inp));
+      inp.el.title = `Per-source bias: how likely THIS xform is picked AFTER xform ${k + 1}. 1 = neutral, 0 = forbidden.`;
+      xaosRow.appendChild(makeLabeledField(`→xf${k + 1} `, inp.el));
     }
     body.appendChild(xaosRow);
   }

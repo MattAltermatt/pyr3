@@ -38,6 +38,7 @@ function mount(genomeOrSeed: number | Genome = 1): {
   const state = createEditState(genome, 1);
   const onChange = vi.fn();
   xformsSection.build(host, state, onChange);
+  document.body.appendChild(host); // text-mode swap needs the host in document
   return { host, state, onChange };
 }
 
@@ -49,6 +50,14 @@ function fireInput(el: HTMLInputElement | HTMLSelectElement, value: string): voi
   el.value = value;
   el.dispatchEvent(new Event('input'));
   if (el.tagName === 'SELECT') el.dispatchEvent(new Event('change'));
+}
+
+// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 describe('xformsSection — DOM smoke', () => {
@@ -77,10 +86,10 @@ describe('xformsSection — header weight + delete', () => {
   it('weight input updates genome + emits xforms.${i}.weight', () => {
     const { host, state, onChange } = mount(1);
     const card0 = cards(host)[0]!;
-    const weightInput = card0.querySelector(
+    const weightCell = card0.querySelector(
       '.pyr3-edit-xform-header .pyr3-edit-num',
-    ) as HTMLInputElement;
-    fireInput(weightInput, '0.42');
+    ) as HTMLElement;
+    typeInto(weightCell, '0.42');
     expect(state.genome.xforms[0]!.weight).toBeCloseTo(0.42, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.weight');
   });
@@ -149,8 +158,8 @@ describe('xformsSection — color / colorSpeed / opacity', () => {
     // Body section order (v2): affine → variations → post → color → xaos.
     // Target the color/opacity controls by their stable classes rather than
     // by index, so future reorders don't break this test.
-    const colorSpeedInput = card0.querySelector('.pyr3-edit-color-speed') as HTMLInputElement;
-    fireInput(colorSpeedInput, '0.31');
+    const colorSpeedInput = card0.querySelector('.pyr3-edit-color-speed') as HTMLElement;
+    typeInto(colorSpeedInput, '0.31');
     expect(state.genome.xforms[0]!.colorSpeed).toBeCloseTo(0.31, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.colorSpeed');
 
@@ -192,9 +201,8 @@ describe('xforms section v2 — affine block', () => {
     xf.a = 1; xf.b = 0; xf.c = 0; xf.d = 0; xf.e = 1; xf.f = 0;
     const { host, state, onChange } = mount(genome);
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const rotInput = card.querySelector('.pyr3-edit-aff-rotation input') as HTMLInputElement;
-    rotInput.value = '90';
-    rotInput.dispatchEvent(new Event('input'));
+    const rotCell = card.querySelector('.pyr3-edit-aff-rotation .pyr3-edit-num') as HTMLElement;
+    typeInto(rotCell, '90');
     const out = state.genome.xforms[0]!;
     expect(out.a).toBeCloseTo(0, 6);
     expect(out.b).toBeCloseTo(-1, 6);
@@ -241,11 +249,10 @@ describe('xforms section v2 — affine block', () => {
       '.pyr3-edit-aff-raw-fold',
     ) as HTMLDetailsElement;
     rawFold.open = true;
-    const aInput = card.querySelector(
-      '.pyr3-edit-aff-raw-a input',
-    ) as HTMLInputElement;
-    aInput.value = '1.5';
-    aInput.dispatchEvent(new Event('input'));
+    const aCell = card.querySelector(
+      '.pyr3-edit-aff-raw-a .pyr3-edit-num',
+    ) as HTMLElement;
+    typeInto(aCell, '1.5');
     expect(state.genome.xforms[0]!.a).toBeCloseTo(1.5, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.a');
   });
@@ -296,11 +303,10 @@ describe('xforms section v2 — post-transform', () => {
     const { host, state, onChange } = mount(genome);
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
     const postBlock = card.querySelector('.pyr3-edit-aff-post') as HTMLElement;
-    const rotInput = postBlock.querySelector(
-      '.pyr3-edit-aff-rotation input',
-    ) as HTMLInputElement;
-    rotInput.value = '90';
-    rotInput.dispatchEvent(new Event('input'));
+    const rotCell = postBlock.querySelector(
+      '.pyr3-edit-aff-rotation .pyr3-edit-num',
+    ) as HTMLElement;
+    typeInto(rotCell, '90');
     // 90° rotation on identity → a≈0, b≈-1, d≈1, e≈0
     const post = state.genome.xforms[0]!.post!;
     expect(post.a).toBeCloseTo(0, 6);
@@ -323,10 +329,10 @@ describe('xformsSection — variations chain', () => {
     const { host, state, onChange } = mount(1);
     const card0 = cards(host)[0]!;
     const row0 = card0.querySelector('.pyr3-edit-var-row') as HTMLElement;
-    const weightInput = row0.querySelector(
+    const weightCell = row0.querySelector(
       '.pyr3-edit-var-header .pyr3-edit-num',
-    ) as HTMLInputElement;
-    fireInput(weightInput, '0.77');
+    ) as HTMLElement;
+    typeInto(weightCell, '0.77');
     expect(state.genome.xforms[0]!.variations[0]!.weight).toBeCloseTo(0.77, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.weight');
   });
@@ -360,13 +366,13 @@ describe('xformsSection — variations chain', () => {
     const { host, state, onChange } = mount(genome);
     const card0 = cards(host)[0]!;
     const row0 = card0.querySelector('.pyr3-edit-var-row') as HTMLElement;
-    const paramInputs = row0.querySelectorAll(
+    const paramCells = row0.querySelectorAll(
       '.pyr3-edit-var-params .pyr3-edit-num',
-    ) as NodeListOf<HTMLInputElement>;
-    fireInput(paramInputs[0]!, '5');
+    ) as NodeListOf<HTMLElement>;
+    typeInto(paramCells[0]!, '5');
     expect(state.genome.xforms[0]!.variations[0]!.param0).toBe(5);
     expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.param0');
-    fireInput(paramInputs[1]!, '3');
+    typeInto(paramCells[1]!, '3');
     expect(state.genome.xforms[0]!.variations[0]!.param1).toBe(3);
     expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.param1');
   });
@@ -376,20 +382,20 @@ describe('xformsSection — xaos row', () => {
   it('renders one xaos input per xform when there are 2+ xforms', () => {
     const { host, state } = mount(1);
     const card0 = cards(host)[0]!;
-    const xaosInputs = card0.querySelectorAll(
+    const xaosCells = card0.querySelectorAll(
       '.pyr3-edit-xaos-row .pyr3-edit-num',
-    ) as NodeListOf<HTMLInputElement>;
-    expect(xaosInputs.length).toBe(state.genome.xforms.length);
+    ) as NodeListOf<HTMLElement>;
+    expect(xaosCells.length).toBe(state.genome.xforms.length);
   });
 
   it('xaos input write initialises xaos array (with 1s) + writes index k', () => {
     const { host, state, onChange } = mount(1);
     expect(state.genome.xforms[0]!.xaos).toBeUndefined();
     const card0 = cards(host)[0]!;
-    const xaosInputs = card0.querySelectorAll(
+    const xaosCells = card0.querySelectorAll(
       '.pyr3-edit-xaos-row .pyr3-edit-num',
-    ) as NodeListOf<HTMLInputElement>;
-    fireInput(xaosInputs[1]!, '0.5');
+    ) as NodeListOf<HTMLElement>;
+    typeInto(xaosCells[1]!, '0.5');
     expect(state.genome.xforms[0]!.xaos).toBeDefined();
     expect(state.genome.xforms[0]!.xaos![1]).toBeCloseTo(0.5, 6);
     expect(state.genome.xforms[0]!.xaos![0]).toBe(1); // pre-filled default
