@@ -452,6 +452,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const oversample = state.genome.oversample ?? 1;
     const filterRadius = state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
 
+    // Snapshot pre-call canvas dims. Restoring to these — instead of
+    // forcing preview.width × preview.height (~384px) — keeps the editor
+    // canvas at the same size the user was looking at before clicking
+    // render-PNG, avoiding the "everything turned sparse / pixelated"
+    // after-effect (#106). The settled-render path uses effectiveDims()
+    // on each lane fire so it'll re-render at the right quality next edit.
+    const restoreDims = effectiveDims();
+
     const modal = showModal(opts.root, `Rendering at ${targetW}×${targetH}…`);
     panelHost.setAttribute('data-busy', 'true');
     // Yield once so the modal paints before the heavy resize+iterate.
@@ -486,18 +494,20 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       console.error(`pyr3-edit: render-PNG failed — ${msg}`);
       showToast(panelHost, `Render failed: ${msg}`);
     } finally {
-      // Restore preview dims + re-iterate so the editor canvas isn't stuck
-      // showing the high-res render at a downscaled blur.
-      canvas.width = preview.width;
-      canvas.height = preview.height;
+      // Restore the canvas to whatever it was before the render-PNG so the
+      // user keeps the same on-screen view they had. fullRender uses
+      // previewSpp (capped genome.quality), which fills the histogram
+      // densely at these dims — no CSS-upscaling from a tiny texture.
+      canvas.width = restoreDims.width;
+      canvas.height = restoreDims.height;
       renderer.resize({
-        width: preview.width,
-        height: preview.height,
-        oversample: 1,
-        filterRadius: DEFAULT_FILTER_RADIUS,
+        width: restoreDims.width,
+        height: restoreDims.height,
+        oversample: restoreDims.oversample,
+        filterRadius: restoreDims.filterRadius,
       });
       const view2 = ctx.getCurrentTexture().createView();
-      editRenderer.fullRender(state.genome, state.seed, view2, preview.width, preview.height);
+      editRenderer.fullRender(state.genome, state.seed, view2, restoreDims.width, restoreDims.height);
       panelHost.removeAttribute('data-busy');
       modal.remove();
     }
