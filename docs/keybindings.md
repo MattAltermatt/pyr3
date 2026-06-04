@@ -25,15 +25,22 @@ as any new binding.
 | click `+ var` button          | Opens the picker; row appended on first preview        | shipped  |
 | click `⎘` (duplicate)         | Clone this xform inline below                          | shipped  |
 
-## /v1/edit — scrubby number inputs (planned — see [#105](https://github.com/MattAltermatt/pyr3/issues/105))
+## /v1/edit — scrubby number inputs ([#105](https://github.com/MattAltermatt/pyr3/issues/105))
+
+Applies to every numeric cell in the editor panel EXCEPT the render
+section's width / height (those stay native — exact pixel typing).
+Sensitivity is magnitude-relative: `delta_per_pixel = max(MIN_STEP_kind, |value| × 0.005)`.
 
 | Binding              | Behavior                                                   | Status   |
 | -------------------- | ---------------------------------------------------------- | -------- |
-| left-drag on field   | Scrub value proportional to horizontal drag distance       | planned  |
-| **shift-drag**       | Coarser step (~10× the default)                            | planned  |
-| **ctrl/alt-drag**    | Finer step (~0.1× the default)                             | planned  |
-| double-click         | Enter text-input mode (native input behavior)              | planned  |
-| up / down arrow      | Step ±1 (native input behavior)                            | planned  |
+| left-drag on field   | Scrub value proportional to horizontal drag distance       | shipped  |
+| **shift-drag**       | Coarse step (×10 the default)                              | shipped  |
+| **alt/option-drag**  | Fine step (×0.1 the default)                               | shipped  |
+| double-click         | Enter text-input mode; Enter commits, Escape reverts       | shipped  |
+| up / down arrow      | Step ±1 (only in text-input mode — native input behavior)  | shipped  |
+
+> Note: `ctrl` is NOT a modifier for fine-scrub. On macOS ctrl-click is
+> the OS context-menu gesture and pre-empts any drag. Use `alt/option`.
 
 ## /v1/viewer (gallery + showcase)
 
