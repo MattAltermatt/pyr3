@@ -23,6 +23,11 @@ export interface EditUiCallbacks {
   onOpenFile?: () => void;
   onSaveFile?: () => void;
   onRenderPng?: () => void;
+  /** Initial settle-delay value (ms) — shown in the top-bar input. */
+  settleDelayMs?: number;
+  /** Fires whenever the user changes the settle-delay input. Host pipes
+   *  the new value into the live/settle scheduler. */
+  onSettleDelayChange?: (ms: number) => void;
 }
 
 export function mountEditUi(
@@ -90,6 +95,30 @@ export function mountEditUi(
     makeButton('🖼️ render PNG', () => callbacks.onRenderPng?.()),
   );
   topbar.appendChild(rerollPngRow);
+
+  // Segment 4: settle delay (ms) — the quiet-time after the last edit
+  // before the full-quality render fires. Longer = the LIVE (small-canvas
+  // fast) frame stays visible longer for single clicks; shorter = the
+  // settled high-quality render arrives sooner. Default 200ms.
+  const settleRow = document.createElement('div');
+  settleRow.className = 'pyr3-edit-named';
+  settleRow.append(document.createTextNode('settle '));
+  const settleInput = document.createElement('input');
+  settleInput.type = 'number';
+  settleInput.min = '0';
+  settleInput.max = '5000';
+  settleInput.step = '50';
+  settleInput.className = 'pyr3-edit-settle-input';
+  settleInput.style.width = '64px';
+  settleInput.value = String(callbacks.settleDelayMs ?? 200);
+  settleInput.title = 'Quiet time after your last edit before the full-quality render fires (ms). Higher = live preview stays visible longer; lower = settled render arrives sooner.';
+  settleInput.addEventListener('input', () => {
+    const n = Number(settleInput.value);
+    if (!Number.isFinite(n) || n < 0) return;
+    callbacks.onSettleDelayChange?.(n);
+  });
+  settleRow.append(settleInput, document.createTextNode(' ms'));
+  topbar.appendChild(settleRow);
 
   host.appendChild(topbar);
 
@@ -207,7 +236,8 @@ const EDIT_CSS = `
   gap: 6px;
 }
 .pyr3-edit-named { display: flex; align-items: center; gap: 4px; }
-.pyr3-edit-text {
+.pyr3-edit-text,
+.pyr3-edit-settle-input {
   background: var(--bar-bg-3, #0f0f13);
   color: var(--text, #ddd);
   border: 1px solid var(--bar-border, #2a2a30);

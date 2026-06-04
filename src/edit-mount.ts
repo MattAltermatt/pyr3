@@ -158,7 +158,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // Quiet time after the user's last edit before the full-dim/quality render
   // kicks off. 150ms is on the snappy end of typical editor norms (Lightroom
   // / Affinity sit around 200-300ms, Photoshop preview around 100ms).
-  const SETTLE_DELAY_MS = 150;
+  // Quiet time after the last edit before the full-quality render fires.
+  // Exposed in the top-bar as a settable input — see EditUiCallbacks.
+  // Default 200 ms — longer than the original 150 because on single clicks
+  // the live frame needs time to be VISIBLE before the settled render
+  // resizes the canvas to full dims and starts encoding (the resize blanks
+  // the canvas briefly). With 200 ms, single clicks reliably show their
+  // live frame; user can tune lower for a snappier settled, higher for a
+  // longer-lived live preview.
+  let settleDelayMs = 200;
   const BAR_DELAY_MS = 500;
 
   function liveDimsFor(full: { width: number; height: number }): { width: number; height: number } {
@@ -255,7 +263,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     settleTimer = setTimeout(() => {
       settleTimer = null;
       void runSettledRender();
-    }, SETTLE_DELAY_MS);
+    }, settleDelayMs);
   }
   async function runSettledRender(): Promise<void> {
     inflightTicket++;
@@ -325,6 +333,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       onOpenFile: handleOpenFile,
       onSaveFile: handleSaveFile,
       onRenderPng: handleRenderPng,
+      settleDelayMs,
+      onSettleDelayChange: (ms) => { settleDelayMs = ms; },
     });
   }
 
