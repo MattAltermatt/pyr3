@@ -86,11 +86,6 @@ describe('mountEditUi shell', () => {
     const chev = header.querySelector('.pyr3-edit-chev') as HTMLElement;
     const body = host.querySelector('.pyr3-edit-section-body') as HTMLElement;
 
-    expect(state.sectionCollapse.palette).toBe(false);
-    expect(chev.textContent).toBe('▼');
-    expect(body.style.display).toBe('block');
-
-    header.click();
     expect(state.sectionCollapse.palette).toBe(true);
     expect(chev.textContent).toBe('▶');
     expect(body.style.display).toBe('none');
@@ -99,6 +94,11 @@ describe('mountEditUi shell', () => {
     expect(state.sectionCollapse.palette).toBe(false);
     expect(chev.textContent).toBe('▼');
     expect(body.style.display).toBe('block');
+
+    header.click();
+    expect(state.sectionCollapse.palette).toBe(true);
+    expect(chev.textContent).toBe('▶');
+    expect(body.style.display).toBe('none');
   });
 
   it('passes the build callback the section body host + state + onChange', () => {

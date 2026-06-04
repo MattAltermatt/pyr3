@@ -179,15 +179,15 @@ describe('createLaneScheduler', () => {
 });
 
 describe('createEditState', () => {
-  it('starts with all 7 sections expanded (collapse = false)', () => {
+  it('starts with all 7 sections collapsed (collapse = true)', () => {
     const st = createEditState(generateRandomGenome(() => 0.5), 1);
-    expect(st.sectionCollapse.palette).toBe(false);
-    expect(st.sectionCollapse.viewport).toBe(false);
-    expect(st.sectionCollapse.xforms).toBe(false);
-    expect(st.sectionCollapse.final).toBe(false);
-    expect(st.sectionCollapse.global).toBe(false);
-    expect(st.sectionCollapse.density).toBe(false);
-    expect(st.sectionCollapse.render).toBe(false);
+    expect(st.sectionCollapse.palette).toBe(true);
+    expect(st.sectionCollapse.viewport).toBe(true);
+    expect(st.sectionCollapse.xforms).toBe(true);
+    expect(st.sectionCollapse.final).toBe(true);
+    expect(st.sectionCollapse.global).toBe(true);
+    expect(st.sectionCollapse.density).toBe(true);
+    expect(st.sectionCollapse.render).toBe(true);
   });
 
   it('records the seed and a default preview size', () => {
