@@ -291,16 +291,27 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   });
 
   // Common path-change handler — used by both UI sections and the canvas
-  // pan/zoom listener. Schedules the right lane and arms the settle timer
-  // for slow / rebuild edits.
+  // pan/zoom listener. SLOW + REBUILD lanes bypass the lane scheduler
+  // entirely and go through requestLiveRender (the same continuous-render
+  // loop pan/zoom uses), so every edit — number-input scrub, slider drag,
+  // spinner click, preset apply, picker preview — gets immediate live
+  // feedback instead of waiting 80ms for the scheduler debounce to flush.
+  // requestLiveRender is self-throttling: max one render in flight, edits
+  // during a render set the dirty bit and chain another after the GPU
+  // finishes. The settle timer still fires 150ms after the last edit and
+  // drives the full-quality render at settled dims.
+  //
+  // FAST lane (tonemap / density / background) stays on the scheduler —
+  // it's present-only against the existing histogram, so the 16ms debounce
+  // is the right batching cadence and there's no heavy re-iterate to
+  // bypass.
   function onPathChange(path: string): void {
     const lane = pathLane(path);
-    scheduler.schedule({ lane, path });
-    // Slow + rebuild → restart the settle timer for the eventual
-    // full-quality render. Fast lane (tonemap/density/background) just
-    // re-presents and doesn't need a settle.
     if (lane === 'slow' || lane === 'rebuild') {
+      void requestLiveRender();
       scheduleSettle();
+    } else {
+      scheduler.schedule({ lane, path });
     }
   }
 
