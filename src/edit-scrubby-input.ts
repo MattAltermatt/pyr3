@@ -120,7 +120,11 @@ export function scrubbyInput(opts: ScrubbyInputOpts): ScrubbyHandle {
     const dxPx = locked ? e.movementX : (e.clientX - lastX);
     lastX = e.clientX;
     if (dxPx === 0) return;
-    const mult = e.shiftKey ? 10 : (e.ctrlKey || e.altKey) ? 0.1 : 1;
+    // Modifiers: shift = coarse (×10), alt/option = fine (×0.1).
+    // Ctrl is NOT used — on macOS ctrl-click triggers the native context
+    // menu before pointerdown completes, so it can't drive a drag reliably.
+    // Cmd (metaKey) is left free for browser shortcuts.
+    const mult = e.shiftKey ? 10 : e.altKey ? 0.1 : 1;
     const perPx = Math.max(floor, Math.abs(value) * RATE) * mult;
     value = clamp(value + dxPx * perPx, opts.min, opts.max);
     emit();

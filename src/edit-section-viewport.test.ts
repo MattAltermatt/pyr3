@@ -30,7 +30,16 @@ function mount() {
   state.genome.size = { width: 1920, height: 1080 };
   const onChange = vi.fn();
   viewportSection.build(host, state, onChange);
+  document.body.appendChild(host); // text-mode swap needs to be in the document
   return { host, state, onChange };
+}
+
+// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 describe('viewportSection — DOM smoke', () => {
@@ -67,48 +76,40 @@ describe('viewportSection — DOM smoke', () => {
 
   it('initial input values reflect genome (rotate=undefined shows as 0)', () => {
     const { host } = mount();
-    const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLInputElement;
-    const cx = host.querySelector('.pyr3-edit-viewport-cx-input') as HTMLInputElement;
-    const rot = host.querySelector('.pyr3-edit-viewport-rotate-input') as HTMLInputElement;
-    expect(scale.value).toBe('200');
-    expect(cx.value).toBe('0');
-    expect(rot.value).toBe('0');
+    const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLElement;
+    const cx = host.querySelector('.pyr3-edit-viewport-cx-input') as HTMLElement;
+    const rot = host.querySelector('.pyr3-edit-viewport-rotate-input') as HTMLElement;
+    expect(scale.textContent).toBe('200');
+    expect(cx.textContent).toBe('0');
+    expect(rot.textContent).toBe('0');
   });
 });
 
 describe('viewportSection — input mutation', () => {
   it('scale input writes genome.scale + fires onChange("scale")', () => {
     const { host, state, onChange } = mount();
-    const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLInputElement;
-    scale.value = '350';
-    scale.dispatchEvent(new Event('input'));
+    typeInto(host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLElement, '350');
     expect(state.genome.scale).toBe(350);
     expect(onChange).toHaveBeenCalledWith('scale');
   });
 
   it('cx input writes genome.cx + fires onChange("cx")', () => {
     const { host, state, onChange } = mount();
-    const cx = host.querySelector('.pyr3-edit-viewport-cx-input') as HTMLInputElement;
-    cx.value = '0.5';
-    cx.dispatchEvent(new Event('input'));
+    typeInto(host.querySelector('.pyr3-edit-viewport-cx-input') as HTMLElement, '0.5');
     expect(state.genome.cx).toBe(0.5);
     expect(onChange).toHaveBeenCalledWith('cx');
   });
 
   it('cy input writes genome.cy + fires onChange("cy")', () => {
     const { host, state, onChange } = mount();
-    const cy = host.querySelector('.pyr3-edit-viewport-cy-input') as HTMLInputElement;
-    cy.value = '-1.25';
-    cy.dispatchEvent(new Event('input'));
+    typeInto(host.querySelector('.pyr3-edit-viewport-cy-input') as HTMLElement, '-1.25');
     expect(state.genome.cy).toBe(-1.25);
     expect(onChange).toHaveBeenCalledWith('cy');
   });
 
   it('rotate input writes genome.rotate when non-zero', () => {
     const { host, state, onChange } = mount();
-    const rot = host.querySelector('.pyr3-edit-viewport-rotate-input') as HTMLInputElement;
-    rot.value = '45';
-    rot.dispatchEvent(new Event('input'));
+    typeInto(host.querySelector('.pyr3-edit-viewport-rotate-input') as HTMLElement, '45');
     expect(state.genome.rotate).toBe(45);
     expect(onChange).toHaveBeenCalledWith('rotate');
   });
@@ -116,9 +117,7 @@ describe('viewportSection — input mutation', () => {
   it('rotate=0 clears genome.rotate back to undefined', () => {
     const { host, state } = mount();
     state.genome.rotate = 30;
-    const rot = host.querySelector('.pyr3-edit-viewport-rotate-input') as HTMLInputElement;
-    rot.value = '0';
-    rot.dispatchEvent(new Event('input'));
+    typeInto(host.querySelector('.pyr3-edit-viewport-rotate-input') as HTMLElement, '0');
     expect(state.genome.rotate).toBeUndefined();
   });
 });
@@ -141,9 +140,9 @@ describe('viewportSection — 🎯 fit button', () => {
   it('syncs the visible input values after fitting', () => {
     const { host, state } = mount();
     const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
-    const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLInputElement;
+    const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLElement;
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(scale.value).toBe(String(state.genome.scale));
+    expect(scale.textContent).toBe(String(state.genome.scale));
   });
 
   it('does NOT fire onChange when the genome has no xforms (degenerate)', () => {

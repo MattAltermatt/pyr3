@@ -112,24 +112,25 @@ describe('scrubbyInput — modifiers', () => {
     pup(el, 101);
   });
 
-  it('ctrl modifier multiplies delta ×0.1', () => {
+  it('alt modifier multiplies delta ×0.1 (fine scrub)', () => {
     const onInput = vi.fn();
     const { el } = scrubbyInput({ value: 0.5, onInput, kind: 'position' });
     document.body.appendChild(el);
     pdown(el, 100);
-    pmove(el, 110, { ctrlKey: true }); // dx +10 px
+    pmove(el, 110, { altKey: true }); // dx +10 px
     // 0.0025/px × 0.1 = 0.00025/px → +0.0025
     expect(onInput).toHaveBeenLastCalledWith(expect.closeTo(0.5025, 6));
     pup(el, 110);
   });
 
-  it('alt modifier multiplies delta ×0.1 (same as ctrl)', () => {
+  it('ctrl is NOT a fine-scrub modifier (Mac context-menu conflict)', () => {
     const onInput = vi.fn();
     const { el } = scrubbyInput({ value: 0.5, onInput, kind: 'position' });
     document.body.appendChild(el);
     pdown(el, 100);
-    pmove(el, 110, { altKey: true });
-    expect(onInput).toHaveBeenLastCalledWith(expect.closeTo(0.5025, 6));
+    pmove(el, 110, { ctrlKey: true }); // dx +10 px; ctrl ignored → ×1
+    // 0.0025/px × 1 = 0.0025/px → +0.025
+    expect(onInput).toHaveBeenLastCalledWith(expect.closeTo(0.525, 6));
     pup(el, 110);
   });
 });

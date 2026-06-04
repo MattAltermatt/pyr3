@@ -17,12 +17,14 @@
 import { type SectionMount } from './edit-ui';
 import { type EditState } from './edit-state';
 import { computeFitViewport } from './edit-fit-viewport';
+import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 
 type ViewportField = 'scale' | 'cx' | 'cy' | 'rotate';
 
 interface FieldSpec {
   key: ViewportField;
   label: string;
+  kind: FieldKind;
   read(state: EditState): number;
   write(state: EditState, value: number): void;
 }
@@ -31,24 +33,28 @@ const FIELDS: readonly FieldSpec[] = [
   {
     key: 'scale',
     label: 'scale',
+    kind: 'scale',
     read: (s) => s.genome.scale,
     write: (s, v) => { s.genome.scale = v; },
   },
   {
     key: 'cx',
     label: 'cx',
+    kind: 'position',
     read: (s) => s.genome.cx,
     write: (s, v) => { s.genome.cx = v; },
   },
   {
     key: 'cy',
     label: 'cy',
+    kind: 'position',
     read: (s) => s.genome.cy,
     write: (s, v) => { s.genome.cy = v; },
   },
   {
     key: 'rotate',
     label: 'rotate',
+    kind: 'rotation',
     read: (s) => s.genome.rotate ?? 0,
     // Drop the field back to undefined when the user zeros it — matches the
     // serializer's "absent = no rotation" convention.
@@ -89,9 +95,9 @@ export const viewportSection: SectionMount = {
     fitRow.appendChild(fitBtn);
     host.appendChild(fitRow);
 
-    // Track each row's input so the fit button can sync displayed values
-    // after rewriting state.
-    const inputs: Partial<Record<ViewportField, HTMLInputElement>> = {};
+    // Track each row's scrubby handle so the fit button can sync displayed
+    // values after rewriting state.
+    const handles: Partial<Record<ViewportField, ScrubbyHandle>> = {};
 
     for (const spec of FIELDS) {
       const row = document.createElement('div');
@@ -108,24 +114,25 @@ export const viewportSection: SectionMount = {
       label.style.fontSize = '11px';
       label.style.color = 'var(--text-dim, #888)';
 
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.step = 'any';
-      input.className = `pyr3-edit-viewport-input pyr3-edit-viewport-${spec.key}-input`;
-      input.style.flex = '1 1 auto';
-      input.style.minWidth = '0';
-      input.value = String(spec.read(state));
-      inputs[spec.key] = input;
-
-      row.append(label, input);
-      host.appendChild(row);
-
-      input.addEventListener('input', () => {
-        const n = Number(input.value);
-        if (!Number.isFinite(n)) return; // tolerate transient blank / `-` while typing
-        spec.write(state, n);
-        onChange(spec.key);
+      const handle = scrubbyInput({
+        value: spec.read(state),
+        kind: spec.kind,
+        ariaLabel: spec.label,
+        onInput: (v) => {
+          spec.write(state, v);
+          onChange(spec.key);
+        },
       });
+      handle.el.classList.add(
+        'pyr3-edit-viewport-input',
+        `pyr3-edit-viewport-${spec.key}-input`,
+      );
+      handle.el.style.flex = '1 1 auto';
+      handle.el.style.minWidth = '0';
+      handles[spec.key] = handle;
+
+      row.append(label, handle.el);
+      host.appendChild(row);
     }
 
     // When the canvas pan/zoom listener (src/edit-canvas-nav.ts) mutates
@@ -140,10 +147,10 @@ export const viewportSection: SectionMount = {
         document.removeEventListener('pyr3:viewport-changed', syncInputsFromState as EventListener);
         return;
       }
-      if (inputs.scale) inputs.scale.value = String(Math.round(state.genome.scale * 1e6) / 1e6);
-      if (inputs.cx) inputs.cx.value = String(Math.round(state.genome.cx * 1e6) / 1e6);
-      if (inputs.cy) inputs.cy.value = String(Math.round(state.genome.cy * 1e6) / 1e6);
-      if (inputs.rotate) inputs.rotate.value = String(state.genome.rotate ?? 0);
+      handles.scale?.setValue(state.genome.scale);
+      handles.cx?.setValue(state.genome.cx);
+      handles.cy?.setValue(state.genome.cy);
+      handles.rotate?.setValue(state.genome.rotate ?? 0);
     }
     document.addEventListener('pyr3:viewport-changed', syncInputsFromState as EventListener);
 
@@ -167,9 +174,9 @@ export const viewportSection: SectionMount = {
       state.genome.scale = rounded(fit.scale);
       state.genome.cx = rounded(fit.cx);
       state.genome.cy = rounded(fit.cy);
-      if (inputs.scale) inputs.scale.value = String(state.genome.scale);
-      if (inputs.cx) inputs.cx.value = String(state.genome.cx);
-      if (inputs.cy) inputs.cy.value = String(state.genome.cy);
+      handles.scale?.setValue(state.genome.scale);
+      handles.cx?.setValue(state.genome.cx);
+      handles.cy?.setValue(state.genome.cy);
       // Schedule the slow-lane fire on each path; the lane scheduler dedups
       // them into a single re-iterate.
       onChange('scale');
