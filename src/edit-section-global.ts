@@ -16,6 +16,7 @@ import { type EditState } from './edit-state';
 import { type SectionMount } from './edit-ui';
 import { DEFAULT_TONEMAP, type Tonemap } from './tonemap';
 import { type Symmetry } from './genome';
+import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 
 // Hex `#rrggbb` → [r, g, b] floats in 0..1.
 export function hexToRgb01(hex: string): [number, number, number] {
@@ -47,17 +48,20 @@ function ensureTonemap(state: EditState): Tonemap {
   return state.genome.tonemap;
 }
 
-function numberInput(value: number, onInput: (v: number) => void, step = 0.01): HTMLInputElement {
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.step = String(step);
-  input.value = String(value);
-  input.className = 'pyr3-edit-num';
-  input.addEventListener('input', () => {
-    const v = parseFloat(input.value);
-    if (Number.isFinite(v)) onInput(v);
+function numberInput(
+  value: number,
+  onInput: (v: number) => void,
+  opts: { kind?: FieldKind; min?: number; max?: number; minStep?: number; format?: (v: number) => string } = {},
+): ScrubbyHandle {
+  return scrubbyInput({
+    value,
+    onInput,
+    kind: opts.kind ?? 'generic',
+    ...(opts.min !== undefined ? { min: opts.min } : {}),
+    ...(opts.max !== undefined ? { max: opts.max } : {}),
+    ...(opts.minStep !== undefined ? { minStep: opts.minStep } : {}),
+    ...(opts.format !== undefined ? { format: opts.format } : {}),
   });
-  return input;
 }
 
 function sliderInput(
@@ -109,7 +113,7 @@ export const globalSection: SectionMount = {
       numberInput(tmGet('brightness'), (v) => {
         ensureTonemap(state).brightness = v;
         onChange('tonemap.brightness');
-      }, 0.1),
+      }, { kind: 'generic', min: 0 }).el,
     ));
 
     // ── gamma ────────────────────────────────────────────────────────────
@@ -118,7 +122,7 @@ export const globalSection: SectionMount = {
       numberInput(tmGet('gamma'), (v) => {
         ensureTonemap(state).gamma = v;
         onChange('tonemap.gamma');
-      }, 0.1),
+      }, { kind: 'generic', min: 0 }).el,
     ));
 
     // ── highlightPower ───────────────────────────────────────────────────
@@ -127,7 +131,7 @@ export const globalSection: SectionMount = {
       numberInput(tmGet('highlightPower'), (v) => {
         ensureTonemap(state).highlightPower = v;
         onChange('tonemap.highlightPower');
-      }, 0.1),
+      }, { kind: 'generic' }).el,
     ));
 
     // ── gammaThreshold ───────────────────────────────────────────────────
@@ -136,7 +140,7 @@ export const globalSection: SectionMount = {
       numberInput(tmGet('gammaThreshold'), (v) => {
         ensureTonemap(state).gammaThreshold = v;
         onChange('tonemap.gammaThreshold');
-      }, 0.001),
+      }, { kind: 'generic', min: 0 }).el,
     ));
 
     // ── vibrancy (0..1 slider) ───────────────────────────────────────────
@@ -191,34 +195,45 @@ export const globalSection: SectionMount = {
     });
     symRow.appendChild(symKind);
 
-    const symN = document.createElement('input');
-    symN.type = 'number';
-    symN.min = '1';
-    symN.step = '1';
-    symN.value = String(state.genome.symmetry?.n ?? 2);
-    symN.className = 'pyr3-edit-num';
-    symN.disabled = state.genome.symmetry === undefined;
-    symN.addEventListener('input', () => {
-      if (!state.genome.symmetry) return;
-      const v = parseInt(symN.value, 10);
-      if (Number.isFinite(v) && v >= 1) {
-        state.genome.symmetry.n = v;
+    const symNHandle = scrubbyInput({
+      value: state.genome.symmetry?.n ?? 2,
+      kind: 'generic',
+      min: 1,
+      minStep: 1,
+      format: (v) => String(Math.round(v)),
+      onInput: (v) => {
+        if (!state.genome.symmetry) return;
+        const rounded = Math.max(1, Math.round(v));
+        state.genome.symmetry.n = rounded;
         onChange('symmetry.n');
-      }
+      },
     });
+    const symN = symNHandle.el;
+    // Mirror the old disabled affordance for the scrubby span — pointer events
+    // off + visually muted when symmetry is inactive.
+    function setSymNDisabled(disabled: boolean): void {
+      symN.style.pointerEvents = disabled ? 'none' : '';
+      symN.style.opacity = disabled ? '0.4' : '';
+      if (disabled) {
+        symN.setAttribute('aria-disabled', 'true');
+      } else {
+        symN.removeAttribute('aria-disabled');
+      }
+    }
+    setSymNDisabled(state.genome.symmetry === undefined);
     symRow.appendChild(symN);
 
     symCheck.addEventListener('change', () => {
       if (symCheck.checked) {
         state.genome.symmetry = { kind: 'rotational', n: 2 };
         symKind.disabled = false;
-        symN.disabled = false;
+        setSymNDisabled(false);
         symKind.value = 'rotational';
-        symN.value = '2';
+        symNHandle.setValue(2);
       } else {
         state.genome.symmetry = undefined;
         symKind.disabled = true;
-        symN.disabled = true;
+        setSymNDisabled(true);
       }
       onChange('symmetry.active');
     });

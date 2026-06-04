@@ -26,7 +26,16 @@ function setup(): {
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
   const onChange = vi.fn();
   globalSection.build(host, state, onChange);
+  document.body.appendChild(host); // text-mode swap needs to be in the document
   return { host, state, onChange };
+}
+
+// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 function rowByLabel(host: HTMLElement, label: string): HTMLElement {
@@ -54,10 +63,10 @@ describe('globalSection — shell', () => {
   it('initial values reflect DEFAULT_TONEMAP when genome.tonemap is undefined', () => {
     const { host, state } = setup();
     expect(state.genome.tonemap).toBeUndefined();
-    const brightness = rowByLabel(host, 'brightness').querySelector('input') as HTMLInputElement;
-    expect(parseFloat(brightness.value)).toBeCloseTo(DEFAULT_TONEMAP.brightness, 5);
-    const gamma = rowByLabel(host, 'gamma').querySelector('input') as HTMLInputElement;
-    expect(parseFloat(gamma.value)).toBeCloseTo(DEFAULT_TONEMAP.gamma, 5);
+    const brightness = rowByLabel(host, 'brightness').querySelector('.pyr3-scrubby') as HTMLElement;
+    expect(parseFloat(brightness.textContent ?? '')).toBeCloseTo(DEFAULT_TONEMAP.brightness, 5);
+    const gamma = rowByLabel(host, 'gamma').querySelector('.pyr3-scrubby') as HTMLElement;
+    expect(parseFloat(gamma.textContent ?? '')).toBeCloseTo(DEFAULT_TONEMAP.gamma, 5);
     const vibrancy = rowByLabel(host, 'vibrancy').querySelector('input') as HTMLInputElement;
     expect(parseFloat(vibrancy.value)).toBeCloseTo(DEFAULT_TONEMAP.vibrancy, 5);
   });
@@ -66,36 +75,28 @@ describe('globalSection — shell', () => {
 describe('globalSection — tonemap field mutations', () => {
   it('brightness input mutates tonemap.brightness and fires the right path', () => {
     const { host, state, onChange } = setup();
-    const input = rowByLabel(host, 'brightness').querySelector('input') as HTMLInputElement;
-    input.value = '12.5';
-    input.dispatchEvent(new Event('input'));
+    typeInto(rowByLabel(host, 'brightness').querySelector('.pyr3-scrubby') as HTMLElement, '12.5');
     expect(state.genome.tonemap?.brightness).toBeCloseTo(12.5, 5);
     expect(onChange).toHaveBeenCalledWith('tonemap.brightness');
   });
 
   it('gamma input mutates tonemap.gamma', () => {
     const { host, state, onChange } = setup();
-    const input = rowByLabel(host, 'gamma').querySelector('input') as HTMLInputElement;
-    input.value = '3.1';
-    input.dispatchEvent(new Event('input'));
+    typeInto(rowByLabel(host, 'gamma').querySelector('.pyr3-scrubby') as HTMLElement, '3.1');
     expect(state.genome.tonemap?.gamma).toBeCloseTo(3.1, 5);
     expect(onChange).toHaveBeenCalledWith('tonemap.gamma');
   });
 
   it('highlightPower input mutates tonemap.highlightPower', () => {
     const { host, state, onChange } = setup();
-    const input = rowByLabel(host, 'highlightPower').querySelector('input') as HTMLInputElement;
-    input.value = '2.0';
-    input.dispatchEvent(new Event('input'));
+    typeInto(rowByLabel(host, 'highlightPower').querySelector('.pyr3-scrubby') as HTMLElement, '2.0');
     expect(state.genome.tonemap?.highlightPower).toBeCloseTo(2.0, 5);
     expect(onChange).toHaveBeenCalledWith('tonemap.highlightPower');
   });
 
   it('gammaThreshold input mutates tonemap.gammaThreshold', () => {
     const { host, state, onChange } = setup();
-    const input = rowByLabel(host, 'gammaThreshold').querySelector('input') as HTMLInputElement;
-    input.value = '0.05';
-    input.dispatchEvent(new Event('input'));
+    typeInto(rowByLabel(host, 'gammaThreshold').querySelector('.pyr3-scrubby') as HTMLElement, '0.05');
     expect(state.genome.tonemap?.gammaThreshold).toBeCloseTo(0.05, 5);
     expect(onChange).toHaveBeenCalledWith('tonemap.gammaThreshold');
   });
@@ -115,9 +116,7 @@ describe('globalSection — lazy tonemap init', () => {
   it('editing brightness when genome.tonemap is undefined initialises from DEFAULT_TONEMAP', () => {
     const { host, state } = setup();
     expect(state.genome.tonemap).toBeUndefined();
-    const input = rowByLabel(host, 'brightness').querySelector('input') as HTMLInputElement;
-    input.value = '7';
-    input.dispatchEvent(new Event('input'));
+    typeInto(rowByLabel(host, 'brightness').querySelector('.pyr3-scrubby') as HTMLElement, '7');
     expect(state.genome.tonemap).toBeDefined();
     expect(state.genome.tonemap!.brightness).toBe(7);
     // Other fields preserved from DEFAULT_TONEMAP (not undefined)
@@ -208,9 +207,7 @@ describe('globalSection — symmetry', () => {
     check.checked = true;
     check.dispatchEvent(new Event('change'));
 
-    const nInput = symRow.querySelector('input[type="number"]') as HTMLInputElement;
-    nInput.value = '6';
-    nInput.dispatchEvent(new Event('input'));
+    typeInto(symRow.querySelector('.pyr3-scrubby') as HTMLElement, '6');
     expect(state.genome.symmetry?.n).toBe(6);
     expect(onChange).toHaveBeenCalledWith('symmetry.n');
   });
@@ -219,8 +216,8 @@ describe('globalSection — symmetry', () => {
     const { host } = setup();
     const symRow = rowByLabel(host, 'symmetry');
     const sel = symRow.querySelector('select') as HTMLSelectElement;
-    const nInput = symRow.querySelector('input[type="number"]') as HTMLInputElement;
+    const nInput = symRow.querySelector('.pyr3-scrubby') as HTMLElement;
     expect(sel.disabled).toBe(true);
-    expect(nInput.disabled).toBe(true);
+    expect(nInput.getAttribute('aria-disabled')).toBe('true');
   });
 });
