@@ -263,6 +263,18 @@ const EDIT_CSS = `
   cursor: pointer;
 }
 .pyr3-edit-btn:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); border-color: var(--accent-border, #884a1a); }
+.pyr3-scrubby {
+  display: inline-block;
+  cursor: ew-resize;
+  user-select: none;
+  -webkit-user-select: none;
+  min-width: 40px;
+  text-align: right;
+  white-space: nowrap;
+}
+.pyr3-scrubby:focus { outline: none; border-color: var(--accent-border, #884a1a); }
+.pyr3-scrubby-dragging { border-color: var(--accent, #ff8c1a); }
+.pyr3-scrubby-textmode { cursor: text; text-align: right; }
 .pyr3-edit-section {
   background: var(--bar-bg-1, #15151a);
   border: 1px solid var(--bar-border, #2a2a30);

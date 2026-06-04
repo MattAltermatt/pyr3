@@ -70,6 +70,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-canvas-nav.ts',   // /v1/edit pan + zoom — owns mouse/wheel listeners on window
   'edit-xform-viz.ts',    // /v1/edit affine viz — owns a 2D canvas
   'edit-variation-picker.ts',  // /v1/edit variation picker — owns a modal, document keydown listener
+  'edit-scrubby-input.ts',     // /v1/edit drag-to-scrub numeric cell — owns DOM + pointer lock
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
