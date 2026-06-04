@@ -256,4 +256,132 @@ const EDIT_CSS = `
 .pyr3-edit-xform-inactive { opacity: 0.55; }
 .pyr3-edit-xform-inactive .pyr3-edit-xform-active { opacity: 1; }
 .pyr3-edit-var-row.pyr3-edit-var-inactive { opacity: 0.55; }
+
+/* ── Variation picker modal (src/edit-variation-picker.ts) ───────── */
+/* No backdrop — the flame canvas stays visible behind. Centered floating
+   panel; <div> not <dialog> for happy-dom compat. */
+.pyr3-var-picker {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 96vw);
+  max-height: 86vh;
+  background: var(--bar-bg-1, #15151a);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 6px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  color: var(--text, #ddd);
+  font-size: 12px;
+}
+.pyr3-var-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bar-border, #2a2a30);
+  background: var(--bar-bg-2, #1a1a20);
+}
+.pyr3-var-head h2 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text, #ddd);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.pyr3-var-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--bar-border, #2a2a30);
+}
+.pyr3-var-search {
+  flex: 1;
+  background: var(--bar-bg-3, #0f0f13);
+  border: 1px solid var(--bar-border, #2a2a30);
+  color: var(--text, #ddd);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+.pyr3-var-search::placeholder { color: var(--text-dimmer, #666); }
+.pyr3-var-body {
+  padding: 12px 14px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.pyr3-var-section-label {
+  color: var(--text-dim, #888);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 12px 0 6px;
+}
+.pyr3-var-section-label:first-child { margin-top: 0; }
+.pyr3-var-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+.pyr3-var-tile {
+  background: var(--bar-bg-2, #1a1a20);
+  border: 1.5px solid var(--bar-border, #2a2a30);
+  border-radius: 4px;
+  padding: 5px 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font: inherit;
+  color: inherit;
+  transition: background 0.08s, border-color 0.08s;
+}
+.pyr3-var-tile:hover {
+  background: var(--bar-bg-3, #0f0f13);
+  border-color: var(--accent-border, #884a1a);
+}
+.pyr3-var-tile.selected {
+  border-color: var(--accent, #ff8c1a);
+  background: rgba(255, 140, 26, 0.10);
+}
+.pyr3-var-thumb {
+  width: 64px;
+  height: 64px;
+  background: #07070a;
+  border-radius: 2px;
+  image-rendering: pixelated;
+  display: block;
+}
+.pyr3-var-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text, #ddd);
+  text-align: center;
+}
+.pyr3-var-category {
+  background: var(--bar-bg-2, #1a1a20);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 3px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.pyr3-var-category > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  color: var(--text, #ddd);
+  font-size: 11px;
+  background: var(--bar-bg-1, #15151a);
+  user-select: none;
+}
+.pyr3-var-category > summary::-webkit-details-marker { display: none; }
+.pyr3-var-category[open] > summary { border-bottom: 1px solid var(--bar-border, #2a2a30); }
+.pyr3-var-category > .pyr3-var-grid { padding: 8px 10px; }
 `;

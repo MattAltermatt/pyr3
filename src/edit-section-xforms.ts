@@ -299,8 +299,12 @@ function buildDecomposedAffineBlock(
   vizCol.className = 'pyr3-edit-aff-viz-col';
   const vizCanvas = document.createElement('canvas');
   vizCanvas.className = 'pyr3-edit-aff-viz';
-  vizCanvas.width = 120;
-  vizCanvas.height = 120;
+  // Mini viz canvas. Sized to fit the editor's 340px panel comfortably:
+  // 88×88 intrinsic + 1px border ≈ 90px column → leaves ~210px for fields
+  // even with a ~16px scrollbar. CSS keeps a max-width: 100% so further
+  // panel shrinkage doesn't overflow.
+  vizCanvas.width = 88;
+  vizCanvas.height = 88;
   vizCol.appendChild(vizCanvas);
   block.append(fieldsCol, vizCol);
 
@@ -939,6 +943,8 @@ canvas.pyr3-edit-aff-viz {
   border: 1px solid var(--bar-border, #2a2a30);
   border-radius: 2px;
   display: block;
+  max-width: 100%;
+  height: auto;
 }
 .pyr3-edit-unit { color: var(--text-dim, #888); font-size: 10px; margin-left: 2px; }
 .pyr3-edit-aff-presets details > summary,
