@@ -14,6 +14,7 @@
 
 import { type SectionMount } from './edit-ui';
 import { type Density, DEFAULT_DENSITY, DENSITY_PRESETS } from './density';
+import { scrubbyInput, type ScrubbyHandle } from './edit-scrubby-input';
 
 const CUSTOM_PRESET_VALUE = 'custom';
 
@@ -75,7 +76,8 @@ export const densitySection: SectionMount = {
     // ── Three slider+number rows ────────────────────────────────────────────
     interface SliderPair {
       slider: HTMLInputElement;
-      number: HTMLInputElement;
+      number: HTMLElement;
+      handle: ScrubbyHandle;
     }
 
     function makeRow(
@@ -84,6 +86,7 @@ export const densitySection: SectionMount = {
       min: number,
       max: number,
       step: number,
+      onScrub: (v: number) => void,
     ): SliderPair {
       const row = document.createElement('div');
       row.className = `pyr3-edit-density-row ${cls}-row`;
@@ -104,33 +107,48 @@ export const densitySection: SectionMount = {
       slider.className = `${cls}-slider`;
       slider.style.flex = '1 1 auto';
 
-      const number = document.createElement('input');
-      number.type = 'number';
-      number.min = String(min);
-      number.max = String(max);
-      number.step = String(step);
-      number.className = `${cls}-number`;
+      const handle = scrubbyInput({
+        value: 0,
+        kind: 'generic',
+        min,
+        max,
+        minStep: step,
+        onInput: onScrub,
+      });
+      const number = handle.el;
+      number.classList.add(`${cls}-number`);
       number.style.width = '60px';
 
       row.append(lab, slider, number);
       host.appendChild(row);
-      return { slider, number };
+      return { slider, number, handle };
     }
 
-    const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 0, 30, 0.5);
-    const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 0, 30, 0.1);
-    const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 0.1, 2.0, 0.05);
+    // Forward-declare so the makeRow onScrub callbacks can reference setField
+    // (function declarations below are hoisted within this build() scope).
+    const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 0, 30, 0.5, (v) => {
+      maxRadPair.slider.value = String(v);
+      setField('maxRad', v);
+    });
+    const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 0, 30, 0.1, (v) => {
+      minRadPair.slider.value = String(v);
+      setField('minRad', v);
+    });
+    const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 0.1, 2.0, 0.05, (v) => {
+      curvePair.slider.value = String(v);
+      setField('curve', v);
+    });
 
     // ── State mutators ──────────────────────────────────────────────────────
 
     function syncWidgets(): void {
       const d = ensureDensity();
       maxRadPair.slider.value = String(d.maxRad);
-      maxRadPair.number.value = String(d.maxRad);
+      maxRadPair.handle.setValue(d.maxRad);
       minRadPair.slider.value = String(d.minRad);
-      minRadPair.number.value = String(d.minRad);
+      minRadPair.handle.setValue(d.minRad);
       curvePair.slider.value = String(d.curve);
-      curvePair.number.value = String(d.curve);
+      curvePair.handle.setValue(d.curve);
       const name = matchPresetName(d);
       presetSelect.value = name ?? CUSTOM_PRESET_VALUE;
     }
@@ -155,25 +173,19 @@ export const densitySection: SectionMount = {
       onChange(`density.${field}`);
     }
 
-    function bindPair(pair: SliderPair, field: keyof Density): void {
+    function bindSlider(pair: SliderPair, field: keyof Density): void {
       pair.slider.addEventListener('input', () => {
         const n = Number(pair.slider.value);
         if (!Number.isFinite(n)) return;
-        pair.number.value = String(n);
+        pair.handle.setValue(n);
         setField(field, n);
       });
-      pair.number.addEventListener('input', () => {
-        const n = Number(pair.number.value);
-        if (!Number.isFinite(n)) return;
-        // Keep slider in sync (clamped by browser to its min/max via DOM).
-        pair.slider.value = String(n);
-        setField(field, n);
-      });
+      // scrubby → state is wired via the onScrub callback passed to makeRow.
     }
 
-    bindPair(maxRadPair, 'maxRad');
-    bindPair(minRadPair, 'minRad');
-    bindPair(curvePair, 'curve');
+    bindSlider(maxRadPair, 'maxRad');
+    bindSlider(minRadPair, 'minRad');
+    bindSlider(curvePair, 'curve');
 
     presetSelect.addEventListener('change', () => {
       const v = presetSelect.value;

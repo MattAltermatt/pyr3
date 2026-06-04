@@ -22,7 +22,16 @@ function mount() {
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
   const onChange = vi.fn();
   densitySection.build(host, state, onChange);
+  document.body.appendChild(host); // text-mode swap needs the host in the document
   return { host, state, onChange };
+}
+
+// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 describe('densitySection', () => {
@@ -41,7 +50,7 @@ describe('densitySection', () => {
 
     const sliders = host.querySelectorAll('input[type="range"]');
     expect(sliders.length).toBe(3);
-    const numbers = host.querySelectorAll('input[type="number"]');
+    const numbers = host.querySelectorAll('.pyr3-scrubby');
     expect(numbers.length).toBe(3);
   });
 
@@ -99,10 +108,9 @@ describe('densitySection', () => {
 
   it('editing maxRad number input mutates state and syncs the slider', () => {
     const { host, state } = mount();
-    const number = host.querySelector<HTMLInputElement>('.pyr3-edit-density-maxRad-number')!;
+    const number = host.querySelector<HTMLElement>('.pyr3-edit-density-maxRad-number')!;
     const slider = host.querySelector<HTMLInputElement>('.pyr3-edit-density-maxRad-slider')!;
-    number.value = '12.5';
-    number.dispatchEvent(new Event('input'));
+    typeInto(number, '12.5');
     expect(state.genome.density!.maxRad).toBe(12.5);
     expect(slider.value).toBe('12.5');
   });
