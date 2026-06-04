@@ -20,6 +20,7 @@ import {
   type SpatialFilter,
   type SpatialFilterShape,
 } from './genome';
+import { scrubbyInput, type ScrubbyHandle } from './edit-scrubby-input';
 
 interface SizePreset {
   name: string;
@@ -138,13 +139,17 @@ export const renderSection: SectionMount = {
     const qLabel = document.createElement('span');
     qLabel.textContent = 'quality';
     qLabel.style.width = '70px';
-    const qualityInput = document.createElement('input');
-    qualityInput.type = 'number';
-    qualityInput.min = '1';
-    qualityInput.step = '1';
-    qualityInput.className = 'pyr3-edit-render-quality';
-    qualityInput.style.width = '80px';
-    qRow.append(qLabel, qualityInput);
+    const qualityHandle: ScrubbyHandle = scrubbyInput({
+      value: state.genome.quality ?? DEFAULT_QUALITY,
+      kind: 'generic',
+      minStep: 0.5,
+      min: 0.5,
+      ariaLabel: 'quality',
+      onInput: (v) => setQuality(v),
+    });
+    qualityHandle.el.classList.add('pyr3-edit-render-quality');
+    qualityHandle.el.style.width = '80px';
+    qRow.append(qLabel, qualityHandle.el);
     host.appendChild(qRow);
 
     // ── Oversample row ──────────────────────────────────────────────────────
@@ -184,13 +189,18 @@ export const renderSection: SectionMount = {
     const frLabel = document.createElement('span');
     frLabel.textContent = 'filter rad';
     frLabel.style.width = '70px';
-    const filterRadiusInput = document.createElement('input');
-    filterRadiusInput.type = 'number';
-    filterRadiusInput.min = '0';
-    filterRadiusInput.step = '0.05';
-    filterRadiusInput.className = 'pyr3-edit-render-filter-radius';
-    filterRadiusInput.style.width = '80px';
-    frRow.append(frLabel, filterRadiusInput);
+    const filterRadiusHandle: ScrubbyHandle = scrubbyInput({
+      value: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
+      kind: 'generic',
+      minStep: 0.005,
+      min: 0,
+      max: 5,
+      ariaLabel: 'filter radius',
+      onInput: (v) => setFilterRadius(v),
+    });
+    filterRadiusHandle.el.classList.add('pyr3-edit-render-filter-radius');
+    filterRadiusHandle.el.style.width = '80px';
+    frRow.append(frLabel, filterRadiusHandle.el);
     host.appendChild(frRow);
 
     // ── Filter shape row ────────────────────────────────────────────────────
@@ -293,17 +303,9 @@ export const renderSection: SectionMount = {
       const n = Number(heightInput.value);
       if (Number.isFinite(n)) setHeight(n);
     });
-    qualityInput.addEventListener('input', () => {
-      const n = Number(qualityInput.value);
-      if (Number.isFinite(n)) setQuality(n);
-    });
     oversampleSelect.addEventListener('change', () => {
       const n = Number(oversampleSelect.value);
       if (Number.isFinite(n)) setOversample(n);
-    });
-    filterRadiusInput.addEventListener('input', () => {
-      const n = Number(filterRadiusInput.value);
-      if (Number.isFinite(n)) setFilterRadius(n);
     });
     filterShapeSelect.addEventListener('change', () => {
       const v = filterShapeSelect.value as SpatialFilterShape;
@@ -317,9 +319,9 @@ export const renderSection: SectionMount = {
     heightInput.value = String(initH);
     presetSelect.value = initW > 0 && initH > 0 ? matchSizePreset(initW, initH) : CUSTOM_PRESET_NAME;
 
-    qualityInput.value = String(state.genome.quality ?? DEFAULT_QUALITY);
+    qualityHandle.setValue(state.genome.quality ?? DEFAULT_QUALITY);
     oversampleSelect.value = String(state.genome.oversample ?? DEFAULT_OVERSAMPLE);
-    filterRadiusInput.value = String(state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS);
+    filterRadiusHandle.setValue(state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS);
     filterShapeSelect.value = state.genome.spatialFilter?.shape ?? DEFAULT_FILTER_SHAPE;
   },
 };

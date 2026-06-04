@@ -18,10 +18,18 @@ function seededRng(seed: number): () => number {
 
 function mount() {
   const host = document.createElement('div');
+  document.body.appendChild(host);
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
   const onChange = vi.fn();
   renderSection.build(host, state, onChange);
   return { host, state, onChange };
+}
+
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 describe('renderSection', () => {
@@ -92,9 +100,8 @@ describe('renderSection', () => {
 
   it('editing quality writes state.genome.quality and fires onChange("quality")', () => {
     const { host, state, onChange } = mount();
-    const q = host.querySelector<HTMLInputElement>('.pyr3-edit-render-quality')!;
-    q.value = '250';
-    q.dispatchEvent(new Event('input'));
+    const q = host.querySelector<HTMLElement>('.pyr3-edit-render-quality')!;
+    typeInto(q, '250');
     expect(state.genome.quality).toBe(250);
     expect(onChange).toHaveBeenCalledWith('quality');
   });
@@ -111,9 +118,8 @@ describe('renderSection', () => {
   it('editing filter radius lazy-inits spatialFilter from {0.5, gaussian} then writes the new value', () => {
     const { host, state, onChange } = mount();
     expect(state.genome.spatialFilter).toBeUndefined();
-    const fr = host.querySelector<HTMLInputElement>('.pyr3-edit-render-filter-radius')!;
-    fr.value = '0.75';
-    fr.dispatchEvent(new Event('input'));
+    const fr = host.querySelector<HTMLElement>('.pyr3-edit-render-filter-radius')!;
+    typeInto(fr, '0.75');
     expect(state.genome.spatialFilter).toEqual({ radius: 0.75, shape: 'gaussian' });
     expect(onChange).toHaveBeenCalledWith('spatialFilter.radius');
   });
