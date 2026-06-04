@@ -6,6 +6,7 @@
 // sliders) lives in src/edit-section-*.ts modules.
 
 import { type EditState, type SectionKey } from './edit-state';
+import { scrubbyInput } from './edit-scrubby-input';
 
 export interface SectionMount {
   key: SectionKey;
@@ -103,21 +104,22 @@ export function mountEditUi(
   const settleRow = document.createElement('div');
   settleRow.className = 'pyr3-edit-named';
   settleRow.append(document.createTextNode('settle '));
-  const settleInput = document.createElement('input');
-  settleInput.type = 'number';
-  settleInput.min = '0';
-  settleInput.max = '5000';
-  settleInput.step = '50';
-  settleInput.className = 'pyr3-edit-settle-input';
-  settleInput.style.width = '64px';
-  settleInput.value = String(callbacks.settleDelayMs ?? 200);
-  settleInput.title = 'Quiet time after your last edit before the full-quality render fires (ms). Higher = live preview stays visible longer; lower = settled render arrives sooner.';
-  settleInput.addEventListener('input', () => {
-    const n = Number(settleInput.value);
-    if (!Number.isFinite(n) || n < 0) return;
-    callbacks.onSettleDelayChange?.(n);
+  const settleHandle = scrubbyInput({
+    value: callbacks.settleDelayMs ?? 200,
+    kind: 'generic',
+    minStep: 5,
+    min: 0,
+    max: 5000,
+    format: (v) => String(Math.round(v)),
+    ariaLabel: 'settle delay (ms)',
+    onInput: (v) => {
+      callbacks.onSettleDelayChange?.(Math.round(v));
+    },
   });
-  settleRow.append(settleInput, document.createTextNode(' ms'));
+  settleHandle.el.classList.add('pyr3-edit-settle-input');
+  settleHandle.el.style.width = '64px';
+  settleHandle.el.title = 'Quiet time after your last edit before the full-quality render fires (ms). Higher = live preview stays visible longer; lower = settled render arrives sooner.';
+  settleRow.append(settleHandle.el, document.createTextNode(' ms'));
   topbar.appendChild(settleRow);
 
   host.appendChild(topbar);
