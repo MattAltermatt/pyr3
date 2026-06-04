@@ -30,7 +30,16 @@ function mount() {
   state.genome.palette = { name: 'flame #100', stops: state.genome.palette.stops };
   const onChange = vi.fn();
   paletteSection.build(host, state, onChange);
+  document.body.appendChild(host); // text-mode swap needs the host in the document
   return { host, state, onChange };
+}
+
+// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 afterEach(() => {
@@ -142,9 +151,9 @@ describe('paletteSection — arrow stepping', () => {
     expect(state.genome.palette.mode).toBe('step');
     // Hue widgets reset to 0 too
     const slider = host.querySelector('.pyr3-edit-palette-hue-slider') as HTMLInputElement;
-    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLInputElement;
+    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLElement;
     expect(slider.value).toBe('0');
-    expect(number.value).toBe('0');
+    expect(number.textContent).toBe('0');
   });
 
   it('picker cell click also resets hue', () => {
@@ -171,21 +180,18 @@ describe('paletteSection — hue mutation', () => {
   it('hue number input mirrors to the slider', () => {
     const { host, state } = mount();
     const slider = host.querySelector('.pyr3-edit-palette-hue-slider') as HTMLInputElement;
-    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLInputElement;
-    number.value = '45';
-    number.dispatchEvent(new Event('input'));
+    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLElement;
+    typeInto(number, '45');
     expect(state.genome.palette.hue).toBe(45);
     expect(slider.value).toBe('45');
   });
 
   it('hue clamps to 0..360', () => {
     const { host, state } = mount();
-    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLInputElement;
-    number.value = '500';
-    number.dispatchEvent(new Event('input'));
+    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLElement;
+    typeInto(number, '500');
     expect(state.genome.palette.hue).toBe(360);
-    number.value = '-30';
-    number.dispatchEvent(new Event('input'));
+    typeInto(number, '-30');
     expect(state.genome.palette.hue).toBe(0);
   });
 });

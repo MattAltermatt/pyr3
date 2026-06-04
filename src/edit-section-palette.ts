@@ -19,6 +19,7 @@
 import { type SectionMount } from './edit-ui';
 import { type Palette, type PaletteMode, type ColorStop } from './palette';
 import { FLAM3_PALETTE_COUNT, getLibraryStops, getLibraryPaletteName } from './flam3-palettes';
+import { scrubbyInput } from './edit-scrubby-input';
 
 // Parse `flame #N` → N. Returns null when the name doesn't match. Closure-
 // only state; we don't add a field to EditState.
@@ -152,12 +153,17 @@ export const paletteSection: SectionMount = {
     hueSlider.className = 'pyr3-edit-palette-hue-slider';
     hueSlider.style.flex = '1 1 auto';
 
-    const hueNumber = document.createElement('input');
-    hueNumber.type = 'number';
-    hueNumber.min = '0';
-    hueNumber.max = '360';
-    hueNumber.step = '1';
-    hueNumber.className = 'pyr3-edit-palette-hue-number';
+    const hueNumberHandle = scrubbyInput({
+      value: 0,
+      kind: 'rotation',
+      min: 0,
+      max: 360,
+      minStep: 1,
+      format: (v) => String(Math.round(v)),
+      onInput: (v) => setHue(v),
+    });
+    const hueNumber = hueNumberHandle.el;
+    hueNumber.classList.add('pyr3-edit-palette-hue-number');
     hueNumber.style.width = '54px';
 
     hueRow.append(hueLabel, hueSlider, hueNumber);
@@ -273,7 +279,7 @@ export const paletteSection: SectionMount = {
       };
       // Sync the hue widgets to 0.
       hueSlider.value = '0';
-      hueNumber.value = '0';
+      hueNumberHandle.setValue(0);
       refreshStrip();
       onChange('palette');
     }
@@ -282,7 +288,7 @@ export const paletteSection: SectionMount = {
       const clamped = Math.max(0, Math.min(360, Math.round(deg)));
       state.genome.palette.hue = clamped;
       if (hueSlider.value !== String(clamped)) hueSlider.value = String(clamped);
-      if (hueNumber.value !== String(clamped)) hueNumber.value = String(clamped);
+      hueNumberHandle.setValue(clamped);
       refreshStrip();
       onChange('palette.hue');
     }
@@ -310,10 +316,6 @@ export const paletteSection: SectionMount = {
     });
 
     hueSlider.addEventListener('input', () => setHue(Number(hueSlider.value)));
-    hueNumber.addEventListener('input', () => {
-      const n = Number(hueNumber.value);
-      if (Number.isFinite(n)) setHue(n);
-    });
 
     linearRadio.input.addEventListener('change', () => {
       if (linearRadio.input.checked) setMode('linear');
@@ -326,7 +328,7 @@ export const paletteSection: SectionMount = {
     refreshStrip();
     const initialHue = state.genome.palette.hue ?? 0;
     hueSlider.value = String(initialHue);
-    hueNumber.value = String(initialHue);
+    hueNumberHandle.setValue(initialHue);
     // Default to flam3's 'step' when paletteMode is unset.
     const initialMode = state.genome.paletteMode ?? 'step';
     linearRadio.input.checked = initialMode === 'linear';
