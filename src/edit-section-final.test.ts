@@ -27,7 +27,16 @@ function setupOff(): {
   state.genome.finalxform = undefined;
   const onChange = vi.fn();
   finalSection.build(host, state, onChange);
+  document.body.appendChild(host); // text-mode swap needs the host in document
   return { host, state, onChange };
+}
+
+// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
+function typeInto(cell: HTMLElement, value: string): void {
+  cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  const inp = cell.querySelector('input') as HTMLInputElement;
+  inp.value = value;
+  inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 function setupOn(): {
@@ -149,9 +158,8 @@ describe('finalSection — editable fields when active', () => {
     expect(affineCells.length).toBeGreaterThanOrEqual(6);
     const keys: Array<'a' | 'b' | 'c' | 'd' | 'e' | 'f'> = ['a', 'b', 'c', 'd', 'e', 'f'];
     for (let i = 0; i < 6; i++) {
-      const input = affineCells[i]!.querySelector('input[type="number"]') as HTMLInputElement;
-      input.value = String(i + 0.5);
-      input.dispatchEvent(new Event('input'));
+      const cell = affineCells[i]!.querySelector('.pyr3-edit-num') as HTMLElement;
+      typeInto(cell, String(i + 0.5));
       expect(state.genome.finalxform![keys[i]!]).toBeCloseTo(i + 0.5, 5);
       expect(onChange).toHaveBeenCalledWith(`finalxform.${keys[i]!}`);
     }
@@ -184,28 +192,26 @@ describe('finalSection — editable fields when active', () => {
     const allCells = host.querySelectorAll('.pyr3-edit-affine-cell');
     // First 6 cells = pre-affine; next 6 = post-affine
     expect(allCells.length).toBeGreaterThanOrEqual(12);
-    const postCInput = allCells[8]!.querySelector('input[type="number"]') as HTMLInputElement;
-    postCInput.value = '1.5';
-    postCInput.dispatchEvent(new Event('input'));
+    const postCCell = allCells[8]!.querySelector('.pyr3-edit-num') as HTMLElement;
+    typeInto(postCCell, '1.5');
     expect(state.genome.finalxform!.post!.c).toBeCloseTo(1.5, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.post.c');
   });
 
   it('colorSpeed number input mutates finalxform.colorSpeed', () => {
     const { host, state, onChange } = setupOn();
-    // colorSpeed is the first number input in the row labeled `colorSpeed`.
+    // colorSpeed is the scrubby cell in the row labeled `colorSpeed`.
     const rows = host.querySelectorAll('.pyr3-edit-row');
-    let csInput: HTMLInputElement | null = null;
+    let csCell: HTMLElement | null = null;
     for (const r of rows) {
       const label = r.querySelector('.pyr3-edit-label');
       if (label?.textContent === 'colorSpeed') {
-        csInput = r.querySelector('input[type="number"]') as HTMLInputElement;
+        csCell = r.querySelector('.pyr3-edit-num') as HTMLElement;
         break;
       }
     }
-    expect(csInput).not.toBeNull();
-    csInput!.value = '0.7';
-    csInput!.dispatchEvent(new Event('input'));
+    expect(csCell).not.toBeNull();
+    typeInto(csCell!, '0.7');
     expect(state.genome.finalxform!.colorSpeed).toBeCloseTo(0.7, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.colorSpeed');
   });
@@ -214,9 +220,8 @@ describe('finalSection — editable fields when active', () => {
     const { host, state, onChange } = setupOn();
     const varRow = host.querySelector('.pyr3-edit-var');
     expect(varRow).not.toBeNull();
-    const weightInput = varRow!.querySelector('.pyr3-edit-var-weight') as HTMLInputElement;
-    weightInput.value = '0.42';
-    weightInput.dispatchEvent(new Event('input'));
+    const weightCell = varRow!.querySelector('.pyr3-edit-var-weight') as HTMLElement;
+    typeInto(weightCell, '0.42');
     expect(state.genome.finalxform!.variations[0]!.weight).toBeCloseTo(0.42, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.variations.0.weight');
   });

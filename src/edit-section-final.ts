@@ -22,6 +22,7 @@ import { type SectionMount } from './edit-ui';
 import { type Variation, type VariationIndex, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM } from './variations';
 import { VARIATION_PARAMS, PARAM_KEYS } from './serialize';
 import { type Xform } from './genome';
+import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 
 const ALL_VARIATION_INDICES: number[] = Object.values(V).sort((a, b) => a - b);
 
@@ -36,17 +37,18 @@ function makeDefaultFinalxform(): Xform {
   };
 }
 
-function num(value: number, onInput: (v: number) => void, step = 0.01): HTMLInputElement {
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.step = String(step);
-  input.value = String(value);
-  input.className = 'pyr3-edit-num';
-  input.addEventListener('input', () => {
-    const v = parseFloat(input.value);
-    if (Number.isFinite(v)) onInput(v);
+function num(
+  value: number,
+  onInput: (v: number) => void,
+  opts: { kind?: FieldKind; min?: number; max?: number } = {},
+): ScrubbyHandle {
+  return scrubbyInput({
+    value,
+    onInput,
+    kind: opts.kind,
+    min: opts.min,
+    max: opts.max,
   });
-  return input;
 }
 
 function slider(
@@ -97,7 +99,7 @@ function buildFinalxformCard(
   host.appendChild(labeledRow('colorSpeed', num(fx.colorSpeed, (v) => {
     fx.colorSpeed = v;
     onChange('finalxform.colorSpeed');
-  })));
+  }, { kind: 'color', min: 0, max: 1 }).el));
 
   // ── opacity slider ───────────────────────────────────────────────────
   host.appendChild(labeledRow('opacity', slider(fx.opacity ?? 1, 0, 1, 0.001, (v) => {
@@ -122,8 +124,8 @@ function buildFinalxformCard(
     const input = num(fx[k], (v) => {
       fx[k] = v;
       onChange(`finalxform.${k}`);
-    });
-    wrap.append(span, input);
+    }, { kind: 'position' });
+    wrap.append(span, input.el);
     affineGrid.appendChild(wrap);
   }
   host.appendChild(affineGrid);
@@ -156,8 +158,8 @@ function buildFinalxformCard(
         if (!fx.post) return;
         fx.post[k] = v;
         onChange(`finalxform.post.${k}`);
-      });
-      wrap.append(span, input);
+      }, { kind: 'position' });
+      wrap.append(span, input.el);
       postGrid.appendChild(wrap);
     }
   };
@@ -218,9 +220,9 @@ function buildFinalxformCard(
       const w = num(v.weight, (val) => {
         v.weight = val;
         onChange(`finalxform.variations.${captureJ}.weight`);
-      });
-      w.className = 'pyr3-edit-num pyr3-edit-var-weight';
-      row.appendChild(w);
+      }, { kind: 'weight' });
+      w.el.classList.add('pyr3-edit-var-weight');
+      row.appendChild(w.el);
 
       // delete button
       const del = document.createElement('button');
@@ -256,8 +258,8 @@ function buildFinalxformCard(
           const pi = num(current, (val) => {
             (v as unknown as Record<string, number>)[pkey] = val;
             onChange(`finalxform.variations.${captureJ}.${pkey}`);
-          });
-          pwrap.append(pl, pi);
+          }, { kind: 'generic' });
+          pwrap.append(pl, pi.el);
           paramsWrap.appendChild(pwrap);
         }
         row.appendChild(paramsWrap);
