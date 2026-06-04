@@ -288,12 +288,18 @@ function buildDecomposedAffineBlock(
   };
   const pathBase = lens === 'pre' ? `xforms.${xformIndex}` : `xforms.${xformIndex}.post`;
 
-  // Container
+  // Container — stacks the fields-and-viz row above the three fold-ups
+  // (shape presets, shear, raw matrix). Previously all five children sat
+  // in one flex row; the fold-up summary labels clipped at panel width.
   const block = document.createElement('div');
   block.className = lens === 'pre' ? 'pyr3-edit-aff-block' : 'pyr3-edit-aff-block pyr3-edit-aff-post';
   parent.appendChild(block);
 
-  // Two-column layout: decomposed fields on left, viz canvas on right.
+  // Top row: decomposed fields on left, mini viz on right.
+  const topRow = document.createElement('div');
+  topRow.className = 'pyr3-edit-aff-row';
+  block.appendChild(topRow);
+
   const fieldsCol = document.createElement('div');
   fieldsCol.className = 'pyr3-edit-aff-fields';
   const vizCol = document.createElement('div');
@@ -307,7 +313,7 @@ function buildDecomposedAffineBlock(
   vizCanvas.width = 88;
   vizCanvas.height = 88;
   vizCol.appendChild(vizCanvas);
-  block.append(fieldsCol, vizCol);
+  topRow.append(fieldsCol, vizCol);
 
   const viz = attachXformViz(vizCanvas, getRaw);
 
@@ -940,10 +946,16 @@ const XFORM_CSS = `
 .pyr3-edit-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .pyr3-edit-aff-block {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.pyr3-edit-aff-row {
+  display: flex;
   gap: 8px;
   align-items: flex-start;
 }
-.pyr3-edit-aff-fields { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; }
+.pyr3-edit-aff-fields { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; }
 .pyr3-edit-aff-viz-col { flex: 0 0 auto; }
 canvas.pyr3-edit-aff-viz {
   background: var(--bar-bg-3, #0f0f13);

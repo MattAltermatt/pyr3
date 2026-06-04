@@ -238,10 +238,9 @@ export const paletteSection: SectionMount = {
         setPaletteIndex(idx);
         closePicker();
       });
-      // Position fixed near the strip so the popover doesn't reflow the panel.
-      const rect = strip.getBoundingClientRect();
-      picker.style.left = `${Math.round(rect.left)}px`;
-      picker.style.top = `${Math.round(rect.bottom + 6)}px`;
+      // Docked to the right of the 340px left panel — positioning lives
+      // entirely in CSS (.pyr3-edit-palette-picker) so resizes / scrolls
+      // don't drift the popover.
       document.body.appendChild(picker);
 
       dismissHandler = (ev) => {
@@ -478,14 +477,20 @@ const PALETTE_CSS = `
   border-color: var(--accent-border, #884a1a);
 }
 /* Full picker: 3-col grid + search + footer (mirrors evolve picker). */
+/* Docked panel — anchored to the right edge of the 340px left panel,
+   matching .pyr3-var-picker. Full-height; no backdrop so the flame
+   stays visible while previewing palette picks. */
 .pyr3-edit-palette-picker {
   position: fixed;
-  background: #0c0c10;
-  border: 1px solid #2a2a36;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-  width: 360px;
-  max-height: 460px;
+  top: 0;
+  bottom: 0;
+  left: 340px;
+  width: 340px;
+  background: var(--bar-bg-1, #15151a);
+  border: none;
+  border-right: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 0;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   z-index: 1000;

@@ -179,6 +179,12 @@ function buildDecomposedAffineBlock(
       : 'pyr3-edit-aff-block pyr3-edit-aff-post';
   parent.appendChild(block);
 
+  // Top row: decomposed fields on left, mini viz on right. Folds (presets /
+  // shear / raw matrix) stack below this row as siblings inside `block`.
+  const topRow = document.createElement('div');
+  topRow.className = 'pyr3-edit-aff-row';
+  block.appendChild(topRow);
+
   const fieldsCol = document.createElement('div');
   fieldsCol.className = 'pyr3-edit-aff-fields';
   const vizCol = document.createElement('div');
@@ -188,7 +194,7 @@ function buildDecomposedAffineBlock(
   vizCanvas.width = 88;
   vizCanvas.height = 88;
   vizCol.appendChild(vizCanvas);
-  block.append(fieldsCol, vizCol);
+  topRow.append(fieldsCol, vizCol);
 
   const viz = attachXformViz(vizCanvas, getRaw);
 
