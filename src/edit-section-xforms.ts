@@ -31,7 +31,14 @@ import {
 } from './edit-xform-quickops';
 import { openVariationPicker } from './edit-variation-picker';
 import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
-import { buildButton, buildToggle, buildRemoveButton } from './edit-primitives';
+import {
+  buildButton,
+  buildToggle,
+  buildRemoveButton,
+  buildRow,
+  buildSlider,
+  buildNumberInput,
+} from './edit-primitives';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -704,20 +711,11 @@ function buildXformCard(
   //  we mount it into the body AFTER variations.)
   const postWrap = document.createElement('div');
   postWrap.className = 'pyr3-edit-post-wrap';
-  // (post-transform header label is appended into the body below variations.)
   postWrap.appendChild(makeSectionLabel('post-transform'));
-
-  const postCheckbox = document.createElement('input');
-  postCheckbox.type = 'checkbox';
-  postCheckbox.className = 'pyr3-edit-checkbox pyr3-edit-post-toggle';
-  postCheckbox.checked = xform.post !== undefined;
-  postCheckbox.title = 'Apply a second affine AFTER the variation chain.';
-  postWrap.appendChild(makeLabeledField('use post-transform ', postCheckbox));
 
   // Container that mounts the decomposed post-block when active.
   const postBlockHost = document.createElement('div');
   postBlockHost.className = 'pyr3-edit-post-block-host';
-  postWrap.appendChild(postBlockHost);
 
   function mountPostBlock(): void {
     postBlockHost.replaceChildren();
@@ -725,17 +723,25 @@ function buildXformCard(
       buildDecomposedAffineBlock(postBlockHost, xform, xformIndex, onChange, 'post');
     }
   }
-  mountPostBlock();
 
-  postCheckbox.addEventListener('change', () => {
-    if (postCheckbox.checked) {
-      xform.post = makeIdentityPost();
-    } else {
-      xform.post = undefined;
-    }
-    onChange(`xforms.${xformIndex}.post`);
-    mountPostBlock();
+  // POST-TRANSFORM toggle (buildToggle pyr3-toggle pill).
+  const postToggle = buildToggle({
+    value: xform.post !== undefined,
+    onChange: (next) => {
+      if (next) {
+        xform.post = makeIdentityPost();
+      } else {
+        xform.post = undefined;
+      }
+      onChange(`xforms.${xformIndex}.post`);
+      mountPostBlock();
+    },
   });
+  postToggle.classList.add('pyr3-edit-post-toggle');
+  postToggle.title = 'Apply a second affine AFTER the variation chain.';
+  postWrap.appendChild(buildRow('use post-transform', postToggle));
+  postWrap.appendChild(postBlockHost);
+  mountPostBlock();
 
   // ── 2. Variations chain (before post per spec body order) ──────────
   body.appendChild(makeSectionLabel('variations'));
@@ -793,54 +799,63 @@ function buildXformCard(
   // ── 3. Post-affine (the postWrap was built above; append it here) ──
   body.appendChild(postWrap);
 
-  // ── 4. Color block (color slider, colorSpeed, opacity slider) ──────
+  // ── 4. Color block (buildRow + buildSlider) ────────────────────────
   body.appendChild(makeSectionLabel('color'));
-  const colorSlider = makeSliderInput(
-    xform.color,
-    (n) => {
+
+  const colorSliderEl = buildSlider({
+    value: xform.color,
+    min: 0,
+    max: 1,
+    step: 0.001,
+    onChange: (n) => {
       xform.color = n;
       onChange(`xforms.${xformIndex}.color`);
     },
-    { min: 0, max: 1, step: 0.001 },
-  );
-  colorSlider.title = 'Where this xform pulls toward on the palette gradient (0 = left, 1 = right).';
-  colorSlider.classList.add('pyr3-edit-color-slider');
-  body.appendChild(makeLabeledField('color ', colorSlider));
+  });
+  colorSliderEl.classList.add('pyr3-edit-color-slider');
+  colorSliderEl.title = 'Where this xform pulls toward on the palette gradient (0 = left, 1 = right).';
+  body.appendChild(buildRow('color', colorSliderEl));
 
-  const colorSpeedInput = makeNumberInput(
-    xform.colorSpeed,
-    (n) => {
+  const colorSpeedInput = buildNumberInput({
+    value: xform.colorSpeed,
+    kind: 'color',
+    min: 0,
+    max: 1,
+    onChange: (n) => {
       xform.colorSpeed = n;
       onChange(`xforms.${xformIndex}.colorSpeed`);
     },
-    { kind: 'color', min: 0, max: 1, width: '64px' },
-  );
+  });
   colorSpeedInput.el.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
   colorSpeedInput.el.classList.add('pyr3-edit-color-speed');
-  body.appendChild(makeLabeledField('colorSpeed ', colorSpeedInput.el));
+  body.appendChild(buildRow('colorSpeed', colorSpeedInput.el));
 
-  const opacitySlider = makeSliderInput(
-    xform.opacity ?? 1,
-    (n) => {
+  const opacitySliderEl = buildSlider({
+    value: xform.opacity ?? 1,
+    min: 0,
+    max: 1,
+    step: 0.001,
+    onChange: (n) => {
       xform.opacity = n;
       onChange(`xforms.${xformIndex}.opacity`);
     },
-    { min: 0, max: 1, step: 0.001 },
-  );
-  opacitySlider.title = "Visibility of this xform's deposits. 0 = ghostly, 1 = full.";
-  opacitySlider.classList.add('pyr3-edit-opacity-slider');
-  body.appendChild(makeLabeledField('opacity ', opacitySlider));
+  });
+  opacitySliderEl.classList.add('pyr3-edit-opacity-slider');
+  opacitySliderEl.title = "Visibility of this xform's deposits. 0 = ghostly, 1 = full.";
+  body.appendChild(buildRow('opacity', opacitySliderEl));
 
-  // ── 5. Xaos row — one number input per OTHER xform. ────────────────
+  // ── 5. Xaos rows (one buildRow per destination xform). ─────────────
   if (totalXforms > 1) {
     body.appendChild(makeSectionLabel('xaos →'));
-    const xaosRow = document.createElement('div');
-    xaosRow.className = 'pyr3-edit-xaos-row';
+    const xaosWrap = document.createElement('div');
+    xaosWrap.className = 'pyr3-edit-xaos-row';
     for (let k = 0; k < totalXforms; k++) {
       const current = xform.xaos?.[k] ?? 1;
-      const inp = makeNumberInput(
-        current,
-        (n) => {
+      const inp = buildNumberInput({
+        value: current,
+        kind: 'weight',
+        min: 0,
+        onChange: (n) => {
           if (!xform.xaos) {
             xform.xaos = new Array<number>(totalXforms).fill(1);
           }
@@ -849,12 +864,11 @@ function buildXformCard(
           xform.xaos[k] = n;
           onChange(`xforms.${xformIndex}.xaos.${k}`);
         },
-        { kind: 'weight', min: 0, width: '56px' },
-      );
+      });
       inp.el.title = `Per-source bias: how likely THIS xform is picked AFTER xform ${k + 1}. 1 = neutral, 0 = forbidden.`;
-      xaosRow.appendChild(makeLabeledField(`→xf${k + 1} `, inp.el));
+      xaosWrap.appendChild(buildRow(`→xf${k + 1}`, inp.el));
     }
-    body.appendChild(xaosRow);
+    body.appendChild(xaosWrap);
   }
 
   card.appendChild(body);

@@ -119,30 +119,39 @@ describe('xformsSection — add xform', () => {
   });
 });
 
-describe('xformsSection — color / colorSpeed / opacity', () => {
-  it('color slider writes genome.xforms[0].color + emits xforms.0.color', () => {
+describe('xformsSection — color / colorSpeed / opacity (v3 row pattern)', () => {
+  it('color row uses buildRow + buildSlider; scrubby write commits xforms.0.color', () => {
     const { host, state, onChange } = mount(1);
     const card0 = cards(host)[0]!;
-    const slider = card0.querySelector('.pyr3-edit-slider') as HTMLInputElement;
-    fireInput(slider, '0.25');
-    expect(state.genome.xforms[0]!.color).toBeCloseTo(0.25, 6);
+    const colorSliderEl = card0.querySelector('.pyr3-edit-color-slider') as HTMLElement;
+    expect(colorSliderEl).toBeTruthy();
+    expect(colorSliderEl.classList.contains('pyr3-slider')).toBe(true);
+    // Drive via the scrubby value display inside the slider.
+    const valueCell = colorSliderEl.querySelector('.pyr3-slider-value > span') as HTMLElement;
+    expect(valueCell).toBeTruthy();
+    typeInto(valueCell, '0.25');
+    expect(state.genome.xforms[0]!.color).toBeCloseTo(0.25, 5);
     expect(onChange).toHaveBeenCalledWith('xforms.0.color');
   });
 
-  it('colorSpeed number + opacity slider write their respective paths', () => {
+  it('colorSpeed row uses scrubby buildNumberInput', () => {
     const { host, state, onChange } = mount(1);
     const card0 = cards(host)[0]!;
-    // Body section order (v2): affine → variations → post → color → xaos.
-    // Target the color/opacity controls by their stable classes rather than
-    // by index, so future reorders don't break this test.
     const colorSpeedInput = card0.querySelector('.pyr3-edit-color-speed') as HTMLElement;
     typeInto(colorSpeedInput, '0.31');
     expect(state.genome.xforms[0]!.colorSpeed).toBeCloseTo(0.31, 6);
     expect(onChange).toHaveBeenCalledWith('xforms.0.colorSpeed');
+  });
 
-    const opacitySlider = card0.querySelector('.pyr3-edit-opacity-slider') as HTMLInputElement;
-    fireInput(opacitySlider, '0.7');
-    expect(state.genome.xforms[0]!.opacity).toBeCloseTo(0.7, 6);
+  it('opacity row uses buildSlider; scrubby write commits xforms.0.opacity', () => {
+    const { host, state, onChange } = mount(1);
+    const card0 = cards(host)[0]!;
+    const opacitySliderEl = card0.querySelector('.pyr3-edit-opacity-slider') as HTMLElement;
+    expect(opacitySliderEl).toBeTruthy();
+    expect(opacitySliderEl.classList.contains('pyr3-slider')).toBe(true);
+    const valueCell = opacitySliderEl.querySelector('.pyr3-slider-value > span') as HTMLElement;
+    typeInto(valueCell, '0.7');
+    expect(state.genome.xforms[0]!.opacity).toBeCloseTo(0.7, 5);
     expect(onChange).toHaveBeenCalledWith('xforms.0.opacity');
   });
 });
@@ -289,23 +298,23 @@ describe('xforms section v2 — quick-ops strip + reset', () => {
   });
 });
 
-describe('xforms section v2 — post-transform', () => {
-  it('post checkbox is unchecked when xform.post is undefined; no decomposed block', () => {
+describe('xforms section v2 — post-transform (buildToggle)', () => {
+  it('post toggle starts off when xform.post is undefined; no decomposed block', () => {
     const { host, state } = mount(1);
     expect(state.genome.xforms[0]!.post).toBeUndefined();
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    expect(postToggle.checked).toBe(false);
-    // No post decomposed block mounted yet.
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    expect(postToggle).toBeTruthy();
+    expect(postToggle.classList.contains('pyr3-toggle')).toBe(true);
+    expect(postToggle.classList.contains('on')).toBe(false);
     expect(card.querySelector('.pyr3-edit-aff-post')).toBeNull();
   });
 
-  it('checking the post toggle instantiates identity post + mounts decomposed block', () => {
+  it('clicking the post toggle instantiates identity post + mounts decomposed block', () => {
     const { host, state, onChange } = mount(1);
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    postToggle.checked = true;
-    postToggle.dispatchEvent(new Event('change'));
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    postToggle.click();
     expect(state.genome.xforms[0]!.post).toEqual({
       a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
     });
@@ -313,16 +322,15 @@ describe('xforms section v2 — post-transform', () => {
     expect(card.querySelector('.pyr3-edit-aff-post')).toBeTruthy();
   });
 
-  it('unchecking the post toggle clears xform.post + removes decomposed block', () => {
+  it('clicking off the post toggle clears xform.post + removes decomposed block', () => {
     const genome = generateRandomGenome(seededRng(1));
     genome.xforms[0]!.post = { a: 2, b: 0, c: 0, d: 0, e: 2, f: 0 };
     const { host, state, onChange } = mount(genome);
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    expect(postToggle.checked).toBe(true);
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    expect(postToggle.classList.contains('on')).toBe(true);
     expect(card.querySelector('.pyr3-edit-aff-post')).toBeTruthy();
-    postToggle.checked = false;
-    postToggle.dispatchEvent(new Event('change'));
+    postToggle.click();
     expect(state.genome.xforms[0]!.post).toBeUndefined();
     expect(onChange).toHaveBeenCalledWith('xforms.0.post');
     expect(card.querySelector('.pyr3-edit-aff-post')).toBeNull();

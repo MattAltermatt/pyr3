@@ -46,7 +46,14 @@ import {
   type FieldKind,
   type ScrubbyHandle,
 } from './edit-scrubby-input';
-import { buildButton } from './edit-primitives';
+import {
+  buildButton,
+  buildToggle,
+  buildRow,
+  buildSlider,
+  buildNumberInput,
+  buildRemoveButton,
+} from './edit-primitives';
 
 function paramNamesFor(variationIndex: number): readonly string[] {
   const kindName = VARIATION_NAMES[variationIndex];
@@ -577,21 +584,13 @@ function buildFinalxformCard(
   }
   host.appendChild(varList);
 
-  // ── 3. Post-transform block (toggle + decomposed UI) ───────────────
+  // ── 3. Post-transform block (buildToggle + decomposed UI) ──────────
   const postWrap = document.createElement('div');
   postWrap.className = 'pyr3-edit-post-wrap';
   postWrap.appendChild(makeSectionLabel('post-transform'));
 
-  const postCheckbox = document.createElement('input');
-  postCheckbox.type = 'checkbox';
-  postCheckbox.className = 'pyr3-edit-checkbox pyr3-edit-post-toggle';
-  postCheckbox.checked = fx.post !== undefined;
-  postCheckbox.title = 'Apply a second affine AFTER the variation chain.';
-  postWrap.appendChild(makeLabeledField('use post-transform ', postCheckbox));
-
   const postBlockHost = document.createElement('div');
   postBlockHost.className = 'pyr3-edit-post-block-host';
-  postWrap.appendChild(postBlockHost);
 
   const mountPostBlock = (): void => {
     postBlockHost.replaceChildren();
@@ -599,56 +598,69 @@ function buildFinalxformCard(
       buildDecomposedAffineBlock(postBlockHost, fx, onChange, 'post');
     }
   };
-  mountPostBlock();
 
-  postCheckbox.addEventListener('change', () => {
-    if (postCheckbox.checked) {
-      fx.post = makeIdentityPost();
-    } else {
-      fx.post = undefined;
-    }
-    onChange('finalxform.post');
-    mountPostBlock();
+  const postToggle = buildToggle({
+    value: fx.post !== undefined,
+    onChange: (next) => {
+      if (next) {
+        fx.post = makeIdentityPost();
+      } else {
+        fx.post = undefined;
+      }
+      onChange('finalxform.post');
+      mountPostBlock();
+    },
   });
+  postToggle.classList.add('pyr3-edit-post-toggle');
+  postToggle.title = 'Apply a second affine AFTER the variation chain.';
+  postWrap.appendChild(buildRow('use post-transform', postToggle));
+  postWrap.appendChild(postBlockHost);
+  mountPostBlock();
   host.appendChild(postWrap);
 
-  // ── 4. Color block (color slider, colorSpeed, opacity slider) ──────
+  // ── 4. Color block (buildRow + buildSlider) ────────────────────────
   host.appendChild(makeSectionLabel('color'));
-  const colorSlider = makeSliderInput(
-    fx.color,
-    (n) => {
+  const colorSliderEl = buildSlider({
+    value: fx.color,
+    min: 0,
+    max: 1,
+    step: 0.001,
+    onChange: (n) => {
       fx.color = n;
       onChange('finalxform.color');
     },
-    { min: 0, max: 1, step: 0.001 },
-  );
-  colorSlider.title = 'Where this xform pulls toward on the palette gradient.';
-  colorSlider.classList.add('pyr3-edit-color-slider');
-  host.appendChild(makeLabeledField('color ', colorSlider));
+  });
+  colorSliderEl.classList.add('pyr3-edit-color-slider');
+  colorSliderEl.title = 'Where this xform pulls toward on the palette gradient.';
+  host.appendChild(buildRow('color', colorSliderEl));
 
-  const colorSpeedInput = makeNumberInput(
-    fx.colorSpeed,
-    (n) => {
+  const colorSpeedInput = buildNumberInput({
+    value: fx.colorSpeed,
+    kind: 'color',
+    min: 0,
+    max: 1,
+    onChange: (n) => {
       fx.colorSpeed = n;
       onChange('finalxform.colorSpeed');
     },
-    { kind: 'color', min: 0, max: 1, width: '64px' },
-  );
+  });
   colorSpeedInput.el.title = 'How fast each visit tugs the color toward its target.';
   colorSpeedInput.el.classList.add('pyr3-edit-color-speed');
-  host.appendChild(makeLabeledField('colorSpeed ', colorSpeedInput.el));
+  host.appendChild(buildRow('colorSpeed', colorSpeedInput.el));
 
-  const opacitySlider = makeSliderInput(
-    fx.opacity ?? 1,
-    (n) => {
+  const opacitySliderEl = buildSlider({
+    value: fx.opacity ?? 1,
+    min: 0,
+    max: 1,
+    step: 0.001,
+    onChange: (n) => {
       fx.opacity = n;
       onChange('finalxform.opacity');
     },
-    { min: 0, max: 1, step: 0.001 },
-  );
-  opacitySlider.title = "Visibility of this xform's deposits.";
-  opacitySlider.classList.add('pyr3-edit-opacity-slider');
-  host.appendChild(makeLabeledField('opacity ', opacitySlider));
+  });
+  opacitySliderEl.classList.add('pyr3-edit-opacity-slider');
+  opacitySliderEl.title = "Visibility of this xform's deposits.";
+  host.appendChild(buildRow('opacity', opacitySliderEl));
 }
 
 export const finalSection: SectionMount = {

@@ -231,21 +231,23 @@ describe('finalSection — quick-ops strip + reset', () => {
   });
 });
 
-describe('finalSection — color block', () => {
-  it('color slider mutates finalxform.color', () => {
+describe('finalSection — color block (v3 row pattern)', () => {
+  it('color row uses buildSlider; scrubby write commits finalxform.color', () => {
     const { host, state, onChange } = setupOn();
-    const slider = host.querySelector('.pyr3-edit-color-slider') as HTMLInputElement;
-    slider.value = '0.72';
-    slider.dispatchEvent(new Event('input'));
+    const sliderEl = host.querySelector('.pyr3-edit-color-slider') as HTMLElement;
+    expect(sliderEl.classList.contains('pyr3-slider')).toBe(true);
+    const valueCell = sliderEl.querySelector('.pyr3-slider-value > span') as HTMLElement;
+    typeInto(valueCell, '0.72');
     expect(state.genome.finalxform!.color).toBeCloseTo(0.72, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.color');
   });
 
-  it('opacity slider mutates finalxform.opacity', () => {
+  it('opacity row uses buildSlider; scrubby write commits finalxform.opacity', () => {
     const { host, state, onChange } = setupOn();
-    const slider = host.querySelector('.pyr3-edit-opacity-slider') as HTMLInputElement;
-    slider.value = '0.4';
-    slider.dispatchEvent(new Event('input'));
+    const sliderEl = host.querySelector('.pyr3-edit-opacity-slider') as HTMLElement;
+    expect(sliderEl.classList.contains('pyr3-slider')).toBe(true);
+    const valueCell = sliderEl.querySelector('.pyr3-slider-value > span') as HTMLElement;
+    typeInto(valueCell, '0.4');
     expect(state.genome.finalxform!.opacity).toBeCloseTo(0.4, 5);
     expect(onChange).toHaveBeenCalledWith('finalxform.opacity');
   });
@@ -259,35 +261,33 @@ describe('finalSection — color block', () => {
   });
 });
 
-describe('finalSection — post-transform', () => {
-  it('post toggle is unchecked when post is undefined; no post block mounted', () => {
+describe('finalSection — post-transform (buildToggle)', () => {
+  it('post toggle is off when post is undefined; no post block mounted', () => {
     const { host, state } = setupOn();
     expect(state.genome.finalxform!.post).toBeUndefined();
     const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    expect(postToggle.checked).toBe(false);
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    expect(postToggle.classList.contains('pyr3-toggle')).toBe(true);
+    expect(postToggle.classList.contains('on')).toBe(false);
     expect(card.querySelector('.pyr3-edit-aff-post')).toBeNull();
   });
 
-  it('checking the post toggle instantiates identity post + mounts decomposed block', () => {
+  it('clicking the post toggle instantiates identity post + mounts decomposed block', () => {
     const { host, state, onChange } = setupOn();
     const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    postToggle.checked = true;
-    postToggle.dispatchEvent(new Event('change'));
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    postToggle.click();
     expect(state.genome.finalxform!.post).toEqual({ a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 });
     expect(onChange).toHaveBeenCalledWith('finalxform.post');
     expect(card.querySelector('.pyr3-edit-aff-post')).toBeTruthy();
   });
 
-  it('unchecking the post toggle clears finalxform.post', () => {
+  it('clicking off the post toggle clears finalxform.post', () => {
     const { host, state, onChange } = setupOn();
     const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    postToggle.checked = true;
-    postToggle.dispatchEvent(new Event('change'));
-    postToggle.checked = false;
-    postToggle.dispatchEvent(new Event('change'));
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    postToggle.click(); // on
+    postToggle.click(); // off
     expect(state.genome.finalxform!.post).toBeUndefined();
     expect(onChange).toHaveBeenCalledWith('finalxform.post');
   });
@@ -295,9 +295,8 @@ describe('finalSection — post-transform', () => {
   it('post decomposed edit writes finalxform.post.<field>', () => {
     const { host, state, onChange } = setupOn();
     const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
-    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLInputElement;
-    postToggle.checked = true;
-    postToggle.dispatchEvent(new Event('change'));
+    const postToggle = card.querySelector('.pyr3-edit-post-toggle') as HTMLElement;
+    postToggle.click();
     const postBlock = card.querySelector('.pyr3-edit-aff-post') as HTMLElement;
     const rotCell = postBlock.querySelector('.pyr3-edit-aff-rotation .pyr3-edit-num') as HTMLElement;
     typeInto(rotCell, '90');
