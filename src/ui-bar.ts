@@ -590,6 +590,104 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   };
 }
 
+// ─── mountBarChrome substrate (#103) ────────────────────────────────────────
+// Phase 1 of the visual overhaul extracts the shared chrome (brand + about +
+// tabs + WebGPU pill + octocat CTAs) into one DRY primitive. Per-surface mount
+// fns (mountBar / mountGalleryBar / mountEditBar / future mountAboutBar) drop
+// their info/action rows into chrome.middleSlot. Task 1.4 refactors the
+// existing fns to consume this; for now mountBarChrome ships alongside the
+// existing chrome builders without disturbing them.
+
+/** Tabs in the top-bar's center cluster. `about` is reserved — it lives in
+ *  the left cluster as a link, not a tab — so surface: 'about' renders all
+ *  three real tabs in their inactive state. */
+export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'about';
+
+export interface ChromeOpts {
+  surface: TabSurface;
+  webgpu: WebGPUStatus;
+  onTabClick: (surface: TabSurface) => void;
+}
+
+export interface ChromeHandle {
+  /** Drop info-row / action-row content here from per-surface mount fns. */
+  middleSlot: HTMLElement;
+  destroy: () => void;
+}
+
+export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandle {
+  injectStylesOnce();
+
+  const bar = el('div', 'pyr3-topbar');
+
+  // Left cluster: brand + about link
+  const left = el('div', 'pyr3-left-cluster');
+  left.append(buildBrand(), buildAboutLink());
+
+  // Center: tab group (viewer / gallery / editor)
+  const tabs = buildTabs(opts.surface, opts.onTabClick);
+
+  // Right cluster: WebGPU pill + fork-it octocat + more-flames octocat
+  const right = buildRightCluster(opts.webgpu);
+
+  bar.append(left, tabs, right);
+  root.append(bar);
+
+  // Per-surface mount fns drop their info-row / action-row content here.
+  const middleSlot = el('div', 'pyr3-middle-slot');
+  root.append(middleSlot);
+
+  return {
+    middleSlot,
+    destroy: () => {
+      bar.remove();
+      middleSlot.remove();
+    },
+  };
+}
+
+function buildBrand(): HTMLElement {
+  const wrap = el('a', 'pyr3-brand') as HTMLAnchorElement;
+  wrap.href = import.meta.env.BASE_URL;
+  const mark = document.createElement('img');
+  mark.className = 'pyr3-brand-mark';
+  mark.src = FLAME_MARK_URI;
+  mark.alt = '';
+  wrap.append(mark, document.createTextNode('pyr3'));
+  return wrap;
+}
+
+function buildAboutLink(): HTMLElement {
+  const a = el('a', 'pyr3-about-link') as HTMLAnchorElement;
+  a.href = `${import.meta.env.BASE_URL}about`;
+  a.textContent = 'about';
+  return a;
+}
+
+function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLElement {
+  const wrap = el('div', 'pyr3-tabs');
+  // `about` lives in the left cluster as a link, so surface: 'about' renders
+  // all three real tabs in their inactive state.
+  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor'];
+  for (const s of surfaces) {
+    const btn = el('div', 'pyr3-tab' + (s === active ? ' active' : ''));
+    btn.dataset.surface = s;
+    btn.textContent = s[0]!.toUpperCase() + s.slice(1);
+    btn.addEventListener('click', () => onClick(s));
+    wrap.append(btn);
+  }
+  return wrap;
+}
+
+function buildRightCluster(webgpu: WebGPUStatus): HTMLElement {
+  const wrap = el('div', 'pyr3-right-cluster');
+  const webgpuChip = buildWebGPUChip(webgpu);
+  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
+  const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
+  wrap.append(webgpuChip, forkCta, sheepCta);
+  return wrap;
+}
+
 function buildWebGPUChip(status: WebGPUStatus): HTMLAnchorElement {
   const a = el('a', 'pyr3-bar-webgpu') as HTMLAnchorElement;
   if (status.available) {

@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest';
-import { mountBar, mountGalleryBar, type BarOpts, type GalleryBarOpts } from './ui-bar';
+import {
+  mountBar,
+  mountBarChrome,
+  mountGalleryBar,
+  type BarOpts,
+  type GalleryBarOpts,
+  type TabSurface,
+} from './ui-bar';
 import type { WebGPUStatus } from './webgpu-check';
 
 // Mock the WebGPU adapter shape — mountBar / mountGalleryBar only read
@@ -209,5 +216,63 @@ describe('mountGalleryBar — [⚙ filters ▾] pill (#49)', () => {
     const pill = root.querySelector('.pyr3-bar-filter-pill') as HTMLAnchorElement;
     pill.click();
     expect(onFilterToggle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mountBarChrome', () => {
+  it('renders the static chrome and exposes a middleSlot', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const webgpu: WebGPUStatus = { available: true } as WebGPUStatus;
+    const onTabClick = vi.fn();
+
+    const handle = mountBarChrome(root, {
+      surface: 'viewer',
+      webgpu,
+      onTabClick,
+    });
+
+    expect(root.querySelector('.pyr3-brand')).toBeTruthy();
+    expect(root.querySelector('.pyr3-tabs')).toBeTruthy();
+    expect(root.querySelector('.pyr3-tab[data-surface="viewer"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-tab[data-surface="gallery"].active')).toBeFalsy();
+    expect(root.querySelector('.pyr3-right-cluster')).toBeTruthy();
+    expect(handle.middleSlot.classList.contains('pyr3-middle-slot')).toBe(true);
+
+    handle.destroy();
+    expect(root.children).toHaveLength(0);
+  });
+
+  it('routes tab clicks to onTabClick', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onTabClick = vi.fn();
+    const handle = mountBarChrome(root, {
+      surface: 'gallery',
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick,
+    });
+    (root.querySelector('.pyr3-tab[data-surface="editor"]') as HTMLElement).click();
+    expect(onTabClick).toHaveBeenCalledWith('editor');
+    handle.destroy();
+  });
+
+  it('surface: "about" renders the tab group with NO tab active', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountBarChrome(root, {
+      surface: 'about',
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+    expect(root.querySelector('.pyr3-tabs')).toBeTruthy();
+    expect(root.querySelector('.pyr3-tab.active')).toBeFalsy();
+    handle.destroy();
+  });
+
+  it('TabSurface type accepts all four surfaces', () => {
+    // Compile-time assertion — purely for the type re-export contract.
+    const surfaces: TabSurface[] = ['viewer', 'gallery', 'editor', 'about'];
+    expect(surfaces).toHaveLength(4);
   });
 });
