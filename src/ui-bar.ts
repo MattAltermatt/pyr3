@@ -592,6 +592,21 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
 
   const bar = el('div', 'pyr3-topbar');
 
+  // #103 Task 1.6: position:sticky + 44px topbar styling. Centered grid layout
+  // (1fr auto 1fr) keeps the tabs cluster in the literal middle regardless of
+  // left/right content widths.
+  bar.style.position = 'sticky';
+  bar.style.top = '0';
+  bar.style.zIndex = '50';
+  bar.style.minHeight = '44px';
+  bar.style.padding = '3px 18px';
+  bar.style.background = COLORS.bg.bar;
+  bar.style.borderBottom = `1px solid ${COLORS.border}`;
+  bar.style.display = 'grid';
+  bar.style.gridTemplateColumns = '1fr auto 1fr';
+  bar.style.alignItems = 'center';
+  bar.style.gap = '16px';
+
   // Left cluster: brand + about link
   const left = el('div', 'pyr3-left-cluster');
   left.append(buildBrand(), buildAboutLink());
