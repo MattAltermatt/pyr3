@@ -159,10 +159,11 @@ const OCTOCAT_PATH =
 let stylesInjected = false;
 
 /** Edit-mode bar (#102): a slim variant of the viewer's chrome row used by
- *  `/v1/edit`. Same wordmark / version / nav links / WebGPU pill / octocat
- *  CTAs, with an EDITABLE flame-name input and a live dimensions readout in
- *  place of the viewer's static meta. No quality ladder / Open / Save row —
- *  those affordances live in the editor's left panel. */
+ *  `/v1/edit`. Same wordmark / nav tabs / WebGPU pill / octocat CTAs, with
+ *  an EDITABLE flame-name input and a live dimensions readout in place of
+ *  the viewer's static meta. No quality ladder / Open / Save row — those
+ *  affordances live in the editor's left panel. (#103 Phase 2 Task 2.6:
+ *  the version chip moved to /about; no longer shown in the top bar.) */
 export interface EditBarOpts {
   webgpu: WebGPUStatus;
   /** Fires when the user edits the flame-name input. */
@@ -1055,7 +1056,6 @@ const BAR_CSS = `
   flex: 1 1 0;
 }
 .pyr3-bar-info-gallery .pyr3-zone-right { justify-content: flex-end; }
-.pyr3-bar-version { color: var(--text-dim); font-size: 10px; font-weight: 400; white-space: nowrap; }
 /* /v1/edit bar: editable flame name. Styled to match the viewer's bold
    metaName but accepts focus + typing. Auto-sizes via field-sizing where
    supported; falls back to a fixed character width. */
