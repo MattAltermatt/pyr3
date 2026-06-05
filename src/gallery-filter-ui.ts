@@ -549,19 +549,18 @@ export function mountFilterDrawer(
   const applyBtn = document.createElement('button');
   applyBtn.type = 'button';
   applyBtn.className = 'pyr3-filter-apply';
-  // Auto-apply is the dispatch path — the Apply button is a live readout
-  // ("Apply (N matches)") that mirrors the current filtered count. Clicking
-  // it is harmless (the spec is already applied), so we leave it active as
-  // an affordance for visitors who expect a discrete apply step.
+  // Filter changes auto-apply to the gallery instantly. The Apply button's
+  // job is the "I'm done picking filters" affordance — click → dismiss the
+  // drawer so the visitor can see the filtered grid unobstructed.
   const renderApplyLabel = (n: number): void => {
     const label = n === 1 ? 'match' : 'matches';
     applyBtn.textContent = `Apply (${n.toLocaleString()} ${label})`;
   };
   renderApplyLabel(currentMatchCount);
-  applyBtn.title = 'auto-apply is on — every filter change updates the gallery instantly. This count reflects the current filtered total.';
+  applyBtn.title = 'close filters — auto-apply is on, so every change updates the gallery instantly; this button just dismisses the drawer.';
   applyBtn.onclick = () => {
-    // No-op cosmetic click — the spec is already applied via auto-apply.
-    // We DON'T re-emit onChange to avoid double-applying the same spec.
+    isOpen = false;
+    drawer.classList.toggle('open', false);
   };
   footer.appendChild(applyBtn);
 

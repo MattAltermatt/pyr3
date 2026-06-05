@@ -397,6 +397,21 @@ describe('mountFilterDrawer — progressive-disclosure structure (Task 5.6)', ()
     expect(apply.textContent).toContain('0 matches');
   });
 
+  it('Apply button closes the drawer (auto-apply already pushed the spec)', () => {
+    const root = document.createElement('div');
+    const handle = mountFilterDrawer(root, {
+      initialFilter: { ...DEFAULT_FILTER_SPEC, colorVarMin: 0.4 },
+      facetCounts: makeCounts(),
+      onChange: vi.fn(),
+    });
+    // Non-default initial filter → drawer auto-opens on mount.
+    expect(handle.isOpen()).toBe(true);
+    const apply = root.querySelector('.pyr3-filter-apply') as HTMLButtonElement;
+    apply.click();
+    expect(handle.isOpen()).toBe(false);
+    expect(root.querySelector('.pyr3-filter-drawer')?.classList.contains('open')).toBe(false);
+  });
+
   it('setFilter rebuilds the chip strip + metric row values', () => {
     const root = document.createElement('div');
     const handle = mountFilterDrawer(root, {
