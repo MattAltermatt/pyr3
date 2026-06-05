@@ -20,13 +20,16 @@ import {
   type GalleryMountHandle,
 } from './gallery-mount';
 import {
-  countActiveAxes,
   DEFAULT_FILTER_SPEC,
   filterSpecEquals,
   type FilterSpec,
 } from './gallery-filter';
 import { computeFacetCounts } from './gallery-facets';
-import { mountFilterDrawer, type FilterDrawerHandle } from './gallery-filter-ui';
+import {
+  activeFilterCount,
+  mountFilterDrawer,
+  type FilterDrawerHandle,
+} from './gallery-filter-ui';
 import { loadFeatureIndex } from './feature-index-client';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
 import {
@@ -1222,7 +1225,7 @@ async function main(): Promise<void> {
     currentFilter = nextFilter;
     history.pushState({}, '', galleryUrl(1, nextFilter));
     setDocTitle('gallery · p1');
-    galleryBar?.setActiveAxes(countActiveAxes(nextFilter));
+    galleryBar?.setActiveAxes(activeFilterCount(nextFilter));
     drawerHandle?.setFilter(nextFilter);
     void ensureFeatureIndex().then((index) => {
       const counts = computeFacetCounts(index, nextFilter);
@@ -1230,6 +1233,10 @@ async function main(): Promise<void> {
       galleryBar?.setPage(1, galleryTotalPages);
       currentGalleryPage = 1;
       drawerHandle?.setFacetCounts(counts);
+      // #103 Phase 5 Task 5.6 — feed the live total into the drawer's footer
+      // so "Apply (N matches)" tracks reality. counts.total is the post-
+      // filter total (computeFacetCounts already applies every active axis).
+      drawerHandle?.setMatchCount(counts.total);
       if (emptyBanner !== null) {
         emptyBanner.style.display = counts.total === 0 ? 'flex' : 'none';
       }
@@ -1297,7 +1304,7 @@ async function main(): Promise<void> {
         const next = Math.floor(Math.random() * galleryTotalPages) + 1;
         navGallery(next);
       },
-      activeAxes: countActiveAxes(currentFilter),
+      activeAxes: activeFilterCount(currentFilter),
       onFilterToggle: () => drawerHandle?.toggleOpen(),
       // #103 Phase 2 Task 2.3 — gallery tab clicks fall through to
       // handleTabClick (no transfer rules apply when leaving gallery).
@@ -1401,6 +1408,7 @@ async function main(): Promise<void> {
 
     galleryBar.setPage(page, galleryTotalPages);
     drawerHandle.setFacetCounts(counts);
+    drawerHandle.setMatchCount(counts.total);
     drawerHandle.setLoading(false);
     if (emptyBanner !== null) {
       emptyBanner.style.display = counts.total === 0 ? 'flex' : 'none';

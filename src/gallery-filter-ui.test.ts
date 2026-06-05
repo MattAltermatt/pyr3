@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Window } from 'happy-dom';
 import {
-  mountFilterDrawer,
-  buildActiveChipStrip,
-  buildSortRow,
-  buildMetricRow,
+  activeFilterCount,
   attachBrushSelect,
+  buildActiveChipStrip,
+  buildMetricRow,
+  buildSortRow,
+  mountFilterDrawer,
 } from './gallery-filter-ui';
 import { DEFAULT_FILTER_SPEC, type FilterSpec, type SortMode, type SortDir } from './gallery-filter';
 
@@ -45,6 +46,10 @@ beforeEach(() => {
   setupDom();
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// mountFilterDrawer — progressive-disclosure layout (Task 5.6)
+// ──────────────────────────────────────────────────────────────────────────
+
 describe('mountFilterDrawer — scaffold + open/close + reset', () => {
   it('mounts hidden when initialFilter is default', () => {
     const root = document.createElement('div');
@@ -60,7 +65,7 @@ describe('mountFilterDrawer — scaffold + open/close + reset', () => {
     handle.destroy();
   });
 
-  it('mounts open when initialFilter is non-default (any axis)', () => {
+  it('mounts open when initialFilter is non-default', () => {
     const root = document.createElement('div');
     const handle = mountFilterDrawer(root, {
       initialFilter: { ...DEFAULT_FILTER_SPEC, sort: 'interest' },
@@ -102,11 +107,7 @@ describe('mountFilterDrawer — scaffold + open/close + reset', () => {
     expect(onChange).toHaveBeenCalledWith(DEFAULT_FILTER_SPEC);
   });
 
-  it('setFilter from non-default to default does NOT auto-close (visitor stays in drawer)', () => {
-    // The drawer's open/closed state belongs to the visitor — auto-closing
-    // when state returns to default would slam the drawer shut mid-edit
-    // (e.g. clicking the default `time` sort pill). The bar pill is the
-    // close affordance; auto-OPEN on non-default still fires.
+  it('setFilter from non-default to default does NOT auto-close', () => {
     const root = document.createElement('div');
     const handle = mountFilterDrawer(root, {
       initialFilter: { ...DEFAULT_FILTER_SPEC, sort: 'interest' },
@@ -145,64 +146,93 @@ describe('mountFilterDrawer — scaffold + open/close + reset', () => {
   });
 });
 
-describe('mountFilterDrawer — sort pills (B3)', () => {
-  const SORT_NAMES = ['time', 'interest', 'coverage', 'entropy', 'colorVar', 'meanLum'] as const;
-
-  it('renders all 6 sort pills with a sort: label', () => {
+describe('mountFilterDrawer — progressive-disclosure structure (Task 5.6)', () => {
+  it('renders the new shell: chip strip + sort row + variations row + 5 metric rows + footer', () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
       initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const pills = root.querySelectorAll('.pyr3-sort-pill');
-    expect(pills.length).toBe(6);
-    const dataSorts = Array.from(pills).map((p) => (p as HTMLElement).dataset.sort);
-    expect(dataSorts).toEqual([...SORT_NAMES]);
-    const labels = Array.from(pills).map((p) => p.textContent);
-    expect(labels).toEqual([...SORT_NAMES]);
-    expect(root.querySelector('.pyr3-filter-row.sort .pyr3-filter-row-label')?.textContent).toBe('sort:');
+    expect(root.querySelector('.pyr3-filter-chip-strip-wrap')).toBeTruthy();
+    expect(root.querySelector('.pyr3-filter-sort-row-wrap')).toBeTruthy();
+    expect(root.querySelector('.pyr3-vars-row')).toBeTruthy();
+    const metricRows = root.querySelectorAll('.pyr3-filter-metric-row-wrap');
+    expect(metricRows.length).toBe(5);
+    const metricAxes = Array.from(metricRows).map((el) => (el as HTMLElement).dataset.metric);
+    expect(metricAxes).toEqual(['xforms', 'coverage', 'entropy', 'colorVar', 'meanLum']);
+    expect(root.querySelector('.pyr3-filter-footer')).toBeTruthy();
+    expect(root.querySelector('.pyr3-filter-reset')).toBeTruthy();
+    expect(root.querySelector('.pyr3-filter-apply')).toBeTruthy();
   });
 
-  it('initialFilter.sort=time → time pill has .active', () => {
+  it('chip strip is empty when filter is default', () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
       initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const active = root.querySelectorAll('.pyr3-sort-pill.active');
-    expect(active.length).toBe(1);
-    expect((active[0] as HTMLElement).dataset.sort).toBe('time');
+    const stripWrap = root.querySelector('.pyr3-filter-chip-strip-wrap') as HTMLElement;
+    expect(stripWrap.querySelectorAll('.pyr3-active-chip').length).toBe(0);
   });
 
-  it('initialFilter.sort=coverage → coverage pill is .active', () => {
+  it('chip strip renders one chip per active axis when filters are set', () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
-      initialFilter: { ...DEFAULT_FILTER_SPEC, sort: 'coverage' },
+      initialFilter: {
+        ...DEFAULT_FILTER_SPEC,
+        coverageMin: 0.3,
+        coverageMax: 0.7,
+        meanLumMin: 0.4,
+      },
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const active = root.querySelectorAll('.pyr3-sort-pill.active');
-    expect(active.length).toBe(1);
-    expect((active[0] as HTMLElement).dataset.sort).toBe('coverage');
+    const chips = root.querySelectorAll('.pyr3-active-chip');
+    expect(chips.length).toBe(2);
   });
 
-  it('clicking a non-active pill fires onChange with that sort', () => {
+  it("clicking a chip's × removes that axis from the filter", () => {
     const root = document.createElement('div');
     const onChange = vi.fn();
     mountFilterDrawer(root, {
-      initialFilter: DEFAULT_FILTER_SPEC,
+      initialFilter: { ...DEFAULT_FILTER_SPEC, coverageMin: 0.3, coverageMax: 0.7 },
       facetCounts: makeCounts(),
       onChange,
     });
-    const entropyPill = root.querySelector('.pyr3-sort-pill[data-sort="entropy"]') as HTMLButtonElement;
-    entropyPill.click();
+    const x = root.querySelector('.pyr3-active-chip-x') as HTMLElement;
+    x.click();
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ coverageMin: 0, coverageMax: null }),
+    );
+  });
+
+  it("clear-all link resets every filter axis but preserves sort + sortDir", () => {
+    const root = document.createElement('div');
+    const onChange = vi.fn();
+    mountFilterDrawer(root, {
+      initialFilter: {
+        ...DEFAULT_FILTER_SPEC,
+        sort: 'coverage',
+        sortDir: 'asc',
+        coverageMin: 0.3,
+        vars: [0],
+      },
+      facetCounts: makeCounts(),
+      onChange,
+    });
+    const clearAll = root.querySelector('.pyr3-active-chip-clear-all') as HTMLElement;
+    clearAll.click();
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0]?.[0]).toMatchObject({ sort: 'entropy' });
+    const next = onChange.mock.calls[0]![0];
+    expect(next.sort).toBe('coverage');
+    expect(next.sortDir).toBe('asc');
+    expect(next.coverageMin).toBe(0);
+    expect(next.vars).toEqual([]);
   });
 
-  it('clicking the already-active pill does NOT fire onChange', () => {
+  it('sort dropdown change fires onChange with the new sort key', () => {
     const root = document.createElement('div');
     const onChange = vi.fn();
     mountFilterDrawer(root, {
@@ -210,401 +240,177 @@ describe('mountFilterDrawer — sort pills (B3)', () => {
       facetCounts: makeCounts(),
       onChange,
     });
-    const timePill = root.querySelector('.pyr3-sort-pill[data-sort="time"]') as HTMLButtonElement;
-    timePill.click();
-    expect(onChange).not.toHaveBeenCalled();
+    const select = root.querySelector('select.pyr3-sort-select') as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    select.value = 'coverage';
+    select.dispatchEvent(new Event('change'));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ sort: 'coverage' }));
   });
 
-  it('setFilter updates which pill is .active', () => {
+  it('sort direction toggle fires onChange with the inverse direction', () => {
     const root = document.createElement('div');
-    const handle = mountFilterDrawer(root, {
-      initialFilter: DEFAULT_FILTER_SPEC,
+    const onChange = vi.fn();
+    mountFilterDrawer(root, {
+      initialFilter: { ...DEFAULT_FILTER_SPEC, sortDir: 'desc' },
       facetCounts: makeCounts(),
-      onChange: vi.fn(),
+      onChange,
     });
-    handle.setFilter({ ...DEFAULT_FILTER_SPEC, sort: 'meanLum' });
-    const active = root.querySelectorAll('.pyr3-sort-pill.active');
-    expect(active.length).toBe(1);
-    expect((active[0] as HTMLElement).dataset.sort).toBe('meanLum');
-    handle.setFilter(DEFAULT_FILTER_SPEC);
-    const active2 = root.querySelectorAll('.pyr3-sort-pill.active');
-    expect(active2.length).toBe(1);
-    expect((active2[0] as HTMLElement).dataset.sort).toBe('time');
+    const dirBtn = root.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement;
+    dirBtn.click();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ sortDir: 'asc' }));
   });
-});
 
-describe('mountFilterDrawer — xform pickers + count strip (B4)', () => {
-  it('renders from select (1..15) and to select (all + 1..15)', () => {
+  it("vars row's `+ add` button renders and is initially closed", () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
       initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const from = root.querySelector('.pyr3-xform-from') as HTMLSelectElement;
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    expect(from).toBeTruthy();
-    expect(to).toBeTruthy();
-    const fromOpts = Array.from(from.querySelectorAll('option')).map((o) => o.value);
-    expect(fromOpts).toEqual(['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15']);
-    const toOpts = Array.from(to.querySelectorAll('option')).map((o) => o.value);
-    expect(toOpts).toEqual(['all','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15']);
+    const addBtn = root.querySelector('.pyr3-vars-add-btn') as HTMLButtonElement;
+    expect(addBtn).toBeTruthy();
+    expect(addBtn.classList.contains('open')).toBe(false);
+    const panel = root.querySelector('.pyr3-vars-picker-panel') as HTMLElement;
+    expect(panel.style.display).toBe('none');
   });
 
-  it('count strip has 14 cells labelled 1..13 and 14+', () => {
+  it('vars chips render when filter has variations', () => {
+    const root = document.createElement('div');
+    mountFilterDrawer(root, {
+      initialFilter: { ...DEFAULT_FILTER_SPEC, vars: [0, 13] },
+      facetCounts: makeCounts(),
+      onChange: vi.fn(),
+    });
+    const chips = root.querySelectorAll('.pyr3-vars-chip');
+    expect(chips.length).toBe(2);
+  });
+
+  it('a vars chip click removes that variation from the filter', () => {
+    const root = document.createElement('div');
+    const onChange = vi.fn();
+    mountFilterDrawer(root, {
+      initialFilter: { ...DEFAULT_FILTER_SPEC, vars: [0, 13] },
+      facetCounts: makeCounts(),
+      onChange,
+    });
+    const chips = root.querySelectorAll('.pyr3-vars-chip');
+    (chips[0] as HTMLElement).click();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ vars: [13] }));
+  });
+
+  it('metric rows are collapsed by default — bodies hidden', () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
       initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const cells = root.querySelectorAll('.pyr3-xform-cell');
-    expect(cells.length).toBe(14);
-    expect((cells[0] as HTMLElement).dataset.bucket).toBe('1');
-    expect((cells[13] as HTMLElement).dataset.bucket).toBe('14');
-    expect(cells[0]?.textContent).toContain('1 (');
-    expect(cells[12]?.textContent).toContain('13 (');
-    expect(cells[13]?.textContent).toContain('14+ (');
+    const bodies = root.querySelectorAll('.pyr3-filter-metric-row-wrap .pyr3-metric-body');
+    expect(bodies.length).toBe(5);
+    for (const body of Array.from(bodies)) {
+      expect((body as HTMLElement).style.display).toBe('none');
+    }
   });
 
-  it('picker values reflect currentFilter (xformMin=3, xformMax=null → to=all)', () => {
+  it('metric row headers carry plain-english labels', () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
-      initialFilter: { ...DEFAULT_FILTER_SPEC, xformMin: 3 },
+      initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const from = root.querySelector('.pyr3-xform-from') as HTMLSelectElement;
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    expect(from.value).toBe('3');
-    expect(to.value).toBe('all');
+    const labels = Array.from(
+      root.querySelectorAll('.pyr3-filter-metric-row-wrap .pyr3-metric-label'),
+    ).map((el) => el.textContent);
+    expect(labels).toEqual([
+      'xform count',
+      'coverage',
+      'complexity',
+      'color variation',
+      'brightness',
+    ]);
   });
 
-  it('picker values reflect currentFilter (xformMax numeric)', () => {
-    const root = document.createElement('div');
-    mountFilterDrawer(root, {
-      initialFilter: { ...DEFAULT_FILTER_SPEC, xformMin: 2, xformMax: 7 },
-      facetCounts: makeCounts(),
-      onChange: vi.fn(),
-    });
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    expect(to.value).toBe('7');
-  });
-
-  it('active range highlight: xformMin=3 xformMax=5 → cells 3..5 .active', () => {
+  it('xform metric row maps xformMin / xformMax through to a metric range value', () => {
     const root = document.createElement('div');
     mountFilterDrawer(root, {
       initialFilter: { ...DEFAULT_FILTER_SPEC, xformMin: 3, xformMax: 5 },
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const cells = root.querySelectorAll('.pyr3-xform-cell');
-    const activeBuckets = Array.from(cells)
-      .filter((c) => c.classList.contains('active'))
-      .map((c) => (c as HTMLElement).dataset.bucket);
-    expect(activeBuckets).toEqual(['3', '4', '5']);
+    const xformWrap = root.querySelector(
+      '.pyr3-filter-metric-row-wrap[data-metric="xforms"]',
+    ) as HTMLElement;
+    expect(xformWrap).toBeTruthy();
+    const value = xformWrap.querySelector('.pyr3-metric-value') as HTMLElement;
+    // xform [3,5] → metric float space [0.2, 0.5] (xformMin=3 → 0.2; xformMax=5 → 0.5)
+    expect(value.textContent).toContain('0.2');
+    expect(value.textContent).toContain('0.5');
   });
 
-  it('empty highlight: cells with count 0 get .empty; non-zero do not', () => {
+  it('coverage metric row reflects the current coverage range in its header', () => {
     const root = document.createElement('div');
-    const counts = makeCounts();
-    counts.xforms.set(2, 17);
-    counts.xforms.set(5, 4);
     mountFilterDrawer(root, {
-      initialFilter: DEFAULT_FILTER_SPEC,
-      facetCounts: counts,
+      initialFilter: { ...DEFAULT_FILTER_SPEC, coverageMin: 0.3, coverageMax: 0.7 },
+      facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    const cells = root.querySelectorAll('.pyr3-xform-cell');
-    const cell2 = cells[1] as HTMLElement; // bucket=2
-    const cell5 = cells[4] as HTMLElement; // bucket=5
-    const cell9 = cells[8] as HTMLElement; // bucket=9 (count=0)
-    expect(cell2.classList.contains('empty')).toBe(false);
-    expect(cell5.classList.contains('empty')).toBe(false);
-    expect(cell9.classList.contains('empty')).toBe(true);
+    const wrap = root.querySelector(
+      '.pyr3-filter-metric-row-wrap[data-metric="coverage"]',
+    ) as HTMLElement;
+    const value = wrap.querySelector('.pyr3-metric-value') as HTMLElement;
+    expect(value.textContent).toContain('0.3');
+    expect(value.textContent).toContain('0.7');
   });
 
-  it('changing the from picker fires onChange with new xformMin', () => {
+  it('Apply button shows the live match count and updates via setMatchCount', () => {
     const root = document.createElement('div');
-    const onChange = vi.fn();
+    const handle = mountFilterDrawer(root, {
+      initialFilter: DEFAULT_FILTER_SPEC,
+      facetCounts: makeCounts(),
+      onChange: vi.fn(),
+      matchCount: 1234,
+    });
+    const apply = root.querySelector('.pyr3-filter-apply') as HTMLButtonElement;
+    expect(apply.textContent).toContain('Apply');
+    expect(apply.textContent).toContain('1,234');
+    expect(apply.textContent).toContain('matches');
+
+    handle.setMatchCount(1);
+    expect(apply.textContent).toContain('1 match');
+    expect(apply.textContent).not.toMatch(/1 matches/);
+
+    handle.setMatchCount(0);
+    expect(apply.textContent).toContain('0 matches');
+  });
+
+  it('Apply button defaults to 0 matches when matchCount is omitted', () => {
+    const root = document.createElement('div');
     mountFilterDrawer(root, {
       initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
-      onChange,
+      onChange: vi.fn(),
     });
-    const from = root.querySelector('.pyr3-xform-from') as HTMLSelectElement;
-    from.value = '4';
-    from.dispatchEvent(new (globalThis as any).Event('change'));
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0]?.[0]).toMatchObject({ xformMin: 4, xformMax: null });
+    const apply = root.querySelector('.pyr3-filter-apply') as HTMLButtonElement;
+    expect(apply.textContent).toContain('0 matches');
   });
 
-  it('changing the to picker to all fires onChange with xformMax=null', () => {
-    const root = document.createElement('div');
-    const onChange = vi.fn();
-    mountFilterDrawer(root, {
-      initialFilter: { ...DEFAULT_FILTER_SPEC, xformMin: 2, xformMax: 7 },
-      facetCounts: makeCounts(),
-      onChange,
-    });
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    to.value = 'all';
-    to.dispatchEvent(new (globalThis as any).Event('change'));
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0]?.[0]).toMatchObject({ xformMin: 2, xformMax: null });
-  });
-
-  it('changing the to picker to a number fires onChange with that xformMax', () => {
-    const root = document.createElement('div');
-    const onChange = vi.fn();
-    mountFilterDrawer(root, {
-      initialFilter: DEFAULT_FILTER_SPEC,
-      facetCounts: makeCounts(),
-      onChange,
-    });
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    to.value = '6';
-    to.dispatchEvent(new (globalThis as any).Event('change'));
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0]?.[0]).toMatchObject({ xformMin: 1, xformMax: 6 });
-  });
-
-  it('auto-clamp: setting from=8 when to=5 bumps to up to 8', () => {
-    const root = document.createElement('div');
-    const onChange = vi.fn();
-    mountFilterDrawer(root, {
-      initialFilter: { ...DEFAULT_FILTER_SPEC, xformMin: 1, xformMax: 5 },
-      facetCounts: makeCounts(),
-      onChange,
-    });
-    const from = root.querySelector('.pyr3-xform-from') as HTMLSelectElement;
-    from.value = '8';
-    from.dispatchEvent(new (globalThis as any).Event('change'));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ xformMin: 8, xformMax: 8 }));
-  });
-
-  it('auto-clamp other direction: setting to=3 when from=7 pulls from down to 3', () => {
-    const root = document.createElement('div');
-    const onChange = vi.fn();
-    mountFilterDrawer(root, {
-      initialFilter: { ...DEFAULT_FILTER_SPEC, xformMin: 7, xformMax: null },
-      facetCounts: makeCounts(),
-      onChange,
-    });
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    to.value = '3';
-    to.dispatchEvent(new (globalThis as any).Event('change'));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ xformMin: 3, xformMax: 3 }));
-  });
-
-  it('setFilter updates picker values + active highlight', () => {
+  it('setFilter rebuilds the chip strip + metric row values', () => {
     const root = document.createElement('div');
     const handle = mountFilterDrawer(root, {
       initialFilter: DEFAULT_FILTER_SPEC,
       facetCounts: makeCounts(),
       onChange: vi.fn(),
     });
-    handle.setFilter({ ...DEFAULT_FILTER_SPEC, xformMin: 4, xformMax: 6 });
-    const from = root.querySelector('.pyr3-xform-from') as HTMLSelectElement;
-    const to = root.querySelector('.pyr3-xform-to') as HTMLSelectElement;
-    expect(from.value).toBe('4');
-    expect(to.value).toBe('6');
-    const activeBuckets = Array.from(root.querySelectorAll('.pyr3-xform-cell.active'))
-      .map((c) => (c as HTMLElement).dataset.bucket);
-    expect(activeBuckets).toEqual(['4', '5', '6']);
-  });
-
-  it('setFacetCounts updates the strip count + empty highlight', () => {
-    const root = document.createElement('div');
-    const handle = mountFilterDrawer(root, {
-      initialFilter: DEFAULT_FILTER_SPEC,
-      facetCounts: makeCounts(),
-      onChange: vi.fn(),
-    });
-    const cells = root.querySelectorAll('.pyr3-xform-cell');
-    expect((cells[2] as HTMLElement).classList.contains('empty')).toBe(true);
-    const nextCounts = makeCounts();
-    nextCounts.xforms.set(3, 42);
-    handle.setFacetCounts(nextCounts);
-    expect(cells[2]?.textContent).toContain('3 (42)');
-    expect((cells[2] as HTMLElement).classList.contains('empty')).toBe(false);
+    expect(root.querySelectorAll('.pyr3-active-chip').length).toBe(0);
+    handle.setFilter({ ...DEFAULT_FILTER_SPEC, colorVarMin: 0.4 });
+    expect(root.querySelectorAll('.pyr3-active-chip').length).toBe(1);
+    const wrap = root.querySelector(
+      '.pyr3-filter-metric-row-wrap[data-metric="colorVar"]',
+    ) as HTMLElement;
+    expect((wrap.querySelector('.pyr3-metric-value') as HTMLElement).textContent).toContain('0.4');
   });
 });
-
-describe.each(['coverage', 'entropy', 'colorVar', 'meanLum'] as const)(
-  'mountFilterDrawer — stat-range row (%s) (C4)',
-  (stat) => {
-    const minKey = `${stat}Min` as const;
-    const maxKey = `${stat}Max` as const;
-
-    function rowSel(s: string) {
-      return `.pyr3-filter-row.stat.${stat} ${s}`;
-    }
-    function cellsFor(root: HTMLElement) {
-      return root.querySelectorAll(`.pyr3-stat-count-strip[data-stat="${stat}"] .pyr3-stat-cell`);
-    }
-
-    it('mounts label + from select (0.0..1.0) + to select (all + 0.0..1.0) + 10 count cells', () => {
-      const root = document.createElement('div');
-      mountFilterDrawer(root, {
-        initialFilter: DEFAULT_FILTER_SPEC,
-        facetCounts: makeCounts(),
-        onChange: vi.fn(),
-      });
-      const label = root.querySelector(`.pyr3-filter-row.stat.${stat} .pyr3-filter-row-label`);
-      expect(label?.textContent).toBe(`${stat}:`);
-      const from = root.querySelector(rowSel(`.pyr3-stat-from[data-stat="${stat}"]`)) as HTMLSelectElement;
-      const to = root.querySelector(rowSel(`.pyr3-stat-to[data-stat="${stat}"]`)) as HTMLSelectElement;
-      expect(from).toBeTruthy();
-      expect(to).toBeTruthy();
-      const fromOpts = Array.from(from.querySelectorAll('option')).map((o) => o.value);
-      expect(fromOpts).toEqual(['0.0','0.1','0.2','0.3','0.4','0.5','0.6','0.7','0.8','0.9','1.0']);
-      const toOpts = Array.from(to.querySelectorAll('option')).map((o) => o.value);
-      expect(toOpts).toEqual(['all','0.0','0.1','0.2','0.3','0.4','0.5','0.6','0.7','0.8','0.9','1.0']);
-      const cells = cellsFor(root);
-      expect(cells.length).toBe(10);
-      expect((cells[0] as HTMLElement).dataset.bucket).toBe('0');
-      expect((cells[9] as HTMLElement).dataset.bucket).toBe('9');
-      expect(cells[0]?.textContent).toContain('0.0-0.1');
-      expect(cells[9]?.textContent).toContain('0.9-1.0');
-    });
-
-    it('default filter → from=0.0, to=all', () => {
-      const root = document.createElement('div');
-      mountFilterDrawer(root, {
-        initialFilter: DEFAULT_FILTER_SPEC,
-        facetCounts: makeCounts(),
-        onChange: vi.fn(),
-      });
-      const from = root.querySelector(`.pyr3-stat-from[data-stat="${stat}"]`) as HTMLSelectElement;
-      const to = root.querySelector(`.pyr3-stat-to[data-stat="${stat}"]`) as HTMLSelectElement;
-      expect(from.value).toBe('0.0');
-      expect(to.value).toBe('all');
-    });
-
-    it('active range highlight: min=0.3 max=0.7 → cells 3,4,5,6 .active', () => {
-      const root = document.createElement('div');
-      mountFilterDrawer(root, {
-        initialFilter: { ...DEFAULT_FILTER_SPEC, [minKey]: 0.3, [maxKey]: 0.7 },
-        facetCounts: makeCounts(),
-        onChange: vi.fn(),
-      });
-      const cells = cellsFor(root);
-      const activeBuckets = Array.from(cells)
-        .filter((c) => c.classList.contains('active'))
-        .map((c) => (c as HTMLElement).dataset.bucket);
-      expect(activeBuckets).toEqual(['3', '4', '5', '6']);
-    });
-
-    it('empty highlight: cells with count 0 get .empty; non-zero do not', () => {
-      const root = document.createElement('div');
-      const counts = makeCounts();
-      counts[stat].set(2, 17);
-      counts[stat].set(5, 4);
-      mountFilterDrawer(root, {
-        initialFilter: DEFAULT_FILTER_SPEC,
-        facetCounts: counts,
-        onChange: vi.fn(),
-      });
-      const cells = cellsFor(root);
-      expect((cells[2] as HTMLElement).classList.contains('empty')).toBe(false);
-      expect((cells[5] as HTMLElement).classList.contains('empty')).toBe(false);
-      expect((cells[7] as HTMLElement).classList.contains('empty')).toBe(true);
-    });
-
-    it('changing from picker fires onChange with new min', () => {
-      const root = document.createElement('div');
-      const onChange = vi.fn();
-      mountFilterDrawer(root, {
-        initialFilter: DEFAULT_FILTER_SPEC,
-        facetCounts: makeCounts(),
-        onChange,
-      });
-      const from = root.querySelector(`.pyr3-stat-from[data-stat="${stat}"]`) as HTMLSelectElement;
-      from.value = '0.4';
-      from.dispatchEvent(new (globalThis as any).Event('change'));
-      expect(onChange).toHaveBeenCalledTimes(1);
-      expect(onChange.mock.calls[0]?.[0]).toMatchObject({ [minKey]: 0.4, [maxKey]: null });
-    });
-
-    it('changing to picker to all fires onChange with max=null', () => {
-      const root = document.createElement('div');
-      const onChange = vi.fn();
-      mountFilterDrawer(root, {
-        initialFilter: { ...DEFAULT_FILTER_SPEC, [minKey]: 0.2, [maxKey]: 0.6 },
-        facetCounts: makeCounts(),
-        onChange,
-      });
-      const to = root.querySelector(`.pyr3-stat-to[data-stat="${stat}"]`) as HTMLSelectElement;
-      to.value = 'all';
-      to.dispatchEvent(new (globalThis as any).Event('change'));
-      expect(onChange).toHaveBeenCalledTimes(1);
-      expect(onChange.mock.calls[0]?.[0]).toMatchObject({ [minKey]: 0.2, [maxKey]: null });
-    });
-
-    it('auto-clamp: setting from=0.8 when to=0.5 bumps to up to 0.8', () => {
-      const root = document.createElement('div');
-      const onChange = vi.fn();
-      mountFilterDrawer(root, {
-        initialFilter: { ...DEFAULT_FILTER_SPEC, [minKey]: 0.1, [maxKey]: 0.5 },
-        facetCounts: makeCounts(),
-        onChange,
-      });
-      const from = root.querySelector(`.pyr3-stat-from[data-stat="${stat}"]`) as HTMLSelectElement;
-      from.value = '0.8';
-      from.dispatchEvent(new (globalThis as any).Event('change'));
-      expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ [minKey]: 0.8, [maxKey]: 0.8 }));
-    });
-
-    it('auto-clamp other direction: setting to=0.3 when from=0.7 pulls from down to 0.3', () => {
-      const root = document.createElement('div');
-      const onChange = vi.fn();
-      mountFilterDrawer(root, {
-        initialFilter: { ...DEFAULT_FILTER_SPEC, [minKey]: 0.7, [maxKey]: null },
-        facetCounts: makeCounts(),
-        onChange,
-      });
-      const to = root.querySelector(`.pyr3-stat-to[data-stat="${stat}"]`) as HTMLSelectElement;
-      to.value = '0.3';
-      to.dispatchEvent(new (globalThis as any).Event('change'));
-      expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ [minKey]: 0.3, [maxKey]: 0.3 }));
-    });
-
-    it('setFilter updates picker values + active highlight', () => {
-      const root = document.createElement('div');
-      const handle = mountFilterDrawer(root, {
-        initialFilter: DEFAULT_FILTER_SPEC,
-        facetCounts: makeCounts(),
-        onChange: vi.fn(),
-      });
-      handle.setFilter({ ...DEFAULT_FILTER_SPEC, [minKey]: 0.4, [maxKey]: 0.7 });
-      const from = root.querySelector(`.pyr3-stat-from[data-stat="${stat}"]`) as HTMLSelectElement;
-      const to = root.querySelector(`.pyr3-stat-to[data-stat="${stat}"]`) as HTMLSelectElement;
-      expect(from.value).toBe('0.4');
-      expect(to.value).toBe('0.7');
-      const activeBuckets = Array.from(cellsFor(root))
-        .filter((c) => c.classList.contains('active'))
-        .map((c) => (c as HTMLElement).dataset.bucket);
-      expect(activeBuckets).toEqual(['4', '5', '6']);
-    });
-
-    it('setFacetCounts updates the strip', () => {
-      const root = document.createElement('div');
-      const handle = mountFilterDrawer(root, {
-        initialFilter: DEFAULT_FILTER_SPEC,
-        facetCounts: makeCounts(),
-        onChange: vi.fn(),
-      });
-      const cells = cellsFor(root);
-      expect((cells[3] as HTMLElement).classList.contains('empty')).toBe(true);
-      const nextCounts = makeCounts();
-      nextCounts[stat].set(3, 42);
-      handle.setFacetCounts(nextCounts);
-      expect(cells[3]?.textContent).toContain('(42)');
-      expect((cells[3] as HTMLElement).classList.contains('empty')).toBe(false);
-    });
-  },
-);
 
 describe('mountFilterDrawer — loading state', () => {
   it('renders the loading banner when loading=true', () => {
@@ -636,6 +442,64 @@ describe('mountFilterDrawer — loading state', () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// activeFilterCount (Task 5.6) — chip-strip-aligned count for the bar badge
+// ──────────────────────────────────────────────────────────────────────────
+
+describe('activeFilterCount — chip-strip-aligned count for the bar badge', () => {
+  it('returns 0 for the default spec', () => {
+    expect(activeFilterCount(DEFAULT_FILTER_SPEC)).toBe(0);
+  });
+
+  it('does NOT count the sort axis (sort dropdown is always visible)', () => {
+    expect(
+      activeFilterCount({ ...DEFAULT_FILTER_SPEC, sort: 'interest', sortDir: 'asc' }),
+    ).toBe(0);
+  });
+
+  it('counts one per active stat axis', () => {
+    expect(
+      activeFilterCount({
+        ...DEFAULT_FILTER_SPEC,
+        coverageMin: 0.3,
+        coverageMax: 0.7,
+      }),
+    ).toBe(1);
+    expect(
+      activeFilterCount({
+        ...DEFAULT_FILTER_SPEC,
+        coverageMin: 0.3,
+        entropyMax: 0.5,
+        meanLumMin: 0.2,
+      }),
+    ).toBe(3);
+  });
+
+  it('counts one per selected variation (each chip is its own axis)', () => {
+    expect(
+      activeFilterCount({ ...DEFAULT_FILTER_SPEC, vars: [0, 13] }),
+    ).toBe(2);
+  });
+
+  it('counts the xform-count axis once when it differs from default', () => {
+    expect(
+      activeFilterCount({ ...DEFAULT_FILTER_SPEC, xformMin: 3, xformMax: 5 }),
+    ).toBe(1);
+  });
+
+  it('matches what buildActiveChipStrip actually renders', () => {
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      vars: [0, 13],
+      xformMin: 3,
+      coverageMin: 0.3,
+    };
+    const strip = buildActiveChipStrip(spec, vi.fn(), vi.fn());
+    const chips = strip.querySelectorAll('.pyr3-active-chip');
+    expect(activeFilterCount(spec)).toBe(chips.length);
+  });
+});
+
 describe('buildActiveChipStrip (Task 5.2) — active-filter chips with one-click remove', () => {
   it('renders one chip per active filter axis, in stable axis order', () => {
     const spec: FilterSpec = {
@@ -651,7 +515,6 @@ describe('buildActiveChipStrip (Task 5.2) — active-filter chips with one-click
     const strip = buildActiveChipStrip(spec, onRemove, onClearAll);
     const chips = strip.querySelectorAll('.pyr3-active-chip');
     expect(chips.length).toBe(3);
-    // Stable order: vars → xforms → coverage → entropy → colorVar → meanLum.
     const ids = Array.from(chips).map((c) => (c as HTMLElement).dataset.chipId);
     expect(ids).toEqual(['vars:0', 'coverage', 'colorVar']);
   });
@@ -902,9 +765,6 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
   });
 
   it('bars within the current range carry an .in-range class, others do not', () => {
-    // min=0.3, max=0.7 → buckets 3..6 in-range (max=0.7 is exclusive upper
-    // edge in the bucket-strip convention used by the existing stat rows;
-    // see Math.ceil(max*10)-1 in mountStatRow's renderStrip).
     const row = buildMetricRow({
       metric: 'colorVar',
       label: 'color variation',
@@ -945,13 +805,11 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
       label: 'coverage',
       min: 0,
       max: null,
-      // Bucket 5 has 100; others 50 → bar 5 should be twice the height of others.
       counts: makeBuckets([50, 50, 50, 50, 50, 100, 50, 50, 50, 50]),
       onRange: vi.fn(),
       initiallyExpanded: true,
     });
     const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
-    // height stored as a percentage string like "100%" or "50%"
     expect(bars[5]!.style.height).toBe('100%');
     expect(bars[0]!.style.height).toBe('50%');
   });
@@ -968,7 +826,6 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
     });
     const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
     for (const bar of bars) {
-      // Either 0% or a small minimum — must not be NaN%/Infinity%.
       expect(bar.style.height.endsWith('%')).toBe(true);
       expect(bar.style.height).not.toContain('NaN');
       expect(bar.style.height).not.toContain('Infinity');
@@ -1011,12 +868,6 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
 // ──────────────────────────────────────────────────────────────────────────
 
 describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histogram', () => {
-  /**
-   * Build a histogram element with 10 buckets sized 50px × 100px each so
-   * that bucket.getBoundingClientRect() gives stable, predictable x-coords
-   * — bucket N has center x ≈ (N + 0.5) × 50. happy-dom returns rect dims
-   * directly from inline styles in lieu of layout.
-   */
   function makeFakeHistogram(): { histogram: HTMLElement; bars: HTMLElement[] } {
     const histogram = document.createElement('div');
     histogram.className = 'pyr3-metric-histogram';
@@ -1031,8 +882,6 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
       bar.dataset.bucket = String(i);
       bar.style.width = '50px';
       bar.style.height = '60px';
-      // happy-dom doesn't do real layout — stub getBoundingClientRect so
-      // the brush handler's pixel-→-bucket math has stable input.
       const left = i * 50;
       bar.getBoundingClientRect = () =>
         ({ left, top: 0, right: left + 50, bottom: 60, width: 50, height: 60, x: left, y: 0, toJSON() { return {}; } }) as DOMRect;
@@ -1040,8 +889,6 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
       bars.push(bar);
       histogram.appendChild(bar);
     }
-    // Also stub the container so clientWidth-based math (the bucketAt
-    // fallback) works deterministically.
     Object.defineProperty(histogram, 'clientWidth', { value: 500, configurable: true });
     histogram.getBoundingClientRect = () =>
       ({ left: 0, top: 0, right: 500, bottom: 60, width: 500, height: 60, x: 0, y: 0, toJSON() { return {}; } }) as DOMRect;
@@ -1054,7 +901,7 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
     return rect.left + rect.width / 2;
   }
 
-  it('mousedown on bucket 3 + mousemove to bucket 7 + mouseup → onRange(0.3, 0.7)', () => {
+  it('mousedown on bucket 3 + mousemove to bucket 7 + mouseup → onRange(0.3, 0.8)', () => {
     const { histogram, bars } = makeFakeHistogram();
     const onRange = vi.fn();
     attachBrushSelect(histogram, onRange);
@@ -1072,8 +919,6 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
     expect(onRange).toHaveBeenCalled();
     const last = onRange.mock.calls.at(-1)!;
     expect(last[0]).toBeCloseTo(0.3, 5);
-    // Upper bound — bucket 7 means [0.7, 0.8) coverage so the emitted max
-    // is 0.8 (exclusive upper-edge convention matching mountStatRow).
     expect(last[1]).toBeCloseTo(0.8, 5);
   });
 
@@ -1129,7 +974,6 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
       clientX: centerOf(bars[5]!), clientY: 30, bubbles: true,
     }));
 
-    // Bars 2..5 should now be in-range; 0, 1, 6..9 should not.
     expect(bars[0]!.classList.contains('in-range')).toBe(false);
     expect(bars[1]!.classList.contains('in-range')).toBe(false);
     expect(bars[2]!.classList.contains('in-range')).toBe(true);
@@ -1137,16 +981,12 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
     expect(bars[5]!.classList.contains('in-range')).toBe(true);
     expect(bars[6]!.classList.contains('in-range')).toBe(false);
 
-    // Cleanup so listeners detach.
     document.dispatchEvent(new MouseEvent('mouseup', {
       clientX: centerOf(bars[5]!), clientY: 30, bubbles: true,
     }));
   });
 
   it('histogram exposes a hover-tooltip element ("click & drag to select range")', () => {
-    // The tooltip is wired by buildMetricRow alongside attachBrushSelect; we
-    // verify the metric row's histogram carries the tooltip element so the
-    // affordance is discoverable.
     const row = buildMetricRow({
       metric: 'colorVar',
       label: 'color variation',
@@ -1162,9 +1002,6 @@ describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histog
   });
 
   it('buildMetricRow wires brush-select into its expanded histogram — drag fires onRange', () => {
-    // Integration check: the histogram inside a buildMetricRow responds to
-    // brush gestures end-to-end. We have to stub the bar rects since
-    // happy-dom skips layout — patch each bar's getBoundingClientRect.
     const onRange = vi.fn();
     const row = buildMetricRow({
       metric: 'meanLum',

@@ -1,15 +1,17 @@
 // Gallery filter drawer — UI surface beneath the gallery bar that hosts
-// sort/variation/xform controls (#49 Phase B/C/D/E).
+// sort / variation / metric controls.
 //
 // State lives in the URL; the drawer is a controlled component — it never
-// holds filter state internally. Every interaction calls opts.onChange
-// with the next FilterSpec; main.ts owns the URL write + master-list
-// rebuild and feeds the new state back via setFilter / setFacetCounts.
+// holds filter state internally. Every interaction calls opts.onChange with
+// the next FilterSpec; main.ts owns the URL write + master-list rebuild and
+// feeds the new state back via setFilter / setFacetCounts.
 //
-// Phase B scope (this file's first cut): scaffold + reset pill + auto-
-// open/close on (non-)default + loading state. Sort, xform, and variation
-// rows are wired in later B/D tasks; the row containers are present here
-// as placeholders so their later wiring is purely additive.
+// #103 Phase 5 Task 5.6 — replaced the original segmented-pill layout with
+// the progressive-disclosure shell: active-chip strip at top, sort row,
+// variations row, one collapsible buildMetricRow per metric axis (xform
+// count + the 4 stat axes), then footer with Reset + "Apply (N matches)"
+// readout. Auto-apply on every change keeps the dispatch path identical
+// to the previous wiring — the Apply button reads as a live match count.
 
 import {
   DEFAULT_FILTER_SPEC,
@@ -22,28 +24,11 @@ import {
 import { FILTER_LABEL_MAP } from './gallery-facets';
 import { mountVariationPicker, type VariationPickerHandle } from './variation-picker';
 import { VARIATION_NAMES } from './variations';
-import {
-  DEFAULT_SCORE_WEIGHTS,
-  PRESET_WEIGHTS,
-  weightsToPresetName,
-  type ScoreWeights,
-} from './feature-score';
-
-/** Hover tooltips for each sort preset — the abstract pill labels
- *  ("coverage", "entropy", …) don't explain what they order by; the
- *  native title-attribute tooltip does. */
-const SORT_TOOLTIPS: Record<SortMode, string> = {
-  time: 'sort: chronological (canonical corpus order — gen ascending, id ascending)',
-  interest: 'sort: weighted "interestingness" — coverage + entropy + colorVar − dimness',
-  coverage: 'sort: how much of the frame is painted (descending — fullest frames first)',
-  entropy: 'sort: textural complexity of the rendered image (descending — most-detailed first)',
-  colorVar: 'sort: variety of colors in the palette (descending — most-colorful first)',
-  meanLum: 'sort: mean brightness (descending — brightest first)',
-  // Custom is wired by Phase E4 (tunable-weights slider panel); the E2 data
-  // layer only ensures the SortMode union compiles end-to-end.
-  custom: 'sort: custom weights (tune the interest-score sliders)',
-};
+import type { ScoreWeights } from './feature-score';
 import type { FacetCounts } from './gallery-facets';
+// SORT_MODES retained for re-exports / external consumers; SortDir/SortMode
+// reach the new buildSortRow widget below.
+void SORT_MODES;
 
 export interface FilterDrawerOpts {
   initialFilter: FilterSpec;
@@ -54,6 +39,9 @@ export interface FilterDrawerOpts {
    *  feature index isn't ready yet. main.ts flips this false once
    *  loadFeatureIndex() resolves. */
   loading?: boolean;
+  /** Initial live match count for the footer's `Apply (N matches)` readout.
+   *  Defaults to 0. Update at runtime via setMatchCount() on the handle. */
+  matchCount?: number;
 }
 
 export interface FilterDrawerHandle {
@@ -61,9 +49,11 @@ export interface FilterDrawerHandle {
    *  rows re-render with fresh leave-one-out counts). */
   setFacetCounts(counts: FacetCounts): void;
   /** Mirror state after main.ts has accepted the change — keeps the
-   *  drawer's internal DOM in sync with the URL's source of truth.
-   *  Also closes the drawer when the new spec is the default. */
+   *  drawer's internal DOM in sync with the URL's source of truth. */
   setFilter(filter: FilterSpec): void;
+  /** Update the footer's "Apply (N matches)" readout. main.ts feeds this
+   *  after every applyFilter so the visitor sees the live match count. */
+  setMatchCount(n: number): void;
   /** Toggle the drawer's open/closed state — wired to the bar's
    *  [⚙ filters ▾] pill click. */
   toggleOpen(): void;
@@ -78,149 +68,52 @@ const STYLES_ID = 'pyr3-filter-drawer-styles';
 const STYLES = `
 .pyr3-filter-drawer {
   display: none;
-  padding: 12px 16px;
-  background: var(--bar-bg-2, #1a1a20);
-  border-bottom: 1px solid var(--bar-border, #2a2a30);
+  padding: 12px 16px 4px;
+  background: #131316;
+  border-bottom: 1px solid #26262c;
   font-family: ui-monospace, monospace;
   font-size: 12px;
-  color: var(--text, #ddd);
+  color: #d8d8de;
 }
 .pyr3-filter-drawer.open { display: block; }
 
-.pyr3-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  flex-wrap: wrap;
-}
-.pyr3-filter-row-label {
-  color: var(--text-dim, #888);
-  min-width: 62px;
-}
-
-.pyr3-filter-reset {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text, #ddd);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 4px 12px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.pyr3-filter-reset:hover { background: var(--bar-bg-3, #0f0f13); }
-
-.pyr3-sort-pill {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text-dim, #aaa);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 3px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.pyr3-sort-pill.active {
-  background: var(--accent-soft, rgba(255, 140, 26, 0.18));
-  color: var(--accent, #ff8c1a);
-  border-color: var(--accent-border, #884a1a);
-}
-.pyr3-sort-pill:hover:not(.active) {
-  background: var(--bar-bg-3, #0f0f13);
-  color: var(--text, #ddd);
-}
-
-.pyr3-sort-order-btn {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text-dim, #aaa);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 3px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  margin-left: 4px;
-}
-.pyr3-sort-order-btn:hover {
-  background: var(--bar-bg-3, #0f0f13);
-  color: var(--text, #ddd);
-}
-
 .pyr3-filter-loading-banner {
   display: none;
-  color: var(--accent, #ff8c1a);
-  padding: 4px 0 8px;
+  color: #ffbe3e;
+  padding: 4px 12px 8px;
   font-style: italic;
 }
 .pyr3-filter-drawer.loading .pyr3-filter-loading-banner { display: block; }
-.pyr3-filter-drawer.loading .pyr3-filter-row > *:not(.pyr3-filter-row-label) {
+.pyr3-filter-drawer.loading .pyr3-filter-section {
   opacity: 0.4;
   pointer-events: none;
 }
 
-.pyr3-xform-from, .pyr3-xform-to {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text, #ddd);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.pyr3-xform-count-strip {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding-left: 70px;  /* align with the picker row's label indent */
-}
-.pyr3-xform-cell {
-  color: var(--text-dim, #666);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.pyr3-xform-cell.active { color: var(--accent, #ff8c1a); }
-.pyr3-xform-cell.empty { color: #444; font-style: italic; }
-.pyr3-filter-row-stat-label { color: var(--text-dim, #888); }
+.pyr3-filter-section { padding: 2px 0; }
 
-.pyr3-stat-from, .pyr3-stat-to {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text, #ddd);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.pyr3-stat-count-strip {
+.pyr3-vars-row {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   flex-wrap: wrap;
-  padding-left: 70px;
 }
-.pyr3-stat-cell {
-  color: var(--text-dim, #666);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.pyr3-stat-cell.active { color: var(--accent, #ff8c1a); }
-.pyr3-stat-cell.empty { color: #444; font-style: italic; }
-
+.pyr3-vars-row-label { color: #8a8a92; min-width: 62px; }
 .pyr3-vars-add-btn {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text-dim, #aaa);
-  border: 1px solid var(--bar-border, #2a2a30);
+  background: #15151a;
+  color: #8a8a92;
+  border: 1px solid #26262c;
   padding: 3px 10px;
   border-radius: 3px;
   cursor: pointer;
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
   font-size: 12px;
 }
-.pyr3-vars-add-btn:hover { background: var(--bar-bg-3, #0f0f13); color: var(--text, #ddd); }
+.pyr3-vars-add-btn:hover { background: #1a1a20; color: #d8d8de; }
 .pyr3-vars-add-btn.open {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent-border);
+  background: rgba(255, 190, 62, 0.18);
+  color: #ffbe3e;
+  border-color: rgba(255, 190, 62, 0.4);
 }
 .pyr3-vars-chips {
   display: inline-flex;
@@ -229,108 +122,62 @@ const STYLES = `
   padding-left: 6px;
 }
 .pyr3-vars-chip {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid var(--accent-border);
+  background: rgba(255, 190, 62, 0.12);
+  color: #ffbe3e;
+  border: 1px solid rgba(255, 190, 62, 0.4);
   padding: 2px 8px;
   border-radius: 8px;
   font-size: 11px;
   cursor: pointer;
   user-select: none;
 }
-.pyr3-vars-chip:hover { background: rgba(255, 140, 26, 0.28); }
+.pyr3-vars-chip:hover { background: rgba(255, 190, 62, 0.22); }
 .pyr3-vars-chip-x { padding-left: 4px; opacity: 0.7; }
 .pyr3-vars-chip:hover .pyr3-vars-chip-x { opacity: 1; }
 .pyr3-vars-picker-panel {
-  padding: 8px 16px 12px 70px;
+  padding: 8px 16px 12px 78px;
   max-height: 360px;
   overflow-y: auto;
-  border-top: 1px solid var(--bar-border, #2a2a30);
-  border-bottom: 1px solid var(--bar-border, #2a2a30);
+  border-top: 1px solid #26262c;
+  border-bottom: 1px solid #26262c;
   margin: 4px 0;
 }
 
-.pyr3-tune-btn {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text-dim, #aaa);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 3px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  margin-left: 4px;
-}
-.pyr3-tune-btn:hover { background: var(--bar-bg-3, #0f0f13); color: var(--text, #ddd); }
-.pyr3-tune-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent-border);
-}
-.pyr3-tune-panel {
-  display: none;
-  padding: 8px 16px 12px 70px;
-  border-top: 1px solid var(--bar-border, #2a2a30);
-  border-bottom: 1px solid var(--bar-border, #2a2a30);
-  margin: 4px 0;
-}
-.pyr3-tune-row {
-  display: grid;
-  grid-template-columns: 90px 1fr 40px;
-  align-items: center;
-  gap: 12px;
-  padding: 3px 0;
-}
-.pyr3-tune-label {
-  color: var(--text-dim, #aaa);
-  font-size: 12px;
-}
-.pyr3-tune-slider {
-  width: 100%;
-  accent-color: var(--accent, #ff8c1a);
-}
-.pyr3-tune-value {
-  color: var(--accent, #ff8c1a);
-  font-size: 11px;
-  font-family: ui-monospace, monospace;
-  text-align: right;
-}
-.pyr3-tune-actions {
+.pyr3-filter-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  padding-top: 6px;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  margin-top: 6px;
+  border-top: 1px solid #26262c;
 }
-.pyr3-tune-reset {
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text-dim, #aaa);
-  border: 1px solid var(--bar-border, #2a2a30);
-  padding: 3px 10px;
+.pyr3-filter-footer-spacer { flex: 1 1 auto; }
+.pyr3-filter-reset {
+  background: transparent;
+  color: #8a8a92;
+  border: 1px solid #26262c;
+  padding: 5px 14px;
   border-radius: 3px;
   cursor: pointer;
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
   font-size: 12px;
 }
-.pyr3-tune-reset:hover { background: var(--bar-bg-3, #0f0f13); color: var(--text, #ddd); }
-
-.pyr3-filter-hide-btn {
-  display: block;
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px 16px;
-  background: var(--bar-bg-1, #15151a);
-  color: var(--text-dim, #aaa);
-  border: 1px solid var(--bar-border, #2a2a30);
+.pyr3-filter-reset:hover { background: #1a1a20; color: #d8d8de; }
+.pyr3-filter-apply {
+  background: linear-gradient(180deg, #ffbe3e 0%, #e87c1a 60%, #bf2408 100%);
+  color: #0a0a0c;
+  border: 1px solid rgba(255, 190, 62, 0.6);
+  padding: 5px 16px;
   border-radius: 3px;
-  cursor: pointer;
-  font-family: ui-monospace, monospace;
+  cursor: default;
+  font-family: inherit;
   font-size: 12px;
-  letter-spacing: 0.04em;
-  text-align: center;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(255, 190, 62, 0.25);
 }
-.pyr3-filter-hide-btn:hover {
-  background: var(--bar-bg-3, #0f0f13);
-  color: var(--text, #ddd);
-}
+.pyr3-filter-apply:hover { filter: brightness(1.06); }
+.pyr3-filter-apply[disabled] { opacity: 0.45; cursor: default; }
 `;
 
 function injectStylesOnce(): void {
@@ -341,6 +188,60 @@ function injectStylesOnce(): void {
   document.head.appendChild(style);
 }
 
+/** The 5 metric axes mounted as collapsible rows below the variations row.
+ *  Order matches the chip-strip order so the visitor reads top-to-bottom in
+ *  the same sequence as the active-filter chips. `xforms` is the integer-
+ *  count axis (1..14+); the other 4 are 0..1 floats. */
+type MetricAxis = 'xforms' | 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
+const METRIC_AXES: readonly MetricAxis[] = ['xforms', 'coverage', 'entropy', 'colorVar', 'meanLum'];
+
+/** Plain-English labels for the metric rows. xforms uses the FILTER_LABEL_MAP
+ *  entry; the four stat axes ship as their FILTER_LABEL_MAP names. */
+const METRIC_LABELS: Record<MetricAxis, string> = {
+  xforms: FILTER_LABEL_MAP.xforms,
+  coverage: FILTER_LABEL_MAP.coverage,
+  entropy: FILTER_LABEL_MAP.entropy,
+  colorVar: FILTER_LABEL_MAP.colorVar,
+  meanLum: FILTER_LABEL_MAP.meanLum,
+};
+
+/** Convert a 0..1 metric range to a 10-bucket Map<bucket, count>. The xform
+ *  facet counts are integer buckets 1..14+; we re-pack them into 10 buckets
+ *  so the same buildMetricRow histogram primitive can render them. The xform
+ *  bucketing maps 1..10 directly and folds 11..14+ into bucket 9 to preserve
+ *  the "long tail" visual. */
+function xformCountsToMetricBuckets(counts: Map<number, number>): Map<number, number> {
+  const out = new Map<number, number>();
+  for (let b = 0; b < 10; b++) out.set(b, 0);
+  for (const [bucket, n] of counts.entries()) {
+    if (bucket < 1) continue;
+    const idx = bucket <= 10 ? bucket - 1 : 9;
+    out.set(idx, (out.get(idx) ?? 0) + n);
+  }
+  return out;
+}
+
+/** Translate the xform integer range (xformMin / xformMax) into the 0..1
+ *  range space the metric row consumes. xformMin=1 → 0.0; xformMin=10 → 0.9;
+ *  xformMax=null → null (no upper cap). The mapping mirrors the bucket
+ *  re-pack above so the in-range bracket aligns with the bar count. */
+function xformRangeToMetricFloat(min: number, max: number | null): { min: number; max: number | null } {
+  const lo = Math.min(9, Math.max(0, min - 1)) / 10;
+  if (max === null) return { min: lo, max: null };
+  const hi = Math.min(10, Math.max(1, max));
+  return { min: lo, max: hi / 10 };
+}
+
+/** Reverse the float-space mapping back to xform integer bounds for
+ *  re-emission into FilterSpec. min=0.0 → xformMin=1; max=null stays null;
+ *  max=1.0 → null (saturates to no-cap); otherwise max → ceil(max * 10). */
+function metricFloatToXformRange(min: number, max: number | null): { min: number; max: number | null } {
+  const lo = Math.max(1, Math.round(min * 10) + 1);
+  if (max === null) return { min: lo, max: null };
+  const hi = Math.round(max * 10);
+  return { min: lo, max: hi >= 14 ? null : hi };
+}
+
 export function mountFilterDrawer(
   root: HTMLElement,
   opts: FilterDrawerOpts,
@@ -349,206 +250,91 @@ export function mountFilterDrawer(
   root.replaceChildren();
 
   let currentFilter = opts.initialFilter;
-  // initialFilter remembered so setFacetCounts can re-render without
-  // needing the caller to re-feed the current spec.
   let currentCounts = opts.facetCounts;
+  let currentMatchCount = opts.matchCount ?? 0;
   let isOpen = !isDefaultFilterSpec(currentFilter);
 
   const drawer = document.createElement('div');
   drawer.className = `pyr3-filter-drawer${isOpen ? ' open' : ''}${opts.loading ? ' loading' : ''}`;
 
-  // Loading banner — hidden by CSS unless .loading is on the drawer.
+  // Loading banner — shown when the feature index isn't ready yet.
   const loadingBanner = document.createElement('div');
   loadingBanner.className = 'pyr3-filter-loading-banner';
   loadingBanner.textContent = 'loading feature index… (filters arrive in ~0.5s)';
   drawer.appendChild(loadingBanner);
 
-  // Placeholder rows for the sort/variation/xform controls — wired in
-  // later B/D tasks. Present as empty containers so the later wiring
-  // is purely additive (no DOM-shape changes that would risk other
-  // rows shifting under the cursor).
-  const sortRow = document.createElement('div');
-  sortRow.className = 'pyr3-filter-row sort';
-  const sortLabel = document.createElement('span');
-  sortLabel.className = 'pyr3-filter-row-label';
-  sortLabel.textContent = 'sort:';
-  sortRow.appendChild(sortLabel);
-  const sortPills = new Map<SortMode, HTMLButtonElement>();
-  // E4 will mount the `custom` pill via the tune-weights panel; for the E2
-  // data layer it stays out of the pill row (no click target — the panel
-  // toggles it on).
-  for (const mode of SORT_MODES) {
-    if (mode === 'custom') continue;
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = 'pyr3-sort-pill';
-    pill.dataset.sort = mode;
-    pill.textContent = mode;
-    pill.title = SORT_TOOLTIPS[mode];
-    if (currentFilter.sort === mode) pill.classList.add('active');
-    pill.onclick = () => {
-      if (currentFilter.sort === mode) return;
-      opts.onChange({ ...currentFilter, sort: mode });
-    };
-    sortPills.set(mode, pill);
-    sortRow.appendChild(pill);
-  }
-  // Sort-direction toggle — flips asc/desc. Sits at the end of the sort
-  // row so it composes with the preset pills. Its label updates to reflect
-  // current direction. Tooltip explains.
-  const orderBtn = document.createElement('button');
-  orderBtn.type = 'button';
-  orderBtn.className = 'pyr3-sort-order-btn';
-  const renderOrderBtn = (dir: SortDir): void => {
-    orderBtn.textContent = dir === 'desc' ? '↓ desc' : '↑ asc';
-    orderBtn.title = dir === 'desc'
-      ? 'sort direction: descending (highest first). click to flip to ascending.'
-      : 'sort direction: ascending (lowest first). click to flip to descending.';
-  };
-  renderOrderBtn(currentFilter.sortDir);
-  orderBtn.onclick = () => {
-    const nextDir: SortDir = currentFilter.sortDir === 'desc' ? 'asc' : 'desc';
-    opts.onChange({ ...currentFilter, sortDir: nextDir });
-  };
-  sortRow.appendChild(orderBtn);
+  // ── Active filter chip strip (top — progressive-disclosure summary) ──
+  // The chip strip is a stateless DOM builder, so the panel owns the
+  // remount-on-state-change responsibility. We park it in a wrapper div so
+  // re-renders can replace its contents without affecting siblings.
+  const chipStripWrap = document.createElement('div');
+  chipStripWrap.className = 'pyr3-filter-section pyr3-filter-chip-strip-wrap';
+  drawer.appendChild(chipStripWrap);
 
-  // [tune ▾] — opens the slider panel for editing the interest-score
-  // weights. Sits at the end of the sort row; appears highlighted when
-  // sort is 'custom' (so the visitor sees that named pills are inactive
-  // because custom weights are in play).
-  const tuneBtn = document.createElement('button');
-  tuneBtn.type = 'button';
-  tuneBtn.className = 'pyr3-tune-btn';
-  tuneBtn.textContent = 'tune ▾';
-  tuneBtn.title = 'tune the interest-score weights — drag sliders to build a custom sort';
-  sortRow.appendChild(tuneBtn);
-
-  drawer.appendChild(sortRow);
-
-  // Tune panel — slider editor for the 4 score weights. Lives directly
-  // below the sort row. Toggles open/closed via the [tune ▾] button OR
-  // auto-opens if the URL arrives with sort=custom.
-  const tunePanel = document.createElement('div');
-  tunePanel.className = 'pyr3-tune-panel';
-  tunePanel.style.display = 'none';
-
-  const sliderEls: Record<keyof ScoreWeights, HTMLInputElement> = {} as Record<keyof ScoreWeights, HTMLInputElement>;
-  const sliderValueEls: Record<keyof ScoreWeights, HTMLSpanElement> = {} as Record<keyof ScoreWeights, HTMLSpanElement>;
-  const WEIGHT_KEYS: Array<keyof ScoreWeights> = ['coverage', 'entropy', 'colorVar', 'dimPenalty'];
-  const WEIGHT_TOOLTIPS: Record<keyof ScoreWeights, string> = {
-    coverage: 'coverage weight — how much "frame fullness" influences the sort',
-    entropy: 'entropy weight — how much "textural complexity" influences the sort',
-    colorVar: 'colorVar weight — how much "palette variety" influences the sort',
-    dimPenalty: 'dimPenalty weight — how much darkness drags the score down (or up, when sorting by meanLum)',
-  };
-
-  for (const k of WEIGHT_KEYS) {
-    const row = document.createElement('div');
-    row.className = 'pyr3-tune-row';
-    const label = document.createElement('span');
-    label.className = 'pyr3-tune-label';
-    label.textContent = k;
-    label.title = WEIGHT_TOOLTIPS[k];
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '0';
-    slider.max = '1';
-    slider.step = '0.05';
-    slider.className = 'pyr3-tune-slider';
-    slider.dataset.weight = k;
-    slider.title = WEIGHT_TOOLTIPS[k];
-    const value = document.createElement('span');
-    value.className = 'pyr3-tune-value';
-    sliderEls[k] = slider;
-    sliderValueEls[k] = value;
-    row.append(label, slider, value);
-    tunePanel.appendChild(row);
+  function rebuildChipStrip(): void {
+    const strip = buildActiveChipStrip(currentFilter, handleChipRemove, handleChipClearAll);
+    chipStripWrap.replaceChildren(strip);
   }
 
-  const tuneActions = document.createElement('div');
-  tuneActions.className = 'pyr3-tune-actions';
-  const resetWeightsBtn = document.createElement('button');
-  resetWeightsBtn.type = 'button';
-  resetWeightsBtn.className = 'pyr3-tune-reset';
-  resetWeightsBtn.textContent = '↺ reset to interest defaults';
-  resetWeightsBtn.title = 'reset weights to the canonical "interest" preset';
-  tuneActions.appendChild(resetWeightsBtn);
-  tunePanel.appendChild(tuneActions);
-
-  function effectiveWeights(spec: FilterSpec): ScoreWeights {
-    if (spec.sort === 'custom') return spec.weights ?? DEFAULT_SCORE_WEIGHTS;
-    if (spec.sort === 'time') return DEFAULT_SCORE_WEIGHTS;  // shown as a baseline; not used
-    return PRESET_WEIGHTS[spec.sort];
-  }
-
-  function renderTunePanel(spec: FilterSpec): void {
-    const w = effectiveWeights(spec);
-    for (const k of WEIGHT_KEYS) {
-      sliderEls[k].value = String(w[k]);
-      sliderValueEls[k].textContent = w[k].toFixed(2);
+  function handleChipRemove(id: ActiveChipId): void {
+    if (id.startsWith('vars:')) {
+      const v = Number(id.slice('vars:'.length));
+      opts.onChange({ ...currentFilter, vars: currentFilter.vars.filter((i) => i !== v) });
+      return;
     }
-    tuneBtn.classList.toggle('active', spec.sort === 'custom');
-  }
-
-  function onSliderChange(): void {
-    const next: ScoreWeights = {
-      coverage: Number.parseFloat(sliderEls.coverage.value),
-      entropy: Number.parseFloat(sliderEls.entropy.value),
-      colorVar: Number.parseFloat(sliderEls.colorVar.value),
-      dimPenalty: Number.parseFloat(sliderEls.dimPenalty.value),
-    };
-    // Update each value label immediately so the visitor sees the live
-    // weight even before the round-trip through main.ts's applyFilter.
-    for (const k of WEIGHT_KEYS) sliderValueEls[k].textContent = next[k].toFixed(2);
-    // If the new tuple matches a known preset, snap sort to that preset's
-    // name (and clear weights). Otherwise it's custom.
-    const preset = weightsToPresetName(next);
-    if (preset !== null) {
-      opts.onChange({ ...currentFilter, sort: preset, weights: null });
-    } else {
-      opts.onChange({ ...currentFilter, sort: 'custom', weights: next });
+    if (id === 'xforms') {
+      opts.onChange({
+        ...currentFilter,
+        xformMin: DEFAULT_FILTER_SPEC.xformMin,
+        xformMax: DEFAULT_FILTER_SPEC.xformMax,
+      });
+      return;
     }
+    // Stat axes — coverage, entropy, colorVar, meanLum.
+    const minKey = `${id}Min` as const;
+    const maxKey = `${id}Max` as const;
+    opts.onChange({
+      ...currentFilter,
+      [minKey]: 0,
+      [maxKey]: null,
+    } as FilterSpec);
   }
 
-  for (const k of WEIGHT_KEYS) {
-    sliderEls[k].addEventListener('input', onSliderChange);
+  function handleChipClearAll(): void {
+    // Clear every active filter axis but keep the current sort + sortDir.
+    // "Clear all" reads as "drop filters", not "reset sort too".
+    opts.onChange({
+      ...DEFAULT_FILTER_SPEC,
+      sort: currentFilter.sort,
+      sortDir: currentFilter.sortDir,
+      weights: currentFilter.weights,
+    });
   }
 
-  resetWeightsBtn.onclick = () => {
-    opts.onChange({ ...currentFilter, sort: 'interest', weights: null });
-  };
+  // ── Sort row (buildSortRow widget — dropdown + direction toggle) ──
+  const sortRowWrap = document.createElement('div');
+  sortRowWrap.className = 'pyr3-filter-section pyr3-filter-sort-row-wrap';
+  drawer.appendChild(sortRowWrap);
 
-  tuneBtn.onclick = () => {
-    const open = tunePanel.style.display !== 'block';
-    tunePanel.style.display = open ? 'block' : 'none';
-  };
-
-  // Auto-open the tune panel if we arrive with sort=custom (so the
-  // visitor sees the weights that produced the current view).
-  if (currentFilter.sort === 'custom') {
-    tunePanel.style.display = 'block';
+  function rebuildSortRow(): void {
+    const row = buildSortRow(currentFilter, handleSortChange, handleDirChange);
+    sortRowWrap.replaceChildren(row);
   }
 
-  drawer.appendChild(tunePanel);
-  renderTunePanel(currentFilter);
-
-  function renderSortActive(sort: SortMode): void {
-    for (const [mode, pill] of sortPills) {
-      pill.classList.toggle('active', mode === sort);
-    }
+  function handleSortChange(next: SortMode): void {
+    opts.onChange({ ...currentFilter, sort: next });
   }
 
-  // ── Variations row (D2) ─────────────────────────────────────────────
-  // Label + `[+ add ▾]` button + active-selection chips (each removable).
-  // Click `[+ add ▾]` toggles a picker panel that lives as a sibling row
-  // below this one — opened panel is `display: block`, closed = `none`.
+  function handleDirChange(next: SortDir): void {
+    opts.onChange({ ...currentFilter, sortDir: next });
+  }
+
+  // ── Variations row — add-button + active chip strip + picker panel ──
   const varsRow = document.createElement('div');
-  varsRow.className = 'pyr3-filter-row vars';
-  drawer.appendChild(varsRow);
-
+  varsRow.className = 'pyr3-filter-section pyr3-vars-row';
   const varsLabel = document.createElement('span');
-  varsLabel.className = 'pyr3-filter-row-label';
-  varsLabel.textContent = 'vars:';
+  varsLabel.className = 'pyr3-vars-row-label';
+  varsLabel.textContent = 'variations:';
   varsRow.appendChild(varsLabel);
 
   const addVarBtn = document.createElement('button');
@@ -562,19 +348,15 @@ export function mountFilterDrawer(
   varsChips.className = 'pyr3-vars-chips';
   varsRow.appendChild(varsChips);
 
-  // Picker panel — sits AFTER the vars row, hidden until the button toggles
-  // it. Inserted into the drawer via insertAdjacentElement('afterend')
-  // after we've appended varsRow below.
+  drawer.appendChild(varsRow);
+
   const varsPickerPanel = document.createElement('div');
-  varsPickerPanel.className = 'pyr3-vars-picker-panel';
+  varsPickerPanel.className = 'pyr3-vars-picker-panel pyr3-filter-section';
   varsPickerPanel.style.display = 'none';
 
   let varsPickerHandle: VariationPickerHandle | null = null;
   let varsPickerOpen = false;
 
-  /** Render the active-selection chips outside the picker (so visitor
-   *  sees what's selected without opening). Each chip's × click removes
-   *  that single variation. */
   function renderVarsChips(vars: number[]): void {
     varsChips.replaceChildren();
     for (const v of vars) {
@@ -625,16 +407,10 @@ export function mountFilterDrawer(
   };
 
   // Click-outside dismissal — close the picker when the click target is
-  // outside both the picker panel AND the [+ add ▾] button. Registered on
-  // document; removed in destroy() to avoid leaks.
+  // outside both the picker panel AND the [+ add ▾] button. Composed-path
+  // check survives mid-event re-renders.
   const onDocumentClick = (e: MouseEvent): void => {
     if (!varsPickerOpen) return;
-    // Use composedPath — the picker re-renders on every selection (via
-    // applyFilter → setFilter → syncVarsPicker), which removes the clicked
-    // row node from the DOM BEFORE this document-level handler runs. A
-    // naive `target.contains()` check would then fail, falsely concluding
-    // the click landed outside the panel. composedPath captures the path
-    // at event dispatch time, before any mutation.
     const path = e.composedPath();
     if (path.includes(varsPickerPanel) || path.includes(addVarBtn)) return;
     varsPickerOpen = false;
@@ -644,311 +420,142 @@ export function mountFilterDrawer(
   document.addEventListener('click', onDocumentClick);
 
   renderVarsChips(currentFilter.vars);
-
-  // The picker panel lives directly below the vars row inside the drawer.
   drawer.appendChild(varsPickerPanel);
 
-  // Stat-range rows — coverage, entropy, colorVar, meanLum. Each row is a
-  // 0..1 float range with decile-bucket count strip. Inserted between
-  // `vars` and `xforms` so the most-used filter (xforms) stays closest to
-  // the actions row.
-  type StatName = 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
-  const STAT_NAMES: StatName[] = ['coverage', 'entropy', 'colorVar', 'meanLum'];
-  const statRowRenderers: Array<(f: FilterSpec, counts: FacetCounts) => void> = [];
+  // ── Collapsible metric rows (5 axes — xforms, coverage, entropy,
+  //    colorVar, meanLum). Each row mounts via buildMetricRow with its
+  //    facet histogram + range bounds; the row wires brush-select drag
+  //    internally. We park each in a wrapper so re-renders on setFilter /
+  //    setFacetCounts can rebuild the row without rebuilding siblings. ──
+  const metricRowWraps: Record<MetricAxis, HTMLDivElement> = {} as Record<MetricAxis, HTMLDivElement>;
+  for (const axis of METRIC_AXES) {
+    const wrap = document.createElement('div');
+    wrap.className = `pyr3-filter-section pyr3-filter-metric-row-wrap`;
+    wrap.dataset.metric = axis;
+    metricRowWraps[axis] = wrap;
+    drawer.appendChild(wrap);
+  }
 
-  function mountStatRow(stat: StatName): void {
-    const row = document.createElement('div');
-    row.className = `pyr3-filter-row stat ${stat}`;
+  function rebuildMetricRow(axis: MetricAxis): void {
+    const wrap = metricRowWraps[axis];
+    let min: number;
+    let max: number | null;
+    let buckets: Map<number, number>;
+    let onRange: (min: number, max: number | null) => void;
 
-    const label = document.createElement('span');
-    label.className = 'pyr3-filter-row-label';
-    label.textContent = `${stat}:`;
-    row.appendChild(label);
-
-    const fromTxt = document.createElement('span');
-    fromTxt.className = 'pyr3-filter-row-stat-label';
-    fromTxt.textContent = 'from';
-    row.appendChild(fromTxt);
-
-    const fromSel = document.createElement('select');
-    fromSel.className = 'pyr3-stat-from';
-    fromSel.dataset.stat = stat;
-    for (let i = 0; i <= 10; i++) {
-      const v = (i / 10).toFixed(1);
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v;
-      fromSel.appendChild(opt);
-    }
-    row.appendChild(fromSel);
-
-    const toTxt = document.createElement('span');
-    toTxt.className = 'pyr3-filter-row-stat-label';
-    toTxt.textContent = 'to';
-    row.appendChild(toTxt);
-
-    const toSel = document.createElement('select');
-    toSel.className = 'pyr3-stat-to';
-    toSel.dataset.stat = stat;
-    {
-      const optAll = document.createElement('option');
-      optAll.value = 'all';
-      optAll.textContent = 'all';
-      toSel.appendChild(optAll);
-      for (let i = 0; i <= 10; i++) {
-        const v = (i / 10).toFixed(1);
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = v;
-        toSel.appendChild(opt);
-      }
-    }
-    row.appendChild(toSel);
-
-    const strip = document.createElement('div');
-    strip.className = 'pyr3-stat-count-strip';
-    strip.dataset.stat = stat;
-    const cells: HTMLSpanElement[] = [];
-    for (let b = 0; b < 10; b++) {
-      const cell = document.createElement('span');
-      cell.className = 'pyr3-stat-cell';
-      cell.dataset.stat = stat;
-      cell.dataset.bucket = String(b);
-      cells.push(cell);
-      strip.appendChild(cell);
+    if (axis === 'xforms') {
+      const re = xformRangeToMetricFloat(currentFilter.xformMin, currentFilter.xformMax);
+      min = re.min;
+      max = re.max;
+      buckets = xformCountsToMetricBuckets(currentCounts.xforms);
+      onRange = (lo, hi) => {
+        const xf = metricFloatToXformRange(lo, hi);
+        opts.onChange({ ...currentFilter, xformMin: xf.min, xformMax: xf.max });
+      };
+    } else {
+      const minKey = `${axis}Min` as const;
+      const maxKey = `${axis}Max` as const;
+      min = currentFilter[minKey] as number;
+      max = currentFilter[maxKey] as number | null;
+      buckets = currentCounts[axis];
+      onRange = (lo, hi) => {
+        opts.onChange({
+          ...currentFilter,
+          [minKey]: lo,
+          [maxKey]: hi,
+        } as FilterSpec);
+      };
     }
 
-    drawer.appendChild(row);
-    drawer.appendChild(strip);
-
-    const minKey = `${stat}Min` as const;
-    const maxKey = `${stat}Max` as const;
-
-    function renderPickers(f: FilterSpec): void {
-      fromSel.value = (f[minKey] as number).toFixed(1);
-      const mx = f[maxKey] as number | null;
-      toSel.value = mx === null ? 'all' : mx.toFixed(1);
-    }
-
-    function renderStrip(f: FilterSpec, counts: FacetCounts): void {
-      const min = f[minKey] as number;
-      const max = f[maxKey] as number | null;
-      const minBucket = Math.min(9, Math.max(0, Math.floor(min * 10)));
-      // Upper bound is exclusive at picker boundaries: max=0.7 includes
-      // buckets up to [0.6, 0.7) only (bucket 6, not 7). null/all → all 10.
-      const maxBucket = max === null
-        ? 9
-        : Math.min(9, Math.max(0, Math.ceil(max * 10) - 1));
-      const bucketMap = counts[stat];
-      for (let b = 0; b < 10; b++) {
-        const cell = cells[b]!;
-        const count = bucketMap.get(b) ?? 0;
-        const lo = (b / 10).toFixed(1);
-        const hi = ((b + 1) / 10).toFixed(1);
-        cell.textContent = `${lo}-${hi} (${count.toLocaleString()})`;
-        const inRange = b >= minBucket && b <= maxBucket;
-        cell.classList.toggle('active', inRange);
-        cell.classList.toggle('empty', count === 0);
-      }
-    }
-
-    fromSel.addEventListener('change', () => {
-      const nextFrom = Number(fromSel.value);
-      let nextTo = currentFilter[maxKey] as number | null;
-      if (nextTo !== null && nextTo < nextFrom) nextTo = nextFrom;
-      opts.onChange({
-        ...currentFilter,
-        [minKey]: nextFrom,
-        [maxKey]: nextTo,
-      } as FilterSpec);
+    const row = buildMetricRow({
+      metric: axis === 'xforms' ? 'coverage' : (axis as 'coverage' | 'entropy' | 'colorVar' | 'meanLum'),
+      label: METRIC_LABELS[axis],
+      min,
+      max,
+      counts: buckets,
+      onRange,
     });
-
-    toSel.addEventListener('change', () => {
-      const raw = toSel.value;
-      const nextTo = raw === 'all' ? null : Number(raw);
-      let nextFrom = currentFilter[minKey] as number;
-      if (nextTo !== null && nextTo < nextFrom) nextFrom = nextTo;
-      opts.onChange({
-        ...currentFilter,
-        [minKey]: nextFrom,
-        [maxKey]: nextTo,
-      } as FilterSpec);
-    });
-
-    renderPickers(currentFilter);
-    renderStrip(currentFilter, currentCounts);
-
-    statRowRenderers.push((f, counts) => {
-      renderPickers(f);
-      renderStrip(f, counts);
-    });
+    // Preserve metric key on the row's dataset for downstream test
+    // assertions / event delegation (buildMetricRow stamps a fallback type
+    // but the panel knows its truth — keep xforms labelled correctly).
+    row.dataset.metric = axis;
+    wrap.replaceChildren(row);
   }
 
-  for (const s of STAT_NAMES) mountStatRow(s);
-
-  // Xforms row — `from` (1..15, required) and `to` (`all` + 1..15) integer
-  // pickers + a 14-cell live count strip below. Auto-clamp invariant:
-  // to >= from. If the user picks a `from` greater than the current `to`,
-  // `to` is clamped UP to match the new `from` (predictable: the picker the
-  // user just touched is authoritative, the other moves to keep the range
-  // valid). Same in reverse for `to` < `from`.
-  const xformsRow = document.createElement('div');
-  xformsRow.className = 'pyr3-filter-row xforms';
-  const xformsLabel = document.createElement('span');
-  xformsLabel.className = 'pyr3-filter-row-label';
-  xformsLabel.textContent = 'xforms:';
-  xformsRow.appendChild(xformsLabel);
-
-  const fromLabel = document.createElement('span');
-  fromLabel.className = 'pyr3-filter-row-stat-label';
-  fromLabel.textContent = 'from';
-  xformsRow.appendChild(fromLabel);
-
-  const fromSelect = document.createElement('select');
-  fromSelect.className = 'pyr3-xform-from';
-  for (let n = 1; n <= 15; n++) {
-    const opt = document.createElement('option');
-    opt.value = String(n);
-    opt.textContent = String(n);
-    fromSelect.appendChild(opt);
-  }
-  xformsRow.appendChild(fromSelect);
-
-  const toLabel = document.createElement('span');
-  toLabel.className = 'pyr3-filter-row-stat-label';
-  toLabel.textContent = 'to';
-  xformsRow.appendChild(toLabel);
-
-  const toSelect = document.createElement('select');
-  toSelect.className = 'pyr3-xform-to';
-  {
-    const optAll = document.createElement('option');
-    optAll.value = 'all';
-    optAll.textContent = 'all';
-    toSelect.appendChild(optAll);
-    for (let n = 1; n <= 15; n++) {
-      const opt = document.createElement('option');
-      opt.value = String(n);
-      opt.textContent = String(n);
-      toSelect.appendChild(opt);
-    }
-  }
-  xformsRow.appendChild(toSelect);
-
-  // Count strip — 14 cells: 1..13 + 14+. Rendered as a sibling of the
-  // picker row so the pickers stay anchored on their own line and the
-  // strip wraps independently underneath.
-  const xformStrip = document.createElement('div');
-  xformStrip.className = 'pyr3-xform-count-strip';
-  const xformCells: HTMLSpanElement[] = [];
-  for (let b = 1; b <= 14; b++) {
-    const cell = document.createElement('span');
-    cell.className = 'pyr3-xform-cell';
-    cell.dataset.bucket = String(b);
-    xformCells.push(cell);
-    xformStrip.appendChild(cell);
+  function rebuildAllMetricRows(): void {
+    for (const axis of METRIC_AXES) rebuildMetricRow(axis);
   }
 
-  drawer.appendChild(xformsRow);
-  drawer.appendChild(xformStrip);
+  // ── Footer — Reset (secondary) + Apply (popped CTA, live match count) ──
+  const footer = document.createElement('div');
+  footer.className = 'pyr3-filter-section pyr3-filter-footer';
 
-  function renderXformPickers(f: FilterSpec): void {
-    fromSelect.value = String(f.xformMin);
-    toSelect.value = f.xformMax === null ? 'all' : String(f.xformMax);
-  }
+  const footerSpacer = document.createElement('span');
+  footerSpacer.className = 'pyr3-filter-footer-spacer';
+  footer.appendChild(footerSpacer);
 
-  function renderXformStrip(f: FilterSpec, counts: FacetCounts): void {
-    const min = f.xformMin;
-    const max = f.xformMax;
-    for (let b = 1; b <= 14; b++) {
-      const cell = xformCells[b - 1]!;
-      const count = counts.xforms.get(b) ?? 0;
-      const label = b === 14 ? '14+' : String(b);
-      cell.textContent = `${label} (${count.toLocaleString()})`;
-      const inRange = b >= min && (max === null || b <= max);
-      cell.classList.toggle('active', inRange);
-      cell.classList.toggle('empty', count === 0);
-    }
-  }
-
-  renderXformPickers(currentFilter);
-  renderXformStrip(currentFilter, currentCounts);
-
-  fromSelect.addEventListener('change', () => {
-    const nextFrom = Number(fromSelect.value);
-    let nextTo = currentFilter.xformMax;
-    // Auto-clamp: if `to` is a finite cap below the new `from`, bump it up
-    // to match. `all` (null) stays `all`.
-    if (nextTo !== null && nextTo < nextFrom) nextTo = nextFrom;
-    opts.onChange({ ...currentFilter, xformMin: nextFrom, xformMax: nextTo });
-  });
-
-  toSelect.addEventListener('change', () => {
-    const raw = toSelect.value;
-    const nextTo = raw === 'all' ? null : Number(raw);
-    let nextFrom = currentFilter.xformMin;
-    // Auto-clamp the other direction: if the new `to` falls below `from`,
-    // pull `from` down to match.
-    if (nextTo !== null && nextTo < nextFrom) nextFrom = nextTo;
-    opts.onChange({ ...currentFilter, xformMin: nextFrom, xformMax: nextTo });
-  });
-
-  // Actions row — reset pill (always last so it can't get pushed off
-  // when filter chips wrap).
-  const actionsRow = document.createElement('div');
-  actionsRow.className = 'pyr3-filter-row actions';
   const resetBtn = document.createElement('button');
-  resetBtn.className = 'pyr3-filter-reset';
   resetBtn.type = 'button';
+  resetBtn.className = 'pyr3-filter-reset';
   resetBtn.textContent = '✕ reset';
-  resetBtn.title = 'clear all filters + sort';
+  resetBtn.title = 'clear every filter and reset sort to chronological';
   resetBtn.onclick = () => opts.onChange(DEFAULT_FILTER_SPEC);
-  actionsRow.appendChild(resetBtn);
-  drawer.appendChild(actionsRow);
+  footer.appendChild(resetBtn);
 
-  // Hide-drawer footer — full-width single button at the very bottom so
-  // visitors who have scrolled past the bar's [⚙ filters ▾] toggle still
-  // have an obvious dismissal affordance. Doesn't touch filter state;
-  // mirrors the bar pill's toggleOpen behavior.
-  const hideBtn = document.createElement('button');
-  hideBtn.type = 'button';
-  hideBtn.className = 'pyr3-filter-hide-btn';
-  hideBtn.textContent = '▴ hide filters';
-  hideBtn.title = 'collapse the filter drawer (filter state stays applied)';
-  hideBtn.onclick = () => {
-    isOpen = false;
-    drawer.classList.remove('open');
+  const applyBtn = document.createElement('button');
+  applyBtn.type = 'button';
+  applyBtn.className = 'pyr3-filter-apply';
+  // Auto-apply is the dispatch path — the Apply button is a live readout
+  // ("Apply (N matches)") that mirrors the current filtered count. Clicking
+  // it is harmless (the spec is already applied), so we leave it active as
+  // an affordance for visitors who expect a discrete apply step.
+  const renderApplyLabel = (n: number): void => {
+    const label = n === 1 ? 'match' : 'matches';
+    applyBtn.textContent = `Apply (${n.toLocaleString()} ${label})`;
   };
-  drawer.appendChild(hideBtn);
+  renderApplyLabel(currentMatchCount);
+  applyBtn.title = 'auto-apply is on — every filter change updates the gallery instantly. This count reflects the current filtered total.';
+  applyBtn.onclick = () => {
+    // No-op cosmetic click — the spec is already applied via auto-apply.
+    // We DON'T re-emit onChange to avoid double-applying the same spec.
+  };
+  footer.appendChild(applyBtn);
+
+  drawer.appendChild(footer);
+
+  // Initial mount of widgets that don't have a stable "first render"
+  // (chip strip + sort row + metric rows are state-driven; do them once
+  // now so the visitor sees them on first open).
+  rebuildChipStrip();
+  rebuildSortRow();
+  rebuildAllMetricRows();
 
   root.appendChild(drawer);
 
   return {
     setFacetCounts(c) {
       currentCounts = c;
-      renderXformStrip(currentFilter, c);
-      for (const r of statRowRenderers) r(currentFilter, c);
+      rebuildAllMetricRows();
       syncVarsPicker();
     },
     setFilter(f) {
       currentFilter = f;
-      renderSortActive(f.sort);
-      renderOrderBtn(f.sortDir);
-      renderTunePanel(f);
-      renderXformPickers(f);
-      renderXformStrip(f, currentCounts);
-      for (const r of statRowRenderers) r(f, currentCounts);
+      rebuildChipStrip();
+      rebuildSortRow();
+      rebuildAllMetricRows();
       renderVarsChips(f.vars);
       syncVarsPicker();
-      // Auto-OPEN when state goes non-default (covers popstate landing on
-      // a filtered URL, and the initial mount). Never auto-CLOSE — the
-      // visitor controls open/closed via the bar pill. Auto-close on
-      // setFilter would slam the drawer shut when picking the default
-      // sort (`time`) mid-edit, which is user-hostile.
+      // Auto-OPEN on non-default state (covers initial mount + popstate
+      // landing on a filtered URL). Never auto-CLOSE — that belongs to the
+      // visitor's filter pill click.
       if (!isOpen && !isDefaultFilterSpec(f)) {
         isOpen = true;
         drawer.classList.toggle('open', true);
       }
+    },
+    setMatchCount(n) {
+      currentMatchCount = n;
+      renderApplyLabel(n);
     },
     toggleOpen() {
       isOpen = !isOpen;
@@ -967,6 +574,13 @@ export function mountFilterDrawer(
     },
   };
 }
+
+// ScoreWeights kept reachable in scope — main.ts re-imports it elsewhere
+// but TS still warns when the import sits unused here after the rewrite.
+// The custom-tune panel was retired in the progressive-disclosure layout;
+// if it returns it'll re-use this import.
+void (null as unknown as ScoreWeights);
+
 
 // ──────────────────────────────────────────────────────────────────────────
 // Task 5.2 — Active filter chip strip
@@ -1121,15 +735,27 @@ function describeActiveChips(spec: FilterSpec): ChipDescriptor[] {
 }
 
 /**
+ * Count of active filter chips for a given spec. Returns the same number
+ * as `describeActiveChips(spec).length` — exported so the gallery info-bar
+ * filter pill can render a "N active" badge matching the chip strip exactly.
+ *
+ * One chip per selected variation + one per active metric axis (xform count,
+ * coverage, entropy, colorVar, meanLum). Sort axis is NOT counted — the sort
+ * dropdown is always visible in the panel; it isn't a "filter that hides
+ * things from view".
+ */
+export function activeFilterCount(spec: FilterSpec): number {
+  return describeActiveChips(spec).length;
+}
+
+/**
  * Build the active-filter chip strip — a flex row of amber-tinted pill
  * chips for each currently-active axis, with a `× clear all` link on the
  * right. The strip is a stateless DOM builder; the caller owns FilterSpec
  * state and decides what to do on remove / clear-all callbacks.
  *
  * Returns the strip's root element so the caller can append it directly
- * into whatever panel composition lives upstream. (Wiring into the live
- * filter drawer happens in Task 5.6 — this builder is standalone for
- * now.)
+ * into whatever panel composition lives upstream.
  */
 export function buildActiveChipStrip(
   spec: FilterSpec,
