@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { qTarget, BUILD_UP_TARGET_Q, samplesPerFrameForBuildUp } from './screensaver-pacing';
+import {
+  qTarget,
+  BUILD_UP_TARGET_Q,
+  cumulativeSamplesAt,
+  rampLabel,
+  RAMP_PRESETS,
+} from './screensaver-pacing';
 
 describe('qTarget', () => {
   it('is 0 at t=0', () => {
@@ -28,30 +34,80 @@ describe('qTarget', () => {
   });
 });
 
-describe('samplesPerFrameForBuildUp', () => {
-  it('computes per-frame samples for q=50 at hero dims, 30s, 30fps', () => {
-    // 50 × 1920 × 1080 = 103,680,000 total; / (30 × 30 frames) = 115,200/frame
-    expect(samplesPerFrameForBuildUp(50, 1920, 1080, 30, 30)).toBeCloseTo(115_200);
+describe('cumulativeSamplesAt', () => {
+  const TOTAL = 1_000_000;
+
+  it('returns 0 at t=0 regardless of ramp', () => {
+    expect(cumulativeSamplesAt(0, 30, TOTAL, 1.0)).toBe(0);
+    expect(cumulativeSamplesAt(0, 30, TOTAL, 2.0)).toBe(0);
+    expect(cumulativeSamplesAt(0, 30, TOTAL, 3.0)).toBe(0);
   });
 
-  it('returns the total budget for buildUpSec=0 (immediate finish)', () => {
-    // q=50 × 100×100 = 500_000 — all-in-one-frame.
-    expect(samplesPerFrameForBuildUp(50, 100, 100, 0, 30)).toBe(500_000);
+  it('returns totalSamples at t=buildUpSec regardless of ramp', () => {
+    expect(cumulativeSamplesAt(30, 30, TOTAL, 1.0)).toBe(TOTAL);
+    expect(cumulativeSamplesAt(30, 30, TOTAL, 2.0)).toBe(TOTAL);
+    expect(cumulativeSamplesAt(30, 30, TOTAL, 3.0)).toBe(TOTAL);
   });
 
-  it('returns the total budget for fps=0 (degenerate)', () => {
-    expect(samplesPerFrameForBuildUp(50, 100, 100, 30, 0)).toBe(500_000);
+  it('clamps at totalSamples past buildUpSec', () => {
+    expect(cumulativeSamplesAt(60, 30, TOTAL, 2.0)).toBe(TOTAL);
   });
 
-  it('scales inversely with buildUpSec', () => {
-    const a = samplesPerFrameForBuildUp(50, 1920, 1080, 30, 30);
-    const b = samplesPerFrameForBuildUp(50, 1920, 1080, 60, 30);
-    expect(a / b).toBeCloseTo(2);
+  it('linear (ramp=1.0) at t=T/2 returns total/2', () => {
+    expect(cumulativeSamplesAt(15, 30, TOTAL, 1.0)).toBeCloseTo(TOTAL / 2);
   });
 
-  it('scales inversely with fps', () => {
-    const a = samplesPerFrameForBuildUp(50, 1920, 1080, 30, 30);
-    const b = samplesPerFrameForBuildUp(50, 1920, 1080, 30, 60);
-    expect(a / b).toBeCloseTo(2);
+  it('quadratic (ramp=2.0) at t=T/2 returns total/4', () => {
+    expect(cumulativeSamplesAt(15, 30, TOTAL, 2.0)).toBeCloseTo(TOTAL / 4);
+  });
+
+  it('cubic (ramp=3.0) at t=T/2 returns total/8', () => {
+    expect(cumulativeSamplesAt(15, 30, TOTAL, 3.0)).toBeCloseTo(TOTAL / 8);
+  });
+
+  it('heavy (ramp=5.0) at t=T/2 returns total × (1/2)^5', () => {
+    expect(cumulativeSamplesAt(15, 30, TOTAL, 5.0)).toBeCloseTo(TOTAL * Math.pow(0.5, 5));
+  });
+
+  it('non-integer ramp (1.5) at t=T/2 returns total × (1/2)^1.5', () => {
+    expect(cumulativeSamplesAt(15, 30, TOTAL, 1.5)).toBeCloseTo(TOTAL * Math.pow(0.5, 1.5));
+  });
+
+  it('returns 0 for negative elapsed', () => {
+    expect(cumulativeSamplesAt(-5, 30, TOTAL, 2.0)).toBe(0);
+  });
+
+  it('returns totalSamples for buildUpSec=0', () => {
+    expect(cumulativeSamplesAt(0,  0, TOTAL, 2.0)).toBe(TOTAL);
+    expect(cumulativeSamplesAt(10, 0, TOTAL, 2.0)).toBe(TOTAL);
+  });
+
+  it('returns 0 for totalSamples=0', () => {
+    expect(cumulativeSamplesAt(15, 30, 0, 2.0)).toBe(0);
+  });
+});
+
+describe('rampLabel', () => {
+  it('returns the preset label for exact matches', () => {
+    expect(rampLabel(1)).toBe('Linear');
+    expect(rampLabel(2)).toBe('Gentle');
+    expect(rampLabel(3)).toBe('Medium');
+    expect(rampLabel(5)).toBe('Heavy');
+  });
+
+  it('falls back to ×N for custom exponents', () => {
+    expect(rampLabel(2.5)).toBe('×2.5');
+    expect(rampLabel(4.0)).toBe('×4.0');
+    expect(rampLabel(7.5)).toBe('×7.5');
+  });
+});
+
+describe('RAMP_PRESETS', () => {
+  it('exposes 4 presets in ascending exponent order', () => {
+    expect(RAMP_PRESETS.map((p) => p.value)).toEqual([1, 2, 3, 5]);
+  });
+
+  it('all preset labels round-trip through rampLabel', () => {
+    for (const p of RAMP_PRESETS) expect(rampLabel(p.value)).toBe(p.label);
   });
 });

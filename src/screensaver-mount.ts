@@ -13,7 +13,7 @@
 import { mountScreensaverLanding } from './screensaver-ui';
 import type { ScreensaverPrefs } from './screensaver-prefs';
 import { createScreensaverQueue, type SheepRef } from './screensaver-queue';
-import { samplesPerFrameForBuildUp } from './screensaver-pacing';
+import { cumulativeSamplesAt, rampLabel } from './screensaver-pacing';
 import { loadFeatureIndex } from './feature-index-client';
 import { fetchFlameXml } from './chunk-fetch';
 import { parseFlame } from './flame-import';
@@ -658,23 +658,21 @@ function startBuildUp(args: {
       const totalPixels = W * H;
       const targetTotalSamples = prefs.buildUpQ * totalPixels;
 
-      // Pacing math — spec §4.2. Distribute the prefs.buildUpQ sample
-      // budget across buildUpSec × fps frames; each walker runs FUSE
-      // warm-up iters then splatItersPerWalker iters that actually scatter
-      // into the histogram. Quality is user-adjustable (DEFAULTS.buildUpQ
-      // = 50; range 10..500 via the landing card's Quality ladder).
-      const samplesPerFrame = samplesPerFrameForBuildUp(
-        prefs.buildUpQ, W, H, prefs.buildUpSec, BUILD_UP_TARGET_FPS,
-      );
-      const splatItersPerWalker = Math.max(1, Math.ceil(samplesPerFrame / BUILD_UP_WALKERS));
-      const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
+      // Pacing math — spec §4.2 + ramp follow-up. The cumulative sample
+      // target follows `total × (elapsed / buildUpSec)^buildUpRamp`; each
+      // frame deposits the gap between that target and what's already
+      // landed. ramp=1.0 reproduces the original flat cadence; higher
+      // exponents slow the start and steepen the finish (image visibly
+      // builds through 50%). Each walker runs FUSE warm-up iters then
+      // splatItersPerWalker scatter iters; only post-fuse iters count
+      // toward samplesAccumulated.
+      //
       // Spec §4.2 adaptive cadence (ADAPTIVE_BACKOFF_MS=25 → drop to 20fps
       // when frameElapsed > 25ms) deferred to follow-up. Cost model
       // (§4.2.2) predicts ~4-5ms per frame at hero dims — 30fps has 5×
-      // headroom, so v1 ships fixed cadence. If Chrome verify shows a
-      // tight frame budget at short buildUpSec or large canvas, add the
-      // backoff branch HERE (measure performance.now() - frameStart, swap
-      // FRAME_INTERVAL_MS to 50 for that flame).
+      // headroom, so v1 ships fixed cadence. Heavy ramp briefly multiplies
+      // per-frame cost near the end; the loop already lets frames slip
+      // (sleepFor = max(1, FRAME_INTERVAL_MS - frameElapsed)).
       const FRAME_INTERVAL_MS   = 1000 / BUILD_UP_TARGET_FPS;
 
       while (!isCancelled()) {
@@ -690,6 +688,18 @@ function startBuildUp(args: {
         }
 
         const frameStart = performance.now();
+
+        // Size this frame's splat from the gap between the ramp's
+        // cumulative target at frame-start elapsed and what we've already
+        // deposited. ramp=1.0 yields ~constant splat (linear); ramp>1.0
+        // makes early frames thin and late frames thick.
+        const frameElapsedSec = (frameStart - startedAt - state.pauseAccumMs) / 1000;
+        const cumTarget = cumulativeSamplesAt(
+          frameElapsedSec, prefs.buildUpSec, targetTotalSamples, prefs.buildUpRamp,
+        );
+        const neededThisFrame   = Math.max(0, cumTarget - samplesAccumulated);
+        const splatItersPerWalker = Math.max(1, Math.ceil(neededThisFrame / BUILD_UP_WALKERS));
+        const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
 
         // Fresh ISAAC seed every frame — same seed re-renders the identical
         // scatter pattern and just brightens the same cells (chaos.ts
@@ -724,7 +734,8 @@ function startBuildUp(args: {
         status.setText(
           `Building flame #${flameNum} (${ref.gen}/${ref.id})\n` +
           `${elapsed.toFixed(1)}s / ${prefs.buildUpSec}s · ` +
-          `samples ${(samplesAccumulated / 1e6).toFixed(1)}M / ${(targetTotalSamples / 1e6).toFixed(1)}M · ${pct}%` +
+          `samples ${(samplesAccumulated / 1e6).toFixed(1)}M / ${(targetTotalSamples / 1e6).toFixed(1)}M · ${pct}% · ` +
+          `ramp ${rampLabel(prefs.buildUpRamp)}` +
           (state.paused ? ' · PAUSED' : ''),
         );
 

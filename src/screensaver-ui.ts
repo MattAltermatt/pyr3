@@ -15,6 +15,7 @@ import {
   CLAMPS,
   type ScreensaverPrefs,
 } from './screensaver-prefs';
+import { rampLabel } from './screensaver-pacing';
 import { COLORS } from './ui-tokens';
 
 export interface ScreensaverLandingOpts {
@@ -30,10 +31,11 @@ export interface ScreensaverLandingHandle {
 
 const LADDERS = {
   buildUpSec: [30, 60, 300, 600],
-  restSec:    [10, 30, 60, 120],
+  restSec:    [0,  30, 60, 120],
   holdSec:    [5,  15, 30, 60],
   buildUpQ:   [50, 100, 200, 500],
   slideshowQ: [50, 100, 200, 500],
+  buildUpRamp:[1,  2,  3,  5],
 } as const;
 
 type LadderField = keyof typeof LADDERS;
@@ -92,6 +94,13 @@ const LADDER_META: Record<LadderField, LadderMeta> = {
     hint:  'Samples per pixel each flame renders to. Higher = denser, smoother flame. 10–500.',
     mode:  'slideshow',
     fmt:   fmtPlain,
+    parse: parseNumericInput,
+  },
+  buildUpRamp: {
+    label: 'Ramp',
+    hint:  'Shape of how samples land over time. Linear lights bright cells early then polishes the tail; heavier curves keep building through the last third.',
+    mode:  'build-up',
+    fmt:   rampLabel,
     parse: parseNumericInput,
   },
 };
@@ -368,6 +377,7 @@ export function mountScreensaverLanding(
   card.append(buildLadder('buildUpSec'));
   card.append(buildLadder('restSec'));
   card.append(buildLadder('buildUpQ'));
+  card.append(buildLadder('buildUpRamp'));
   card.append(buildLadder('holdSec'));
   card.append(buildLadder('slideshowQ'));
 

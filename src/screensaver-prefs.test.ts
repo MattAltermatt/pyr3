@@ -46,6 +46,7 @@ describe('screensaver-prefs', () => {
       holdSec: 30,
       buildUpQ: 75,
       slideshowQ: 200,
+      buildUpRamp: 1.5,
     });
     expect(readScreensaverPrefs()).toEqual({
       mode: 'slideshow',
@@ -54,6 +55,7 @@ describe('screensaver-prefs', () => {
       holdSec: 30,
       buildUpQ: 75,
       slideshowQ: 200,
+      buildUpRamp: 1.5,
     });
   });
 
@@ -65,6 +67,7 @@ describe('screensaver-prefs', () => {
       holdSec: 15,
       buildUpQ: 99999,   // > max
       slideshowQ: 1,     // < min
+      buildUpRamp: 99,   // > max
     });
     const got = readScreensaverPrefs();
     expect(got.buildUpSec).toBe(CLAMPS.buildUpSec.max);
@@ -72,11 +75,24 @@ describe('screensaver-prefs', () => {
     expect(got.holdSec).toBe(15);
     expect(got.buildUpQ).toBe(CLAMPS.buildUpQ.max);
     expect(got.slideshowQ).toBe(CLAMPS.slideshowQ.min);
+    expect(got.buildUpRamp).toBe(CLAMPS.buildUpRamp.max);
   });
 
-  it('DEFAULTS expose the spec’d quality baselines (50 build-up, 100 slideshow)', () => {
-    expect(DEFAULTS.buildUpQ).toBe(50);
+  it('DEFAULTS expose the spec’d quality baselines (200 build-up, 100 slideshow)', () => {
+    expect(DEFAULTS.buildUpQ).toBe(200);
     expect(DEFAULTS.slideshowQ).toBe(100);
+  });
+
+  it('DEFAULTS.buildUpRamp is Medium (3.0)', () => {
+    expect(DEFAULTS.buildUpRamp).toBe(3.0);
+  });
+
+  it('DEFAULTS.buildUpSec is 1m (60s)', () => {
+    expect(DEFAULTS.buildUpSec).toBe(60);
+  });
+
+  it('DEFAULTS.restSec is 0 (no rest between builds)', () => {
+    expect(DEFAULTS.restSec).toBe(0);
   });
 
   it('CLAMPS bound quality 10..500 for both modes', () => {
@@ -86,16 +102,18 @@ describe('screensaver-prefs', () => {
     expect(CLAMPS.slideshowQ.max).toBe(500);
   });
 
-  it('v1 stored prefs trigger DEFAULTS fallback (new fields gained)', () => {
-    // Simulate a user who saved prefs under v1 (no buildUpQ / slideshowQ).
+  it('older stored prefs trigger DEFAULTS fallback (new fields gained)', () => {
+    // Simulate a user who saved prefs under v2 (no buildUpRamp).
     localStorage.setItem(
       'pyr3.screensaver.prefs',
       JSON.stringify({
-        version: 1,
+        version: 2,
         mode: 'build-up',
         buildUpSec: 60,
         restSec: 10,
         holdSec: 30,
+        buildUpQ: 75,
+        slideshowQ: 200,
       }),
     );
     expect(readScreensaverPrefs()).toEqual(DEFAULTS);
