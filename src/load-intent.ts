@@ -228,5 +228,5 @@ export function galleryUrlForFlame(
   flameCorpusIndex: number,
 ): string {
   const page = Math.floor(flameCorpusIndex / GALLERY_PAGE_SIZE) + 1;
-  return `/showcase?page=${page}`;
+  return `/v1/gallery/p/${page}`;
 }

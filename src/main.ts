@@ -183,13 +183,13 @@ async function main(): Promise<void> {
   // other transitions fall through to the bare surface URL.
   const SURFACE_FALLBACK: Record<TabSurface, string> = {
     viewer:  '/',
-    gallery: '/showcase',
+    gallery: '/v1/gallery',
     editor:  '/v1/edit',
     about:   '/about',
   };
   function currentTabSurface(): TabSurface {
     const p = window.location.pathname;
-    if (p === '/showcase' || p.startsWith('/showcase/')) return 'gallery';
+    if (p === '/v1/gallery' || p.startsWith('/v1/gallery/')) return 'gallery';
     if (p === '/v1/edit' || p.startsWith('/v1/edit/')) return 'editor';
     if (p === '/about' || p.startsWith('/about/')) return 'about';
     // /v1/gen/<gen>/id/<id> deep-links are still the viewer surface; bare

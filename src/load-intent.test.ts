@@ -317,8 +317,8 @@ describe('tab-navigation URL helpers', () => {
     expect(editorUrlForFlame(undefined)).toBe('/v1/edit');
   });
 
-  it('galleryUrlForFlame returns /showcase?page=N where N contains the corpusId', () => {
+  it('galleryUrlForFlame returns /v1/gallery/p/N where N contains the corpusId', () => {
     // assuming page size 9; flame at corpus-list index 124 → page 14
-    expect(galleryUrlForFlame({ gen: 198, id: 7372 }, 124)).toBe('/showcase?page=14');
+    expect(galleryUrlForFlame({ gen: 198, id: 7372 }, 124)).toBe('/v1/gallery/p/14');
   });
 });
