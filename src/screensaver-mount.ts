@@ -520,6 +520,13 @@ function startBuildUp(args: {
       canvas.style.opacity = '1';
 
       const totalPixels = W * H;
+      // The "always quality 50, photo-develop" trick: present() always
+      // normalizes brightness against the FINAL target (q=50 × pixels).
+      // While samplesAccumulated < target, each pixel's hit count divides
+      // by the larger target → dim. Black at t=0, full brightness when
+      // samples ≈ target. Without this trick, the visualizer self-normalizes
+      // to whatever's accumulated so far and the early image looks "done."
+      const targetTotalSamples = BUILD_UP_TARGET_Q * totalPixels;
 
       // Decoupled iterate + present loop. Dispatch (iterate) at ITER_INTERVAL_MS
       // — each renderer.iterate carries a fixed ~44ms GPU overhead, so
@@ -563,12 +570,15 @@ function startBuildUp(args: {
         }
 
         // Present paced — visualize the current histogram at 10fps. Cheap
-        // (no chaos iteration); just density + visualize passes.
-        if (now - lastPresentAt >= PRESENT_INTERVAL_MS && samplesAccumulated > 0) {
+        // (no chaos iteration); just density + visualize passes. Always
+        // normalize against targetTotalSamples (q=50) so the flame photo-
+        // develops from black instead of self-normalizing to "looks done
+        // immediately" at low sample counts.
+        if (now - lastPresentAt >= PRESENT_INTERVAL_MS) {
           renderer.present({
             genome,
             outputView: ctx.getCurrentTexture().createView(),
-            totalSamples: samplesAccumulated,
+            totalSamples: targetTotalSamples,
           });
           lastPresentAt = now;
         }
@@ -578,11 +588,12 @@ function startBuildUp(args: {
       }
       if (isCancelled()) return;
 
-      // Final full-quality present before rest.
+      // Final present at the same target — by now samplesAccumulated ≈
+      // targetTotalSamples, so brightness lands at full.
       renderer.present({
         genome,
         outputView: ctx.getCurrentTexture().createView(),
-        totalSamples: Math.max(1, samplesAccumulated),
+        totalSamples: targetTotalSamples,
       });
 
       // Rest period — hold at full quality. Skip signal shortcircuits;
@@ -738,8 +749,16 @@ function injectHiddenRuleOnce(): void {
   style.textContent = `
 .pyr3-screensaver-card.hidden { display: none; }
 /* In fullscreen, hide the top strip — the flame owns the whole screen.
-   !important overrides the inline display:flex on the strip element. */
+   !important overrides the inline display:flex on the strip element.
+   Use both :fullscreen (native) and our class fallback for max coverage. */
+:fullscreen .pyr3-screensaver-strip { display: none !important; }
+:-webkit-full-screen .pyr3-screensaver-strip { display: none !important; }
 .pyr3-screensaver-fs .pyr3-screensaver-strip { display: none !important; }
+/* Also hide the now-playing pill in fullscreen — it's already at top-right
+   of a normally-positioned overlay; in fullscreen we want pure flame. */
+:fullscreen .pyr3-screensaver-pill,
+:-webkit-full-screen .pyr3-screensaver-pill,
+.pyr3-screensaver-fs .pyr3-screensaver-pill { display: none !important; }
 `;
   document.head.append(style);
 }
