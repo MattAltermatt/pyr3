@@ -43,8 +43,12 @@ export interface ScreensaverPageHandle {
   stop(): void;
 }
 
-const CANVAS_MAX_W = 2560;
-const CANVAS_MAX_H = 1440;
+// Canvas backing-store dims match the user's screen (window.screen.width
+// × .height), capped at 4K. The cap is a GPU-memory safety net: at 4K
+// with oversample=4 the internal histogram is ~528 MB and q=50 takes ~4 B
+// samples to fill. Override with ?w=N&h=N if you want a specific size.
+const CANVAS_MAX_W = 3840;
+const CANVAS_MAX_H = 2160;
 const CANVAS_MIN_DIM = 256;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -138,7 +142,12 @@ interface PillCallbacks {
   onStop: () => void;
 }
 
-function buildNowPlayingPill(cb: PillCallbacks): HTMLElement {
+interface PillHandle {
+  el: HTMLElement;
+  setPaused(paused: boolean): void;
+}
+
+function buildNowPlayingPill(cb: PillCallbacks): PillHandle {
   const pill = el('div', 'pyr3-screensaver-pill');
   Object.assign(pill.style, {
     position: 'absolute',
@@ -171,14 +180,29 @@ function buildNowPlayingPill(cb: PillCallbacks): HTMLElement {
     b.addEventListener('click', fn);
     return b;
   }
+  const playPauseBtn = btn('⏸', cb.onPause, 'Pause / resume (Space)');
+  // Orange ring signals "this is the live play/pause control." When paused
+  // the ring stays static; when playing it pulses gently so the user has
+  // an at-a-glance "yes it's running" signal.
+  playPauseBtn.style.boxShadow = `0 0 0 2px ${COLORS.flame.top}`;
+  playPauseBtn.style.transition = 'box-shadow 0.2s';
   pill.append(
     btn('⏮', cb.onPrev,       'Previous (←)'),
-    btn('⏸', cb.onPause,      'Pause / resume (Space)'),
+    playPauseBtn,
     btn('⏭', cb.onNext,       'Next (→)'),
     btn('⛶', cb.onFullscreen, 'Toggle fullscreen (F)'),
     btn('⏹', cb.onStop,       'Stop, back to settings (S)'),
   );
-  return pill;
+  return {
+    el: pill,
+    setPaused(paused) {
+      playPauseBtn.textContent = paused ? '▶' : '⏸';
+      playPauseBtn.title = paused ? 'Resume (Space)' : 'Pause (Space)';
+      playPauseBtn.style.boxShadow = paused
+        ? `0 0 0 2px ${COLORS.flame.top}`
+        : `0 0 0 2px ${COLORS.flame.top}, 0 0 10px ${COLORS.flame.mid}`;
+    },
+  };
 }
 
 /** Per-page tracker so the fullscreenchange listener can tell apart "user
@@ -250,12 +274,16 @@ function clampDim(n: number, max: number): number {
 
 function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
   const canvas = el('canvas', 'pyr3-screensaver-canvas');
-  // Render at the user's screen resolution (capped) so fullscreen looks
-  // pixel-native. CSS scales 100% in the windowed view; browser
-  // downsamples cleanly. window.screen reports device pixels on all
-  // modern browsers.
-  const sw = (typeof window !== 'undefined' && window.screen?.width)  ? window.screen.width  : 1920;
-  const sh = (typeof window !== 'undefined' && window.screen?.height) ? window.screen.height : 1080;
+  // Render at the user's screen resolution (capped at 4K) so fullscreen
+  // looks pixel-native. CSS scales 100% in the windowed view; the browser
+  // downsamples cleanly. URL overrides: ?w=NNNN&h=NNNN.
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const overrideW = params?.get('w');
+  const overrideH = params?.get('h');
+  const sw = overrideW ? Number(overrideW)
+    : (typeof window !== 'undefined' && window.screen?.width)  ? window.screen.width  : 1920;
+  const sh = overrideH ? Number(overrideH)
+    : (typeof window !== 'undefined' && window.screen?.height) ? window.screen.height : 1080;
   canvas.width = clampDim(sw, CANVAS_MAX_W);
   canvas.height = clampDim(sh, CANVAS_MAX_H);
   Object.assign(canvas.style, {
@@ -272,6 +300,8 @@ interface ModeControls {
   /** Toggle paused state. Pause freezes elapsed/hold timers; render output
    *  is whatever was last presented. */
   togglePause(): void;
+  /** Read current paused state — wired to the pill's play/pause icon. */
+  isPaused(): boolean;
   /** Signal a skip — dir = 1 for next, -1 for prev. The mode picks this up
    *  at its next loop boundary. */
   skip(dir: -1 | 1): void;
@@ -360,6 +390,10 @@ async function renderFlameToQuality(args: {
   isCancelled: () => boolean;
 }): Promise<void> {
   const { renderer, genome, ctx, W, H, targetQ, isCancelled } = args;
+  // Apply the genome's preferred oversample + filter radius for full quality.
+  const overs = genome.oversample ?? 1;
+  const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+  renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
   renderer.reset(genome);
   const seed = (Math.random() * 0xffffffff) >>> 0;
   const pixels = W * H;
@@ -380,10 +414,12 @@ async function renderFlameToQuality(args: {
     await new Promise<void>((r) => setTimeout(r, 0));
   }
   if (isCancelled()) return;
+  // Final DE-on present — matches the viewer's q=50 finish.
   renderer.present({
     genome,
     outputView: ctx.getCurrentTexture().createView(),
     totalSamples: Math.max(1, accumulated),
+    forceDeOff: false,
   });
 }
 
@@ -527,6 +563,9 @@ function startSlideshow(args: {
       togglePause() {
         state.paused = !state.paused;
       },
+      isPaused() {
+        return state.paused;
+      },
       skip(dir) {
         state.skipDir = dir;
       },
@@ -559,6 +598,8 @@ function startBuildUp(args: {
       oversample: 1,
       filterRadius: DEFAULT_FILTER_RADIUS,
     });
+    // Renderer config is overridden per-flame inside the loop via
+    // renderer.resize() — see comment near the resize call.
 
     status.setText('Loading corpus index…');
     const index = await loadFeatureIndex();
@@ -585,6 +626,14 @@ function startBuildUp(args: {
         continue;
       }
       if (isCancelled()) return;
+
+      // Apply the GENOME's preferred oversample + filter radius — this is
+      // what gives the viewer its smooth look at the same q=50. Default
+      // oversample=1 + filterRadius=0.5 looks raw/noisy because chaos hits
+      // get splatted as single sharp dots instead of Gaussian-spread.
+      const overs = genome.oversample ?? 1;
+      const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+      renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
 
       renderer.reset(genome);
       const seed = (Math.random() * 0xffffffff) >>> 0;
@@ -673,12 +722,15 @@ function startBuildUp(args: {
       }
       if (isCancelled()) return;
 
-      // Final present at the same target — by now samplesAccumulated ≈
-      // targetTotalSamples, so brightness lands at full.
+      // Final present — by now samplesAccumulated ≈ targetTotalSamples, so
+      // we switch to normalizing by the actual sample count (matches what
+      // the viewer's final present does) AND explicitly turn DE on so the
+      // resting image gets the full density-estimation pass.
       renderer.present({
         genome,
         outputView: ctx.getCurrentTexture().createView(),
-        totalSamples: targetTotalSamples,
+        totalSamples: Math.max(targetTotalSamples, samplesAccumulated),
+        forceDeOff: false,
       });
 
       // Rest period — hold at full quality. Skip signal shortcircuits;
@@ -712,6 +764,9 @@ function startBuildUp(args: {
       togglePause() {
         state.paused = !state.paused;
       },
+      isPaused() {
+        return state.paused;
+      },
       skip(dir) {
         state.skipDir = dir;
       },
@@ -734,18 +789,21 @@ export function mountScreensaverPage(
 
   let runHandle: ModeHandle | null = null;
 
+  let pillHandle: PillHandle | null = null;
+  let pillSyncTimer: number | undefined;
+
   const landing = mountScreensaverLanding(root, {
     onPlay: (prefs: ScreensaverPrefs) => {
       landing.card.classList.add('hidden');
-      const pill = buildNowPlayingPill({
+      pillHandle = buildNowPlayingPill({
         onPrev:       () => runHandle?.controls.skip(-1),
         onPause:      () => runHandle?.controls.togglePause(),
         onNext:       () => runHandle?.controls.skip(1),
         onFullscreen: () => { void toggleFullscreen(root); },
         onStop:       stopPlayback,
       });
-      root.append(pill);
-      attachPillAutohide(pill);
+      root.append(pillHandle.el);
+      attachPillAutohide(pillHandle.el);
       const status = buildStatusPanel();
       root.append(status.el);
       if (device && format) {
@@ -756,6 +814,12 @@ export function mountScreensaverPage(
       } else {
         status.setText('WebGPU unavailable — preview mode only.');
       }
+      // Poll runHandle.controls.isPaused() so the pill icon + ring stays
+      // in sync regardless of who toggled pause (keyboard / pill click).
+      pillSyncTimer = window.setInterval(() => {
+        if (!pillHandle || !runHandle) return;
+        pillHandle.setPaused(runHandle.controls.isPaused());
+      }, 100);
     },
   });
 
@@ -824,6 +888,9 @@ export function mountScreensaverPage(
       mousemoveListener = null;
     }
     window.clearTimeout(pillHideTimer);
+    window.clearInterval(pillSyncTimer);
+    pillSyncTimer = undefined;
+    pillHandle = null;
     root.querySelector('.pyr3-screensaver-pill')?.remove();
     root.querySelector('.pyr3-screensaver-status')?.remove();
     canvasHost.replaceChildren();

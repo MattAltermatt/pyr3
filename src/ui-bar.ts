@@ -1033,9 +1033,9 @@ function buildAboutLink(): HTMLElement {
 
 function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLElement {
   const wrap = el('div', 'pyr3-tabs');
-  // `about` and `screensaver` live in the left cluster as links, so those
-  // surfaces render all three real tabs in their inactive state.
-  const surfaces: Exclude<TabSurface, 'about' | 'screensaver'>[] = ['viewer', 'gallery', 'editor'];
+  // `about` lives in the left cluster as a link, so surface: 'about' renders
+  // all four real tabs in their inactive state. `screensaver` IS a tab.
+  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor', 'screensaver'];
   for (const s of surfaces) {
     const btn = el('div', 'pyr3-tab' + (s === active ? ' active' : ''));
     btn.dataset.surface = s;
