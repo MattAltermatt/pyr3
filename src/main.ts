@@ -49,6 +49,7 @@ import { startChunkedRender, startDecoupledRender, type RunHandle } from './rend
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { DEFAULT_WALKER_JITTER, resolveWalkerJitter } from './walker-jitter';
 import {
+  mountAboutBar,
   mountBar,
   mountGalleryBar,
   type BarHandle,
@@ -57,6 +58,7 @@ import {
   type GalleryBarHandle,
   type TabSurface,
 } from './ui-bar';
+import { mountAbout } from './about-mount';
 import { checkWebGPU } from './webgpu-check';
 
 // The "welcome flame" — the bundled fixture `/` paints for an instant,
@@ -222,6 +224,45 @@ async function main(): Promise<void> {
 
     // All other transitions: bare surface URL.
     window.location.href = SURFACE_FALLBACK[target];
+  }
+
+  // #103 Phase 2 Task 2.5 — /about short-circuit. Like /v1/edit, this route
+  // skips the viewer renderer / corpus / gallery setup entirely; the About
+  // page is pure content, no GPU device, no canvas. Mount the about-flavored
+  // chrome (no tab active, .pyr3-about-link gets `active`) into #pyr3-bar
+  // and the page body into #pyr3-canvas-zone. The version + buildDate come
+  // from Vite's `define` block (mirrored in vitest.config.ts) so they can't
+  // drift from package.json.
+  if (window.location.pathname === '/about') {
+    const barRoot = document.getElementById('pyr3-bar');
+    const bodyRoot = document.getElementById('pyr3-canvas-zone');
+    if (!barRoot || !bodyRoot) {
+      console.error('pyr3: /about — required DOM nodes (#pyr3-bar / #pyr3-canvas-zone) missing');
+      return;
+    }
+    mountAboutBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    // Hide the canvas + first-paint cue so the about body has the zone to
+    // itself (same pattern as the gallery / edit short-circuits).
+    const canvas = document.getElementById('pyr3-canvas');
+    if (canvas) canvas.hidden = true;
+    const firstPaint = document.getElementById('pyr3-firstpaint');
+    if (firstPaint) firstPaint.remove();
+    const aboutContainer = document.createElement('div');
+    aboutContainer.id = 'pyr3-about';
+    Object.assign(aboutContainer.style, {
+      position: 'absolute',
+      inset: '0',
+      overflowY: 'auto',
+    });
+    bodyRoot.appendChild(aboutContainer);
+    mountAbout(aboutContainer, {
+      version: __PYR3_VERSION__,
+      buildDate: __BUILD_DATE__,
+      // The WebGPUStatus type doesn't carry adapter-info detail; leave gpuInfo
+      // undefined so mountAbout's "WebGPU" fallback shows on the chip.
+    });
+    setDocTitle('about');
+    return;
   }
 
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {

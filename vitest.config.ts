@@ -9,13 +9,17 @@ const includeParityFeBeFull = process.env.VITEST_INCLUDE_PARITY_FE_BE === '1';
 const includeParityFeBeSmoke = process.env.VITEST_INCLUDE_PARITY_FE_BE_SMOKE === '1';
 const includeParityFeBe = includeParityFeBeFull || includeParityFeBeSmoke;
 
-// Mirror vite.config's __PYR3_VERSION__ define so any test that touches code
-// referencing the build constant resolves it (vitest doesn't load vite.config).
+// Mirror vite.config's __PYR3_VERSION__ + __BUILD_DATE__ defines so any test
+// that touches code referencing those build constants resolves them (vitest
+// doesn't load vite.config). __BUILD_DATE__ added by #103 Phase 2 Task 2.5
+// for the /about page's version chip.
 const version = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version;
+const buildDate = new Date().toISOString().slice(0, 10);
 
 export default defineConfig({
   define: {
     __PYR3_VERSION__: JSON.stringify(version),
+    __BUILD_DATE__: JSON.stringify(buildDate),
   },
   test: {
     exclude: [

@@ -2,12 +2,16 @@ import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 
 // #1: single-source the app version from package.json and inject it as a build
-// constant, so the top-bar version chip can never drift from the real version.
+// constant, so the /about page's version chip can never drift from the real
+// version. #103 Phase 2 Task 2.5: __BUILD_DATE__ pairs with it for the /about
+// chip's "build YYYY-MM-DD" line.
 const version = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version;
+const buildDate = new Date().toISOString().slice(0, 10);
 
 export default defineConfig({
   define: {
     __PYR3_VERSION__: JSON.stringify(version),
+    __BUILD_DATE__: JSON.stringify(buildDate),
   },
   // Apex custom-domain base. The site serves at https://pyr3.app/ (GitHub
   // Pages custom domain via public/CNAME). All app code uses
