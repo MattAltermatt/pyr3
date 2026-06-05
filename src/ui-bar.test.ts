@@ -24,30 +24,17 @@ function makeBarOpts(over: Partial<BarOpts> = {}): BarOpts {
     onSave: vi.fn(),
     onSurpriseMe: vi.fn(),
     estimateCost: () => ({ width: 1024, height: 1024, mb: 4, fits: true }),
+    onTabClick: vi.fn(),
     ...over,
   };
 }
 
-describe('mountBar — gallery link', () => {
-  it('left zone contains a gallery link with href pointing at /v1/gallery', () => {
-    const root = document.createElement('div');
-    mountBar(root, makeBarOpts());
-    const links = Array.from(root.querySelectorAll('a'));
-    const gallery = links.find((a) => a.textContent === 'gallery') as HTMLAnchorElement | undefined;
-    expect(gallery).toBeDefined();
-    expect(gallery!.getAttribute('href')).toMatch(/\/v1\/gallery$/);
-  });
-
-  it('setGalleryHref updates the link to the page-N URL', () => {
-    const root = document.createElement('div');
-    const handle = mountBar(root, makeBarOpts());
-    handle.setGalleryHref(27);
-    const gallery = Array.from(root.querySelectorAll('a')).find(
-      (a) => a.textContent === 'gallery',
-    ) as HTMLAnchorElement;
-    expect(gallery.getAttribute('href')).toMatch(/\/v1\/gallery\/p\/27$/);
-  });
-});
+// Phase 2 of #103 will replace setGalleryHref with the chrome-tab transfer
+// rule (viewer-only currentFlame → gallery URL via `app-state`). Task 1.4
+// dropped the visible gallery anchor when mountBar adopted mountBarChrome
+// (the chrome's tab group carries gallery navigation now); setGalleryHref
+// stays on BarHandle as a no-op stub for back-compat with the existing
+// main.ts call site, so no test asserts on its DOM effect anymore.
 
 function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
   return {
@@ -59,6 +46,7 @@ function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
     onRandomPage: vi.fn(),
     activeAxes: 0,
     onFilterToggle: vi.fn(),
+    onTabClick: vi.fn(),
     ...over,
   };
 }

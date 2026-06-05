@@ -10,7 +10,7 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
-import { corpusUrl, galleryUrl, HERO_GEN, HERO_ID } from './load-intent';
+import { corpusUrl, galleryUrl } from './load-intent';
 import { QUALITY_TIERS, type QualityRequest } from './presets';
 import { composeSaveFilename } from './save-image';
 import { COLORS } from './ui-tokens';
@@ -43,6 +43,10 @@ export interface BarOpts {
    *  elite, 20% from the middle band, bottom 5% excluded) and navigates
    *  to it. Sibling of the gallery 🎲 (uniform across the full corpus). */
   onSurpriseMe: () => void;
+  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here.
+   *  Phase 2 wires the real handler (viewer-only currentFlame transfer rule);
+   *  for Phase 1 callers can stub `() => {}`. */
+  onTabClick: (surface: TabSurface) => void;
 }
 
 /** Resolved cost of a custom render request. */
@@ -126,6 +130,8 @@ export interface GalleryBarOpts {
   /** Fired when the user clicks the [⚙ filters ▾] pill. main.ts forwards
    *  to the drawer's toggleOpen(). */
   onFilterToggle(): void;
+  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
+  onTabClick: (surface: TabSurface) => void;
 }
 
 export interface GalleryBarHandle {
@@ -163,6 +169,8 @@ export interface EditBarOpts {
   onNameChange: (name: string) => void;
   /** Fires when the user edits the nick input. Empty string → clear. */
   onNickChange: (nick: string) => void;
+  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
+  onTabClick: (surface: TabSurface) => void;
 }
 
 export interface EditBarHandle {
@@ -185,31 +193,17 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   root.replaceChildren();
   root.classList.add('pyr3-bar-root');
 
+  // Chrome substrate (#103 Task 1.4): brand + about-link + tabs + WebGPU
+  // pill + octocat CTAs. The editor's per-surface content (name/nick inputs
+  // + dimensions readout) drops into chrome.middleSlot.
+  const chrome = mountBarChrome(root, {
+    surface: 'editor',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
   const infoRow = el('div', 'pyr3-bar-info');
   const infoLeft = el('div', 'pyr3-zone-left');
-
-  const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
-  wordmark.href = import.meta.env.BASE_URL;
-  const mark = document.createElement('img');
-  mark.className = 'pyr3-bar-mark';
-  mark.src = FLAME_MARK_URI;
-  mark.alt = '';
-  wordmark.append(mark, document.createTextNode('pyr3'));
-
-  const version = el('span', 'pyr3-bar-version');
-  version.textContent = `v${__PYR3_VERSION__}`;
-
-  const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  about.href = `${import.meta.env.BASE_URL}help/about.html`;
-  about.textContent = 'about';
-
-  const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  showcase.href = `${import.meta.env.BASE_URL}showcase/`;
-  showcase.textContent = 'showcase';
-
-  const gallery = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  gallery.href = galleryUrl(1);
-  gallery.textContent = 'gallery';
 
   // Flame name — editable text input styled to feel like the viewer's bold
   // metaName label. width:auto so it grows with the typed name.
@@ -234,21 +228,13 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const dims = el('span', 'pyr3-bar-quality');
 
   infoLeft.append(
-    wordmark, version,
-    sep(), about, sep(), showcase, sep(), gallery,
-    sep(), nameInput,
+    nameInput,
     nickPrefix, nickInput,
     dimsSep, dims,
   );
 
-  const infoRight = el('div', 'pyr3-zone-right');
-  const webgpuChip = buildWebGPUChip(opts.webgpu);
-  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
-  const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
-  infoRight.append(webgpuChip, forkCta, sheepCta);
-
-  infoRow.append(infoLeft, infoRight);
-  root.append(infoRow);
+  infoRow.append(infoLeft);
+  chrome.middleSlot.append(infoRow);
 
   // Lazy-built tier3 progress panel (same structure as mountBar's). Pinned
   // under the bar via `position: absolute; top: 100%`.
@@ -279,7 +265,7 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
         const why = editTier3.row.querySelector('.pyr3-tier3-why') as HTMLElement | null;
         if (why) why.style.display = 'none';
         editTier3.eta.style.display = 'none';
-        root.append(editTier3.row);
+        chrome.middleSlot.append(editTier3.row);
       }
       editTier3.label.textContent = label;
       // Full bar = "in progress" (no incremental progress available).
@@ -296,7 +282,7 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
         editTier3.row.remove();
         editTier3 = null;
       }
-      root.replaceChildren();
+      chrome.destroy();
       root.classList.remove('pyr3-bar-root');
     },
   };
@@ -307,34 +293,25 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   root.replaceChildren();
   root.classList.add('pyr3-bar-root');
 
-  // ══ bar ① — info / identity / links out ══
+  // Chrome substrate (#103 Task 1.4): brand + about-link + tabs + WebGPU
+  // pill + octocat CTAs. The viewer's per-surface content (info row + action
+  // row + Advanced custom-render row) drops into chrome.middleSlot.
+  const chrome = mountBarChrome(root, {
+    surface: 'viewer',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
+  // ══ bar ① — info / identity ══
+  // The chrome above carries brand / about / tabs / WebGPU; this row carries
+  // the viewer-specific meta readout (flame name + quality + variations).
   const infoRow = el('div', 'pyr3-bar-info');
   const infoLeft = el('div', 'pyr3-zone-left');
-  const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
-  wordmark.href = import.meta.env.BASE_URL; // home (welcome flame), base-aware
-  const mark = document.createElement('img');
-  mark.className = 'pyr3-bar-mark';
-  mark.src = FLAME_MARK_URI;
-  mark.alt = '';
-  wordmark.append(mark, document.createTextNode('pyr3'));
-  // #1: version chip — small/muted, immediately after the wordmark. Single-
-  // sourced from package.json via the __PYR3_VERSION__ build constant so it
-  // can't drift. Sits outside the wordmark anchor (it's a label, not a link).
-  const version = el('span', 'pyr3-bar-version');
-  version.textContent = `v${__PYR3_VERSION__}`;
-  const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  about.href = `${import.meta.env.BASE_URL}help/about.html`;
-  about.textContent = 'about';
-  // PYR3-042 — in-app entry point to the /showcase gallery (same internal-nav
-  // style as "about"; the gallery cards link back to the viewer per PYR3-045).
-  const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  showcase.href = `${import.meta.env.BASE_URL}showcase/`;
-  showcase.textContent = 'showcase';
-  // Sibling of `showcase` — both point at gallery-like surfaces (curated
-  // /showcase vs the full corpus). Default href is page 1; main.ts updates
-  // it via setGalleryHref to the contextual page containing the currently-
-  // displayed sheep, so a click lands the visitor on a page where their
-  // current sheep is visible on first paint.
+  // setGalleryHref still updates an internal anchor for back-compat. The
+  // chrome's gallery tab replaces the visible link, but the BarHandle
+  // contract stays (Phase 2 wires real tab-nav via opts.onTabClick + the
+  // currentFlame context). The link is created but kept off-DOM so the
+  // setter can no-op safely without surprising callers.
   const gallery = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
   gallery.href = galleryUrl(1);
   gallery.textContent = 'gallery';
@@ -346,14 +323,9 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const metaVariations = el('span', 'pyr3-bar-variations');
   // Toast rides in the info zone next to the meta name.
   const toast = el('span', 'pyr3-bar-toast');
-  infoLeft.append(wordmark, version, sep(), about, sep(), showcase, sep(), gallery, sep(), metaName, metaQuality, metaVariations, toast);
+  infoLeft.append(metaName, metaQuality, metaVariations, toast);
 
-  const infoRight = el('div', 'pyr3-zone-right');
-  const webgpuChip = buildWebGPUChip(opts.webgpu);
-  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
-  const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
-  infoRight.append(webgpuChip, forkCta, sheepCta);
-  infoRow.append(infoLeft, infoRight);
+  infoRow.append(infoLeft);
 
   // ══ bar ② — actions (Open · quality ladder · corpus nav) ══
   const actionRow = el('div', 'pyr3-bar-action');
@@ -460,7 +432,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     if (advOpen) recompute();
   };
 
-  root.append(infoRow, actionRow, advRow);
+  chrome.middleSlot.append(infoRow, actionRow, advRow);
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -501,7 +473,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     showProgress(p) {
       if (!tier3) {
         tier3 = buildTier3();
-        root.append(tier3.row);
+        chrome.middleSlot.append(tier3.row);
       }
       tier3.label.textContent = p.label;
       tier3.fill.style.width = `${Math.round(p.percent * 100)}%`;
@@ -809,37 +781,21 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   root.replaceChildren();
   root.classList.add('pyr3-bar-root');
 
-  // ══ info row — left (wordmark + nav links) / center (page nav) / right ══
+  // Chrome substrate (#103 Task 1.4): brand + about-link + tabs + WebGPU
+  // pill + octocat CTAs. The gallery-specific page-nav cluster + filter
+  // pill go into chrome.middleSlot.
+  const chrome = mountBarChrome(root, {
+    surface: 'gallery',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
+  // ══ info row — left (placeholder) / center (page nav) / right (placeholder) ══
   // `pyr3-bar-info-gallery` modifier balances the left/right zones (both
   // flex: 1 1 0) so the center page-nav cluster sits in the visual middle
-  // of the bar — the default viewer bar has the right zone content-width,
-  // which off-centered the gallery's nav (#50 feedback).
+  // of the row.
   const infoRow = el('div', 'pyr3-bar-info pyr3-bar-info-gallery');
-
-  // Left zone — wordmark, about, showcase, "← viewer". The `gallery` link is
-  // omitted (we're already in the gallery); a `viewer` link points back at
-  // the hero corpus URL so a fresh / bookmarked gallery load has an obvious
-  // way home that doesn't depend on browser history.
   const infoLeft = el('div', 'pyr3-zone-left');
-  const wordmark = el('a', 'pyr3-bar-wordmark') as HTMLAnchorElement;
-  wordmark.href = import.meta.env.BASE_URL;
-  const mark = document.createElement('img');
-  mark.className = 'pyr3-bar-mark';
-  mark.src = FLAME_MARK_URI;
-  mark.alt = '';
-  wordmark.append(mark, document.createTextNode('pyr3'));
-  const version = el('span', 'pyr3-bar-version');
-  version.textContent = `v${__PYR3_VERSION__}`;
-  const about = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  about.href = `${import.meta.env.BASE_URL}help/about.html`;
-  about.textContent = 'about';
-  const showcase = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  showcase.href = `${import.meta.env.BASE_URL}showcase/`;
-  showcase.textContent = 'showcase';
-  const viewerLink = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  viewerLink.href = corpusUrl(HERO_GEN, HERO_ID);
-  viewerLink.textContent = '← viewer';
-  infoLeft.append(wordmark, version, sep(), about, sep(), showcase, sep(), viewerLink);
 
   // Center zone — page nav cluster. Pinned width on the page label so prev/
   // next don't shift under the cursor as N grows (matches the corpus-nav
@@ -884,16 +840,12 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   };
   infoCenter.append(prevPill, pageLabel, nextPill, dicePill, filterPill);
 
-  // Right zone — WebGPU pill + the two octocat CTAs (reused unchanged from
-  // the viewer bar's helpers).
+  // Right zone — placeholder. Chrome substrate carries WebGPU pill + the two
+  // octocat CTAs above; this empty zone keeps the centered grid balance.
   const infoRight = el('div', 'pyr3-zone-right');
-  const webgpuChip = buildWebGPUChip(opts.webgpu);
-  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
-  const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
-  infoRight.append(webgpuChip, forkCta, sheepCta);
 
   infoRow.append(infoLeft, infoCenter, infoRight);
-  root.append(infoRow);
+  chrome.middleSlot.append(infoRow);
 
   let currentPage = opts.page;
   let currentTotal = opts.totalPages;
@@ -940,7 +892,7 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
       renderFilterBadge(n);
     },
     destroy() {
-      root.replaceChildren();
+      chrome.destroy();
       root.classList.remove('pyr3-bar-root');
     },
   };

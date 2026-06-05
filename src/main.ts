@@ -185,6 +185,9 @@ async function main(): Promise<void> {
         navigateCorpus(pick.gen, pick.id);
       });
     },
+    // #103 Task 1.4: chrome substrate tab clicks. Phase 2 wires the real
+    // viewer-only currentFlame transfer rule; stubbed for now.
+    onTabClick: () => {},
   });
 
   if (!webgpu.available) {
@@ -239,6 +242,9 @@ async function main(): Promise<void> {
         editorRef?.setNick(nick);
         persistNick(nick);
       },
+      // #103 Task 1.4: chrome substrate tab clicks; Phase 2 wires the
+      // real handler.
+      onTabClick: () => {},
     });
 
     const { mountEditPage } = await import('./edit-mount');
@@ -1172,6 +1178,9 @@ async function main(): Promise<void> {
       },
       activeAxes: countActiveAxes(currentFilter),
       onFilterToggle: () => drawerHandle?.toggleOpen(),
+      // #103 Task 1.4: chrome substrate tab clicks; Phase 2 wires the
+      // real handler.
+      onTabClick: () => {},
     });
 
     // #49 Phase B6 — mount drawer EAGERLY with loading=true, before
