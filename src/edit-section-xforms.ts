@@ -144,36 +144,37 @@ function buildVariationRow(
   const headerRow = document.createElement('div');
   headerRow.className = 'pyr3-edit-var-header';
 
-  const activeCbx = document.createElement('input');
-  activeCbx.type = 'checkbox';
-  activeCbx.className = 'pyr3-edit-var-active';
-  activeCbx.checked = v.active !== false;
-  activeCbx.title = 'Click to toggle. Shift-click to solo within this xform.';
-  activeCbx.addEventListener('click', (ev) => {
-    const me = ev as MouseEvent;
-    if (me.shiftKey) {
-      me.preventDefault();
-      me.stopPropagation();
-      state.soloVariationSnapshot = state.soloVariationSnapshot ?? {};
-      const existing = state.soloVariationSnapshot[xformIndex];
-      if (existing && existing.targetIndex === varIndex) {
-        restoreFromSolo(xform.variations, existing);
-        delete state.soloVariationSnapshot[xformIndex];
-      } else {
-        if (existing) restoreFromSolo(xform.variations, existing);
-        state.soloVariationSnapshot[xformIndex] = snapshotForSolo(xform.variations, varIndex);
-        for (let i = 0; i < xform.variations.length; i++) {
-          if (i !== varIndex) xform.variations[i]!.active = false;
-        }
-      }
-      onChange(`xforms.${xformIndex}.variations.solo`);
-      rebuildSection?.();
-      return;
-    }
-    v.active = activeCbx.checked ? undefined : false;
-    wrap.classList.toggle('pyr3-edit-var-inactive', v.active === false);
-    onChange(`xforms.${xformIndex}.variations.${varIndex}.active`);
+  const activeToggle = buildToggle({
+    value: v.active !== false,
+    onChange: (next) => {
+      v.active = next ? undefined : false;
+      wrap.classList.toggle('pyr3-edit-var-inactive', v.active === false);
+      onChange(`xforms.${xformIndex}.variations.${varIndex}.active`);
+    },
   });
+  activeToggle.classList.add('pyr3-edit-var-active');
+  activeToggle.title = 'Click to toggle. Shift-click to solo within this xform.';
+  // Capture-phase shift-click → solo within this xform.
+  activeToggle.addEventListener('click', (ev) => {
+    const me = ev as MouseEvent;
+    if (!me.shiftKey) return;
+    me.preventDefault();
+    me.stopImmediatePropagation();
+    state.soloVariationSnapshot = state.soloVariationSnapshot ?? {};
+    const existing = state.soloVariationSnapshot[xformIndex];
+    if (existing && existing.targetIndex === varIndex) {
+      restoreFromSolo(xform.variations, existing);
+      delete state.soloVariationSnapshot[xformIndex];
+    } else {
+      if (existing) restoreFromSolo(xform.variations, existing);
+      state.soloVariationSnapshot[xformIndex] = snapshotForSolo(xform.variations, varIndex);
+      for (let i = 0; i < xform.variations.length; i++) {
+        if (i !== varIndex) xform.variations[i]!.active = false;
+      }
+    }
+    onChange(`xforms.${xformIndex}.variations.solo`);
+    rebuildSection?.();
+  }, true);
 
   const kindBtn = document.createElement('button');
   kindBtn.type = 'button';
@@ -216,10 +217,12 @@ function buildVariationRow(
   weightInput.el.title = "Strength of this variation's contribution. The chain sums weighted contributions.";
   weightInput.el.classList.add('pyr3-edit-var-weight');
 
-  const delBtn = makeIconButton('🗑️', () => removeSelf());
-  delBtn.title = 'Remove this variation from the chain.';
+  const removeBtn = buildRemoveButton({
+    title: 'Remove this variation from the chain.',
+    onClick: () => removeSelf(),
+  });
 
-  headerRow.append(activeCbx, kindBtn, weightInput.el, delBtn);
+  headerRow.append(activeToggle, kindBtn, weightInput.el, removeBtn);
   wrap.appendChild(headerRow);
 
   // Param row — labels + inputs per VARIATION_PARAMS[kind]. Rebuilt on

@@ -477,12 +477,12 @@ describe('xforms section v2 — variation rows', () => {
     expect(card.querySelector('.pyr3-edit-var-kind-btn')).toBeTruthy();
   });
 
-  it('per-row active checkbox toggles variation.active', () => {
+  it('per-row toggle widget inactivates variation.active', () => {
     const { host, state, onChange } = mount();
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const cbx = card.querySelector('.pyr3-edit-var-active') as HTMLInputElement;
-    expect(cbx.checked).toBe(true);
-    cbx.click();
+    const toggle = card.querySelector('.pyr3-edit-var-active') as HTMLElement;
+    expect(toggle.classList.contains('pyr3-toggle')).toBe(true);
+    toggle.click();
     expect(state.genome.xforms[0]!.variations[0]!.active).toBe(false);
     expect(onChange).toHaveBeenCalledWith(expect.stringContaining('variations.0.active'));
   });
@@ -496,6 +496,51 @@ describe('xforms section v2 — variation rows', () => {
     // Picker mounted, but no new variation appended yet.
     expect(document.querySelector('.pyr3-var-picker')).toBeTruthy();
     expect(state.genome.xforms[0]!.variations.length).toBe(originalLen);
+  });
+
+  it('row layout is [toggle | name | weight | remove]', () => {
+    const { host } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const row = card.querySelector('.pyr3-edit-var-row') as HTMLElement;
+    const header = row.querySelector('.pyr3-edit-var-header') as HTMLElement;
+    // Toggle widget present
+    expect(header.querySelector('.pyr3-edit-var-active.pyr3-toggle')).toBeTruthy();
+    // Kind name button (the picker trigger)
+    expect(header.querySelector('.pyr3-edit-var-kind-btn')).toBeTruthy();
+    // Scrubby weight input
+    expect(header.querySelector('.pyr3-edit-var-weight')).toBeTruthy();
+    // Remove × button (buildRemoveButton primitive)
+    expect(header.querySelector('.pyr3-remove-btn')).toBeTruthy();
+  });
+
+  it('row remove button deletes the variation from the chain', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    genome.xforms[0]!.variations = [
+      { index: V.linear, weight: 1 },
+      { index: V.julian, weight: 0.5 },
+    ];
+    const { host, state, onChange } = mount(genome);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const rows = card.querySelectorAll('.pyr3-edit-var-row');
+    expect(rows.length).toBe(2);
+    const removeOnRow0 = rows[0]!.querySelector('.pyr3-edit-var-header .pyr3-remove-btn') as HTMLElement;
+    removeOnRow0.click();
+    expect(state.genome.xforms[0]!.variations.length).toBe(1);
+    expect(state.genome.xforms[0]!.variations[0]!.index).toBe(V.julian);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.removed');
+  });
+
+  it('row weight input is the scrubby (pyr3-input class via buildNumberInput)', () => {
+    const { host, state, onChange } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const row = card.querySelector('.pyr3-edit-var-row') as HTMLElement;
+    const weightCell = row.querySelector('.pyr3-edit-var-weight') as HTMLElement;
+    // Scrubby span carries pyr3-input class when built via buildNumberInput;
+    // however legacy via scrubbyInput keeps pyr3-edit-num. Either is fine —
+    // assert the scrubby semantic (dblclick → text mode → Enter commits).
+    typeInto(weightCell, '0.55');
+    expect(state.genome.xforms[0]!.variations[0]!.weight).toBeCloseTo(0.55, 6);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.weight');
   });
 });
 
