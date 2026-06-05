@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Window } from 'happy-dom';
-import { mountFilterDrawer } from './gallery-filter-ui';
-import { DEFAULT_FILTER_SPEC } from './gallery-filter';
+import { mountFilterDrawer, buildActiveChipStrip } from './gallery-filter-ui';
+import { DEFAULT_FILTER_SPEC, type FilterSpec } from './gallery-filter';
 
 function setupDom(): void {
   const w = new Window();
@@ -623,5 +623,102 @@ describe('mountFilterDrawer — loading state', () => {
     expect(drawer?.classList.contains('loading')).toBe(true);
     handle.setLoading(false);
     expect(drawer?.classList.contains('loading')).toBe(false);
+  });
+});
+
+describe('buildActiveChipStrip (Task 5.2) — active-filter chips with one-click remove', () => {
+  it('renders one chip per active filter axis, in stable axis order', () => {
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      vars: [0],
+      coverageMin: 0.3,
+      coverageMax: 0.7,
+      colorVarMin: 0.2,
+      colorVarMax: null,
+    };
+    const onRemove = vi.fn();
+    const onClearAll = vi.fn();
+    const strip = buildActiveChipStrip(spec, onRemove, onClearAll);
+    const chips = strip.querySelectorAll('.pyr3-active-chip');
+    expect(chips.length).toBe(3);
+    // Stable order: vars → xforms → coverage → entropy → colorVar → meanLum.
+    const ids = Array.from(chips).map((c) => (c as HTMLElement).dataset.chipId);
+    expect(ids).toEqual(['vars:0', 'coverage', 'colorVar']);
+  });
+
+  it('renders no chips when spec is default (all-default → empty)', () => {
+    const strip = buildActiveChipStrip(DEFAULT_FILTER_SPEC, vi.fn(), vi.fn());
+    expect(strip.querySelectorAll('.pyr3-active-chip').length).toBe(0);
+  });
+
+  it('chip label uses plain-english name + active range', () => {
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      colorVarMin: 0.3,
+      colorVarMax: 0.7,
+    };
+    const strip = buildActiveChipStrip(spec, vi.fn(), vi.fn());
+    const chip = strip.querySelector('.pyr3-active-chip') as HTMLElement;
+    expect(chip.textContent).toContain('color variation');
+    expect(chip.textContent).toContain('0.3');
+    expect(chip.textContent).toContain('0.7');
+  });
+
+  it('open-ended ranges render with the unbounded edge as ≥ or ≤', () => {
+    const lower: FilterSpec = { ...DEFAULT_FILTER_SPEC, coverageMin: 0.5 };
+    const upperOnly: FilterSpec = { ...DEFAULT_FILTER_SPEC, entropyMin: 0, entropyMax: 0.4 };
+    const lowerChip = buildActiveChipStrip(lower, vi.fn(), vi.fn()).querySelector('.pyr3-active-chip')!;
+    expect(lowerChip.textContent).toContain('≥');
+    expect(lowerChip.textContent).toContain('0.5');
+    const upperChip = buildActiveChipStrip(upperOnly, vi.fn(), vi.fn()).querySelector('.pyr3-active-chip')!;
+    expect(upperChip.textContent).toContain('≤');
+    expect(upperChip.textContent).toContain('0.4');
+  });
+
+  it('xforms chip uses xform-count label + value/range', () => {
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, xformMin: 3, xformMax: 5 };
+    const chip = buildActiveChipStrip(spec, vi.fn(), vi.fn()).querySelector('.pyr3-active-chip')!;
+    expect(chip.textContent).toContain('xform count');
+    expect(chip.textContent).toContain('3');
+    expect(chip.textContent).toContain('5');
+  });
+
+  it("clicking a chip's × button invokes onRemove with the filter id", () => {
+    const spec: FilterSpec = {
+      ...DEFAULT_FILTER_SPEC,
+      coverageMin: 0.3,
+      coverageMax: 0.7,
+    };
+    const onRemove = vi.fn();
+    const strip = buildActiveChipStrip(spec, onRemove, vi.fn());
+    const x = strip.querySelector('.pyr3-active-chip-x') as HTMLElement;
+    x.click();
+    expect(onRemove).toHaveBeenCalledWith('coverage');
+  });
+
+  it('vars chips each remove themselves individually by id', () => {
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, vars: [0, 13] };
+    const onRemove = vi.fn();
+    const strip = buildActiveChipStrip(spec, onRemove, vi.fn());
+    const chips = strip.querySelectorAll('.pyr3-active-chip');
+    expect(chips.length).toBe(2);
+    (chips[1]!.querySelector('.pyr3-active-chip-x') as HTMLElement).click();
+    expect(onRemove).toHaveBeenCalledWith('vars:13');
+  });
+
+  it('clear-all link is present when any filter is active and fires onClearAll', () => {
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, coverageMin: 0.4 };
+    const onClearAll = vi.fn();
+    const strip = buildActiveChipStrip(spec, vi.fn(), onClearAll);
+    const clearAll = strip.querySelector('.pyr3-active-chip-clear-all') as HTMLElement;
+    expect(clearAll).toBeTruthy();
+    expect(clearAll.textContent).toContain('clear all');
+    clearAll.click();
+    expect(onClearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('clear-all link is absent when no filters are active', () => {
+    const strip = buildActiveChipStrip(DEFAULT_FILTER_SPEC, vi.fn(), vi.fn());
+    expect(strip.querySelector('.pyr3-active-chip-clear-all')).toBeFalsy();
   });
 });

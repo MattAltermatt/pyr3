@@ -19,6 +19,7 @@ import {
   type SortDir,
   type SortMode,
 } from './gallery-filter';
+import { FILTER_LABEL_MAP } from './gallery-facets';
 import { mountVariationPicker, type VariationPickerHandle } from './variation-picker';
 import { VARIATION_NAMES } from './variations';
 import {
@@ -965,4 +966,213 @@ export function mountFilterDrawer(
       root.replaceChildren();
     },
   };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Task 5.2 — Active filter chip strip
+// ──────────────────────────────────────────────────────────────────────────
+//
+// `buildActiveChipStrip` returns a flex row of amber-tinted pill chips —
+// one per currently-active filter axis — with a `× clear all` link on the
+// right. Each chip carries a tiny × button that fires `onRemove(chipId)`;
+// the right-side link fires `onClearAll()`. The strip never mutates state
+// itself — composition + state-write happens at the panel level (Task 5.6
+// wires this into mountFilterDrawer).
+//
+// Stable axis order: vars (one chip per selected variation, sorted asc) →
+// xforms → coverage → entropy → colorVar → meanLum. The order mirrors the
+// FilterSpec field order so chip strip and metric rows below scan in the
+// same direction.
+
+/** Identifier emitted by `onRemove` so the caller knows which axis (or
+ *  which individual variation) to clear from the FilterSpec.
+ *  - `vars:<idx>` — remove that one variation from `spec.vars`
+ *  - `xforms` | `coverage` | `entropy` | `colorVar` | `meanLum` — reset
+ *    that axis's min/max to DEFAULT_FILTER_SPEC values */
+export type ActiveChipId =
+  | `vars:${number}`
+  | 'xforms'
+  | 'coverage'
+  | 'entropy'
+  | 'colorVar'
+  | 'meanLum';
+
+const CHIP_STYLES_ID = 'pyr3-active-chip-styles';
+
+const CHIP_STYLES = `
+.pyr3-active-chip-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.pyr3-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: rgba(255, 190, 62, 0.12);
+  border: 1px solid rgba(255, 190, 62, 0.4);
+  color: #ffbe3e;
+  border-radius: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+.pyr3-active-chip-x {
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+}
+.pyr3-active-chip-x:hover { opacity: 1; }
+.pyr3-active-chip-clear-all {
+  margin-left: auto;
+  color: rgba(255, 190, 62, 0.7);
+  cursor: pointer;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  padding: 3px 8px;
+  font-family: inherit;
+}
+.pyr3-active-chip-clear-all:hover {
+  color: #ffbe3e;
+  text-decoration: underline;
+}
+`;
+
+function injectChipStylesOnce(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(CHIP_STYLES_ID)) return;
+  const style = document.createElement('style');
+  style.id = CHIP_STYLES_ID;
+  style.textContent = CHIP_STYLES;
+  document.head.appendChild(style);
+}
+
+/** Format a 0..1 range as a human-readable string for a chip label.
+ *  - Both bounds defaulted → null (caller skips emitting the chip)
+ *  - Lower-only → `≥ X.X`
+ *  - Upper-only → `≤ X.X`
+ *  - Both bounds → `X.X–Y.Y` (en-dash, not hyphen, per design spec)
+ */
+function formatStatRange(min: number, max: number | null): string | null {
+  const lowerActive = min > 0;
+  const upperActive = max !== null;
+  if (!lowerActive && !upperActive) return null;
+  if (lowerActive && !upperActive) return `≥ ${min.toFixed(1)}`;
+  if (!lowerActive && upperActive) return `≤ ${(max as number).toFixed(1)}`;
+  return `${min.toFixed(1)}–${(max as number).toFixed(1)}`;
+}
+
+/** Format an xform-count range as a human-readable string. Returns null
+ *  when the range matches the default (min=1, max=null = no cap). */
+function formatXformRange(min: number, max: number | null): string | null {
+  const lowerActive = min !== DEFAULT_FILTER_SPEC.xformMin;
+  const upperActive = max !== DEFAULT_FILTER_SPEC.xformMax;
+  if (!lowerActive && !upperActive) return null;
+  if (lowerActive && max === null) return `≥ ${min}`;
+  if (!lowerActive && max !== null) return `≤ ${max}`;
+  if (min === max) return `${min}`;
+  return `${min}–${max as number}`;
+}
+
+interface ChipDescriptor {
+  id: ActiveChipId;
+  label: string;
+  value: string;
+}
+
+/** Walk the FilterSpec and produce one ChipDescriptor per active axis. The
+ *  result is in canonical order (vars first, then xforms, then the four
+ *  stats) — the chip strip + metric rows below scan in the same direction. */
+function describeActiveChips(spec: FilterSpec): ChipDescriptor[] {
+  const out: ChipDescriptor[] = [];
+
+  // Variations: one chip per selected variation index. spec.vars is kept
+  // sorted ascending as a class invariant — we keep that order here.
+  for (const v of spec.vars) {
+    const name = VARIATION_NAMES[v] ?? `var${v}`;
+    out.push({ id: `vars:${v}`, label: 'variation', value: name });
+  }
+
+  const xfRange = formatXformRange(spec.xformMin, spec.xformMax);
+  if (xfRange !== null) {
+    out.push({ id: 'xforms', label: FILTER_LABEL_MAP.xforms, value: xfRange });
+  }
+
+  const stats: Array<['coverage' | 'entropy' | 'colorVar' | 'meanLum']> = [
+    ['coverage'], ['entropy'], ['colorVar'], ['meanLum'],
+  ];
+  for (const [stat] of stats) {
+    const minKey = `${stat}Min` as const;
+    const maxKey = `${stat}Max` as const;
+    const range = formatStatRange(spec[minKey] as number, spec[maxKey] as number | null);
+    if (range !== null) {
+      out.push({ id: stat, label: FILTER_LABEL_MAP[stat], value: range });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Build the active-filter chip strip — a flex row of amber-tinted pill
+ * chips for each currently-active axis, with a `× clear all` link on the
+ * right. The strip is a stateless DOM builder; the caller owns FilterSpec
+ * state and decides what to do on remove / clear-all callbacks.
+ *
+ * Returns the strip's root element so the caller can append it directly
+ * into whatever panel composition lives upstream. (Wiring into the live
+ * filter drawer happens in Task 5.6 — this builder is standalone for
+ * now.)
+ */
+export function buildActiveChipStrip(
+  spec: FilterSpec,
+  onRemove: (id: ActiveChipId) => void,
+  onClearAll: () => void,
+): HTMLElement {
+  injectChipStylesOnce();
+
+  const strip = document.createElement('div');
+  strip.className = 'pyr3-active-chip-strip';
+
+  const chips = describeActiveChips(spec);
+
+  for (const c of chips) {
+    const chip = document.createElement('span');
+    chip.className = 'pyr3-active-chip';
+    chip.dataset.chipId = c.id;
+    // Label · value · ×  — span keeps the × in the chip tap target without
+    // making the whole chip clickable (which would conflict with the
+    // future "click chip → re-open metric row" affordance).
+    const text = document.createElement('span');
+    text.textContent = `${c.label} ${c.value}`;
+    chip.appendChild(text);
+    const x = document.createElement('span');
+    x.className = 'pyr3-active-chip-x';
+    x.textContent = '×';
+    x.title = `remove ${c.label} filter`;
+    x.onclick = () => onRemove(c.id);
+    chip.appendChild(x);
+    strip.appendChild(chip);
+  }
+
+  // Clear-all link only appears when at least one chip rendered — when no
+  // filters are active there's nothing to clear and the link is dead UI.
+  if (chips.length > 0) {
+    const clearAll = document.createElement('button');
+    clearAll.type = 'button';
+    clearAll.className = 'pyr3-active-chip-clear-all';
+    clearAll.textContent = '× clear all';
+    clearAll.title = 'clear every active filter (sort stays)';
+    clearAll.onclick = () => onClearAll();
+    strip.appendChild(clearAll);
+  }
+
+  return strip;
 }
