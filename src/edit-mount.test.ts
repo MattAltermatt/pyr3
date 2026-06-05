@@ -33,6 +33,7 @@ function makeStorageStub(): Storage {
 // in edit-state.ts) that we exercise directly here.
 import {
   resolveColdStartGenome,
+  resolveColdStartGenomeWithSource,
   resolveColdStartCollapse,
   WIP_KEY,
   PENDING_TRANSFER_KEY,
@@ -76,6 +77,34 @@ describe('resolveColdStartGenome (Task 6.5)', () => {
     const got = resolveColdStartGenome(reroll);
     expect(got.name).toBe('after-malformed');
     expect(reroll).toHaveBeenCalledTimes(1);
+  });
+
+  // 2026-06-05 — the source-tagged variant lets the editor mount decide
+  // whether to stamp the user's defaultNick (only on the reroll path).
+  it('resolveColdStartGenomeWithSource tags pending transfers, WIP, and reroll distinctly', () => {
+    // 1. pending wins over WIP + reroll
+    const pendingGenome = generateRandomGenome(seededRng(1));
+    pendingGenome.name = 'pending';
+    writePendingTransfer({ genome: pendingGenome, corpusId: null, timestamp: Date.now() });
+    const wipGenome = generateRandomGenome(seededRng(2));
+    wipGenome.name = 'wip';
+    localStorage.setItem(WIP_KEY, JSON.stringify(wipGenome));
+    let result = resolveColdStartGenomeWithSource(() => generateRandomGenome(seededRng(99)));
+    expect(result.source).toBe('pending');
+    expect(result.genome.name).toBe('pending');
+
+    // 2. With pending consumed, WIP wins over reroll
+    result = resolveColdStartGenomeWithSource(() => generateRandomGenome(seededRng(99)));
+    expect(result.source).toBe('wip');
+    expect(result.genome.name).toBe('wip');
+
+    // 3. With WIP cleared, reroll fires
+    localStorage.removeItem(WIP_KEY);
+    const fresh = generateRandomGenome(seededRng(99));
+    fresh.name = 'fresh-reroll';
+    result = resolveColdStartGenomeWithSource(() => fresh);
+    expect(result.source).toBe('reroll');
+    expect(result.genome.name).toBe('fresh-reroll');
   });
 });
 

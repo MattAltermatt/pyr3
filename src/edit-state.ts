@@ -355,10 +355,26 @@ export function restoreSectionCollapse(): Record<SectionKey, boolean> {
  *  user's action ("open file in viewer → click editor tab") is more explicit
  *  than "fall back to whatever I was last editing". */
 export function resolveColdStartGenome(rerollFn: () => Genome): Genome {
+  return resolveColdStartGenomeWithSource(rerollFn).genome;
+}
+
+/** Source-tagged variant of resolveColdStartGenome. Callers who need to
+ *  treat the three paths differently — e.g. only stamp the user's stored
+ *  defaultNick on the fresh reroll path, never on a pending transfer or a
+ *  restored WIP — branch on the source tag. */
+export type ColdStartGenomeSource = 'pending' | 'wip' | 'reroll';
+
+export interface ColdStartGenomeResult {
+  genome: Genome;
+  source: ColdStartGenomeSource;
+}
+
+export function resolveColdStartGenomeWithSource(rerollFn: () => Genome): ColdStartGenomeResult {
   const pending = consumePendingTransfer();
-  if (pending) return pending.genome;
+  if (pending) return { genome: pending.genome, source: 'pending' };
   const wip = restoreWip();
-  return wip ?? rerollFn();
+  if (wip) return { genome: wip, source: 'wip' };
+  return { genome: rerollFn(), source: 'reroll' };
 }
 
 /** Resolve the initial section-collapse map at editor mount. Wraps

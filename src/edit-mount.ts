@@ -14,7 +14,7 @@ import {
   createLaneScheduler,
   pathLane,
   resolveColdStartCollapse,
-  resolveColdStartGenome,
+  resolveColdStartGenomeWithSource,
   schedulePersist,
   type EditState,
   type LaneScheduler,
@@ -112,9 +112,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const ctx: GPUCanvasContext = ctxOrNull;
   ctx.configure({ device: opts.device, format: opts.format, alphaMode: 'opaque' });
 
-  // Apply defaultNick to a genome iff the genome has no nick. Files opened
-  // with their own nick keep that nick; random / rerolled / nick-less .pyr3.json
-  // get the user's saved nick stamped in.
+  // Stamp the user's stored defaultNick onto a freshly-rerolled genome only.
+  // 2026-06-05 policy: opens (file / viewer→editor transfer) PRESERVE the
+  // original nick (or leave blank when truly absent) — never inject the
+  // user's stored value. The viewer side now also extracts ESF chain-nick
+  // into genome.nick, so transferred ESF flames arrive with their lineage
+  // authorship intact and this stamp wouldn't fire anyway.
   function applyDefaultNick(genome: Genome): void {
     if (genome.nick === undefined && opts.defaultNick) {
       genome.nick = opts.defaultNick;
@@ -129,14 +132,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   }
 
   // Initial genome + state.
-  // #103 Phase 6 Task 6.5 — cold-start hydration. If localStorage carries a
-  // persisted WIP genome from a prior session, restore from that; otherwise
-  // run the existing fresh-reroll path. applyDefaultNick + applyEditorDefaults
-  // are applied to either source — a persisted WIP lacking size/quality (e.g.
-  // restored from an older pre-#102 schema) still receives the editor's
-  // working defaults.
-  const initialGenome = resolveColdStartGenome(() => generateRandomGenome());
-  applyDefaultNick(initialGenome);
+  // #103 Phase 6 Task 6.5 — cold-start hydration. Three possible sources:
+  //   pending — viewer→editor transfer (user's explicit handoff)
+  //   wip     — restored from localStorage of a prior editor session
+  //   reroll  — fresh random when neither of the above is present
+  // The defaultNick stamp only fires on `reroll` so opens preserve the
+  // original author (or stay blank). applyEditorDefaults is harmless on
+  // all three paths (fills only undefined size/quality).
+  const initial = resolveColdStartGenomeWithSource(() => generateRandomGenome());
+  const initialGenome = initial.genome;
+  if (initial.source === 'reroll') applyDefaultNick(initialGenome);
   applyEditorDefaults(initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
@@ -478,7 +483,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         const text = await file.text();
         const parsed = JSON.parse(text);
         const genome = genomeFromJson(parsed);
-        applyDefaultNick(genome);
+        // Open-file PRESERVES the file's nick (or leaves blank when absent).
+        // Only the Reroll path stamps defaultNick (matches the cold-start
+        // policy above).
         applyEditorDefaults(genome);
         applyNewGenome(genome);
       } catch (err) {
