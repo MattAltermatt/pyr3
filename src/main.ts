@@ -205,20 +205,29 @@ async function main(): Promise<void> {
     if (here === 'viewer' && target === 'gallery' && cf?.corpusId) {
       const { gen, id } = cf.corpusId;
       // The gallery anchor needs the flame's corpus-list index to land on
-      // the page containing it. pageForSheep does that resolution async; we
-      // fire-and-forget — if it resolves promptly we anchor, otherwise we
-      // fall back to /showcase bare. Done via Promise.race against a 0ms
-      // tick so callers don't see a perceptible delay.
-      void pageForSheep(gen, id).then((page) => {
+      // the page containing it. pageForSheep does that resolution async.
+      // Bound it with a 150ms timeout so a slow / hung index lookup falls
+      // through to the bare /showcase URL instead of stalling — and guard
+      // with a `settled` flag so a late resolve doesn't pull the user back
+      // to gallery after they've moved on (e.g. clicked another tab).
+      let settled = false;
+      const onResolve = (page: number): void => {
+        if (settled) return;
+        settled = true;
         // pageForSheep returns a 1-indexed page. galleryUrlForFlame expects
-        // the 0-indexed corpus list index. Convert by (page - 1) * GALLERY_PAGE_SIZE
-        // — close enough to land on the right page (any in-page offset is a
-        // cosmetic concern, not a navigational one).
+        // the 0-indexed corpus list index. Convert by (page - 1) *
+        // GALLERY_PAGE_SIZE — close enough to land on the right page (any
+        // in-page offset is a cosmetic concern, not a navigational one).
         const approxIndex = (page - 1) * GALLERY_PAGE_SIZE;
         window.location.href = galleryUrlForFlame({ gen, id }, approxIndex);
-      }).catch(() => {
+      };
+      const onFallback = (): void => {
+        if (settled) return;
+        settled = true;
         window.location.href = SURFACE_FALLBACK.gallery;
-      });
+      };
+      setTimeout(onFallback, 150);
+      void pageForSheep(gen, id).then(onResolve).catch(onFallback);
       return;
     }
     if (here === 'viewer' && target === 'editor') {
