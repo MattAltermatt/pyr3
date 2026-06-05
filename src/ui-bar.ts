@@ -12,6 +12,7 @@
 
 import { corpusUrl, galleryUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
 import type { QualityRequest } from './presets';
+import { composeFlameFilename } from './save-flame';
 import { composeSaveFilename } from './save-image';
 import { COLORS } from './ui-tokens';
 import type { WebGPUStatus } from './webgpu-check';
@@ -38,6 +39,11 @@ export interface BarOpts {
    *  bar composes the filename (flame + tier + quality) and hands it down; main
    *  owns the actual canvas.toBlob + anchor-download wiring. */
   onSave: (filename: string) => void;
+  /** #103 Phase 3 Task 3.3: download the current genome as a `.pyr3.json` flame
+   *  file. The bar composes a sanitized filename from the flame name; main
+   *  owns the genome lookup + JSON-encode + anchor-download wiring (delegates
+   *  to `saveFlame()` in `src/save-flame.ts`). */
+  onSaveFlame: (filename: string) => void;
   /** #23: fired when the user clicks the viewer's 🎲 pill — picks an
    *  interestingness-weighted flame from the corpus (80% from top-10%
    *  elite, 20% from the middle band, bottom 5% excluded) and navigates
@@ -365,16 +371,25 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     qualityGroup.append(b);
   }
 
-  // #22: 💾 Save — download the current canvas as PNG. Phase 3 Task 3.3 will
-  // wrap this in a "Save Render (primary)" + "Save Flame (secondary)" pair;
-  // for Task 3.2 we keep the single Save in place and Task 3.3 swaps it out.
-  const saveBtn = button('💾 Save', 'pyr3-bar-btn', () => {
+  // #103 Phase 3 Task 3.3 — paired save buttons:
+  //   - 🧬 Save Flame  (secondary) — exports the genome as `.pyr3.json`
+  //   - 💾 Save Render (primary, popped) — exports the current canvas as PNG
+  // The Render save is the load-bearing "I want to keep this picture" action
+  // and reads as a popped CTA (flame-gradient fill, dark text, glow). The
+  // Flame save is the parallel "I want to keep the recipe" action and stays
+  // visually quiet next to it. Both gate on `barBusy` + `currentQuality`.
+  const saveFlameBtn = button('🧬 Save Flame', 'pyr3-btn pyr3-bar-save-flame', () => {
+    opts.onSaveFlame(composeFlameFilename(currentFlameName));
+  });
+  saveFlameBtn.title = 'Download the current genome as a .pyr3.json flame file';
+
+  const saveBtn = button('💾 Save Render', 'pyr3-btn-primary pyr3-bar-save-render', () => {
     opts.onSave(composeSaveFilename(currentFlameName, currentQuality));
   });
   saveBtn.disabled = true;
   saveBtn.title = 'Download the current render as a PNG';
 
-  actionLeft.append(openBtn, sizeBtn, qualityLabel, qualityGroup, saveBtn);
+  actionLeft.append(openBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn);
 
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
   // curated showcase set (sibling of the gallery dice #50, which picks from
@@ -1247,6 +1262,34 @@ const BAR_CSS = `
 .pyr3-bar-quality-btn:hover:not(:disabled):not(.on) { background: #2a2a30; color: var(--text); }
 .pyr3-bar-quality-btn.on { background: var(--accent); color: ${COLORS.bg.page}; font-weight: 700; }
 .pyr3-bar-quality-btn:disabled { color: #555; cursor: not-allowed; }
+
+/* #103 Phase 3 Task 3.3 — Save Flame (secondary) + Save Render (primary, popped).
+   .pyr3-btn = neutral secondary chip (matches .pyr3-bar-btn but the canonical
+   class for the new visual-overhaul primitives).
+   .pyr3-btn-primary = filled flame-gradient CTA with dark text + glow + heavier
+   weight. Used for the load-bearing "keep this picture" action. */
+.pyr3-btn {
+  font-size: 11px; padding: 4px 14px; border-radius: 3px;
+  background: #222; color: var(--text); border: 1px solid #444;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.pyr3-btn:hover:not(:disabled) { background: #2a2a30; }
+.pyr3-btn:disabled { background: #1a1a1f; color: #555; border-color: #2a2a30; cursor: not-allowed; }
+.pyr3-btn-primary {
+  font-size: 12px; padding: 6px 16px; border-radius: 4px;
+  background: linear-gradient(180deg, ${COLORS.flame.top} 0%, ${COLORS.flame.mid} 60%, ${COLORS.flame.bot} 100%);
+  color: #1a0d04; border: 1px solid ${COLORS.flame.mid};
+  cursor: pointer; font-family: inherit; font-weight: 800; white-space: nowrap;
+  box-shadow: 0 0 12px rgba(232, 124, 26, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.pyr3-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 0 18px rgba(232, 124, 26, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+.pyr3-btn-primary:disabled {
+  background: #2a1f15; color: #6b5a44; border-color: #3a3a42;
+  box-shadow: none; cursor: not-allowed;
+}
 
 /* #103 Phase 3 Task 3.2 — Size dropdown menu (lives on document.body). */
 .pyr3-size-menu {

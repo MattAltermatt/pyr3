@@ -23,6 +23,7 @@ function makeBarOpts(over: Partial<BarOpts> = {}): BarOpts {
     onRenderQuality: vi.fn(),
     onNavigate: vi.fn(),
     onSave: vi.fn(),
+    onSaveFlame: vi.fn(),
     onSurpriseMe: vi.fn(),
     estimateCost: () => ({ width: 1024, height: 1024, mb: 4, fits: true }),
     onTabClick: vi.fn(),
@@ -277,6 +278,67 @@ describe('mountAboutBar', () => {
     expect(root.querySelector('.pyr3-tab.active')).toBeFalsy();
     expect(root.querySelector('.pyr3-about-link.active')).toBeTruthy();
     handle.destroy();
+  });
+});
+
+describe('viewer action row — Save Flame + Save Render (#103 Phase 3 Task 3.3)', () => {
+  it('renders TWO distinct save buttons (Save Flame secondary + Save Render primary)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts());
+
+    const saveFlame = root.querySelector('.pyr3-bar-save-flame') as HTMLElement;
+    const saveRender = root.querySelector('.pyr3-bar-save-render') as HTMLElement;
+    expect(saveFlame).not.toBeNull();
+    expect(saveRender).not.toBeNull();
+    expect(saveFlame.textContent).toContain('Save Flame');
+    expect(saveRender.textContent).toContain('Save Render');
+  });
+
+  it('Save Render carries primary-CTA styling (pyr3-btn-primary class)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts());
+    const saveRender = root.querySelector('.pyr3-bar-save-render') as HTMLElement;
+    expect(saveRender.classList.contains('pyr3-btn-primary')).toBe(true);
+  });
+
+  it('Save Flame uses standard secondary styling (pyr3-btn class)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts());
+    const saveFlame = root.querySelector('.pyr3-bar-save-flame') as HTMLElement;
+    expect(saveFlame.classList.contains('pyr3-btn')).toBe(true);
+    expect(saveFlame.classList.contains('pyr3-btn-primary')).toBe(false);
+  });
+
+  it('clicking Save Render fires the existing onSave handler with the composed filename', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onSave = vi.fn();
+    const bar = mountBar(root, makeBarOpts({ onSave }));
+    bar.setMeta({ flameName: 'electricsheep.247.19679' });
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+    const saveRender = root.querySelector('.pyr3-bar-save-render') as HTMLElement;
+    saveRender.click();
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0]![0]).toContain('electricsheep.247.19679');
+    expect(onSave.mock.calls[0]![0]).toMatch(/\.png$/);
+  });
+
+  it('clicking Save Flame fires onSaveFlame with a .pyr3.json filename', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onSaveFlame = vi.fn();
+    const bar = mountBar(root, makeBarOpts({ onSaveFlame }));
+    bar.setMeta({ flameName: 'electricsheep.247.19679' });
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+    const saveFlame = root.querySelector('.pyr3-bar-save-flame') as HTMLElement;
+    saveFlame.click();
+    expect(onSaveFlame).toHaveBeenCalledTimes(1);
+    const fn = onSaveFlame.mock.calls[0]![0] as string;
+    expect(fn).toContain('electricsheep.247.19679');
+    expect(fn).toMatch(/\.pyr3\.json$/);
   });
 });
 

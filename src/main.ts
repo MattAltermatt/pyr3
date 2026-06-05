@@ -272,6 +272,16 @@ async function main(): Promise<void> {
     onNavigate: (gen, id) => navigateCorpus(gen, id),
     estimateCost: (longEdge, spp) => estimateCostFn(longEdge, spp),
     onSave: (filename) => saveCanvas(filename),
+    // #103 Phase 3 Task 3.3: 🧬 Save Flame exports the current genome as
+    // `.pyr3.json`. `getCurrentFlame()` carries the genome the viewer is
+    // displaying — set during every corpus load / file open / surprise pick.
+    onSaveFlame: (filename) => {
+      const current = getCurrentFlame();
+      if (!current) return;
+      void import('./save-flame').then(({ saveFlame }) => {
+        saveFlame(current.genome, filename);
+      });
+    },
     onSurpriseMe: () => {
       // #23: pick a flame from the corpus weighted by interestingness +
       // navigate to it. The first click awaits the feature-index load
