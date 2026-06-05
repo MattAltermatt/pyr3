@@ -1,9 +1,15 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the /v1/edit palette section. Covers DOM smoke, ◀/▶ arrow
-// cycling, hue slider/number mutation, mode radio toggling, and full 3-col
-// 701-cell picker open/close/select + live name search. All under happy-dom
-// (no GPU).
+// Unit tests for the /v1/edit palette section after Phase 9 reflow:
+//   - Full-width hue-rotating ribbon at top (the one section-body exception
+//     to the row grid).
+//   - `palette` row: launcher button (text = paletteIdentifier()) →
+//     opens the docked picker.
+//   - `hue rotation` row: buildSlider 0..360 with degree value display.
+//   - `⟲ reset hue` btn-accent inline action.
+//   - Section header carries a `hue +N°` chip when state.genome.palette.hue
+//     is non-zero.
+//   - Mode radio (linear/step → genome.paletteMode) preserved.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { paletteSection } from './edit-section-palette';
@@ -22,19 +28,43 @@ function seededRng(seed: number): () => number {
   };
 }
 
+// mountEditUi adds a .pyr3-edit-section-header sibling to the body host.
+// Tests that exercise header chip logic need the wrap+header+body structure.
+function mountWithHeader(stateOverrides?: (state: ReturnType<typeof createEditState>) => void): {
+  wrap: HTMLElement;
+  header: HTMLElement;
+  host: HTMLElement;
+  state: ReturnType<typeof createEditState>;
+  onChange: ReturnType<typeof vi.fn>;
+} {
+  const wrap = document.createElement('div');
+  wrap.className = 'pyr3-edit-section';
+  const header = document.createElement('div');
+  header.className = 'pyr3-edit-section-header';
+  const host = document.createElement('div');
+  host.className = 'pyr3-edit-section-body';
+  wrap.append(header, host);
+  document.body.appendChild(wrap);
+
+  const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+  // Pin palette to flame #100 so paletteSource derives deterministically.
+  state.genome.palette = { name: 'flame #100', stops: state.genome.palette.stops };
+  if (stateOverrides) stateOverrides(state);
+  const onChange = vi.fn();
+  paletteSection.build(host, state, onChange);
+  return { wrap, header, host, state, onChange };
+}
+
 function mount() {
   const host = document.createElement('div');
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-  // Pin the palette name to a known shape so the closure-local paletteIdx
-  // parses deterministically.
   state.genome.palette = { name: 'flame #100', stops: state.genome.palette.stops };
   const onChange = vi.fn();
   paletteSection.build(host, state, onChange);
-  document.body.appendChild(host); // text-mode swap needs the host in the document
+  document.body.appendChild(host);
   return { host, state, onChange };
 }
 
-// Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
 function typeInto(cell: HTMLElement, value: string): void {
   cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   const inp = cell.querySelector('input') as HTMLInputElement;
@@ -43,160 +73,161 @@ function typeInto(cell: HTMLElement, value: string): void {
 }
 
 afterEach(() => {
-  // Pickers mount on document.body; clean between tests so they don't bleed.
-  document.querySelectorAll('.pyr3-edit-palette-picker').forEach((p) => p.remove());
+  document.body.innerHTML = '';
 });
 
 describe('paletteSection — DOM smoke', () => {
-  it('renders strip, ◀/▶ arrows, hue slider, hue number, mode radios', () => {
+  it('renders ribbon, launcher button, hue slider, reset-hue action, mode radios', () => {
     const { host } = mount();
-    expect(host.querySelector('.pyr3-edit-palette-strip')).toBeTruthy();
-    expect(host.querySelector('.pyr3-edit-palette-prev')).toBeTruthy();
-    expect(host.querySelector('.pyr3-edit-palette-next')).toBeTruthy();
-    expect(host.querySelector('.pyr3-edit-palette-hue-slider')).toBeTruthy();
-    expect(host.querySelector('.pyr3-edit-palette-hue-number')).toBeTruthy();
+    expect(host.querySelector('.pyr3-edit-palette-ribbon')).toBeTruthy();
+    expect(host.querySelector('.pyr3-edit-palette-launcher')).toBeTruthy();
+    expect(host.querySelector('.pyr3-edit-palette-hue-row')).toBeTruthy();
+    expect(host.querySelector('.pyr3-edit-palette-reset-hue')).toBeTruthy();
     expect(host.querySelector('.pyr3-edit-palette-mode-linear')).toBeTruthy();
     expect(host.querySelector('.pyr3-edit-palette-mode-step')).toBeTruthy();
   });
 
-  it('strip row is a single flex row (◀ / strip / ▶ same line)', () => {
+  it('ribbon is a full-width 22px strip with the palette CSS gradient', () => {
     const { host } = mount();
-    const row = host.querySelector('.pyr3-edit-palette-strip-row') as HTMLElement;
-    expect(row.style.display).toBe('flex');
+    const ribbon = host.querySelector('.pyr3-edit-palette-ribbon') as HTMLElement;
+    expect(ribbon.style.height).toBe('22px');
+    expect(ribbon.style.width).toBe('100%');
+    // CSS gradient bg derived from the palette's stops.
+    expect(ribbon.style.background).toContain('linear-gradient');
   });
 
-  it('label shows "<name> · flame #N" when palette idx is named', () => {
+  it('ribbon applies CSS filter: hue-rotate bound to genome.palette.hue', () => {
+    const { host } = mountWithHeader((state) => {
+      state.genome.palette.hue = 30;
+    });
+    const ribbon = host.querySelector('.pyr3-edit-palette-ribbon') as HTMLElement;
+    expect(ribbon.style.filter).toBe('hue-rotate(30deg)');
+  });
+
+  it('launcher button text reflects paletteIdentifier({kind: "flam3", number: N})', () => {
     const { host } = mount();
-    const label = host.querySelector('.pyr3-edit-palette-label') as HTMLElement;
-    const name = getLibraryPaletteName(100);
-    if (name) {
-      expect(label.textContent).toBe(`${name} · flame #100`);
+    const launcher = host.querySelector('.pyr3-edit-palette-launcher') as HTMLElement;
+    const expectedName = getLibraryPaletteName(100);
+    if (expectedName) {
+      expect(launcher.textContent).toContain(expectedName);
+      expect(launcher.textContent).toContain('flam3');
     } else {
-      expect(label.textContent).toBe('flame #100');
+      expect(launcher.textContent).toContain('#100');
+      expect(launcher.textContent).toContain('flam3');
     }
-  });
-
-  it('label falls back to "flame #N" when palette idx is unnamed (no-name)', () => {
-    // Find an idx whose name resolves to null (no-name in the source XML).
-    let noNameIdx = -1;
-    for (let i = 0; i < FLAM3_PALETTE_COUNT; i++) {
-      if (getLibraryPaletteName(i) === null) { noNameIdx = i; break; }
-    }
-    if (noNameIdx < 0) return; // skip if every entry is named
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    state.genome.palette = { name: `flame #${noNameIdx}`, stops: state.genome.palette.stops };
-    paletteSection.build(host, state, vi.fn());
-    const label = host.querySelector('.pyr3-edit-palette-label') as HTMLElement;
-    expect(label.textContent).toBe(`flame #${noNameIdx}`);
   });
 
   it('initial mode radio reflects genome.paletteMode (default step — flam3 spec)', () => {
     const { host } = mount();
-    const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
     const step = host.querySelector('.pyr3-edit-palette-mode-step') as HTMLInputElement;
+    const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
     expect(step.checked).toBe(true);
     expect(linear.checked).toBe(false);
   });
 });
 
-describe('paletteSection — arrow stepping', () => {
-  it('▶ arrow click advances paletteIdx by 1, fires onChange("palette")', () => {
-    const { host, state, onChange } = mount();
-    const next = host.querySelector('.pyr3-edit-palette-next') as HTMLButtonElement;
-    next.click();
-    expect(state.genome.palette.name).toBe('flame #101');
-    expect(onChange).toHaveBeenCalledWith('palette');
-  });
-
-  it('◀ arrow click steps paletteIdx back by 1', () => {
-    const { host, state, onChange } = mount();
-    const prev = host.querySelector('.pyr3-edit-palette-prev') as HTMLButtonElement;
-    prev.click();
-    expect(state.genome.palette.name).toBe('flame #99');
-    expect(onChange).toHaveBeenCalledWith('palette');
-  });
-
-  it('label updates after arrow click', () => {
-    const { host } = mount();
-    const next = host.querySelector('.pyr3-edit-palette-next') as HTMLButtonElement;
-    next.click();
-    const label = host.querySelector('.pyr3-edit-palette-label') as HTMLElement;
-    const name = getLibraryPaletteName(101);
-    const expected = name ? `${name} · flame #101` : 'flame #101';
-    expect(label.textContent).toBe(expected);
-  });
-
-  it('arrow stepping wraps around at FLAM3_PALETTE_COUNT boundary', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    state.genome.palette = {
-      name: `flame #${FLAM3_PALETTE_COUNT - 1}`,
-      stops: state.genome.palette.stops,
-    };
-    const onChange = vi.fn();
-    paletteSection.build(host, state, onChange);
-    const next = host.querySelector('.pyr3-edit-palette-next') as HTMLButtonElement;
-    next.click();
-    expect(state.genome.palette.name).toBe('flame #0');
-  });
-
-  it('arrow click RESETS hue to 0 on new palette (mode is preserved)', () => {
-    const { host, state } = mount();
-    state.genome.palette.hue = 90;
-    state.genome.palette.mode = 'step';
-    const next = host.querySelector('.pyr3-edit-palette-next') as HTMLButtonElement;
-    next.click();
-    expect(state.genome.palette.hue).toBeUndefined();
-    expect(state.genome.palette.mode).toBe('step');
-    // Hue widgets reset to 0 too
-    const slider = host.querySelector('.pyr3-edit-palette-hue-slider') as HTMLInputElement;
-    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLElement;
-    expect(slider.value).toBe('0');
-    expect(number.textContent).toBe('0');
-  });
-
-  it('picker cell click also resets hue', () => {
-    const { host, state } = mount();
-    state.genome.palette.hue = 180;
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    const cells = document.querySelectorAll<HTMLElement>('.pyr3-edit-palette-picker-cell');
-    cells[10]!.click();
-    expect(state.genome.palette.hue).toBeUndefined();
-  });
-});
-
 describe('paletteSection — hue mutation', () => {
-  it('hue slider input writes palette.hue + fires onChange("palette.hue")', () => {
+  it('hue slider scrubby input writes palette.hue + fires onChange("palette.hue")', () => {
     const { host, state, onChange } = mount();
-    const slider = host.querySelector('.pyr3-edit-palette-hue-slider') as HTMLInputElement;
-    slider.value = '180';
-    slider.dispatchEvent(new Event('input'));
+    const hueRow = host.querySelector('.pyr3-edit-palette-hue-row') as HTMLElement;
+    const scrubby = hueRow.querySelector('.pyr3-slider-scrubby') as HTMLElement;
+    typeInto(scrubby, '180');
     expect(state.genome.palette.hue).toBe(180);
     expect(onChange).toHaveBeenCalledWith('palette.hue');
   });
 
-  it('hue number input mirrors to the slider', () => {
+  it('scrubbing the hue updates the ribbon filter live', () => {
     const { host, state } = mount();
-    const slider = host.querySelector('.pyr3-edit-palette-hue-slider') as HTMLInputElement;
-    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLElement;
-    typeInto(number, '45');
-    expect(state.genome.palette.hue).toBe(45);
-    expect(slider.value).toBe('45');
+    const ribbon = host.querySelector('.pyr3-edit-palette-ribbon') as HTMLElement;
+    const hueRow = host.querySelector('.pyr3-edit-palette-hue-row') as HTMLElement;
+    const scrubby = hueRow.querySelector('.pyr3-slider-scrubby') as HTMLElement;
+    typeInto(scrubby, '120');
+    expect(ribbon.style.filter).toBe('hue-rotate(120deg)');
+    expect(state.genome.palette.hue).toBe(120);
   });
 
-  it('hue clamps to 0..360', () => {
+  it('hue clamps to 0..360 via scrubby', () => {
     const { host, state } = mount();
-    const number = host.querySelector('.pyr3-edit-palette-hue-number') as HTMLElement;
-    typeInto(number, '500');
+    const hueRow = host.querySelector('.pyr3-edit-palette-hue-row') as HTMLElement;
+    const scrubby = hueRow.querySelector('.pyr3-slider-scrubby') as HTMLElement;
+    typeInto(scrubby, '500');
     expect(state.genome.palette.hue).toBe(360);
-    typeInto(number, '-30');
+    typeInto(scrubby, '-30');
     expect(state.genome.palette.hue).toBe(0);
+  });
+
+  it('reset-hue button uses buildButton accent variant', () => {
+    const { host } = mount();
+    const reset = host.querySelector('.pyr3-edit-palette-reset-hue') as HTMLElement;
+    // buildButton({variant: 'accent'}) tags as `pyr3-btn pyr3-btn-accent`.
+    expect(reset.classList.contains('pyr3-btn')).toBe(true);
+    expect(reset.classList.contains('pyr3-btn-accent')).toBe(true);
+  });
+
+  it('reset-hue button restores hue to 0 and clears the ribbon filter', () => {
+    const { host, state, onChange } = mountWithHeader((state) => {
+      state.genome.palette.hue = 90;
+    });
+    const ribbon = host.querySelector('.pyr3-edit-palette-ribbon') as HTMLElement;
+    expect(ribbon.style.filter).toBe('hue-rotate(90deg)');
+    const reset = host.querySelector('.pyr3-edit-palette-reset-hue') as HTMLElement;
+    reset.click();
+    expect(state.genome.palette.hue).toBe(0);
+    expect(ribbon.style.filter).toBe('hue-rotate(0deg)');
+    expect(onChange).toHaveBeenCalledWith('palette.hue');
   });
 });
 
-describe('paletteSection — mode radio (flam3 paletteMode)', () => {
+describe('paletteSection — section header chip', () => {
+  it('chip not mounted when hue is 0/undefined', async () => {
+    const { header } = mountWithHeader();
+    // Microtask defer in build() — wait for the chip to be (or not be) mounted.
+    await Promise.resolve();
+    const chip = header.querySelector('.pyr3-edit-palette-chip');
+    expect(chip).toBeNull();
+  });
+
+  it('chip text reads "hue +30°" when hue is 30', async () => {
+    const { header } = mountWithHeader((state) => {
+      state.genome.palette.hue = 30;
+    });
+    await Promise.resolve();
+    const chip = header.querySelector('.pyr3-edit-palette-chip') as HTMLElement;
+    expect(chip).toBeTruthy();
+    expect(chip.textContent).toBe('hue +30°');
+  });
+
+  it('chip updates live as hue scrubs', async () => {
+    const { host, header } = mountWithHeader();
+    await Promise.resolve();
+    expect(header.querySelector('.pyr3-edit-palette-chip')).toBeNull();
+    const hueRow = host.querySelector('.pyr3-edit-palette-hue-row') as HTMLElement;
+    const scrubby = hueRow.querySelector('.pyr3-slider-scrubby') as HTMLElement;
+    typeInto(scrubby, '45');
+    const chip = header.querySelector('.pyr3-edit-palette-chip') as HTMLElement;
+    expect(chip).toBeTruthy();
+    expect(chip.textContent).toBe('hue +45°');
+  });
+});
+
+describe('paletteSection — launcher / ribbon → openPalettePicker', () => {
+  it('launcher button click invokes state.openPalettePicker (when set)', () => {
+    const opener = vi.fn();
+    const { host, state } = mount();
+    state.openPalettePicker = opener;
+    const launcher = host.querySelector('.pyr3-edit-palette-launcher') as HTMLElement;
+    launcher.click();
+    expect(opener).toHaveBeenCalledOnce();
+  });
+
+  it('launcher click is a no-op when openPalettePicker is unset (graceful)', () => {
+    const { host } = mount();
+    const launcher = host.querySelector('.pyr3-edit-palette-launcher') as HTMLElement;
+    expect(() => launcher.click()).not.toThrow();
+  });
+});
+
+describe('paletteSection — mode radio (flam3 paletteMode, preserved)', () => {
   it('initial mode reflects genome.paletteMode (default step when unset)', () => {
     const { host } = mount();
     const linear = host.querySelector('.pyr3-edit-palette-mode-linear') as HTMLInputElement;
@@ -214,7 +245,7 @@ describe('paletteSection — mode radio (flam3 paletteMode)', () => {
     expect(onChange).toHaveBeenCalledWith('paletteMode');
   });
 
-  it('clicking step REMOVES genome.paletteMode (step is flam3 default — omit for clean round-trip)', () => {
+  it('clicking step REMOVES genome.paletteMode (step is flam3 default — clean round-trip)', () => {
     const host = document.createElement('div');
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     state.genome.palette = { name: 'flame #100', stops: state.genome.palette.stops };
@@ -227,81 +258,7 @@ describe('paletteSection — mode radio (flam3 paletteMode)', () => {
     expect(state.genome.paletteMode).toBeUndefined();
     expect(onChange).toHaveBeenCalledWith('paletteMode');
   });
-
-  it('mode row carries a plain-language tooltip explaining step vs linear', () => {
-    const { host } = mount();
-    const row = host.querySelector('.pyr3-edit-palette-mode-row') as HTMLElement;
-    expect(row.title.length).toBeGreaterThan(0);
-    expect(row.title.toLowerCase()).toMatch(/step/);
-    expect(row.title.toLowerCase()).toMatch(/linear/);
-  });
 });
 
-describe('paletteSection — full picker (3-col grid + search + footer)', () => {
-  it('clicking the strip opens the picker on document.body with all 701 cells', () => {
-    const { host } = mount();
-    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    const picker = document.querySelector('.pyr3-edit-palette-picker');
-    expect(picker).toBeTruthy();
-    const cells = document.querySelectorAll('.pyr3-edit-palette-picker-cell');
-    expect(cells.length).toBe(FLAM3_PALETTE_COUNT);
-  });
-
-  it('each cell carries idx, name, and a #N number', () => {
-    const { host } = mount();
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    const first = document.querySelector('.pyr3-edit-palette-picker-cell') as HTMLElement;
-    expect(first.dataset['paletteIdx']).toBe('0');
-    expect(first.querySelector('.pyr3-edit-palette-picker-cell-name')).toBeTruthy();
-    expect(first.querySelector('.pyr3-edit-palette-picker-cell-num')?.textContent).toBe('#0');
-  });
-
-  it('clicking a picker cell sets the palette index + closes the picker', () => {
-    const { host, state, onChange } = mount();
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    const cells = document.querySelectorAll<HTMLElement>('.pyr3-edit-palette-picker-cell');
-    const target = cells[5]!;
-    const idx = Number(target.dataset['paletteIdx']);
-    target.click();
-    expect(state.genome.palette.name).toBe(`flame #${idx}`);
-    expect(onChange).toHaveBeenCalledWith('palette');
-    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
-  });
-
-  it('clicking the strip a second time closes the picker (toggle)', () => {
-    const { host } = mount();
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeTruthy();
-    strip.click();
-    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
-  });
-
-  it('search filters cells live, updates the footer count', () => {
-    const { host } = mount();
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    const search = document.querySelector('.pyr3-edit-palette-picker-search input') as HTMLInputElement;
-    search.value = 'sky-flesh';
-    search.dispatchEvent(new Event('input'));
-    const visibleCells = [...document.querySelectorAll<HTMLElement>('.pyr3-edit-palette-picker-cell')]
-      .filter((c) => c.style.display !== 'none');
-    expect(visibleCells.length).toBeGreaterThan(0);
-    expect(visibleCells.length).toBeLessThan(FLAM3_PALETTE_COUNT);
-    const countEl = document.querySelector('.pyr3-edit-palette-picker-footer span') as HTMLElement;
-    expect(countEl.textContent).toMatch(/\d+ \/ \d+ match/);
-  });
-
-  it('Escape key closes the picker', () => {
-    const { host } = mount();
-    const strip = host.querySelector('.pyr3-edit-palette-strip') as HTMLElement;
-    strip.click();
-    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeTruthy();
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(document.querySelector('.pyr3-edit-palette-picker')).toBeNull();
-  });
-});
+// FLAM3_PALETTE_COUNT just keeps the import live across grep/lint sweeps.
+void FLAM3_PALETTE_COUNT;

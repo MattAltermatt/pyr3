@@ -1,28 +1,41 @@
-// pyr3 — /v1/edit palette section.
+// pyr3 — /v1/edit palette section (Phase 9 visual overhaul).
 //
 // Layout:
-//   - Strip row: [◀] [gradient strip — click to pick] [▶]   (flex, single row)
-//   - Label:     "<library-name> · flame #N"               (uses getLibraryPaletteName)
-//   - Hue:       slider 0..360 + number input              → palette.hue
-//   - Mode:      linear / step radio                        → palette.mode
+//   - Ribbon (full-width 22px, top) — gradient strip of the current palette;
+//     CSS `filter: hue-rotate(<deg>deg)` previews the rotated palette live
+//     without re-baking the LUT. Click = shortcut to open the picker.
+//     This is the locked exception to the section's row-grid convention.
+//   - palette row   — buildRow('palette', launcher button). The launcher
+//     text comes from paletteIdentifier(state.paletteSource ?? inferred).
+//     Click → state.openPalettePicker() (wired by the editor mount).
+//   - hue rotation  — buildRow('hue rotation', buildSlider 0..360 deg).
+//   - reset action  — inline accent `⟲ reset hue` btn (no label column).
+//   - mode row      — preserved from pre-Phase-9 (genome.paletteMode
+//     scatter-time sampling; linear vs step radio).
 //
-// Picker (clicking the strip): full 701-palette 3-column grid with live
-// name-search + footer. Same pattern as /v1/evolve's buildPalettePicker
-// (parked branch); CSS class names mirror so future DRY into a shared
-// `pyr3-palette-picker` is mechanical.
+// Section header gains a `hue +N°` chip when hue is non-zero (mirrors the
+// density section's chip pattern; mounted via a microtask after build()).
 //
 // onChange paths (matching pathLane in src/edit-state.ts):
-//   - palette swap     → onChange('palette')      (fast lane)
-//   - palette hue      → onChange('palette.hue')  (fast lane)
-//   - palette mode     → onChange('palette.mode') (fast lane)
+//   - palette swap     → onChange('palette')      (slow lane)
+//   - palette hue      → onChange('palette.hue')  (slow lane)
+//   - palette mode     → onChange('paletteMode')  (slow lane)
+//
+// The launcher / ribbon both open the picker via state.openPalettePicker —
+// the section never constructs the picker itself. That keeps the section
+// stateless wrt picker lifecycle; the editor host owns the docking.
 
 import { type SectionMount } from './edit-ui';
 import { type Palette, type PaletteMode, type ColorStop } from './palette';
-import { FLAM3_PALETTE_COUNT, getLibraryStops, getLibraryPaletteName } from './flam3-palettes';
-import { scrubbyInput } from './edit-scrubby-input';
+import { FLAM3_PALETTE_COUNT, getLibraryStops } from './flam3-palettes';
+import {
+  type PaletteSource,
+  paletteIdentifier,
+} from './flam3-palette-names';
+import { COLORS } from './ui-tokens';
+import { buildRow, buildSlider, buildButton } from './edit-primitives';
 
-// Parse `flame #N` → N. Returns null when the name doesn't match. Closure-
-// only state; we don't add a field to EditState.
+// Parse `flame #N` → N. Returns null when the name doesn't match.
 function parseFlameIndex(name: string): number | null {
   const m = /^flame\s+#(\d+)$/i.exec(name);
   if (!m) return null;
@@ -34,6 +47,15 @@ function parseFlameIndex(name: string): number | null {
 function paletteAtIndex(idx: number): Palette {
   const stops = getLibraryStops(idx) ?? [];
   return { name: `flame #${idx}`, stops };
+}
+
+// Derive a PaletteSource from the genome's palette.name when state hasn't
+// explicitly set paletteSource yet. `flame #N` → flam3 catalog entry.
+function inferPaletteSource(palette: Palette): PaletteSource {
+  const idx = parseFlameIndex(palette.name);
+  if (idx !== null) return { kind: 'flam3', number: idx };
+  // Fallback for unknown-source palettes — show as flam3 #0 placeholder.
+  return { kind: 'flam3', number: 0 };
 }
 
 // Build a CSS linear-gradient from a palette's stops. Sorted by t so out-of-
@@ -55,31 +77,6 @@ function gradientCss(palette: { stops: ColorStop[] }): string {
   return `linear-gradient(to right, ${parts.join(', ')})`;
 }
 
-// Format the readable label for `flame #N` — `<name> · flame #N` when a name
-// is known, else just `flame #N`.
-function paletteDisplayLabel(idx: number): string {
-  const name = getLibraryPaletteName(idx);
-  return name ? `${name} · flame #${idx}` : `flame #${idx}`;
-}
-
-// Lazy entries cache — pays the 701-decode only on first picker open.
-interface LibraryEntry { idx: number; name: string; gradient: string; }
-let _libraryEntries: LibraryEntry[] | null = null;
-function getLibraryEntries(): LibraryEntry[] {
-  if (_libraryEntries) return _libraryEntries;
-  const out: LibraryEntry[] = [];
-  for (let i = 0; i < FLAM3_PALETTE_COUNT; i++) {
-    const stops = getLibraryStops(i) ?? [];
-    out.push({
-      idx: i,
-      name: getLibraryPaletteName(i) ?? `no-name`,
-      gradient: gradientCss({ stops }),
-    });
-  }
-  _libraryEntries = out;
-  return out;
-}
-
 export const paletteSection: SectionMount = {
   key: 'palette',
   title: '🎨 PALETTE',
@@ -87,95 +84,94 @@ export const paletteSection: SectionMount = {
     ensurePaletteStyles();
     host.classList.add('pyr3-edit-section-palette');
 
-    // Closure-local current index. Seed from the genome's palette.name when it
-    // matches `flame #N`; otherwise default to 0.
-    let paletteIdx = parseFlameIndex(state.genome.palette.name) ?? 0;
+    // ── Ribbon (full-width 22px, top) ──────────────────────────────────────
+    // Locked exception to the row grid: full-width preview strip. Clicking
+    // it opens the picker (handled in the click handler below; ribbon click
+    // does NOT also affect hue — different element entirely).
+    const ribbon = document.createElement('div');
+    ribbon.className = 'pyr3-edit-palette-ribbon';
+    ribbon.setAttribute('role', 'button');
+    ribbon.tabIndex = 0;
+    ribbon.title = 'click to pick a palette';
+    ribbon.style.width = '100%';
+    ribbon.style.height = '22px';
+    ribbon.style.border = `1px solid ${COLORS.border}`;
+    ribbon.style.borderRadius = '2px';
+    ribbon.style.cursor = 'pointer';
+    ribbon.style.marginBottom = '10px';
+    host.appendChild(ribbon);
 
-    // ── Strip row: [◀] [strip] [▶] — single flex row ───────────────────────
-    const stripRow = document.createElement('div');
-    stripRow.className = 'pyr3-edit-palette-strip-row';
-    stripRow.style.display = 'flex';
-    stripRow.style.alignItems = 'center';
-    stripRow.style.gap = '6px';
+    // ── palette row (launcher button) ──────────────────────────────────────
+    const launcher = document.createElement('div');
+    launcher.className = 'pyr3-edit-palette-launcher';
+    launcher.style.display = 'inline-flex';
+    launcher.style.alignItems = 'center';
+    launcher.style.gap = '6px';
+    launcher.style.padding = '4px 8px';
+    launcher.style.borderRadius = '3px';
+    launcher.style.border = `1px solid ${COLORS.border}`;
+    launcher.style.background = COLORS.bg.input;
+    launcher.style.cursor = 'pointer';
+    launcher.style.fontSize = '12px';
+    launcher.style.flex = '1 1 0';
+    launcher.style.minWidth = '0';
+    launcher.title = 'click to pick a palette';
 
-    const prevBtn = document.createElement('button');
-    prevBtn.type = 'button';
-    prevBtn.className = 'pyr3-edit-palette-arrow pyr3-edit-palette-prev';
-    prevBtn.textContent = '◀';
-    prevBtn.title = 'previous palette';
+    const launcherPrefix = document.createElement('span');
+    launcherPrefix.className = 'pyr3-edit-palette-launcher-prefix';
+    launcherPrefix.style.color = COLORS.text.dim;
+    const launcherName = document.createElement('span');
+    launcherName.className = 'pyr3-edit-palette-launcher-name';
+    launcherName.style.color = COLORS.flame.top;
+    launcherName.style.flex = '1 1 0';
+    launcherName.style.minWidth = '0';
+    launcherName.style.overflow = 'hidden';
+    launcherName.style.textOverflow = 'ellipsis';
+    launcherName.style.whiteSpace = 'nowrap';
+    const browseCue = document.createElement('span');
+    browseCue.className = 'pyr3-edit-palette-launcher-cue';
+    browseCue.textContent = 'browse 701 ▸';
+    browseCue.style.color = COLORS.text.muted;
+    browseCue.style.fontSize = '10px';
+    browseCue.style.flex = '0 0 auto';
 
-    const strip = document.createElement('div');
-    strip.className = 'pyr3-edit-palette-strip';
-    strip.setAttribute('role', 'button');
-    strip.tabIndex = 0;
-    strip.style.flex = '1 1 auto';
-    strip.style.height = '32px';
-    strip.style.minWidth = '0';
-    strip.style.cursor = 'pointer';
-    strip.style.border = '1px solid var(--bar-border, #2a2a30)';
-    strip.style.borderRadius = '2px';
-    strip.title = 'click to pick a palette';
+    launcher.append(launcherPrefix, launcherName, browseCue);
+    host.appendChild(buildRow('palette', launcher));
 
-    const nextBtn = document.createElement('button');
-    nextBtn.type = 'button';
-    nextBtn.className = 'pyr3-edit-palette-arrow pyr3-edit-palette-next';
-    nextBtn.textContent = '▶';
-    nextBtn.title = 'next palette';
-
-    stripRow.append(prevBtn, strip, nextBtn);
-    host.appendChild(stripRow);
-
-    // ── Label: "<name> · flame #N" ─────────────────────────────────────────
-    const label = document.createElement('div');
-    label.className = 'pyr3-edit-palette-label';
-    label.style.fontSize = '11px';
-    label.style.color = 'var(--text-dim, #888)';
-    label.style.marginTop = '4px';
-    host.appendChild(label);
-
-    // ── Hue row ────────────────────────────────────────────────────────────
-    const hueRow = document.createElement('div');
-    hueRow.className = 'pyr3-edit-palette-hue-row';
-    hueRow.style.display = 'flex';
-    hueRow.style.alignItems = 'center';
-    hueRow.style.gap = '6px';
-    hueRow.style.marginTop = '8px';
-
-    const hueLabel = document.createElement('span');
-    hueLabel.textContent = 'hue';
-    hueLabel.style.width = '32px';
-
-    const hueSlider = document.createElement('input');
-    hueSlider.type = 'range';
-    hueSlider.min = '0';
-    hueSlider.max = '360';
-    hueSlider.step = '1';
-    hueSlider.className = 'pyr3-edit-palette-hue-slider';
-    hueSlider.style.flex = '1 1 auto';
-
-    const hueNumberHandle = scrubbyInput({
-      value: 0,
-      kind: 'rotation',
+    // ── hue rotation row ───────────────────────────────────────────────────
+    const initialHue = state.genome.palette.hue ?? 0;
+    const hueSlider = buildSlider({
+      value: initialHue,
       min: 0,
       max: 360,
-      minStep: 1,
-      format: (v) => String(Math.round(v)),
-      onInput: (v) => setHue(v),
+      step: 1,
+      format: (v) => `${Math.round(v)}°`,
+      onChange: (v) => setHue(v),
     });
-    const hueNumber = hueNumberHandle.el;
-    hueNumber.classList.add('pyr3-edit-palette-hue-number');
-    hueNumber.style.width = '54px';
+    hueSlider.classList.add('pyr3-edit-palette-hue-row');
+    host.appendChild(buildRow('hue rotation', hueSlider));
 
-    hueRow.append(hueLabel, hueSlider, hueNumber);
-    host.appendChild(hueRow);
+    // ── reset hue inline action ────────────────────────────────────────────
+    // Action-only row with no label column — sits just under the hue slider.
+    const resetBtn = buildButton({
+      variant: 'accent',
+      label: 'reset hue',
+      icon: '⟲',
+      onClick: () => setHue(0),
+    });
+    resetBtn.classList.add('pyr3-edit-palette-reset-hue');
+    const resetRow = document.createElement('div');
+    resetRow.className = 'pyr3-edit-palette-reset-row';
+    resetRow.style.display = 'flex';
+    resetRow.style.justifyContent = 'flex-end';
+    resetRow.style.margin = '4px 0 8px';
+    resetRow.appendChild(resetBtn);
+    host.appendChild(resetRow);
 
-    // ── Mode row ───────────────────────────────────────────────────────────
+    // ── Mode row (preserved from pre-Phase-9) ──────────────────────────────
     // Writes genome.paletteMode (top-level, flam3 spec) — controls per-scatter
     // sampling: 'step' uses palette[floor(idx)] verbatim (flam3 default);
-    // 'linear' lerps between adjacent LUT entries by color_index fractional
-    // part. Subtle effect with a 256-entry LUT but matches flam3 behavior.
-    // (pyr3 also has palette.mode for LUT-bake-time stop interpolation; left
-    // unexposed here — flam3's scatter-time mode is the canonical knob.)
+    // 'linear' lerps between adjacent LUT entries.
     const modeRow = document.createElement('div');
     modeRow.className = 'pyr3-edit-palette-mode-row';
     modeRow.style.display = 'flex';
@@ -188,7 +184,9 @@ export const paletteSection: SectionMount = {
 
     const modeLabelTxt = document.createElement('span');
     modeLabelTxt.textContent = 'mode';
-    modeLabelTxt.style.width = '32px';
+    modeLabelTxt.style.width = '96px';
+    modeLabelTxt.style.color = COLORS.text.muted;
+    modeLabelTxt.style.fontSize = '12px';
 
     const radioGroup = `pyr3-edit-palette-mode-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -201,6 +199,8 @@ export const paletteSection: SectionMount = {
       wrap.style.alignItems = 'center';
       wrap.style.gap = '3px';
       wrap.style.cursor = 'pointer';
+      wrap.style.fontSize = '12px';
+      wrap.style.color = COLORS.text.primary;
       const input = document.createElement('input');
       input.type = 'radio';
       input.name = radioGroup;
@@ -216,85 +216,74 @@ export const paletteSection: SectionMount = {
     modeRow.append(modeLabelTxt, linearRadio.wrap, stepRadio.wrap);
     host.appendChild(modeRow);
 
-    // ── Full picker (3-col grid + search + footer; opens on strip click) ───
-    let picker: HTMLElement | null = null;
-    let dismissHandler: ((ev: MouseEvent | KeyboardEvent) => void) | null = null;
-
-    function closePicker(): void {
-      if (picker) {
-        picker.remove();
-        picker = null;
-      }
-      if (dismissHandler) {
-        document.removeEventListener('mousedown', dismissHandler);
-        document.removeEventListener('keydown', dismissHandler);
-        dismissHandler = null;
-      }
+    // ── Header chip (hue +N°) ──────────────────────────────────────────────
+    function findHeader(): HTMLElement | null {
+      const wrap = host.parentElement;
+      if (!wrap) return null;
+      return wrap.querySelector('.pyr3-edit-section-header') as HTMLElement | null;
     }
 
-    function openPicker(): void {
-      if (picker) { closePicker(); return; }
-      picker = buildPicker(paletteIdx, (idx) => {
-        setPaletteIndex(idx);
-        closePicker();
+    const chip = document.createElement('span');
+    chip.className = 'pyr3-edit-palette-chip';
+    chip.style.marginLeft = 'auto';
+    chip.style.fontSize = '10px';
+    chip.style.fontFamily = 'ui-monospace, monospace';
+    chip.style.color = COLORS.flame.top;
+    chip.style.padding = '1px 6px';
+    chip.style.borderRadius = '3px';
+    chip.style.border = `1px solid ${COLORS.flame.bot}`;
+    chip.style.background = COLORS.bg.action;
+    chip.style.userSelect = 'none';
+    chip.addEventListener('click', (ev) => ev.stopPropagation());
+
+    function refreshChip(): void {
+      const hue = state.genome.palette.hue ?? 0;
+      const header = findHeader();
+      if (!header) return;
+      // Detach prior chip first so re-mounts don't duplicate.
+      header.querySelectorAll('.pyr3-edit-palette-chip').forEach((n) => {
+        if (n !== chip) n.remove();
       });
-      // Docked to the right of the 340px left panel — positioning lives
-      // entirely in CSS (.pyr3-edit-palette-picker) so resizes / scrolls
-      // don't drift the popover.
-      document.body.appendChild(picker);
-
-      dismissHandler = (ev) => {
-        if (ev instanceof KeyboardEvent) {
-          if (ev.key === 'Escape') closePicker();
-          return;
-        }
-        const t = ev.target as Node;
-        if (picker && !picker.contains(t) && t !== strip) closePicker();
-      };
-      document.addEventListener('mousedown', dismissHandler);
-      document.addEventListener('keydown', dismissHandler);
+      if (hue === 0) {
+        if (chip.parentElement) chip.remove();
+        return;
+      }
+      const sign = hue >= 0 ? '+' : '−';
+      chip.textContent = `hue ${sign}${Math.abs(Math.round(hue))}°`;
+      if (!chip.parentElement) header.appendChild(chip);
     }
 
-    // ── State mutators ──────────────────────────────────────────────────────
+    Promise.resolve().then(() => refreshChip());
 
-    function refreshStrip(): void {
-      strip.style.background = gradientCss(state.genome.palette);
-      label.textContent = paletteDisplayLabel(paletteIdx);
+    // ── State mutators ─────────────────────────────────────────────────────
+    function currentSource(): PaletteSource {
+      return state.paletteSource ?? inferPaletteSource(state.genome.palette);
     }
 
-    function setPaletteIndex(idx: number): void {
-      const wrapped = ((idx % FLAM3_PALETTE_COUNT) + FLAM3_PALETTE_COUNT) % FLAM3_PALETTE_COUNT;
-      paletteIdx = wrapped;
-      const fresh = paletteAtIndex(wrapped);
-      // Picking a new palette resets hue to 0 (the chosen palette is the
-      // user's reference point; old hue rotation would silently re-cast it).
-      // Mode is preserved because it's a stylistic preference (smooth vs
-      // banded LUT) independent of which palette you picked.
-      const existing = state.genome.palette;
-      state.genome.palette = {
-        name: fresh.name,
-        stops: fresh.stops,
-        ...(existing.mode !== undefined ? { mode: existing.mode } : {}),
-      };
-      // Sync the hue widgets to 0.
-      hueSlider.value = '0';
-      hueNumberHandle.setValue(0);
-      refreshStrip();
-      onChange('palette');
+    function refreshLauncher(): void {
+      const ident = paletteIdentifier(currentSource());
+      launcherPrefix.textContent = ident.prefix ? `${ident.prefix} ` : '';
+      launcherName.textContent = ident.name;
+      launcherName.style.fontFamily = ident.monospace
+        ? 'ui-monospace, monospace'
+        : 'inherit';
+    }
+
+    function refreshRibbon(): void {
+      ribbon.style.background = gradientCss(state.genome.palette);
+      const hue = state.genome.palette.hue ?? 0;
+      ribbon.style.filter = `hue-rotate(${Math.round(hue)}deg)`;
     }
 
     function setHue(deg: number): void {
       const clamped = Math.max(0, Math.min(360, Math.round(deg)));
       state.genome.palette.hue = clamped;
-      if (hueSlider.value !== String(clamped)) hueSlider.value = String(clamped);
-      hueNumberHandle.setValue(clamped);
-      refreshStrip();
+      refreshRibbon();
+      refreshChip();
       onChange('palette.hue');
     }
 
     function setMode(mode: PaletteMode): void {
-      // Write the flam3-spec top-level paletteMode (chaos scatter-time sampling).
-      // Omit when 'step' since that's flam3 default — keeps round-trip clean.
       if (mode === 'step') {
         delete state.genome.paletteMode;
       } else {
@@ -303,18 +292,27 @@ export const paletteSection: SectionMount = {
       onChange('paletteMode');
     }
 
-    // ── Wire events ─────────────────────────────────────────────────────────
-    prevBtn.addEventListener('click', () => setPaletteIndex(paletteIdx - 1));
-    nextBtn.addEventListener('click', () => setPaletteIndex(paletteIdx + 1));
-    strip.addEventListener('click', openPicker);
-    strip.addEventListener('keydown', (ev) => {
+    // ── Wire events ────────────────────────────────────────────────────────
+    function openPicker(): void {
+      state.openPalettePicker?.();
+    }
+
+    launcher.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openPicker();
+    });
+
+    ribbon.addEventListener('click', (ev) => {
+      // Ribbon click is independent of the hue slider — no fall-through.
+      ev.stopPropagation();
+      openPicker();
+    });
+    ribbon.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' || ev.key === ' ') {
         ev.preventDefault();
         openPicker();
       }
     });
-
-    hueSlider.addEventListener('input', () => setHue(Number(hueSlider.value)));
 
     linearRadio.input.addEventListener('change', () => {
       if (linearRadio.input.checked) setMode('linear');
@@ -323,132 +321,19 @@ export const paletteSection: SectionMount = {
       if (stepRadio.input.checked) setMode('step');
     });
 
-    // ── Initial render ──────────────────────────────────────────────────────
-    refreshStrip();
-    const initialHue = state.genome.palette.hue ?? 0;
-    hueSlider.value = String(initialHue);
-    hueNumberHandle.setValue(initialHue);
-    // Default to flam3's 'step' when paletteMode is unset.
+    // ── Initial render ─────────────────────────────────────────────────────
+    refreshLauncher();
+    refreshRibbon();
     const initialMode = state.genome.paletteMode ?? 'step';
     linearRadio.input.checked = initialMode === 'linear';
     stepRadio.input.checked = initialMode === 'step';
   },
 };
 
-// ─── Full picker: 3-col grid + live search + footer (evolve pattern) ────────
-
-function buildPicker(currentIdx: number, onPick: (idx: number) => void): HTMLDivElement {
-  const entries = getLibraryEntries();
-
-  const root = document.createElement('div');
-  root.className = 'pyr3-edit-palette-picker';
-
-  // Search bar
-  const searchWrap = document.createElement('div');
-  searchWrap.className = 'pyr3-edit-palette-picker-search';
-  const search = document.createElement('input');
-  search.type = 'text';
-  search.placeholder = `🔍 search ${FLAM3_PALETTE_COUNT} palettes by name…`;
-  search.spellcheck = false;
-  search.autocomplete = 'off';
-  searchWrap.appendChild(search);
-  root.appendChild(searchWrap);
-
-  // 3-col grid body
-  const body = document.createElement('div');
-  body.className = 'pyr3-edit-palette-picker-body';
-  const cellByIdx = new Map<number, HTMLDivElement>();
-  for (const entry of entries) {
-    const cell = document.createElement('div');
-    cell.className = 'pyr3-edit-palette-picker-cell';
-    if (entry.idx === currentIdx) cell.classList.add('current');
-    cell.dataset['paletteIdx'] = String(entry.idx);
-    cell.dataset['paletteName'] = entry.name;
-    cell.title = `${entry.name} · flame #${entry.idx}`;
-
-    const stripEl = document.createElement('div');
-    stripEl.className = 'pyr3-edit-palette-picker-cell-strip';
-    stripEl.style.background = entry.gradient;
-    cell.appendChild(stripEl);
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'pyr3-edit-palette-picker-cell-name';
-    nameEl.textContent = entry.name;
-    cell.appendChild(nameEl);
-
-    const numEl = document.createElement('div');
-    numEl.className = 'pyr3-edit-palette-picker-cell-num';
-    numEl.textContent = `#${entry.idx}`;
-    cell.appendChild(numEl);
-
-    cell.addEventListener('click', (e) => {
-      e.stopPropagation();
-      onPick(entry.idx);
-    });
-    body.appendChild(cell);
-    cellByIdx.set(entry.idx, cell);
-  }
-  root.appendChild(body);
-
-  // Footer (count + hover-name)
-  const footer = document.createElement('div');
-  footer.className = 'pyr3-edit-palette-picker-footer';
-  const countEl = document.createElement('span');
-  countEl.textContent = `${FLAM3_PALETTE_COUNT} palettes`;
-  const hoverEl = document.createElement('span');
-  hoverEl.className = 'hover-name';
-  hoverEl.textContent = 'esc to close';
-  footer.appendChild(countEl);
-  footer.appendChild(hoverEl);
-  root.appendChild(footer);
-
-  body.addEventListener('mouseover', (e) => {
-    const target = e.target as HTMLElement;
-    const cell = target.closest('.pyr3-edit-palette-picker-cell');
-    if (cell instanceof HTMLElement) {
-      const name = cell.dataset['paletteName'] ?? '';
-      const idx = cell.dataset['paletteIdx'] ?? '';
-      hoverEl.textContent = `${name} · flame #${idx}`;
-    }
-  });
-  body.addEventListener('mouseleave', () => { hoverEl.textContent = 'esc to close'; });
-
-  let visibleCount = entries.length;
-  search.addEventListener('input', () => {
-    const q = search.value.trim().toLowerCase();
-    visibleCount = 0;
-    for (const entry of entries) {
-      const cell = cellByIdx.get(entry.idx)!;
-      const match = q === '' || entry.name.toLowerCase().includes(q);
-      cell.style.display = match ? '' : 'none';
-      if (match) visibleCount++;
-    }
-    countEl.textContent = q === ''
-      ? `${FLAM3_PALETTE_COUNT} palettes`
-      : `${visibleCount} / ${FLAM3_PALETTE_COUNT} match`;
-  });
-
-  search.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    for (const entry of entries) {
-      const cell = cellByIdx.get(entry.idx)!;
-      if (cell.style.display !== 'none') {
-        onPick(entry.idx);
-        return;
-      }
-    }
-  });
-
-  // Scroll current into view after layout settles.
-  setTimeout(() => {
-    const cell = cellByIdx.get(currentIdx);
-    if (cell) cell.scrollIntoView({ block: 'center', behavior: 'auto' });
-    search.focus();
-  }, 0);
-
-  return root;
-}
+// Suppress unused-import warning — paletteAtIndex / FLAM3_PALETTE_COUNT
+// stay exported indirectly through edit-state callsites; the picker
+// (Task 9.3+) will reimport paletteAtIndex when wiring apply.
+void paletteAtIndex;
 
 // One-time CSS injection (idempotent — same id check as the rest of the editor).
 function ensurePaletteStyles(): void {
@@ -461,101 +346,14 @@ function ensurePaletteStyles(): void {
 }
 
 const PALETTE_CSS = `
-.pyr3-edit-palette-arrow {
-  background: var(--bar-bg-2, #1a1a20);
-  color: var(--text, #ddd);
-  border: 1px solid var(--bar-border, #2a2a30);
-  border-radius: 3px;
-  padding: 2px 8px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  flex: 0 0 auto;
+.pyr3-edit-palette-ribbon:hover {
+  outline: 1px solid var(--accent, #ff8c1a);
+  outline-offset: 1px;
 }
-.pyr3-edit-palette-arrow:hover {
-  background: var(--accent-soft, rgba(255, 140, 26, 0.18));
+.pyr3-edit-palette-ribbon:focus-visible {
+  outline: 2px solid var(--accent, #ff8c1a);
+}
+.pyr3-edit-palette-launcher:hover {
   border-color: var(--accent-border, #884a1a);
 }
-/* Full picker: 3-col grid + search + footer (mirrors evolve picker). */
-/* Docked panel — anchored to the right edge of the 340px left panel,
-   matching .pyr3-var-picker. Full-height; no backdrop so the flame
-   stays visible while previewing palette picks. */
-.pyr3-edit-palette-picker {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 340px;
-  width: 340px;
-  background: var(--bar-bg-1, #15151a);
-  border: none;
-  border-right: 1px solid var(--bar-border, #2a2a30);
-  border-radius: 0;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  z-index: 1000;
-  overflow: hidden;
-}
-.pyr3-edit-palette-picker-search {
-  padding: 8px;
-  border-bottom: 1px solid #1e1e26;
-  flex-shrink: 0;
-}
-.pyr3-edit-palette-picker-search input {
-  width: 100%;
-  background: #1a1a22;
-  border: 1px solid #2a2a36;
-  color: #ccc;
-  border-radius: 3px;
-  padding: 5px 8px;
-  font-family: inherit;
-  font-size: 12px;
-  box-sizing: border-box;
-}
-.pyr3-edit-palette-picker-search input::placeholder { color: #555; }
-.pyr3-edit-palette-picker-body {
-  overflow-y: auto;
-  padding: 8px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  flex: 1;
-  min-height: 0;
-}
-.pyr3-edit-palette-picker-cell {
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 3px;
-  background: transparent;
-}
-.pyr3-edit-palette-picker-cell:hover { background: #15151a; }
-.pyr3-edit-palette-picker-cell.current { background: rgba(255, 140, 26, 0.10); }
-.pyr3-edit-palette-picker-cell-strip {
-  height: 16px;
-  border-radius: 2px;
-}
-.pyr3-edit-palette-picker-cell-name {
-  font-size: 9px;
-  color: #888;
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-}
-.pyr3-edit-palette-picker-cell-num {
-  font-size: 8px;
-  color: #555;
-  text-align: center;
-}
-.pyr3-edit-palette-picker-footer {
-  padding: 6px 10px;
-  border-top: 1px solid #1e1e26;
-  color: #666;
-  font-size: 10px;
-  display: flex;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-.pyr3-edit-palette-picker-footer .hover-name { color: var(--accent, #ff8c1a); }
 `;

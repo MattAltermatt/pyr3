@@ -10,6 +10,7 @@
 // Lane semantics — see docs/superpowers/specs/2026-06-03-flame-editor-v1-design.md.
 
 import { type Genome } from './genome';
+import { type PaletteSource } from './flam3-palette-names';
 
 export type Lane = 'fast' | 'slow' | 'rebuild';
 
@@ -71,6 +72,16 @@ export interface EditState {
    *  (e.g. `vivid*`) when the user manually nudges a tonemap value off
    *  the preset's exact triple. UI-only; never serialized. */
   lastDensityPreset?: string;
+  /** Phase 9 — palette subpanel launcher / ribbon-click both invoke this
+   *  to open the docked palette picker. Wired by the editor's mount-fn at
+   *  build time; sections never construct the picker themselves. UI-only;
+   *  never serialized. */
+  openPalettePicker?: () => void;
+  /** Phase 9 — set by the editor host to the canonical PaletteSource for
+   *  the currently-loaded palette. Drives the launcher button text via
+   *  paletteIdentifier(). Defaults to `flame #N` inferred from
+   *  state.genome.palette.name when unset. */
+  paletteSource?: PaletteSource;
 }
 
 export function createEditState(genome: Genome, seed: number): EditState {
