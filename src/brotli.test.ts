@@ -51,11 +51,14 @@ describe('inflateBrotliBytes', () => {
   it('throws when decompressed output exceeds the 64 MB cap (PYR3-065 bomb guard)', async () => {
     // 64 MB + 1 KB of zeros compresses to a few KB but decompresses past the
     // cap — the inflate must abort rather than buffer the whole bomb.
+    // Wall-clock here: brotliCompressSync of 64MB of zeros + the streaming
+    // inflate that races the abort. ~2s locally but flakes past vitest's
+    // default 5s timeout on under-spec'd CI runners — bump explicitly.
     const oversize = brotliCompressSync(Buffer.alloc(64 * 1024 * 1024 + 1024));
     const ab = oversize.buffer.slice(
       oversize.byteOffset,
       oversize.byteOffset + oversize.byteLength,
     );
     await expect(inflateBrotliBytes(ab)).rejects.toThrow(/cap|decompression bomb/i);
-  });
+  }, 30_000);
 });
