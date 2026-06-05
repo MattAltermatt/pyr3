@@ -158,6 +158,48 @@ describe('globalSection — background color', () => {
   });
 });
 
+describe('globalSection — row primitive adoption (task 7.8)', () => {
+  it('every row uses the shared buildRow grid (.pyr3-row + 96px label column)', () => {
+    const { host } = setup();
+    const rows = host.querySelectorAll('.pyr3-row');
+    // 7 rows expected: brightness/gamma/highlightPower/gammaThreshold/vibrancy/background/symmetry
+    expect(rows.length).toBe(7);
+    for (const r of rows) {
+      const el = r as HTMLElement;
+      expect(el.style.gridTemplateColumns).toBe('96px 1fr');
+    }
+  });
+
+  it('vibrancy row uses buildSlider chrome (rail + fill + handle + scrubby value)', () => {
+    const { host } = setup();
+    const vRow = rowByLabel(host, 'vibrancy');
+    expect(vRow.querySelector('.pyr3-slider')).not.toBeNull();
+    expect(vRow.querySelector('.pyr3-slider-rail')).not.toBeNull();
+    expect(vRow.querySelector('.pyr3-slider-fill')).not.toBeNull();
+    expect(vRow.querySelector('.pyr3-slider-handle')).not.toBeNull();
+    // The always-visible numeric value lives in the slider's value cell.
+    expect(vRow.querySelector('.pyr3-slider-value')).not.toBeNull();
+  });
+
+  it('background row uses buildColorSwatch filling the control column', () => {
+    const { host } = setup();
+    const bgRow = rowByLabel(host, 'background');
+    const swatch = bgRow.querySelector('.pyr3-color-swatch') as HTMLElement;
+    expect(swatch).not.toBeNull();
+    expect(swatch.style.width).toBe('100%');
+    // Hidden native <input type="color"> still present for OS picker + tests.
+    expect(bgRow.querySelector('input[type="color"]')).not.toBeNull();
+  });
+
+  it('symmetry row carries checkbox + kind dropdown + n input inline', () => {
+    const { host } = setup();
+    const symRow = rowByLabel(host, 'symmetry');
+    expect(symRow.querySelector('input[type="checkbox"]')).not.toBeNull();
+    expect(symRow.querySelector('select')).not.toBeNull();
+    expect(symRow.querySelector('.pyr3-scrubby')).not.toBeNull();
+  });
+});
+
 describe('globalSection — symmetry', () => {
   it('checkbox starts unchecked when symmetry is undefined', () => {
     const { host, state } = setup();

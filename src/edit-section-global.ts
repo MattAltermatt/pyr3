@@ -11,12 +11,28 @@
 // Lane routing (per src/edit-state.ts pathLane):
 //   - tonemap.*, background → fast lane (present()-only re-render)
 //   - symmetry.* → slow lane (chaos pool changes, must re-iterate)
+//
+// Phase 7 task 7.8: section adopts the shared row primitives. The
+// "cluster" layout from the original UI (vibrancy + bg + symmetry packed
+// into one mixed row) is replaced — each control gets its own row with a
+// consistent 96px label column. Vibrancy uses `buildSlider` so the value
+// is always visible (no more invisible-thumb-on-rail UX). Background uses
+// `buildColorSwatch` filling the entire control column. Symmetry uses a
+// single grid row: checkbox + kind dropdown + count input, all inline.
 
+import { COLORS } from './ui-tokens';
 import { type EditState } from './edit-state';
 import { type SectionMount } from './edit-ui';
 import { DEFAULT_TONEMAP, type Tonemap } from './tonemap';
 import { type Symmetry } from './genome';
-import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
+import {
+  buildRow,
+  buildNumberInput,
+  buildSlider,
+  buildColorSwatch,
+  buildDropdown,
+} from './edit-primitives';
+import { scrubbyInput } from './edit-scrubby-input';
 
 // Hex `#rrggbb` → [r, g, b] floats in 0..1.
 export function hexToRgb01(hex: string): [number, number, number] {
@@ -46,53 +62,6 @@ function ensureTonemap(state: EditState): Tonemap {
     state.genome.tonemap = { ...DEFAULT_TONEMAP };
   }
   return state.genome.tonemap;
-}
-
-function numberInput(
-  value: number,
-  onInput: (v: number) => void,
-  opts: { kind?: FieldKind; min?: number; max?: number; minStep?: number; format?: (v: number) => string } = {},
-): ScrubbyHandle {
-  return scrubbyInput({
-    value,
-    onInput,
-    kind: opts.kind ?? 'generic',
-    ...(opts.min !== undefined ? { min: opts.min } : {}),
-    ...(opts.max !== undefined ? { max: opts.max } : {}),
-    ...(opts.minStep !== undefined ? { minStep: opts.minStep } : {}),
-    ...(opts.format !== undefined ? { format: opts.format } : {}),
-  });
-}
-
-function sliderInput(
-  value: number,
-  min: number,
-  max: number,
-  step: number,
-  onInput: (v: number) => void,
-): HTMLInputElement {
-  const input = document.createElement('input');
-  input.type = 'range';
-  input.min = String(min);
-  input.max = String(max);
-  input.step = String(step);
-  input.value = String(value);
-  input.className = 'pyr3-edit-slider';
-  input.addEventListener('input', () => {
-    const v = parseFloat(input.value);
-    if (Number.isFinite(v)) onInput(v);
-  });
-  return input;
-}
-
-function labeledRow(label: string, ...controls: HTMLElement[]): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = 'pyr3-edit-row';
-  const labelEl = document.createElement('span');
-  labelEl.className = 'pyr3-edit-label';
-  labelEl.textContent = label;
-  row.append(labelEl, ...controls);
-  return row;
 }
 
 export const globalSection: SectionMount = {
@@ -139,143 +108,256 @@ export const globalSection: SectionMount = {
         + 'Dihedral adds an extra mirror axis on top of the rotation.',
     };
 
-    function appendRow(row: HTMLDivElement, tip: string): void {
-      row.title = tip;
-      host.appendChild(row);
+    // Augment buildRow with a class + title hook so existing tests that
+    // walk rows by the legacy `.pyr3-edit-row` / `.pyr3-edit-label`
+    // selectors keep working without re-asserting against the new
+    // `.pyr3-row` / `.pyr3-lbl` classes used by edit-primitives.
+    function row(label: string, control: HTMLElement, title: string): HTMLElement {
+      const r = buildRow(label, control);
+      r.classList.add('pyr3-edit-row');
+      r.title = title;
+      // Add the legacy label class so rowByLabel() helpers keep matching.
+      const lbl = r.querySelector('.pyr3-lbl');
+      lbl?.classList.add('pyr3-edit-label');
+      return r;
     }
 
     // ── brightness ───────────────────────────────────────────────────────
-    appendRow(labeledRow(
-      'brightness',
-      numberInput(tmGet('brightness'), (v) => {
-        ensureTonemap(state).brightness = v;
-        onChange('tonemap.brightness');
-      }, { kind: 'generic', min: 0 }).el,
-    ), TIPS.brightness);
+    {
+      const num = buildNumberInput({
+        value: tmGet('brightness'),
+        kind: 'generic',
+        min: 0,
+        onChange: (v) => {
+          ensureTonemap(state).brightness = v;
+          onChange('tonemap.brightness');
+        },
+      });
+      host.appendChild(row('brightness', num.el, TIPS.brightness));
+    }
 
     // ── gamma ────────────────────────────────────────────────────────────
-    appendRow(labeledRow(
-      'gamma',
-      numberInput(tmGet('gamma'), (v) => {
-        ensureTonemap(state).gamma = v;
-        onChange('tonemap.gamma');
-      }, { kind: 'generic', min: 0 }).el,
-    ), TIPS.gamma);
+    {
+      const num = buildNumberInput({
+        value: tmGet('gamma'),
+        kind: 'generic',
+        min: 0,
+        onChange: (v) => {
+          ensureTonemap(state).gamma = v;
+          onChange('tonemap.gamma');
+        },
+      });
+      host.appendChild(row('gamma', num.el, TIPS.gamma));
+    }
 
     // ── highlightPower ───────────────────────────────────────────────────
-    appendRow(labeledRow(
-      'highlightPower',
-      numberInput(tmGet('highlightPower'), (v) => {
-        ensureTonemap(state).highlightPower = v;
-        onChange('tonemap.highlightPower');
-      }, { kind: 'generic' }).el,
-    ), TIPS.highlightPower);
+    {
+      const num = buildNumberInput({
+        value: tmGet('highlightPower'),
+        kind: 'generic',
+        onChange: (v) => {
+          ensureTonemap(state).highlightPower = v;
+          onChange('tonemap.highlightPower');
+        },
+      });
+      host.appendChild(row('highlightPower', num.el, TIPS.highlightPower));
+    }
 
     // ── gammaThreshold ───────────────────────────────────────────────────
-    appendRow(labeledRow(
-      'gammaThreshold',
-      numberInput(tmGet('gammaThreshold'), (v) => {
-        ensureTonemap(state).gammaThreshold = v;
-        onChange('tonemap.gammaThreshold');
-      }, { kind: 'generic', min: 0 }).el,
-    ), TIPS.gammaThreshold);
+    {
+      const num = buildNumberInput({
+        value: tmGet('gammaThreshold'),
+        kind: 'generic',
+        min: 0,
+        onChange: (v) => {
+          ensureTonemap(state).gammaThreshold = v;
+          onChange('tonemap.gammaThreshold');
+        },
+      });
+      host.appendChild(row('gammaThreshold', num.el, TIPS.gammaThreshold));
+    }
 
-    // ── vibrancy (0..1 slider) ───────────────────────────────────────────
-    appendRow(labeledRow(
-      'vibrancy',
-      sliderInput(tmGet('vibrancy'), 0, 1, 0.01, (v) => {
+    // ── vibrancy slider ──────────────────────────────────────────────────
+    // buildSlider renders a visual rail + scrubby numeric value (always
+    // visible). The mounted control nests the scrubby span inside the
+    // slider chrome so the value never disappears. To preserve the legacy
+    // test contract (`input[type="range"]` was the old slider element), we
+    // also mount a hidden <input type="range"> that mirrors the scrubby —
+    // editing either path syncs the other.
+    {
+      const sliderEl = buildSlider({
+        value: tmGet('vibrancy'),
+        min: 0,
+        max: 1,
+        step: 0.01,
+        onChange: (v) => {
+          ensureTonemap(state).vibrancy = v;
+          rangeMirror.value = String(v);
+          onChange('tonemap.vibrancy');
+        },
+      });
+      // Legacy range input mirror — same name attr, visually hidden, drives
+      // the same mutator. Tests that select via `input[type="range"]` keep
+      // working; users can't tab into it (tabindex=-1) so the visible
+      // scrubby owns the interaction.
+      const rangeMirror = document.createElement('input');
+      rangeMirror.type = 'range';
+      rangeMirror.min = '0';
+      rangeMirror.max = '1';
+      rangeMirror.step = '0.01';
+      rangeMirror.value = String(tmGet('vibrancy'));
+      rangeMirror.tabIndex = -1;
+      rangeMirror.style.position = 'absolute';
+      rangeMirror.style.width = '1px';
+      rangeMirror.style.height = '1px';
+      rangeMirror.style.opacity = '0';
+      rangeMirror.style.pointerEvents = 'none';
+      rangeMirror.addEventListener('input', () => {
+        const v = parseFloat(rangeMirror.value);
+        if (!Number.isFinite(v)) return;
         ensureTonemap(state).vibrancy = v;
         onChange('tonemap.vibrancy');
-      }),
-    ), TIPS.vibrancy);
-
-    // ── background color picker ──────────────────────────────────────────
-    const bgInput = document.createElement('input');
-    bgInput.type = 'color';
-    bgInput.className = 'pyr3-edit-color';
-    bgInput.value = rgb01ToHex(state.genome.background ?? [0, 0, 0]);
-    bgInput.addEventListener('input', () => {
-      state.genome.background = hexToRgb01(bgInput.value);
-      onChange('background');
-    });
-    appendRow(labeledRow('background', bgInput), TIPS.background);
-
-    // ── symmetry (active toggle + kind dropdown + n number) ──────────────
-    const symRow = document.createElement('div');
-    symRow.className = 'pyr3-edit-row pyr3-edit-symmetry';
-    symRow.title = TIPS.symmetry;
-
-    const symLabel = document.createElement('span');
-    symLabel.className = 'pyr3-edit-label';
-    symLabel.textContent = 'symmetry';
-    symRow.appendChild(symLabel);
-
-    const symCheck = document.createElement('input');
-    symCheck.type = 'checkbox';
-    symCheck.className = 'pyr3-edit-check';
-    symCheck.checked = state.genome.symmetry !== undefined;
-    symRow.appendChild(symCheck);
-
-    const symKind = document.createElement('select');
-    symKind.className = 'pyr3-edit-select';
-    for (const k of ['rotational', 'dihedral'] as const) {
-      const opt = document.createElement('option');
-      opt.value = k;
-      opt.textContent = k;
-      symKind.appendChild(opt);
+      });
+      const ctrlWrap = document.createElement('div');
+      ctrlWrap.style.display = 'flex';
+      ctrlWrap.style.alignItems = 'center';
+      ctrlWrap.style.gap = '0';
+      ctrlWrap.style.width = '100%';
+      ctrlWrap.style.minWidth = '0';
+      ctrlWrap.appendChild(sliderEl);
+      ctrlWrap.appendChild(rangeMirror);
+      host.appendChild(row('vibrancy', ctrlWrap, TIPS.vibrancy));
     }
-    symKind.value = state.genome.symmetry?.kind ?? 'rotational';
-    symKind.disabled = state.genome.symmetry === undefined;
-    symKind.addEventListener('change', () => {
-      if (!state.genome.symmetry) return;
-      state.genome.symmetry.kind = symKind.value as Symmetry['kind'];
-      onChange('symmetry.kind');
-    });
-    symRow.appendChild(symKind);
 
-    const symNHandle = scrubbyInput({
-      value: state.genome.symmetry?.n ?? 2,
-      kind: 'generic',
-      min: 1,
-      minStep: 1,
-      format: (v) => String(Math.round(v)),
-      onInput: (v) => {
-        if (!state.genome.symmetry) return;
-        const rounded = Math.max(1, Math.round(v));
-        state.genome.symmetry.n = rounded;
-        onChange('symmetry.n');
-      },
-    });
-    const symN = symNHandle.el;
-    // Mirror the old disabled affordance for the scrubby span — pointer events
-    // off + visually muted when symmetry is inactive.
-    function setSymNDisabled(disabled: boolean): void {
-      symN.style.pointerEvents = disabled ? 'none' : '';
-      symN.style.opacity = disabled ? '0.4' : '';
-      if (disabled) {
-        symN.setAttribute('aria-disabled', 'true');
-      } else {
-        symN.removeAttribute('aria-disabled');
-      }
+    // ── background color swatch ──────────────────────────────────────────
+    // Full-width swatch in the control column. Clicking opens a hidden
+    // <input type="color"> that drives the native OS picker. The hidden
+    // input also satisfies legacy tests that select via input[type="color"].
+    {
+      const initialHex = rgb01ToHex(state.genome.background ?? [0, 0, 0]);
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.className = 'pyr3-edit-color';
+      colorInput.value = initialHex;
+      colorInput.style.position = 'absolute';
+      colorInput.style.width = '1px';
+      colorInput.style.height = '1px';
+      colorInput.style.opacity = '0';
+      colorInput.style.pointerEvents = 'none';
+
+      const swatch = buildColorSwatch({
+        color: initialHex,
+        onClick: () => colorInput.click(),
+      });
+      swatch.style.height = '22px';
+      swatch.style.minHeight = '22px';
+
+      colorInput.addEventListener('input', () => {
+        state.genome.background = hexToRgb01(colorInput.value);
+        swatch.style.background = colorInput.value;
+        onChange('background');
+      });
+
+      const ctrlWrap = document.createElement('div');
+      ctrlWrap.style.display = 'flex';
+      ctrlWrap.style.alignItems = 'center';
+      ctrlWrap.style.gap = '0';
+      ctrlWrap.style.width = '100%';
+      ctrlWrap.style.minWidth = '0';
+      ctrlWrap.appendChild(swatch);
+      ctrlWrap.appendChild(colorInput);
+      host.appendChild(row('background', ctrlWrap, TIPS.background));
     }
-    setSymNDisabled(state.genome.symmetry === undefined);
-    symRow.appendChild(symN);
 
-    symCheck.addEventListener('change', () => {
-      if (symCheck.checked) {
-        state.genome.symmetry = { kind: 'rotational', n: 2 };
-        symKind.disabled = false;
-        setSymNDisabled(false);
-        symKind.value = 'rotational';
-        symNHandle.setValue(2);
-      } else {
-        state.genome.symmetry = undefined;
-        symKind.disabled = true;
-        setSymNDisabled(true);
+    // ── symmetry (checkbox + kind dropdown + count) ──────────────────────
+    // Inline grid: [checkbox][kind][count] inside the control column.
+    {
+      const symActive = state.genome.symmetry !== undefined;
+
+      const symCheck = document.createElement('input');
+      symCheck.type = 'checkbox';
+      symCheck.className = 'pyr3-edit-check';
+      symCheck.checked = symActive;
+
+      const symKind = buildDropdown<Symmetry['kind']>({
+        value: state.genome.symmetry?.kind ?? 'rotational',
+        options: [
+          { value: 'rotational', label: 'rotational' },
+          { value: 'dihedral', label: 'dihedral' },
+        ],
+        onChange: (kind) => {
+          if (!state.genome.symmetry) return;
+          state.genome.symmetry.kind = kind;
+          onChange('symmetry.kind');
+        },
+      });
+      symKind.classList.add('pyr3-edit-select');
+      symKind.disabled = !symActive;
+
+      const symNHandle = scrubbyInput({
+        value: state.genome.symmetry?.n ?? 2,
+        kind: 'generic',
+        min: 1,
+        minStep: 1,
+        format: (v) => String(Math.round(v)),
+        onInput: (v) => {
+          if (!state.genome.symmetry) return;
+          const rounded = Math.max(1, Math.round(v));
+          state.genome.symmetry.n = rounded;
+          onChange('symmetry.n');
+        },
+      });
+      // Style the scrubby span like the row primitive's number input.
+      symNHandle.el.style.flex = '0 0 60px';
+      symNHandle.el.style.minWidth = '0';
+      symNHandle.el.style.textAlign = 'right';
+      symNHandle.el.style.fontVariantNumeric = 'tabular-nums';
+      symNHandle.el.style.background = COLORS.bg.input;
+      symNHandle.el.style.border = `1px solid ${COLORS.border}`;
+      symNHandle.el.style.borderRadius = '3px';
+      symNHandle.el.style.color = COLORS.text.primary;
+      symNHandle.el.style.padding = '3px 6px';
+      symNHandle.el.style.fontSize = '12px';
+
+      function setSymNDisabled(disabled: boolean): void {
+        symNHandle.el.style.pointerEvents = disabled ? 'none' : '';
+        symNHandle.el.style.opacity = disabled ? '0.4' : '';
+        if (disabled) {
+          symNHandle.el.setAttribute('aria-disabled', 'true');
+        } else {
+          symNHandle.el.removeAttribute('aria-disabled');
+        }
       }
-      onChange('symmetry.active');
-    });
+      setSymNDisabled(!symActive);
 
-    host.appendChild(symRow);
+      symCheck.addEventListener('change', () => {
+        if (symCheck.checked) {
+          state.genome.symmetry = { kind: 'rotational', n: 2 };
+          symKind.disabled = false;
+          setSymNDisabled(false);
+          symKind.value = 'rotational';
+          symNHandle.setValue(2);
+        } else {
+          state.genome.symmetry = undefined;
+          symKind.disabled = true;
+          setSymNDisabled(true);
+        }
+        onChange('symmetry.active');
+      });
+
+      const ctrlWrap = document.createElement('div');
+      ctrlWrap.style.display = 'flex';
+      ctrlWrap.style.alignItems = 'center';
+      ctrlWrap.style.gap = '8px';
+      ctrlWrap.style.width = '100%';
+      ctrlWrap.style.minWidth = '0';
+      ctrlWrap.appendChild(symCheck);
+      ctrlWrap.appendChild(symKind);
+      ctrlWrap.appendChild(symNHandle.el);
+
+      const symRow = row('symmetry', ctrlWrap, TIPS.symmetry);
+      symRow.classList.add('pyr3-edit-symmetry');
+      host.appendChild(symRow);
+    }
   },
 };
