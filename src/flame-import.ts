@@ -692,12 +692,24 @@ export function parseFlame(xml: string): FlameImportResult {
   // loads) — leaving 'imported' here would leak into the Save filename and
   // the document title even when a more informative label is available.
   const flameName = flame.getAttribute('name') ?? '';
-  // Author nick (Electric Sheep / Apophysis convention). Stripped of
-  // surrounding whitespace; empty string treated as absent so the
-  // "By <nick>" attribution stays cleanly omitted on flames that
-  // declare nick="" rather than skipping the attribute.
-  const nickAttr = flame.getAttribute('nick')?.trim();
-  const flameNick = nickAttr && nickAttr.length > 0 ? nickAttr : undefined;
+  // Author nick. Top-level `<flame nick="...">` first (Apophysis
+  // convention; rare on ESF). When absent, fall back to the outermost
+  // `<edit nick="...">` in the lineage chain — that's the most recent
+  // authorship signal on Electric-Sheep .flam3 files (which carry nick
+  // ONLY inside `<edit>` chain entries, never on the flame attr itself).
+  // Empty / whitespace-only values are treated as absent.
+  const topNick = flame.getAttribute('nick')?.trim();
+  let flameNick: string | undefined;
+  if (topNick && topNick.length > 0) {
+    flameNick = topNick;
+  } else {
+    // querySelector returns the first match in document order = outermost
+    // `<edit>` with a nick. Walk on the live DOM, not a string regex, so
+    // attribute-quoting/whitespace edge cases stay correct.
+    const editWithNick = flame.querySelector('edit[nick]');
+    const chainNick = editWithNick?.getAttribute('nick')?.trim();
+    if (chainNick && chainNick.length > 0) flameNick = chainNick;
+  }
   const { cx, cy } = parseCenter(flame, defaultedFields);
   const symmetry = parseSymmetryChild(flame);
   const density = parseDensity(flame);

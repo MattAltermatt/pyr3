@@ -886,6 +886,52 @@ describe('parseFlame <flame nick="..."> capture', () => {
     const { genome } = parseFlame(wrapWithAttrs('name="test" nick="  Brood  "'));
     expect(genome.nick).toBe('Brood');
   });
+
+  it('falls back to outermost <edit nick="..."> when top-level nick is absent (ESF convention)', () => {
+    const xml = `<flame name="electricsheep.247.19679" size="1024 1024" center="0 0" scale="100">
+      ${minPalette}
+      <xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"/>
+      <edit date="Mon Sep 11" action="clone">
+        <edit date="Thu Sep 7" action="clone brood">
+          <edit date="Mon Jan 19" nick="sheep" id="11618" action="clone upload"/>
+        </edit>
+      </edit>
+    </flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.nick).toBe('sheep');
+  });
+
+  it('prefers the outermost <edit nick> when multiple chain entries carry nicks', () => {
+    const xml = `<flame name="x" size="1024 1024" center="0 0" scale="100">
+      ${minPalette}
+      <xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"/>
+      <edit nick="fractalapple" date="2017"/>
+      <edit nick="moonflower" date="2009"/>
+    </flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.nick).toBe('fractalapple');
+  });
+
+  it('top-level nick takes precedence over chain nicks (Apophysis convention preserved)', () => {
+    const xml = `<flame name="x" nick="Brood" size="1024 1024" center="0 0" scale="100">
+      ${minPalette}
+      <xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"/>
+      <edit nick="sheep"/>
+    </flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.nick).toBe('Brood');
+  });
+
+  it('chain nick="" is treated as absent (continues fallback search)', () => {
+    const xml = `<flame name="x" size="1024 1024" center="0 0" scale="100">
+      ${minPalette}
+      <xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"/>
+      <edit nick="" date="2017"/>
+    </flame>`;
+    // querySelector('edit[nick]') will still match nick="" → trim → empty → undefined.
+    const { genome } = parseFlame(xml);
+    expect(genome.nick).toBeUndefined();
+  });
 });
 
 // PYR3-036 safeguard #1 — reachability: EVERY variation in V must survive
