@@ -16,6 +16,8 @@ import {
   buildColorSwatch,
   buildPair,
   buildSlider,
+  buildToggle,
+  buildRemoveButton,
 } from './edit-primitives';
 
 describe('buildRow', () => {
@@ -167,6 +169,70 @@ describe('buildSlider', () => {
     const sl = buildSlider({ value: 0.25, min: 0, max: 1, onChange: vi.fn() });
     const fill = sl.querySelector('.pyr3-slider-fill') as HTMLElement;
     expect(fill.style.width).toBe('25%');
+  });
+});
+
+describe('buildToggle', () => {
+  it('renders a 32x18 pill with class pyr3-toggle; active appends `on`', () => {
+    const t = buildToggle({ value: true, onChange: vi.fn() });
+    expect(t.classList.contains('pyr3-toggle')).toBe(true);
+    expect(t.classList.contains('on')).toBe(true);
+    expect(t.style.width).toBe('32px');
+    expect(t.style.height).toBe('18px');
+  });
+
+  it('class `on` reflects value=false', () => {
+    const t = buildToggle({ value: false, onChange: vi.fn() });
+    expect(t.classList.contains('pyr3-toggle')).toBe(true);
+    expect(t.classList.contains('on')).toBe(false);
+  });
+
+  it('click flips state + fires onChange(next)', () => {
+    const onChange = vi.fn();
+    const t = buildToggle({ value: false, onChange });
+    t.click();
+    expect(onChange).toHaveBeenCalledWith(true);
+    expect(t.classList.contains('on')).toBe(true);
+    t.click();
+    expect(onChange).toHaveBeenLastCalledWith(false);
+    expect(t.classList.contains('on')).toBe(false);
+  });
+
+  it('exposes a setValue(v) method on the element', () => {
+    const t = buildToggle({ value: false, onChange: vi.fn() });
+    (t as HTMLElement & { setValue: (v: boolean) => void }).setValue(true);
+    expect(t.classList.contains('on')).toBe(true);
+  });
+});
+
+describe('buildRemoveButton', () => {
+  it('renders a 22x22 × button with class pyr3-remove-btn', () => {
+    const r = buildRemoveButton({ onClick: vi.fn() });
+    expect(r.classList.contains('pyr3-remove-btn')).toBe(true);
+    expect(r.style.width).toBe('22px');
+    expect(r.style.height).toBe('22px');
+    expect(r.textContent).toBe('×');
+  });
+
+  it('fires onClick on click', () => {
+    const onClick = vi.fn();
+    const r = buildRemoveButton({ onClick });
+    r.click();
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('hover applies red-tinted color (COLORS.danger)', () => {
+    const r = buildRemoveButton({ onClick: vi.fn() });
+    // pointerenter / mouseenter handler tints the button
+    r.dispatchEvent(new MouseEvent('mouseenter'));
+    expect(r.style.color.toLowerCase()).toContain('e85a4a');
+    r.dispatchEvent(new MouseEvent('mouseleave'));
+    expect(r.style.color.toLowerCase()).not.toContain('e85a4a');
+  });
+
+  it('accepts an optional title attr', () => {
+    const r = buildRemoveButton({ onClick: vi.fn(), title: 'remove this xform' });
+    expect(r.title).toBe('remove this xform');
   });
 });
 

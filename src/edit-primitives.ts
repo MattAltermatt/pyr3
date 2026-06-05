@@ -261,6 +261,104 @@ function defaultSliderFormat(v: number): string {
   return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
 }
 
+// ── Toggle pill ───────────────────────────────────────────────────────────
+// 32×18 pill switch. Class `pyr3-toggle` (with `on` appended when active).
+// Click flips the state, fires onChange(next), and re-renders the dot.
+export interface ToggleOpts {
+  value: boolean;
+  onChange: (next: boolean) => void;
+}
+
+export interface ToggleHandle extends HTMLElement {
+  setValue(v: boolean): void;
+}
+
+export function buildToggle(opts: ToggleOpts): ToggleHandle {
+  const el = document.createElement('div') as unknown as ToggleHandle;
+  let value = opts.value;
+
+  function paint(): void {
+    el.className = value ? 'pyr3-toggle on' : 'pyr3-toggle';
+    el.style.background = value ? COLORS.flame.mid : COLORS.bg.input;
+    el.style.borderColor = value ? COLORS.flame.bot : COLORS.border;
+    // dot position
+    dot.style.left = value ? '16px' : '2px';
+    dot.style.background = value ? COLORS.flame.top : COLORS.text.dim;
+  }
+
+  el.style.width = '32px';
+  el.style.height = '18px';
+  el.style.borderRadius = '10px';
+  el.style.border = `1px solid ${COLORS.border}`;
+  el.style.position = 'relative';
+  el.style.cursor = 'pointer';
+  el.style.flex = '0 0 auto';
+
+  const dot = document.createElement('div');
+  dot.className = 'pyr3-toggle-dot';
+  dot.style.position = 'absolute';
+  dot.style.top = '2px';
+  dot.style.width = '12px';
+  dot.style.height = '12px';
+  dot.style.borderRadius = '50%';
+  dot.style.transition = 'left 80ms ease, background 80ms ease';
+  el.appendChild(dot);
+
+  el.addEventListener('click', () => {
+    value = !value;
+    paint();
+    opts.onChange(value);
+  });
+
+  el.setValue = (v: boolean): void => {
+    value = v;
+    paint();
+  };
+
+  paint();
+  return el;
+}
+
+// ── Remove × button ──────────────────────────────────────────────────────
+// 22×22 square `×` button. Transparent at rest; red-tinted on hover.
+export interface RemoveButtonOpts {
+  onClick: () => void;
+  title?: string;
+}
+
+export function buildRemoveButton(opts: RemoveButtonOpts): HTMLElement {
+  const btn = document.createElement('div');
+  btn.className = 'pyr3-remove-btn';
+  btn.textContent = '×';
+  btn.style.width = '22px';
+  btn.style.height = '22px';
+  btn.style.display = 'flex';
+  btn.style.alignItems = 'center';
+  btn.style.justifyContent = 'center';
+  btn.style.background = 'transparent';
+  btn.style.border = `1px solid ${COLORS.border}`;
+  btn.style.borderRadius = '3px';
+  btn.style.cursor = 'pointer';
+  btn.style.color = COLORS.text.muted;
+  btn.style.fontSize = '16px';
+  btn.style.lineHeight = '1';
+  btn.style.flex = '0 0 auto';
+  btn.style.userSelect = 'none';
+  if (opts.title) btn.title = opts.title;
+
+  const restColor = COLORS.text.muted;
+  btn.addEventListener('mouseenter', () => {
+    btn.style.color = COLORS.danger;
+    btn.style.borderColor = COLORS.danger;
+  });
+  btn.addEventListener('mouseleave', () => {
+    btn.style.color = restColor;
+    btn.style.borderColor = COLORS.border;
+  });
+  btn.addEventListener('click', opts.onClick);
+  return btn;
+}
+
 // ── Pair ──────────────────────────────────────────────────────────────────
 // Sub-grid `1fr auto 1fr` for W×H, position x/y, etc. The separator is a
 // plain span; callers pass any character ('×', ',', '/').
