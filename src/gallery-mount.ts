@@ -194,27 +194,23 @@ export async function pageForSheep(
   const manifest = await loadManifest();
   if (manifest === null) return 1;
 
+  // Walk identically to pageOfSheep: iterate manifest.gens IN ORDER (which
+  // is descending — newest gens first); accumulate `loadAvail(gen).length`
+  // per non-target gen; locate target id within target gen's avail. The
+  // previous logic used `entry.gen < gen` to mean "already-counted gens",
+  // which is correct ONLY for ascending manifests — wrong for the project's
+  // newest-first manifest (Bug 2026-06-04: hero 247/19679 was landing on
+  // p/4278 of 198/0734x flames because gens 246, 245, ... were wrongly
+  // counted as "before" the target gen 247).
   let seen = 0;
   for (const entry of manifest.gens) {
-    if (entry.gen < gen) {
-      // Whole gen lies before the target — count via the manifest's own
-      // `count` field so a cold lookup is one network fetch (the target's
-      // avail) instead of O(gens). The manifest's count is the contract for
-      // total ids per gen; avail-list length is allowed to lag in sparse
-      // corpora, so trusting count keeps the index aligned with what the
-      // gallery's pageOfSheep walk produces.
-      seen += entry.count;
-      continue;
-    }
-    if (entry.gen > gen) {
-      // Target gen isn't in the manifest at all — degrade to page 1.
-      return 1;
-    }
-    // entry.gen === gen — locate id within this gen's avail list.
     const ids = await loadAvail(entry.gen);
-    const idx = ids.indexOf(id);
-    if (idx < 0) return 1;
-    return Math.floor((seen + idx) / perPage) + 1;
+    if (entry.gen === gen) {
+      const idx = ids.indexOf(id);
+      if (idx < 0) return 1;
+      return Math.floor((seen + idx) / perPage) + 1;
+    }
+    seen += ids.length;
   }
   return 1;
 }

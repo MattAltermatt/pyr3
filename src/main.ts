@@ -200,10 +200,37 @@ async function main(): Promise<void> {
     const here = currentTabSurface();
     const cf = getCurrentFlame();
 
+    // Bug B (2026-06-04): when the user came from a gallery page (recorded
+    // in sessionStorage on every gallery mount), restore that exact page on
+    // viewer→gallery — even if the flame they're currently viewing belongs
+    // to a different page. Matches user mental model: "Gallery" = back to
+    // where I was browsing.
+    if (here === 'viewer' && target === 'gallery') {
+      try {
+        const last = sessionStorage.getItem('pyr3.gallery.lastUrl');
+        if (last && last.startsWith('/v1/gallery')) {
+          window.location.href = last;
+          return;
+        }
+      } catch { /* sessionStorage blocked — fall through */ }
+    }
+
     // Viewer-only transfer rule: when leaving the viewer with a known flame,
-    // carry it into the destination surface.
-    if (here === 'viewer' && target === 'gallery' && cf?.corpusId) {
-      const { gen, id } = cf.corpusId;
+    // carry it into the destination surface. Resolve corpusId from
+    // currentFlame first; fall back to parsing the viewer's URL path (the
+    // `/v1/gen/<gen>/id/<id>` route) so the transfer is resilient even when
+    // currentFlame hasn't been populated yet by the corpus-load callback
+    // (Bug A 2026-06-04: user reports landing on bare /v1/gallery from a
+    // freshly-loaded deep-link viewer).
+    const corpusFromUrl = (() => {
+      const m = window.location.pathname.match(/^\/v1\/gen\/(\d+)\/id\/(\d+)\/?$/);
+      if (!m) return null;
+      return { gen: Number(m[1]), id: Number(m[2]) };
+    })();
+    const corpusId = cf?.corpusId ?? corpusFromUrl;
+
+    if (here === 'viewer' && target === 'gallery' && corpusId) {
+      const { gen, id } = corpusId;
       // The gallery anchor needs the flame's corpus-list index to land on
       // the page containing it. pageForSheep does that resolution async.
       // Bound it with a 150ms timeout so a slow / hung index lookup falls
@@ -244,11 +271,11 @@ async function main(): Promise<void> {
       if (cf?.genome) {
         writePendingTransfer({
           genome: cf.genome,
-          corpusId: cf.corpusId ?? null,
+          corpusId: cf.corpusId ?? corpusFromUrl ?? null,
           timestamp: Date.now(),
         });
       }
-      window.location.href = editorUrlForFlame(cf?.corpusId);
+      window.location.href = editorUrlForFlame(cf?.corpusId ?? corpusFromUrl ?? undefined);
       return;
     }
 
@@ -1566,6 +1593,16 @@ async function main(): Promise<void> {
   const intent = parseLoadIntent(window.location.pathname + window.location.search)
     ?? { kind: 'default' as const };
   if (intent.kind === 'gallery') {
+    // Bug B (2026-06-04): persist the gallery URL we land on so a later
+    // viewer→Gallery click can restore exactly this page (instead of
+    // computing the page containing the just-viewed flame, which is a
+    // different mental model from "back to where I was browsing").
+    try {
+      sessionStorage.setItem(
+        'pyr3.gallery.lastUrl',
+        window.location.pathname + window.location.search,
+      );
+    } catch { /* sessionStorage blocked — best-effort only */ }
     await mountGallerySurface(intent.page);
   } else if (intent.kind === 'corpus') {
     await enqueueCorpus(intent.gen, intent.id, false); // initial load: no pushState
