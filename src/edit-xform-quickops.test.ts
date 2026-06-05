@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHAPE_PRESETS, type ShapePreset } from './edit-xform-presets';
+import { SHAPE_PRESETS, type ShapePreset } from './edit-xform-quickops';
 
 const RAD = Math.PI / 180;
 

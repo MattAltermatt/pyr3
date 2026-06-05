@@ -35,7 +35,7 @@ import {
   type DecomposedAffine,
 } from './affine-decompose';
 import { attachXformViz } from './edit-xform-viz';
-import { SHAPE_PRESETS } from './edit-xform-presets';
+import { SHAPE_PRESETS } from './edit-xform-quickops';
 import { openVariationPicker } from './edit-variation-picker';
 import {
   scrubbyInput,
