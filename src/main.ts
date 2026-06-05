@@ -194,6 +194,7 @@ async function main(): Promise<void> {
     if (p === '/v1/gallery' || p.startsWith('/v1/gallery/')) return 'gallery';
     if (p === '/v1/edit' || p.startsWith('/v1/edit/')) return 'editor';
     if (p === '/about' || p.startsWith('/about/')) return 'about';
+    if (p === '/v1/screensaver' || p.startsWith('/v1/screensaver/')) return 'screensaver';
     // /v1/gen/<gen>/id/<id> deep-links are still the viewer surface; bare
     // `/` and any unrecognized path also resolve to viewer.
     return 'viewer';
@@ -328,6 +329,37 @@ async function main(): Promise<void> {
       // undefined so mountAbout's "WebGPU" fallback shows on the chip.
     });
     setDocTitle('about');
+    return;
+  }
+
+  // #109 — /v1/screensaver short-circuit. Mirrors the /about pattern:
+  // mountScreensaverBar into #pyr3-bar; screensaver page body into the
+  // middleSlot. Viewer canvas + first-paint cue hidden so the screensaver
+  // owns the visible zone.
+  if (window.location.pathname === '/v1/screensaver' || window.location.pathname.startsWith('/v1/screensaver/')) {
+    const barRoot = document.getElementById('pyr3-bar');
+    const bodyRoot = document.getElementById('pyr3-canvas-zone');
+    if (!barRoot || !bodyRoot) {
+      console.error('pyr3: /v1/screensaver — required DOM nodes missing');
+      return;
+    }
+    const { mountScreensaverBar } = await import('./ui-bar');
+    const screensaverBar = mountScreensaverBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    const canvas = document.getElementById('pyr3-canvas');
+    if (canvas) canvas.hidden = true;
+    const firstPaint = document.getElementById('pyr3-firstpaint');
+    if (firstPaint) firstPaint.remove();
+    const ssContainer = document.createElement('div');
+    ssContainer.id = 'pyr3-screensaver';
+    Object.assign(ssContainer.style, {
+      position: 'relative',
+      height: 'calc(100vh - 44px)',
+      overflow: 'hidden',
+    });
+    screensaverBar.middleSlot.appendChild(ssContainer);
+    const { mountScreensaverPage } = await import('./screensaver-mount');
+    mountScreensaverPage({ root: ssContainer });
+    setDocTitle('screensaver');
     return;
   }
 
