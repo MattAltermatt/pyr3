@@ -387,6 +387,107 @@ describe('palette picker — favorites (Task 9.6)', () => {
     expect(allTab.textContent).toContain('701');
   });
 
+  it('placeholder — favorites tab live re-filter exercised below', () => {
+    void 0;
+  });
+});
+
+describe('palette picker — auto-apply / revert / apply&close (Task 9.8)', () => {
+  it('cell click WITHOUT auto-apply: selects without calling onApply', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click();
+    expect(onApply).not.toHaveBeenCalled();
+    // The cell becomes the currently-selected cell (visually + footer).
+    expect(cell5.classList.contains('active')).toBe(true);
+    // Selected info shows the paletteIdentifier text — for flam3 catalog
+    // entries this is either `flam3 "name"` or `flam3 #N`. Either way the
+    // `flam3` prefix is present.
+    const selected = root.querySelector('.pyr3-palette-picker-selected') as HTMLElement;
+    expect(selected.textContent).toContain('flam3');
+  });
+
+  it('cell click WITH auto-apply ON: immediately calls onApply with the source', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    // Toggle auto-apply ON.
+    const toggle = root.querySelector('.pyr3-palette-picker-auto-apply') as HTMLElement;
+    toggle.click();
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click();
+    expect(onApply).toHaveBeenCalledOnce();
+    expect(onApply).toHaveBeenCalledWith({ kind: 'flam3', number: 5 });
+  });
+
+  it('toggling auto-apply OFF after a select does not auto-fire onApply', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    const toggle = root.querySelector('.pyr3-palette-picker-auto-apply') as HTMLElement;
+    toggle.click(); // ON
+    toggle.click(); // OFF
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click();
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('apply & close calls onApply with the SELECTED source, then onClose', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const onClose = vi.fn();
+    const { root } = mount(makeOpts({ onApply, onClose }));
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click(); // select #5 without applying
+    const apply = root.querySelector('.pyr3-palette-picker-apply') as HTMLElement;
+    apply.click();
+    expect(onApply).toHaveBeenCalledWith({ kind: 'flam3', number: 5 });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('apply & close uses the picker-current source when nothing else selected', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    const apply = root.querySelector('.pyr3-palette-picker-apply') as HTMLElement;
+    apply.click();
+    expect(onApply).toHaveBeenCalledWith({ kind: 'flam3', number: 100 });
+  });
+
+  it('revert restores the originally-selected palette as the active selection', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    // Initially current = flam3 #100. Pick #5; then click revert.
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click();
+    expect(cell5.classList.contains('active')).toBe(true);
+    const revert = root.querySelector('.pyr3-palette-picker-revert') as HTMLElement;
+    revert.click();
+    expect(cell5.classList.contains('active')).toBe(false);
+    const cell100 = root.querySelector('.pyr3-palette-picker-cell[data-idx="100"]') as HTMLElement;
+    expect(cell100.classList.contains('active')).toBe(true);
+    // Selected info reflects the revert — back to flam3 catalog format.
+    const selected = root.querySelector('.pyr3-palette-picker-selected') as HTMLElement;
+    expect(selected.textContent).toContain('flam3');
+  });
+
+  it('revert with auto-apply ON also fires onApply with the original source', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    const toggle = root.querySelector('.pyr3-palette-picker-auto-apply') as HTMLElement;
+    toggle.click(); // ON
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click();
+    onApply.mockClear();
+    const revert = root.querySelector('.pyr3-palette-picker-revert') as HTMLElement;
+    revert.click();
+    expect(onApply).toHaveBeenCalledWith({ kind: 'flam3', number: 100 });
+  });
+
   it('toggling a star while on favorites tab updates the visible set live', () => {
     installLocalStorageStub();
     localStorage.setItem('pyr3.palette.favorites', JSON.stringify(['flam3:10']));

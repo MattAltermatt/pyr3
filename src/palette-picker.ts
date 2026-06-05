@@ -293,7 +293,7 @@ export function mountPalettePicker(
   autoApplyLabel.textContent = 'auto-apply';
   const autoApply = buildToggle({
     value: false,
-    onChange: () => { /* Task 9.8 wires commit semantics */ },
+    onChange: (next) => { autoApplyOn = next; },
   });
   autoApply.classList.add('pyr3-palette-picker-auto-apply');
   autoApplyWrap.append(autoApplyLabel, autoApply);
@@ -310,13 +310,19 @@ export function mountPalettePicker(
   body.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
 
   const entries = getLibraryEntries();
-  const activeIdx = currentActiveIdx(opts.current);
+  const originalSource = opts.current; // snapshot for revert
+  // selectedSource starts at the picker's current; cell clicks update it,
+  // revert snaps it back to originalSource, apply&close commits it.
+  let selectedSource: PaletteSource = opts.current;
   const cellByIdx = new Map<number, HTMLElement>();
   const starByIdx = new Map<number, HTMLElement>();
 
   // Live favorite set + tab state ------------------------------------------
   const favorites = readFavorites();
   let activeTab: 'all' | 'favorites' = 'all';
+  // Auto-apply: cell click immediately invokes onApply. OFF = deferred until
+  // the footer apply&close button fires.
+  let autoApplyOn = false;
 
   function isFavorite(idx: number): boolean {
     return favorites.has(favoriteIdFor({ kind: 'flam3', number: idx }));
@@ -344,6 +350,7 @@ export function mountPalettePicker(
     applyFilter();
   }
 
+  const activeIdx = currentActiveIdx(opts.current);
   for (const entry of entries) {
     const cell = document.createElement('div');
     cell.className = 'pyr3-palette-picker-cell';
@@ -362,6 +369,14 @@ export function mountPalettePicker(
       cell.style.borderColor = COLORS.flame.top;
       cell.style.background = COLORS.bg.action;
     }
+
+    // Cell click → update selection. With auto-apply ON, also fire onApply.
+    cell.addEventListener('click', () => {
+      setSelected({ kind: 'flam3', number: entry.idx });
+      if (autoApplyOn) {
+        opts.onApply(selectedSource);
+      }
+    });
 
     // Cell ribbon: 36px gradient strip
     const ribbon = document.createElement('div');
@@ -409,6 +424,28 @@ export function mountPalettePicker(
     paintStar(entry.idx);
   }
   picker.appendChild(body);
+
+  // Selection helpers — paint the active border on the cell matching
+  // selectedSource; update the footer "selected" info text.
+  function paintActive(idx: number | null): void {
+    for (const [i, cell] of cellByIdx) {
+      const isActive = i === idx;
+      cell.classList.toggle('active', isActive);
+      cell.style.borderColor = isActive ? COLORS.flame.top : 'transparent';
+      cell.style.background = isActive ? COLORS.bg.action : 'transparent';
+    }
+  }
+  function setSelected(source: PaletteSource): void {
+    selectedSource = source;
+    paintActive(currentActiveIdx(source));
+    refreshSelectedInfo();
+  }
+  function refreshSelectedInfo(): void {
+    const ident = paletteIdentifier(selectedSource);
+    selected.textContent = ident.prefix
+      ? `${ident.prefix} ${ident.name}`
+      : ident.name;
+  }
 
   // Live filter — search (substring AND) × chip (any-tag OR) × tab (all
   // vs favorites). Badge shows total when nothing is filtering, else
@@ -474,7 +511,11 @@ export function mountPalettePicker(
     variant: 'accent',
     label: 'revert',
     icon: '⟲',
-    onClick: () => { /* Task 9.8 wires snapshot restore */ },
+    onClick: () => {
+      setSelected(originalSource);
+      // Auto-apply ON → revert also commits the original back to the host.
+      if (autoApplyOn) opts.onApply(selectedSource);
+    },
   });
   revertBtn.classList.add('pyr3-palette-picker-revert');
 
@@ -482,7 +523,7 @@ export function mountPalettePicker(
     variant: 'primary',
     label: 'apply & close',
     onClick: () => {
-      opts.onApply(opts.current);
+      opts.onApply(selectedSource);
       opts.onClose();
     },
   });
