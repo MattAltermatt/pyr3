@@ -40,7 +40,8 @@ import {
   type PaletteSource,
   paletteIdentifier,
 } from './flam3-palette-names';
-import { FLAM3_PALETTE_COUNT } from './flam3-palettes';
+import { FLAM3_PALETTE_COUNT, getLibraryStops, getLibraryPaletteName } from './flam3-palettes';
+import { type ColorStop } from './palette';
 
 export interface PalettePickerOpts {
   /** The palette the editor is currently showing. Drives initial selection. */
@@ -54,6 +55,54 @@ export interface PalettePickerOpts {
 export interface PalettePickerHandle {
   /** Remove the picker DOM. Idempotent. */
   destroy: () => void;
+}
+
+// ── Library entries (lazy-decoded once at first picker open) ──────────────
+interface LibraryEntry {
+  idx: number;
+  name: string;       // display name (no-name → `flame #N`)
+  searchName: string; // lower-cased name for filter matching
+  gradient: string;   // CSS linear-gradient(...) string for cell ribbon
+}
+
+let _libraryEntries: LibraryEntry[] | null = null;
+function getLibraryEntries(): LibraryEntry[] {
+  if (_libraryEntries) return _libraryEntries;
+  const out: LibraryEntry[] = [];
+  for (let i = 0; i < FLAM3_PALETTE_COUNT; i++) {
+    const stops = getLibraryStops(i) ?? [];
+    const name = getLibraryPaletteName(i) ?? `flame #${i}`;
+    out.push({
+      idx: i,
+      name,
+      searchName: name.toLowerCase(),
+      gradient: gradientCss(stops),
+    });
+  }
+  _libraryEntries = out;
+  return out;
+}
+
+// CSS gradient from a palette's stops. Sample every 16th index for a
+// representative gradient (browser perf).
+function gradientCss(stops: readonly ColorStop[]): string {
+  if (stops.length === 0) return 'linear-gradient(to right, #000, #000)';
+  const sorted = [...stops].sort((a, b) => a.t - b.t);
+  const step = Math.max(1, Math.floor(sorted.length / 16));
+  const parts: string[] = [];
+  for (let i = 0; i < sorted.length; i += step) {
+    const s = sorted[i]!;
+    const r = Math.round(s.r * 255);
+    const g = Math.round(s.g * 255);
+    const b = Math.round(s.b * 255);
+    const pct = Math.max(0, Math.min(100, s.t * 100)).toFixed(2);
+    parts.push(`rgb(${r}, ${g}, ${b}) ${pct}%`);
+  }
+  return `linear-gradient(to right, ${parts.join(', ')})`;
+}
+
+function currentActiveIdx(source: PaletteSource): number | null {
+  return source.kind === 'flam3' ? source.number : null;
 }
 
 export function mountPalettePicker(
@@ -153,10 +202,90 @@ export function mountPalettePicker(
 
   picker.appendChild(head);
 
-  // ── Body (Task 9.4 fills with the 3-col cell grid) ──────────────────────
+  // ── Body — 3-col cell grid (Task 9.4) ──────────────────────────────────
   const body = document.createElement('div');
   body.className = 'pyr3-palette-picker-body';
+  // Inline the grid template so tests can read the column policy directly.
+  body.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+
+  const entries = getLibraryEntries();
+  const activeIdx = currentActiveIdx(opts.current);
+  const cellByIdx = new Map<number, HTMLElement>();
+
+  for (const entry of entries) {
+    const cell = document.createElement('div');
+    cell.className = 'pyr3-palette-picker-cell';
+    cell.dataset['idx'] = String(entry.idx);
+    cell.dataset['name'] = entry.searchName;
+    cell.title = entry.name;
+    cell.style.cursor = 'pointer';
+    cell.style.padding = '4px';
+    cell.style.borderRadius = '3px';
+    cell.style.border = `1px solid transparent`;
+    cell.style.background = 'transparent';
+    cell.style.position = 'relative';
+
+    if (entry.idx === activeIdx) {
+      cell.classList.add('active');
+      cell.style.borderColor = COLORS.flame.top;
+      cell.style.background = COLORS.bg.action;
+    }
+
+    // Cell ribbon: 36px gradient strip
+    const ribbon = document.createElement('div');
+    ribbon.className = 'pyr3-palette-picker-cell-ribbon';
+    ribbon.style.height = '36px';
+    ribbon.style.borderRadius = '2px';
+    ribbon.style.border = `1px solid ${COLORS.border}`;
+    ribbon.style.background = entry.gradient;
+    cell.appendChild(ribbon);
+
+    // Name (truncated)
+    const nameEl = document.createElement('div');
+    nameEl.className = 'pyr3-palette-picker-cell-name';
+    nameEl.textContent = entry.name;
+    nameEl.style.fontSize = '10px';
+    nameEl.style.color = COLORS.text.muted;
+    nameEl.style.marginTop = '4px';
+    nameEl.style.overflow = 'hidden';
+    nameEl.style.textOverflow = 'ellipsis';
+    nameEl.style.whiteSpace = 'nowrap';
+    nameEl.style.textAlign = 'center';
+    cell.appendChild(nameEl);
+
+    // Star (top-right corner; placeholder for Task 9.6 — favorites)
+    const star = document.createElement('div');
+    star.className = 'pyr3-palette-picker-cell-star';
+    star.textContent = '☆';
+    star.style.position = 'absolute';
+    star.style.top = '2px';
+    star.style.right = '4px';
+    star.style.fontSize = '12px';
+    star.style.color = COLORS.text.dim;
+    star.style.userSelect = 'none';
+    star.style.cursor = 'pointer';
+    cell.appendChild(star);
+
+    body.appendChild(cell);
+    cellByIdx.set(entry.idx, cell);
+  }
   picker.appendChild(body);
+
+  // Live search filter — updates cell visibility + badge count.
+  function applyFilter(): void {
+    const q = search.value.trim().toLowerCase();
+    let visible = 0;
+    for (const entry of entries) {
+      const cell = cellByIdx.get(entry.idx)!;
+      const match = q === '' || entry.searchName.includes(q);
+      cell.style.display = match ? '' : 'none';
+      if (match) visible++;
+    }
+    badge.textContent = q === ''
+      ? `${FLAM3_PALETTE_COUNT}`
+      : `${visible} / ${FLAM3_PALETTE_COUNT}`;
+  }
+  search.addEventListener('input', applyFilter);
 
   // ── Footer: selected info · revert · apply&close ────────────────────────
   const foot = document.createElement('div');

@@ -126,3 +126,81 @@ describe('palette picker — shell DOM', () => {
     expect(root.querySelector('.pyr3-palette-picker')).toBeNull();
   });
 });
+
+describe('palette picker — body cell grid (Task 9.4)', () => {
+  it('body uses grid-template-columns: repeat(3, 1fr)', () => {
+    const { root } = mount();
+    const body = root.querySelector('.pyr3-palette-picker-body') as HTMLElement;
+    // gridTemplateColumns is normalized by the browser; just check 3 columns.
+    expect(body.style.gridTemplateColumns).toMatch(/repeat\(3,/);
+  });
+
+  it('renders one cell per flam3 palette', () => {
+    const { root } = mount();
+    const cells = root.querySelectorAll('.pyr3-palette-picker-cell');
+    // 701 catalog entries.
+    expect(cells.length).toBe(701);
+  });
+
+  it('each cell has a ribbon (height: 36px), a name, and a star placeholder', () => {
+    const { root } = mount();
+    const first = root.querySelector('.pyr3-palette-picker-cell') as HTMLElement;
+    const ribbon = first.querySelector('.pyr3-palette-picker-cell-ribbon') as HTMLElement;
+    expect(ribbon).toBeTruthy();
+    expect(ribbon.style.height).toBe('36px');
+    expect(first.querySelector('.pyr3-palette-picker-cell-name')).toBeTruthy();
+    expect(first.querySelector('.pyr3-palette-picker-cell-star')).toBeTruthy();
+  });
+
+  it('active cell (matching opts.current) carries the `active` class + amber border', () => {
+    // current = flam3 #100; expect cell[data-idx="100"] to be active.
+    const { root } = mount();
+    const active = root.querySelectorAll('.pyr3-palette-picker-cell.active');
+    expect(active.length).toBe(1);
+    const idx = (active[0] as HTMLElement).dataset['idx'];
+    expect(idx).toBe('100');
+    // Amber border via the COLORS.flame.top token — assert the style is set.
+    const style = (active[0] as HTMLElement).style;
+    expect(style.borderColor).toBeTruthy();
+  });
+
+  it('typing in the search input filters cells live (case-insensitive substring)', () => {
+    const { root } = mount();
+    const search = root.querySelector('.pyr3-palette-picker-search') as HTMLInputElement;
+    // 'sky' should match e.g. flam3 #1 sky-flesh, and hide most others.
+    search.value = 'sky';
+    search.dispatchEvent(new Event('input'));
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.length).toBeLessThan(701);
+    // Every visible cell's name contains 'sky' (case-insensitive).
+    for (const c of visible) {
+      const name = (c.querySelector('.pyr3-palette-picker-cell-name') as HTMLElement).textContent ?? '';
+      expect(name.toLowerCase()).toContain('sky');
+    }
+  });
+
+  it('clearing search restores all cells', () => {
+    const { root } = mount();
+    const search = root.querySelector('.pyr3-palette-picker-search') as HTMLInputElement;
+    search.value = 'sky';
+    search.dispatchEvent(new Event('input'));
+    search.value = '';
+    search.dispatchEvent(new Event('input'));
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    expect(visible.length).toBe(701);
+  });
+
+  it('search match updates the count badge live', () => {
+    const { root } = mount();
+    const search = root.querySelector('.pyr3-palette-picker-search') as HTMLInputElement;
+    const badge = root.querySelector('.pyr3-palette-picker-badge') as HTMLElement;
+    expect(badge.textContent).toBe('701');
+    search.value = 'sky';
+    search.dispatchEvent(new Event('input'));
+    // Format is `<visible> / 701` once filtered.
+    expect(badge.textContent).toMatch(/\d+ \/ 701/);
+  });
+});
