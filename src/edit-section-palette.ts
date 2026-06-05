@@ -34,6 +34,7 @@ import {
 } from './flam3-palette-names';
 import { COLORS } from './ui-tokens';
 import { buildRow, buildSlider, buildButton } from './edit-primitives';
+import { mountPalettePicker, type PalettePickerHandle } from './palette-picker';
 
 // Parse `flame #N` → N. Returns null when the name doesn't match.
 function parseFlameIndex(name: string): number | null {
@@ -290,6 +291,59 @@ export const paletteSection: SectionMount = {
         state.genome.paletteMode = mode;
       }
       onChange('paletteMode');
+    }
+
+    // ── Default openPalettePicker (host can override) ──────────────────────
+    // The editor host (edit-mount.ts) is welcome to supply its own opener
+    // that docks the picker into a specific layout slot; if it doesn't, we
+    // install a body-mounted default so the launcher button works out of
+    // the box. CSS `position: fixed; left: 340px` handles the dock visual.
+    if (!state.openPalettePicker) {
+      let pickerHandle: PalettePickerHandle | null = null;
+      const dismissOnKey = (ev: KeyboardEvent): void => {
+        if (ev.key !== 'Escape') return;
+        if (pickerHandle) {
+          pickerHandle.destroy();
+          pickerHandle = null;
+          document.removeEventListener('keydown', dismissOnKey);
+        }
+      };
+      state.openPalettePicker = (): void => {
+        if (pickerHandle) {
+          pickerHandle.destroy();
+          pickerHandle = null;
+          document.removeEventListener('keydown', dismissOnKey);
+          return;
+        }
+        pickerHandle = mountPalettePicker(document.body, {
+          current: currentSource(),
+          onApply: (source) => {
+            // Apply a picked palette to the genome — corpus/mine are future
+            // work; for the flam3 catalog we resolve to library stops here.
+            if (source.kind === 'flam3') {
+              const fresh = paletteAtIndex(source.number);
+              const existing = state.genome.palette;
+              state.genome.palette = {
+                name: fresh.name,
+                stops: fresh.stops,
+                ...(existing.mode !== undefined ? { mode: existing.mode } : {}),
+              };
+              state.paletteSource = source;
+              refreshLauncher();
+              refreshRibbon();
+              onChange('palette');
+            }
+          },
+          onClose: () => {
+            if (pickerHandle) {
+              pickerHandle.destroy();
+              pickerHandle = null;
+              document.removeEventListener('keydown', dismissOnKey);
+            }
+          },
+        });
+        document.addEventListener('keydown', dismissOnKey);
+      };
     }
 
     // ── Wire events ────────────────────────────────────────────────────────

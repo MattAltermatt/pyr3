@@ -225,6 +225,48 @@ describe('paletteSection — launcher / ribbon → openPalettePicker', () => {
     const launcher = host.querySelector('.pyr3-edit-palette-launcher') as HTMLElement;
     expect(() => launcher.click()).not.toThrow();
   });
+
+  it('ribbon click also invokes state.openPalettePicker', () => {
+    const opener = vi.fn();
+    const { host, state } = mount();
+    state.openPalettePicker = opener;
+    const ribbon = host.querySelector('.pyr3-edit-palette-ribbon') as HTMLElement;
+    ribbon.click();
+    expect(opener).toHaveBeenCalledOnce();
+  });
+
+  it('ribbon click does NOT also drive the hue slider (separate handlers)', () => {
+    const opener = vi.fn();
+    const { host, state, onChange } = mount();
+    state.openPalettePicker = opener;
+    const initialHue = state.genome.palette.hue ?? 0;
+    const ribbon = host.querySelector('.pyr3-edit-palette-ribbon') as HTMLElement;
+    ribbon.click();
+    expect(state.genome.palette.hue ?? 0).toBe(initialHue);
+    // onChange for hue must not have fired from this click.
+    expect(onChange).not.toHaveBeenCalledWith('palette.hue');
+  });
+
+  it('after build() the section installs a default openPalettePicker (when unset)', () => {
+    // The section's build mounts a default opener so the launcher works even
+    // before the host wires a dock. Calling it should not throw.
+    const { state } = mount();
+    expect(typeof state.openPalettePicker).toBe('function');
+    expect(() => state.openPalettePicker?.()).not.toThrow();
+    // Default opener mounts the picker on document.body. Clean up so the
+    // afterEach doesn't leak listeners across tests.
+    document.querySelectorAll('.pyr3-palette-picker').forEach((n) => n.remove());
+  });
+
+  it('host-provided openPalettePicker is NOT overwritten by the default', () => {
+    const opener = vi.fn();
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    state.genome.palette = { name: 'flame #100', stops: state.genome.palette.stops };
+    state.openPalettePicker = opener;
+    paletteSection.build(host, state, vi.fn());
+    expect(state.openPalettePicker).toBe(opener);
+  });
 });
 
 describe('paletteSection — mode radio (flam3 paletteMode, preserved)', () => {

@@ -513,17 +513,24 @@ function ensurePickerStyles(): void {
 
 const PICKER_CSS = `
 .pyr3-palette-picker {
+  /* Docked to the right of the 340px editor left panel; matches the
+     #102 variation-picker placement so the muscle memory transfers. */
+  position: fixed;
+  top: 88px;          /* under the top bar + info row */
+  bottom: 0;
+  left: 340px;
   width: 380px;
   display: flex;
   flex-direction: column;
   background: ${COLORS.bg.panel};
   border: 1px solid ${COLORS.border};
+  border-left: none;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
-  height: 100%;
   min-height: 0;
   overflow: hidden;
   color: ${COLORS.text.primary};
   font-size: 12px;
+  z-index: 1000;
 }
 .pyr3-palette-picker-head {
   padding: 10px 12px;
