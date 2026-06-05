@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import {
+  mountAboutBar,
   mountBar,
   mountBarChrome,
   mountGalleryBar,
@@ -262,5 +263,19 @@ describe('mountBarChrome', () => {
     // Compile-time assertion — purely for the type re-export contract.
     const surfaces: TabSurface[] = ['viewer', 'gallery', 'editor', 'about'];
     expect(surfaces).toHaveLength(4);
+  });
+});
+
+describe('mountAboutBar', () => {
+  it('renders chrome with NO tab active (about lives in left cluster, not tabs)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountAboutBar(root, {
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+    expect(root.querySelector('.pyr3-tab.active')).toBeFalsy();
+    expect(root.querySelector('.pyr3-about-link.active')).toBeTruthy();
+    handle.destroy();
   });
 });

@@ -618,6 +618,45 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   };
 }
 
+// ─── mountAboutBar (#103 Task 1.5) ──────────────────────────────────────────
+// The /about route's top-bar variant. Reuses mountBarChrome and marks the
+// existing `.pyr3-about-link` in the left cluster with `.active` so the user
+// gets a clear "you are here" cue (about isn't a tab — it lives next to the
+// brand). All three real tabs render in their inactive state via
+// surface: 'about' on the chrome substrate.
+
+export interface AboutBarOpts {
+  webgpu: WebGPUStatus;
+  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
+  onTabClick: (surface: TabSurface) => void;
+}
+
+export interface AboutBarHandle {
+  destroy: () => void;
+}
+
+export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHandle {
+  injectStylesOnce();
+  root.classList.add('pyr3-bar-root');
+
+  const chrome = mountBarChrome(root, {
+    surface: 'about',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
+  // Highlight the about-link in the left cluster — the only "you are here"
+  // affordance on /about, since the tab group has no `about` slot.
+  root.querySelector('.pyr3-about-link')?.classList.add('active');
+
+  return {
+    destroy: () => {
+      chrome.destroy();
+      root.classList.remove('pyr3-bar-root');
+    },
+  };
+}
+
 function buildBrand(): HTMLElement {
   const wrap = el('a', 'pyr3-brand') as HTMLAnchorElement;
   wrap.href = import.meta.env.BASE_URL;
