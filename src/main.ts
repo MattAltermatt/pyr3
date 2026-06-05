@@ -226,7 +226,12 @@ async function main(): Promise<void> {
         settled = true;
         window.location.href = SURFACE_FALLBACK.gallery;
       };
-      setTimeout(onFallback, 150);
+      // 2000ms upper bound — pageForSheep is normally <500ms (manifest fetch
+      // + array scan) but cold cache can take longer. The previous 150ms was
+      // too aggressive; users routinely fell back to bare gallery instead of
+      // landing on the flame's page. If the lookup genuinely hangs, the user
+      // still has an escape after 2s.
+      setTimeout(onFallback, 2000);
       void pageForSheep(gen, id).then(onResolve).catch(onFallback);
       return;
     }
@@ -819,6 +824,13 @@ async function main(): Promise<void> {
     // applyPreset resolves size (long-edge → native aspect), scale, oversample(1)
     // and capped quality — identical math to the CLI presets.
     const renderGenome = applyPreset(activeGenome, spec);
+    // Size-dropdown explicit dims: when the request carries both width AND
+    // height (Size presets like square 1080×1080 or iPhone 1290×2796), honor
+    // the exact ratio instead of preserving the genome's aspect. The
+    // long-edge math in applyPreset already ran above — overwrite its size.
+    if (req.kind === 'custom' && req.width != null && req.height != null) {
+      renderGenome.size = { width: req.width, height: req.height };
+    }
     const targetW = renderGenome.size?.width ?? RENDER_SIZE;
     const targetH = renderGenome.size?.height ?? RENDER_SIZE;
     const spp = renderGenome.quality ?? spec.maxSpp;

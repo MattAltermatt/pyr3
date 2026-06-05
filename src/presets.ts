@@ -100,7 +100,12 @@ export function tierToSpec(t: QualityTier): PresetSpec {
  *  Custom always renders at oversample 1 (the FE removed oversample>1 for memory). */
 export type QualityRequest =
   | { kind: 'tier'; tier: QualityTier }
-  | { kind: 'custom'; longEdge: number; spp: number };
+  // Custom request. When `width` AND `height` are both present, the render
+  // uses those exact dims (overrides the long-edge + genome-aspect math) —
+  // used by the viewer/editor Size dropdown to honor explicit preset ratios
+  // like 1080×1080 (square) or 1290×2796 (iPhone). When omitted, the legacy
+  // long-edge + preserve-genome-aspect path applies.
+  | { kind: 'custom'; longEdge: number; spp: number; width?: number; height?: number };
 
 // #25 — CLI quality parity. The BE CLI consumes the SAME ladder as the FE so a
 // `--preset high` render produces identical dims/SPP to the viewer's High tier.

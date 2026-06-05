@@ -597,10 +597,15 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
           renderSizeLabel();
           closeSizeMenu();
           const longEdge = Math.max(item.w, item.h);
+          // Pass explicit width+height so the renderer uses the preset's exact
+          // aspect ratio (1080×1080 square, 1290×2796 iPhone, etc.) instead of
+          // overlaying the genome's native aspect on the long edge.
           opts.onRenderQuality({
             kind: 'custom',
             longEdge,
             spp: currentSpp,
+            width: item.w,
+            height: item.h,
           });
         };
         menu.append(row);
