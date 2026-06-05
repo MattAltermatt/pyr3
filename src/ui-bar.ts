@@ -862,10 +862,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 // existing fns to consume this; for now mountBarChrome ships alongside the
 // existing chrome builders without disturbing them.
 
-/** Tabs in the top-bar's center cluster. `about` is reserved — it lives in
- *  the left cluster as a link, not a tab — so surface: 'about' renders all
- *  three real tabs in their inactive state. */
-export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'about';
+/** Tabs in the top-bar's center cluster. `about` and `screensaver` are
+ *  reserved — they live in the left cluster as links, not tabs — so those
+ *  surfaces render all three real tabs in their inactive state. */
+export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'about' | 'screensaver';
 
 export interface ChromeOpts {
   surface: TabSurface;
@@ -973,6 +973,46 @@ export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHa
   };
 }
 
+// ─── mountScreensaverBar (#109) ─────────────────────────────────────────────
+// The /v1/screensaver top-bar variant. Mirrors mountAboutBar: reuses
+// mountBarChrome and renders all three real tabs inactive via
+// surface: 'screensaver'. The screensaver page renders its own settings card
+// + canvas + permanent controls strip into middleSlot.
+
+export interface ScreensaverBarOpts {
+  webgpu: WebGPUStatus;
+  onTabClick: (surface: TabSurface) => void;
+}
+
+export interface ScreensaverBarHandle {
+  /** Caller mounts the landing card / canvas / pill into this slot. */
+  middleSlot: HTMLElement;
+  destroy: () => void;
+}
+
+export function mountScreensaverBar(
+  root: HTMLElement,
+  opts: ScreensaverBarOpts,
+): ScreensaverBarHandle {
+  injectStylesOnce();
+  root.replaceChildren();
+  root.classList.add('pyr3-bar-root');
+
+  const chrome = mountBarChrome(root, {
+    surface: 'screensaver',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
+  return {
+    middleSlot: chrome.middleSlot,
+    destroy: () => {
+      chrome.destroy();
+      root.classList.remove('pyr3-bar-root');
+    },
+  };
+}
+
 function buildBrand(): HTMLElement {
   const wrap = el('a', 'pyr3-brand') as HTMLAnchorElement;
   wrap.href = import.meta.env.BASE_URL;
@@ -993,9 +1033,9 @@ function buildAboutLink(): HTMLElement {
 
 function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLElement {
   const wrap = el('div', 'pyr3-tabs');
-  // `about` lives in the left cluster as a link, so surface: 'about' renders
-  // all three real tabs in their inactive state.
-  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor'];
+  // `about` and `screensaver` live in the left cluster as links, so those
+  // surfaces render all three real tabs in their inactive state.
+  const surfaces: Exclude<TabSurface, 'about' | 'screensaver'>[] = ['viewer', 'gallery', 'editor'];
   for (const s of surfaces) {
     const btn = el('div', 'pyr3-tab' + (s === active ? ' active' : ''));
     btn.dataset.surface = s;

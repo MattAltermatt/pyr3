@@ -183,10 +183,11 @@ async function main(): Promise<void> {
   // pages to the flame's corpus page; editor preloads via ?gen=&id=). All
   // other transitions fall through to the bare surface URL.
   const SURFACE_FALLBACK: Record<TabSurface, string> = {
-    viewer:  '/',
-    gallery: '/v1/gallery',
-    editor:  '/v1/edit',
-    about:   '/about',
+    viewer:      '/',
+    gallery:     '/v1/gallery',
+    editor:      '/v1/edit',
+    about:       '/about',
+    screensaver: '/v1/screensaver',
   };
   function currentTabSurface(): TabSurface {
     const p = window.location.pathname;
