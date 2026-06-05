@@ -67,6 +67,24 @@ function xformBucket(n: number): number {
   return n >= 14 ? 14 : n;
 }
 
+/** Plain-English user-facing labels for filter metric keys. The internal
+ *  facet keys (`interest`, `entropy`, `colorVar`, `meanLum`) are
+ *  algorithm-jargon — fine for code and URL params, but the filter panel
+ *  exposes them to users who don't know the terminology. This map renames
+ *  them once at the UI layer. Sort labels stay unmapped — they're already
+ *  short and the sort dropdown groups them by name visibly.
+ *
+ *  Consumed by `gallery-filter-ui.ts` when rendering active-filter chips,
+ *  metric-row headers, and the variation/xform row labels. */
+export const FILTER_LABEL_MAP = {
+  interest:  'interestingness',
+  coverage:  'coverage',
+  entropy:   'complexity',
+  colorVar:  'color variation',
+  meanLum:   'brightness',
+  xforms:    'xform count',
+} as const;
+
 export interface FacetCounts {
   /** variation index → count of flames having THIS variation among the
    *  set that passes ALL OTHER filters (variation axis excluded). */

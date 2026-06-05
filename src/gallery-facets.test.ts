@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeFacetCounts } from './gallery-facets';
+import { computeFacetCounts, FILTER_LABEL_MAP } from './gallery-facets';
 import { DEFAULT_FILTER_SPEC, type FilterSpec } from './gallery-filter';
 import type { FeatureIndex } from './feature-index-client';
 import type { FeatureRecord } from './feature-index';
@@ -214,5 +214,16 @@ describe('computeFacetCounts', () => {
     const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, vars: [0, 14] };
     const c = computeFacetCounts(idx, spec);
     expect(c.total).toBe(1);
+  });
+});
+
+describe('plain-english filter labels', () => {
+  it('maps internal facet keys to user-facing names', () => {
+    expect(FILTER_LABEL_MAP.interest).toBe('interestingness');
+    expect(FILTER_LABEL_MAP.colorVar).toBe('color variation');
+    expect(FILTER_LABEL_MAP.meanLum).toBe('brightness');
+    expect(FILTER_LABEL_MAP.entropy).toBe('complexity');
+    expect(FILTER_LABEL_MAP.coverage).toBe('coverage');
+    expect(FILTER_LABEL_MAP.xforms).toBe('xform count');
   });
 });
