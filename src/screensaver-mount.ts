@@ -666,6 +666,13 @@ function startBuildUp(args: {
       );
       const splatItersPerWalker = Math.max(1, Math.ceil(samplesPerFrame / BUILD_UP_WALKERS));
       const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
+      // Spec §4.2 adaptive cadence (ADAPTIVE_BACKOFF_MS=25 → drop to 20fps
+      // when frameElapsed > 25ms) deferred to follow-up. Cost model
+      // (§4.2.2) predicts ~4-5ms per frame at hero dims — 30fps has 5×
+      // headroom, so v1 ships fixed cadence. If Chrome verify shows a
+      // tight frame budget at short buildUpSec or large canvas, add the
+      // backoff branch HERE (measure performance.now() - frameStart, swap
+      // FRAME_INTERVAL_MS to 50 for that flame).
       const FRAME_INTERVAL_MS   = 1000 / BUILD_UP_TARGET_FPS;
 
       while (!isCancelled()) {
