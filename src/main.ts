@@ -335,7 +335,8 @@ async function main(): Promise<void> {
   // #109 — /v1/screensaver short-circuit. Mirrors the /about pattern:
   // mountScreensaverBar into #pyr3-bar; screensaver page body into the
   // middleSlot. Viewer canvas + first-paint cue hidden so the screensaver
-  // owns the visible zone.
+  // owns the visible zone. Device + format are pre-acquired here and passed
+  // to the screensaver mount so it can run the build-up / slideshow loops.
   if (window.location.pathname === '/v1/screensaver' || window.location.pathname.startsWith('/v1/screensaver/')) {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
@@ -343,6 +344,7 @@ async function main(): Promise<void> {
       console.error('pyr3: /v1/screensaver — required DOM nodes missing');
       return;
     }
+    const { device: ssDevice, format: ssFormat } = await acquireGpu();
     const { mountScreensaverBar } = await import('./ui-bar');
     const screensaverBar = mountScreensaverBar(barRoot, { webgpu, onTabClick: handleTabClick });
     const canvas = document.getElementById('pyr3-canvas');
@@ -358,7 +360,7 @@ async function main(): Promise<void> {
     });
     screensaverBar.middleSlot.appendChild(ssContainer);
     const { mountScreensaverPage } = await import('./screensaver-mount');
-    mountScreensaverPage({ root: ssContainer });
+    mountScreensaverPage({ root: ssContainer, device: ssDevice, format: ssFormat });
     setDocTitle('screensaver');
     return;
   }

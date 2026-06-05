@@ -1,6 +1,6 @@
 // Mount the /v1/screensaver page body. Wires the landing card, the canvas
-// host (Phase 3 populates with the real WebGPU canvas + mode loops), and the
-// permanent bottom controls strip.
+// host, the per-mode render loops (build-up wired here in T7; slideshow in
+// T8), and the permanent bottom controls strip.
 //
 // Structural analogue of edit-mount.ts: this module owns the page-level state
 // machine. The bar lives in #pyr3-bar and is mounted by main.ts via
@@ -12,16 +12,38 @@
 
 import { mountScreensaverLanding } from './screensaver-ui';
 import type { ScreensaverPrefs } from './screensaver-prefs';
+import { createScreensaverQueue, type SheepRef } from './screensaver-queue';
+import { qTarget, BUILD_UP_TARGET_Q } from './screensaver-pacing';
+import { loadFeatureIndex } from './feature-index-client';
+import { fetchFlameXml } from './chunk-fetch';
+import { parseFlame } from './flame-import';
+import {
+  createRenderer,
+  computeDispatch,
+  DEFAULT_FILTER_RADIUS,
+  type Renderer,
+} from './renderer';
+import type { Genome } from './genome';
 
 export interface MountScreensaverOpts {
   /** Container the page renders into. Cleared on mount. */
   root: HTMLElement;
+  /** Pre-acquired WebGPU device + canvas format. Optional so unit tests
+   *  (no WebGPU) can still mount the landing card; production main.ts
+   *  always passes both. When absent, Play stages the UI transitions but
+   *  no flame loop runs. */
+  device?: GPUDevice;
+  format?: GPUTextureFormat;
 }
 
 export interface ScreensaverPageHandle {
   /** Returns to the landing state (hides pill + canvas, re-shows card). */
   stop(): void;
 }
+
+const CANVAS_MAX_W = 1920;
+const CANVAS_MAX_H = 1080;
+const CANVAS_MIN_DIM = 256;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -47,6 +69,7 @@ function buildControlsStrip(): HTMLElement {
     opacity: '0.6',
     pointerEvents: 'none',
     textAlign: 'center',
+    zIndex: '10',
   });
   return strip;
 }
@@ -60,6 +83,7 @@ function buildNowPlayingPill(opts: { onStop: () => void }): HTMLElement {
     padding: '6px 10px',
     display: 'flex',
     gap: '8px',
+    zIndex: '10',
   });
   const stop = el('button', 'pyr3-screensaver-pill-stop');
   stop.textContent = '⏸';
@@ -68,13 +92,149 @@ function buildNowPlayingPill(opts: { onStop: () => void }): HTMLElement {
   return pill;
 }
 
+async function loadGenomeByRef(ref: SheepRef): Promise<Genome> {
+  const xml = await fetchFlameXml(ref.gen, ref.id);
+  return parseFlame(xml).genome;
+}
+
+function clampDim(n: number, max: number): number {
+  return Math.max(CANVAS_MIN_DIM, Math.min(max, Math.floor(n)));
+}
+
+function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
+  const canvas = el('canvas', 'pyr3-screensaver-canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = host.clientWidth || 1024;
+  const cssH = host.clientHeight || 1024;
+  canvas.width = clampDim(cssW * dpr, CANVAS_MAX_W);
+  canvas.height = clampDim(cssH * dpr, CANVAS_MAX_H);
+  Object.assign(canvas.style, {
+    position: 'absolute',
+    inset: '0',
+    width: '100%',
+    height: '100%',
+  });
+  host.append(canvas);
+  return canvas;
+}
+
+interface BuildUpHandle {
+  cancel(): void;
+}
+
+/** Promise-based sleep that bails on cancel. */
+async function sleepCancellable(ms: number, isCancelled: () => boolean): Promise<void> {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    if (isCancelled()) return;
+    await new Promise<void>((r) => setTimeout(r, Math.min(50, end - performance.now())));
+  }
+}
+
+function startBuildUp(args: {
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  canvasHost: HTMLElement;
+  prefs: ScreensaverPrefs;
+}): BuildUpHandle {
+  const { device, format, canvasHost, prefs } = args;
+  let cancelled = false;
+  const isCancelled = () => cancelled;
+
+  void (async () => {
+    const canvas = makeRenderCanvas(canvasHost);
+    const W = canvas.width;
+    const H = canvas.height;
+    const ctx = canvas.getContext('webgpu');
+    if (!ctx) return;
+    ctx.configure({ device, format, alphaMode: 'opaque' });
+
+    const renderer: Renderer = createRenderer(device, format, {
+      width: W,
+      height: H,
+      oversample: 1,
+      filterRadius: DEFAULT_FILTER_RADIUS,
+    });
+
+    const index = await loadFeatureIndex();
+    if (isCancelled()) return;
+    const allRefs = index.filter(() => true);
+    if (allRefs.length === 0) return;
+    const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
+
+    while (!isCancelled()) {
+      const ref = queue.next();
+      if (!ref) break;
+      let genome: Genome;
+      try {
+        genome = await loadGenomeByRef(ref);
+      } catch {
+        // Sparse-corpus gap or transient fetch failure — skip this flame.
+        continue;
+      }
+      if (isCancelled()) return;
+
+      renderer.reset(genome);
+      const seed = (Math.random() * 0xffffffff) >>> 0;
+      const startedAt = performance.now();
+      let samplesAccumulated = 0;
+
+      canvas.style.transition = '';
+      canvas.style.opacity = '1';
+
+      const totalPixels = W * H;
+
+      // Pacing loop: each frame, catch samples up to qTarget(elapsed).
+      while (!isCancelled()) {
+        const elapsed = (performance.now() - startedAt) / 1000;
+        const targetQ = qTarget(elapsed, prefs.buildUpSec);
+        const desiredSamples = targetQ * totalPixels;
+        const delta = desiredSamples - samplesAccumulated;
+        if (delta > 0) {
+          const sppToAdd = Math.max(1, Math.ceil(delta / totalPixels));
+          const dispatch = computeDispatch(sppToAdd, W, H);
+          renderer.iterate({
+            genome,
+            seed,
+            walkers: dispatch.dispatchWalkers,
+            itersPerWalker: dispatch.dispatchIters,
+          });
+          samplesAccumulated += dispatch.actualSamples;
+        }
+        renderer.present({
+          genome,
+          outputView: ctx.getCurrentTexture().createView(),
+          totalSamples: Math.max(1, samplesAccumulated),
+        });
+        if (targetQ >= BUILD_UP_TARGET_Q && elapsed >= prefs.buildUpSec) break;
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      }
+      if (isCancelled()) return;
+
+      // Rest period — hold at full quality.
+      await sleepCancellable(prefs.restSec * 1000, isCancelled);
+      if (isCancelled()) return;
+
+      // Fade-to-black ~2s, then advance.
+      canvas.style.transition = 'opacity 2s';
+      canvas.style.opacity = '0';
+      await sleepCancellable(2200, isCancelled);
+    }
+  })();
+
+  return {
+    cancel() {
+      cancelled = true;
+    },
+  };
+}
+
 export function mountScreensaverPage(
   opts: MountScreensaverOpts,
 ): ScreensaverPageHandle {
-  const { root } = opts;
+  const { root, device, format } = opts;
   root.replaceChildren();
 
-  // Phase 3 wires the WebGPU canvas into this host. Skeleton leaves it empty.
   const canvasHost = el('div', 'pyr3-screensaver-canvas-host');
   Object.assign(canvasHost.style, {
     position: 'absolute',
@@ -82,29 +242,34 @@ export function mountScreensaverPage(
   });
   root.append(canvasHost);
 
+  let runHandle: BuildUpHandle | null = null;
+
   const landing = mountScreensaverLanding(root, {
     onPlay: (prefs: ScreensaverPrefs) => {
       landing.card.classList.add('hidden');
       const pill = buildNowPlayingPill({ onStop: stopPlayback });
       root.append(pill);
-      // Phase 3 — Tasks 7/8/9 attach the real render loop + queue + keyboard
-      // here. Skeleton accepts the prefs and parks.
-      void prefs;
+      if (device && format && prefs.mode === 'build-up') {
+        runHandle = startBuildUp({ device, format, canvasHost, prefs });
+      }
+      // Slideshow mode wired in T8; until then it just shows the pill.
     },
   });
 
-  // Center the landing card and give it a backdrop class hook so CSS in later
-  // phases can style it (`.hidden` toggles display).
   Object.assign(landing.card.style, {
     position: 'absolute',
     top: '50%',
     left: '50%',
     transform: 'translate(-50%, -50%)',
+    zIndex: '5',
   });
   injectHiddenRuleOnce();
 
   function stopPlayback(): void {
+    runHandle?.cancel();
+    runHandle = null;
     root.querySelector('.pyr3-screensaver-pill')?.remove();
+    canvasHost.replaceChildren();
     landing.card.classList.remove('hidden');
     landing.refresh();
   }
