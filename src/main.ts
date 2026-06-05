@@ -265,21 +265,26 @@ async function main(): Promise<void> {
       console.error('pyr3: /about — required DOM nodes (#pyr3-bar / #pyr3-canvas-zone) missing');
       return;
     }
-    mountAboutBar(barRoot, { webgpu, onTabClick: handleTabClick });
-    // Hide the canvas + first-paint cue so the about body has the zone to
-    // itself (same pattern as the gallery / edit short-circuits).
+    const aboutBar = mountAboutBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    // Hide the canvas + first-paint cue so the About body owns the visible
+    // zone (same pattern as the gallery / edit short-circuits).
     const canvas = document.getElementById('pyr3-canvas');
     if (canvas) canvas.hidden = true;
     const firstPaint = document.getElementById('pyr3-firstpaint');
     if (firstPaint) firstPaint.remove();
+    // DRY substrate contract — every per-surface bar exposes a `middleSlot`,
+    // and the surface's body content lives in it. Drop a scrollable wrapper
+    // in the slot so the About content (which can exceed the viewport) gets
+    // a defined scroll container instead of pushing the bar around.
     const aboutContainer = document.createElement('div');
     aboutContainer.id = 'pyr3-about';
     Object.assign(aboutContainer.style, {
-      position: 'absolute',
-      inset: '0',
       overflowY: 'auto',
+      // Fill the remaining viewport under the 44px topbar. The bar's
+      // `position: sticky` keeps it visible while the body scrolls.
+      height: 'calc(100vh - 44px)',
     });
-    bodyRoot.appendChild(aboutContainer);
+    aboutBar.middleSlot.appendChild(aboutContainer);
     mountAbout(aboutContainer, {
       version: __PYR3_VERSION__,
       buildDate: __BUILD_DATE__,

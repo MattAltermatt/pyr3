@@ -368,6 +368,22 @@ describe('mountAboutBar', () => {
     });
     expect(root.querySelector('.stale-prior-content')).toBeNull();
   });
+
+  it('exposes a middleSlot on the handle (DRY substrate contract — matches mountBar / mountGalleryBar / mountEditBar)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountAboutBar(root, {
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+    expect(handle.middleSlot).toBeInstanceOf(HTMLElement);
+    expect(handle.middleSlot.classList.contains('pyr3-middle-slot')).toBe(true);
+    // Caller can append the About body into it — round-trip the contract.
+    const probe = document.createElement('div');
+    probe.className = 'about-body-probe';
+    handle.middleSlot.appendChild(probe);
+    expect(root.querySelector('.about-body-probe')).toBe(probe);
+  });
 });
 
 describe('viewer action row — Save Flame + Save Render (#103 Phase 3 Task 3.3)', () => {

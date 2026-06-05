@@ -878,6 +878,9 @@ export interface AboutBarOpts {
 }
 
 export interface AboutBarHandle {
+  /** Caller mounts the About body content into this slot (DRY substrate
+   *  contract — every per-surface bar exposes the same `middleSlot`). */
+  middleSlot: HTMLElement;
   destroy: () => void;
 }
 
@@ -901,6 +904,7 @@ export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHa
   root.querySelector('.pyr3-about-link')?.classList.add('active');
 
   return {
+    middleSlot: chrome.middleSlot,
     destroy: () => {
       chrome.destroy();
       root.classList.remove('pyr3-bar-root');
