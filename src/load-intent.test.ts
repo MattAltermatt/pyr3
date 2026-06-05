@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   corpusUrl,
+  editorUrlForFlame,
   GALLERY_PAGE_SIZE,
   galleryUrl,
+  galleryUrlForFlame,
   HERO_GEN,
   HERO_ID,
   pageForCorpusIndex,
@@ -303,5 +305,20 @@ describe('galleryUrl — filter round-trip', () => {
   it('non-default filter on page 3 emits /v1/gallery/p/3?...', () => {
     const url = galleryUrl(3, { ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [V.julia] });
     expect(url).toMatch(/v1\/gallery\/p\/3\?sort=interest&vars=julia$/);
+  });
+});
+
+describe('tab-navigation URL helpers', () => {
+  it('editorUrlForFlame returns /v1/edit?gen=&id= when corpusId present', () => {
+    expect(editorUrlForFlame({ gen: 198, id: 7372 })).toBe('/v1/edit?gen=198&id=7372');
+  });
+
+  it('editorUrlForFlame returns bare /v1/edit when no corpusId', () => {
+    expect(editorUrlForFlame(undefined)).toBe('/v1/edit');
+  });
+
+  it('galleryUrlForFlame returns /showcase?page=N where N contains the corpusId', () => {
+    // assuming page size 9; flame at corpus-list index 124 → page 14
+    expect(galleryUrlForFlame({ gen: 198, id: 7372 }, 124)).toBe('/showcase?page=14');
   });
 });

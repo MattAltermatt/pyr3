@@ -170,3 +170,28 @@ export function galleryUrl(page: number, filter?: FilterSpec): string {
 export function pageForCorpusIndex(corpusIndex: number, perPage = GALLERY_PAGE_SIZE): number {
   return Math.floor(corpusIndex / perPage) + 1;
 }
+
+/**
+ * Tab-navigation URL helpers (2026-06-04 visual-overhaul § tab navigation
+ * contract). When the viewer's currentFlame context is present, clicking the
+ * Editor or Gallery tab transfers context: editorUrlForFlame embeds the
+ * corpusId as query params so the editor preloads it; galleryUrlForFlame
+ * resolves the page that contains the flame so the gallery centers on it.
+ *
+ * These helpers are intentionally framework-agnostic (`/v1/edit` / `/showcase`
+ * are the locked surface paths) — they do NOT touch import.meta.env.BASE_URL
+ * because the consumers (main.ts handleTabClick) navigate via
+ * window.location.href which is base-aware on its own.
+ */
+export function editorUrlForFlame(corpusId?: { gen: number; id: number }): string {
+  if (!corpusId) return '/v1/edit';
+  return `/v1/edit?gen=${corpusId.gen}&id=${corpusId.id}`;
+}
+
+export function galleryUrlForFlame(
+  _corpusId: { gen: number; id: number },
+  flameCorpusIndex: number,
+): string {
+  const page = Math.floor(flameCorpusIndex / GALLERY_PAGE_SIZE) + 1;
+  return `/showcase?page=${page}`;
+}
