@@ -18,6 +18,12 @@ interface StoredQuality {
   tier?: string;
   longEdge?: number;
   spp?: number;
+  // Optional explicit dims — Size presets (1080×1080 square, 1290×2796
+  // iPhone) need the exact aspect ratio across page refreshes, not just the
+  // long-edge. Round-tripped only when BOTH width and height are present;
+  // a half-written pair degrades back to longEdge+spp.
+  width?: number;
+  height?: number;
 }
 
 interface StoredPrefs {
@@ -41,7 +47,13 @@ function parseStored(raw: StoredQuality | undefined): QualityRequest | null {
   }
   if (raw.kind === 'custom') {
     if (!isPositiveInt(raw.longEdge) || !isPositiveNumber(raw.spp)) return null;
-    return { kind: 'custom', longEdge: raw.longEdge, spp: raw.spp };
+    const base = { kind: 'custom' as const, longEdge: raw.longEdge, spp: raw.spp };
+    // Both dims must be valid positive integers to carry forward; otherwise
+    // fall back cleanly to longEdge+spp so a partly-broken record still works.
+    if (isPositiveInt(raw.width) && isPositiveInt(raw.height)) {
+      return { ...base, width: raw.width, height: raw.height };
+    }
+    return base;
   }
   return null;
 }
@@ -78,7 +90,9 @@ export function writeGlobalQuality(q: QualityRequest): void {
   const stored: StoredQuality =
     q.kind === 'tier'
       ? { kind: 'tier', tier: q.tier.name }
-      : { kind: 'custom', longEdge: q.longEdge, spp: q.spp };
+      : q.width != null && q.height != null
+        ? { kind: 'custom', longEdge: q.longEdge, spp: q.spp, width: q.width, height: q.height }
+        : { kind: 'custom', longEdge: q.longEdge, spp: q.spp };
   const payload: StoredPrefs = { globalQuality: stored };
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(payload));

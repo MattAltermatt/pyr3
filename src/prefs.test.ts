@@ -100,6 +100,67 @@ describe('writeGlobalQuality + readGlobalQuality round-trip', () => {
     expect(readGlobalQuality()).toEqual({ kind: 'custom', longEdge: 2000, spp: 75 });
   });
 
+  it('round-trips a custom quality request with explicit width+height (Size preset)', () => {
+    // Size presets like 1080×1080 (square) and 1290×2796 (iPhone) pass exact
+    // dims so the renderer honors the preset's aspect instead of the genome's
+    // native. Persisting longEdge+spp alone loses that aspect across page
+    // refreshes — round-trip width+height too.
+    writeGlobalQuality({
+      kind: 'custom',
+      longEdge: 1080,
+      spp: 50,
+      width: 1080,
+      height: 1080,
+    });
+    expect(readGlobalQuality()).toEqual({
+      kind: 'custom',
+      longEdge: 1080,
+      spp: 50,
+      width: 1080,
+      height: 1080,
+    });
+  });
+
+  it('round-trips a portrait Size preset (1290×2796)', () => {
+    writeGlobalQuality({
+      kind: 'custom',
+      longEdge: 2796,
+      spp: 50,
+      width: 1290,
+      height: 2796,
+    });
+    expect(readGlobalQuality()).toEqual({
+      kind: 'custom',
+      longEdge: 2796,
+      spp: 50,
+      width: 1290,
+      height: 2796,
+    });
+  });
+
+  it('drops half-specified dims (width without height) to longEdge+spp only', () => {
+    // A half-written record is malformed at the dim level but the longEdge+spp
+    // are still useful — degrade gracefully instead of rejecting the whole
+    // record. Symmetric for height without width.
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
+        globalQuality: { kind: 'custom', longEdge: 1080, spp: 50, width: 1080 },
+      }),
+    );
+    expect(readGlobalQuality()).toEqual({ kind: 'custom', longEdge: 1080, spp: 50 });
+  });
+
+  it('drops non-integer width or height to longEdge+spp only', () => {
+    localStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({
+        globalQuality: { kind: 'custom', longEdge: 1080, spp: 50, width: 1080.5, height: 1080 },
+      }),
+    );
+    expect(readGlobalQuality()).toEqual({ kind: 'custom', longEdge: 1080, spp: 50 });
+  });
+
   it('overwrites prior values', () => {
     writeGlobalQuality({ kind: 'tier', tier: QUALITY_TIERS[0]! });
     writeGlobalQuality({ kind: 'tier', tier: QUALITY_TIERS[3]! });
