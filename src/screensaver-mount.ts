@@ -55,17 +55,13 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-interface KeyHint { key: string; label: string; }
+interface StripChip {
+  key: string;
+  label: string;
+  onClick: () => void;
+}
 
-const KEY_HINTS: KeyHint[] = [
-  { key: 'Space',  label: 'pause' },
-  { key: '← →',    label: 'skip' },
-  { key: 'F',      label: 'fullscreen' },
-  { key: 'Esc',    label: 'exit FS' },
-  { key: 'S',      label: 'settings' },
-];
-
-function buildControlsStrip(): HTMLElement {
+function buildControlsStrip(chips: StripChip[]): HTMLElement {
   const strip = el('div', 'pyr3-screensaver-strip');
   Object.assign(strip.style, {
     position: 'absolute',
@@ -76,24 +72,42 @@ function buildControlsStrip(): HTMLElement {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: '20px',
+    gap: '14px',
     background: COLORS.bg.info,
     borderBottom: `1px solid ${COLORS.border}`,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
     fontSize: '13px',
     color: COLORS.text.primary,
-    pointerEvents: 'none',
     zIndex: '12',
   });
-  for (const hint of KEY_HINTS) {
-    const group = el('span', 'pyr3-screensaver-hint');
+  for (const chip of chips) {
+    const group = el('button', 'pyr3-screensaver-hint');
     Object.assign(group.style, {
       display: 'inline-flex',
       alignItems: 'center',
       gap: '6px',
+      padding: '4px 8px',
+      background: 'transparent',
+      border: '1px solid transparent',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      fontSize: 'inherit',
+      color: 'inherit',
     });
+    group.title = `${chip.key} — click or press`;
+    group.addEventListener('click', chip.onClick);
+    group.addEventListener('mouseenter', () => {
+      group.style.background = COLORS.bg.action;
+      group.style.borderColor = COLORS.border;
+    });
+    group.addEventListener('mouseleave', () => {
+      group.style.background = 'transparent';
+      group.style.borderColor = 'transparent';
+    });
+
     const kbd = el('kbd', 'pyr3-screensaver-kbd');
-    kbd.textContent = hint.key;
+    kbd.textContent = chip.key;
     Object.assign(kbd.style, {
       padding: '3px 8px',
       background: COLORS.bg.action,
@@ -104,10 +118,11 @@ function buildControlsStrip(): HTMLElement {
       letterSpacing: '0.02em',
       minWidth: '20px',
       textAlign: 'center',
+      pointerEvents: 'none',
     });
     const lbl = el('span');
-    lbl.textContent = hint.label;
-    lbl.style.color = COLORS.text.muted;
+    lbl.textContent = chip.label;
+    Object.assign(lbl.style, { color: COLORS.text.muted, pointerEvents: 'none' });
     group.append(kbd, lbl);
     strip.append(group);
   }
@@ -735,7 +750,15 @@ export function mountScreensaverPage(
     landing.refresh();
   }
 
-  const strip = buildControlsStrip();
+  // Clickable strip: each chip fires the same action as its keyboard
+  // shortcut. Esc-chip click does what Esc does (stop + exit FS).
+  const strip = buildControlsStrip([
+    { key: 'Space', label: 'pause',      onClick: () => runHandle?.controls.togglePause() },
+    { key: '← →',   label: 'skip',       onClick: () => runHandle?.controls.skip(1) },
+    { key: 'F',     label: 'fullscreen', onClick: () => { void toggleFullscreen(root); } },
+    { key: 'Esc',   label: 'exit FS',    onClick: () => { if (runHandle) stopPlayback(); } },
+    { key: 'S',     label: 'settings',   onClick: () => { if (runHandle) stopPlayback(); } },
+  ]);
   root.append(strip);
 
   return { stop: stopPlayback };

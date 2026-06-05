@@ -35,6 +35,31 @@ const LADDERS = {
 
 type LadderField = keyof typeof LADDERS;
 
+interface LadderMeta {
+  label: string;
+  hint: string;
+  /** Which mode this ladder belongs to. */
+  mode: 'build-up' | 'slideshow';
+}
+
+const LADDER_META: Record<LadderField, LadderMeta> = {
+  buildUpSec: {
+    label: 'Build-up time',
+    hint:  'How long the chaos game takes to draw the flame, from black to full quality.',
+    mode:  'build-up',
+  },
+  restSec: {
+    label: 'Rest period',
+    hint:  'After the flame finishes building, how long it stays on screen at full quality before fading to the next one.',
+    mode:  'build-up',
+  },
+  holdSec: {
+    label: 'Slideshow hold',
+    hint:  'How long each fully-rendered flame stays on screen before crossfading to the next.',
+    mode:  'slideshow',
+  },
+};
+
 function fmtSec(n: number): string {
   if (n >= 60 && n % 60 === 0) return `${n / 60}m`;
   return `${n}s`;
@@ -105,9 +130,15 @@ function injectStyles(): void {
   font-weight: 700;
 }
 
+.pyr3-screensaver-ladder-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pyr3-screensaver-ladder-block.hidden { display: none; }
 .pyr3-screensaver-ladder-row {
   display: grid;
-  grid-template-columns: 110px 1fr 60px;
+  grid-template-columns: 130px 1fr 60px;
   align-items: center;
   gap: 10px;
 }
@@ -117,6 +148,12 @@ function injectStyles(): void {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-weight: 600;
+}
+.pyr3-screensaver-ladder-hint {
+  font-size: 11px;
+  color: ${COLORS.text.dim};
+  padding-left: 140px;
+  line-height: 1.4;
 }
 .pyr3-screensaver-ladder-row > .pyr3-screensaver-ladder-presets {
   display: grid;
@@ -212,6 +249,12 @@ export function mountScreensaverLanding(
   function refreshModeButtons(): void {
     slideshowBtn.classList.toggle('on', prefs.mode === 'slideshow');
     buildUpBtn.classList.toggle('on', prefs.mode === 'build-up');
+    // Hide ladder blocks that don't belong to the current mode.
+    for (const field of Object.keys(LADDER_META) as LadderField[]) {
+      const block = ladderBlocks[field];
+      if (!block) continue;
+      block.classList.toggle('hidden', LADDER_META[field].mode !== prefs.mode);
+    }
   }
   slideshowBtn.addEventListener('click', () => {
     prefs = { ...prefs, mode: 'slideshow' };
@@ -225,13 +268,18 @@ export function mountScreensaverLanding(
   // Ladder rows
   const ladderRows: Record<LadderField, { input: HTMLInputElement; buttons: HTMLButtonElement[] }> =
     {} as Record<LadderField, { input: HTMLInputElement; buttons: HTMLButtonElement[] }>;
+  const ladderBlocks: Partial<Record<LadderField, HTMLElement>> = {};
 
-  function buildLadder(field: LadderField, label: string): HTMLElement {
+  function buildLadder(field: LadderField): HTMLElement {
+    const meta = LADDER_META[field];
+    const block = el('div', 'pyr3-screensaver-ladder-block');
+    block.dataset.screensaverLadderBlock = field;
+
     const row = el('div', 'pyr3-screensaver-ladder-row');
     row.dataset.screensaverLadder = field;
 
     const labelEl = el('label', 'pyr3-screensaver-ladder-label');
-    labelEl.textContent = label;
+    labelEl.textContent = meta.label;
     row.append(labelEl);
 
     const presets = el('div', 'pyr3-screensaver-ladder-presets');
@@ -267,8 +315,14 @@ export function mountScreensaverLanding(
     });
     row.append(input);
 
+    const hint = el('div', 'pyr3-screensaver-ladder-hint');
+    hint.textContent = meta.hint;
+
+    block.append(row, hint);
+
     ladderRows[field] = { input, buttons };
-    return row;
+    ladderBlocks[field] = block;
+    return block;
   }
 
   function refreshLadder(field: LadderField): void {
@@ -280,9 +334,9 @@ export function mountScreensaverLanding(
   }
 
   card.append(modeRow);
-  card.append(buildLadder('buildUpSec', 'Build-up time'));
-  card.append(buildLadder('restSec',    'Rest period'));
-  card.append(buildLadder('holdSec',    'Slideshow hold'));
+  card.append(buildLadder('buildUpSec'));
+  card.append(buildLadder('restSec'));
+  card.append(buildLadder('holdSec'));
 
   // Play button
   const play = el('button', 'pyr3-screensaver-play');
