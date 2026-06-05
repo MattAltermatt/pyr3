@@ -264,6 +264,30 @@ export function restoreSectionCollapse(): Record<SectionKey, boolean> {
   }
 }
 
+// ── #103 Phase 6 Task 6.5 — Cold-start hydration helpers ──────────────
+// mountEditPage's cold-start path needs (a) the starting genome and
+// (b) the initial section-collapse map. These wrap restoreWip() /
+// restoreSectionCollapse() with the fall-back behaviour the editor wants:
+// a missing or malformed WIP triggers a fresh random reroll; a missing or
+// malformed collapse map yields the default all-collapsed (#102 preserved).
+
+/** Resolve the starting genome at editor mount. Returns the persisted WIP if
+ *  one is available, otherwise the result of `rerollFn()`. `rerollFn` is the
+ *  caller's fresh-random-genome generator — kept as a parameter so this
+ *  helper stays free of edit-seed coupling and so tests can spy on whether
+ *  the fallback ran. */
+export function resolveColdStartGenome(rerollFn: () => Genome): Genome {
+  const wip = restoreWip();
+  return wip ?? rerollFn();
+}
+
+/** Resolve the initial section-collapse map at editor mount. Wraps
+ *  restoreSectionCollapse() — kept as a named cold-start entry point so the
+ *  intent at the mountEditPage callsite is obvious. */
+export function resolveColdStartCollapse(): Record<SectionKey, boolean> {
+  return restoreSectionCollapse();
+}
+
 /** Transient UI-only solo state. Captured when shift-click activates solo on
  *  an xform / variation; restored when solo exits. */
 export interface SoloSnapshot {

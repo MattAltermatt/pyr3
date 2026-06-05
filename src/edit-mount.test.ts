@@ -27,6 +27,80 @@ function makeStorageStub(): Storage {
   };
 }
 
+// #103 Phase 6 Task 6.5 — cold-start hydration. mountEditPage itself needs a
+// GPUDevice (can't instantiate under happy-dom), so the cold-start logic
+// extracts into pure helpers (resolveColdStartGenome / resolveColdStartCollapse
+// in edit-state.ts) that we exercise directly here.
+import {
+  resolveColdStartGenome,
+  resolveColdStartCollapse,
+  WIP_KEY,
+} from './edit-state';
+
+describe('resolveColdStartGenome (Task 6.5)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns the persisted WIP genome when localStorage has a valid entry', () => {
+    const saved = generateRandomGenome(seededRng(7));
+    saved.name = 'restored-from-wip';
+    localStorage.setItem(WIP_KEY, JSON.stringify(saved));
+    const reroll = vi.fn(() => generateRandomGenome(seededRng(99)));
+    const got = resolveColdStartGenome(reroll);
+    expect(got.name).toBe('restored-from-wip');
+    expect(reroll).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the random-reroll fn when localStorage is empty', () => {
+    const fresh = generateRandomGenome(seededRng(99));
+    fresh.name = 'fresh-reroll';
+    const reroll = vi.fn(() => fresh);
+    const got = resolveColdStartGenome(reroll);
+    expect(got.name).toBe('fresh-reroll');
+    expect(reroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the random-reroll fn when localStorage holds malformed JSON', () => {
+    localStorage.setItem(WIP_KEY, '{not json');
+    const fresh = generateRandomGenome(seededRng(99));
+    fresh.name = 'after-malformed';
+    const reroll = vi.fn(() => fresh);
+    const got = resolveColdStartGenome(reroll);
+    expect(got.name).toBe('after-malformed');
+    expect(reroll).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('resolveColdStartCollapse (Task 6.5)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns the default all-collapsed map when nothing persisted (#102 preserved)', () => {
+    const map = resolveColdStartCollapse();
+    expect(map).toEqual({
+      palette: true, viewport: true, xforms: true, final: true,
+      global: true, density: true, render: true,
+    });
+  });
+
+  it('returns the persisted map when present', () => {
+    const stored = {
+      palette: false, viewport: true, xforms: false, final: true,
+      global: false, density: false, render: true,
+    };
+    localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(stored));
+    expect(resolveColdStartCollapse()).toEqual(stored);
+  });
+});
+
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {

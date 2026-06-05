@@ -13,6 +13,8 @@ import {
   createEditState,
   createLaneScheduler,
   pathLane,
+  resolveColdStartCollapse,
+  resolveColdStartGenome,
   schedulePersist,
   type EditState,
   type LaneScheduler,
@@ -127,11 +129,21 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   }
 
   // Initial genome + state.
-  const initialGenome = generateRandomGenome();
+  // #103 Phase 6 Task 6.5 — cold-start hydration. If localStorage carries a
+  // persisted WIP genome from a prior session, restore from that; otherwise
+  // run the existing fresh-reroll path. applyDefaultNick + applyEditorDefaults
+  // are applied to either source — a persisted WIP lacking size/quality (e.g.
+  // restored from an older pre-#102 schema) still receives the editor's
+  // working defaults.
+  const initialGenome = resolveColdStartGenome(() => generateRandomGenome());
   applyDefaultNick(initialGenome);
   applyEditorDefaults(initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
+  // Hydrate the section-collapse map from localStorage too — falls back to
+  // the all-collapsed default (#102 preserved) when nothing is persisted or
+  // the stored JSON is malformed.
+  state.sectionCollapse = resolveColdStartCollapse();
   state.preview = preview;
   // #103 Phase 2 Task 2.3 — editor writes the cross-surface currentFlame
   // context so an editor→viewer tab click can carry the WIP genome over.
