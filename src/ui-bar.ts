@@ -13,6 +13,7 @@
 import { corpusUrl, galleryUrl, HERO_GEN, HERO_ID } from './load-intent';
 import { QUALITY_TIERS, type QualityRequest } from './presets';
 import { composeSaveFilename } from './save-image';
+import { COLORS } from './ui-tokens';
 import type { WebGPUStatus } from './webgpu-check';
 
 export interface BarMeta {
@@ -885,7 +886,7 @@ const BAR_CSS = `
      (gen.id + arrow, 10-11 chars) all occupy the same slot. */
   min-width: 10ch; text-align: center;
 }
-.pyr3-nav-pill:hover { background: var(--accent); color: #0a0a0c; }
+.pyr3-nav-pill:hover { background: var(--accent); color: ${COLORS.bg.page}; }
 .pyr3-nav-pill.disabled { opacity: 0.4; pointer-events: none; cursor: not-allowed; }
 .pyr3-bar-qlabel { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
 .pyr3-bar-ladder { display: inline-flex; border: 1px solid #3a3a42; border-radius: 6px; overflow: hidden; }
@@ -895,7 +896,7 @@ const BAR_CSS = `
 }
 .pyr3-tier-btn:last-child { border-right: 0; }
 .pyr3-tier-btn:hover:not(:disabled):not(.on) { background: #2a2a30; color: var(--text); }
-.pyr3-tier-btn.on { background: var(--accent); color: #0a0a0c; font-weight: 600; }
+.pyr3-tier-btn.on { background: var(--accent); color: ${COLORS.bg.page}; font-weight: 600; }
 .pyr3-tier-btn:disabled { color: #555; cursor: not-allowed; }
 .pyr3-bar-quality { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
 .pyr3-bar-gallery-nav {
@@ -1009,7 +1010,7 @@ const BAR_CSS = `
 .pyr3-adv-cost.over { color: var(--err); }
 .pyr3-adv-render {
   font-size: 11px; padding: 4px 14px; border-radius: 4px; font-family: inherit; font-weight: 600; cursor: pointer;
-  background: var(--accent); color: #0a0a0c; border: 1px solid var(--accent);
+  background: var(--accent); color: ${COLORS.bg.page}; border: 1px solid var(--accent);
 }
 .pyr3-adv-render:disabled { background: #2a2118; color: #6b5a44; border-color: #3a3a42; cursor: not-allowed; }
 

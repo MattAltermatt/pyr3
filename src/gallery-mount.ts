@@ -34,6 +34,7 @@ import { type FilterSpec, filterSpecEquals } from './gallery-filter';
 import { PRESET_WEIGHTS, DEFAULT_SCORE_WEIGHTS, type ScoreWeights } from './feature-score';
 import type { FeatureIndex } from './feature-index-client';
 import type { FeatureRecord } from './feature-index';
+import { COLORS } from './ui-tokens';
 
 export interface SheepRef {
   gen: number;
@@ -391,7 +392,7 @@ const CELL_STYLE = `
 .pyr3-gallery-cell-loading {
   position:absolute; left:0; right:0; top:0; aspect-ratio:1;
   display:none; align-items:center; justify-content:center;
-  background:#0a0a0c; border-radius:2px;
+  background:${COLORS.bg.page}; border-radius:2px;
   font-family:ui-monospace, monospace; font-size:11px; color:#666;
   pointer-events:none;
   animation: pyr3-gallery-loading-pulse 1.4s ease-in-out infinite;

@@ -7,6 +7,7 @@
 
 import { type EditState, type SectionKey } from './edit-state';
 import { scrubbyInput } from './edit-scrubby-input';
+import { COLORS } from './ui-tokens';
 
 export interface SectionMount {
   key: SectionKey;
@@ -212,7 +213,7 @@ const EDIT_CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg, #0a0a0c);
+  background: var(--bg, ${COLORS.bg.page});
   overflow: hidden;
   position: relative;
 }
