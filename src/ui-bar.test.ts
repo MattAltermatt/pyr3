@@ -53,6 +53,63 @@ function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
   };
 }
 
+describe('gallery info row — three-column with centered page-nav (#103 Phase 4 Task 4.1)', () => {
+  it('info row is a 3-column grid (1fr | auto | 1fr) keeping the page-nav cluster centered', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 100 }));
+    const row = root.querySelector('.pyr3-bar-info-gallery') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.style.display).toBe('grid');
+    expect(row.style.gridTemplateColumns).toBe('1fr auto 1fr');
+  });
+
+  it('page-text element has min-width: 160px (prev/next pills do not shift)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 100 }));
+    const pageLabel = root.querySelector('.pyr3-bar-page-label') as HTMLElement;
+    expect(pageLabel).not.toBeNull();
+    expect(pageLabel.style.minWidth).toBe('160px');
+  });
+
+  it('filter button is in the right column (right of the centered page-nav cluster)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 100 }));
+    const row = root.querySelector('.pyr3-bar-info-gallery') as HTMLElement;
+    expect(row).not.toBeNull();
+    // The row has three direct children: left placeholder, center page-nav,
+    // right filter-cluster. The filter pill lives inside the third child.
+    expect(row.children.length).toBe(3);
+    const rightCol = row.children[2] as HTMLElement;
+    expect(rightCol.querySelector('.pyr3-bar-filter-pill')).not.toBeNull();
+    // And it must NOT appear inside the center column.
+    const centerCol = row.children[1] as HTMLElement;
+    expect(centerCol.querySelector('.pyr3-bar-filter-pill')).toBeNull();
+  });
+
+  it('prev pill left position does not change as the page number digit count grows', () => {
+    // Snapshot test: rendering "page 1 of 5798" vs "page 4278 of 5798" must
+    // keep the prev pill anchored at the same horizontal offset (the pinned
+    // 160px min-width on the page-text element absorbs the digit-count delta).
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountGalleryBar(root, makeGalleryOpts({ page: 1, totalPages: 5798 }));
+
+    const prevPill = root.querySelectorAll('.pyr3-nav-pill')[0] as HTMLElement;
+    const pageLabel = root.querySelector('.pyr3-bar-page-label') as HTMLElement;
+    expect(pageLabel.textContent).toBe('page 1 of 5798');
+    const leftAtPage1 = prevPill.getBoundingClientRect().left;
+
+    handle.setPage(4278);
+    expect(pageLabel.textContent).toBe('page 4278 of 5798');
+    const leftAtPage4278 = prevPill.getBoundingClientRect().left;
+
+    expect(leftAtPage4278).toBe(leftAtPage1);
+  });
+});
+
 describe('mountGalleryBar — 🎲 random-page pill (#50)', () => {
   it('center cluster contains a labeled 🎲 pill', () => {
     const root = document.createElement('div');

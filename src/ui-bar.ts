@@ -922,30 +922,55 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
     onTabClick: opts.onTabClick,
   });
 
-  // ══ info row — left (placeholder) / center (page nav) / right (placeholder) ══
-  // `pyr3-bar-info-gallery` modifier balances the left/right zones (both
-  // flex: 1 1 0) so the center page-nav cluster sits in the visual middle
-  // of the row.
+  // ══ info row — three-column grid: left placeholder / center page-nav / right filter ══
+  //
+  // #103 Phase 4 Task 4.1 overhaul: explicit 3-column grid (`1fr | auto |
+  // 1fr`) keeps the page-nav cluster centered regardless of left/right
+  // content widths; the filter button moves out of the centered cluster
+  // into the right column where it reads as the gallery's only verb.
+  // Page label has a pinned `min-width: 160px` so digit-count changes
+  // ("page 1 of 5798" → "page 4278 of 5798") never shift the prev/next
+  // pills under the cursor.
   const infoRow = el('div', 'pyr3-bar-info pyr3-bar-info-gallery');
+  // Inline-style the grid contract so the test asserting layout (and the
+  // visual centering) holds independent of the stylesheet load order.
+  infoRow.style.display = 'grid';
+  infoRow.style.gridTemplateColumns = '1fr auto 1fr';
+  infoRow.style.alignItems = 'center';
+  infoRow.style.gap = '16px';
+
+  // Left column — empty placeholder; keeps the centered grid truly centered.
   const infoLeft = el('div', 'pyr3-zone-left');
 
-  // Center zone — page nav cluster. Pinned width on the page label so prev/
-  // next don't shift under the cursor as N grows (matches the corpus-nav
-  // min-width discipline in the viewer bar). 🎲 dice pill rides at the
-  // right end of the cluster — picks a random sheep from the full corpus
-  // and opens it in a new tab (matches gallery cell-click behavior).
+  // Center column — page nav cluster: ‹ prev · page N of M · next › · 🎲 random.
+  // The 🎲 pill picks a random sheep from the full corpus and opens it in
+  // a new tab (matches gallery cell-click behavior). Page label carries a
+  // pinned 160px min-width so prev/next never shift as N's digit count grows.
   const infoCenter = el('div', 'pyr3-bar-gallery-nav');
   const prevPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
   prevPill.textContent = '‹ prev';
   prevPill.title = 'previous page';
   const pageLabel = el('span', 'pyr3-bar-page-label');
+  // Pin the page label's min-width inline so the layout-snapshot test does
+  // not depend on the stylesheet attaching first. Spec § Gallery info row:
+  // `min-width: 160px` so prev/next pills do not shift horizontally as the
+  // page-number digit count changes.
+  pageLabel.style.minWidth = '160px';
+  pageLabel.style.textAlign = 'center';
   const nextPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
   nextPill.textContent = 'next ›';
   nextPill.title = 'next page';
   const dicePill = el('a', 'pyr3-nav-pill pyr3-bar-gallery-dice') as HTMLAnchorElement;
   dicePill.textContent = '🎲 random page';
   dicePill.title = 'jump to a random page in the gallery';
-  // [⚙ filters ▾ (N active)] pill — wired in #49 Phase B. Click toggles the
+  infoCenter.append(prevPill, pageLabel, nextPill, dicePill);
+
+  // Right column — filter button. Lives outside the center cluster so the
+  // page-nav reads as the gallery's primary affordance and the filter
+  // toggle as the secondary verb. Phase 5 wires the live active-count badge;
+  // for now setActiveAxes() updates the badge at runtime (count=0 hides it).
+  const infoRight = el('div', 'pyr3-zone-right');
+  // [🧰 Filter ▾ (N active)] pill — wired in #49 Phase B. Click toggles the
   // filter drawer that mounts below this bar. Badge hidden when no axes
   // active; setActiveAxes() updates it at runtime.
   const filterPill = el('a', 'pyr3-nav-pill pyr3-bar-filter-pill') as HTMLAnchorElement;
@@ -970,11 +995,7 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
     e.preventDefault();
     opts.onFilterToggle();
   };
-  infoCenter.append(prevPill, pageLabel, nextPill, dicePill, filterPill);
-
-  // Right zone — placeholder. Chrome substrate carries WebGPU pill + the two
-  // octocat CTAs above; this empty zone keeps the centered grid balance.
-  const infoRight = el('div', 'pyr3-zone-right');
+  infoRight.append(filterPill);
 
   infoRow.append(infoLeft, infoCenter, infoRight);
   chrome.middleSlot.append(infoRow);
@@ -1082,14 +1103,17 @@ const BAR_CSS = `
 .pyr3-tier-btn:disabled { color: #555; cursor: not-allowed; }
 .pyr3-bar-quality { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
 .pyr3-bar-gallery-nav {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
-  margin: 0 auto; /* center between left + right flex zones */
+  /* #103 Phase 4 Task 4.1 — Gallery info row is a 3-column grid (1fr|auto|1fr);
+     the page-nav lives in the auto column and centers via the grid. */
+  display: flex; align-items: center; gap: 10px;
 }
 .pyr3-bar-page-label {
   font-family: ui-monospace, monospace; font-size: 11px; color: var(--text);
-  /* Pin a width so the prev/next pills don't reflow as N grows; "page 9999 of
-     9999" is the widest reasonable label. */
-  min-width: 18ch; text-align: center; white-space: nowrap;
+  /* Pinned min-width per the spec (160px = ~"page 4278 of 5798" comfortable).
+     Inline-styled in mountGalleryBar so the test asserting layout passes
+     without depending on the stylesheet load order; the rule here mirrors
+     it for any consumer subclassing the bar. */
+  min-width: 160px; text-align: center; white-space: nowrap;
 }
 .pyr3-bar-gallery-dice {
   /* Pill carries "🎲 random page" — natural width, no min-width pin
@@ -1124,14 +1148,10 @@ const BAR_CSS = `
   /* Hidden by inline style when activeAxes === 0; rules here apply only
      when visible. */
 }
-.pyr3-bar-info-gallery .pyr3-zone-left,
-.pyr3-bar-info-gallery .pyr3-zone-right {
-  /* Both zones flex-grow equally so the center page-nav cluster lands in
-     the literal middle of the bar (the default viewer bar has zone-right
-     as flex: 0 0 auto, which would push the gallery's center off to the
-     right whenever left+right have unequal content widths). */
-  flex: 1 1 0;
-}
+/* #103 Phase 4 Task 4.1 — Gallery info row is grid-based (1fr|auto|1fr);
+   the left placeholder + right filter-cluster cells size themselves via
+   the grid columns, and the right cluster right-aligns its contents so the
+   filter pill hugs the page edge. */
 .pyr3-bar-info-gallery .pyr3-zone-right { justify-content: flex-end; }
 /* /v1/edit bar: editable flame name. Styled to match the viewer's bold
    metaName but accepts focus + typing. Auto-sizes via field-sizing where
