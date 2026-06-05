@@ -82,14 +82,14 @@ const LADDER_META: Record<LadderField, LadderMeta> = {
   },
   buildUpQ: {
     label: 'Quality',
-    hint:  'Samples per pixel to reach before settling. Higher = smoother, slower build. 10–500.',
+    hint:  'Samples per pixel to reach before settling. Higher = denser, smoother flame. 10–500.',
     mode:  'build-up',
     fmt:   fmtPlain,
     parse: parseNumericInput,
   },
   slideshowQ: {
     label: 'Quality',
-    hint:  'Samples per pixel each flame renders to before crossfading. Higher = smoother, longer render. 10–500.',
+    hint:  'Samples per pixel each flame renders to. Higher = denser, smoother flame. 10–500.',
     mode:  'slideshow',
     fmt:   fmtPlain,
     parse: parseNumericInput,
