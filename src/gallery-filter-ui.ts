@@ -457,6 +457,7 @@ export function mountFilterDrawer(
     let buckets: Map<number, number>;
     let onRange: (min: number, max: number | null) => void;
 
+    let formatValue: ((min: number, max: number | null) => string) | undefined;
     if (axis === 'xforms') {
       const re = xformRangeToMetricFloat(currentFilter.xformMin, currentFilter.xformMax);
       min = re.min;
@@ -465,6 +466,13 @@ export function mountFilterDrawer(
       onRange = (lo, hi) => {
         const xf = metricFloatToXformRange(lo, hi);
         opts.onChange({ ...currentFilter, xformMin: xf.min, xformMax: xf.max });
+      };
+      // Render the row's range readout in integer xform-count units (e.g.
+      // "4–6", "≥ 3", "all") instead of the metric-float default ("0.3–0.6"),
+      // so the row matches the active-chip strip's "xform count 4–6" display.
+      formatValue = (lo, hi) => {
+        const xf = metricFloatToXformRange(lo, hi);
+        return formatXformRange(xf.min, xf.max) ?? 'all';
       };
     } else {
       const minKey = `${axis}Min` as const;
@@ -488,6 +496,7 @@ export function mountFilterDrawer(
       max,
       counts: buckets,
       onRange,
+      formatValue,
     });
     // Preserve metric key on the row's dataset for downstream test
     // assertions / event delegation (buildMetricRow stamps a fallback type
@@ -1003,6 +1012,11 @@ export interface MetricRowOpts {
   /** Optional cold-start expanded mode — when true the body opens
    *  immediately. Default false (collapsed). */
   initiallyExpanded?: boolean;
+  /** Optional custom range formatter. Receives the 0..1 (min, max) and
+   *  returns the display string. Used by the xform-count axis to render
+   *  in integer xform-count units ("4–6") instead of the metric-float
+   *  default ("0.3–0.6") since the underlying filter is integer-valued. */
+  formatValue?: (min: number, max: number | null) => string;
 }
 
 const METRIC_ROW_STYLES_ID = 'pyr3-metric-row-styles';
@@ -1162,7 +1176,9 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 
   const valueEl = document.createElement('span');
   valueEl.className = 'pyr3-metric-value';
-  valueEl.textContent = formatMetricRange(opts.min, opts.max);
+  valueEl.textContent = opts.formatValue
+    ? opts.formatValue(opts.min, opts.max)
+    : formatMetricRange(opts.min, opts.max);
   header.appendChild(valueEl);
 
   row.appendChild(header);
@@ -1224,7 +1240,7 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 
   const readout = document.createElement('div');
   readout.className = 'pyr3-metric-readout';
-  readout.textContent = `range · ${formatMetricRange(opts.min, opts.max)}`;
+  readout.textContent = `range · ${opts.formatValue ? opts.formatValue(opts.min, opts.max) : formatMetricRange(opts.min, opts.max)}`;
   body.appendChild(readout);
 
   row.appendChild(body);

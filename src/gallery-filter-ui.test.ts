@@ -343,9 +343,11 @@ describe('mountFilterDrawer — progressive-disclosure structure (Task 5.6)', ()
     ) as HTMLElement;
     expect(xformWrap).toBeTruthy();
     const value = xformWrap.querySelector('.pyr3-metric-value') as HTMLElement;
-    // xform [3,5] → metric float space [0.2, 0.5] (xformMin=3 → 0.2; xformMax=5 → 0.5)
-    expect(value.textContent).toContain('0.2');
-    expect(value.textContent).toContain('0.5');
+    // xform [3, 5] is now rendered in integer xform-count units to match the
+    // active-chip strip's "xform count 3–5" — not the underlying metric
+    // float space (0.2–0.5) (overhaul fix 2026-06-04).
+    expect(value.textContent).toContain('3');
+    expect(value.textContent).toContain('5');
   });
 
   it('coverage metric row reflects the current coverage range in its header', () => {

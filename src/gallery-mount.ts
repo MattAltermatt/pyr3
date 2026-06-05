@@ -396,7 +396,7 @@ const CELL_STYLE = `
   grid-template-columns:repeat(3, 1fr);
   gap:26px;
   padding:28px;
-  max-width:min(1200px, calc(100vh - 122px));
+  max-width:1200px;
   width:100%;
   box-sizing:border-box;
   margin:0 auto;
