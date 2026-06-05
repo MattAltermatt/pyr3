@@ -253,6 +253,11 @@ export function mountFilterDrawer(
   let currentCounts = opts.facetCounts;
   let currentMatchCount = opts.matchCount ?? 0;
   let isOpen = !isDefaultFilterSpec(currentFilter);
+  // Live sortDir — kept here so rapid double-clicks on the direction toggle
+  // don't read a stale closure capture from buildSortRow. handleDirChange
+  // mutates this synchronously BEFORE emitting onChange (which may re-route
+  // through async setFilter and eventually rebuild the row).
+  let currentSortDir: SortDir = currentFilter.sortDir;
 
   const drawer = document.createElement('div');
   drawer.className = `pyr3-filter-drawer${isOpen ? ' open' : ''}${opts.loading ? ' loading' : ''}`;
@@ -317,7 +322,12 @@ export function mountFilterDrawer(
   drawer.appendChild(sortRowWrap);
 
   function rebuildSortRow(): void {
-    const row = buildSortRow(currentFilter, handleSortChange, handleDirChange);
+    const row = buildSortRow(
+      currentFilter,
+      handleSortChange,
+      handleDirChange,
+      () => currentSortDir,
+    );
     sortRowWrap.replaceChildren(row);
   }
 
@@ -326,6 +336,10 @@ export function mountFilterDrawer(
   }
 
   function handleDirChange(next: SortDir): void {
+    // Update the live mirror FIRST so a rapid double-click reads the new
+    // direction even though `currentFilter` only refreshes through the
+    // async setFilter path.
+    currentSortDir = next;
     opts.onChange({ ...currentFilter, sortDir: next });
   }
 
@@ -540,6 +554,7 @@ export function mountFilterDrawer(
     },
     setFilter(f) {
       currentFilter = f;
+      currentSortDir = f.sortDir;
       rebuildChipStrip();
       rebuildSortRow();
       rebuildAllMetricRows();
@@ -876,11 +891,18 @@ const NAMED_SORT_MODES: readonly SortMode[] = SORT_MODES.filter((m) => m !== 'cu
  * Build the sort row — `[sort] [select ▾] [↓ desc | ↑ asc]`. Standalone DOM
  * builder; caller owns FilterSpec state and decides what to do on
  * `onSortChange(newKey)` / `onDirChange(newDir)`.
+ *
+ * `liveSortDir` is an optional getter — the direction toggle reads through it
+ * on every click rather than caching `spec.sortDir` in a closure. This avoids
+ * a stale-capture bug on rapid double-clicks: caller can update the live
+ * value synchronously, while the spec round-trips through async onChange /
+ * setFilter. When omitted, the initial spec.sortDir is used (back-compat).
  */
 export function buildSortRow(
   spec: FilterSpec,
   onSortChange: (next: SortMode) => void,
   onDirChange: (next: SortDir) => void,
+  liveSortDir?: () => SortDir,
 ): HTMLElement {
   injectSortRowStylesOnce();
 
@@ -925,7 +947,11 @@ export function buildSortRow(
   };
   renderDir(spec.sortDir);
   dirBtn.onclick = () => {
-    onDirChange(spec.sortDir === 'desc' ? 'asc' : 'desc');
+    // Read live, not from closure. A rapid double-click on a stale closure
+    // would emit the same direction twice; reading through the getter sees
+    // the synchronous update the caller made on the previous click.
+    const dir = liveSortDir ? liveSortDir() : spec.sortDir;
+    onDirChange(dir === 'desc' ? 'asc' : 'desc');
   };
   row.appendChild(dirBtn);
 

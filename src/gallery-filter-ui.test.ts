@@ -657,6 +657,36 @@ describe('buildSortRow (Task 5.3) — sort dropdown + direction toggle', () => {
     expect(dirBtn.textContent).toContain('↓');
     expect(dirBtn.textContent).toContain('desc');
   });
+
+  it('rapid double-click reads live sortDir, not closure — emits asc then desc', () => {
+    // Without the liveSortDir getter both clicks would see `spec.sortDir`
+    // unchanged ('desc') and emit 'asc' twice. With the getter, the second
+    // click sees the new value (caller updated it inside the first
+    // onDirChange) and emits 'desc'.
+    const onDirChange = vi.fn<(d: SortDir) => void>();
+    let liveDir: SortDir = 'desc';
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, sortDir: 'desc' };
+    const row = buildSortRow(
+      spec,
+      vi.fn(),
+      (next) => { liveDir = next; onDirChange(next); },
+      () => liveDir,
+    );
+    const dirBtn = row.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement;
+    dirBtn.click();
+    dirBtn.click();
+    expect(onDirChange).toHaveBeenNthCalledWith(1, 'asc');
+    expect(onDirChange).toHaveBeenNthCalledWith(2, 'desc');
+  });
+
+  it('omitting liveSortDir falls back to spec.sortDir (back-compat)', () => {
+    // Old call-sites with no getter still work — first click uses spec.sortDir.
+    const onDirChange = vi.fn<(d: SortDir) => void>();
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, sortDir: 'asc' };
+    const row = buildSortRow(spec, vi.fn(), onDirChange /* no getter */);
+    (row.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement).click();
+    expect(onDirChange).toHaveBeenCalledWith('desc');
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────
