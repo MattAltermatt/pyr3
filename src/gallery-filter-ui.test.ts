@@ -5,6 +5,7 @@ import {
   buildActiveChipStrip,
   buildSortRow,
   buildMetricRow,
+  attachBrushSelect,
 } from './gallery-filter-ui';
 import { DEFAULT_FILTER_SPEC, type FilterSpec, type SortMode, type SortDir } from './gallery-filter';
 
@@ -1005,3 +1006,202 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// Task 5.5 — Brush-select drag gesture on the histogram
+// ──────────────────────────────────────────────────────────────────────────
+
+describe('attachBrushSelect (Task 5.5) — drag a bucket range across the histogram', () => {
+  /**
+   * Build a histogram element with 10 buckets sized 50px × 100px each so
+   * that bucket.getBoundingClientRect() gives stable, predictable x-coords
+   * — bucket N has center x ≈ (N + 0.5) × 50. happy-dom returns rect dims
+   * directly from inline styles in lieu of layout.
+   */
+  function makeFakeHistogram(): { histogram: HTMLElement; bars: HTMLElement[] } {
+    const histogram = document.createElement('div');
+    histogram.className = 'pyr3-metric-histogram';
+    histogram.style.position = 'relative';
+    histogram.style.display = 'flex';
+    histogram.style.width = '500px';
+    histogram.style.height = '60px';
+    const bars: HTMLElement[] = [];
+    for (let i = 0; i < 10; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'pyr3-metric-bar';
+      bar.dataset.bucket = String(i);
+      bar.style.width = '50px';
+      bar.style.height = '60px';
+      // happy-dom doesn't do real layout — stub getBoundingClientRect so
+      // the brush handler's pixel-→-bucket math has stable input.
+      const left = i * 50;
+      bar.getBoundingClientRect = () =>
+        ({ left, top: 0, right: left + 50, bottom: 60, width: 50, height: 60, x: left, y: 0, toJSON() { return {}; } }) as DOMRect;
+      Object.defineProperty(bar, 'offsetWidth', { value: 50, configurable: true });
+      bars.push(bar);
+      histogram.appendChild(bar);
+    }
+    // Also stub the container so clientWidth-based math (the bucketAt
+    // fallback) works deterministically.
+    Object.defineProperty(histogram, 'clientWidth', { value: 500, configurable: true });
+    histogram.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 500, bottom: 60, width: 500, height: 60, x: 0, y: 0, toJSON() { return {}; } }) as DOMRect;
+    document.body.appendChild(histogram);
+    return { histogram, bars };
+  }
+
+  function centerOf(bar: HTMLElement): number {
+    const rect = bar.getBoundingClientRect();
+    return rect.left + rect.width / 2;
+  }
+
+  it('mousedown on bucket 3 + mousemove to bucket 7 + mouseup → onRange(0.3, 0.7)', () => {
+    const { histogram, bars } = makeFakeHistogram();
+    const onRange = vi.fn();
+    attachBrushSelect(histogram, onRange);
+
+    bars[3]!.dispatchEvent(new MouseEvent('mousedown', {
+      clientX: centerOf(bars[3]!), clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: centerOf(bars[7]!), clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      clientX: centerOf(bars[7]!), clientY: 30, bubbles: true,
+    }));
+
+    expect(onRange).toHaveBeenCalled();
+    const last = onRange.mock.calls.at(-1)!;
+    expect(last[0]).toBeCloseTo(0.3, 5);
+    // Upper bound — bucket 7 means [0.7, 0.8) coverage so the emitted max
+    // is 0.8 (exclusive upper-edge convention matching mountStatRow).
+    expect(last[1]).toBeCloseTo(0.8, 5);
+  });
+
+  it('reverse drag — mousedown bucket 7 → move to bucket 3 → mouseup still emits onRange(0.3, 0.8)', () => {
+    const { histogram, bars } = makeFakeHistogram();
+    const onRange = vi.fn();
+    attachBrushSelect(histogram, onRange);
+
+    bars[7]!.dispatchEvent(new MouseEvent('mousedown', {
+      clientX: centerOf(bars[7]!), clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: centerOf(bars[3]!), clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      clientX: centerOf(bars[3]!), clientY: 30, bubbles: true,
+    }));
+
+    expect(onRange).toHaveBeenCalled();
+    const last = onRange.mock.calls.at(-1)!;
+    expect(last[0]).toBeCloseTo(0.3, 5);
+    expect(last[1]).toBeCloseTo(0.8, 5);
+  });
+
+  it('mousedown outside the histogram does NOT fire onRange', () => {
+    const { histogram } = makeFakeHistogram();
+    const onRange = vi.fn();
+    attachBrushSelect(histogram, onRange);
+
+    const stray = document.createElement('div');
+    document.body.appendChild(stray);
+    stray.dispatchEvent(new MouseEvent('mousedown', {
+      clientX: 0, clientY: 0, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: 100, clientY: 0, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      clientX: 100, clientY: 0, bubbles: true,
+    }));
+
+    expect(onRange).not.toHaveBeenCalled();
+  });
+
+  it('mid-drag, in-progress range visually highlights bars within the drag span', () => {
+    const { histogram, bars } = makeFakeHistogram();
+    attachBrushSelect(histogram, vi.fn());
+
+    bars[2]!.dispatchEvent(new MouseEvent('mousedown', {
+      clientX: centerOf(bars[2]!), clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: centerOf(bars[5]!), clientY: 30, bubbles: true,
+    }));
+
+    // Bars 2..5 should now be in-range; 0, 1, 6..9 should not.
+    expect(bars[0]!.classList.contains('in-range')).toBe(false);
+    expect(bars[1]!.classList.contains('in-range')).toBe(false);
+    expect(bars[2]!.classList.contains('in-range')).toBe(true);
+    expect(bars[4]!.classList.contains('in-range')).toBe(true);
+    expect(bars[5]!.classList.contains('in-range')).toBe(true);
+    expect(bars[6]!.classList.contains('in-range')).toBe(false);
+
+    // Cleanup so listeners detach.
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      clientX: centerOf(bars[5]!), clientY: 30, bubbles: true,
+    }));
+  });
+
+  it('histogram exposes a hover-tooltip element ("click & drag to select range")', () => {
+    // The tooltip is wired by buildMetricRow alongside attachBrushSelect; we
+    // verify the metric row's histogram carries the tooltip element so the
+    // affordance is discoverable.
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0,
+      max: null,
+      counts: new Map(),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const tooltip = row.querySelector('.pyr3-metric-tooltip') as HTMLElement;
+    expect(tooltip).toBeTruthy();
+    expect(tooltip.textContent).toContain('drag');
+  });
+
+  it('buildMetricRow wires brush-select into its expanded histogram — drag fires onRange', () => {
+    // Integration check: the histogram inside a buildMetricRow responds to
+    // brush gestures end-to-end. We have to stub the bar rects since
+    // happy-dom skips layout — patch each bar's getBoundingClientRect.
+    const onRange = vi.fn();
+    const row = buildMetricRow({
+      metric: 'meanLum',
+      label: 'brightness',
+      min: 0,
+      max: null,
+      counts: new Map([
+        [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1], [8, 1], [9, 1],
+      ]),
+      onRange,
+      initiallyExpanded: true,
+    });
+    document.body.appendChild(row);
+    const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
+    for (let i = 0; i < bars.length; i++) {
+      const left = i * 50;
+      bars[i]!.getBoundingClientRect = () =>
+        ({ left, top: 0, right: left + 50, bottom: 60, width: 50, height: 60, x: left, y: 0, toJSON() { return {}; } }) as DOMRect;
+    }
+    const histogram = row.querySelector('.pyr3-metric-histogram') as HTMLElement;
+    Object.defineProperty(histogram, 'clientWidth', { value: 500, configurable: true });
+    histogram.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 500, bottom: 60, width: 500, height: 60, x: 0, y: 0, toJSON() { return {}; } }) as DOMRect;
+
+    bars[1]!.dispatchEvent(new MouseEvent('mousedown', {
+      clientX: 75, clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: 425, clientY: 30, bubbles: true,
+    }));
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      clientX: 425, clientY: 30, bubbles: true,
+    }));
+
+    expect(onRange).toHaveBeenCalled();
+    const last = onRange.mock.calls.at(-1)!;
+    expect(last[0]).toBeCloseTo(0.1, 5);
+    expect(last[1]).toBeCloseTo(0.9, 5);
+  });
+});

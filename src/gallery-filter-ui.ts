@@ -1324,9 +1324,9 @@ export function buildSortRow(
 // [0.3, 0.4) … [0.6, 0.7)).
 //
 // The row is standalone — no FilterSpec coupling. The caller passes the
-// current bounds + bucket counts + an `onRange(min, max | null)` callback.
-// Task 5.5 will wire brush-select drag onto the histogram; until then the
-// `onRange` callback is unused by this builder.
+// current bounds + bucket counts + an `onRange(min, max | null)` callback,
+// and Task 5.5's `attachBrushSelect` wires drag-to-select onto the
+// histogram automatically (no separate wiring needed at the call site).
 
 export type MetricKey = 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
 
@@ -1430,6 +1430,23 @@ const METRIC_ROW_STYLES = `
   color: #8a8a92;
   font-size: 11px;
 }
+.pyr3-metric-tooltip {
+  display: none;
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  background: rgba(20, 20, 23, 0.95);
+  color: #ffbe3e;
+  border: 1px solid #26262c;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+.pyr3-metric-histogram:hover .pyr3-metric-tooltip { display: block; }
 `;
 
 function injectMetricRowStylesOnce(): void {
@@ -1506,6 +1523,14 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
   const histogram = document.createElement('div');
   histogram.className = 'pyr3-metric-histogram';
 
+  // Hover-tooltip ("click & drag to select range") — display:none by
+  // default; CSS `:hover` on the histogram flips it to display:block.
+  // Cheaper than a JS hover handler and accessibility-friendly.
+  const tooltip = document.createElement('div');
+  tooltip.className = 'pyr3-metric-tooltip';
+  tooltip.textContent = 'click & drag to select range';
+  histogram.appendChild(tooltip);
+
   // Normalize bar heights against the max bucket count. Empty histogram
   // (all zeros) → every bar gets 0% (we still emit a valid percentage so
   // the CSS doesn't end up with `NaN%` / `Infinity%`).
@@ -1552,10 +1577,9 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 
   row.appendChild(body);
 
-  // Note: brush-select wiring lives in Task 5.5; for now the histogram is
-  // visual-only and the `onRange` callback is unused (kept in the signature
-  // so the wire-in in Task 5.5 is purely additive).
-  void opts.onRange;
+  // Wire brush-select onto the histogram so drag gestures map to onRange.
+  // (Task 5.5 — attachBrushSelect is defined below.)
+  attachBrushSelect(histogram, opts.onRange);
 
   // Collapse / expand state. `display: none` toggling is the cheapest
   // mechanism that preserves layout when the user expands a row.
@@ -1572,4 +1596,93 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
   });
 
   return row;
+}
+// ──────────────────────────────────────────────────────────────────────────
+// Task 5.5 — Brush-select drag gesture on the histogram
+// ──────────────────────────────────────────────────────────────────────────
+//
+// `attachBrushSelect` adds a `mousedown → mousemove → mouseup` drag handler
+// to the histogram. The user can press inside any bucket bar, drag across
+// other buckets, and release to commit a [min, max] range. Reverse drag
+// (right-to-left) normalizes the bounds so onRange always fires with
+// `min <= max`. During the drag, the bars within the in-progress range
+// receive an `.in-range` class so the visual highlight tracks the cursor.
+//
+// `onRange` receives normalized 0..1 decile bounds:
+//   lo bucket B → min = B / 10
+//   hi bucket B → max = (B + 1) / 10, or `null` if B === 9 (saturates
+//                 to "no upper cap" so the canonical FilterSpec encoding
+//                 matches DEFAULT_FILTER_SPEC.<metric>Max).
+//
+// Document-level mousemove/mouseup listeners are attached on mousedown so
+// the drag continues even when the cursor leaves the histogram (matching
+// the typical web brush-select UX). They're removed in mouseup.
+
+function bucketAt(clientX: number, el: HTMLElement): number {
+  const rect = el.getBoundingClientRect();
+  const localX = clientX - rect.left;
+  const width = el.clientWidth || rect.width || 1;
+  return Math.min(9, Math.max(0, Math.floor((localX / width) * 10)));
+}
+
+export function attachBrushSelect(
+  histogram: HTMLElement,
+  onRange: (min: number, max: number | null) => void,
+): void {
+  let dragStart: number | null = null;
+
+  function bucketsToRange(loBucket: number, hiBucket: number): { min: number; max: number | null } {
+    const lo = Math.min(loBucket, hiBucket);
+    const hi = Math.max(loBucket, hiBucket);
+    const min = lo / 10;
+    // hi=9 saturates to null (no upper cap) so the canonical
+    // DEFAULT_FILTER_SPEC.<metric>Max value re-encodes cleanly. Earlier
+    // buckets carry the exclusive upper-edge convention from mountStatRow:
+    // bucket 7 means [0.7, 0.8) → emitted max = 0.8.
+    const max = hi === 9 ? null : (hi + 1) / 10;
+    return { min, max };
+  }
+
+  function renderInProgress(loBucket: number, hiBucket: number): void {
+    const lo = Math.min(loBucket, hiBucket);
+    const hi = Math.max(loBucket, hiBucket);
+    const bars = histogram.querySelectorAll('.pyr3-metric-bar');
+    bars.forEach((el, idx) => {
+      el.classList.toggle('in-range', idx >= lo && idx <= hi);
+    });
+  }
+
+  function onMove(ev: MouseEvent): void {
+    if (dragStart === null) return;
+    const cur = bucketAt(ev.clientX, histogram);
+    renderInProgress(dragStart, cur);
+  }
+
+  function onUp(ev: MouseEvent): void {
+    if (dragStart === null) {
+      cleanup();
+      return;
+    }
+    const cur = bucketAt(ev.clientX, histogram);
+    const { min, max } = bucketsToRange(dragStart, cur);
+    onRange(min, max);
+    cleanup();
+  }
+
+  function cleanup(): void {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    dragStart = null;
+  }
+
+  histogram.addEventListener('mousedown', (ev) => {
+    // Only react when the press is INSIDE the histogram (the listener is
+    // attached to the histogram, so by the time we're here the bubbling
+    // already filtered for us — but we still need to record the start
+    // bucket before document-level listeners take over).
+    dragStart = bucketAt(ev.clientX, histogram);
+    renderInProgress(dragStart, dragStart);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 }
