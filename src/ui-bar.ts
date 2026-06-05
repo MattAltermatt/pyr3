@@ -548,16 +548,15 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       gallery.href = galleryUrl(page);
     },
     setVariations(names) {
-      const MAX_SHOWN = 4;
+      // #103 Phase 3 Task 3.1 — every variation visible inline, no `+N`
+      // collapse. The info row is the canonical info-only strip; the spec
+      // calls for all variations to spread across the full row width.
       if (names.length === 0) {
         metaVariations.textContent = '';
         metaVariations.title = '';
         return;
       }
-      const shown = names.slice(0, MAX_SHOWN);
-      const extra = names.length - shown.length;
-      metaVariations.textContent = ` · ${shown.join(' · ')}${extra > 0 ? ` · +${extra}` : ''}`;
-      // Full list on hover, so truncation never hides what the flame uses.
+      metaVariations.textContent = ` · ${names.join(' · ')}`;
       metaVariations.title = names.join(' · ');
     },
   };
@@ -1093,8 +1092,12 @@ const BAR_CSS = `
   color: var(--text);
 }
 .pyr3-bar-variations {
+  /* #103 Phase 3 Task 3.1: all variations expanded — no +N collapse.
+     Muted gray for the variation tokens; separators inherit the row's
+     flame-mid via the .pyr3-bar-sep rule. The row itself wraps so very-
+     long variation sets do not force horizontal scroll. */
   color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  min-width: 0;
 }
 
 .pyr3-bar-advanced {

@@ -279,3 +279,58 @@ describe('mountAboutBar', () => {
     handle.destroy();
   });
 });
+
+describe('viewer info row — all variations expanded (#103 Phase 3 Task 3.1)', () => {
+  it('renders every variation inline with no +N collapse', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const bar = mountBar(root, makeBarOpts());
+    bar.setMeta({ flameName: 'electricsheep.247.19679' });
+    bar.setQuality({
+      width: 1920, height: 1080, spp: 50, tierLabel: 'Standard',
+    });
+    bar.setVariations(['linear', 'julia', 'bent', 'fan', 'spherical', 'sinusoidal']);
+
+    const variations = root.querySelector('.pyr3-bar-variations') as HTMLElement;
+    expect(variations).not.toBeNull();
+    const txt = variations.textContent ?? '';
+    for (const v of ['linear', 'julia', 'bent', 'fan', 'spherical', 'sinusoidal']) {
+      expect(txt).toContain(v);
+    }
+    // No `+N` truncation marker should appear, regardless of variation count.
+    expect(txt).not.toMatch(/\+\d+/);
+  });
+
+  it('shows 12 variations all expanded (stress)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const bar = mountBar(root, makeBarOpts());
+    const many = [
+      'linear', 'julia', 'bent', 'fan', 'spherical', 'sinusoidal',
+      'swirl', 'horseshoe', 'polar', 'handkerchief', 'heart', 'disc',
+    ];
+    bar.setVariations(many);
+    const variations = root.querySelector('.pyr3-bar-variations') as HTMLElement;
+    const txt = variations.textContent ?? '';
+    for (const v of many) expect(txt).toContain(v);
+    expect(txt).not.toMatch(/\+\d+/);
+  });
+
+  it('renders the info row with name, dim, quality, tier in flame-amber styling order', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const bar = mountBar(root, makeBarOpts());
+    bar.setMeta({ flameName: 'electricsheep.247.19679' });
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+
+    // Name strong element (bold white)
+    const nameStrong = root.querySelector('.pyr3-bar-meta-name strong') as HTMLElement;
+    expect(nameStrong?.textContent).toBe('electricsheep.247.19679');
+
+    // Quality span contains dim · q<n> · tier
+    const quality = root.querySelector('.pyr3-bar-quality') as HTMLElement;
+    expect(quality?.textContent ?? '').toContain('1920×1080');
+    expect(quality?.textContent ?? '').toContain('q50');
+    expect(quality?.textContent ?? '').toContain('Standard');
+  });
+});
