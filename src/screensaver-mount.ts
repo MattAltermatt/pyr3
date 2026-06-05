@@ -43,13 +43,19 @@ export interface ScreensaverPageHandle {
   stop(): void;
 }
 
-// Canvas backing-store dims match the user's screen (window.screen.width
-// × .height), capped at 4K. The cap is a GPU-memory safety net: at 4K
-// with oversample=4 the internal histogram is ~528 MB and q=50 takes ~4 B
-// samples to fill. Override with ?w=N&h=N if you want a specific size.
-const CANVAS_MAX_W = 3840;
-const CANVAS_MAX_H = 2160;
+// Canvas backing-store dims target HD by default — CSS scales 100% to fill
+// the viewport / screen, browser handles the upscale. Going screen-native
+// (2560×1440 or 4K) PLUS a genome oversample of 4 builds an internal
+// histogram of 50M-130M pixels; each present's density+visualize pass over
+// that swamps the GPU and locks the page up. Override with ?w=N&h=N when
+// you have headroom. Genome oversample is also capped (see SCREENSAVER_MAX_OS).
+const CANVAS_MAX_W = 1920;
+const CANVAS_MAX_H = 1080;
 const CANVAS_MIN_DIM = 256;
+// Genomes typically set oversample 1-4. For real-time screensaver render
+// we cap at 2 — going to 4 quadruples the histogram size and present cost
+// for marginal visible-quality gain on a fullscreen canvas.
+const SCREENSAVER_MAX_OS = 2;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -391,7 +397,7 @@ async function renderFlameToQuality(args: {
 }): Promise<void> {
   const { renderer, genome, ctx, W, H, targetQ, isCancelled } = args;
   // Apply the genome's preferred oversample + filter radius for full quality.
-  const overs = genome.oversample ?? 1;
+  const overs = Math.min(SCREENSAVER_MAX_OS, genome.oversample ?? 1);
   const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
   renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
   renderer.reset(genome);
@@ -661,8 +667,11 @@ function startBuildUp(args: {
       // dispatching every rAF (60Hz) saturated the GPU at 99%. Present
       // (visualize-only) is cheap, so we re-tone-map at PRESENT_INTERVAL_MS
       // for smooth visible brightness ramp between dispatches.
-      const ITER_INTERVAL_MS = 250;
-      const PRESENT_INTERVAL_MS = 100;
+      // 500ms intervals = 2 iterate dispatches/sec + 2 presents/sec. Build-up
+      // is meditative — visible change is slow over minutes — so 2fps is
+      // plenty. Lower cadence = much calmer GPU on consumer hardware.
+      const ITER_INTERVAL_MS = 500;
+      const PRESENT_INTERVAL_MS = 500;
 
       while (!isCancelled()) {
         if (state.skipDir !== 0) break;
