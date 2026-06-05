@@ -92,6 +92,37 @@ export function pushRecentlyUsed(index: number): void {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Favorites (localStorage)
+// ──────────────────────────────────────────────────────────────────────
+// Stored as a JSON array of variation NAMES (not indices) under
+// `pyr3.variation.favorites`. Names are stable across pyr3 versions; the
+// numeric V indices are an internal packing detail and could shift if the
+// catalogue is reordered. The localStorage key is intentionally distinct
+// from `pyr3.palette.favorites` so the two pickers' favorites never collide.
+
+const FAVORITES_KEY = 'pyr3.variation.favorites';
+
+function readFavorites(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((x) => typeof x === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeFavorites(set: Set<string>): void {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...set]));
+  } catch {
+    // localStorage disabled (private mode); silently no-op.
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Picker
 // ──────────────────────────────────────────────────────────────────────
 
@@ -250,13 +281,11 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
 
   const cellByIdx = new Map<number, HTMLElement>();
   const starByIdx = new Map<number, HTMLElement>();
-  // Favorites wiring lands in Task 10.2; commit-1 shell renders the
-  // star widget in its empty state and the favorites tab as a
-  // structural placeholder.
+  const favorites = readFavorites();
   let activeTab: 'all' | 'favorites' = 'all';
 
-  function isFavorite(_idx: number): boolean {
-    return false;
+  function isFavorite(idx: number): boolean {
+    return favorites.has(VARIATION_NAMES[idx] ?? '');
   }
   function paintStar(idx: number): void {
     const star = starByIdx.get(idx);
@@ -271,8 +300,15 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
       star.style.color = COLORS.text.dim;
     }
   }
-  function toggleFavorite(_idx: number): void {
-    // Task 10.2 wires persistence; no-op in the shell commit.
+  function toggleFavorite(idx: number): void {
+    const name = VARIATION_NAMES[idx];
+    if (!name) return;
+    if (favorites.has(name)) favorites.delete(name);
+    else favorites.add(name);
+    writeFavorites(favorites);
+    paintStar(idx);
+    refreshTabCounts();
+    applyFilter();
   }
 
   function buildCell(entry: VariationEntry): HTMLElement {
@@ -401,13 +437,9 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   }
   search.addEventListener('input', applyFilter);
 
-  function favoriteCount(): number {
-    // Task 10.2 replaces this with a real count from localStorage.
-    return 0;
-  }
   function refreshTabCounts(): void {
     allTab.textContent = `all (${totalCount})`;
-    favTab.textContent = `★ favorites (${favoriteCount()})`;
+    favTab.textContent = `★ favorites (${favorites.size})`;
   }
   function setTab(tab: 'all' | 'favorites'): void {
     activeTab = tab;

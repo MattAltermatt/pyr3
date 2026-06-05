@@ -343,24 +343,125 @@ describe('variation picker — fitting-room behavior', () => {
   });
 });
 
-// ── Favorites tab — shell-level structural test (Task 10.1) ─────────────
-// Favorites persistence + filtering is wired in Task 10.2.
+// ── Favorites (Task 10.2) ────────────────────────────────────────────────
 
-describe('variation picker — favorites tab (shell)', () => {
-  it('star widget renders ☆ on every cell', () => {
+describe('variation picker — favorites', () => {
+  it('star is empty (☆) when not favorited', () => {
     setup();
-    const cells = document.querySelectorAll('.pyr3-picker-cell');
-    for (const c of cells) {
-      const star = c.querySelector('.pyr3-picker-cell-star') as HTMLElement;
-      expect(star.textContent).toBe('☆');
-    }
+    const cell = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"]`,
+    ) as HTMLElement;
+    const star = cell.querySelector('.pyr3-picker-cell-star') as HTMLElement;
+    expect(star.textContent).toBe('☆');
+    expect(star.classList.contains('on')).toBe(false);
   });
 
-  it('favorites tab label shows count of zero before any star is wired', () => {
+  it('clicking a star toggles favorite — filled ★ + .on class', () => {
+    setup();
+    const cell = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"]`,
+    ) as HTMLElement;
+    const star = cell.querySelector('.pyr3-picker-cell-star') as HTMLElement;
+    star.click();
+    expect(star.textContent).toBe('★');
+    expect(star.classList.contains('on')).toBe(true);
+    star.click();
+    expect(star.textContent).toBe('☆');
+    expect(star.classList.contains('on')).toBe(false);
+  });
+
+  it('clicking a star does NOT also preview/select the cell', () => {
+    const { onPreview } = setup({ initialIndex: V.spherical });
+    const cell = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"]`,
+    ) as HTMLElement;
+    const star = cell.querySelector('.pyr3-picker-cell-star') as HTMLElement;
+    star.click();
+    // No preview fired (the cell click handler is stopPropagation'd from
+    // the star widget).
+    expect(onPreview).not.toHaveBeenCalled();
+  });
+
+  it('favorites persist to localStorage under pyr3.variation.favorites as JSON array of names', () => {
+    setup();
+    const cell = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"]`,
+    ) as HTMLElement;
+    (cell.querySelector('.pyr3-picker-cell-star') as HTMLElement).click();
+    const raw = localStorage.getItem('pyr3.variation.favorites');
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as unknown[];
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toContain('linear');
+  });
+
+  it('★ favorites tab filters cells to favorited-only', () => {
+    setup();
+    // Star two variations.
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement).click();
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.heart}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement).click();
+    // Switch to favorites tab.
+    (document.querySelector(
+      '.pyr3-picker-tab[data-tab="favorites"]',
+    ) as HTMLElement).click();
+    const cells = document.querySelectorAll<HTMLElement>('.pyr3-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    expect(visible.length).toBe(2);
+    const visibleNames = visible.map((c) => c.dataset['vname']);
+    expect(visibleNames).toContain('linear');
+    expect(visibleNames).toContain('heart');
+  });
+
+  it('favorites tab label shows the favorite count live', () => {
     setup();
     const favTab = document.querySelector(
       '.pyr3-picker-tab[data-tab="favorites"]',
     ) as HTMLElement;
     expect(favTab.textContent).toContain('(0)');
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement).click();
+    expect(favTab.textContent).toContain('(1)');
+  });
+
+  it('favorites localStorage key is separate from palette favorites', () => {
+    setup();
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement).click();
+    expect(localStorage.getItem('pyr3.variation.favorites')).toBeTruthy();
+    // Must NOT have written to the palette key.
+    expect(localStorage.getItem('pyr3.palette.favorites')).toBeNull();
+  });
+
+  it('favorites round-trip — values persisted in one picker session restore in the next', () => {
+    // First session: star linear + julian.
+    const first = setup();
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement).click();
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.julian}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement).click();
+    first.handle.close();
+    document.body.replaceChildren();
+    // Second session: stars should hydrate from localStorage.
+    setup();
+    const linearStar = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.linear}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement;
+    const julianStar = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.julian}"] .pyr3-picker-cell-star`,
+    ) as HTMLElement;
+    expect(linearStar.textContent).toBe('★');
+    expect(julianStar.textContent).toBe('★');
+    const favTab = document.querySelector(
+      '.pyr3-picker-tab[data-tab="favorites"]',
+    ) as HTMLElement;
+    expect(favTab.textContent).toContain('(2)');
   });
 });
