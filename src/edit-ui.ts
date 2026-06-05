@@ -46,66 +46,18 @@ export function mountEditUi(
   host.replaceChildren();
   host.classList.add('pyr3-edit-panel');
 
-  // ── Single header card: open/save → divider → name/nick → divider →
-  // reroll/render PNG. One card, three segments separated by hr dividers.
+  // The legacy editor toolbar (open/save buttons, name/nick inputs, reroll/
+  // render PNG buttons) was removed in the 2026-06-04 visual overhaul — those
+  // affordances now live in the top-bar's info row + action row (see
+  // mountEditBar in ui-bar.ts). Only the settle-delay scrubby is preserved
+  // here as a power-user knob that didn't migrate to the action row.
   const topbar = document.createElement('div');
   topbar.className = 'pyr3-edit-topbar';
 
-  // Segment 1: Open + Save
-  const openSaveRow = document.createElement('div');
-  openSaveRow.className = 'pyr3-edit-buttons';
-  openSaveRow.append(
-    makeButton('📂 open', () => callbacks.onOpenFile?.()),
-    makeButton('💾 save', () => callbacks.onSaveFile?.()),
-  );
-  topbar.appendChild(openSaveRow);
-
-  topbar.appendChild(makeDivider());
-
-  // Segment 2: name + nick
-  const nameRow = document.createElement('div');
-  nameRow.className = 'pyr3-edit-named';
-  nameRow.append(document.createTextNode('name '));
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.value = state.genome.name;
-  nameInput.className = 'pyr3-edit-text';
-  nameInput.addEventListener('input', () => {
-    state.genome.name = nameInput.value;
-    callbacks.onChange('name');
-  });
-  nameRow.append(nameInput);
-  topbar.appendChild(nameRow);
-
-  const nickRow = document.createElement('div');
-  nickRow.className = 'pyr3-edit-named';
-  nickRow.append(document.createTextNode('nick '));
-  const nickInput = document.createElement('input');
-  nickInput.type = 'text';
-  nickInput.value = state.genome.nick ?? '';
-  nickInput.className = 'pyr3-edit-text';
-  nickInput.addEventListener('input', () => {
-    state.genome.nick = nickInput.value || undefined;
-    callbacks.onChange('nick');
-  });
-  nickRow.append(nickInput);
-  topbar.appendChild(nickRow);
-
-  topbar.appendChild(makeDivider());
-
-  // Segment 3: reroll + render PNG
-  const rerollPngRow = document.createElement('div');
-  rerollPngRow.className = 'pyr3-edit-buttons';
-  rerollPngRow.append(
-    makeButton('🎲 reroll', () => callbacks.onReroll?.()),
-    makeButton('🖼️ render PNG', () => callbacks.onRenderPng?.()),
-  );
-  topbar.appendChild(rerollPngRow);
-
-  // Segment 4: settle delay (ms) — the quiet-time after the last edit
-  // before the full-quality render fires. Longer = the LIVE (small-canvas
-  // fast) frame stays visible longer for single clicks; shorter = the
-  // settled high-quality render arrives sooner. Default 200ms.
+  // Settle delay (ms) — the quiet-time after the last edit before the
+  // full-quality render fires. Longer = the LIVE (small-canvas fast) frame
+  // stays visible longer for single clicks; shorter = the settled high-
+  // quality render arrives sooner. Default 200ms.
   const settleRow = document.createElement('div');
   settleRow.className = 'pyr3-edit-named';
   settleRow.append(document.createTextNode('settle '));
@@ -172,21 +124,6 @@ export function mountEditUi(
       topbar.remove();
     },
   };
-}
-
-function makeDivider(): HTMLHRElement {
-  const hr = document.createElement('hr');
-  hr.className = 'pyr3-edit-divider';
-  return hr;
-}
-
-function makeButton(label: string, onClick: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = label;
-  b.className = 'pyr3-edit-btn';
-  b.addEventListener('click', onClick);
-  return b;
 }
 
 // One-time style injection. Idempotent so HMR doesn't double-inject.

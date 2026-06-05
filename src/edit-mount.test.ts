@@ -211,45 +211,11 @@ function makeSections(keys: SectionKey[]): SectionMount[] {
 }
 
 describe('mountEditUi shell', () => {
-  it('renders 1 header card: open+save / divider / name+nick / divider / reroll+png', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    mountEditUi(host, state, [], { onChange: () => {} });
-    // 4 buttons (open, save, reroll, render PNG) across 2 button rows
-    expect(host.querySelectorAll('.pyr3-edit-btn').length).toBe(4);
-    // 2 inputs (name, nick) in the middle segment
-    expect(host.querySelectorAll('.pyr3-edit-text').length).toBe(2);
-    // Single topbar card with 2 dividers
-    expect(host.querySelectorAll('.pyr3-edit-topbar').length).toBe(1);
-    expect(host.querySelectorAll('.pyr3-edit-divider').length).toBe(2);
-  });
-
-  it('identity card name input writes to genome + fires onChange("name")', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    const onChange = vi.fn();
-    mountEditUi(host, state, [], { onChange });
-    const nameInput = host.querySelectorAll('.pyr3-edit-text')[0] as HTMLInputElement;
-    nameInput.value = 'Phoenix';
-    nameInput.dispatchEvent(new Event('input'));
-    expect(state.genome.name).toBe('Phoenix');
-    expect(onChange).toHaveBeenCalledWith('name');
-  });
-
-  it('identity card nick input writes optional field; empty → undefined', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    const onChange = vi.fn();
-    mountEditUi(host, state, [], { onChange });
-    const nickInput = host.querySelectorAll('.pyr3-edit-text')[1] as HTMLInputElement;
-    nickInput.value = 'matt';
-    nickInput.dispatchEvent(new Event('input'));
-    expect(state.genome.nick).toBe('matt');
-    nickInput.value = '';
-    nickInput.dispatchEvent(new Event('input'));
-    expect(state.genome.nick).toBeUndefined();
-    expect(onChange).toHaveBeenCalledWith('nick');
-  });
+  // Legacy "header card" tests removed in the 2026-06-04 visual overhaul —
+  // the open/save buttons, name/nick inputs, and reroll/render PNG buttons
+  // now live in the top-bar's info+action rows (covered by ui-bar.test.ts),
+  // not in the edit-ui panel header. The panel header now only carries the
+  // settle-delay scrubby (a power-user knob not surfaced in the action row).
 
   it('renders 7 section headers when 7 sections are passed', () => {
     const host = document.createElement('div');
@@ -334,29 +300,8 @@ describe('mountEditUi shell', () => {
     }
   });
 
-  it('reroll/open/save/png buttons render and fire their callbacks', () => {
-    const host = document.createElement('div');
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    const onReroll = vi.fn();
-    const onOpenFile = vi.fn();
-    const onSaveFile = vi.fn();
-    const onRenderPng = vi.fn();
-    mountEditUi(host, state, [], {
-      onChange: () => {},
-      onReroll,
-      onOpenFile,
-      onSaveFile,
-      onRenderPng,
-    });
-    const buttons = host.querySelectorAll('.pyr3-edit-btn');
-    expect(buttons.length).toBe(4);
-    (buttons[0] as HTMLButtonElement).click();
-    (buttons[1] as HTMLButtonElement).click();
-    (buttons[2] as HTMLButtonElement).click();
-    (buttons[3] as HTMLButtonElement).click();
-    expect(onReroll).toHaveBeenCalledTimes(1);
-    expect(onOpenFile).toHaveBeenCalledTimes(1);
-    expect(onSaveFile).toHaveBeenCalledTimes(1);
-    expect(onRenderPng).toHaveBeenCalledTimes(1);
-  });
+  // Legacy 4-button test removed — see comment above. Callbacks
+  // (onReroll/onOpenFile/onSaveFile/onRenderPng) are still wired through
+  // mountEditUi's callbacks contract for the EditPageHandle, exercised
+  // indirectly by ui-bar.test.ts and integration paths.
 });
