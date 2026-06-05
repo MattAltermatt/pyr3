@@ -10,7 +10,7 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
-import { corpusUrl, galleryUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
+import { corpusUrl, galleryUrl, QUALITY_PRESETS, SETTLE_PRESETS, SIZE_PRESETS } from './load-intent';
 import type { QualityRequest } from './presets';
 import { composeFlameFilename } from './save-flame';
 import { composeSaveFilename } from './save-image';
@@ -188,6 +188,9 @@ export interface EditBarOpts {
   onReroll: () => void;
   onSizeChange: (width: number, height: number) => void;
   onQualityChange: (quality: number) => void;
+  /** Fires when the user clicks a SETTLE ladder button. ms = quiet time
+   *  after the last edit before the full-quality render fires. */
+  onSettleChange: (ms: number) => void;
   onSaveFlame: () => void;
   onSave: () => void;
 }
@@ -204,6 +207,10 @@ export interface EditBarHandle {
   /** Update the active QUALITY pick (highlights the matching numeric button
    *  in amber). */
   setQuality(spp: number): void;
+  /** Update the active SETTLE pick (highlights the matching ms button).
+   *  When ms isn't in the SETTLE_PRESETS ladder, no button is highlighted
+   *  — matches the QUALITY pattern for off-ladder values typed in the panel. */
+  setSettle(ms: number): void;
   /** Show the rendering-in-flight tier3 panel under the bar. Mirrors the
    *  viewer's mountBar showProgress; same DOM + CSS classes. The editor's
    *  render is single-dispatch (no incremental progress), so callers pass
@@ -315,7 +322,43 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   saveRenderBtn.title = 'Download the current render as a PNG';
 
   actionLeft.append(openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
-  actionRow.append(actionLeft);
+
+  // SETTLE ladder (right side) — quiet time after the last edit before
+  // the full-quality render fires. Mirror the QUALITY ladder pattern:
+  // bar drives the panel's `settle` field, panel can still type any
+  // value 0..5000 and the bar will show no highlight for off-ladder ms.
+  const actionRight = el('div', 'pyr3-zone-actright');
+  const SETTLE_TOOLTIP =
+    'Settle delay (ms) — quiet time after your last edit before the full-quality '
+    + 'render fires. Higher = the live (small-canvas) preview stays visible longer; '
+    + 'lower = the settled high-quality render arrives sooner.';
+  const settleLabel = el('span', 'pyr3-bar-quality-label pyr3-bar-settle-label');
+  settleLabel.textContent = 'SETTLE';
+  settleLabel.title = SETTLE_TOOLTIP;
+  const settleGroup = el('div', 'pyr3-bar-quality-group pyr3-bar-settle-group');
+  const settleBtns = new Map<number, HTMLButtonElement>();
+  let currentSettle: number = 200;
+  for (const ms of SETTLE_PRESETS) {
+    const b = document.createElement('button');
+    // Reuse the QUALITY ladder's visual styling but mark the SETTLE-side
+    // button with its own class so test queries can scope `.pyr3-bar-quality-btn`
+    // (now narrowed to the QUALITY group via :not(.pyr3-bar-settle-btn))
+    // OR just select `.pyr3-bar-settle-btn` directly.
+    b.className = 'pyr3-bar-quality-btn pyr3-bar-settle-btn';
+    b.type = 'button';
+    b.textContent = String(ms);
+    b.title = `wait ${ms}ms after the last edit before the full-quality render fires`;
+    b.onclick = () => opts.onSettleChange(ms);
+    settleBtns.set(ms, b);
+    settleGroup.append(b);
+  }
+  const renderSettleHighlight = (): void => {
+    for (const [ms, b] of settleBtns) b.classList.toggle('on', ms === currentSettle);
+  };
+  renderSettleHighlight();
+  actionRight.append(settleLabel, settleGroup);
+
+  actionRow.append(actionLeft, actionRight);
 
   // Size dropdown — same lazy build + outside-click dismiss pattern as the
   // viewer. NO deflect footer in the editor (we are the editor).
@@ -410,6 +453,10 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     setQuality(spp) {
       currentSpp = spp;
       renderQualityHighlight();
+    },
+    setSettle(ms) {
+      currentSettle = ms;
+      renderSettleHighlight();
     },
     showProgress(label) {
       if (!editTier3) {
@@ -1254,6 +1301,7 @@ const BAR_CSS = `
 .pyr3-zone-left { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pyr3-zone-right { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; justify-content: flex-end; }
 .pyr3-zone-actleft { flex: 1 1 0; display: flex; align-items: center; gap: 8px; }
+.pyr3-zone-actright { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; margin-left: 12px; }
 .pyr3-bar-nav { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 .pyr3-nav-pill {
   font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap;

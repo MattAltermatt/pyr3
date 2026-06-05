@@ -21,6 +21,10 @@ export interface SectionMount {
 
 export interface EditUiHandle {
   destroy(): void;
+  /** Update the `settle` scrubby's displayed value WITHOUT firing
+   *  onSettleDelayChange — used when the bar's SETTLE ladder writes the
+   *  new value, so the panel readout stays in sync without an echo loop. */
+  setSettleDelayMs(ms: number): void;
 }
 
 export interface EditUiCallbacks {
@@ -122,6 +126,12 @@ export function mountEditUi(
     destroy(): void {
       for (const el of sectionEls) el.remove();
       topbar.remove();
+    },
+    setSettleDelayMs(ms: number): void {
+      // setValue updates the scrubby's display + internal state but does
+      // NOT fire onInput, so the bar→panel echo doesn't loop back through
+      // onSettleDelayChange → bar.setSettle → here → onInput.
+      settleHandle.setValue(ms);
     },
   };
 }

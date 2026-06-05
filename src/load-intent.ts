@@ -75,6 +75,14 @@ export const SIZE_PRESETS = [
  *  pick. */
 export const QUALITY_PRESETS = [10, 25, 50, 75, 100] as const;
 
+/** Settle-delay ladder (ms) for the editor bar's SETTLE button group.
+ *  Quiet time after the user's last edit before the full-quality render
+ *  fires — higher = the live (small-canvas) preview stays visible longer;
+ *  lower = the settled high-quality render arrives sooner. Default 200
+ *  matches the panel scrubby's default. Panel can override with any
+ *  value 0..5000; bar shows no highlight on off-ladder values. */
+export const SETTLE_PRESETS = [200, 500, 1000, 2000] as const;
+
 /** Returns true iff the segment is a string of one-or-more decimal digits. */
 function isNonNegInt(segment: string): boolean {
   return /^\d+$/.test(segment);

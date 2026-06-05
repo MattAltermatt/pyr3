@@ -64,6 +64,7 @@ function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
     onReroll: vi.fn(),
     onSizeChange: vi.fn(),
     onQualityChange: vi.fn(),
+    onSettleChange: vi.fn(),
     onSaveFlame: vi.fn(),
     onSave: vi.fn(),
     onTabClick: vi.fn(),
@@ -768,7 +769,7 @@ describe('editor action row — Open · Reroll · Size · QUALITY · Save Flame 
     ) as HTMLElement;
     expect(qLabel?.textContent?.toLowerCase()).toBe('quality');
     const buttons = Array.from(
-      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn'),
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn:not(.pyr3-bar-settle-btn)'),
     ) as HTMLButtonElement[];
     const labels = buttons.map((b) => b.textContent);
     expect(labels).toEqual(['10', '25', '50', '75', '100']);
@@ -780,7 +781,7 @@ describe('editor action row — Open · Reroll · Size · QUALITY · Save Flame 
     const handle = mountEditBar(root, makeEditOpts());
     handle.setQuality(75);
     const buttons = Array.from(
-      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn'),
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn:not(.pyr3-bar-settle-btn)'),
     ) as HTMLButtonElement[];
     const active = buttons.filter((b) => b.classList.contains('on'));
     expect(active).toHaveLength(1);
@@ -793,10 +794,62 @@ describe('editor action row — Open · Reroll · Size · QUALITY · Save Flame 
     const onQualityChange = vi.fn();
     mountEditBar(root, makeEditOpts({ onQualityChange }));
     const buttons = Array.from(
-      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn'),
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn:not(.pyr3-bar-settle-btn)'),
     ) as HTMLButtonElement[];
     buttons.find((b) => b.textContent === '100')!.click();
     expect(onQualityChange).toHaveBeenCalledWith(100);
+  });
+
+  it('renders SETTLE ladder (200/500/1000/2000) on the right side of the action row', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const settleLabel = root.querySelector(
+      '.pyr3-bar-action .pyr3-bar-settle-label',
+    ) as HTMLElement;
+    expect(settleLabel?.textContent?.toLowerCase()).toBe('settle');
+    // Tooltip mentions the live/settled tradeoff.
+    expect(settleLabel.title).toMatch(/settle delay.*ms/i);
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-settle-btn'),
+    ) as HTMLButtonElement[];
+    expect(buttons.map((b) => b.textContent)).toEqual(['200', '500', '1000', '2000']);
+    // Settle group lives in the right-side zone so it doesn't crowd the left
+    // action cluster.
+    const rightZone = root.querySelector('.pyr3-zone-actright');
+    expect(rightZone).not.toBeNull();
+    expect(rightZone!.contains(settleLabel)).toBe(true);
+  });
+
+  it('clicking a SETTLE button fires onSettleChange with that ms value', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onSettleChange = vi.fn();
+    mountEditBar(root, makeEditOpts({ onSettleChange }));
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-settle-btn'),
+    ) as HTMLButtonElement[];
+    buttons.find((b) => b.textContent === '1000')!.click();
+    expect(onSettleChange).toHaveBeenCalledWith(1000);
+  });
+
+  it('setSettle(ms) highlights the matching SETTLE button (off-ladder = no highlight)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountEditBar(root, makeEditOpts());
+    handle.setSettle(500);
+    let active = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-settle-btn.on'),
+    ) as HTMLButtonElement[];
+    expect(active).toHaveLength(1);
+    expect(active[0]!.textContent).toBe('500');
+    // Off-ladder value (e.g. user typed 750 in the panel scrubby) →
+    // no button highlighted; the bar acknowledges the panel override.
+    handle.setSettle(750);
+    active = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-settle-btn.on'),
+    ) as HTMLButtonElement[];
+    expect(active).toHaveLength(0);
   });
 
   it('clicking a Size menu item fires onSizeChange with the chosen dimensions', () => {

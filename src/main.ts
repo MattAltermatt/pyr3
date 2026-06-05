@@ -400,6 +400,7 @@ async function main(): Promise<void> {
       saveRender(): Promise<void>;
       setSize(w: number, h: number): void;
       setQuality(q: number): void;
+      setSettleDelayMs(ms: number): void;
     } | null = null;
 
     // Persisted author nick — read on entry, written on every change so a
@@ -434,6 +435,10 @@ async function main(): Promise<void> {
       onReroll: () => editorRef?.reroll(),
       onSizeChange: (w, h) => editorRef?.setSize(w, h),
       onQualityChange: (q) => editorRef?.setQuality(q),
+      onSettleChange: (ms) => {
+        editorRef?.setSettleDelayMs(ms);
+        editBar.setSettle(ms);
+      },
       onSaveFlame: () => editorRef?.saveFlame(),
       onSave: () => { void editorRef?.saveRender(); },
       // #103 Phase 2 Task 2.3 — editor tab clicks fall through to
@@ -486,6 +491,7 @@ async function main(): Promise<void> {
       },
       onProgressShow: (label) => editBar.showProgress(label),
       onProgressHide: () => editBar.hideProgress(),
+      onSettleDelayChange: (ms) => editBar.setSettle(ms),
     });
     editorRef = editor;
     return;

@@ -58,6 +58,11 @@ export interface MountEditPageOpts {
   onProgressShow?: (label: string) => void;
   /** Fires when the in-flight render completes. */
   onProgressHide?: () => void;
+  /** Fires when the panel's `settle` scrubby changes the settle-delay value,
+   *  so the host can echo it onto the editor bar's SETTLE button highlight.
+   *  NOT fired when setSettleDelayMs is called externally (the host already
+   *  knows about that change). */
+  onSettleDelayChange?: (ms: number) => void;
 }
 
 export interface EditPageHandle {
@@ -82,6 +87,10 @@ export interface EditPageHandle {
   saveRender(): Promise<void>;
   setSize(width: number, height: number): void;
   setQuality(quality: number): void;
+  /** Top-bar SETTLE ladder writes here. Updates the live settleDelayMs +
+   *  syncs the panel's `settle` scrubby. Does NOT fire onSettleDelayChange
+   *  (the host invoked this mutator and already knows the new value). */
+  setSettleDelayMs(ms: number): void;
 }
 
 const DEFAULT_PREVIEW = { width: 512, height: 512 };
@@ -377,7 +386,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       onSaveFile: handleSaveFile,
       onRenderPng: handleRenderPng,
       settleDelayMs,
-      onSettleDelayChange: (ms) => { settleDelayMs = ms; },
+      onSettleDelayChange: (ms) => {
+        settleDelayMs = ms;
+        // Echo to the host so the editor bar's SETTLE ladder highlight
+        // can re-sync when the user types an off-ladder value in the panel.
+        opts.onSettleDelayChange?.(ms);
+      },
     });
   }
 
@@ -648,6 +662,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       rebuildPanel();
       onPathChange('quality');
       opts.onStateChange?.(state);
+    },
+    setSettleDelayMs(ms: number): void {
+      // 2026-06-05: bar SETTLE ladder writes here. Mutate the live value
+      // + sync the panel's scrubby without firing onSettleDelayChange —
+      // the caller (main.ts) already initiated this and will echo to the
+      // bar's setSettle highlight itself.
+      if (!Number.isFinite(ms) || ms < 0) return;
+      settleDelayMs = Math.round(ms);
+      ui?.setSettleDelayMs(settleDelayMs);
     },
     destroy(): void {
       panZoom.destroy();
