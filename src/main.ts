@@ -325,10 +325,20 @@ async function main(): Promise<void> {
     editRoot.hidden = false;
     document.body.classList.add('pyr3-edit-mode');
 
-    // Forwarding refs: the bar's onNameChange / onNickChange need to call the
-    // editor's setName / setNick, but the editor doesn't exist yet (we need
-    // the bar handle first so we can pass onStateChange to the editor).
-    let editorRef: { setName(n: string): void; setNick(n: string): void } | null = null;
+    // Forwarding refs: the bar's onNameChange / onNickChange + action-row
+    // callbacks need to call into the editor handle, but the editor doesn't
+    // exist yet (we need the bar handle first so we can pass onStateChange
+    // to the editor).
+    let editorRef: {
+      setName(n: string): void;
+      setNick(n: string): void;
+      reroll(): void;
+      openFile(): void;
+      saveFlame(): void;
+      saveRender(): Promise<void>;
+      setSize(w: number, h: number): void;
+      setQuality(q: number): void;
+    } | null = null;
 
     // Persisted author nick — read on entry, written on every change so a
     // session-fresh genome (random seed / reroll) inherits the user's saved
@@ -354,6 +364,16 @@ async function main(): Promise<void> {
         editorRef?.setNick(nick);
         persistNick(nick);
       },
+      // #103 Phase 6 Task 6.2 — action row callbacks. Each one routes into an
+      // existing editor handler (handleReroll / handleOpenFile /
+      // handleSaveFile / handleRenderPng) or a new setter exposed on
+      // EditPageHandle.
+      onOpenFile: () => editorRef?.openFile(),
+      onReroll: () => editorRef?.reroll(),
+      onSizeChange: (w, h) => editorRef?.setSize(w, h),
+      onQualityChange: (q) => editorRef?.setQuality(q),
+      onSaveFlame: () => editorRef?.saveFlame(),
+      onSave: () => { void editorRef?.saveRender(); },
       // #103 Phase 2 Task 2.3 — editor tab clicks fall through to
       // handleTabClick (no transfer rules apply when leaving editor).
       onTabClick: handleTabClick,
@@ -387,6 +407,15 @@ async function main(): Promise<void> {
           authorNick: state.genome.nick,
         });
         editBar.setDimensions(state.genome.size ?? null);
+        // Mirror size + quality back to the bar's action row so the 📐 Size ▾
+        // button label + the active QUALITY pick stay in sync when the user
+        // edits W/H/quality in the Render section, or after reroll/open.
+        if (state.genome.size) {
+          editBar.setSize(state.genome.size.width, state.genome.size.height);
+        }
+        if (state.genome.quality) {
+          editBar.setQuality(state.genome.quality);
+        }
         // Mirror panel-internal nick edits to localStorage too (the bar's
         // onNickChange path covers the bar input; this covers the panel's
         // identity-card nick input).

@@ -66,6 +66,19 @@ export interface EditPageHandle {
    *  flame name / nick back into the editor state. */
   setName(name: string): void;
   setNick(nick: string): void;
+  /** #103 Phase 6 Task 6.2 — top-bar action callbacks. The editor's chrome
+   *  action row mirrors the viewer's pattern (📂 Open · 🎲 Reroll · 📐 Size ▾ ·
+   *  QUALITY · 🧬 Save Flame · 💾 Save Render); these methods give the host
+   *  (main.ts) a way to invoke the editor's existing state mutators
+   *  (handleReroll / handleOpenFile / handleSaveFile / handleRenderPng) and
+   *  the size/quality mutators that previously only the in-panel Render
+   *  section could drive. */
+  reroll(): void;
+  openFile(): void;
+  saveFlame(): void;
+  saveRender(): Promise<void>;
+  setSize(width: number, height: number): void;
+  setQuality(quality: number): void;
 }
 
 const DEFAULT_PREVIEW = { width: 512, height: 512 };
@@ -566,6 +579,42 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     setNick(nick: string): void {
       state.genome.nick = nick || undefined;
       scheduler.schedule({ lane: pathLane('nick'), path: 'nick' });
+    },
+    // #103 Phase 6 Task 6.2 — top-bar action callbacks. These reuse the
+    // editor's existing internal handlers / scheduling shapes; the bar is
+    // just a second entry point alongside the in-panel section UI.
+    reroll(): void {
+      handleReroll();
+    },
+    openFile(): void {
+      handleOpenFile();
+    },
+    saveFlame(): void {
+      handleSaveFile();
+    },
+    async saveRender(): Promise<void> {
+      await handleRenderPng();
+    },
+    setSize(width: number, height: number): void {
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+      const w = Math.round(width);
+      const h = Math.round(height);
+      state.genome.size = { width: w, height: h };
+      // Re-render the panel UI so the Render section's W×H inputs + preset
+      // dropdown re-sync to the new dims. The rebuild lane covers the
+      // re-iterate at the new dims; opts.onStateChange echo then updates the
+      // bar's setDimensions readout.
+      rebuildPanel();
+      onPathChange('size.width');
+      onPathChange('size.height');
+      opts.onStateChange?.(state);
+    },
+    setQuality(quality: number): void {
+      if (!Number.isFinite(quality) || quality <= 0) return;
+      state.genome.quality = quality;
+      rebuildPanel();
+      onPathChange('quality');
+      opts.onStateChange?.(state);
     },
     destroy(): void {
       panZoom.destroy();

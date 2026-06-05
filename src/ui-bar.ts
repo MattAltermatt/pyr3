@@ -178,6 +178,18 @@ export interface EditBarOpts {
   onNickChange: (nick: string) => void;
   /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
   onTabClick: (surface: TabSurface) => void;
+  /** #103 Phase 6 Task 6.2 — action row callbacks. The editor's action row
+   *  mirrors the viewer's pattern (📂 Open · 📐 Size ▾ · QUALITY [10·25·…] ·
+   *  🧬 Save Flame · 💾 Save Render) and adds 🎲 Reroll between Open and
+   *  Size. main.ts wires each handler into the editor's state mutators
+   *  (handleReroll / handleOpenFile / handleSaveFile / handleRenderPng on
+   *  the EditPageHandle). */
+  onOpenFile: () => void;
+  onReroll: () => void;
+  onSizeChange: (width: number, height: number) => void;
+  onQualityChange: (quality: number) => void;
+  onSaveFlame: () => void;
+  onSave: () => void;
 }
 
 export interface EditBarHandle {
@@ -186,6 +198,12 @@ export interface EditBarHandle {
   /** Update the dimensions readout (after Render-section edits or open). Pass
    *  null for "auto" (no explicit size; saved at preview dims). */
   setDimensions(dims: { width: number; height: number } | null): void;
+  /** Update the current size (drives the 📐 Size ▾ button label + the
+   *  selected preset highlight in the menu). */
+  setSize(width: number, height: number): void;
+  /** Update the active QUALITY pick (highlights the matching numeric button
+   *  in amber). */
+  setQuality(spp: number): void;
   /** Show the rendering-in-flight tier3 panel under the bar. Mirrors the
    *  viewer's mountBar showProgress; same DOM + CSS classes. The editor's
    *  render is single-dispatch (no incremental progress), so callers pass
@@ -243,7 +261,129 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   );
 
   infoRow.append(infoLeft);
-  chrome.middleSlot.append(infoRow);
+
+  // #103 Phase 6 Task 6.2 — action row matches the viewer's pattern:
+  //   📂 Open · 🎲 Reroll · 📐 Size ▾ · QUALITY [10·25·50·75·100] · 🧬 Save Flame · 💾 Save Render
+  // The editor has no corpus-browse cluster (no surprise / prev / next pills);
+  // verbs only on the left, no right cluster. The Size dropdown reuses the
+  // viewer's SIZE_PRESETS list but omits the "open in Editor" deflect footer
+  // (we're already in the editor).
+  const actionRow = el('div', 'pyr3-bar-action');
+  const actionLeft = el('div', 'pyr3-zone-actleft');
+
+  const openBtn = button('📂 Open', 'pyr3-bar-btn pyr3-edit-open', () => opts.onOpenFile());
+  openBtn.title = 'Open a .pyr3.json or .flame file';
+
+  const rerollBtn = button('🎲 Reroll', 'pyr3-bar-btn pyr3-edit-reroll', () => opts.onReroll());
+  rerollBtn.title = 'Generate a fresh random genome';
+
+  // 📐 Size ▾ — same dropdown shape as the viewer's, with the editor variant
+  // having NO "open in Editor" deflect footer (we are the editor).
+  let currentSize: { w: number; h: number } = { w: 1920, h: 1080 };
+  let currentSpp: number = QUALITY_PRESETS[2] /* 50 */;
+  const sizeBtn = button('📐 1920×1080 ▾', 'pyr3-bar-size', () => toggleSizeMenu());
+  sizeBtn.title = 'Pick a canvas size';
+  const renderSizeLabel = (): void => {
+    sizeBtn.textContent = `📐 ${currentSize.w}×${currentSize.h} ▾`;
+  };
+
+  // QUALITY label + numeric SPP button group.
+  const qualityLabel = el('span', 'pyr3-bar-quality-label');
+  qualityLabel.textContent = 'QUALITY';
+  const qualityGroup = el('div', 'pyr3-bar-quality-group');
+  const qualityBtns = new Map<number, HTMLButtonElement>();
+  for (const spp of QUALITY_PRESETS) {
+    const b = document.createElement('button');
+    b.className = 'pyr3-bar-quality-btn';
+    b.type = 'button';
+    b.textContent = String(spp);
+    b.title = `render at ${spp} samples per pixel`;
+    b.onclick = () => opts.onQualityChange(spp);
+    qualityBtns.set(spp, b);
+    qualityGroup.append(b);
+  }
+  const renderQualityHighlight = (): void => {
+    for (const [spp, b] of qualityBtns) b.classList.toggle('on', spp === currentSpp);
+  };
+  renderQualityHighlight();
+
+  // Paired save buttons — mirror the viewer's secondary/primary pair.
+  const saveFlameBtn = button('🧬 Save Flame', 'pyr3-btn pyr3-bar-save-flame', () => opts.onSaveFlame());
+  saveFlameBtn.title = 'Download the current genome as a .pyr3.json flame file';
+
+  const saveRenderBtn = button('💾 Save Render', 'pyr3-btn-primary pyr3-bar-save-render', () => opts.onSave());
+  saveRenderBtn.title = 'Download the current render as a PNG';
+
+  actionLeft.append(openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
+  actionRow.append(actionLeft);
+
+  // Size dropdown — same lazy build + outside-click dismiss pattern as the
+  // viewer. NO deflect footer in the editor (we are the editor).
+  let sizeMenu: HTMLElement | null = null;
+  let sizeMenuOpen = false;
+  const closeSizeMenu = (): void => {
+    if (sizeMenu) {
+      sizeMenu.remove();
+      sizeMenu = null;
+    }
+    sizeMenuOpen = false;
+    sizeBtn.classList.remove('open');
+  };
+  const buildSizeMenu = (): HTMLElement => {
+    const menu = el('div', 'pyr3-size-menu');
+    for (const group of SIZE_PRESETS) {
+      const header = el('div', 'pyr3-size-group');
+      header.textContent = group.group;
+      menu.append(header);
+      for (const item of group.items) {
+        const row = el('div', 'pyr3-size-item');
+        const label = el('span', 'pyr3-size-label');
+        label.textContent = item.label;
+        const dimsEl = el('span', 'pyr3-size-dims');
+        dimsEl.textContent = `${item.w}×${item.h}`;
+        row.append(label, dimsEl);
+        row.onclick = () => {
+          // Optimistically reflect the pick in the button label; the editor's
+          // onStateChange echo will overwrite this once the render lands.
+          currentSize = { w: item.w, h: item.h };
+          renderSizeLabel();
+          closeSizeMenu();
+          opts.onSizeChange(item.w, item.h);
+        };
+        menu.append(row);
+      }
+    }
+    // NOTE: no "open in Editor" deflect footer — we are the editor. The user
+    // sets explicit non-preset dims by typing into the Render section's W×H
+    // inputs in the panel below.
+    return menu;
+  };
+  const toggleSizeMenu = (): void => {
+    if (sizeMenuOpen) {
+      closeSizeMenu();
+      return;
+    }
+    sizeMenu = buildSizeMenu();
+    document.body.append(sizeMenu);
+    const rect = sizeBtn.getBoundingClientRect();
+    sizeMenu.style.position = 'fixed';
+    sizeMenu.style.top = `${rect.bottom + 4}px`;
+    sizeMenu.style.left = `${rect.left}px`;
+    sizeMenu.style.zIndex = '60';
+    sizeMenuOpen = true;
+    sizeBtn.classList.add('open');
+    setTimeout(() => {
+      const onDocClick = (ev: MouseEvent): void => {
+        if (!sizeMenu) return;
+        if (sizeMenu.contains(ev.target as Node) || sizeBtn.contains(ev.target as Node)) return;
+        closeSizeMenu();
+        document.removeEventListener('click', onDocClick);
+      };
+      document.addEventListener('click', onDocClick);
+    }, 0);
+  };
+
+  chrome.middleSlot.append(infoRow, actionRow);
 
   // Lazy-built tier3 progress panel (same structure as mountBar's). Pinned
   // under the bar via `position: absolute; top: 100%`.
@@ -262,6 +402,14 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     },
     setDimensions(d) {
       dims.textContent = d ? `${d.width}×${d.height}` : 'auto';
+    },
+    setSize(w, h) {
+      currentSize = { w, h };
+      renderSizeLabel();
+    },
+    setQuality(spp) {
+      currentSpp = spp;
+      renderQualityHighlight();
     },
     showProgress(label) {
       if (!editTier3) {
@@ -291,6 +439,9 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
         editTier3.row.remove();
         editTier3 = null;
       }
+      // Size menu lives outside the bar root (anchored to document.body) —
+      // explicitly close it on destroy so a leftover menu doesn't dangle.
+      closeSizeMenu();
       chrome.destroy();
       root.classList.remove('pyr3-bar-root');
     },

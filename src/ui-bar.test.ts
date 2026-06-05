@@ -60,6 +60,12 @@ function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
     webgpu: STUB_WEBGPU,
     onNameChange: vi.fn(),
     onNickChange: vi.fn(),
+    onOpenFile: vi.fn(),
+    onReroll: vi.fn(),
+    onSizeChange: vi.fn(),
+    onQualityChange: vi.fn(),
+    onSaveFlame: vi.fn(),
+    onSave: vi.fn(),
     onTabClick: vi.fn(),
     ...over,
   };
@@ -646,6 +652,173 @@ describe('editor info row — editable name + nick + dims (#103 Phase 6 Task 6.1
     const dims = root.querySelector('.pyr3-bar-info .pyr3-bar-quality') as HTMLElement;
     expect(dims).not.toBeNull();
     expect(dims.textContent).toBe('1920×1080');
+  });
+});
+
+describe('editor action row — Open · Reroll · Size · QUALITY · Save Flame · Save Render (#103 Phase 6 Task 6.2)', () => {
+  it('renders the action row with all six controls in order', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+
+    const actionRow = root.querySelector('.pyr3-bar-action') as HTMLElement;
+    expect(actionRow).not.toBeNull();
+
+    const openBtn = actionRow.querySelector('.pyr3-edit-open') as HTMLElement;
+    const rerollBtn = actionRow.querySelector('.pyr3-edit-reroll') as HTMLElement;
+    const sizeBtn = actionRow.querySelector('.pyr3-bar-size') as HTMLElement;
+    const qualityLabel = actionRow.querySelector('.pyr3-bar-quality-label') as HTMLElement;
+    const qualityGroup = actionRow.querySelector('.pyr3-bar-quality-group') as HTMLElement;
+    const saveFlame = actionRow.querySelector('.pyr3-bar-save-flame') as HTMLElement;
+    const saveRender = actionRow.querySelector('.pyr3-bar-save-render') as HTMLElement;
+
+    expect(openBtn).not.toBeNull();
+    expect(rerollBtn).not.toBeNull();
+    expect(sizeBtn).not.toBeNull();
+    expect(qualityLabel).not.toBeNull();
+    expect(qualityGroup).not.toBeNull();
+    expect(saveFlame).not.toBeNull();
+    expect(saveRender).not.toBeNull();
+
+    // Document order: Open → Reroll → Size → QUALITY label → QUALITY group → Save Flame → Save Render
+    const ordered = [openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlame, saveRender];
+    for (let i = 1; i < ordered.length; i++) {
+      const earlier =
+        ordered[i - 1]!.compareDocumentPosition(ordered[i]!) & Node.DOCUMENT_POSITION_FOLLOWING;
+      expect(earlier).toBeTruthy();
+    }
+
+    expect(openBtn.textContent).toContain('Open');
+    expect(rerollBtn.textContent).toContain('Reroll');
+    expect(saveFlame.textContent).toContain('Save Flame');
+    expect(saveRender.textContent).toContain('Save Render');
+  });
+
+  it('Save Render carries the primary-CTA class', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const saveRender = root.querySelector('.pyr3-bar-save-render') as HTMLElement;
+    expect(saveRender.classList.contains('pyr3-btn-primary')).toBe(true);
+  });
+
+  it('Save Flame uses standard secondary styling (pyr3-btn class)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const saveFlame = root.querySelector('.pyr3-bar-save-flame') as HTMLElement;
+    expect(saveFlame.classList.contains('pyr3-btn')).toBe(true);
+    expect(saveFlame.classList.contains('pyr3-btn-primary')).toBe(false);
+  });
+
+  it('clicking Open fires onOpenFile', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onOpenFile = vi.fn();
+    mountEditBar(root, makeEditOpts({ onOpenFile }));
+    (root.querySelector('.pyr3-edit-open') as HTMLElement).click();
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking Reroll fires onReroll', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onReroll = vi.fn();
+    mountEditBar(root, makeEditOpts({ onReroll }));
+    (root.querySelector('.pyr3-edit-reroll') as HTMLElement).click();
+    expect(onReroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders QUALITY numeric group 10/25/50/75/100', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const qLabel = root.querySelector(
+      '.pyr3-bar-action .pyr3-bar-quality-label',
+    ) as HTMLElement;
+    expect(qLabel?.textContent?.toLowerCase()).toBe('quality');
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn'),
+    ) as HTMLButtonElement[];
+    const labels = buttons.map((b) => b.textContent);
+    expect(labels).toEqual(['10', '25', '50', '75', '100']);
+  });
+
+  it('highlights the active quality button in amber based on the current spp', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountEditBar(root, makeEditOpts());
+    handle.setQuality(75);
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn'),
+    ) as HTMLButtonElement[];
+    const active = buttons.filter((b) => b.classList.contains('on'));
+    expect(active).toHaveLength(1);
+    expect(active[0]!.textContent).toBe('75');
+  });
+
+  it('clicking a QUALITY button fires onQualityChange with that spp', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onQualityChange = vi.fn();
+    mountEditBar(root, makeEditOpts({ onQualityChange }));
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-action .pyr3-bar-quality-btn'),
+    ) as HTMLButtonElement[];
+    buttons.find((b) => b.textContent === '100')!.click();
+    expect(onQualityChange).toHaveBeenCalledWith(100);
+  });
+
+  it('clicking a Size menu item fires onSizeChange with the chosen dimensions', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onSizeChange = vi.fn();
+    mountEditBar(root, makeEditOpts({ onSizeChange }));
+    const sizeBtn = root.querySelector('.pyr3-bar-action .pyr3-bar-size') as HTMLElement;
+    sizeBtn.click();
+    const menu = document.querySelector('.pyr3-size-menu') as HTMLElement;
+    expect(menu).not.toBeNull();
+    const items = Array.from(menu.querySelectorAll('.pyr3-size-item')) as HTMLElement[];
+    items[0]!.click(); // first item under "Common" = HD = 1920×1080
+    expect(onSizeChange).toHaveBeenCalledWith(1920, 1080);
+  });
+
+  it('size menu in editor does NOT carry the "open in Editor" deflect footer', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const sizeBtn = root.querySelector('.pyr3-bar-action .pyr3-bar-size') as HTMLElement;
+    sizeBtn.click();
+    const menu = document.querySelector('.pyr3-size-menu') as HTMLElement;
+    const footer = menu.querySelector('.pyr3-size-footer');
+    expect(footer).toBeNull();
+    expect(menu.textContent ?? '').not.toContain('open in Editor');
+  });
+
+  it('does NOT render the viewer-side right cluster (no surprise / prev / next)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    expect(root.querySelector('.pyr3-bar-viewer-dice')).toBeNull();
+    expect(root.querySelector('.pyr3-bar-nav')).toBeNull();
+  });
+
+  it('clicking Save Flame fires onSaveFlame', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onSaveFlame = vi.fn();
+    mountEditBar(root, makeEditOpts({ onSaveFlame }));
+    (root.querySelector('.pyr3-bar-save-flame') as HTMLElement).click();
+    expect(onSaveFlame).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking Save Render fires onSave', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onSave = vi.fn();
+    mountEditBar(root, makeEditOpts({ onSave }));
+    (root.querySelector('.pyr3-bar-save-render') as HTMLElement).click();
+    expect(onSave).toHaveBeenCalledTimes(1);
   });
 });
 
