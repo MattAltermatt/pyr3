@@ -1,8 +1,8 @@
 // pyr3 — /v1/edit viewport section.
 //
 // Four number inputs (scale, cx, cy, rotate) plus a 🎯 fit button at the top.
-// Number inputs use the browser's native up/down spinners — no custom ◀/▶
-// steppers (those were redundant alongside the built-in spinner UI).
+// Number inputs use the scrubby chrome from edit-primitives.ts so the drag-
+// to-scrub + dbl-click-to-type pattern is uniform across the editor.
 //
 // `rotate` is optional on the Genome — we display 0 when undefined and only
 // write back to state when the value is non-zero (cleaner JSON round-trip:
@@ -13,11 +13,18 @@
 // (or the preview dims when genome.size is unset). Updates state + inputs
 // in one shot; the slow-lane scheduler picks up the three onChange calls
 // and coalesces them into one re-iterate.
+//
+// Phase 7 task 7.9: adopts the row primitives and uses `buildButton`
+// (`variant: 'accent'`) for the 🎯 fit affordance — the named-action style
+// per the visual-overhaul spec. The legacy `pyr3-edit-btn` class is
+// retained on the button element so existing call-sites + tests keep
+// matching.
 
 import { type SectionMount } from './edit-ui';
 import { type EditState } from './edit-state';
 import { computeFitViewport } from './edit-fit-viewport';
-import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
+import { type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
+import { buildRow, buildNumberInput, buildButton } from './edit-primitives';
 
 type ViewportField = 'scale' | 'cx' | 'cy' | 'rotate';
 
@@ -82,15 +89,18 @@ export const viewportSection: SectionMount = {
   build(host, state, onChange) {
     host.classList.add('pyr3-edit-section-viewport');
 
-    // Fit button — top of the section. Matches the editor's canonical
-    // pyr3-edit-btn style (same as 🖼️ render PNG / 🎲 reroll / 📂 open).
+    // Fit button — top of the section, btn-accent variant per spec.
     const fitRow = document.createElement('div');
     fitRow.className = 'pyr3-edit-buttons';
     fitRow.style.marginBottom = '6px';
-    const fitBtn = document.createElement('button');
-    fitBtn.type = 'button';
-    fitBtn.className = 'pyr3-edit-btn pyr3-edit-viewport-fit';
-    fitBtn.textContent = '🎯 fit';
+    const fitBtn = buildButton({
+      variant: 'accent',
+      label: 'fit',
+      icon: '🎯',
+      onClick: () => handleFit(),
+    });
+    // Legacy classes kept so existing tests + CSS still target the button.
+    fitBtn.classList.add('pyr3-edit-btn', 'pyr3-edit-viewport-fit');
     fitBtn.title = 'Move cx / cy / scale so the entire flame fits inside the render area';
     fitRow.appendChild(fitBtn);
     host.appendChild(fitRow);
@@ -100,38 +110,26 @@ export const viewportSection: SectionMount = {
     const handles: Partial<Record<ViewportField, ScrubbyHandle>> = {};
 
     for (const spec of FIELDS) {
-      const row = document.createElement('div');
-      row.className = `pyr3-edit-viewport-row pyr3-edit-viewport-${spec.key}`;
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.gap = '6px';
-      row.style.marginBottom = '4px';
-
-      const label = document.createElement('span');
-      label.textContent = spec.label;
-      label.className = 'pyr3-edit-viewport-label';
-      label.style.width = '54px';
-      label.style.fontSize = '11px';
-      label.style.color = 'var(--text-dim, #888)';
-
-      const handle = scrubbyInput({
+      const num = buildNumberInput({
         value: spec.read(state),
         kind: spec.kind,
-        ariaLabel: spec.label,
-        onInput: (v) => {
+        onChange: (v) => {
           spec.write(state, v);
           onChange(spec.key);
         },
       });
-      handle.el.classList.add(
+      num.el.classList.add(
         'pyr3-edit-viewport-input',
         `pyr3-edit-viewport-${spec.key}-input`,
       );
-      handle.el.style.flex = '1 1 auto';
-      handle.el.style.minWidth = '0';
-      handles[spec.key] = handle;
+      handles[spec.key] = num.handle;
 
-      row.append(label, handle.el);
+      const row = buildRow(spec.label, num.el);
+      row.classList.add(
+        'pyr3-edit-row',
+        'pyr3-edit-viewport-row',
+        `pyr3-edit-viewport-${spec.key}`,
+      );
       host.appendChild(row);
     }
 
@@ -154,7 +152,7 @@ export const viewportSection: SectionMount = {
     }
     document.addEventListener('pyr3:viewport-changed', syncInputsFromState as EventListener);
 
-    fitBtn.addEventListener('click', () => {
+    function handleFit(): void {
       const dims = fitCanvasDims(state);
       const fit = computeFitViewport(state.genome, dims.width, dims.height);
       if (!fit) {
@@ -182,6 +180,6 @@ export const viewportSection: SectionMount = {
       onChange('scale');
       onChange('cx');
       onChange('cy');
-    });
+    }
   },
 };

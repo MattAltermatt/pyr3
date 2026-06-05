@@ -69,6 +69,25 @@ describe('viewportSection — DOM smoke', () => {
     expect(btn.classList.contains('pyr3-edit-btn')).toBe(true);
   });
 
+  it('🎯 fit uses buildButton with the accent variant (task 7.9)', () => {
+    const { host } = mount();
+    const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLElement;
+    expect(btn.classList.contains('pyr3-btn')).toBe(true);
+    expect(btn.classList.contains('pyr3-btn-accent')).toBe(true);
+    // The 🎯 emoji icon is rendered ahead of the label text.
+    expect(btn.textContent).toContain('🎯');
+    expect(btn.textContent).toContain('fit');
+  });
+
+  it('rows use the shared 96px-label grid (.pyr3-row)', () => {
+    const { host } = mount();
+    const rows = host.querySelectorAll('.pyr3-row');
+    expect(rows.length).toBe(4);
+    for (const r of rows) {
+      expect((r as HTMLElement).style.gridTemplateColumns).toBe('96px 1fr');
+    }
+  });
+
   it('does NOT render the legacy ◀ / ▶ stepper buttons', () => {
     const { host } = mount();
     expect(host.querySelectorAll('.pyr3-edit-viewport-stepper').length).toBe(0);
