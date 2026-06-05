@@ -25,6 +25,7 @@ import {
 } from './renderer';
 import type { Genome } from './genome';
 import { COLORS } from './ui-tokens';
+import { HERO_GEN, HERO_ID } from './load-intent';
 
 export interface MountScreensaverOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -200,6 +201,49 @@ async function loadGenomeByRef(ref: SheepRef): Promise<Genome> {
   return parseFlame(xml).genome;
 }
 
+/** `?hero=true` — render only the canonical hero flame on repeat. Useful
+ *  for visually QAing build-up pacing / tonemap behavior against a known
+ *  fixture instead of a random shuffle. */
+function shouldUseHeroOnly(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('hero') === 'true';
+}
+
+function pickSourceRefs(allRefs: SheepRef[]): SheepRef[] {
+  if (shouldUseHeroOnly()) return [{ gen: HERO_GEN, id: HERO_ID }];
+  return allRefs;
+}
+
+interface StatusPanel {
+  el: HTMLElement;
+  setText(s: string): void;
+}
+
+function buildStatusPanel(): StatusPanel {
+  const panel = el('div', 'pyr3-screensaver-status');
+  Object.assign(panel.style, {
+    position: 'absolute',
+    top: '60px',
+    left: '16px',
+    padding: '8px 12px',
+    background: COLORS.bg.panel,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '6px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: '12px',
+    color: COLORS.text.primary,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+    zIndex: '11',
+    minWidth: '240px',
+    lineHeight: '1.45',
+  });
+  panel.textContent = 'starting…';
+  return {
+    el: panel,
+    setText: (s) => { panel.textContent = s; },
+  };
+}
+
 function clampDim(n: number, max: number): number {
   return Math.max(CANVAS_MIN_DIM, Math.min(max, Math.floor(n)));
 }
@@ -368,8 +412,9 @@ function startSlideshow(args: {
   format: GPUTextureFormat;
   canvasHost: HTMLElement;
   prefs: ScreensaverPrefs;
+  status: StatusPanel;
 }): ModeHandle {
-  const { device, format, canvasHost, prefs } = args;
+  const { device, format, canvasHost, prefs, status } = args;
   const state = createModeState();
   const isCancelled = () => state.cancelled;
 
@@ -379,17 +424,21 @@ function startSlideshow(args: {
     front.canvas.style.opacity = '0';
     back.canvas.style.opacity = '0';
 
+    status.setText('Loading corpus index…');
     const index = await loadFeatureIndex();
     if (isCancelled()) return;
-    const allRefs = index.filter(() => true);
+    const allRefs = pickSourceRefs(index.filter(() => true));
     if (allRefs.length === 0) return;
     const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
+    let slideNum = 0;
 
     // Prime the front layer with the first flame.
     const firstRef = queue.next();
     if (!firstRef) return;
+    slideNum++;
     let firstGenome: Genome;
     try {
+      status.setText(`Rendering slide #${slideNum} (${firstRef.gen}/${firstRef.id})…`);
       firstGenome = await loadGenomeByRef(firstRef);
     } catch {
       return;
@@ -423,8 +472,10 @@ function startSlideshow(args: {
           : queue.next();
       state.skipDir = 0;
       if (!pickRef) break;
+      slideNum++;
       let nextGenome: Genome;
       try {
+        status.setText(`Rendering slide #${slideNum} (${pickRef.gen}/${pickRef.id})…`);
         nextGenome = await loadGenomeByRef(pickRef);
       } catch {
         continue;
@@ -445,9 +496,17 @@ function startSlideshow(args: {
 
       // Wait the remainder of the hold period. Skip signal shortcircuits
       // immediately; pause extends.
-      const reason = await sleepInteractive(prefs.holdSec * 1000, state);
+      const holdStart = performance.now();
+      const holdMs = prefs.holdSec * 1000;
+      const statusTick = window.setInterval(() => {
+        const e = Math.min(prefs.holdSec, (performance.now() - holdStart) / 1000);
+        status.setText(`Slide #${slideNum - 1} on screen · ${e.toFixed(0)}s / ${prefs.holdSec}s · next ready`);
+      }, 500);
+      const reason = await sleepInteractive(holdMs, state);
+      window.clearInterval(statusTick);
       if (reason === 'cancelled') return;
       // 'done' and 'skipped' both fall through to the crossfade.
+      status.setText(`Crossfading to slide #${slideNum}…`);
 
       // Crossfade.
       prefetchTarget.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
@@ -480,8 +539,9 @@ function startBuildUp(args: {
   format: GPUTextureFormat;
   canvasHost: HTMLElement;
   prefs: ScreensaverPrefs;
+  status: StatusPanel;
 }): ModeHandle {
-  const { device, format, canvasHost, prefs } = args;
+  const { device, format, canvasHost, prefs, status } = args;
   const state = createModeState();
   const isCancelled = () => state.cancelled;
 
@@ -500,11 +560,13 @@ function startBuildUp(args: {
       filterRadius: DEFAULT_FILTER_RADIUS,
     });
 
+    status.setText('Loading corpus index…');
     const index = await loadFeatureIndex();
     if (isCancelled()) return;
-    const allRefs = index.filter(() => true);
+    const allRefs = pickSourceRefs(index.filter(() => true));
     if (allRefs.length === 0) return;
     const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
+    let flameNum = 0;
 
     while (!isCancelled()) {
       // Pick the next ref; skip-back consumes history.
@@ -514,8 +576,10 @@ function startBuildUp(args: {
           : queue.next();
       state.skipDir = 0;
       if (!ref) break;
+      flameNum++;
       let genome: Genome;
       try {
+        status.setText(`Loading flame #${flameNum} (${ref.gen}/${ref.id})…`);
         genome = await loadGenomeByRef(ref);
       } catch {
         continue;
@@ -596,6 +660,12 @@ function startBuildUp(args: {
             totalSamples: targetTotalSamples,
           });
           lastPresentAt = now;
+          const pct = Math.min(100, Math.round((targetQ / BUILD_UP_TARGET_Q) * 100));
+          status.setText(
+            `Building flame #${flameNum} (${ref.gen}/${ref.id})\n` +
+            `${elapsed.toFixed(1)}s / ${prefs.buildUpSec}s · q=${targetQ.toFixed(1)} / 50 · ${pct}%` +
+            (state.paused ? ' · PAUSED' : ''),
+          );
         }
 
         if (targetQ >= BUILD_UP_TARGET_Q && elapsed >= prefs.buildUpSec) break;
@@ -613,10 +683,21 @@ function startBuildUp(args: {
 
       // Rest period — hold at full quality. Skip signal shortcircuits;
       // pause extends.
+      const restStart = performance.now();
+      const restTick = window.setInterval(() => {
+        const e = Math.min(prefs.restSec, (performance.now() - restStart) / 1000);
+        status.setText(
+          `Flame #${flameNum} (${ref.gen}/${ref.id}) at q=50\n` +
+          `resting ${e.toFixed(0)}s / ${prefs.restSec}s` +
+          (state.paused ? ' · PAUSED' : ''),
+        );
+      }, 500);
       const restReason = await sleepInteractive(prefs.restSec * 1000, state);
+      window.clearInterval(restTick);
       if (restReason === 'cancelled') return;
 
       // Fade-to-black ~2s, then advance.
+      status.setText(`Fading out flame #${flameNum}…`);
       canvas.style.transition = 'opacity 2s';
       canvas.style.opacity = '0';
       await sleepCancellable(2200, isCancelled);
@@ -665,11 +746,15 @@ export function mountScreensaverPage(
       });
       root.append(pill);
       attachPillAutohide(pill);
+      const status = buildStatusPanel();
+      root.append(status.el);
       if (device && format) {
         runHandle =
           prefs.mode === 'build-up'
-            ? startBuildUp({ device, format, canvasHost, prefs })
-            : startSlideshow({ device, format, canvasHost, prefs });
+            ? startBuildUp({ device, format, canvasHost, prefs, status })
+            : startSlideshow({ device, format, canvasHost, prefs, status });
+      } else {
+        status.setText('WebGPU unavailable — preview mode only.');
       }
     },
   });
@@ -740,6 +825,7 @@ export function mountScreensaverPage(
     }
     window.clearTimeout(pillHideTimer);
     root.querySelector('.pyr3-screensaver-pill')?.remove();
+    root.querySelector('.pyr3-screensaver-status')?.remove();
     canvasHost.replaceChildren();
     // Exit fullscreen if we're in it. Idempotent if windowed.
     if (document.fullscreenElement) {
@@ -777,11 +863,13 @@ function injectHiddenRuleOnce(): void {
 :fullscreen .pyr3-screensaver-strip { display: none !important; }
 :-webkit-full-screen .pyr3-screensaver-strip { display: none !important; }
 .pyr3-screensaver-fs .pyr3-screensaver-strip { display: none !important; }
-/* Also hide the now-playing pill in fullscreen — it's already at top-right
-   of a normally-positioned overlay; in fullscreen we want pure flame. */
+/* Also hide the now-playing pill + status panel in fullscreen — pure flame. */
 :fullscreen .pyr3-screensaver-pill,
+:fullscreen .pyr3-screensaver-status,
 :-webkit-full-screen .pyr3-screensaver-pill,
-.pyr3-screensaver-fs .pyr3-screensaver-pill { display: none !important; }
+:-webkit-full-screen .pyr3-screensaver-status,
+.pyr3-screensaver-fs .pyr3-screensaver-pill,
+.pyr3-screensaver-fs .pyr3-screensaver-status { display: none !important; }
 `;
   document.head.append(style);
 }
