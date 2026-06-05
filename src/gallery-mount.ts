@@ -340,6 +340,29 @@ export async function pageOfSheepFiltered(
   return master.slice(start, start + perPage);
 }
 
+/** Find the page (1-indexed) that contains the given {gen, id} flame under
+ *  the active filter+sort. Walks the cached master list (same as
+ *  pageOfSheepFiltered slices) so the returned page matches what the
+ *  gallery actually displays. Returns 1 when the flame isn't in the
+ *  filtered set (degrade gracefully).
+ *
+ *  Bug fix 2026-06-04: the unfiltered pageForSheep walked manifest.gens
+ *  in native order, but the live gallery uses pageOfSheepFiltered with
+ *  default sort `time desc` — different walks, different pages. */
+export function pageForSheepFiltered(
+  gen: number,
+  id: number,
+  perPage: number,
+  spec: FilterSpec,
+  deps: FilteredPageDeps,
+): number {
+  if (perPage < 1) return 1;
+  const master = getMasterList(deps.index, spec);
+  const idx = master.findIndex(r => r.gen === gen && r.id === id);
+  if (idx < 0) return 1;
+  return Math.floor(idx / perPage) + 1;
+}
+
 /** Total pages for the given filter spec. 0 when the filter matches no
  *  records (drives the empty-state UX). */
 export function totalPagesFiltered(
