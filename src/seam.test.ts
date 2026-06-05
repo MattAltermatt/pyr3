@@ -49,6 +49,7 @@ const SEAM_EXEMPT = new Set<string>([
   'load-intent.ts',       // galleryUrl/corpusUrl read import.meta.env.BASE_URL
   'loader.ts',            // user-facing file loader, uses File API
   'ui-bar.ts',            // viewer bar — uses document
+  'about-mount.ts',       // /about page body — DOM-mounting (#103 visual overhaul)
   'variation-picker.ts',  // DOM-mounting variation picker (#79)
   'webgpu-check.ts',      // probes navigator.gpu — checking is its job
   'brotli.ts',            // platform-aware decoder probe (native vs wasm)
