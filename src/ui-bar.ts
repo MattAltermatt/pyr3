@@ -190,6 +190,11 @@ export interface EditBarOpts {
   onUndo: () => void;
   /** #108 — redo the next entry in the history stack. */
   onRedo: () => void;
+  /** #104 — caller resolves the current name template against live genome
+   *  state (returning the slugified filename preview) or returns `null` when
+   *  there's no template. Bar shows the result as `→ <preview>` next to the
+   *  name input. Called on every input event + every setMeta echo. */
+  computePreview?: (template: string) => string | null;
   onSizeChange: (width: number, height: number) => void;
   onQualityChange: (quality: number) => void;
   /** Fires when the user clicks a SETTLE ladder button. ms = quiet time
@@ -253,7 +258,27 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   // Spec default: empty value reads as 'untitled' via the placeholder. Hover
   // and focus expand the dashed underline to a solid amber line (CSS).
   nameInput.placeholder = 'untitled';
-  nameInput.addEventListener('input', () => opts.onNameChange(nameInput.value));
+
+  // #104 — template preview tail. Hidden by default; shown when the input
+  // contains a {placeholder}. computePreview is owned by main.ts (it holds
+  // the genome + seed + counter peek); the bar just renders whatever
+  // string it returns.
+  const previewEl = el('span', 'pyr3-bar-name-preview');
+  previewEl.style.display = 'none';
+  function updatePreview(): void {
+    const text = opts.computePreview?.(nameInput.value) ?? null;
+    if (text === null) {
+      previewEl.style.display = 'none';
+      previewEl.textContent = '';
+    } else {
+      previewEl.style.display = '';
+      previewEl.textContent = `→ ${text}`;
+    }
+  }
+  nameInput.addEventListener('input', () => {
+    opts.onNameChange(nameInput.value);
+    updatePreview();
+  });
 
   // Nick — small, after the name with "by" prefix. Always rendered; empty
   // value reads as 'you' via the placeholder.
@@ -269,8 +294,26 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const dimsSep = sep();
   const dims = el('span', 'pyr3-bar-quality');
 
+  // #104 — discoverability link for the template syntax. Always visible
+  // (subtle styling); opens the full reference in a new tab so the editor
+  // state isn't lost. ↗ arrow matches the bar's other external-link
+  // affordances (about, fork-it, more-flames).
+  const templatesLink = document.createElement('a');
+  templatesLink.className = 'pyr3-bar-templates-link';
+  templatesLink.href = '/help/name-templates.html';
+  templatesLink.target = '_blank';
+  templatesLink.rel = 'noopener noreferrer';
+  templatesLink.title = 'Use {placeholders} in the name — opens the full reference';
+  const templatesLabel = el('span');
+  templatesLabel.textContent = 'templates';
+  const templatesArrow = el('span', 'pyr3-bar-templates-arrow');
+  templatesArrow.textContent = '↗';
+  templatesLink.append(templatesLabel, templatesArrow);
+
   infoLeft.append(
     nameInput,
+    previewEl,
+    templatesLink,
     nickPrefix, nickInput,
     dimsSep, dims,
   );
@@ -464,6 +507,9 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
       if (document.activeElement !== nickInput) {
         nickInput.value = meta.authorNick ?? '';
       }
+      // #104 — genome state change (open / reroll / panel edit / etc.) can
+      // alter what a template resolves to, so re-tick the preview.
+      updatePreview();
     },
     setDimensions(d) {
       dims.textContent = d ? `${d.width}×${d.height}` : 'auto';
@@ -1475,6 +1521,31 @@ const BAR_CSS = `
   background: var(--bar-bg-3);
   text-decoration: underline solid var(--accent);
   text-decoration-thickness: 1.5px;
+}
+.pyr3-bar-name-preview {
+  color: var(--text-dim);
+  font: 400 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 6px;
+  white-space: nowrap;
+  user-select: text;
+}
+.pyr3-bar-templates-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font: 400 11px ui-sans-serif, system-ui, -apple-system, sans-serif;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.pyr3-bar-templates-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.pyr3-bar-templates-arrow {
+  font-size: 9px;
+  opacity: 0.8;
 }
 .pyr3-bar-nick-input {
   background: transparent;

@@ -438,6 +438,7 @@ async function main(): Promise<void> {
       setSettleDelayMs(ms: number): void;
       undo(): void;
       redo(): void;
+      computeFilenamePreview(template: string): string | null;
     } | null = null;
 
     // Persisted author nick — read on entry, written on every change so a
@@ -472,6 +473,7 @@ async function main(): Promise<void> {
       onReroll: () => editorRef?.reroll(),
       onUndo: () => editorRef?.undo(),
       onRedo: () => editorRef?.redo(),
+      computePreview: (template) => editorRef?.computeFilenamePreview(template) ?? null,
       onSizeChange: (w, h) => editorRef?.setSize(w, h),
       onQualityChange: (q) => editorRef?.setQuality(q),
       onSettleChange: (ms) => {
@@ -537,6 +539,16 @@ async function main(): Promise<void> {
       },
     });
     editorRef = editor;
+
+    // #104 — the editor's first onStateChange echo fires DURING mountEditPage
+    // construction (before this assignment), so the bar's preview tail can't
+    // resolve the template (computeFilenamePreview routes through editorRef,
+    // which was still null). Re-tick setMeta now that editorRef is live so a
+    // cold-start with a templated genome.name shows its preview immediately.
+    editBar.setMeta({
+      flameName: editor.state.genome.name,
+      authorNick: editor.state.genome.nick,
+    });
 
     // #108 — keyboard handler scoped to the editor's lifecycle. Cmd/Ctrl+Z
     // undo, Shift+Cmd/Ctrl+Z or Ctrl+Y redo. metaKey || ctrlKey makes both

@@ -28,6 +28,8 @@ import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { setCurrentFlame } from './app-state';
 import { createHistory, type History } from './edit-history';
+import { hasTemplate, resolveTemplate } from './flame-name-template';
+import { peekIndex, bumpIndex } from './flame-name-counter';
 
 export interface MountEditPageOpts {
   /** Root container the editor takes over (replaceChildren). The caller
@@ -74,6 +76,12 @@ export interface EditPageHandle {
   /** Test/inspection hook — exposes the live EditState so a host can grab
    *  the current genome. */
   readonly state: EditState;
+  /** #104 — resolve a template string against the editor's live state
+   *  (genome / seed / counter peek) and return the slugified filename
+   *  preview. Returns `null` when the input has no `{placeholder}`. The
+   *  bar wires this to its `computePreview` so the `→ ...` tail next to
+   *  the name input ticks live. */
+  computeFilenamePreview(template: string): string | null;
   /** #108 — step the editor back one history entry. No-op when the stack
    *  pointer is at the oldest entry. */
   undo(): void;
@@ -580,6 +588,39 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     input.click();
   }
 
+  // #104 — resolve `state.genome.name` against live state if it contains a
+  // {placeholder}. Returns the slugified filename (no extension); falls back
+  // to slugify(state.genome.name) when the name is a plain literal. The
+  // genome.name field itself stays untouched (we want re-opens to show the
+  // editable template, not a frozen resolved string).
+  function resolveCurrentFilename(): string {
+    const template = state.genome.name;
+    if (!hasTemplate(template)) return slugify(template);
+    const resolved = resolveTemplate(template, {
+      genome: state.genome,
+      seed: state.seed,
+      now: new Date(),
+      index: peekIndex(template),
+      random: Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0'),
+    });
+    return slugify(resolved);
+  }
+
+  // #104 — preview helper for the bar. Returns the slugified resolved name
+  // (no extension) when the user's input contains a template; null when
+  // it's a plain literal so the bar can hide the `→ ...` tail.
+  function computeFilenamePreview(template: string): string | null {
+    if (!hasTemplate(template)) return null;
+    const resolved = resolveTemplate(template, {
+      genome: state.genome,
+      seed: state.seed,
+      now: new Date(),
+      index: peekIndex(template),
+      random: Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0'),
+    });
+    return slugify(resolved);
+  }
+
   async function handleRenderPng(): Promise<void> {
     const targetW = state.genome.size?.width ?? 1024;
     const targetH = state.genome.size?.height ?? 1024;
@@ -606,6 +647,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       const view = ctx.getCurrentTexture().createView();
       editRenderer.fullRenderAt(state.genome, state.seed, targetW, targetH, view);
 
+      const filename = resolveCurrentFilename();
+      const template = state.genome.name;
       await new Promise<void>((resolve, reject) => {
         canvas.toBlob((blob) => {
           if (!blob) {
@@ -615,11 +658,20 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `${slugify(state.genome.name)}.png`;
+          a.download = `${filename}.png`;
           document.body.appendChild(a);
           a.click();
           a.remove();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
+          // #104 — only bump the counter on a confirmed successful save (the
+          // anchor click fired without throwing). A toBlob failure would
+          // have rejected above so we'd never reach this point. Echo
+          // onStateChange so the bar's preview tail re-ticks to the
+          // bumped index.
+          if (hasTemplate(template)) {
+            bumpIndex(template);
+            opts.onStateChange?.(state);
+          }
           resolve();
         }, 'image/png');
       });
@@ -649,17 +701,29 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
 
   function handleSaveFile(): void {
     try {
+      // #104 — note: genomeToJson writes state.genome.name unchanged (the
+      // literal template), so re-opens preserve editability. The filename
+      // uses the resolved form.
       const json = JSON.stringify(genomeToJson(state.genome), null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${slugify(state.genome.name)}.pyr3.json`;
+      const template = state.genome.name;
+      a.download = `${resolveCurrentFilename()}.pyr3.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       // Revoke after a tick so the browser has time to start the download.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      // #104 — anchor.click() succeeded; bump the per-template counter so
+      // the next save lands at the next index. Echo onStateChange so the
+      // bar's preview tail re-ticks to the bumped index (the bar's preview
+      // is recomputed inside setMeta).
+      if (hasTemplate(template)) {
+        bumpIndex(template);
+        opts.onStateChange?.(state);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`pyr3-edit: save failed — ${msg}`);
@@ -737,6 +801,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       if (!Number.isFinite(ms) || ms < 0) return;
       settleDelayMs = Math.round(ms);
       ui?.setSettleDelayMs(settleDelayMs);
+    },
+    computeFilenamePreview(template: string): string | null {
+      return computeFilenamePreview(template);
     },
     undo(): void {
       // Flush any pending debounce so an in-flight slider drag commits
