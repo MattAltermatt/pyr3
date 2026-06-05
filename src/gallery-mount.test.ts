@@ -250,6 +250,120 @@ function makeOrchHarness(opts: { autoResolve?: boolean } = {}) {
   };
 }
 
+describe('mountGallery — 3×3 square tiles with <gen>/<id> link (#103 Phase 4 Task 4.2)', () => {
+  it('tile grid container uses grid-template-columns: repeat(3, 1fr)', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    const grid = container.querySelector('.pyr3-gallery-grid') as HTMLElement;
+    expect(grid).not.toBeNull();
+    expect(grid.style.gridTemplateColumns).toBe('repeat(3, 1fr)');
+    handle.destroy();
+  });
+
+  it('every tile has aspect-ratio: 1 (square layout)', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    const wraps = container.querySelectorAll<HTMLElement>('.pyr3-tile-wrap');
+    expect(wraps).toHaveLength(9);
+    for (const wrap of wraps) {
+      // CSS normalizes `aspect-ratio: 1` to `1 / 1` (CSS-equivalent canonical form);
+      // accept either so the assertion stays portable across DOM impls.
+      expect(['1', '1 / 1']).toContain(wrap.style.aspectRatio);
+    }
+    handle.destroy();
+  });
+
+  it('every tile carries a .pyr3-tile-id label matching <gen>/<id> (id zero-padded to 5)', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+
+    const labels = container.querySelectorAll<HTMLElement>('.pyr3-tile-id');
+    expect(labels.length).toBe(9);
+    // Page 1 of the orch corpus (gen 100, ids 1..9).
+    expect(labels[0]!.textContent).toBe('100/00001');
+    expect(labels[8]!.textContent).toBe('100/00009');
+    handle.destroy();
+  });
+
+  it('clicking the id label navigates to the viewer (same href as the tile)', async () => {
+    const container = document.createElement('div');
+    const harness = makeOrchHarness();
+    const fetchGenome = async (): Promise<Genome | null> => stubGenome();
+
+    const handle = await mountGallery(1, {
+      renderer: stubRenderer(),
+      device: null as unknown as GPUDevice,
+      format: 'bgra8unorm',
+      container,
+      fetchGenome,
+      draftTier: DRAFT_TIER,
+      startRender: harness.startRender,
+      loadAvail: orchLoadAvail,
+      loadManifest: orchLoadManifest,
+    });
+
+    await flushMicrotasks();
+
+    // The id label is mounted inside the wrap anchor, so a click anywhere in
+    // the wrap (image or label) navigates via the wrap's href. We assert the
+    // wrap is the anchor + the label lives inside it (so DOM-bubbled clicks
+    // resolve to the same corpus URL).
+    const firstWrap = container.querySelectorAll('.pyr3-tile-wrap')[0] as HTMLAnchorElement;
+    expect(firstWrap.tagName).toBe('A');
+    expect(firstWrap.getAttribute('href')).toMatch(/v1\/gen\/100\/id\/1$/);
+    const label = firstWrap.querySelector('.pyr3-tile-id') as HTMLElement;
+    // closest('a') walks up to the wrap anchor — confirms the label click
+    // bubbles to the same navigation target.
+    const labelAnchor = label.closest('a') as HTMLAnchorElement;
+    expect(labelAnchor).toBe(firstWrap);
+    expect(labelAnchor.getAttribute('href')).toMatch(/v1\/gen\/100\/id\/1$/);
+    handle.destroy();
+  });
+});
+
 describe('mountGallery — DOM grid', () => {
   it('mounts 9 cell anchors in the container', async () => {
     const container = document.createElement('div');

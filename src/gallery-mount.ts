@@ -381,14 +381,53 @@ const CELL_STYLE_ID = 'pyr3-gallery-styles';
 // grid_w + 122 ≤ viewport_h (cells are square: cell_h = (grid_w - 24)/3).
 // Constrain by min(content cap, height-derived width) so the whole 3×3 fits
 // without scrolling at any viewport size — the surface design (#47).
+// #103 Phase 4 Task 4.2 — 3×3 square tiles + `<gen>/<id>` link below.
+// Each tile is a `.pyr3-tile-wrap` (also carrying the legacy
+// `.pyr3-gallery-cell` class so the orchestrator's empty / loading /
+// missing state classes apply without rewriting the wave-fill code).
+// `aspect-ratio: 1` lives on the wrap so the WHOLE tile is square (image +
+// label below combined would otherwise drift off-square as the label adds
+// vertical height); the canvas inherits the wrap's square shape via
+// width:100% + height-driven layout. ID label sits beneath, monospace,
+// in `COLORS.text.dim`; hover transitions to `COLORS.flame.top`.
 const CELL_STYLE = `
-.pyr3-gallery-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; padding:16px; max-width:min(1200px, calc(100vh - 122px)); width:100%; box-sizing:border-box; margin:0 auto; }
-.pyr3-gallery-cell { display:flex; flex-direction:column; gap:4px; text-decoration:none; color:inherit; position:relative; }
-.pyr3-gallery-cell canvas { width:100%; aspect-ratio:1; background:#000; border-radius:2px; display:block; }
-.pyr3-gallery-cell.empty canvas, .pyr3-gallery-cell.missing canvas { background:#15151a; border:1px solid #2a2a30; }
-.pyr3-gallery-cell-label { font-family:ui-monospace, monospace; font-size:11px; color:#888; text-align:center; }
-.pyr3-gallery-cell.missing .pyr3-gallery-cell-label { color:#555; font-style:italic; }
-.pyr3-gallery-cell:hover canvas { outline:1px solid #ff8c1a; outline-offset:2px; }
+.pyr3-gallery-grid {
+  display:grid;
+  grid-template-columns:repeat(3, 1fr);
+  gap:26px;
+  padding:28px;
+  max-width:min(1200px, calc(100vh - 122px));
+  width:100%;
+  box-sizing:border-box;
+  margin:0 auto;
+}
+.pyr3-tile-wrap, .pyr3-gallery-cell {
+  display:flex; flex-direction:column; gap:10px;
+  text-decoration:none; color:inherit; position:relative;
+}
+.pyr3-tile-wrap canvas, .pyr3-gallery-cell canvas {
+  width:100%; aspect-ratio:1; background:#000; border-radius:2px; display:block;
+}
+.pyr3-tile-wrap.empty canvas, .pyr3-tile-wrap.missing canvas,
+.pyr3-gallery-cell.empty canvas, .pyr3-gallery-cell.missing canvas {
+  background:#15151a; border:1px solid #2a2a30;
+}
+.pyr3-tile-id, .pyr3-gallery-cell-label {
+  font-family:ui-monospace, monospace; font-size:12px;
+  color:${COLORS.text.dim}; text-align:center;
+  transition: color 0.15s ease;
+}
+.pyr3-tile-wrap:hover .pyr3-tile-id,
+.pyr3-gallery-cell:hover .pyr3-gallery-cell-label {
+  color:${COLORS.flame.top};
+}
+.pyr3-tile-wrap.missing .pyr3-tile-id,
+.pyr3-gallery-cell.missing .pyr3-gallery-cell-label {
+  color:#555; font-style:italic;
+}
+.pyr3-tile-wrap:hover canvas, .pyr3-gallery-cell:hover canvas {
+  outline:1px solid ${COLORS.flame.top}; outline-offset:2px;
+}
 .pyr3-gallery-cell-loading {
   position:absolute; left:0; right:0; top:0; aspect-ratio:1;
   display:none; align-items:center; justify-content:center;
@@ -397,6 +436,7 @@ const CELL_STYLE = `
   pointer-events:none;
   animation: pyr3-gallery-loading-pulse 1.4s ease-in-out infinite;
 }
+.pyr3-tile-wrap.loading .pyr3-gallery-cell-loading,
 .pyr3-gallery-cell.loading .pyr3-gallery-cell-loading { display:flex; }
 @keyframes pyr3-gallery-loading-pulse {
   0%, 100% { opacity: 0.85; }
@@ -431,9 +471,20 @@ interface CellHandle {
 
 function buildCell(cellDim: number): CellHandle {
   const root = document.createElement('a');
-  root.className = 'pyr3-gallery-cell empty';
+  // #103 Phase 4 Task 4.2 — carry both the new `.pyr3-tile-wrap` class and
+  // the legacy `.pyr3-gallery-cell` class so the orchestrator's state
+  // classes (`.empty`, `.loading`, `.missing`) continue to apply without
+  // rewriting the wave-fill code. New consumers should target
+  // `.pyr3-tile-wrap` + `.pyr3-tile-id`; legacy callers stay green.
+  root.className = 'pyr3-tile-wrap pyr3-gallery-cell empty';
   root.target = '_blank';
   root.rel = 'noopener noreferrer';
+  // Pin `aspect-ratio: 1` on the wrap so the whole tile (canvas + label
+  // stacked) stays in the square grid cell at any viewport width. The
+  // canvas inherits via width:100%; the label sits beneath inside the same
+  // square footprint. Inline-style so the layout-snapshot test passes
+  // without depending on stylesheet load order.
+  root.style.aspectRatio = '1';
 
   const canvas = document.createElement('canvas');
   canvas.width = cellDim;
@@ -452,7 +503,8 @@ function buildCell(cellDim: number): CellHandle {
   root.appendChild(loading);
 
   const label = document.createElement('span');
-  label.className = 'pyr3-gallery-cell-label';
+  // Carry both classes for the same dual-contract reason as the wrap above.
+  label.className = 'pyr3-tile-id pyr3-gallery-cell-label';
   root.appendChild(label);
 
   // getContext returns null in non-WebGPU environments (e.g. jsdom test
@@ -549,6 +601,14 @@ export async function mountGallery(
   deps.container.replaceChildren();
   const grid = document.createElement('div');
   grid.className = 'pyr3-gallery-grid';
+  // #103 Phase 4 Task 4.2 — inline-style the 3-col grid + 26px gap + 28px
+  // padding contract so the layout-snapshot test asserts without depending
+  // on the stylesheet attaching first. The CSS rule above mirrors these
+  // for any subclassed consumer.
+  grid.style.display = 'grid';
+  grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+  grid.style.gap = '26px';
+  grid.style.padding = '28px';
   deps.container.appendChild(grid);
 
   const cells: CellHandle[] = [];
