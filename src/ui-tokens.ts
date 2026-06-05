@@ -13,6 +13,7 @@ export const COLORS = {
     info:   '#131316',
     action: '#15110d',
     panel:  '#141417',
+    input:  '#0a0a0c',
   },
   border: '#26262c',
   text: {

@@ -14,6 +14,7 @@ describe('ui-tokens', () => {
     expect(COLORS.bg.info).toBe('#131316');
     expect(COLORS.bg.action).toBe('#15110d');
     expect(COLORS.bg.panel).toBe('#141417');
+    expect(COLORS.bg.input).toBe('#0a0a0c');
   });
 
   it('exposes text tiers and named accents', () => {
