@@ -42,8 +42,8 @@ export interface ScreensaverPageHandle {
   stop(): void;
 }
 
-const CANVAS_MAX_W = 1920;
-const CANVAS_MAX_H = 1080;
+const CANVAS_MAX_W = 2560;
+const CANVAS_MAX_H = 1440;
 const CANVAS_MIN_DIM = 256;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -165,8 +165,15 @@ function buildNowPlayingPill(cb: PillCallbacks): HTMLElement {
   return pill;
 }
 
+/** Per-page tracker so the fullscreenchange listener can tell apart "user
+ *  pressed F to toggle off" (no stop) from "user pressed Esc / browser
+ *  exited" (stop playback). Set true just before our toggle calls
+ *  exitFullscreen; cleared on the resulting fullscreenchange. */
+const fullscreenIntent = { userToggledOff: false };
+
 async function toggleFullscreen(target: HTMLElement): Promise<void> {
   if (document.fullscreenElement) {
+    fullscreenIntent.userToggledOff = true;
     await document.exitFullscreen();
   } else {
     await target.requestFullscreen();
@@ -184,11 +191,14 @@ function clampDim(n: number, max: number): number {
 
 function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
   const canvas = el('canvas', 'pyr3-screensaver-canvas');
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = host.clientWidth || 1024;
-  const cssH = host.clientHeight || 1024;
-  canvas.width = clampDim(cssW * dpr, CANVAS_MAX_W);
-  canvas.height = clampDim(cssH * dpr, CANVAS_MAX_H);
+  // Render at the user's screen resolution (capped) so fullscreen looks
+  // pixel-native. CSS scales 100% in the windowed view; browser
+  // downsamples cleanly. window.screen reports device pixels on all
+  // modern browsers.
+  const sw = (typeof window !== 'undefined' && window.screen?.width)  ? window.screen.width  : 1920;
+  const sh = (typeof window !== 'undefined' && window.screen?.height) ? window.screen.height : 1080;
+  canvas.width = clampDim(sw, CANVAS_MAX_W);
+  canvas.height = clampDim(sh, CANVAS_MAX_H);
   Object.assign(canvas.style, {
     position: 'absolute',
     inset: '0',
@@ -526,7 +536,12 @@ function startBuildUp(args: {
         const desiredSamples = targetQ * totalPixels;
         const delta = desiredSamples - samplesAccumulated;
         if (delta > 0) {
-          const sppToAdd = Math.max(1, Math.ceil(delta / totalPixels));
+          // Fractional spp is fine — computeDispatch rounds to sample count
+          // internally and floors at MIN_ITERS_PER_WALKER. Passing the raw
+          // fraction lets per-frame deltas stay small (tens of K samples,
+          // not millions) so the brightness ramps smoothly instead of
+          // jumping on the first dispatch.
+          const sppToAdd = delta / totalPixels;
           const dispatch = computeDispatch(sppToAdd, W, H);
           renderer.iterate({
             genome,
@@ -676,6 +691,11 @@ export function mountScreensaverPage(
     window.clearTimeout(pillHideTimer);
     root.querySelector('.pyr3-screensaver-pill')?.remove();
     canvasHost.replaceChildren();
+    // Exit fullscreen if we're in it. Idempotent if windowed.
+    if (document.fullscreenElement) {
+      fullscreenIntent.userToggledOff = true;
+      void document.exitFullscreen().catch(() => {});
+    }
     landing.card.classList.remove('hidden');
     landing.refresh();
   }
@@ -691,6 +711,10 @@ function injectHiddenRuleOnce(): void {
   if (hiddenRuleInjected) return;
   hiddenRuleInjected = true;
   const style = document.createElement('style');
-  style.textContent = '.pyr3-screensaver-card.hidden { display: none; }';
+  style.textContent = `
+.pyr3-screensaver-card.hidden { display: none; }
+/* In fullscreen, hide the top strip — the flame owns the whole screen. */
+.pyr3-screensaver-fs .pyr3-screensaver-strip { display: none; }
+`;
   document.head.append(style);
 }
