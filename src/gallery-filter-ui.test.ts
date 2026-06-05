@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Window } from 'happy-dom';
-import { mountFilterDrawer, buildActiveChipStrip, buildSortRow } from './gallery-filter-ui';
+import {
+  mountFilterDrawer,
+  buildActiveChipStrip,
+  buildSortRow,
+  buildMetricRow,
+} from './gallery-filter-ui';
 import { DEFAULT_FILTER_SPEC, type FilterSpec, type SortMode, type SortDir } from './gallery-filter';
 
 function setupDom(): void {
@@ -17,6 +22,10 @@ function setupDom(): void {
   globalThis.HTMLSelectElement = w.HTMLSelectElement;
   // @ts-expect-error
   globalThis.Event = w.Event;
+  // @ts-expect-error
+  globalThis.MouseEvent = w.MouseEvent;
+  // @ts-expect-error
+  globalThis.window = w;
 }
 
 function makeCounts() {
@@ -785,3 +794,214 @@ describe('buildSortRow (Task 5.3) — sort dropdown + direction toggle', () => {
     expect(dirBtn.textContent).toContain('desc');
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// Task 5.4 — Collapsible metric rows with histogram
+// ──────────────────────────────────────────────────────────────────────────
+
+describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', () => {
+  function makeBuckets(values: number[]): Map<number, number> {
+    const m = new Map<number, number>();
+    for (let i = 0; i < values.length; i++) m.set(i, values[i]!);
+    return m;
+  }
+
+  it('renders header with chevron, label, and current range value', () => {
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0.3,
+      max: 0.7,
+      counts: makeBuckets([1, 2, 3, 4, 5, 6, 5, 4, 3, 2]),
+      onRange: vi.fn(),
+    });
+    const header = row.querySelector('.pyr3-metric-header') as HTMLElement;
+    expect(header).toBeTruthy();
+    expect(header.textContent).toContain('color variation');
+    expect(header.textContent).toContain('0.3');
+    expect(header.textContent).toContain('0.7');
+  });
+
+  it('collapsed by default — only header shown, chevron is ▸, body hidden', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      counts: makeBuckets([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      onRange: vi.fn(),
+    });
+    const chevron = row.querySelector('.pyr3-metric-chevron') as HTMLElement;
+    expect(chevron.textContent).toContain('▸');
+    const body = row.querySelector('.pyr3-metric-body') as HTMLElement;
+    expect(body).toBeTruthy();
+    expect(body.style.display).toBe('none');
+  });
+
+  it('shows "all" instead of a range when both bounds are at default (min=0, max=null)', () => {
+    const row = buildMetricRow({
+      metric: 'entropy',
+      label: 'complexity',
+      min: 0,
+      max: null,
+      counts: makeBuckets([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+      onRange: vi.fn(),
+    });
+    const value = row.querySelector('.pyr3-metric-value') as HTMLElement;
+    expect(value.textContent).toBe('all');
+  });
+
+  it('clicking the chevron expands the row — body becomes visible, chevron flips to ▾', () => {
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0.2,
+      max: 0.6,
+      counts: makeBuckets([0, 1, 2, 3, 4, 5, 4, 3, 2, 1]),
+      onRange: vi.fn(),
+    });
+    const header = row.querySelector('.pyr3-metric-header') as HTMLElement;
+    header.click();
+    const chevron = row.querySelector('.pyr3-metric-chevron') as HTMLElement;
+    expect(chevron.textContent).toContain('▾');
+    const body = row.querySelector('.pyr3-metric-body') as HTMLElement;
+    expect(body.style.display).toBe('block');
+  });
+
+  it('clicking the chevron a second time collapses again', () => {
+    const row = buildMetricRow({
+      metric: 'meanLum',
+      label: 'brightness',
+      min: 0.1,
+      max: 0.5,
+      counts: makeBuckets([0, 1, 1, 2, 2, 3, 3, 4, 4, 5]),
+      onRange: vi.fn(),
+    });
+    const header = row.querySelector('.pyr3-metric-header') as HTMLElement;
+    header.click();  // expand
+    header.click();  // collapse
+    const body = row.querySelector('.pyr3-metric-body') as HTMLElement;
+    expect(body.style.display).toBe('none');
+    const chevron = row.querySelector('.pyr3-metric-chevron') as HTMLElement;
+    expect(chevron.textContent).toContain('▸');
+  });
+
+  it('expanded body has a histogram with exactly 10 bucket bars', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      counts: makeBuckets([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const bars = row.querySelectorAll('.pyr3-metric-bar');
+    expect(bars).toHaveLength(10);
+  });
+
+  it('bars within the current range carry an .in-range class, others do not', () => {
+    // min=0.3, max=0.7 → buckets 3..6 in-range (max=0.7 is exclusive upper
+    // edge in the bucket-strip convention used by the existing stat rows;
+    // see Math.ceil(max*10)-1 in mountStatRow's renderStrip).
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0.3,
+      max: 0.7,
+      counts: makeBuckets([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
+    expect(bars[0]!.classList.contains('in-range')).toBe(false);
+    expect(bars[2]!.classList.contains('in-range')).toBe(false);
+    expect(bars[3]!.classList.contains('in-range')).toBe(true);
+    expect(bars[5]!.classList.contains('in-range')).toBe(true);
+    expect(bars[6]!.classList.contains('in-range')).toBe(true);
+    expect(bars[7]!.classList.contains('in-range')).toBe(false);
+  });
+
+  it('max=null treats every bucket above min as in-range (no upper cap)', () => {
+    const row = buildMetricRow({
+      metric: 'entropy',
+      label: 'complexity',
+      min: 0.4,
+      max: null,
+      counts: makeBuckets([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
+    expect(bars[3]!.classList.contains('in-range')).toBe(false);
+    expect(bars[4]!.classList.contains('in-range')).toBe(true);
+    expect(bars[9]!.classList.contains('in-range')).toBe(true);
+  });
+
+  it('bar heights are proportional to bucket counts (max bucket → full height)', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      // Bucket 5 has 100; others 50 → bar 5 should be twice the height of others.
+      counts: makeBuckets([50, 50, 50, 50, 50, 100, 50, 50, 50, 50]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
+    // height stored as a percentage string like "100%" or "50%"
+    expect(bars[5]!.style.height).toBe('100%');
+    expect(bars[0]!.style.height).toBe('50%');
+  });
+
+  it('handles empty histogram (all zero counts) without divide-by-zero — bar heights collapse to 0', () => {
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0,
+      max: null,
+      counts: makeBuckets([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const bars = Array.from(row.querySelectorAll('.pyr3-metric-bar')) as HTMLElement[];
+    for (const bar of bars) {
+      // Either 0% or a small minimum — must not be NaN%/Infinity%.
+      expect(bar.style.height.endsWith('%')).toBe(true);
+      expect(bar.style.height).not.toContain('NaN');
+      expect(bar.style.height).not.toContain('Infinity');
+    }
+  });
+
+  it('renders edge brackets at the start + end of the current range', () => {
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0.3,
+      max: 0.7,
+      counts: makeBuckets([5, 5, 5, 5, 5, 5, 5, 5, 5, 5]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const brackets = row.querySelectorAll('.pyr3-metric-bracket');
+    expect(brackets.length).toBe(2);
+  });
+
+  it('expanded body shows the readable range readout when a range is set', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0.2,
+      max: 0.8,
+      counts: makeBuckets([1, 2, 3, 4, 5, 4, 3, 2, 1, 0]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const readout = row.querySelector('.pyr3-metric-readout') as HTMLElement;
+    expect(readout).toBeTruthy();
+    expect(readout.textContent).toContain('0.2');
+    expect(readout.textContent).toContain('0.8');
+  });
+});
+

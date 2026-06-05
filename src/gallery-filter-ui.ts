@@ -1305,3 +1305,271 @@ export function buildSortRow(
 
   return row;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Task 5.4 — Collapsible metric rows with histogram
+// ──────────────────────────────────────────────────────────────────────────
+//
+// `buildMetricRow` returns a vertical stack: a header (chevron + label +
+// current-range value) on top, and an expanded body (10-bucket histogram +
+// edge brackets + range readout) below. Clicking the header toggles the
+// body open/closed. The histogram bars carry an `.in-range` class when
+// their bucket falls inside the current [min, max] range — the row's
+// caller picks the colors via CSS.
+//
+// In-range bucket convention mirrors the existing `mountStatRow`:
+//   minBucket = floor(min × 10)
+//   maxBucket = max === null ? 9 : ceil(max × 10) - 1
+// So a min=0.3 / max=0.7 range covers buckets 3..6 (i.e. the deciles
+// [0.3, 0.4) … [0.6, 0.7)).
+//
+// The row is standalone — no FilterSpec coupling. The caller passes the
+// current bounds + bucket counts + an `onRange(min, max | null)` callback.
+// Task 5.5 will wire brush-select drag onto the histogram; until then the
+// `onRange` callback is unused by this builder.
+
+export type MetricKey = 'coverage' | 'entropy' | 'colorVar' | 'meanLum';
+
+export interface MetricRowOpts {
+  metric: MetricKey;
+  label: string;
+  /** Current lower bound on the metric in 0..1 (inclusive). */
+  min: number;
+  /** Current upper bound on the metric in 0..1 (exclusive at decile edge),
+   *  or null for "no upper cap". When BOTH min=0 AND max=null the row's
+   *  header displays `all` instead of a numeric range. */
+  max: number | null;
+  /** Decile bucket (0..9) → count of records in that bucket. Missing
+   *  buckets are treated as 0. */
+  counts: Map<number, number>;
+  /** Fired when the user brush-selects a new range. Lower bound is always
+   *  the decile floor (e.g. 0.3 for bucket 3); upper bound is the next
+   *  decile ceiling (e.g. 0.8 for bucket 7, since bucket 7 = [0.7, 0.8)
+   *  — see the upper-edge convention in mountStatRow). max=1.0 maps to
+   *  null (no cap) so the spec stays canonical. */
+  onRange: (min: number, max: number | null) => void;
+  /** Optional cold-start expanded mode — when true the body opens
+   *  immediately. Default false (collapsed). */
+  initiallyExpanded?: boolean;
+}
+
+const METRIC_ROW_STYLES_ID = 'pyr3-metric-row-styles';
+
+const METRIC_ROW_STYLES = `
+.pyr3-metric-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #d8d8de;
+}
+.pyr3-metric-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.pyr3-metric-header:hover { color: #ffbe3e; }
+.pyr3-metric-chevron {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  color: #8a8a92;
+}
+.pyr3-metric-label {
+  color: #d8d8de;
+  flex: 0 0 auto;
+  /* Pin a min-width so the value text doesn't shift the row's center as
+   * the range changes (matches the "no-jump UI" convention). */
+  min-width: 110px;
+}
+.pyr3-metric-value {
+  color: #8a8a92;
+  font-size: 11px;
+}
+.pyr3-metric-body {
+  display: none;
+  padding: 6px 0 4px;
+}
+.pyr3-metric-histogram {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+  padding: 4px;
+  cursor: crosshair;
+}
+.pyr3-metric-bar {
+  flex: 1 1 0;
+  background: #e87c1a;
+  opacity: 0.35;
+  border-radius: 1px;
+  transition: opacity 80ms ease-out;
+  min-height: 2px;
+}
+.pyr3-metric-bar.in-range {
+  background: #ffbe3e;
+  opacity: 1;
+}
+.pyr3-metric-bracket {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: #ffbe3e;
+  pointer-events: none;
+}
+.pyr3-metric-readout {
+  margin-top: 4px;
+  color: #8a8a92;
+  font-size: 11px;
+}
+`;
+
+function injectMetricRowStylesOnce(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(METRIC_ROW_STYLES_ID)) return;
+  const style = document.createElement('style');
+  style.id = METRIC_ROW_STYLES_ID;
+  style.textContent = METRIC_ROW_STYLES;
+  document.head.appendChild(style);
+}
+
+/** Format the current range for the header line. Returns `all` when both
+ *  bounds are at their defaults (min=0, max=null) — the "all" sentinel is
+ *  more legible than `0.0–all` at a glance. Otherwise emits an en-dash
+ *  range (e.g. `0.3–0.7`) for both-bounded, `≥ 0.3` for lower-only,
+ *  `≤ 0.7` for upper-only. */
+function formatMetricRange(min: number, max: number | null): string {
+  if (min === 0 && max === null) return 'all';
+  if (min > 0 && max === null) return `≥ ${min.toFixed(1)}`;
+  if (min === 0 && max !== null) return `≤ ${max.toFixed(1)}`;
+  return `${min.toFixed(1)}–${(max as number).toFixed(1)}`;
+}
+
+/** Compute the in-range bucket span for a given (min, max) selection,
+ *  matching mountStatRow's exclusive-upper-edge convention. */
+function rangeToBuckets(min: number, max: number | null): { lo: number; hi: number } {
+  const lo = Math.min(9, Math.max(0, Math.floor(min * 10)));
+  const hi = max === null ? 9 : Math.min(9, Math.max(0, Math.ceil(max * 10) - 1));
+  return { lo, hi };
+}
+
+/**
+ * Build a collapsible metric row — header + (when expanded) histogram +
+ * range readout. The histogram auto-wires brush-select drag (Task 5.5)
+ * so the row is a complete drop-in for the filter drawer's metric axes.
+ *
+ * Standalone DOM builder; the caller owns FilterSpec state and decides
+ * what to do with the `onRange(min, max | null)` callback.
+ */
+export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
+  injectMetricRowStylesOnce();
+
+  const row = document.createElement('div');
+  row.className = 'pyr3-metric-row';
+  row.dataset.metric = opts.metric;
+
+  // Header — chevron + label + current-range value. Click anywhere on the
+  // header toggles the body open/closed; the chevron is just a visual cue.
+  const header = document.createElement('div');
+  header.className = 'pyr3-metric-header';
+
+  const chevron = document.createElement('span');
+  chevron.className = 'pyr3-metric-chevron';
+  chevron.textContent = '▸';
+  header.appendChild(chevron);
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'pyr3-metric-label';
+  labelEl.textContent = opts.label;
+  header.appendChild(labelEl);
+
+  const valueEl = document.createElement('span');
+  valueEl.className = 'pyr3-metric-value';
+  valueEl.textContent = formatMetricRange(opts.min, opts.max);
+  header.appendChild(valueEl);
+
+  row.appendChild(header);
+
+  // Body — histogram + readout. Hidden by default; clicking the header
+  // toggles `display: block` and the chevron between ▸ and ▾.
+  const body = document.createElement('div');
+  body.className = 'pyr3-metric-body';
+
+  const histogram = document.createElement('div');
+  histogram.className = 'pyr3-metric-histogram';
+
+  // Normalize bar heights against the max bucket count. Empty histogram
+  // (all zeros) → every bar gets 0% (we still emit a valid percentage so
+  // the CSS doesn't end up with `NaN%` / `Infinity%`).
+  let maxCount = 0;
+  for (const v of opts.counts.values()) {
+    if (v > maxCount) maxCount = v;
+  }
+
+  const { lo: rangeLo, hi: rangeHi } = rangeToBuckets(opts.min, opts.max);
+
+  const bars: HTMLElement[] = [];
+  for (let b = 0; b < 10; b++) {
+    const bar = document.createElement('div');
+    bar.className = 'pyr3-metric-bar';
+    bar.dataset.bucket = String(b);
+    const count = opts.counts.get(b) ?? 0;
+    const pct = maxCount === 0 ? 0 : Math.round((count / maxCount) * 100);
+    bar.style.height = `${pct}%`;
+    if (b >= rangeLo && b <= rangeHi) bar.classList.add('in-range');
+    bars.push(bar);
+    histogram.appendChild(bar);
+  }
+
+  // Edge brackets — small amber rectangles overlaying the histogram at
+  // the START of the rangeLo bucket and the END of the rangeHi bucket.
+  // Positioned as percentages of histogram width so they stay anchored
+  // on resize without JS re-layout.
+  const bracketStart = document.createElement('div');
+  bracketStart.className = 'pyr3-metric-bracket';
+  bracketStart.style.left = `${rangeLo * 10}%`;
+  histogram.appendChild(bracketStart);
+
+  const bracketEnd = document.createElement('div');
+  bracketEnd.className = 'pyr3-metric-bracket';
+  bracketEnd.style.left = `${(rangeHi + 1) * 10}%`;
+  histogram.appendChild(bracketEnd);
+
+  body.appendChild(histogram);
+
+  const readout = document.createElement('div');
+  readout.className = 'pyr3-metric-readout';
+  readout.textContent = `range · ${formatMetricRange(opts.min, opts.max)}`;
+  body.appendChild(readout);
+
+  row.appendChild(body);
+
+  // Note: brush-select wiring lives in Task 5.5; for now the histogram is
+  // visual-only and the `onRange` callback is unused (kept in the signature
+  // so the wire-in in Task 5.5 is purely additive).
+  void opts.onRange;
+
+  // Collapse / expand state. `display: none` toggling is the cheapest
+  // mechanism that preserves layout when the user expands a row.
+  let expanded = opts.initiallyExpanded === true;
+  function syncExpansion(): void {
+    body.style.display = expanded ? 'block' : 'none';
+    chevron.textContent = expanded ? '▾' : '▸';
+  }
+  syncExpansion();
+
+  header.addEventListener('click', () => {
+    expanded = !expanded;
+    syncExpansion();
+  });
+
+  return row;
+}
