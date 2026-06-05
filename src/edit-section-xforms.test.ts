@@ -187,10 +187,9 @@ describe('xforms section v2 — affine block', () => {
     expect(card.querySelector('canvas.pyr3-edit-aff-viz')).toBeTruthy();
   });
 
-  it('renders shape-presets / shear / raw-matrix fold-ups', () => {
+  it('renders shear / raw-matrix fold-ups (shape-presets fold-up replaced by quick-ops strip in Task 8.3)', () => {
     const { host } = mount(1);
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    expect(card.querySelector('.pyr3-edit-aff-presets')).toBeTruthy();
     expect(card.querySelector('.pyr3-edit-aff-shear-fold')).toBeTruthy();
     expect(card.querySelector('.pyr3-edit-aff-raw-fold')).toBeTruthy();
   });
@@ -211,21 +210,7 @@ describe('xforms section v2 — affine block', () => {
     expect(onChange).toHaveBeenCalled();
   });
 
-  it('preset click overwrites the 5 decomposed fields', () => {
-    const { host, state } = mount(1);
-    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const presetsDet = card.querySelector(
-      '.pyr3-edit-aff-presets details',
-    ) as HTMLDetailsElement;
-    presetsDet.open = true;
-    const flipY = card.querySelector(
-      '.pyr3-edit-preset[data-preset="flip-y"]',
-    ) as HTMLButtonElement;
-    flipY.click();
-    const xf = state.genome.xforms[0]!;
-    expect(xf.e).toBeCloseTo(-1, 6);
-    expect(xf.a).toBeCloseTo(1, 6);
-  });
+  // (preset click test replaced by the quick-ops strip tests in Task 8.3.)
 
   it('shear fold-up auto-opens when the genome contains a non-zero shear matrix', () => {
     const genome = generateRandomGenome(seededRng(1));

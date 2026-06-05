@@ -24,7 +24,7 @@ import {
   type DecomposedAffine,
 } from './affine-decompose';
 import { attachXformViz } from './edit-xform-viz';
-import { SHAPE_PRESETS } from './edit-xform-quickops';
+// edit-xform-quickops imports added in Phase 8 Task 8.3 (quick-ops strip).
 import { openVariationPicker } from './edit-variation-picker';
 import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 
@@ -377,46 +377,11 @@ function buildDecomposedAffineBlock(
   bindDecomposed('positionX', 'position x', initial.positionX);
   bindDecomposed('positionY', 'position y', initial.positionY);
 
-  // ── Shape-presets fold-up ─────────────────────────────────────────
-  const presetsWrap = document.createElement('div');
-  presetsWrap.className = 'pyr3-edit-aff-presets';
-  const presetsDet = document.createElement('details');
-  const presetsSum = document.createElement('summary');
-  presetsSum.textContent = 'shape presets';
-  presetsDet.appendChild(presetsSum);
-  const presetsGrid = document.createElement('div');
-  presetsGrid.className = 'pyr3-edit-preset-grid';
-  for (const p of SHAPE_PRESETS) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'pyr3-edit-preset';
-    btn.dataset['preset'] = p.key;
-    btn.textContent = p.label;
-    btn.title = `Set the affine to ${p.label}.`;
-    btn.addEventListener('click', () => {
-      const dec = rawToDecomposed(getRaw());
-      const next = p.apply({ positionX: dec.positionX, positionY: dec.positionY });
-      setRaw(decomposedToRaw(next));
-      viz.draw();
-      // Refresh the visible decomposed input values from the new state.
-      for (const f of ['scaleX', 'scaleY', 'rotation', 'positionX', 'positionY'] as const) {
-        const h = decomposedInputs[f];
-        if (!h) continue;
-        const v = f === 'rotation' ? next.rotation / RAD : next[f];
-        h.setValue(v);
-      }
-      // Shear is part of the preset; reflect into the shear input + auto-open
-      // if the preset introduced a non-zero shear.
-      if (shearHandle) shearHandle.setValue(next.shear);
-      if (shearFold && Math.abs(next.shear) > 1e-9) shearFold.open = true;
-      refreshRawInputs();
-      onChange(`${pathBase}.preset`);
-    });
-    presetsGrid.appendChild(btn);
-  }
-  presetsDet.appendChild(presetsGrid);
-  presetsWrap.appendChild(presetsDet);
-  block.appendChild(presetsWrap);
+  // ── Quick-ops strip + reset (mounted by Task 8.3) ─────────────────
+  // The pre-overhaul "shape presets" fold-up was removed when its
+  // absolute-write semantics were replaced by the relative quick-ops
+  // module (edit-xform-quickops.ts). Task 8.3 mounts the strip + the
+  // reset-to-identity action in its place.
 
   // ── Shear fold-up (auto-opens if shear !== 0) ─────────────────────
   const shearFold = document.createElement('details');

@@ -147,10 +147,9 @@ describe('finalSection — v2 affine block', () => {
     expect(card.querySelector('canvas.pyr3-edit-aff-viz')).toBeTruthy();
   });
 
-  it('renders shape-presets / shear / raw-matrix fold-ups', () => {
+  it('renders shear / raw-matrix fold-ups (shape-presets fold-up replaced by quick-ops strip in Task 8.3)', () => {
     const { host } = setupOn();
     const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
-    expect(card.querySelector('.pyr3-edit-aff-presets')).toBeTruthy();
     expect(card.querySelector('.pyr3-edit-aff-shear-fold')).toBeTruthy();
     expect(card.querySelector('.pyr3-edit-aff-raw-fold')).toBeTruthy();
   });
