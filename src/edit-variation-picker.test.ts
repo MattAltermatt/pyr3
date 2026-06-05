@@ -1,4 +1,18 @@
 // @vitest-environment happy-dom
+//
+// Unit tests for the variation picker (Phase 10 visual overhaul refactor).
+//
+// The picker mirrors the palette-picker shell DOM (.pyr3-picker /
+// .pyr3-picker-head / .pyr3-picker-body / .pyr3-picker-foot) with:
+//   - Title:   '🧬 Variation picker · xform N'
+//   - Search:  filter by variation name (substring)
+//   - Tabs:    all (99) · ★ favorites (N)
+//   - Sort:    name (asc/desc)
+//   - Auto-apply toggle
+//   - 3-col cell grid of variation thumbnails + name + star
+//   - Footer:  selected info · ⟲ revert · apply & close
+//
+// NO filter chips — per user direction.
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
@@ -8,7 +22,9 @@ import {
   readRecentlyUsed,
   pushRecentlyUsed,
 } from './edit-variation-picker';
-import { V } from './variations';
+import { V, VARIATION_NAMES } from './variations';
+
+const TOTAL_VARIATIONS = Object.keys(VARIATION_NAMES).length;
 
 // Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
 // globally under vitest. See src/prefs.test.ts for the canonical pattern.
@@ -32,6 +48,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+// ── Catalogue invariants ─────────────────────────────────────────────────
 
 describe('FEATURED_VARIATIONS', () => {
   it('contains 20-30 curated variation indices', () => {
@@ -88,78 +106,261 @@ describe('recently-used FIFO', () => {
   });
 });
 
-describe('openVariationPicker — fitting-room behavior', () => {
-  function setup() {
-    const initialIndex: number = V.spherical;
-    let currentIndex: number = initialIndex;
-    const onPreview = vi.fn((idx: number) => { currentIndex = idx; });
-    const onCommit = vi.fn();
-    const onCancel = vi.fn();
-    const handle = openVariationPicker({
-      host: document.body,
-      initialIndex,
-      onPreview,
-      onCommit,
-      onCancel,
-    });
-    return { handle, onPreview, onCommit, onCancel, getCurrent: () => currentIndex };
-  }
+// ── Picker shell DOM ─────────────────────────────────────────────────────
 
-  it('mounts a dialog and shows recently-used + featured + browse all', () => {
+function setup(over: {
+  initialIndex?: number;
+  xformIndex?: number;
+} = {}) {
+  const initialIndex: number = over.initialIndex ?? V.spherical;
+  let currentIndex: number = initialIndex;
+  const onPreview = vi.fn((idx: number) => { currentIndex = idx; });
+  const onCommit = vi.fn();
+  const onCancel = vi.fn();
+  const handle = openVariationPicker({
+    host: document.body,
+    initialIndex,
+    xformIndex: over.xformIndex,
+    onPreview,
+    onCommit,
+    onCancel,
+  });
+  return { handle, onPreview, onCommit, onCancel, getCurrent: () => currentIndex };
+}
+
+describe('variation picker — shell DOM', () => {
+  it('mounts a docked sidecar with head / body / foot', () => {
     setup();
-    const dialog = document.querySelector('.pyr3-var-picker') as HTMLDivElement;
-    expect(dialog).toBeTruthy();
-    expect(dialog.querySelector('.pyr3-var-featured')).toBeTruthy();
-    expect(dialog.querySelector('.pyr3-var-browse')).toBeTruthy();
+    expect(document.querySelector('.pyr3-picker')).toBeTruthy();
+    expect(document.querySelector('.pyr3-picker-head')).toBeTruthy();
+    expect(document.querySelector('.pyr3-picker-body')).toBeTruthy();
+    expect(document.querySelector('.pyr3-picker-foot')).toBeTruthy();
   });
 
-  it('clicking a tile fires onPreview with the picked index', () => {
-    const { onPreview } = setup();
-    const tile = document.querySelector(`.pyr3-var-tile[data-vidx="${V.julian}"]`) as HTMLButtonElement;
-    tile.click();
-    expect(onPreview).toHaveBeenCalledWith(V.julian);
-  });
-
-  it('apply button fires onCommit + closes', () => {
-    const { onCommit } = setup();
-    (document.querySelector('.pyr3-var-apply') as HTMLButtonElement).click();
-    expect(onCommit).toHaveBeenCalled();
-    expect(document.querySelector('.pyr3-var-picker')).toBeNull();
-  });
-
-  it('revert button fires onPreview(initialIndex) and keeps dialog open', () => {
-    const { onPreview } = setup();
-    (document.querySelector(`.pyr3-var-tile[data-vidx="${V.heart}"]`) as HTMLButtonElement).click();
-    (document.querySelector('.pyr3-var-revert') as HTMLButtonElement).click();
-    expect(onPreview).toHaveBeenLastCalledWith(V.spherical);
+  it('shell carries the legacy .pyr3-var-picker class for backward-compat selectors', () => {
+    setup();
+    // Preserves the API surface — the editor's outer host scopes selectors
+    // by this class.
     expect(document.querySelector('.pyr3-var-picker')).toBeTruthy();
   });
 
-  it('cancel button fires onCancel + closes', () => {
-    const { onCancel } = setup();
-    (document.querySelector('.pyr3-var-cancel') as HTMLButtonElement).click();
-    expect(onCancel).toHaveBeenCalled();
-    expect(document.querySelector('.pyr3-var-picker')).toBeNull();
+  it('title shows "🧬 Variation picker · xform N" when xformIndex provided', () => {
+    setup({ xformIndex: 2 });
+    const title = document.querySelector('.pyr3-picker-title') as HTMLElement;
+    expect(title).toBeTruthy();
+    expect(title.textContent).toContain('Variation picker');
+    expect(title.textContent).toContain('xform 2');
   });
 
-  it('Escape key acts as cancel', () => {
+  it('title omits the xform suffix when xformIndex is undefined', () => {
+    setup();
+    const title = document.querySelector('.pyr3-picker-title') as HTMLElement;
+    expect(title.textContent).toContain('Variation picker');
+    expect(title.textContent).not.toMatch(/xform/i);
+  });
+
+  it('header has a close-x button that fires onCancel + closes', () => {
+    const { onCancel } = setup();
+    const close = document.querySelector('.pyr3-picker-close') as HTMLElement;
+    expect(close).toBeTruthy();
+    close.click();
+    expect(onCancel).toHaveBeenCalled();
+    expect(document.querySelector('.pyr3-picker')).toBeNull();
+  });
+
+  it('header has a search input', () => {
+    setup();
+    const search = document.querySelector('.pyr3-picker-search') as HTMLInputElement;
+    expect(search).toBeTruthy();
+    expect(search.tagName).toBe('INPUT');
+  });
+
+  it('header has NO chip row (per user spec for variation picker)', () => {
+    setup();
+    expect(document.querySelector('.pyr3-picker-chip-row')).toBeNull();
+  });
+
+  it('header has tabs: `all` and `★ favorites` with counts', () => {
+    setup();
+    const tabs = document.querySelectorAll('.pyr3-picker-tab');
+    expect(tabs.length).toBe(2);
+    const allTab = document.querySelector('.pyr3-picker-tab[data-tab="all"]') as HTMLElement;
+    const favTab = document.querySelector('.pyr3-picker-tab[data-tab="favorites"]') as HTMLElement;
+    expect(allTab).toBeTruthy();
+    expect(favTab).toBeTruthy();
+    expect(allTab.textContent).toContain('all');
+    expect(allTab.textContent).toContain(String(TOTAL_VARIATIONS));
+    expect(favTab.textContent).toContain('favorites');
+  });
+
+  it('controls row has a name-sort dropdown + auto-apply toggle', () => {
+    setup();
+    const sort = document.querySelector('.pyr3-picker-sort') as HTMLSelectElement;
+    expect(sort).toBeTruthy();
+    expect(sort.tagName).toBe('SELECT');
+    const toggle = document.querySelector('.pyr3-picker-auto-apply') as HTMLElement;
+    expect(toggle).toBeTruthy();
+  });
+
+  it('body uses a 3-col grid', () => {
+    setup();
+    const body = document.querySelector('.pyr3-picker-body') as HTMLElement;
+    expect(body.style.gridTemplateColumns).toMatch(/repeat\(3,/);
+  });
+
+  it('body renders one cell per known variation', () => {
+    setup();
+    const cells = document.querySelectorAll('.pyr3-picker-cell');
+    expect(cells.length).toBe(TOTAL_VARIATIONS);
+  });
+
+  it('each cell has a thumbnail img, name, and star widget', () => {
+    setup();
+    const cell = document.querySelector('.pyr3-picker-cell') as HTMLElement;
+    expect(cell.querySelector('img.pyr3-var-thumb')).toBeTruthy();
+    expect(cell.querySelector('.pyr3-picker-cell-name')).toBeTruthy();
+    expect(cell.querySelector('.pyr3-picker-cell-star')).toBeTruthy();
+  });
+
+  it('active cell (matching initialIndex) carries the .active class', () => {
+    setup({ initialIndex: V.spherical });
+    const active = document.querySelectorAll('.pyr3-picker-cell.active');
+    expect(active.length).toBe(1);
+    expect((active[0] as HTMLElement).dataset['vidx']).toBe(String(V.spherical));
+  });
+
+  it('footer has selected info + revert + apply&close buttons', () => {
+    setup();
+    expect(document.querySelector('.pyr3-picker-selected')).toBeTruthy();
+    expect(document.querySelector('.pyr3-picker-revert')).toBeTruthy();
+    expect(document.querySelector('.pyr3-picker-apply')).toBeTruthy();
+  });
+
+  it('apply & close button uses btn-primary variant (popped CTA)', () => {
+    setup();
+    const apply = document.querySelector('.pyr3-picker-apply') as HTMLElement;
+    expect(apply.classList.contains('pyr3-btn')).toBe(true);
+    expect(apply.classList.contains('pyr3-btn-primary')).toBe(true);
+  });
+
+  it('revert button uses btn-accent variant', () => {
+    setup();
+    const revert = document.querySelector('.pyr3-picker-revert') as HTMLElement;
+    expect(revert.classList.contains('pyr3-btn')).toBe(true);
+    expect(revert.classList.contains('pyr3-btn-accent')).toBe(true);
+  });
+});
+
+// ── Behavior — fitting-room semantics ────────────────────────────────────
+
+describe('variation picker — fitting-room behavior', () => {
+  it('clicking a cell fires onPreview with that variation index', () => {
+    const { onPreview } = setup();
+    const cell = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.julian}"]`,
+    ) as HTMLElement;
+    cell.click();
+    expect(onPreview).toHaveBeenCalledWith(V.julian);
+  });
+
+  it('clicking a cell updates the .active highlight', () => {
+    setup();
+    const cell = document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.heart}"]`,
+    ) as HTMLElement;
+    cell.click();
+    expect(cell.classList.contains('active')).toBe(true);
+    const others = document.querySelectorAll('.pyr3-picker-cell.active');
+    expect(others.length).toBe(1);
+  });
+
+  it('apply & close button fires onCommit + closes', () => {
+    const { onCommit } = setup();
+    (document.querySelector('.pyr3-picker-apply') as HTMLElement).click();
+    expect(onCommit).toHaveBeenCalled();
+    expect(document.querySelector('.pyr3-picker')).toBeNull();
+  });
+
+  it('revert button fires onPreview(initialIndex) and keeps picker open', () => {
+    const { onPreview } = setup({ initialIndex: V.spherical });
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.heart}"]`,
+    ) as HTMLElement).click();
+    (document.querySelector('.pyr3-picker-revert') as HTMLElement).click();
+    expect(onPreview).toHaveBeenLastCalledWith(V.spherical);
+    expect(document.querySelector('.pyr3-picker')).toBeTruthy();
+  });
+
+  it('Escape key cancels (fires onCancel + closes)', () => {
     const { onCancel } = setup();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(onCancel).toHaveBeenCalled();
+    expect(document.querySelector('.pyr3-picker')).toBeNull();
   });
 
-  it('search filters tiles by name', () => {
+  it('search filters cells by name (substring, case-insensitive)', () => {
     setup();
-    const search = document.querySelector('.pyr3-var-search') as HTMLInputElement;
+    const search = document.querySelector('.pyr3-picker-search') as HTMLInputElement;
     search.value = 'jul';
     search.dispatchEvent(new Event('input'));
-    // Should show only julia / julian / juliascope in the filtered grid.
-    const visibleTiles = [...document.querySelectorAll('.pyr3-var-tile')].filter(
-      el => (el as HTMLElement).style.display !== 'none',
-    );
-    const names = visibleTiles.map(el => el.getAttribute('data-vname'));
-    expect(names).toContain('julia');
-    expect(names).toContain('julian');
-    expect(names.every(n => n!.toLowerCase().includes('jul'))).toBe(true);
+    const cells = document.querySelectorAll<HTMLElement>('.pyr3-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    expect(visible.length).toBeGreaterThan(0);
+    const names = visible.map((c) => c.dataset['vname'] ?? '');
+    for (const n of names) expect(n.toLowerCase()).toContain('jul');
+  });
+
+  it('sort: name desc reverses the cell order vs name asc', () => {
+    setup();
+    const body = document.querySelector('.pyr3-picker-body') as HTMLElement;
+    const sort = document.querySelector('.pyr3-picker-sort') as HTMLSelectElement;
+    sort.value = 'name-asc';
+    sort.dispatchEvent(new Event('change'));
+    const ascOrder = [...body.querySelectorAll<HTMLElement>('.pyr3-picker-cell')]
+      .map((c) => c.dataset['vname'] ?? '');
+    sort.value = 'name-desc';
+    sort.dispatchEvent(new Event('change'));
+    const descOrder = [...body.querySelectorAll<HTMLElement>('.pyr3-picker-cell')]
+      .map((c) => c.dataset['vname'] ?? '');
+    expect(descOrder).toEqual([...ascOrder].reverse());
+  });
+
+  it('auto-apply OFF: clicking a cell does NOT fire onCommit', () => {
+    const { onCommit } = setup();
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.heart}"]`,
+    ) as HTMLElement).click();
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('auto-apply ON: clicking a cell fires onCommit', () => {
+    const { onCommit } = setup();
+    (document.querySelector('.pyr3-picker-auto-apply') as HTMLElement).click();
+    (document.querySelector(
+      `.pyr3-picker-cell[data-vidx="${V.heart}"]`,
+    ) as HTMLElement).click();
+    expect(onCommit).toHaveBeenCalled();
+  });
+});
+
+// ── Favorites tab — shell-level structural test (Task 10.1) ─────────────
+// Favorites persistence + filtering is wired in Task 10.2.
+
+describe('variation picker — favorites tab (shell)', () => {
+  it('star widget renders ☆ on every cell', () => {
+    setup();
+    const cells = document.querySelectorAll('.pyr3-picker-cell');
+    for (const c of cells) {
+      const star = c.querySelector('.pyr3-picker-cell-star') as HTMLElement;
+      expect(star.textContent).toBe('☆');
+    }
+  });
+
+  it('favorites tab label shows count of zero before any star is wired', () => {
+    setup();
+    const favTab = document.querySelector(
+      '.pyr3-picker-tab[data-tab="favorites"]',
+    ) as HTMLElement;
+    expect(favTab.textContent).toContain('(0)');
   });
 });

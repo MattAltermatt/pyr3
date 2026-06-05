@@ -1,18 +1,32 @@
-// pyr3 — /v1/edit variation kind picker.
+// pyr3 — /v1/edit variation kind picker (Phase 10 visual overhaul refactor).
 //
-// Tiered modal: recently-used → featured (~25 curated) → browse all
-// (categorized accordion) → with instant search across all tiers. Fitting-
-// room preview: clicking a tile fires onPreview live so the flame canvas
-// updates behind the picker; apply commits, revert restores snapshot
-// while keeping the picker open, cancel/Escape/click-outside restores +
-// closes.
+// Docked sidecar mirroring the palette picker shell DOM. Same family of
+// affordances: header with title + close-x + search + tabs (all · ★ favorites)
+// + sort + auto-apply toggle; 3-col body grid of cells (thumb + name + star);
+// footer with selected info + ⟲ revert + apply & close.
 //
-// Recently-used persists in localStorage; FIFO cap = 5; dedup-to-front.
+// API preserved from the pre-Phase-10 modal version so call sites in
+// `edit-section-xforms.ts` (kindBtn / + var button) keep working:
+//   openVariationPicker({ host, initialIndex, onPreview, onCommit, onCancel })
+//   returns { close() }
+//
+// Phase 10 additions:
+//   - `xformIndex?: number` in opts → drives the title suffix
+//   - `.pyr3-picker` shared shell DOM (also carries the legacy
+//     `.pyr3-var-picker` class for any external selectors)
+//   - ★ favorites persisted under `pyr3.variation.favorites` (separate
+//     localStorage key from the palette picker)
+//
+// Filter chips are intentionally OMITTED per user direction — type
+// categorization stays in the data (CATEGORY_MAP) for future use, but no
+// chip UI.
 
+import { COLORS } from './ui-tokens';
+import { buildDropdown, buildToggle, buildButton } from './edit-primitives';
 import { V, VARIATION_NAMES } from './variations';
 
 // ──────────────────────────────────────────────────────────────────────
-// Tier data
+// Tier data (preserved from the previous picker version)
 // ──────────────────────────────────────────────────────────────────────
 
 /** Curated featured set — the workhorses 90% of flames use. */
@@ -24,8 +38,9 @@ export const FEATURED_VARIATIONS: readonly number[] = [
 ];
 
 /** All known variations, grouped by family. Every index in V appears in
- *  exactly one category. Order within a category is approximate flam3
- *  index order. */
+ *  exactly one category. Used by external callers (and reserved for a
+ *  future category sort/filter). The picker UI itself does NOT render
+ *  category chips per user direction. */
 export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
   const groups: Record<string, number[]> = {
     'Polar / angular': [
@@ -77,182 +92,378 @@ export function pushRecentlyUsed(index: number): void {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Picker modal
+// Picker
 // ──────────────────────────────────────────────────────────────────────
 
 export interface VariationPickerOpts {
-  /** Where to append the modal — usually `document.body`. */
+  /** Where to append the picker — usually `document.body`. */
   host: HTMLElement;
   /** The variation index that's currently in the slot, used as the
    *  snapshot to revert to. */
   initialIndex: number;
-  /** Called on each tile click. The host should write to genome and fire
+  /** Which xform the picker is editing — drives the title suffix. */
+  xformIndex?: number;
+  /** Called on each cell click. The host should write to genome and fire
    *  the slow lane so the flame canvas updates behind the picker. */
   onPreview: (index: number) => void;
-  /** Called when the user clicks "✓ apply". The current preview wins. */
+  /** Called when the user clicks "apply & close". The current preview wins. */
   onCommit: () => void;
-  /** Called when the user cancels (×, Escape, click outside). Host should
-   *  treat as "abandon picker state" — the most recent preview was a
-   *  no-op in retrospect. */
+  /** Called when the user cancels (×, Escape). Host should treat as
+   *  "abandon picker state" — the most recent preview was a no-op in
+   *  retrospect. */
   onCancel: () => void;
 }
 
 export interface VariationPickerHandle {
-  /** Programmatic close, equivalent to clicking "× cancel". */
+  /** Programmatic close, equivalent to clicking close-x. */
   close(): void;
 }
 
+interface VariationEntry {
+  idx: number;
+  name: string;
+  searchName: string;
+}
+
+function buildEntries(): VariationEntry[] {
+  const out: VariationEntry[] = [];
+  for (const [name, idxRaw] of Object.entries(V)) {
+    const idx = idxRaw as number;
+    out.push({ idx, name, searchName: name.toLowerCase() });
+  }
+  // Stable index order for the default cell layout.
+  out.sort((a, b) => a.idx - b.idx);
+  return out;
+}
+
 export function openVariationPicker(opts: VariationPickerOpts): VariationPickerHandle {
+  ensurePickerStyles();
+
   // Snapshot the index the picker opened on; revert restores to this.
   const snapshot = opts.initialIndex;
   let currentIndex = opts.initialIndex;
-  const sessionRecents: number[] = []; // grows as user previews this session
+  let autoApplyOn = false;
 
-  // ── DOM ──────────────────────────────────────────────────────────
-  const root = document.createElement('div');
-  root.className = 'pyr3-var-picker';
-  // (Styles injected by edit-ui.ts EDIT_CSS; minimal inline for happy-dom.)
+  const entries = buildEntries();
+  const totalCount = entries.length;
 
-  // Header
+  // ── Shell ────────────────────────────────────────────────────────
+  const picker = document.createElement('div');
+  // `.pyr3-picker` = shared shell class (matches palette picker's parallel
+  // contract). `.pyr3-var-picker` = legacy qualifier so any external
+  // selectors / styles addressing the modal-era variation picker still
+  // resolve to this picker.
+  picker.className = 'pyr3-picker pyr3-var-picker';
+
+  // ── Header ───────────────────────────────────────────────────────
   const head = document.createElement('div');
-  head.className = 'pyr3-var-head';
-  const title = document.createElement('h2');
-  title.textContent = 'Pick a variation';
-  head.append(title);
+  head.className = 'pyr3-picker-head';
 
-  // Action row: search + apply / revert / cancel
-  const actions = document.createElement('div');
-  actions.className = 'pyr3-var-actions';
-  const searchInput = document.createElement('input');
-  searchInput.type = 'search';
-  searchInput.className = 'pyr3-var-search';
-  searchInput.placeholder = `search ${Object.keys(VARIATION_NAMES).length} variations…`;
-  const applyBtn = document.createElement('button');
-  applyBtn.type = 'button';
-  applyBtn.className = 'pyr3-var-apply pyr3-edit-btn';
-  applyBtn.textContent = '✓ apply';
-  const revertBtn = document.createElement('button');
-  revertBtn.type = 'button';
-  revertBtn.className = 'pyr3-var-revert pyr3-edit-btn';
-  revertBtn.textContent = '↺ revert';
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'pyr3-var-cancel pyr3-edit-btn';
-  cancelBtn.textContent = '× cancel';
-  actions.append(searchInput, applyBtn, revertBtn, cancelBtn);
+  const titleRow = document.createElement('div');
+  titleRow.className = 'pyr3-picker-title-row';
 
-  // Body — three sections (recents, featured, browse all)
+  const title = document.createElement('div');
+  title.className = 'pyr3-picker-title';
+  title.textContent = opts.xformIndex !== undefined
+    ? `🧬 Variation picker · xform ${opts.xformIndex}`
+    : '🧬 Variation picker';
+
+  const badge = document.createElement('span');
+  badge.className = 'pyr3-picker-badge';
+  badge.textContent = String(totalCount);
+
+  const closeBtn = document.createElement('div');
+  closeBtn.className = 'pyr3-picker-close';
+  closeBtn.textContent = '×';
+  closeBtn.title = 'close picker (esc)';
+  closeBtn.addEventListener('click', () => cancel());
+
+  titleRow.append(title, badge, closeBtn);
+  head.appendChild(titleRow);
+
+  // Search input
+  const search = document.createElement('input');
+  search.className = 'pyr3-picker-search';
+  search.type = 'text';
+  search.placeholder = `🔍 search ${totalCount} variations…`;
+  search.spellcheck = false;
+  search.autocomplete = 'off';
+  head.appendChild(search);
+
+  // Tabs: all (N) · ★ favorites (M)
+  const tabsRow = document.createElement('div');
+  tabsRow.className = 'pyr3-picker-tabs';
+  const allTab = document.createElement('div');
+  allTab.className = 'pyr3-picker-tab active';
+  allTab.dataset['tab'] = 'all';
+  const favTab = document.createElement('div');
+  favTab.className = 'pyr3-picker-tab';
+  favTab.dataset['tab'] = 'favorites';
+  tabsRow.append(allTab, favTab);
+  head.appendChild(tabsRow);
+
+  // Controls: sort + auto-apply
+  const controlsRow = document.createElement('div');
+  controlsRow.className = 'pyr3-picker-controls';
+
+  type SortKey = 'name-asc' | 'name-desc';
+  let activeSort: SortKey = 'name-asc';
+  const sort = buildDropdown<SortKey>({
+    value: 'name-asc',
+    options: [
+      { value: 'name-asc',  label: 'sort: name (a→z)' },
+      { value: 'name-desc', label: 'sort: name (z→a)' },
+    ],
+    onChange: (v) => {
+      activeSort = v;
+      applySort();
+    },
+  });
+  sort.classList.add('pyr3-picker-sort');
+
+  const autoApplyWrap = document.createElement('label');
+  autoApplyWrap.className = 'pyr3-picker-auto-apply-wrap';
+  autoApplyWrap.style.display = 'inline-flex';
+  autoApplyWrap.style.alignItems = 'center';
+  autoApplyWrap.style.gap = '6px';
+  autoApplyWrap.style.fontSize = '11px';
+  autoApplyWrap.style.color = COLORS.text.muted;
+  autoApplyWrap.style.cursor = 'pointer';
+  const autoApplyLabel = document.createElement('span');
+  autoApplyLabel.textContent = 'auto-apply';
+  const autoApply = buildToggle({
+    value: false,
+    onChange: (next) => { autoApplyOn = next; },
+  });
+  autoApply.classList.add('pyr3-picker-auto-apply');
+  autoApplyWrap.append(autoApplyLabel, autoApply);
+
+  controlsRow.append(sort, autoApplyWrap);
+  head.appendChild(controlsRow);
+
+  picker.appendChild(head);
+
+  // ── Body — 3-col cell grid ───────────────────────────────────────
   const body = document.createElement('div');
-  body.className = 'pyr3-var-body';
+  body.className = 'pyr3-picker-body';
+  body.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
 
-  const recentsSection = document.createElement('div');
-  recentsSection.className = 'pyr3-var-recents';
-  const featuredSection = document.createElement('div');
-  featuredSection.className = 'pyr3-var-featured';
-  const browseSection = document.createElement('div');
-  browseSection.className = 'pyr3-var-browse';
-  body.append(recentsSection, featuredSection, browseSection);
+  const cellByIdx = new Map<number, HTMLElement>();
+  const starByIdx = new Map<number, HTMLElement>();
+  // Favorites wiring lands in Task 10.2; commit-1 shell renders the
+  // star widget in its empty state and the favorites tab as a
+  // structural placeholder.
+  let activeTab: 'all' | 'favorites' = 'all';
 
-  root.append(head, actions, body);
-  opts.host.appendChild(root);
+  function isFavorite(_idx: number): boolean {
+    return false;
+  }
+  function paintStar(idx: number): void {
+    const star = starByIdx.get(idx);
+    if (!star) return;
+    if (isFavorite(idx)) {
+      star.textContent = '★';
+      star.classList.add('on');
+      star.style.color = COLORS.flame.top;
+    } else {
+      star.textContent = '☆';
+      star.classList.remove('on');
+      star.style.color = COLORS.text.dim;
+    }
+  }
+  function toggleFavorite(_idx: number): void {
+    // Task 10.2 wires persistence; no-op in the shell commit.
+  }
 
-  // ── Render helpers ───────────────────────────────────────────────
-  function makeTile(varIndex: number): HTMLButtonElement {
-    const tile = document.createElement('button');
-    tile.type = 'button';
-    tile.className = 'pyr3-var-tile';
-    tile.dataset['vidx'] = String(varIndex);
-    tile.dataset['vname'] = VARIATION_NAMES[varIndex] ?? `var${varIndex}`;
-    if (varIndex === currentIndex) tile.classList.add('selected');
+  function buildCell(entry: VariationEntry): HTMLElement {
+    const cell = document.createElement('div');
+    cell.className = 'pyr3-picker-cell';
+    cell.dataset['vidx'] = String(entry.idx);
+    cell.dataset['vname'] = entry.name;
+    cell.title = entry.name;
+    cell.style.cursor = 'pointer';
+    cell.style.padding = '4px';
+    cell.style.borderRadius = '3px';
+    cell.style.border = '1px solid transparent';
+    cell.style.background = 'transparent';
+    cell.style.position = 'relative';
 
-    const img = document.createElement('img');
-    img.className = 'pyr3-var-thumb';
-    img.alt = VARIATION_NAMES[varIndex] ?? '';
-    img.src = `/variation-thumbs/${VARIATION_NAMES[varIndex]}.png`;
-    img.onerror = () => {
-      // Fallback: replace with a 64px canvas the variation is live-rendered
-      // into. Same math, slower first-paint. Stubbed here as a 1-color box
-      // so the UI doesn't show a broken-image icon while we add the fallback.
-      img.replaceWith(document.createElement('div'));
-    };
-    const label = document.createElement('div');
-    label.className = 'pyr3-var-name';
-    label.textContent = VARIATION_NAMES[varIndex] ?? `var${varIndex}`;
-    tile.append(img, label);
+    if (entry.idx === currentIndex) {
+      cell.classList.add('active');
+      cell.style.borderColor = COLORS.flame.top;
+      cell.style.background = COLORS.bg.action;
+    }
 
-    tile.addEventListener('click', () => {
-      currentIndex = varIndex;
-      sessionRecents.unshift(varIndex);
-      opts.onPreview(varIndex);
-      // Update selected highlight
-      root.querySelectorAll('.pyr3-var-tile.selected').forEach(el => el.classList.remove('selected'));
-      tile.classList.add('selected');
+    cell.addEventListener('click', () => {
+      currentIndex = entry.idx;
+      opts.onPreview(entry.idx);
+      paintActive(entry.idx);
+      refreshSelectedInfo();
+      if (autoApplyOn) {
+        commit();
+      }
     });
 
-    return tile;
+    // Thumbnail (preserve the existing production assets).
+    const img = document.createElement('img');
+    img.className = 'pyr3-var-thumb';
+    img.alt = entry.name;
+    img.src = `/variation-thumbs/${entry.name}.png`;
+    img.style.width = '100%';
+    img.style.aspectRatio = '1 / 1';
+    img.style.objectFit = 'cover';
+    img.style.borderRadius = '2px';
+    img.style.border = `1px solid ${COLORS.border}`;
+    img.style.background = COLORS.bg.input;
+    img.onerror = () => {
+      // Graceful fallback — empty box so the cell still has shape.
+      img.style.visibility = 'hidden';
+    };
+    cell.appendChild(img);
+
+    // Name
+    const nameEl = document.createElement('div');
+    nameEl.className = 'pyr3-picker-cell-name';
+    nameEl.textContent = entry.name;
+    nameEl.style.fontSize = '10px';
+    nameEl.style.color = COLORS.text.muted;
+    nameEl.style.marginTop = '4px';
+    nameEl.style.overflow = 'hidden';
+    nameEl.style.textOverflow = 'ellipsis';
+    nameEl.style.whiteSpace = 'nowrap';
+    nameEl.style.textAlign = 'center';
+    cell.appendChild(nameEl);
+
+    // Star
+    const star = document.createElement('div');
+    star.className = 'pyr3-picker-cell-star';
+    star.textContent = '☆';
+    star.style.position = 'absolute';
+    star.style.top = '2px';
+    star.style.right = '4px';
+    star.style.fontSize = '12px';
+    star.style.color = COLORS.text.dim;
+    star.style.userSelect = 'none';
+    star.style.cursor = 'pointer';
+    star.title = 'toggle favorite';
+    star.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      toggleFavorite(entry.idx);
+    });
+    cell.appendChild(star);
+
+    starByIdx.set(entry.idx, star);
+    paintStar(entry.idx);
+    return cell;
   }
 
-  function renderRecents(): void {
-    recentsSection.replaceChildren();
-    const persisted = readRecentlyUsed();
-    const combined = [...new Set([...sessionRecents, ...persisted])].slice(0, 5);
-    if (combined.length === 0) return;
-    const label = document.createElement('div');
-    label.className = 'pyr3-var-section-label';
-    label.textContent = `recently used · ${combined.length}`;
-    recentsSection.append(label);
-    const grid = document.createElement('div');
-    grid.className = 'pyr3-var-grid';
-    for (const idx of combined) grid.append(makeTile(idx));
-    recentsSection.append(grid);
+  for (const entry of entries) {
+    const cell = buildCell(entry);
+    body.appendChild(cell);
+    cellByIdx.set(entry.idx, cell);
   }
+  picker.appendChild(body);
 
-  function renderFeatured(): void {
-    featuredSection.replaceChildren();
-    const label = document.createElement('div');
-    label.className = 'pyr3-var-section-label';
-    label.textContent = `featured · ${FEATURED_VARIATIONS.length}`;
-    featuredSection.append(label);
-    const grid = document.createElement('div');
-    grid.className = 'pyr3-var-grid';
-    for (const idx of FEATURED_VARIATIONS) grid.append(makeTile(idx));
-    featuredSection.append(grid);
-  }
-
-  function renderBrowse(): void {
-    browseSection.replaceChildren();
-    const label = document.createElement('div');
-    label.className = 'pyr3-var-section-label';
-    label.textContent = `browse all`;
-    browseSection.append(label);
-    for (const [catName, indices] of Object.entries(CATEGORY_MAP)) {
-      const det = document.createElement('details');
-      det.className = 'pyr3-var-category';
-      const sum = document.createElement('summary');
-      sum.textContent = `${catName} · ${indices.length}`;
-      det.append(sum);
-      const grid = document.createElement('div');
-      grid.className = 'pyr3-var-grid';
-      for (const idx of indices) grid.append(makeTile(idx));
-      det.append(grid);
-      browseSection.append(det);
+  function paintActive(idx: number): void {
+    for (const [i, cell] of cellByIdx) {
+      const isActive = i === idx;
+      cell.classList.toggle('active', isActive);
+      cell.style.borderColor = isActive ? COLORS.flame.top : 'transparent';
+      cell.style.background = isActive ? COLORS.bg.action : 'transparent';
     }
   }
 
-  function applyFilter(query: string): void {
-    const q = query.trim().toLowerCase();
-    const all = root.querySelectorAll('.pyr3-var-tile') as NodeListOf<HTMLElement>;
-    all.forEach(tile => {
-      const name = tile.dataset['vname']?.toLowerCase() ?? '';
-      const match = q === '' || name.includes(q);
-      tile.style.display = match ? '' : 'none';
+  function applySort(): void {
+    const sorted = [...entries].sort((a, b) => {
+      if (activeSort === 'name-asc') return a.searchName.localeCompare(b.searchName);
+      return b.searchName.localeCompare(a.searchName);
     });
+    for (const e of sorted) {
+      const cell = cellByIdx.get(e.idx);
+      if (cell) body.appendChild(cell); // re-append in new order
+    }
   }
 
-  // ── Wire actions ─────────────────────────────────────────────────
+  function applyFilter(): void {
+    const q = search.value.trim().toLowerCase();
+    const favOnly = activeTab === 'favorites';
+    let visible = 0;
+    for (const entry of entries) {
+      const cell = cellByIdx.get(entry.idx)!;
+      const searchMatch = q === '' || entry.searchName.includes(q);
+      const tabMatch = !favOnly || isFavorite(entry.idx);
+      const match = searchMatch && tabMatch;
+      cell.style.display = match ? '' : 'none';
+      if (match) visible++;
+    }
+    const filtering = q !== '' || favOnly;
+    badge.textContent = filtering ? `${visible} / ${totalCount}` : String(totalCount);
+  }
+  search.addEventListener('input', applyFilter);
+
+  function favoriteCount(): number {
+    // Task 10.2 replaces this with a real count from localStorage.
+    return 0;
+  }
+  function refreshTabCounts(): void {
+    allTab.textContent = `all (${totalCount})`;
+    favTab.textContent = `★ favorites (${favoriteCount()})`;
+  }
+  function setTab(tab: 'all' | 'favorites'): void {
+    activeTab = tab;
+    allTab.classList.toggle('active', tab === 'all');
+    favTab.classList.toggle('active', tab === 'favorites');
+    applyFilter();
+  }
+  allTab.addEventListener('click', () => setTab('all'));
+  favTab.addEventListener('click', () => setTab('favorites'));
+  refreshTabCounts();
+
+  // ── Footer ───────────────────────────────────────────────────────
+  const foot = document.createElement('div');
+  foot.className = 'pyr3-picker-foot';
+
+  const selected = document.createElement('div');
+  selected.className = 'pyr3-picker-selected';
+  function refreshSelectedInfo(): void {
+    const name = VARIATION_NAMES[currentIndex] ?? `var${currentIndex}`;
+    selected.textContent = name;
+  }
+  refreshSelectedInfo();
+
+  const footActions = document.createElement('div');
+  footActions.className = 'pyr3-picker-foot-actions';
+
+  const revertBtn = buildButton({
+    variant: 'accent',
+    label: 'revert',
+    icon: '⟲',
+    onClick: () => {
+      currentIndex = snapshot;
+      opts.onPreview(snapshot);
+      paintActive(snapshot);
+      refreshSelectedInfo();
+    },
+  });
+  revertBtn.classList.add('pyr3-picker-revert');
+
+  const applyBtn = buildButton({
+    variant: 'primary',
+    label: 'apply & close',
+    onClick: () => commit(),
+  });
+  applyBtn.classList.add('pyr3-picker-apply');
+
+  footActions.append(revertBtn, applyBtn);
+  foot.append(selected, footActions);
+  picker.appendChild(foot);
+
+  opts.host.appendChild(picker);
+
+  // ── Lifecycle ────────────────────────────────────────────────────
   function close(): void {
     document.removeEventListener('keydown', onKeyDown);
-    root.remove();
+    if (picker.parentElement) picker.remove();
   }
 
   function commit(): void {
@@ -261,37 +472,168 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     close();
   }
 
-  function revert(): void {
-    currentIndex = snapshot;
-    opts.onPreview(snapshot);
-    // Update selected highlight on the snapshot tile, clear others.
-    root.querySelectorAll('.pyr3-var-tile.selected').forEach(el => el.classList.remove('selected'));
-    const snapTile = root.querySelector(`.pyr3-var-tile[data-vidx="${snapshot}"]`);
-    snapTile?.classList.add('selected');
-  }
-
   function cancel(): void {
-    if (currentIndex !== snapshot) opts.onPreview(snapshot); // restore one final time
     opts.onCancel();
     close();
   }
 
   function onKeyDown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape') {
-      cancel();
-    }
+    if (ev.key === 'Escape') cancel();
   }
-
-  applyBtn.addEventListener('click', commit);
-  revertBtn.addEventListener('click', revert);
-  cancelBtn.addEventListener('click', cancel);
-  searchInput.addEventListener('input', () => applyFilter(searchInput.value));
   document.addEventListener('keydown', onKeyDown);
-
-  // Initial paint
-  renderRecents();
-  renderFeatured();
-  renderBrowse();
 
   return { close: () => cancel() };
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CSS
+// ──────────────────────────────────────────────────────────────────────
+
+function ensurePickerStyles(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('pyr3-var-picker-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'pyr3-var-picker-styles';
+  style.textContent = PICKER_CSS;
+  document.head.appendChild(style);
+}
+
+const PICKER_CSS = `
+.pyr3-picker.pyr3-var-picker {
+  /* Mirrors palette picker dock — to the right of the 340px editor left
+     panel. Shifted right one panel-width so it doesn't collide with an
+     open palette picker (z-index already handles the case but visual
+     separation matters too). */
+  position: fixed;
+  top: 88px;
+  bottom: 0;
+  left: 340px;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  background: ${COLORS.bg.panel};
+  border: 1px solid ${COLORS.border};
+  border-left: none;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+  min-height: 0;
+  overflow: hidden;
+  color: ${COLORS.text.primary};
+  font-size: 12px;
+  z-index: 1001;
+}
+.pyr3-picker-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid ${COLORS.border};
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pyr3-picker-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pyr3-picker-title {
+  font-size: 13px;
+  color: ${COLORS.flame.top};
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+.pyr3-picker-badge {
+  font-size: 10px;
+  color: ${COLORS.text.muted};
+  font-family: ui-monospace, monospace;
+  background: ${COLORS.bg.input};
+  border: 1px solid ${COLORS.border};
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.pyr3-picker-close {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: ${COLORS.text.muted};
+  border-radius: 3px;
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+.pyr3-picker-close:hover {
+  background: ${COLORS.bg.input};
+  color: ${COLORS.danger};
+}
+.pyr3-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  background: ${COLORS.bg.input};
+  border: 1px solid ${COLORS.border};
+  border-radius: 3px;
+  color: ${COLORS.text.primary};
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+.pyr3-picker-search::placeholder { color: ${COLORS.text.dim}; }
+.pyr3-picker-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid ${COLORS.border};
+  padding-bottom: 4px;
+}
+.pyr3-picker-tab {
+  font-size: 11px;
+  padding: 3px 8px;
+  color: ${COLORS.text.muted};
+  border-radius: 3px 3px 0 0;
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.pyr3-picker-tab:hover { color: ${COLORS.text.primary}; }
+.pyr3-picker-tab.active {
+  color: ${COLORS.flame.top};
+  background: ${COLORS.bg.action};
+  border-color: ${COLORS.flame.bot};
+}
+.pyr3-picker-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pyr3-picker-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+.pyr3-picker-foot {
+  padding: 8px 12px;
+  border-top: 1px solid ${COLORS.border};
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pyr3-picker-selected {
+  flex: 1 1 auto;
+  font-size: 11px;
+  color: ${COLORS.text.muted};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pyr3-picker-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+`;
