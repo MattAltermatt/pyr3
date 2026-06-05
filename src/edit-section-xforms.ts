@@ -24,9 +24,14 @@ import {
   type DecomposedAffine,
 } from './affine-decompose';
 import { attachXformViz } from './edit-xform-viz';
-// edit-xform-quickops imports added in Phase 8 Task 8.3 (quick-ops strip).
+import {
+  applyQuickOp,
+  QUICK_OPS_DEFS,
+  type DecomposedAffine as QuickOpAffine,
+} from './edit-xform-quickops';
 import { openVariationPicker } from './edit-variation-picker';
 import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
+import { buildButton } from './edit-primitives';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -377,11 +382,83 @@ function buildDecomposedAffineBlock(
   bindDecomposed('positionX', 'position x', initial.positionX);
   bindDecomposed('positionY', 'position y', initial.positionY);
 
-  // ── Quick-ops strip + reset (mounted by Task 8.3) ─────────────────
-  // The pre-overhaul "shape presets" fold-up was removed when its
-  // absolute-write semantics were replaced by the relative quick-ops
-  // module (edit-xform-quickops.ts). Task 8.3 mounts the strip + the
-  // reset-to-identity action in its place.
+  // ── Quick-ops strip + reset-to-identity ───────────────────────────
+  // Relative modifiers (rotate ±45° / scale ×2 ×½ / flip x / flip y /
+  // shear +0.1) applied via applyQuickOp from edit-xform-quickops.ts.
+  // The reset-to-identity is a separate accent button below — it's the
+  // only absolute write left and is intentionally distinguished.
+  const quickopsStrip = document.createElement('div');
+  quickopsStrip.className = 'pyr3-edit-aff-quickops';
+  for (const q of QUICK_OPS_DEFS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pyr3-edit-quickop';
+    btn.dataset['op'] = q.id;
+    btn.textContent = q.icon + (q.delta ? ' ' + q.delta : ' ' + q.label);
+    btn.title = `${q.label}${q.delta ? ' ' + q.delta : ''}`;
+    btn.addEventListener('click', () => {
+      const dec = rawToDecomposed(getRaw());
+      // Convert affine-decompose contract (radians + positionX/Y) →
+      // quickops contract (degrees + posX/Y), apply, then back.
+      const qop: QuickOpAffine = {
+        scaleX: dec.scaleX,
+        scaleY: dec.scaleY,
+        rotation: dec.rotation / RAD,
+        shear: dec.shear,
+        posX: dec.positionX,
+        posY: dec.positionY,
+      };
+      const after = applyQuickOp(q.id, qop);
+      const nextDec: DecomposedAffine = {
+        scaleX: after.scaleX,
+        scaleY: after.scaleY,
+        rotation: after.rotation * RAD,
+        shear: after.shear,
+        positionX: after.posX,
+        positionY: after.posY,
+      };
+      setRaw(decomposedToRaw(nextDec));
+      viz.draw();
+      for (const f of ['scaleX', 'scaleY', 'rotation', 'positionX', 'positionY'] as const) {
+        const h = decomposedInputs[f];
+        if (!h) continue;
+        const v = f === 'rotation' ? nextDec.rotation / RAD : nextDec[f];
+        h.setValue(v);
+      }
+      if (shearHandle) shearHandle.setValue(nextDec.shear);
+      if (shearFold && Math.abs(nextDec.shear) > 1e-9) shearFold.open = true;
+      refreshRawInputs();
+      onChange(`${pathBase}.quickop`);
+    });
+    quickopsStrip.appendChild(btn);
+  }
+  block.appendChild(quickopsStrip);
+
+  // Separate reset-to-identity action (accent button, popped from the strip).
+  const resetBtn = buildButton({
+    variant: 'accent',
+    label: 'reset to identity',
+    icon: '⟲',
+    onClick: () => {
+      const pos = rawToDecomposed(getRaw());
+      const nextDec: DecomposedAffine = {
+        scaleX: 1, scaleY: 1, rotation: 0, shear: 0,
+        positionX: pos.positionX, positionY: pos.positionY,
+      };
+      setRaw(decomposedToRaw(nextDec));
+      viz.draw();
+      decomposedInputs.scaleX?.setValue(1);
+      decomposedInputs.scaleY?.setValue(1);
+      decomposedInputs.rotation?.setValue(0);
+      decomposedInputs.positionX?.setValue(nextDec.positionX);
+      decomposedInputs.positionY?.setValue(nextDec.positionY);
+      if (shearHandle) shearHandle.setValue(0);
+      refreshRawInputs();
+      onChange(`${pathBase}.reset`);
+    },
+  });
+  resetBtn.classList.add('pyr3-edit-aff-reset');
+  block.appendChild(resetBtn);
 
   // ── Shear fold-up (auto-opens if shear !== 0) ─────────────────────
   const shearFold = document.createElement('details');

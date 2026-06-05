@@ -195,6 +195,42 @@ describe('finalSection — v2 affine block', () => {
   });
 });
 
+describe('finalSection — quick-ops strip + reset', () => {
+  it('renders 7 quick-op buttons from QUICK_OPS_DEFS', () => {
+    const { host } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const strip = card.querySelector('.pyr3-edit-aff-quickops') as HTMLElement;
+    expect(strip).toBeTruthy();
+    expect(strip.querySelectorAll('.pyr3-edit-quickop').length).toBe(7);
+  });
+
+  it('clicking rotate+45 mutates the finalxform affine', () => {
+    const { host, state, onChange } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const rot45 = card.querySelector('.pyr3-edit-quickop[data-op="rotate+45"]') as HTMLElement;
+    rot45.click();
+    const k = Math.SQRT1_2;
+    expect(state.genome.finalxform!.a).toBeCloseTo(k, 6);
+    expect(onChange).toHaveBeenCalledWith('finalxform.quickop');
+  });
+
+  it('reset-to-identity is rendered with btn-accent and resets the affine', () => {
+    const { host, state, onChange } = setupOn();
+    const card = host.querySelector('.pyr3-edit-final-card') as HTMLElement;
+    const fx = state.genome.finalxform!;
+    fx.a = 2; fx.b = 0.3; fx.c = 0.42; fx.d = 0.1; fx.e = 1.7; fx.f = -0.7;
+    const reset = card.querySelector('.pyr3-edit-aff-reset') as HTMLElement;
+    expect(reset).toBeTruthy();
+    expect(reset.classList.contains('pyr3-btn-accent')).toBe(true);
+    reset.click();
+    expect(fx.a).toBeCloseTo(1, 6);
+    expect(fx.e).toBeCloseTo(1, 6);
+    expect(fx.c).toBeCloseTo(0.42, 6);
+    expect(fx.f).toBeCloseTo(-0.7, 6);
+    expect(onChange).toHaveBeenCalledWith('finalxform.reset');
+  });
+});
+
 describe('finalSection — color block', () => {
   it('color slider mutates finalxform.color', () => {
     const { host, state, onChange } = setupOn();

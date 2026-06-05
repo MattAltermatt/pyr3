@@ -243,6 +243,75 @@ describe('xforms section v2 — affine block', () => {
   });
 });
 
+describe('xforms section v2 — quick-ops strip + reset', () => {
+  it('renders 7 quick-op buttons from QUICK_OPS_DEFS, in order', () => {
+    const { host } = mount(1);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const strip = card.querySelector('.pyr3-edit-aff-quickops') as HTMLElement;
+    expect(strip).toBeTruthy();
+    const buttons = strip.querySelectorAll('.pyr3-edit-quickop');
+    expect(buttons.length).toBe(7);
+    const ids = [...buttons].map((b) => (b as HTMLElement).dataset['op']);
+    expect(ids).toEqual([
+      'rotate+45', 'rotate-45',
+      'scale2x', 'scaleHalf',
+      'flipY', 'flipX',
+      'shear+0.1',
+    ]);
+  });
+
+  it('clicking the rotate+45 button increments the matrix via applyQuickOp + persists', () => {
+    const { host, state, onChange } = mount(1);
+    const xf = state.genome.xforms[0]!;
+    xf.a = 1; xf.b = 0; xf.c = 0; xf.d = 0; xf.e = 1; xf.f = 0;
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const rot45 = card.querySelector(
+      '.pyr3-edit-quickop[data-op="rotate+45"]',
+    ) as HTMLElement;
+    rot45.click();
+    // 45° rotation: a=cos45, b=-sin45, d=sin45, e=cos45
+    const k = Math.SQRT1_2;
+    expect(xf.a).toBeCloseTo(k, 6);
+    expect(xf.b).toBeCloseTo(-k, 6);
+    expect(xf.d).toBeCloseTo(k, 6);
+    expect(xf.e).toBeCloseTo(k, 6);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.quickop');
+  });
+
+  it('clicking scaleHalf halves both scaleX and scaleY', () => {
+    const { host, state } = mount(1);
+    const xf = state.genome.xforms[0]!;
+    xf.a = 2; xf.b = 0; xf.c = 0; xf.d = 0; xf.e = 2; xf.f = 0;
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const half = card.querySelector(
+      '.pyr3-edit-quickop[data-op="scaleHalf"]',
+    ) as HTMLElement;
+    half.click();
+    expect(xf.a).toBeCloseTo(1, 6);
+    expect(xf.e).toBeCloseTo(1, 6);
+  });
+
+  it('reset-to-identity button uses btn-accent variant + writes identity matrix preserving position', () => {
+    const { host, state, onChange } = mount(1);
+    const xf = state.genome.xforms[0]!;
+    xf.a = 2; xf.b = 0.3; xf.c = 0.42; xf.d = 0.1; xf.e = 1.7; xf.f = -0.7;
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const reset = card.querySelector('.pyr3-edit-aff-reset') as HTMLElement;
+    expect(reset).toBeTruthy();
+    // btn-accent class
+    expect(reset.classList.contains('pyr3-btn-accent')).toBe(true);
+    reset.click();
+    expect(xf.a).toBeCloseTo(1, 6);
+    expect(xf.b).toBeCloseTo(0, 6);
+    expect(xf.d).toBeCloseTo(0, 6);
+    expect(xf.e).toBeCloseTo(1, 6);
+    // Position preserved (c, f).
+    expect(xf.c).toBeCloseTo(0.42, 6);
+    expect(xf.f).toBeCloseTo(-0.7, 6);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.reset');
+  });
+});
+
 describe('xforms section v2 — post-transform', () => {
   it('post checkbox is unchecked when xform.post is undefined; no decomposed block', () => {
     const { host, state } = mount(1);
