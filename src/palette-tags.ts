@@ -35,7 +35,11 @@ const SAMPLE_COUNT = 16;
 //     AND ≤ PASTEL_S
 //                → tagged 'pastel'
 const DARK_L   = 0.15;
-const PASTEL_L = 0.75;
+// PASTEL_L raised from 0.75 → 0.80 so pastel covers strictly-higher-L tints
+// than pink (PINK_L_MIN = 0.75). The two bands used to overlap exactly at
+// 0.75; with the pink check now running first this is belt+braces against
+// future ordering drift.
+const PASTEL_L = 0.80;
 const PASTEL_S = 0.40;
 
 // TUNING-FLAG: gray threshold. Saturation ≤ GRAY_S in [0, 1] → 'gray'
@@ -95,6 +99,14 @@ function classify(r: number, g: number, b: number): ColorTag {
   // of the (often noisy) hue at low lightness.
   if (l <= DARK_L) return 'dark';
 
+  // Pink runs BEFORE pastel so that warm-hue light tints (e.g. blush
+  // rgb(240,200,210)) get tagged 'pink' instead of being swallowed by the
+  // pastel check. The two used to share a 0.75 lightness floor; pink wins on
+  // hue and pastel now sits at L ≥ 0.80 (PASTEL_L raised above).
+  if ((h >= 320 || h < 30) && l >= PINK_L_MIN && s <= PINK_S_MAX) {
+    return 'pink';
+  }
+
   // Pastel: high-lightness low-saturation chromatic tints.
   if (l >= PASTEL_L && s <= PASTEL_S) return 'pastel';
 
@@ -104,11 +116,6 @@ function classify(r: number, g: number, b: number): ColorTag {
   // Brown: warm hue (0..50°), darker band, mid saturation.
   if (h >= 0 && h < 50 && l >= BROWN_L_MIN && l <= BROWN_L_MAX && s >= BROWN_S_MIN) {
     return 'brown';
-  }
-
-  // Pink: warm hue at high lightness with lowered saturation.
-  if ((h >= 320 || h < 30) && l >= PINK_L_MIN && s <= PINK_S_MAX) {
-    return 'pink';
   }
 
   // Hue bands.

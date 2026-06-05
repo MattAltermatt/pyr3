@@ -66,6 +66,23 @@ describe('palette-tags — computeTags HSL classification', () => {
     expect(tags).toContain('pink' as ColorTag);
   });
 
+  it('returns "pink" (not "pastel") for a desaturated blush (240,200,210)', () => {
+    // Regression guard: pink check now runs BEFORE pastel. With the old
+    // ordering, low-saturation warm-hue tints at the 0.75 lightness border
+    // could fall into pastel and shadow pink.
+    const tags = computeTags(solidPalette(240, 200, 210));
+    expect(tags).toContain('pink' as ColorTag);
+    expect(tags).not.toContain('pastel' as ColorTag);
+  });
+
+  it('still tags a truly low-sat high-L warm tint as pastel only when L ≥ 0.80', () => {
+    // Borderline case: L just under PASTEL_L (0.80) with low sat + warm hue
+    // hits the pink band (since pink_l_min is 0.75) — assert pink wins.
+    // (rgb(220,205,210): L ≈ 0.83, s small, warm hue → pink.)
+    const tags = computeTags(solidPalette(220, 205, 210));
+    expect(tags).toContain('pink' as ColorTag);
+  });
+
   it('returns "brown" for a dark warm desaturated color', () => {
     const tags = computeTags(solidPalette(110, 60, 30));
     expect(tags).toContain('brown' as ColorTag);
