@@ -13,7 +13,7 @@
 import { mountScreensaverLanding } from './screensaver-ui';
 import type { ScreensaverPrefs } from './screensaver-prefs';
 import { createScreensaverQueue, type SheepRef } from './screensaver-queue';
-import { qTarget, BUILD_UP_TARGET_Q } from './screensaver-pacing';
+import { BUILD_UP_TARGET_Q, samplesPerFrameForBuildUp } from './screensaver-pacing';
 import { loadFeatureIndex } from './feature-index-client';
 import { fetchFlameXml } from './chunk-fetch';
 import { parseFlame } from './flame-import';
@@ -56,6 +56,14 @@ const CANVAS_MIN_DIM = 256;
 // we cap at 2 — going to 4 quadruples the histogram size and present cost
 // for marginal visible-quality gain on a fullscreen canvas.
 const SCREENSAVER_MAX_OS = 2;
+
+// Build-up loop tuning (spec §4.2.1). Fixed; not user-exposed.
+// 30fps cadence with 1024 walkers × ~112 splat iters per walker per frame
+// lands ~115k samples/frame at hero dims (1080p × OS=2), reaching q=50
+// over 30s buildUpSec at ~13% sustained GPU. See spec §4.2.2 cost model.
+const BUILD_UP_TARGET_FPS = 30;
+const BUILD_UP_WALKERS    = 1024;
+const BUILD_UP_FUSE       = 200;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -604,8 +612,6 @@ function startBuildUp(args: {
       oversample: 1,
       filterRadius: DEFAULT_FILTER_RADIUS,
     });
-    // Renderer config is overridden per-flame inside the loop via
-    // renderer.resize() — see comment near the resize call.
 
     status.setText('Loading corpus index…');
     const index = await loadFeatureIndex();
@@ -616,7 +622,6 @@ function startBuildUp(args: {
     let flameNum = 0;
 
     while (!isCancelled()) {
-      // Pick the next ref; skip-back consumes history.
       const ref =
         state.skipDir === -1
           ? (queue.prev() ?? queue.next())
@@ -633,45 +638,35 @@ function startBuildUp(args: {
       }
       if (isCancelled()) return;
 
-      // Apply the GENOME's preferred oversample + filter radius — this is
-      // what gives the viewer its smooth look at the same q=50. Default
-      // oversample=1 + filterRadius=0.5 looks raw/noisy because chaos hits
-      // get splatted as single sharp dots instead of Gaussian-spread.
-      const overs = genome.oversample ?? 1;
+      // Apply screensaver oversample cap (parity with slideshow's
+      // renderFlameToQuality). Without this, hero genome's native OS=4
+      // quadruples the histogram (8.3M → 33M cells) and pins the GPU on
+      // every present pass — the original lockup.
+      const overs = Math.min(SCREENSAVER_MAX_OS, genome.oversample ?? 1);
       const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
       renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
-
       renderer.reset(genome);
-      const seed = (Math.random() * 0xffffffff) >>> 0;
+
       const startedAt = performance.now();
       state.pauseAccumMs = 0;
       state.pausedAt = 0;
       let samplesAccumulated = 0;
-      let lastIterAt = 0;
-      let lastPresentAt = 0;
 
       canvas.style.transition = '';
       canvas.style.opacity = '1';
 
       const totalPixels = W * H;
-      // The "always quality 50, photo-develop" trick: present() always
-      // normalizes brightness against the FINAL target (q=50 × pixels).
-      // While samplesAccumulated < target, each pixel's hit count divides
-      // by the larger target → dim. Black at t=0, full brightness when
-      // samples ≈ target. Without this trick, the visualizer self-normalizes
-      // to whatever's accumulated so far and the early image looks "done."
       const targetTotalSamples = BUILD_UP_TARGET_Q * totalPixels;
 
-      // Decoupled iterate + present loop. Dispatch (iterate) at ITER_INTERVAL_MS
-      // — each renderer.iterate carries a fixed ~44ms GPU overhead, so
-      // dispatching every rAF (60Hz) saturated the GPU at 99%. Present
-      // (visualize-only) is cheap, so we re-tone-map at PRESENT_INTERVAL_MS
-      // for smooth visible brightness ramp between dispatches.
-      // 500ms intervals = 2 iterate dispatches/sec + 2 presents/sec. Build-up
-      // is meditative — visible change is slow over minutes — so 2fps is
-      // plenty. Lower cadence = much calmer GPU on consumer hardware.
-      const ITER_INTERVAL_MS = 500;
-      const PRESENT_INTERVAL_MS = 500;
+      // Pacing math — spec §4.2. Distribute the q=50 sample budget across
+      // buildUpSec × fps frames; each walker runs FUSE warm-up iters then
+      // splatItersPerWalker iters that actually scatter into the histogram.
+      const samplesPerFrame = samplesPerFrameForBuildUp(
+        BUILD_UP_TARGET_Q, W, H, prefs.buildUpSec, BUILD_UP_TARGET_FPS,
+      );
+      const splatItersPerWalker = Math.max(1, Math.ceil(samplesPerFrame / BUILD_UP_WALKERS));
+      const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
+      const FRAME_INTERVAL_MS   = 1000 / BUILD_UP_TARGET_FPS;
 
       while (!isCancelled()) {
         if (state.skipDir !== 0) break;
@@ -684,71 +679,71 @@ function startBuildUp(args: {
           state.pauseAccumMs += performance.now() - state.pausedAt;
           state.pausedAt = 0;
         }
-        const now = performance.now();
-        const elapsed = (now - startedAt - state.pauseAccumMs) / 1000;
-        const targetQ = qTarget(elapsed, prefs.buildUpSec);
 
-        // Iterate paced — catch up to qTarget once every ITER_INTERVAL_MS.
-        if (now - lastIterAt >= ITER_INTERVAL_MS) {
-          const desiredSamples = targetQ * totalPixels;
-          const delta = desiredSamples - samplesAccumulated;
-          if (delta > 0) {
-            const sppToAdd = delta / totalPixels;
-            const dispatch = computeDispatch(sppToAdd, W, H);
-            renderer.iterate({
-              genome,
-              seed,
-              walkers: dispatch.dispatchWalkers,
-              itersPerWalker: dispatch.dispatchIters,
-            });
-            samplesAccumulated += dispatch.actualSamples;
-          }
-          lastIterAt = now;
-        }
+        const frameStart = performance.now();
 
-        // Present paced — visualize the current histogram at 10fps. Cheap
-        // (no chaos iteration); just density + visualize passes. Always
-        // normalize against targetTotalSamples (q=50) so the flame photo-
-        // develops from black instead of self-normalizing to "looks done
-        // immediately" at low sample counts.
-        if (now - lastPresentAt >= PRESENT_INTERVAL_MS) {
-          renderer.present({
-            genome,
-            outputView: ctx.getCurrentTexture().createView(),
-            totalSamples: targetTotalSamples,
-          });
-          lastPresentAt = now;
-          const pct = Math.min(100, Math.round((targetQ / BUILD_UP_TARGET_Q) * 100));
-          status.setText(
-            `Building flame #${flameNum} (${ref.gen}/${ref.id})\n` +
-            `${elapsed.toFixed(1)}s / ${prefs.buildUpSec}s · q=${targetQ.toFixed(1)} / 50 · ${pct}%` +
-            (state.paused ? ' · PAUSED' : ''),
-          );
-        }
+        // Fresh ISAAC seed every frame — same seed re-renders the identical
+        // scatter pattern and just brightens the same cells (chaos.ts
+        // re-inits ISAAC from `seed` on every dispatch).
+        const seed = (Math.random() * 0xffffffff) >>> 0;
+        renderer.iterate({
+          genome,
+          seed,
+          walkers:        BUILD_UP_WALKERS,
+          itersPerWalker: totalItersPerWalker,
+        });
+        // Splatted samples = walkers × (iters - fuse). First BUILD_UP_FUSE
+        // iters per walker are warm-up; only post-fuse iters scatter.
+        // Tracking walkers × iters would over-normalize the tonemap and
+        // the build-up would look incorrectly dim.
+        samplesAccumulated += BUILD_UP_WALKERS * splatItersPerWalker;
 
-        if (targetQ >= BUILD_UP_TARGET_Q && elapsed >= prefs.buildUpSec) break;
-        await new Promise<void>((r) => setTimeout(r, 50));
+        // Tone-normalize against ACCUMULATED samples (not a fixed target)
+        // AND skip density. Each new sample lands bright; the image
+        // densifies frame by frame rather than fading-up. forceDeOff: true
+        // is required even when genome.density is undefined (renderer.ts
+        // useDE rule) to make intent explicit.
+        renderer.present({
+          genome,
+          outputView:   ctx.getCurrentTexture().createView(),
+          totalSamples: Math.max(1, samplesAccumulated),
+          forceDeOff:   true,
+        });
+
+        const elapsed = (performance.now() - startedAt - state.pauseAccumMs) / 1000;
+        const pct     = Math.min(100, Math.round(100 * samplesAccumulated / targetTotalSamples));
+        status.setText(
+          `Building flame #${flameNum} (${ref.gen}/${ref.id})\n` +
+          `${elapsed.toFixed(1)}s / ${prefs.buildUpSec}s · ` +
+          `samples ${(samplesAccumulated / 1e6).toFixed(1)}M / ${(targetTotalSamples / 1e6).toFixed(1)}M · ${pct}%` +
+          (state.paused ? ' · PAUSED' : ''),
+        );
+
+        if (samplesAccumulated >= targetTotalSamples) break;
+        if (elapsed >= prefs.buildUpSec) break;
+
+        const frameElapsed = performance.now() - frameStart;
+        const sleepFor     = Math.max(1, FRAME_INTERVAL_MS - frameElapsed);
+        await new Promise<void>((r) => setTimeout(r, sleepFor));
       }
       if (isCancelled()) return;
 
-      // Final present — by now samplesAccumulated ≈ targetTotalSamples, so
-      // we switch to normalizing by the actual sample count (matches what
-      // the viewer's final present does) AND explicitly turn DE on so the
-      // resting image gets the full density-estimation pass.
+      // Settle: density ON, tone-normalize to actual accumulated samples.
+      // This is the dotty → smooth reveal — the chaos game's coherent
+      // attractor emerges via the density pass + log tonemap.
       renderer.present({
         genome,
-        outputView: ctx.getCurrentTexture().createView(),
-        totalSamples: Math.max(targetTotalSamples, samplesAccumulated),
-        forceDeOff: false,
+        outputView:   ctx.getCurrentTexture().createView(),
+        totalSamples: Math.max(1, samplesAccumulated),
+        forceDeOff:   false,
       });
 
-      // Rest period — hold at full quality. Skip signal shortcircuits;
-      // pause extends.
+      // Rest period — hold settled image at full quality.
       const restStart = performance.now();
       const restTick = window.setInterval(() => {
         const e = Math.min(prefs.restSec, (performance.now() - restStart) / 1000);
         status.setText(
-          `Flame #${flameNum} (${ref.gen}/${ref.id}) at q=50\n` +
+          `Flame #${flameNum} (${ref.gen}/${ref.id}) settled\n` +
           `resting ${e.toFixed(0)}s / ${prefs.restSec}s` +
           (state.paused ? ' · PAUSED' : ''),
         );
