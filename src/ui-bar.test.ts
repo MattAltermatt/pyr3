@@ -5,8 +5,10 @@ import {
   mountAboutBar,
   mountBar,
   mountBarChrome,
+  mountEditBar,
   mountGalleryBar,
   type BarOpts,
+  type EditBarOpts,
   type GalleryBarOpts,
   type TabSurface,
 } from './ui-bar';
@@ -48,6 +50,16 @@ function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
     onRandomPage: vi.fn(),
     activeAxes: 0,
     onFilterToggle: vi.fn(),
+    onTabClick: vi.fn(),
+    ...over,
+  };
+}
+
+function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
+  return {
+    webgpu: STUB_WEBGPU,
+    onNameChange: vi.fn(),
+    onNickChange: vi.fn(),
     onTabClick: vi.fn(),
     ...over,
   };
@@ -571,3 +583,69 @@ describe('viewer info row — all variations expanded (#103 Phase 3 Task 3.1)', 
     expect(quality?.textContent ?? '').toContain('Standard');
   });
 });
+
+describe('editor info row — editable name + nick + dims (#103 Phase 6 Task 6.1)', () => {
+  it('info row contains TWO inputs (name + nick) and NO action buttons', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+
+    const infoRow = root.querySelector('.pyr3-bar-info') as HTMLElement;
+    expect(infoRow).not.toBeNull();
+    const inputs = infoRow.querySelectorAll('input');
+    expect(inputs.length).toBe(2);
+    // Info row is info-only — no buttons inside it
+    expect(infoRow.querySelectorAll('button').length).toBe(0);
+  });
+
+  it('the name input carries the editable-name affordance class', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const name = root.querySelector('.pyr3-bar-name-input') as HTMLInputElement;
+    expect(name).not.toBeNull();
+    expect(name.tagName).toBe('INPUT');
+  });
+
+  it('the nick input carries the editable-nick affordance class', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountEditBar(root, makeEditOpts());
+    const nick = root.querySelector('.pyr3-bar-nick-input') as HTMLInputElement;
+    expect(nick).not.toBeNull();
+    expect(nick.tagName).toBe('INPUT');
+  });
+
+  it('editing the name input fires onNameChange with the new value', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onNameChange = vi.fn();
+    mountEditBar(root, makeEditOpts({ onNameChange }));
+    const name = root.querySelector('.pyr3-bar-name-input') as HTMLInputElement;
+    name.value = 'my-new-flame';
+    name.dispatchEvent(new Event('input'));
+    expect(onNameChange).toHaveBeenCalledWith('my-new-flame');
+  });
+
+  it('editing the nick input fires onNickChange with the new value', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onNickChange = vi.fn();
+    mountEditBar(root, makeEditOpts({ onNickChange }));
+    const nick = root.querySelector('.pyr3-bar-nick-input') as HTMLInputElement;
+    nick.value = 'mattmatt';
+    nick.dispatchEvent(new Event('input'));
+    expect(onNickChange).toHaveBeenCalledWith('mattmatt');
+  });
+
+  it('dimensions readout shows `${width}×${height}` and uses the amber quality class', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountEditBar(root, makeEditOpts());
+    handle.setDimensions({ width: 1920, height: 1080 });
+    const dims = root.querySelector('.pyr3-bar-info .pyr3-bar-quality') as HTMLElement;
+    expect(dims).not.toBeNull();
+    expect(dims.textContent).toBe('1920×1080');
+  });
+});
+

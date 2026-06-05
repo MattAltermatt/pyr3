@@ -217,17 +217,19 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.className = 'pyr3-bar-name-input';
-  nameInput.placeholder = 'flame name';
+  // Spec default: empty value reads as 'untitled' via the placeholder. Hover
+  // and focus expand the dashed underline to a solid amber line (CSS).
+  nameInput.placeholder = 'untitled';
   nameInput.addEventListener('input', () => opts.onNameChange(nameInput.value));
 
   // Nick — small, after the name with "by" prefix. Always rendered; empty
-  // value reads as "no nick set".
+  // value reads as 'you' via the placeholder.
   const nickPrefix = el('span', 'pyr3-bar-meta-author');
   nickPrefix.textContent = 'by';
   const nickInput = document.createElement('input');
   nickInput.type = 'text';
   nickInput.className = 'pyr3-bar-nick-input';
-  nickInput.placeholder = 'nick';
+  nickInput.placeholder = 'you';
   nickInput.addEventListener('input', () => opts.onNickChange(nickInput.value));
 
   // Dimensions — read-only label · `1920×1080` or `auto`.
@@ -1155,39 +1157,56 @@ const BAR_CSS = `
 .pyr3-bar-info-gallery .pyr3-zone-right { justify-content: flex-end; }
 /* /v1/edit bar: editable flame name. Styled to match the viewer's bold
    metaName but accepts focus + typing. Auto-sizes via field-sizing where
-   supported; falls back to a fixed character width. */
+   supported; falls back to a fixed character width.
+   #103 Phase 6 Task 6.1: dashed-underline edit affordance at rest; the
+   underline expands to a solid amber line on hover/focus to signal that
+   the field is editable. */
 .pyr3-bar-name-input {
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 3px;
   color: var(--text);
   font: 600 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
   padding: 2px 6px;
   min-width: 12ch;
   field-sizing: content;
+  text-decoration: underline dashed var(--text-dim);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
 }
-.pyr3-bar-name-input:hover { border-color: var(--bar-border); }
+.pyr3-bar-name-input:hover {
+  text-decoration: underline solid var(--accent);
+  text-decoration-thickness: 1.5px;
+}
 .pyr3-bar-name-input:focus {
   outline: none;
   background: var(--bar-bg-3);
-  border-color: var(--accent-border);
+  text-decoration: underline solid var(--accent);
+  text-decoration-thickness: 1.5px;
 }
 .pyr3-bar-nick-input {
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 3px;
   color: var(--text-muted);
   font: 400 11px ui-sans-serif, system-ui, -apple-system, sans-serif;
   padding: 1px 5px;
   min-width: 6ch;
   field-sizing: content;
+  text-decoration: underline dashed var(--text-dim);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
 }
-.pyr3-bar-nick-input:hover { border-color: var(--bar-border); }
+.pyr3-bar-nick-input:hover {
+  text-decoration: underline solid var(--accent);
+  text-decoration-thickness: 1.5px;
+}
 .pyr3-bar-nick-input:focus {
   outline: none;
   background: var(--bar-bg-3);
-  border-color: var(--accent-border);
   color: var(--text);
+  text-decoration: underline solid var(--accent);
+  text-decoration-thickness: 1.5px;
 }
 .pyr3-bar-variations {
   /* #103 Phase 3 Task 3.1: all variations expanded — no +N collapse.
