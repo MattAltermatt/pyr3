@@ -65,6 +65,52 @@ export interface NumberInputResult {
   handle: ScrubbyHandle;
 }
 
+/** Plain `<input type="number">` variant of buildNumberInput — no scrub
+ *  drag, no double-click-to-type swap. Use for fields where the user
+ *  almost always types an exact value (W×H, quality) and the bar's
+ *  Size/Quality ladders cover the "pick a preset" path. Returns the same
+ *  NumberInputResult shape so existing call sites that use
+ *  `result.handle.setValue(n)` keep working — `setValue` here simply
+ *  updates the input's value without firing change. */
+export function buildPlainNumberInput(opts: NumberInputOpts): NumberInputResult {
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.value = String(opts.value);
+  if (opts.min !== undefined) input.min = String(opts.min);
+  if (opts.max !== undefined) input.max = String(opts.max);
+  if (opts.step !== undefined) input.step = String(opts.step);
+  input.className = 'pyr3-input pyr3-plain-num';
+  input.style.flex = '1 1 0';
+  input.style.minWidth = '0';
+  input.style.width = '100%';
+  input.style.textAlign = 'right';
+  input.style.fontVariantNumeric = 'tabular-nums';
+  input.style.background = COLORS.bg.input;
+  input.style.border = `1px solid ${COLORS.border}`;
+  input.style.borderRadius = '3px';
+  input.style.color = COLORS.text.primary;
+  input.style.padding = '3px 6px';
+  input.style.fontSize = '12px';
+  input.style.fontFamily = 'inherit';
+
+  input.addEventListener('input', () => {
+    const v = Number(input.value);
+    if (Number.isFinite(v)) opts.onChange(v);
+  });
+
+  const handle: ScrubbyHandle = {
+    el: input as unknown as HTMLSpanElement,
+    setValue(v: number): void {
+      // Don't clobber the user's in-flight typing.
+      if (document.activeElement !== input) input.value = String(v);
+    },
+    destroy(): void {
+      input.remove();
+    },
+  };
+  return { el: input, handle };
+}
+
 export function buildNumberInput(opts: NumberInputOpts): NumberInputResult {
   const fmt = opts.precision !== undefined
     ? (v: number): string => (Number.isFinite(v) ? v.toFixed(opts.precision!) : String(v))
@@ -177,31 +223,52 @@ export function buildSlider(opts: SliderOpts): HTMLElement {
   wrap.style.gap = '8px';
   wrap.style.minWidth = '0';
 
-  // Visual rail (left)
+  // Visual rail (left) — interactive. Click-anywhere snaps the handle to
+  // that point and drag-anywhere updates the value continuously. The
+  // numeric value to the right still supports drag-to-scrub + dbl-click
+  // type-to-enter, so power users have all three affordances.
   const rail = document.createElement('div');
   rail.className = 'pyr3-slider-rail';
   rail.style.position = 'relative';
-  rail.style.height = '4px';
-  rail.style.background = COLORS.bg.input;
-  rail.style.border = `1px solid ${COLORS.border}`;
+  // 12px tall click target with a 2px visual stripe centered inside —
+  // a 4px-tall rail is too narrow to grab reliably.
+  rail.style.height = '12px';
+  rail.style.background = 'transparent';
   rail.style.borderRadius = '2px';
   rail.style.minWidth = '0';
+  rail.style.cursor = 'pointer';
+  rail.style.touchAction = 'none';
+  // Inner stripe + fill draw the visible rail.
+  const stripe = document.createElement('div');
+  stripe.style.position = 'absolute';
+  stripe.style.left = '0';
+  stripe.style.right = '0';
+  stripe.style.top = '50%';
+  stripe.style.height = '4px';
+  stripe.style.transform = 'translateY(-50%)';
+  stripe.style.background = COLORS.bg.input;
+  stripe.style.border = `1px solid ${COLORS.border}`;
+  stripe.style.borderRadius = '2px';
+  stripe.style.pointerEvents = 'none';
+  rail.appendChild(stripe);
 
   const fill = document.createElement('div');
   fill.className = 'pyr3-slider-fill';
   fill.style.position = 'absolute';
   fill.style.left = '0';
-  fill.style.top = '0';
-  fill.style.height = '100%';
+  fill.style.top = '50%';
+  fill.style.height = '4px';
+  fill.style.transform = 'translateY(-50%)';
   fill.style.background = COLORS.flame.mid;
   fill.style.borderRadius = '2px';
+  fill.style.pointerEvents = 'none';
 
   const handle = document.createElement('div');
   handle.className = 'pyr3-slider-handle';
   handle.style.position = 'absolute';
   handle.style.top = '50%';
-  handle.style.width = '10px';
-  handle.style.height = '10px';
+  handle.style.width = '12px';
+  handle.style.height = '12px';
   handle.style.background = COLORS.flame.top;
   handle.style.border = `1px solid ${COLORS.flame.bot}`;
   handle.style.borderRadius = '50%';
@@ -252,6 +319,46 @@ export function buildSlider(opts: SliderOpts): HTMLElement {
 
   wrap.appendChild(rail);
   wrap.appendChild(value);
+
+  // Click-anywhere-on-rail = jump-to-value + start drag. While dragging,
+  // pointermove updates value continuously; release/cancel ends the drag.
+  function valueFromClientX(clientX: number): number {
+    const rect = rail.getBoundingClientRect();
+    const range = opts.max - opts.min;
+    if (rect.width <= 0 || range <= 0) return opts.min;
+    const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    let v = opts.min + t * range;
+    if (opts.step !== undefined && opts.step > 0) {
+      v = opts.min + Math.round((v - opts.min) / opts.step) * opts.step;
+    }
+    return Math.max(opts.min, Math.min(opts.max, v));
+  }
+  function commitFromX(clientX: number): void {
+    const v = valueFromClientX(clientX);
+    updateVisual(v);
+    scrubby.setValue(v);
+    opts.onChange(v);
+  }
+  let railDragActive = false;
+  rail.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    railDragActive = true;
+    try { rail.setPointerCapture(ev.pointerId); } catch { /* ignored */ }
+    commitFromX(ev.clientX);
+    ev.preventDefault();
+  });
+  rail.addEventListener('pointermove', (ev) => {
+    if (!railDragActive) return;
+    commitFromX(ev.clientX);
+  });
+  function endRailDrag(ev: PointerEvent): void {
+    if (!railDragActive) return;
+    railDragActive = false;
+    try { rail.releasePointerCapture(ev.pointerId); } catch { /* ignored */ }
+  }
+  rail.addEventListener('pointerup', endRailDrag);
+  rail.addEventListener('pointercancel', endRailDrag);
+
   return wrap;
 }
 

@@ -82,6 +82,10 @@ export function scrubbyInput(opts: ScrubbyInputOpts): ScrubbyHandle {
   el.setAttribute('tabindex', '0');
   if (opts.ariaLabel) el.setAttribute('aria-label', opts.ariaLabel);
   el.setAttribute('aria-valuenow', String(value));
+  // Discoverability — surface both interaction affordances so users find
+  // the keyboard-input path. Caller can still overwrite el.title to give
+  // a more field-specific hint after construction.
+  el.title = 'drag horizontally to scrub · double-click to type a value';
   el.textContent = fmt(value);
 
   function emit(): void {

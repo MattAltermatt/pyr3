@@ -31,6 +31,7 @@ import {
 import {
   buildRow,
   buildNumberInput,
+  buildPlainNumberInput,
   buildDropdown,
   buildPair,
 } from './edit-primitives';
@@ -172,7 +173,10 @@ export const renderSection: SectionMount = {
 
     // ── W × H pair row ──────────────────────────────────────────────────────
     // Sub-grid 1fr auto 1fr — neither input clips, the `×` pins center.
-    const widthInputRes = buildNumberInput({
+    // 2026-06-05: plain numeric inputs (not scrubby) for W × H — the bar's
+    // 📐 Size ▾ ladder handles the "pick a preset" path, and users typing
+    // explicit dims want a real input not a drag-target.
+    const widthInputRes = buildPlainNumberInput({
       value: state.genome.size?.width ?? 0,
       kind: 'generic',
       min: 1,
@@ -182,7 +186,7 @@ export const renderSection: SectionMount = {
     });
     widthInputRes.el.classList.add('pyr3-edit-render-width');
 
-    const heightInputRes = buildNumberInput({
+    const heightInputRes = buildPlainNumberInput({
       value: state.genome.size?.height ?? 0,
       kind: 'generic',
       min: 1,
@@ -199,7 +203,9 @@ export const renderSection: SectionMount = {
     host.appendChild(whRow);
 
     // ── quality row ─────────────────────────────────────────────────────────
-    const qualityRes = buildNumberInput({
+    // 2026-06-05: plain input (not scrubby) — the bar's QUALITY ladder
+    // handles preset SPP picks; the panel is for explicit typed values.
+    const qualityRes = buildPlainNumberInput({
       value: state.genome.quality ?? DEFAULT_QUALITY,
       kind: 'generic',
       min: 0.5,

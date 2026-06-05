@@ -32,6 +32,14 @@ function mount() {
 }
 
 function typeInto(cell: HTMLElement, value: string): void {
+  // Plain `<input>` (W×H + quality after 2026-06-05) → set value + fire
+  // input event directly. Scrubby `<span>` → dblclick to enter text mode,
+  // then type-and-Enter through the inner input.
+  if (cell instanceof HTMLInputElement) {
+    cell.value = value;
+    cell.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
   cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   const inp = cell.querySelector('input') as HTMLInputElement;
   inp.value = value;
