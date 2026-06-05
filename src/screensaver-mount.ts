@@ -118,9 +118,17 @@ function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
   return canvas;
 }
 
-interface BuildUpHandle {
+interface ModeHandle {
   cancel(): void;
 }
+
+/** Final quality the slideshow renders each flame to before holding. Higher
+ *  than build-up's BUILD_UP_TARGET_Q (50) since slideshow is "lean back at
+ *  full quality"; lower than viewer's max (200) to keep prefetch within the
+ *  default holdSec window. */
+const SLIDESHOW_TARGET_Q = 100;
+const SLIDESHOW_CHUNK_SAMPLES = 5_000_000;
+const SLIDESHOW_CROSSFADE_MS = 1500;
 
 /** Promise-based sleep that bails on cancel. */
 async function sleepCancellable(ms: number, isCancelled: () => boolean): Promise<void> {
@@ -131,12 +139,170 @@ async function sleepCancellable(ms: number, isCancelled: () => boolean): Promise
   }
 }
 
+/** Render a single flame to the target quality in chunks, yielding to the
+ *  event loop between dispatches so cancellation can land. Presents only
+ *  once at the end — slideshow is "appear fully rendered". */
+async function renderFlameToQuality(args: {
+  renderer: Renderer;
+  genome: Genome;
+  ctx: GPUCanvasContext;
+  W: number;
+  H: number;
+  targetQ: number;
+  isCancelled: () => boolean;
+}): Promise<void> {
+  const { renderer, genome, ctx, W, H, targetQ, isCancelled } = args;
+  renderer.reset(genome);
+  const seed = (Math.random() * 0xffffffff) >>> 0;
+  const pixels = W * H;
+  const totalSamplesTarget = targetQ * pixels;
+  let accumulated = 0;
+  while (accumulated < totalSamplesTarget && !isCancelled()) {
+    const remaining = totalSamplesTarget - accumulated;
+    const chunkSamples = Math.min(SLIDESHOW_CHUNK_SAMPLES, remaining);
+    const sppToAdd = Math.max(1, Math.ceil(chunkSamples / pixels));
+    const dispatch = computeDispatch(sppToAdd, W, H);
+    renderer.iterate({
+      genome,
+      seed,
+      walkers: dispatch.dispatchWalkers,
+      itersPerWalker: dispatch.dispatchIters,
+    });
+    accumulated += dispatch.actualSamples;
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
+  if (isCancelled()) return;
+  renderer.present({
+    genome,
+    outputView: ctx.getCurrentTexture().createView(),
+    totalSamples: Math.max(1, accumulated),
+  });
+}
+
+function makeSlideshowCanvas(
+  host: HTMLElement,
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  zIndex: number,
+): { canvas: HTMLCanvasElement; ctx: GPUCanvasContext; renderer: Renderer; W: number; H: number } {
+  const canvas = makeRenderCanvas(host);
+  canvas.style.zIndex = String(zIndex);
+  const ctx = canvas.getContext('webgpu');
+  if (!ctx) throw new Error('screensaver: WebGPU canvas context unavailable');
+  ctx.configure({ device, format, alphaMode: 'opaque' });
+  const renderer = createRenderer(device, format, {
+    width: canvas.width,
+    height: canvas.height,
+    oversample: 1,
+    filterRadius: DEFAULT_FILTER_RADIUS,
+  });
+  return { canvas, ctx, renderer, W: canvas.width, H: canvas.height };
+}
+
+function startSlideshow(args: {
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  canvasHost: HTMLElement;
+  prefs: ScreensaverPrefs;
+}): ModeHandle {
+  const { device, format, canvasHost, prefs } = args;
+  let cancelled = false;
+  const isCancelled = () => cancelled;
+
+  void (async () => {
+    const front = makeSlideshowCanvas(canvasHost, device, format, 2);
+    const back = makeSlideshowCanvas(canvasHost, device, format, 1);
+    front.canvas.style.opacity = '0';
+    back.canvas.style.opacity = '0';
+
+    const index = await loadFeatureIndex();
+    if (isCancelled()) return;
+    const allRefs = index.filter(() => true);
+    if (allRefs.length === 0) return;
+    const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
+
+    // Prime the front layer with the first flame.
+    const firstRef = queue.next();
+    if (!firstRef) return;
+    let firstGenome: Genome;
+    try {
+      firstGenome = await loadGenomeByRef(firstRef);
+    } catch {
+      return;
+    }
+    if (isCancelled()) return;
+    await renderFlameToQuality({
+      renderer: front.renderer,
+      genome: firstGenome,
+      ctx: front.ctx,
+      W: front.W,
+      H: front.H,
+      targetQ: SLIDESHOW_TARGET_Q,
+      isCancelled,
+    });
+    if (isCancelled()) return;
+    front.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
+    front.canvas.style.opacity = '1';
+
+    // Track which layer currently displays the active flame. After every
+    // crossfade we flip — the layer that just faded out becomes the prefetch
+    // target for the next flame.
+    let activeIsFront = true;
+
+    while (!isCancelled()) {
+      // Pick + render the next flame into the inactive layer (prefetch).
+      const nextRef = queue.next();
+      if (!nextRef) break;
+      let nextGenome: Genome;
+      try {
+        nextGenome = await loadGenomeByRef(nextRef);
+      } catch {
+        continue;
+      }
+      if (isCancelled()) return;
+      const prefetchTarget = activeIsFront ? back : front;
+      const currentActive = activeIsFront ? front : back;
+      await renderFlameToQuality({
+        renderer: prefetchTarget.renderer,
+        genome: nextGenome,
+        ctx: prefetchTarget.ctx,
+        W: prefetchTarget.W,
+        H: prefetchTarget.H,
+        targetQ: SLIDESHOW_TARGET_Q,
+        isCancelled,
+      });
+      if (isCancelled()) return;
+
+      // Wait the remainder of the hold period. Prefetch may have eaten into
+      // it — that's the point. If prefetch took longer than holdSec we
+      // crossfade immediately.
+      await sleepCancellable(prefs.holdSec * 1000, isCancelled);
+      if (isCancelled()) return;
+
+      // Crossfade.
+      prefetchTarget.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
+      prefetchTarget.canvas.style.opacity = '1';
+      currentActive.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
+      currentActive.canvas.style.opacity = '0';
+      await sleepCancellable(SLIDESHOW_CROSSFADE_MS + 100, isCancelled);
+
+      activeIsFront = !activeIsFront;
+    }
+  })();
+
+  return {
+    cancel() {
+      cancelled = true;
+    },
+  };
+}
+
 function startBuildUp(args: {
   device: GPUDevice;
   format: GPUTextureFormat;
   canvasHost: HTMLElement;
   prefs: ScreensaverPrefs;
-}): BuildUpHandle {
+}): ModeHandle {
   const { device, format, canvasHost, prefs } = args;
   let cancelled = false;
   const isCancelled = () => cancelled;
@@ -242,17 +408,19 @@ export function mountScreensaverPage(
   });
   root.append(canvasHost);
 
-  let runHandle: BuildUpHandle | null = null;
+  let runHandle: ModeHandle | null = null;
 
   const landing = mountScreensaverLanding(root, {
     onPlay: (prefs: ScreensaverPrefs) => {
       landing.card.classList.add('hidden');
       const pill = buildNowPlayingPill({ onStop: stopPlayback });
       root.append(pill);
-      if (device && format && prefs.mode === 'build-up') {
-        runHandle = startBuildUp({ device, format, canvasHost, prefs });
+      if (device && format) {
+        runHandle =
+          prefs.mode === 'build-up'
+            ? startBuildUp({ device, format, canvasHost, prefs })
+            : startSlideshow({ device, format, canvasHost, prefs });
       }
-      // Slideshow mode wired in T8; until then it just shows the pill.
     },
   });
 
