@@ -205,41 +205,52 @@ const METRIC_LABELS: Record<MetricAxis, string> = {
   meanLum: FILTER_LABEL_MAP.meanLum,
 };
 
-/** Convert a 0..1 metric range to a 10-bucket Map<bucket, count>. The xform
- *  facet counts are integer buckets 1..14+; we re-pack them into 10 buckets
- *  so the same buildMetricRow histogram primitive can render them. The xform
- *  bucketing maps 1..10 directly and folds 11..14+ into bucket 9 to preserve
- *  the "long tail" visual. */
+/** Number of histogram buckets for the xform-count axis: integer counts
+ *  1..13 each get their own bar; ≥14 collapses into the trailing "14+"
+ *  bucket. Matches the `xformBucket(n)` collapse in gallery-facets.ts. */
+const XFORM_BUCKETS = 14;
+
+/** Convert the facets' xform-keyed Map (keys 1..13 + 14 for "14+") into a
+ *  bucket-indexed Map (keys 0..13) that the histogram primitive consumes
+ *  directly. Bucket i ↔ xform count i+1, where bucket 13 is the "14+" tail. */
 function xformCountsToMetricBuckets(counts: Map<number, number>): Map<number, number> {
   const out = new Map<number, number>();
-  for (let b = 0; b < 10; b++) out.set(b, 0);
-  for (const [bucket, n] of counts.entries()) {
-    if (bucket < 1) continue;
-    const idx = bucket <= 10 ? bucket - 1 : 9;
+  for (let b = 0; b < XFORM_BUCKETS; b++) out.set(b, 0);
+  for (const [xform, n] of counts.entries()) {
+    if (xform < 1) continue;
+    // xformBucket already clamps ≥14 into key 14 — but defend in depth.
+    const idx = Math.min(XFORM_BUCKETS - 1, xform - 1);
     out.set(idx, (out.get(idx) ?? 0) + n);
   }
   return out;
 }
 
 /** Translate the xform integer range (xformMin / xformMax) into the 0..1
- *  range space the metric row consumes. xformMin=1 → 0.0; xformMin=10 → 0.9;
- *  xformMax=null → null (no upper cap). The mapping mirrors the bucket
- *  re-pack above so the in-range bracket aligns with the bar count. */
+ *  range space the metric row consumes. xformMin=1 → 0.0; xformMin=14 →
+ *  13/14 ≈ 0.929; xformMax=null → null (no upper cap). Mirrors the
+ *  14-bucket layout so the in-range bracket aligns with each bar. */
 function xformRangeToMetricFloat(min: number, max: number | null): { min: number; max: number | null } {
-  const lo = Math.min(9, Math.max(0, min - 1)) / 10;
+  const lo = Math.min(XFORM_BUCKETS - 1, Math.max(0, min - 1)) / XFORM_BUCKETS;
   if (max === null) return { min: lo, max: null };
-  const hi = Math.min(10, Math.max(1, max));
-  return { min: lo, max: hi / 10 };
+  const hi = Math.min(XFORM_BUCKETS, Math.max(1, max));
+  return { min: lo, max: hi / XFORM_BUCKETS };
 }
 
 /** Reverse the float-space mapping back to xform integer bounds for
  *  re-emission into FilterSpec. min=0.0 → xformMin=1; max=null stays null;
- *  max=1.0 → null (saturates to no-cap); otherwise max → ceil(max * 10). */
+ *  max → round(max * 14); when that hits the trailing "14+" bucket
+ *  (xformMax≥14) we saturate to null (no cap) so FilterSpec stays canonical. */
 function metricFloatToXformRange(min: number, max: number | null): { min: number; max: number | null } {
-  const lo = Math.max(1, Math.round(min * 10) + 1);
+  const lo = Math.max(1, Math.round(min * XFORM_BUCKETS) + 1);
   if (max === null) return { min: lo, max: null };
-  const hi = Math.round(max * 10);
-  return { min: lo, max: hi >= 14 ? null : hi };
+  const hi = Math.round(max * XFORM_BUCKETS);
+  return { min: lo, max: hi >= XFORM_BUCKETS ? null : hi };
+}
+
+/** Bucket-label fn for the xform-count axis. Bucket index 0..12 → "1".."13";
+ *  bucket 13 → the "14+" tail marker. */
+function xformBucketLabel(i: number): string {
+  return i < XFORM_BUCKETS - 1 ? String(i + 1) : '14+';
 }
 
 export function mountFilterDrawer(
@@ -497,6 +508,8 @@ export function mountFilterDrawer(
       counts: buckets,
       onRange,
       formatValue,
+      bucketCount: axis === 'xforms' ? XFORM_BUCKETS : undefined,
+      bucketLabels: axis === 'xforms' ? xformBucketLabel : undefined,
     });
     // Preserve metric key on the row's dataset for downstream test
     // assertions / event delegation (buildMetricRow stamps a fallback type
@@ -1017,6 +1030,15 @@ export interface MetricRowOpts {
    *  in integer xform-count units ("4–6") instead of the metric-float
    *  default ("0.3–0.6") since the underlying filter is integer-valued. */
   formatValue?: (min: number, max: number | null) => string;
+  /** Number of histogram buckets. Default 10 (the 0..1 decile axes). The
+   *  xform-count axis passes 14 (1..13 individual + "14+" tail). When
+   *  changed, brush-select snaps to N buckets too. */
+  bucketCount?: number;
+  /** Optional label for the i-th bucket, rendered below each bar. Default
+   *  is the bucket's upper-bound to one decimal (e.g. `0.1`, `0.2`, …,
+   *  `1.0` for the default 10-bucket axes). Xforms override with the
+   *  integer-count labels (`1`, `2`, …, `13`, `14+`). */
+  bucketLabels?: (i: number) => string;
 }
 
 const METRIC_ROW_STYLES_ID = 'pyr3-metric-row-styles';
@@ -1063,13 +1085,40 @@ const METRIC_ROW_STYLES = `
 .pyr3-metric-histogram {
   position: relative;
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 48px;
+  flex-direction: column;
+  gap: 4px;
   background: rgba(0, 0, 0, 0.18);
   border-radius: 3px;
   padding: 4px;
   cursor: crosshair;
+}
+.pyr3-metric-count-row,
+.pyr3-metric-axis-row {
+  display: flex;
+  gap: 2px;
+}
+.pyr3-metric-count,
+.pyr3-metric-axislabel {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  color: #8a8a92;
+  text-align: center;
+  white-space: nowrap;
+  overflow: visible;
+  pointer-events: none;
+}
+.pyr3-metric-count {
+  color: #b6b6bd;
+}
+.pyr3-metric-bar-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 48px;
 }
 .pyr3-metric-bar {
   flex: 1 1 0;
@@ -1085,8 +1134,8 @@ const METRIC_ROW_STYLES = `
 }
 .pyr3-metric-bracket {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 0;
+  bottom: 0;
   width: 2px;
   background: #ffbe3e;
   pointer-events: none;
@@ -1137,10 +1186,12 @@ function formatMetricRange(min: number, max: number | null): string {
 }
 
 /** Compute the in-range bucket span for a given (min, max) selection,
- *  matching mountStatRow's exclusive-upper-edge convention. */
-function rangeToBuckets(min: number, max: number | null): { lo: number; hi: number } {
-  const lo = Math.min(9, Math.max(0, Math.floor(min * 10)));
-  const hi = max === null ? 9 : Math.min(9, Math.max(0, Math.ceil(max * 10) - 1));
+ *  matching mountStatRow's exclusive-upper-edge convention. N is the
+ *  histogram's bucket count (10 for stats, 14 for xforms). */
+function rangeToBuckets(min: number, max: number | null, n: number): { lo: number; hi: number } {
+  const last = n - 1;
+  const lo = Math.min(last, Math.max(0, Math.floor(min * n)));
+  const hi = max === null ? last : Math.min(last, Math.max(0, Math.ceil(max * n) - 1));
   return { lo, hi };
 }
 
@@ -1154,6 +1205,13 @@ function rangeToBuckets(min: number, max: number | null): { lo: number; hi: numb
  */
 export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
   injectMetricRowStylesOnce();
+
+  // Bucket count is configurable so the xform-count axis can render its
+  // full 14-bucket spread (1..13 + "14+") through the same primitive that
+  // serves the 10-decile stat axes.
+  const N = opts.bucketCount ?? 10;
+  const defaultBucketLabel = (i: number): string => ((i + 1) / N).toFixed(1);
+  const bucketLabel = opts.bucketLabels ?? defaultBucketLabel;
 
   const row = document.createElement('div');
   row.className = 'pyr3-metric-row';
@@ -1207,35 +1265,58 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
     if (v > maxCount) maxCount = v;
   }
 
-  const { lo: rangeLo, hi: rangeHi } = rangeToBuckets(opts.min, opts.max);
+  const { lo: rangeLo, hi: rangeHi } = rangeToBuckets(opts.min, opts.max, N);
 
-  const bars: HTMLElement[] = [];
-  for (let b = 0; b < 10; b++) {
+  // Stacked rows: count labels above bars, bars in the middle (with the
+  // amber range brackets overlaying), axis labels below. Each row is its
+  // own flex of N equal cells so labels align column-for-column with bars.
+  const countRow = document.createElement('div');
+  countRow.className = 'pyr3-metric-count-row';
+
+  const barRow = document.createElement('div');
+  barRow.className = 'pyr3-metric-bar-row';
+
+  const axisRow = document.createElement('div');
+  axisRow.className = 'pyr3-metric-axis-row';
+
+  for (let b = 0; b < N; b++) {
+    const count = opts.counts.get(b) ?? 0;
+
+    const countLabel = document.createElement('div');
+    countLabel.className = 'pyr3-metric-count';
+    countLabel.textContent = count.toLocaleString('en-US');
+    countRow.appendChild(countLabel);
+
     const bar = document.createElement('div');
     bar.className = 'pyr3-metric-bar';
     bar.dataset.bucket = String(b);
-    const count = opts.counts.get(b) ?? 0;
     const pct = maxCount === 0 ? 0 : Math.round((count / maxCount) * 100);
     bar.style.height = `${pct}%`;
     if (b >= rangeLo && b <= rangeHi) bar.classList.add('in-range');
-    bars.push(bar);
-    histogram.appendChild(bar);
+    barRow.appendChild(bar);
+
+    const axis = document.createElement('div');
+    axis.className = 'pyr3-metric-axislabel';
+    axis.textContent = bucketLabel(b);
+    axisRow.appendChild(axis);
   }
 
-  // Edge brackets — small amber rectangles overlaying the histogram at
-  // the START of the rangeLo bucket and the END of the rangeHi bucket.
-  // Positioned as percentages of histogram width so they stay anchored
-  // on resize without JS re-layout.
+  // Edge brackets — small amber rectangles overlaying the bar row at the
+  // START of the rangeLo bucket and the END of the rangeHi bucket.
+  // Positioned as percentages of the bar-row width so they stay anchored
+  // on resize without JS re-layout. (Living inside the bar row keeps them
+  // visually aligned with bar tops/bottoms regardless of label rows.)
   const bracketStart = document.createElement('div');
   bracketStart.className = 'pyr3-metric-bracket';
-  bracketStart.style.left = `${rangeLo * 10}%`;
-  histogram.appendChild(bracketStart);
+  bracketStart.style.left = `${(rangeLo / N) * 100}%`;
+  barRow.appendChild(bracketStart);
 
   const bracketEnd = document.createElement('div');
   bracketEnd.className = 'pyr3-metric-bracket';
-  bracketEnd.style.left = `${(rangeHi + 1) * 10}%`;
-  histogram.appendChild(bracketEnd);
+  bracketEnd.style.left = `${((rangeHi + 1) / N) * 100}%`;
+  barRow.appendChild(bracketEnd);
 
+  histogram.append(countRow, barRow, axisRow);
   body.appendChild(histogram);
 
   const readout = document.createElement('div');
@@ -1247,7 +1328,7 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 
   // Wire brush-select onto the histogram so drag gestures map to onRange.
   // (Task 5.5 — attachBrushSelect is defined below.)
-  attachBrushSelect(histogram, opts.onRange);
+  attachBrushSelect(histogram, opts.onRange, N);
 
   // Collapse / expand state. `display: none` toggling is the cheapest
   // mechanism that preserves layout when the user expands a row.
@@ -1286,28 +1367,30 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 // the drag continues even when the cursor leaves the histogram (matching
 // the typical web brush-select UX). They're removed in mouseup.
 
-function bucketAt(clientX: number, el: HTMLElement): number {
+function bucketAt(clientX: number, el: HTMLElement, n: number): number {
   const rect = el.getBoundingClientRect();
   const localX = clientX - rect.left;
   const width = el.clientWidth || rect.width || 1;
-  return Math.min(9, Math.max(0, Math.floor((localX / width) * 10)));
+  return Math.min(n - 1, Math.max(0, Math.floor((localX / width) * n)));
 }
 
 export function attachBrushSelect(
   histogram: HTMLElement,
   onRange: (min: number, max: number | null) => void,
+  bucketCount: number = 10,
 ): void {
+  const N = bucketCount;
   let dragStart: number | null = null;
 
   function bucketsToRange(loBucket: number, hiBucket: number): { min: number; max: number | null } {
     const lo = Math.min(loBucket, hiBucket);
     const hi = Math.max(loBucket, hiBucket);
-    const min = lo / 10;
-    // hi=9 saturates to null (no upper cap) so the canonical
+    const min = lo / N;
+    // hi=N-1 saturates to null (no upper cap) so the canonical
     // DEFAULT_FILTER_SPEC.<metric>Max value re-encodes cleanly. Earlier
     // buckets carry the exclusive upper-edge convention from mountStatRow:
-    // bucket 7 means [0.7, 0.8) → emitted max = 0.8.
-    const max = hi === 9 ? null : (hi + 1) / 10;
+    // bucket B means [B/N, (B+1)/N) → emitted max = (B+1)/N.
+    const max = hi === N - 1 ? null : (hi + 1) / N;
     return { min, max };
   }
 
@@ -1322,7 +1405,7 @@ export function attachBrushSelect(
 
   function onMove(ev: MouseEvent): void {
     if (dragStart === null) return;
-    const cur = bucketAt(ev.clientX, histogram);
+    const cur = bucketAt(ev.clientX, histogram, N);
     renderInProgress(dragStart, cur);
   }
 
@@ -1331,7 +1414,7 @@ export function attachBrushSelect(
       cleanup();
       return;
     }
-    const cur = bucketAt(ev.clientX, histogram);
+    const cur = bucketAt(ev.clientX, histogram, N);
     const { min, max } = bucketsToRange(dragStart, cur);
     onRange(min, max);
     cleanup();
@@ -1348,7 +1431,7 @@ export function attachBrushSelect(
     // attached to the histogram, so by the time we're here the bubbling
     // already filtered for us — but we still need to record the start
     // bucket before document-level listeners take over).
-    dragStart = bucketAt(ev.clientX, histogram);
+    dragStart = bucketAt(ev.clientX, histogram, N);
     renderInProgress(dragStart, dragStart);
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);

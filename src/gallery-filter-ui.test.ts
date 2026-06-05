@@ -893,6 +893,80 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
     expect(readout.textContent).toContain('0.2');
     expect(readout.textContent).toContain('0.8');
   });
+
+  it('default bucketLabels render the bucket upper-bound for stat axes (0.1 0.2 … 1.0)', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      counts: makeBuckets([3242, 2480, 3021, 3106, 3544, 3730, 4410, 5158, 6710, 16774]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const axisLabels = Array.from(row.querySelectorAll('.pyr3-metric-axislabel'))
+      .map(el => el.textContent);
+    expect(axisLabels).toEqual(['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1.0']);
+  });
+
+  it('renders comma-formatted per-bucket count labels above each bar', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      counts: makeBuckets([3242, 2480, 3021, 3106, 3544, 3730, 4410, 5158, 6710, 16774]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const counts = Array.from(row.querySelectorAll('.pyr3-metric-count'))
+      .map(el => el.textContent);
+    expect(counts).toEqual([
+      '3,242', '2,480', '3,021', '3,106', '3,544',
+      '3,730', '4,410', '5,158', '6,710', '16,774',
+    ]);
+  });
+
+  it('bucketCount=14 + custom bucketLabels render xform-style row (1..13, 14+)', () => {
+    const counts14 = new Map<number, number>();
+    const xformCounts = [77, 5287, 9048, 8575, 5756, 4217, 3132, 3050, 2175, 1845, 1968, 3242, 1129, 2674];
+    for (let i = 0; i < 14; i++) counts14.set(i, xformCounts[i]!);
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'xform count',
+      min: 0,
+      max: null,
+      counts: counts14,
+      bucketCount: 14,
+      bucketLabels: (i) => i < 13 ? String(i + 1) : '14+',
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const bars = row.querySelectorAll('.pyr3-metric-bar');
+    expect(bars).toHaveLength(14);
+    const axisLabels = Array.from(row.querySelectorAll('.pyr3-metric-axislabel'))
+      .map(el => el.textContent);
+    expect(axisLabels).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14+']);
+    const counts = Array.from(row.querySelectorAll('.pyr3-metric-count'))
+      .map(el => el.textContent);
+    expect(counts[1]).toBe('5,287');
+    expect(counts[13]).toBe('2,674');
+  });
+
+  it('zero-count buckets still render an empty (non-null) count label so the row stays aligned', () => {
+    const row = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      counts: makeBuckets([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const counts = row.querySelectorAll('.pyr3-metric-count');
+    expect(counts).toHaveLength(10);
+    for (const el of counts) expect(el.textContent).toBe('0');
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────
