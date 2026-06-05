@@ -1540,4 +1540,53 @@ const BAR_CSS = `
   font-weight: 500; cursor: pointer; white-space: nowrap; font-family: inherit;
 }
 .pyr3-tier3-cancel:hover { background: rgba(255,140,26,0.28); }
+
+/* === Chrome substrate (mountBarChrome, Phase 1) — was missing CSS for child class names === */
+.pyr3-left-cluster { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.pyr3-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+.pyr3-brand-mark {
+  width: 38px; height: 38px; flex-shrink: 0;
+  transform: translateY(1px);
+  filter: drop-shadow(0 0 6px rgba(255, 130, 30, 0.35));
+}
+.pyr3-brand-wordmark {
+  font-weight: 800; font-size: 24px; line-height: 1; letter-spacing: -0.02em;
+  background: linear-gradient(180deg, ${COLORS.flame.top}, ${COLORS.flame.bot});
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.pyr3-about-link {
+  color: ${COLORS.flame.mid}; font-size: 13px; font-weight: 500;
+  text-decoration: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.pyr3-about-link::after { content: ' ↗'; font-size: 11px; opacity: 0.7; }
+.pyr3-about-link:hover { color: ${COLORS.flame.top}; }
+.pyr3-about-link.active { color: ${COLORS.flame.top}; }
+
+.pyr3-tabs {
+  display: flex; align-items: center; gap: 4px;
+  background: #07070a; padding: 3px;
+  border-radius: 9px; border: 1px solid #1a1a1f;
+}
+.pyr3-tab {
+  padding: 4px 16px; border-radius: 7px;
+  font-size: 13px; font-weight: 600; color: ${COLORS.text.muted};
+  cursor: pointer; user-select: none;
+  transition: color 0.15s, background 0.15s;
+}
+.pyr3-tab:hover { color: ${COLORS.text.primary}; }
+.pyr3-tab.active {
+  background: linear-gradient(180deg, #2a1a08, #1a0d04);
+  color: ${COLORS.flame.top};
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 190, 62, 0.5),
+    inset 0 1px 3px rgba(0, 0, 0, 0.7),
+    0 0 14px rgba(255, 130, 30, 0.2);
+  text-shadow: 0 0 8px rgba(255, 190, 62, 0.5);
+}
+
+.pyr3-right-cluster {
+  display: flex; align-items: center; justify-content: flex-end; gap: 18px;
+  min-width: 0;
+}
 `;
