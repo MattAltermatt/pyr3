@@ -13,6 +13,7 @@ import {
   createEditState,
   createLaneScheduler,
   pathLane,
+  schedulePersist,
   type EditState,
   type LaneScheduler,
 } from './edit-state';
@@ -334,6 +335,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // is the right batching cadence and there's no heavy re-iterate to
   // bypass.
   function onPathChange(path: string): void {
+    // #103 Phase 6 Task 6.3 — persist the WIP genome to localStorage on every
+    // edit. Debounced inside schedulePersist so a slider drag doesn't burn
+    // a setItem call per frame; cold-start (below) reads the result back via
+    // restoreWip().
+    schedulePersist(state.genome);
     const lane = pathLane(path);
     if (lane === 'slow' || lane === 'rebuild') {
       void requestLiveRender();
@@ -420,6 +426,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // existing fields don't need a re-publish: app-state stores the
     // reference and observers re-read on tab click.
     setCurrentFlame({ genome });
+    // #103 Phase 6 Task 6.3 — reroll / open replaces the whole genome; persist
+    // the new one so a reload doesn't drop back to the prior WIP. Debounced
+    // alongside any inline edits the user does next.
+    schedulePersist(genome);
     if (seed !== undefined) state.seed = seed;
     rebuildPanel();
     inflightTicket++;
@@ -574,10 +584,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     state,
     setName(name: string): void {
       state.genome.name = name;
+      // #103 Phase 6 Task 6.3 — programmatic mutators bypass onPathChange (they
+      // talk to the scheduler directly), so also schedule the WIP persist here.
+      schedulePersist(state.genome);
       scheduler.schedule({ lane: pathLane('name'), path: 'name' });
     },
     setNick(nick: string): void {
       state.genome.nick = nick || undefined;
+      schedulePersist(state.genome);
       scheduler.schedule({ lane: pathLane('nick'), path: 'nick' });
     },
     // #103 Phase 6 Task 6.2 — top-bar action callbacks. These reuse the

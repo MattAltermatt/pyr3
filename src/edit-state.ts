@@ -166,6 +166,104 @@ export function createLaneScheduler(
   };
 }
 
+// ── #103 Phase 6 Task 6.3 — WIP genome persistence ────────────────────
+// The editor stores its in-progress genome to localStorage on every edit so
+// that a tab reload / browser close doesn't drop the user's work. Cold-start
+// (mountEditPage) calls restoreWip() and uses the result as the initial
+// genome when present; otherwise the existing random-reroll path runs.
+// schedulePersist() debounces by 200ms so a rapid slider drag doesn't burn
+// 100 setItem calls per second.
+
+export const WIP_KEY = 'pyr3.editor.wip';
+
+/** Write the genome JSON to localStorage immediately. Best-effort —
+ *  localStorage may be disabled (private mode, storage-full); failures are
+ *  swallowed so the editor stays interactive. */
+export function persistWip(genome: Genome): void {
+  try {
+    localStorage.setItem(WIP_KEY, JSON.stringify(genome));
+  } catch {
+    // localStorage disabled (private browsing) or quota exceeded — no-op.
+  }
+}
+
+/** Read the persisted genome back. Returns null when:
+ *   • the key isn't present (first visit / cleared storage)
+ *   • the stored JSON is malformed (corrupted by a partial write)
+ *   • localStorage itself throws (private mode).
+ *
+ *  The caller (mountEditPage cold-start) treats null as "no saved WIP" and
+ *  falls back to the random-reroll path. */
+export function restoreWip(): Genome | null {
+  try {
+    const raw = localStorage.getItem(WIP_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as Genome;
+  } catch {
+    return null;
+  }
+}
+
+// Debounced persistence — coalesces a rapid edit stream into a single
+// localStorage write 200ms after the LAST edit. The timer lives at module
+// scope so consecutive schedulePersist() calls share / reset the same timer.
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Queue a debounced persistWip. If another schedulePersist lands within
+ *  200ms, the prior pending write is cancelled and the new genome takes
+ *  its place — the LAST scheduled value wins. */
+export function schedulePersist(genome: Genome): void {
+  if (_persistTimer !== null) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    _persistTimer = null;
+    persistWip(genome);
+  }, 200);
+}
+
+// ── #103 Phase 6 Task 6.4 — Section-collapse persistence ──────────────
+// Per-section collapse state survives reloads. Default (no key present /
+// malformed JSON) is the existing all-collapsed map preserved from #102.
+
+export const SECTION_COLLAPSE_KEY = 'pyr3.editor.sectionCollapse';
+
+const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
+  palette: true,
+  viewport: true,
+  xforms: true,
+  final: true,
+  global: true,
+  density: true,
+  render: true,
+};
+
+/** Persist the per-section collapse map immediately. No debounce — toggle
+ *  events are rare (one per section-header click). Best-effort; swallows
+ *  any localStorage failure. */
+export function persistSectionCollapse(map: Record<SectionKey, boolean>): void {
+  try {
+    localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage disabled or full — no-op; the in-memory map continues
+    // to drive this session.
+  }
+}
+
+/** Read the persisted section-collapse map. Returns the default
+ *  all-collapsed map when the key is absent, JSON is malformed, or
+ *  localStorage throws. Always returns a fresh copy so callers can mutate. */
+export function restoreSectionCollapse(): Record<SectionKey, boolean> {
+  try {
+    const raw = localStorage.getItem(SECTION_COLLAPSE_KEY);
+    if (!raw) return { ...DEFAULT_SECTION_COLLAPSE };
+    const parsed = JSON.parse(raw) as Record<SectionKey, boolean>;
+    // Merge over the default so a partial / older shape still produces all
+    // seven keys; persisted values win where present.
+    return { ...DEFAULT_SECTION_COLLAPSE, ...parsed };
+  } catch {
+    return { ...DEFAULT_SECTION_COLLAPSE };
+  }
+}
+
 /** Transient UI-only solo state. Captured when shift-click activates solo on
  *  an xform / variation; restored when solo exits. */
 export interface SoloSnapshot {
