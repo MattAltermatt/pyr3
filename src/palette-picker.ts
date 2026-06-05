@@ -188,11 +188,24 @@ export function mountPalettePicker(
   const badge = document.createElement('span');
   badge.className = 'pyr3-palette-picker-badge';
   badge.textContent = `${FLAM3_PALETTE_COUNT}`;
+  // Close-without-apply reverts to the originally-selected palette so a
+  // visitor can browse-as-preview without ending up stuck on whatever
+  // they last clicked. apply&close sets `committed=true` first so this
+  // revert is skipped. Comparison uses JSON to cover all 3 PaletteSource
+  // variants (corpus/flam3/mine) without per-kind branching.
+  const sourceEq = (a: PaletteSource, b: PaletteSource): boolean =>
+    JSON.stringify(a) === JSON.stringify(b);
+  const handleDismiss = (): void => {
+    if (!committed && !sourceEq(originalSource, selectedSource)) {
+      opts.onApply(originalSource);
+    }
+    opts.onClose();
+  };
   const closeBtn = document.createElement('div');
   closeBtn.className = 'pyr3-palette-picker-close';
   closeBtn.textContent = '×';
-  closeBtn.title = 'close picker (esc)';
-  closeBtn.addEventListener('click', () => opts.onClose());
+  closeBtn.title = 'close picker (esc) — reverts to original';
+  closeBtn.addEventListener('click', handleDismiss);
   titleRow.append(title, badge, closeBtn);
   head.appendChild(titleRow);
 
@@ -302,7 +315,7 @@ export function mountPalettePicker(
   const autoApplyLabel = document.createElement('span');
   autoApplyLabel.textContent = 'auto-apply';
   const autoApply = buildToggle({
-    value: false,
+    value: true,
     onChange: (next) => { autoApplyOn = next; },
   });
   autoApply.classList.add('pyr3-palette-picker-auto-apply');
@@ -330,9 +343,16 @@ export function mountPalettePicker(
   // Live favorite set + tab state ------------------------------------------
   const favorites = readFavorites();
   let activeTab: 'all' | 'favorites' = 'all';
-  // Auto-apply: cell click immediately invokes onApply. OFF = deferred until
-  // the footer apply&close button fires.
-  let autoApplyOn = false;
+  // 2026-06-05: auto-apply ON by default — single-clicking a palette
+  // immediately re-renders in that color so the user can preview without
+  // a separate commit. apply&close locks the pick; closing any other way
+  // reverts to the original palette (see committed flag below).
+  let autoApplyOn = true;
+  // Tracks whether the user explicitly committed via apply&close. When
+  // false at close-time, the picker reverts to originalSource — so a
+  // visitor who previewed N palettes and closed the picker doesn't end
+  // up stuck on whatever they last clicked.
+  let committed = false;
 
   function isFavorite(idx: number): boolean {
     return favorites.has(favoriteIdFor({ kind: 'flam3', number: idx }));
@@ -578,6 +598,7 @@ export function mountPalettePicker(
     variant: 'primary',
     label: 'apply & close',
     onClick: () => {
+      committed = true;
       opts.onApply(selectedSource);
       opts.onClose();
     },

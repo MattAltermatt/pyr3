@@ -393,45 +393,74 @@ describe('palette picker — favorites (Task 9.6)', () => {
 });
 
 describe('palette picker — auto-apply / revert / apply&close (Task 9.8)', () => {
-  it('cell click WITHOUT auto-apply: selects without calling onApply', () => {
+  it('cell click with auto-apply ON (default) immediately calls onApply for live preview', () => {
     installLocalStorageStub();
     const onApply = vi.fn();
     const { root } = mount(makeOpts({ onApply }));
-    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
-    cell5.click();
-    expect(onApply).not.toHaveBeenCalled();
-    // The cell becomes the currently-selected cell (visually + footer).
-    expect(cell5.classList.contains('active')).toBe(true);
-    // Selected info shows the paletteIdentifier text — for flam3 catalog
-    // entries this is either `flam3 "name"` or `flam3 #N`. Either way the
-    // `flam3` prefix is present.
-    const selected = root.querySelector('.pyr3-palette-picker-selected') as HTMLElement;
-    expect(selected.textContent).toContain('flam3');
-  });
-
-  it('cell click WITH auto-apply ON: immediately calls onApply with the source', () => {
-    installLocalStorageStub();
-    const onApply = vi.fn();
-    const { root } = mount(makeOpts({ onApply }));
-    // Toggle auto-apply ON.
-    const toggle = root.querySelector('.pyr3-palette-picker-auto-apply') as HTMLElement;
-    toggle.click();
+    // 2026-06-05: auto-apply is ON by default — single click previews live.
     const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
     cell5.click();
     expect(onApply).toHaveBeenCalledOnce();
     expect(onApply).toHaveBeenCalledWith({ kind: 'flam3', number: 5 });
+    expect(cell5.classList.contains('active')).toBe(true);
+    const selected = root.querySelector('.pyr3-palette-picker-selected') as HTMLElement;
+    expect(selected.textContent).toContain('flam3');
   });
 
-  it('toggling auto-apply OFF after a select does not auto-fire onApply', () => {
+  it('toggling auto-apply OFF lets cell clicks select without firing onApply', () => {
     installLocalStorageStub();
     const onApply = vi.fn();
     const { root } = mount(makeOpts({ onApply }));
+    // Default ON → click once turns it OFF.
     const toggle = root.querySelector('.pyr3-palette-picker-auto-apply') as HTMLElement;
-    toggle.click(); // ON
-    toggle.click(); // OFF
+    toggle.click();
     const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
     cell5.click();
     expect(onApply).not.toHaveBeenCalled();
+    expect(cell5.classList.contains('active')).toBe(true);
+  });
+
+  it('closing the picker without apply&close REVERTS to the original palette', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const onClose = vi.fn();
+    const { root } = mount(makeOpts({ onApply, onClose }));
+    // Live-preview a different palette (auto-apply ON by default).
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click();
+    expect(onApply).toHaveBeenLastCalledWith({ kind: 'flam3', number: 5 });
+    // Close via the X — should re-fire onApply with the ORIGINAL source.
+    const closeBtn = root.querySelector('.pyr3-palette-picker-close') as HTMLElement;
+    closeBtn.click();
+    expect(onApply).toHaveBeenLastCalledWith({ kind: 'flam3', number: 100 });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('apply&close does NOT trigger the close-revert (committed = true)', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const onClose = vi.fn();
+    const { root } = mount(makeOpts({ onApply, onClose }));
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    cell5.click(); // preview #5 (onApply call 1)
+    const apply = root.querySelector('.pyr3-palette-picker-apply') as HTMLElement;
+    apply.click(); // commit (onApply call 2 with #5) + onClose
+    expect(onApply).toHaveBeenLastCalledWith({ kind: 'flam3', number: 5 });
+    // Total of 2 calls — preview + commit. NO third call reverting to #100.
+    expect(onApply).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('closing without changing selection does NOT fire onApply (no-op revert)', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const onClose = vi.fn();
+    const { root } = mount(makeOpts({ onApply, onClose }));
+    // Just open + close — original === selected, nothing to revert.
+    const closeBtn = root.querySelector('.pyr3-palette-picker-close') as HTMLElement;
+    closeBtn.click();
+    expect(onApply).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('apply & close calls onApply with the SELECTED source, then onClose', () => {
@@ -478,8 +507,7 @@ describe('palette picker — auto-apply / revert / apply&close (Task 9.8)', () =
     installLocalStorageStub();
     const onApply = vi.fn();
     const { root } = mount(makeOpts({ onApply }));
-    const toggle = root.querySelector('.pyr3-palette-picker-auto-apply') as HTMLElement;
-    toggle.click(); // ON
+    // Auto-apply ON by default (2026-06-05).
     const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
     cell5.click();
     onApply.mockClear();
