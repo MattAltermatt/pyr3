@@ -518,7 +518,16 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     b.title = `render at ${spp} samples per pixel`;
     b.onclick = () => {
       const longEdge = Math.max(currentSize.w, currentSize.h);
-      opts.onRenderQuality({ kind: 'custom', longEdge, spp });
+      // Pass explicit width+height so a QUALITY click preserves the user's
+      // current Size choice. Size and Quality must be orthogonal — changing
+      // quality must NOT collapse the aspect back to the genome's native.
+      opts.onRenderQuality({
+        kind: 'custom',
+        longEdge,
+        spp,
+        width: currentSize.w,
+        height: currentSize.h,
+      });
     };
     qualityBtns.set(spp, b);
     qualityGroup.append(b);
