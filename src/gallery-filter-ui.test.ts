@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Window } from 'happy-dom';
-import { mountFilterDrawer, buildActiveChipStrip } from './gallery-filter-ui';
-import { DEFAULT_FILTER_SPEC, type FilterSpec } from './gallery-filter';
+import { mountFilterDrawer, buildActiveChipStrip, buildSortRow } from './gallery-filter-ui';
+import { DEFAULT_FILTER_SPEC, type FilterSpec, type SortMode, type SortDir } from './gallery-filter';
 
 function setupDom(): void {
   const w = new Window();
@@ -720,5 +720,68 @@ describe('buildActiveChipStrip (Task 5.2) — active-filter chips with one-click
   it('clear-all link is absent when no filters are active', () => {
     const strip = buildActiveChipStrip(DEFAULT_FILTER_SPEC, vi.fn(), vi.fn());
     expect(strip.querySelector('.pyr3-active-chip-clear-all')).toBeFalsy();
+  });
+});
+
+describe('buildSortRow (Task 5.3) — sort dropdown + direction toggle', () => {
+  const NAMED_SORTS = ['time', 'interest', 'coverage', 'entropy', 'colorVar', 'meanLum'] as const;
+
+  it('renders a "sort" label, a dropdown of the named sort modes, and a direction toggle', () => {
+    const row = buildSortRow(DEFAULT_FILTER_SPEC, vi.fn(), vi.fn());
+    expect(row.querySelector('.pyr3-sort-row-label')?.textContent).toBe('sort');
+    const select = row.querySelector('select.pyr3-sort-select') as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    expect(optionValues).toEqual([...NAMED_SORTS]);
+    expect(row.querySelector('.pyr3-sort-dir-btn')).toBeTruthy();
+  });
+
+  it('dropdown excludes "custom" (it is a UI-only mode toggled by the tune panel)', () => {
+    const row = buildSortRow(DEFAULT_FILTER_SPEC, vi.fn(), vi.fn());
+    const select = row.querySelector('select.pyr3-sort-select') as HTMLSelectElement;
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    expect(optionValues).not.toContain('custom');
+  });
+
+  it('dropdown reflects the current sort and direction toggle reflects the current dir', () => {
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, sort: 'interest', sortDir: 'asc' };
+    const row = buildSortRow(spec, vi.fn(), vi.fn());
+    const select = row.querySelector('select.pyr3-sort-select') as HTMLSelectElement;
+    expect(select.value).toBe('interest');
+    const dirBtn = row.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement;
+    expect(dirBtn.textContent).toContain('asc');
+    expect(dirBtn.textContent).toContain('↑');
+  });
+
+  it('changing the dropdown invokes onSortChange with the new key', () => {
+    const onSortChange = vi.fn<(s: SortMode) => void>();
+    const row = buildSortRow(DEFAULT_FILTER_SPEC, onSortChange, vi.fn());
+    const select = row.querySelector('select.pyr3-sort-select') as HTMLSelectElement;
+    select.value = 'coverage';
+    select.dispatchEvent(new Event('change'));
+    expect(onSortChange).toHaveBeenCalledWith('coverage');
+  });
+
+  it('clicking the direction toggle flips desc→asc and invokes onDirChange with the new dir', () => {
+    const onDirChange = vi.fn<(d: SortDir) => void>();
+    const specDesc: FilterSpec = { ...DEFAULT_FILTER_SPEC, sortDir: 'desc' };
+    const row = buildSortRow(specDesc, vi.fn(), onDirChange);
+    (row.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement).click();
+    expect(onDirChange).toHaveBeenCalledWith('asc');
+  });
+
+  it('clicking the direction toggle flips asc→desc', () => {
+    const onDirChange = vi.fn<(d: SortDir) => void>();
+    const specAsc: FilterSpec = { ...DEFAULT_FILTER_SPEC, sortDir: 'asc' };
+    const row = buildSortRow(specAsc, vi.fn(), onDirChange);
+    (row.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement).click();
+    expect(onDirChange).toHaveBeenCalledWith('desc');
+  });
+
+  it('direction toggle shows "↓ desc" when sortDir is desc', () => {
+    const row = buildSortRow(DEFAULT_FILTER_SPEC, vi.fn(), vi.fn());
+    const dirBtn = row.querySelector('.pyr3-sort-dir-btn') as HTMLButtonElement;
+    expect(dirBtn.textContent).toContain('↓');
+    expect(dirBtn.textContent).toContain('desc');
   });
 });

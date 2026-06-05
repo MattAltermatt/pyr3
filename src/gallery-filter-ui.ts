@@ -1176,3 +1176,132 @@ export function buildActiveChipStrip(
 
   return strip;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Task 5.3 — Sort dropdown + direction toggle
+// ──────────────────────────────────────────────────────────────────────────
+//
+// `buildSortRow` returns a row containing the "sort" label, a <select>
+// dropdown of the 6 named sort modes (the `custom` mode is excluded — the
+// tune panel toggles it on, no direct pick affordance), and a direction
+// toggle button (`↓ desc` / `↑ asc`). It's a stateless builder; callers
+// pass `onSortChange` and `onDirChange` to receive change events.
+//
+// Wired into the live filter panel in Task 5.6. Until then it's standalone
+// so it can be unit-tested in isolation and previewed without disturbing
+// the existing segmented-pill sort UI.
+
+const SORT_ROW_STYLES_ID = 'pyr3-sort-row-styles';
+
+const SORT_ROW_STYLES = `
+.pyr3-sort-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #d8d8de;
+}
+.pyr3-sort-row-label {
+  color: #8a8a92;
+  min-width: 40px;
+}
+.pyr3-sort-select {
+  background: #15151a;
+  color: #d8d8de;
+  border: 1px solid #26262c;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pyr3-sort-select:hover { background: #1a1a20; }
+.pyr3-sort-dir-btn {
+  background: #15151a;
+  color: #d8d8de;
+  border: 1px solid #26262c;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.pyr3-sort-dir-btn:hover { background: #1a1a20; }
+`;
+
+function injectSortRowStylesOnce(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(SORT_ROW_STYLES_ID)) return;
+  const style = document.createElement('style');
+  style.id = SORT_ROW_STYLES_ID;
+  style.textContent = SORT_ROW_STYLES;
+  document.head.appendChild(style);
+}
+
+/** Sort modes shown in the dropdown — every mode in SORT_MODES except
+ *  `custom`, which is a UI-only state the tune panel toggles on when the
+ *  visitor edits weights. There's no "click me" affordance for custom in
+ *  the dropdown to avoid a dead option that does nothing when picked. */
+const NAMED_SORT_MODES: readonly SortMode[] = SORT_MODES.filter((m) => m !== 'custom');
+
+/**
+ * Build the sort row — `[sort] [select ▾] [↓ desc | ↑ asc]`. Standalone DOM
+ * builder; caller owns FilterSpec state and decides what to do on
+ * `onSortChange(newKey)` / `onDirChange(newDir)`.
+ */
+export function buildSortRow(
+  spec: FilterSpec,
+  onSortChange: (next: SortMode) => void,
+  onDirChange: (next: SortDir) => void,
+): HTMLElement {
+  injectSortRowStylesOnce();
+
+  const row = document.createElement('div');
+  row.className = 'pyr3-sort-row';
+
+  const label = document.createElement('span');
+  label.className = 'pyr3-sort-row-label';
+  label.textContent = 'sort';
+  row.appendChild(label);
+
+  // Dropdown — populated from SORT_MODES (excluding `custom`). The select's
+  // value reflects spec.sort; if spec.sort is `custom`, the select falls
+  // back to showing the first named option since `custom` has no entry —
+  // but the tune panel UI will indicate the custom state separately.
+  const select = document.createElement('select');
+  select.className = 'pyr3-sort-select';
+  for (const mode of NAMED_SORT_MODES) {
+    const opt = document.createElement('option');
+    opt.value = mode;
+    opt.textContent = mode;
+    select.appendChild(opt);
+  }
+  if ((NAMED_SORT_MODES as readonly string[]).includes(spec.sort)) {
+    select.value = spec.sort;
+  }
+  select.addEventListener('change', () => {
+    onSortChange(select.value as SortMode);
+  });
+  row.appendChild(select);
+
+  // Direction toggle — shows the current direction and, on click, fires
+  // the inverse. Visitor reads the current state from the glyph + label.
+  const dirBtn = document.createElement('button');
+  dirBtn.type = 'button';
+  dirBtn.className = 'pyr3-sort-dir-btn';
+  const renderDir = (dir: SortDir): void => {
+    dirBtn.textContent = dir === 'desc' ? '↓ desc' : '↑ asc';
+    dirBtn.title = dir === 'desc'
+      ? 'sort direction: descending (highest first). click to flip to ascending.'
+      : 'sort direction: ascending (lowest first). click to flip to descending.';
+  };
+  renderDir(spec.sortDir);
+  dirBtn.onclick = () => {
+    onDirChange(spec.sortDir === 'desc' ? 'asc' : 'desc');
+  };
+  row.appendChild(dirBtn);
+
+  return row;
+}
