@@ -29,7 +29,7 @@
 // or outside to dismiss.
 
 import { type SectionMount } from './edit-ui';
-import { type Density, DEFAULT_DENSITY, DENSITY_PRESETS } from './density';
+import { type Density, DEFAULT_DENSITY } from './density';
 import { scrubbyInput, type ScrubbyHandle } from './edit-scrubby-input';
 import { DEFAULT_TONEMAP, type Tonemap } from './tonemap';
 import {
@@ -40,22 +40,10 @@ import { COLORS } from './ui-tokens';
 import { buildButton } from './edit-primitives';
 import { buildInfoIcon } from './edit-tooltip';
 
-const CUSTOM_PRESET_VALUE = 'custom';
-
 // Cross-section event: fired when any tonemap field is edited outside the
 // density section (e.g. brightness in Global). The density section
 // subscribes so the header chip + strip highlight stay accurate.
 export const TONEMAP_CHANGED_EVENT = 'pyr3:tonemap-changed';
-
-// Match an engine-DE Density triple against the named preset list.
-function matchPresetName(d: Density): string | null {
-  for (const p of DENSITY_PRESETS) {
-    if (p.density.maxRad === d.maxRad && p.density.minRad === d.minRad && p.density.curve === d.curve) {
-      return p.name;
-    }
-  }
-  return null;
-}
 
 // Match the live tonemap against the named-preset list. Only the 4
 // real tonemap fields (gamma / gammaThreshold / vibrancy / brightness)
@@ -183,44 +171,11 @@ export const densitySection: SectionMount = {
       refreshTonemapChip();
     }
 
-    // ── Engine DE preset dropdown (legacy, retained) ────────────────────────
-    const presetRow = document.createElement('div');
-    presetRow.className = 'pyr3-edit-density-preset-row';
-    presetRow.style.display = 'flex';
-    presetRow.style.alignItems = 'center';
-    presetRow.style.gap = '6px';
-
-    const presetLabel = document.createElement('span');
-    presetLabel.textContent = 'preset';
-    presetLabel.style.width = '96px';
-    presetLabel.style.color = COLORS.text.muted;
-    presetLabel.style.fontSize = '12px';
-
-    const presetSelect = document.createElement('select');
-    presetSelect.className = 'pyr3-edit-density-preset';
-    presetSelect.style.flex = '1 1 auto';
-    for (const p of DENSITY_PRESETS) {
-      const opt = document.createElement('option');
-      opt.value = p.name;
-      opt.textContent = p.name;
-      presetSelect.appendChild(opt);
-    }
-    const customOpt = document.createElement('option');
-    customOpt.value = CUSTOM_PRESET_VALUE;
-    customOpt.textContent = CUSTOM_PRESET_VALUE;
-    presetSelect.appendChild(customOpt);
-
-    presetRow.append(presetLabel, presetSelect);
-    presetRow.appendChild(buildInfoIcon({
-      title: 'PRESET',
-      body:
-        'Quick-start density-estimation defaults. '
-        + 'Crisp = small blur, sharp detail. Smooth = bigger blur, glowier output.',
-      hint: 'Leave at default unless you want to tune blur kernel size by hand.',
-    }));
-    host.appendChild(presetRow);
-
     // ── Three slider+number rows (maxRad / minRad / curve) ──────────────────
+    // 2026-06-05: the engine-DE preset dropdown (`crisp / standard / smooth`)
+    // was dropped — the tonemap preset strip above already serves the
+    // "quick-start defaults" affordance for this section, and the three
+    // sliders below let advanced users tune maxRad/minRad/curve directly.
     interface SliderPair {
       slider: HTMLInputElement;
       number: HTMLElement;
@@ -393,24 +348,12 @@ export const densitySection: SectionMount = {
       minRadPair.handle.setValue(d.minRad);
       curvePair.slider.value = String(d.curve);
       curvePair.handle.setValue(d.curve);
-      const name = matchPresetName(d);
-      presetSelect.value = name ?? CUSTOM_PRESET_VALUE;
-    }
-
-    function applyPreset(name: string): void {
-      const preset = DENSITY_PRESETS.find((p) => p.name === name);
-      if (!preset) return;
-      state.genome.density = { ...preset.density };
-      syncWidgets();
-      onChange('density.maxRad');
     }
 
     function setField(field: keyof Density, value: number): void {
       if (!Number.isFinite(value)) return;
       const d = ensureDensity();
       d[field] = value;
-      const name = matchPresetName(d);
-      presetSelect.value = name ?? CUSTOM_PRESET_VALUE;
       onChange(`density.${field}`);
     }
 
@@ -426,12 +369,6 @@ export const densitySection: SectionMount = {
     bindSlider(maxRadPair, 'maxRad');
     bindSlider(minRadPair, 'minRad');
     bindSlider(curvePair, 'curve');
-
-    presetSelect.addEventListener('change', () => {
-      const v = presetSelect.value;
-      if (v === CUSTOM_PRESET_VALUE) return;
-      applyPreset(v);
-    });
 
     syncWidgets();
   },
