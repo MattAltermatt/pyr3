@@ -74,6 +74,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-variation-picker.ts',  // /v1/edit variation picker — owns a modal, document keydown listener
   'edit-scrubby-input.ts',     // /v1/edit drag-to-scrub numeric cell — owns DOM + pointer lock
   'edit-primitives.ts',        // /v1/edit shared row/input/dropdown/swatch/pair builders (#103 Phase 7)
+  'edit-tooltip.ts',           // /v1/edit info-icon + anchored popover (#103 Phase 7)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
