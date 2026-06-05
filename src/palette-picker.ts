@@ -42,6 +42,27 @@ import {
 } from './flam3-palette-names';
 import { FLAM3_PALETTE_COUNT, getLibraryStops, getLibraryPaletteName } from './flam3-palettes';
 import { type ColorStop } from './palette';
+import {
+  COLOR_TAGS,
+  type ColorTag,
+  getFlam3PaletteTags,
+} from './palette-tags';
+
+// Canonical chip swatch colors (visible nub on each chip). One sample per
+// category; calibrated by eye against the spec's 11 categories.
+const CHIP_SWATCH: Record<ColorTag, string> = {
+  red:    '#d83a3a',
+  orange: '#e87c1a',
+  yellow: '#e8c91a',
+  green:  '#3aa84a',
+  blue:   '#3a6ad8',
+  purple: '#8c3ad8',
+  pink:   '#e88ab0',
+  brown:  '#7a4a28',
+  pastel: '#d8c8e8',
+  dark:   '#1a1a1e',
+  gray:   '#8a8a92',
+};
 
 export interface PalettePickerOpts {
   /** The palette the editor is currently showing. Drives initial selection. */
@@ -144,9 +165,52 @@ export function mountPalettePicker(
   search.autocomplete = 'off';
   head.appendChild(search);
 
-  // Chip row (Task 9.5 fills this with 11 color filter chips)
+  // Chip row — 11 color filter chips (Task 9.5).
   const chipRow = document.createElement('div');
   chipRow.className = 'pyr3-palette-picker-chip-row';
+  const activeChips = new Set<ColorTag>();
+  const chipByTag = new Map<ColorTag, HTMLElement>();
+  for (const tag of COLOR_TAGS) {
+    const chip = document.createElement('div');
+    chip.className = 'pyr3-palette-picker-chip';
+    chip.dataset['tag'] = tag;
+    chip.title = tag;
+    const swatch = document.createElement('span');
+    swatch.className = 'pyr3-palette-picker-chip-swatch';
+    swatch.style.backgroundColor = CHIP_SWATCH[tag];
+    const label = document.createElement('span');
+    label.className = 'pyr3-palette-picker-chip-label';
+    label.textContent = tag;
+    chip.append(swatch, label);
+    chip.addEventListener('click', () => {
+      if (activeChips.has(tag)) {
+        activeChips.delete(tag);
+        chip.classList.remove('on');
+      } else {
+        activeChips.add(tag);
+        chip.classList.add('on');
+      }
+      applyFilter();
+    });
+    chipRow.appendChild(chip);
+    chipByTag.set(tag, chip);
+  }
+  // `clear` link — resets every chip.
+  const chipClear = document.createElement('span');
+  chipClear.className = 'pyr3-palette-picker-chip-clear';
+  chipClear.textContent = 'clear';
+  chipClear.title = 'clear all color filters';
+  chipClear.style.cursor = 'pointer';
+  chipClear.style.fontSize = '10px';
+  chipClear.style.color = COLORS.text.muted;
+  chipClear.style.alignSelf = 'center';
+  chipClear.style.marginLeft = '4px';
+  chipClear.addEventListener('click', () => {
+    activeChips.clear();
+    for (const chip of chipByTag.values()) chip.classList.remove('on');
+    applyFilter();
+  });
+  chipRow.appendChild(chipClear);
   head.appendChild(chipRow);
 
   // Tabs: all (701) · ★ favorites (N)
@@ -271,19 +335,31 @@ export function mountPalettePicker(
   }
   picker.appendChild(body);
 
-  // Live search filter — updates cell visibility + badge count.
+  // Live filter — combines search (substring AND) with chip filter (any-tag OR).
+  // No filter / search → badge shows total; otherwise `visible / total`.
   function applyFilter(): void {
     const q = search.value.trim().toLowerCase();
+    const chipsOn = activeChips.size > 0;
     let visible = 0;
     for (const entry of entries) {
       const cell = cellByIdx.get(entry.idx)!;
-      const match = q === '' || entry.searchName.includes(q);
+      const searchMatch = q === '' || entry.searchName.includes(q);
+      let chipMatch = true;
+      if (chipsOn) {
+        const tags = getFlam3PaletteTags(entry.idx);
+        chipMatch = false;
+        for (const t of tags) {
+          if (activeChips.has(t)) { chipMatch = true; break; }
+        }
+      }
+      const match = searchMatch && chipMatch;
       cell.style.display = match ? '' : 'none';
       if (match) visible++;
     }
-    badge.textContent = q === ''
-      ? `${FLAM3_PALETTE_COUNT}`
-      : `${visible} / ${FLAM3_PALETTE_COUNT}`;
+    const filtering = q !== '' || chipsOn;
+    badge.textContent = filtering
+      ? `${visible} / ${FLAM3_PALETTE_COUNT}`
+      : `${FLAM3_PALETTE_COUNT}`;
   }
   search.addEventListener('input', applyFilter);
 
@@ -419,6 +495,33 @@ const PICKER_CSS = `
   gap: 4px;
   min-height: 0;
 }
+.pyr3-palette-picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: ${COLORS.text.muted};
+  background: ${COLORS.bg.input};
+  border: 1px solid ${COLORS.border};
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.pyr3-palette-picker-chip:hover { border-color: ${COLORS.flame.bot}; }
+.pyr3-palette-picker-chip.on {
+  background: ${COLORS.bg.action};
+  border-color: ${COLORS.flame.bot};
+  color: ${COLORS.flame.top};
+}
+.pyr3-palette-picker-chip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+.pyr3-palette-picker-chip-clear:hover { color: ${COLORS.flame.top}; }
 .pyr3-palette-picker-tabs {
   display: flex;
   gap: 4px;

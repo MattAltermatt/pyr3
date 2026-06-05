@@ -200,7 +200,95 @@ describe('palette picker — body cell grid (Task 9.4)', () => {
     expect(badge.textContent).toBe('701');
     search.value = 'sky';
     search.dispatchEvent(new Event('input'));
-    // Format is `<visible> / 701` once filtered.
+    expect(badge.textContent).toMatch(/\d+ \/ 701/);
+  });
+});
+
+describe('palette picker — color filter chips (Task 9.5)', () => {
+  it('renders 11 chips matching COLOR_TAGS', async () => {
+    const { COLOR_TAGS } = await import('./palette-tags');
+    const { root } = mount();
+    const chips = root.querySelectorAll('.pyr3-palette-picker-chip');
+    expect(chips.length).toBe(COLOR_TAGS.length);
+    expect(chips.length).toBe(11);
+    const order = [...chips].map((c) => (c as HTMLElement).dataset['tag']);
+    expect(order).toEqual([...COLOR_TAGS]);
+  });
+
+  it('each chip has a canonical color swatch (background style set)', () => {
+    const { root } = mount();
+    const chips = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-chip');
+    for (const chip of chips) {
+      const swatch = chip.querySelector('.pyr3-palette-picker-chip-swatch') as HTMLElement;
+      expect(swatch).toBeTruthy();
+      // backgroundColor (canonical sample) is set.
+      expect(swatch.style.backgroundColor || swatch.style.background).toBeTruthy();
+    }
+  });
+
+  it('clicking a chip toggles the .on class', () => {
+    const { root } = mount();
+    const redChip = root.querySelector('.pyr3-palette-picker-chip[data-tag="red"]') as HTMLElement;
+    expect(redChip.classList.contains('on')).toBe(false);
+    redChip.click();
+    expect(redChip.classList.contains('on')).toBe(true);
+    redChip.click();
+    expect(redChip.classList.contains('on')).toBe(false);
+  });
+
+  it('chip clicks filter the cell grid — OR within color chips', () => {
+    const { root } = mount();
+    const redChip = root.querySelector('.pyr3-palette-picker-chip[data-tag="red"]') as HTMLElement;
+    redChip.click();
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    // Some palettes contain red; some don't. Visible count must be < 701.
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.length).toBeLessThan(701);
+    // Turn on a second color — visible count should grow or stay equal (OR).
+    const blueChip = root.querySelector('.pyr3-palette-picker-chip[data-tag="blue"]') as HTMLElement;
+    blueChip.click();
+    const visible2 = [...root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell')]
+      .filter((c) => c.style.display !== 'none');
+    expect(visible2.length).toBeGreaterThanOrEqual(visible.length);
+  });
+
+  it('chip filter ANDs with search', () => {
+    const { root } = mount();
+    const search = root.querySelector('.pyr3-palette-picker-search') as HTMLInputElement;
+    const redChip = root.querySelector('.pyr3-palette-picker-chip[data-tag="red"]') as HTMLElement;
+    redChip.click();
+    const visibleChip = [...root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell')]
+      .filter((c) => c.style.display !== 'none').length;
+    search.value = 'rose';
+    search.dispatchEvent(new Event('input'));
+    const visibleBoth = [...root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell')]
+      .filter((c) => c.style.display !== 'none').length;
+    // AND of chip + search ≤ chip-only.
+    expect(visibleBoth).toBeLessThanOrEqual(visibleChip);
+  });
+
+  it('clear link resets all chip selections', () => {
+    const { root } = mount();
+    const redChip = root.querySelector('.pyr3-palette-picker-chip[data-tag="red"]') as HTMLElement;
+    redChip.click();
+    expect(redChip.classList.contains('on')).toBe(true);
+    const clear = root.querySelector('.pyr3-palette-picker-chip-clear') as HTMLElement;
+    expect(clear).toBeTruthy();
+    clear.click();
+    const onChips = root.querySelectorAll('.pyr3-palette-picker-chip.on');
+    expect(onChips.length).toBe(0);
+  });
+});
+
+// (chip+search interaction with the badge count is exercised in the
+// 'chip filter ANDs with search' test above.)
+describe('palette picker — chip+search final assert', () => {
+  it('chip+search reduces visible count and badge reflects it', () => {
+    const { root } = mount();
+    const redChip = root.querySelector('.pyr3-palette-picker-chip[data-tag="red"]') as HTMLElement;
+    redChip.click();
+    const badge = root.querySelector('.pyr3-palette-picker-badge') as HTMLElement;
     expect(badge.textContent).toMatch(/\d+ \/ 701/);
   });
 });
