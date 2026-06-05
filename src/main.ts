@@ -436,6 +436,8 @@ async function main(): Promise<void> {
       setSize(w: number, h: number): void;
       setQuality(q: number): void;
       setSettleDelayMs(ms: number): void;
+      undo(): void;
+      redo(): void;
     } | null = null;
 
     // Persisted author nick — read on entry, written on every change so a
@@ -468,6 +470,8 @@ async function main(): Promise<void> {
       // EditPageHandle.
       onOpenFile: () => editorRef?.openFile(),
       onReroll: () => editorRef?.reroll(),
+      onUndo: () => editorRef?.undo(),
+      onRedo: () => editorRef?.redo(),
       onSizeChange: (w, h) => editorRef?.setSize(w, h),
       onQualityChange: (q) => editorRef?.setQuality(q),
       onSettleChange: (ms) => {
@@ -527,8 +531,39 @@ async function main(): Promise<void> {
       onProgressShow: (label) => editBar.showProgress(label),
       onProgressHide: () => editBar.hideProgress(),
       onSettleDelayChange: (ms) => editBar.setSettle(ms),
+      onHistoryChange: (canUndo, canRedo) => {
+        editBar.setUndoEnabled(canUndo);
+        editBar.setRedoEnabled(canRedo);
+      },
     });
     editorRef = editor;
+
+    // #108 — keyboard handler scoped to the editor's lifecycle. Cmd/Ctrl+Z
+    // undo, Shift+Cmd/Ctrl+Z or Ctrl+Y redo. metaKey || ctrlKey makes both
+    // OSes forgiving; Ctrl+Y is gated to non-Mac so we don't intercept any
+    // reserved Mac combo. preventDefault stops browser back-step on form
+    // controls. Listener is bound to document; removed on tab-away when
+    // the editor is destroyed.
+    const isMac = /Mac|iPhone|iPad/i.test(navigator.userAgent);
+    const onEditorKeydown = (e: KeyboardEvent): void => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      // Skip when focus is inside a text-typing element — Cmd-Z in a
+      // <input> should undo the typing, not the editor state.
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) { e.preventDefault(); editor.undo(); }
+      else if (key === 'z' && e.shiftKey) { e.preventDefault(); editor.redo(); }
+      else if (key === 'y' && !isMac) { e.preventDefault(); editor.redo(); }
+    };
+    document.addEventListener('keydown', onEditorKeydown);
+    const originalDestroy = editor.destroy;
+    editor.destroy = () => {
+      document.removeEventListener('keydown', onEditorKeydown);
+      originalDestroy.call(editor);
+    };
     return;
   }
 

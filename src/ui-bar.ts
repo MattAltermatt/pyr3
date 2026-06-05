@@ -186,6 +186,10 @@ export interface EditBarOpts {
    *  the EditPageHandle). */
   onOpenFile: () => void;
   onReroll: () => void;
+  /** #108 — undo last edit. Disabled state is driven by setUndoEnabled. */
+  onUndo: () => void;
+  /** #108 — redo the next entry in the history stack. */
+  onRedo: () => void;
   onSizeChange: (width: number, height: number) => void;
   onQualityChange: (quality: number) => void;
   /** Fires when the user clicks a SETTLE ladder button. ms = quiet time
@@ -217,6 +221,10 @@ export interface EditBarHandle {
    *  percent=1.0 + a label like "rendering 1920×1080 · q50". */
   showProgress(label: string): void;
   hideProgress(): void;
+  /** #108 — toggle the ⟲ Undo button enabled state. Disabled-not-hidden so
+   *  the action row doesn't shift under the cursor when the stack empties. */
+  setUndoEnabled(enabled: boolean): void;
+  setRedoEnabled(enabled: boolean): void;
   destroy(): void;
 }
 
@@ -278,6 +286,20 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const actionRow = el('div', 'pyr3-bar-action');
   const actionLeft = el('div', 'pyr3-zone-actleft');
 
+  // #108 — undo/redo pair at the far left. Disabled-not-hidden so the rest
+  // of the action row doesn't shift under the cursor when the stack empties
+  // (per the no-jump-disabled-over-hidden memory). Platform-aware tooltip:
+  // ⌘Z / ⇧⌘Z on Mac, Ctrl+Z / Ctrl+Shift+Z elsewhere.
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent);
+  const undoKey = isMac ? '⌘Z' : 'Ctrl+Z';
+  const redoKey = isMac ? '⇧⌘Z' : 'Ctrl+Shift+Z';
+  const undoBtn = button('⟲', 'pyr3-bar-btn pyr3-edit-undo', () => opts.onUndo());
+  undoBtn.title = `Undo (${undoKey})`;
+  undoBtn.disabled = true;
+  const redoBtn = button('⟳', 'pyr3-bar-btn pyr3-edit-redo', () => opts.onRedo());
+  redoBtn.title = `Redo (${redoKey})`;
+  redoBtn.disabled = true;
+
   const openBtn = button('📂 Open', 'pyr3-bar-btn pyr3-edit-open', () => opts.onOpenFile());
   openBtn.title = 'Open a .pyr3.json or .flame file';
 
@@ -321,7 +343,7 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const saveRenderBtn = button('💾 Save Render', 'pyr3-btn-primary pyr3-bar-save-render', () => opts.onSave());
   saveRenderBtn.title = 'Download the current render as a PNG';
 
-  actionLeft.append(openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
+  actionLeft.append(undoBtn, redoBtn, openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
 
   // SETTLE ladder (right side) — quiet time after the last edit before
   // the full-quality render fires. Mirror the QUALITY ladder pattern:
@@ -457,6 +479,12 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     setSettle(ms) {
       currentSettle = ms;
       renderSettleHighlight();
+    },
+    setUndoEnabled(enabled) {
+      undoBtn.disabled = !enabled;
+    },
+    setRedoEnabled(enabled) {
+      redoBtn.disabled = !enabled;
     },
     showProgress(label) {
       if (!editTier3) {

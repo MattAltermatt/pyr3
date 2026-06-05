@@ -27,6 +27,7 @@ import { genomeToJson, genomeFromJson } from './serialize';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { setCurrentFlame } from './app-state';
+import { createHistory, type History } from './edit-history';
 
 export interface MountEditPageOpts {
   /** Root container the editor takes over (replaceChildren). The caller
@@ -63,6 +64,9 @@ export interface MountEditPageOpts {
    *  NOT fired when setSettleDelayMs is called externally (the host already
    *  knows about that change). */
   onSettleDelayChange?: (ms: number) => void;
+  /** #108 — fires after every history mutation (push, undo, redo, reset) so
+   *  the host can refresh the bar's ⟲ ⟳ button enabled state. */
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
 }
 
 export interface EditPageHandle {
@@ -70,6 +74,15 @@ export interface EditPageHandle {
   /** Test/inspection hook — exposes the live EditState so a host can grab
    *  the current genome. */
   readonly state: EditState;
+  /** #108 — step the editor back one history entry. No-op when the stack
+   *  pointer is at the oldest entry. */
+  undo(): void;
+  /** #108 — step forward one history entry. No-op at the tip. */
+  redo(): void;
+  /** #108 — true when there's a prior history entry to undo into. */
+  canUndo(): boolean;
+  /** #108 — true when there's a future history entry to redo into. */
+  canRedo(): boolean;
   /** Programmatic state mutators — let a host wire the top bar's editable
    *  flame name / nick back into the editor state. */
   setName(name: string): void;
@@ -154,6 +167,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   applyEditorDefaults(initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
+
+  // #108 — undo/redo stack, seeded with the cold-start genome. push happens
+  // on every commit gesture (onPathChange), debounced via the same window
+  // as the settle timer so a slider drag is one entry, not sixty. reset on
+  // file-open + reroll (whole-genome replacement, not an edit). undo/redo
+  // restore via the no-history-reset branch of applyNewGenome.
+  const history: History = createHistory(initialGenome);
+  function notifyHistoryChange(): void {
+    opts.onHistoryChange?.(history.canUndo(), history.canRedo());
+  }
   // Hydrate the section-collapse map from localStorage too — falls back to
   // the all-collapsed default (#102 preserved) when nothing is persisted or
   // the stored JSON is malformed.
@@ -360,12 +383,37 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // it's present-only against the existing histogram, so the 16ms debounce
   // is the right batching cadence and there's no heavy re-iterate to
   // bypass.
+  // #108 — debounce a single history.push to fire HISTORY_DEBOUNCE_MS after
+  // the user's last edit, so a slider drag (60 onPathChange calls/sec)
+  // commits one entry. Name/nick + bar settings (size/quality/SETTLE) skip
+  // this — they don't route through onPathChange in a way that's part of
+  // the visual-edit gesture history (name/nick are metadata; size/quality
+  // are render preferences, not genome shape).
+  const HISTORY_DEBOUNCE_MS = 250;
+  let historyCommitTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleHistoryCommit(): void {
+    if (historyCommitTimer !== null) clearTimeout(historyCommitTimer);
+    historyCommitTimer = setTimeout(() => {
+      historyCommitTimer = null;
+      history.push(state.genome);
+      notifyHistoryChange();
+    }, HISTORY_DEBOUNCE_MS);
+  }
+
   function onPathChange(path: string): void {
     // #103 Phase 6 Task 6.3 — persist the WIP genome to localStorage on every
     // edit. Debounced inside schedulePersist so a slider drag doesn't burn
     // a setItem call per frame; cold-start (below) reads the result back via
     // restoreWip().
     schedulePersist(state.genome);
+    // #108 — only genome-shape edits land in the undo stack. Bar-driven
+    // render preferences (canvas size, render quality) flow through
+    // onPathChange to trigger a settle, but undo unwinds *visual edits*,
+    // not "what dimensions am I previewing at." name + nick bypass
+    // onPathChange entirely via their dedicated mutators.
+    if (path !== 'quality' && !path.startsWith('size.')) {
+      scheduleHistoryCommit();
+    }
     const lane = pathLane(path);
     if (lane === 'slow' || lane === 'rebuild') {
       void requestLiveRender();
@@ -450,7 +498,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     },
   });
 
-  async function applyNewGenome(genome: Genome, seed?: number): Promise<void> {
+  async function applyNewGenome(
+    genome: Genome,
+    seed?: number,
+    historyAction: 'reset' | 'preserve' = 'reset',
+  ): Promise<void> {
     state.genome = genome;
     // #103 Phase 2 Task 2.3 — re-publish the editor's WIP genome whenever
     // a fresh genome lands (reroll / open file). In-place mutations of
@@ -462,6 +514,20 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // alongside any inline edits the user does next.
     schedulePersist(genome);
     if (seed !== undefined) state.seed = seed;
+    // #108 — reroll + file open wipe history (whole-genome replacement, not
+    // an edit). Undo/redo themselves call this with 'preserve' since the
+    // pointer move IS the history operation.
+    if (historyAction === 'reset') {
+      // Cancel any pending edit-commit timer so a debounce in flight when
+      // the user hits Reroll doesn't fire AFTER the reset and add a stale
+      // entry.
+      if (historyCommitTimer !== null) {
+        clearTimeout(historyCommitTimer);
+        historyCommitTimer = null;
+      }
+      history.reset(genome);
+      notifyHistoryChange();
+    }
     rebuildPanel();
     inflightTicket++;
     const myTicket = inflightTicket;
@@ -672,7 +738,34 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       settleDelayMs = Math.round(ms);
       ui?.setSettleDelayMs(settleDelayMs);
     },
+    undo(): void {
+      // Flush any pending debounce so an in-flight slider drag commits
+      // BEFORE we pop — otherwise the unflushed entry is silently lost when
+      // the user hits Cmd-Z mid-drag.
+      if (historyCommitTimer !== null) {
+        clearTimeout(historyCommitTimer);
+        historyCommitTimer = null;
+        history.push(state.genome);
+      }
+      const restored = history.undo();
+      if (!restored) return;
+      void applyNewGenome(restored, undefined, 'preserve');
+      notifyHistoryChange();
+    },
+    redo(): void {
+      const restored = history.redo();
+      if (!restored) return;
+      void applyNewGenome(restored, undefined, 'preserve');
+      notifyHistoryChange();
+    },
+    canUndo(): boolean {
+      return history.canUndo();
+    },
+    canRedo(): boolean {
+      return history.canRedo();
+    },
     destroy(): void {
+      if (historyCommitTimer !== null) clearTimeout(historyCommitTimer);
       panZoom.destroy();
       scheduler.cancel();
       ui?.destroy();

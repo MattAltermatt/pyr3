@@ -62,6 +62,8 @@ function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
     onNickChange: vi.fn(),
     onOpenFile: vi.fn(),
     onReroll: vi.fn(),
+    onUndo: vi.fn(),
+    onRedo: vi.fn(),
     onSizeChange: vi.fn(),
     onQualityChange: vi.fn(),
     onSettleChange: vi.fn(),
