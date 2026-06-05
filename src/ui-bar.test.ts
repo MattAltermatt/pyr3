@@ -354,6 +354,20 @@ describe('mountAboutBar', () => {
     expect(root.querySelector('.pyr3-about-link.active')).toBeTruthy();
     handle.destroy();
   });
+
+  it('clears prior children from root before mounting (matches mountBar / mountEditBar / mountGalleryBar)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const stale = document.createElement('div');
+    stale.className = 'stale-prior-content';
+    stale.textContent = 'leftover';
+    root.appendChild(stale);
+    mountAboutBar(root, {
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+    expect(root.querySelector('.stale-prior-content')).toBeNull();
+  });
 });
 
 describe('viewer action row — Save Flame + Save Render (#103 Phase 3 Task 3.3)', () => {

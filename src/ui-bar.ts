@@ -883,6 +883,11 @@ export interface AboutBarHandle {
 
 export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHandle {
   injectStylesOnce();
+  // Clear root before mounting chrome — matches the convention every other
+  // bar mount fn (mountBar / mountEditBar / mountGalleryBar) follows, so a
+  // re-mount on the same root (HMR, tab swap) doesn't leave a stale prior
+  // chrome alongside the new one.
+  root.replaceChildren();
   root.classList.add('pyr3-bar-root');
 
   const chrome = mountBarChrome(root, {
