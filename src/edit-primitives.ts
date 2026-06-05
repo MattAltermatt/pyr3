@@ -153,6 +153,114 @@ export function buildColorSwatch(opts: ColorSwatchOpts): HTMLElement {
   return sw;
 }
 
+// ── Slider with always-visible value display ─────────────────────────────
+// Visual rail + fill + handle on the left, scrubby numeric value display
+// on the right. The numeric is a scrubbyInput so drag-to-scrub works on
+// the number itself; the rail is the visual chrome that tracks position.
+// (Click-on-rail-to-set is intentionally not wired here — the scrubby
+// handles all the input semantics. The rail is read-only chrome.)
+export interface SliderOpts {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  format?: (v: number) => string;
+  onChange: (v: number) => void;
+}
+
+export function buildSlider(opts: SliderOpts): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pyr3-slider';
+  wrap.style.display = 'grid';
+  wrap.style.gridTemplateColumns = '1fr auto';
+  wrap.style.alignItems = 'center';
+  wrap.style.gap = '8px';
+  wrap.style.minWidth = '0';
+
+  // Visual rail (left)
+  const rail = document.createElement('div');
+  rail.className = 'pyr3-slider-rail';
+  rail.style.position = 'relative';
+  rail.style.height = '4px';
+  rail.style.background = COLORS.bg.input;
+  rail.style.border = `1px solid ${COLORS.border}`;
+  rail.style.borderRadius = '2px';
+  rail.style.minWidth = '0';
+
+  const fill = document.createElement('div');
+  fill.className = 'pyr3-slider-fill';
+  fill.style.position = 'absolute';
+  fill.style.left = '0';
+  fill.style.top = '0';
+  fill.style.height = '100%';
+  fill.style.background = COLORS.flame.mid;
+  fill.style.borderRadius = '2px';
+
+  const handle = document.createElement('div');
+  handle.className = 'pyr3-slider-handle';
+  handle.style.position = 'absolute';
+  handle.style.top = '50%';
+  handle.style.width = '10px';
+  handle.style.height = '10px';
+  handle.style.background = COLORS.flame.top;
+  handle.style.border = `1px solid ${COLORS.flame.bot}`;
+  handle.style.borderRadius = '50%';
+  handle.style.transform = 'translate(-50%, -50%)';
+  handle.style.pointerEvents = 'none';
+
+  rail.appendChild(fill);
+  rail.appendChild(handle);
+
+  // Numeric value display (right) — uses scrubby for drag + dbl-click typing
+  const value = document.createElement('div');
+  value.className = 'pyr3-slider-value';
+  value.style.minWidth = '52px';
+  value.style.textAlign = 'right';
+  value.style.color = COLORS.text.primary;
+  value.style.fontSize = '12px';
+  value.style.fontVariantNumeric = 'tabular-nums';
+
+  // Position-update helper closes over rail/fill/handle.
+  const updateVisual = (v: number): void => {
+    const range = opts.max - opts.min;
+    const t = range > 0 ? (v - opts.min) / range : 0;
+    const pct = Math.max(0, Math.min(1, t)) * 100;
+    fill.style.width = `${pct}%`;
+    handle.style.left = `${pct}%`;
+  };
+  updateVisual(opts.value);
+
+  const fmt = opts.format ?? defaultSliderFormat;
+  const scrubby = scrubbyInput({
+    value: opts.value,
+    kind: 'generic',
+    min: opts.min,
+    max: opts.max,
+    minStep: opts.step,
+    format: fmt,
+    onInput: (v) => {
+      updateVisual(v);
+      opts.onChange(v);
+    },
+    className: 'pyr3-slider-scrubby',
+  });
+  // The scrubby span IS the displayed value — let it carry the visual.
+  scrubby.el.style.fontSize = '12px';
+  scrubby.el.style.color = COLORS.text.primary;
+  scrubby.el.style.fontVariantNumeric = 'tabular-nums';
+  value.appendChild(scrubby.el);
+
+  wrap.appendChild(rail);
+  wrap.appendChild(value);
+  return wrap;
+}
+
+function defaultSliderFormat(v: number): string {
+  if (!Number.isFinite(v)) return String(v);
+  const s = v.toFixed(3);
+  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
+}
+
 // ── Pair ──────────────────────────────────────────────────────────────────
 // Sub-grid `1fr auto 1fr` for W×H, position x/y, etc. The separator is a
 // plain span; callers pass any character ('×', ',', '/').

@@ -15,6 +15,7 @@ import {
   buildDropdown,
   buildColorSwatch,
   buildPair,
+  buildSlider,
 } from './edit-primitives';
 
 describe('buildRow', () => {
@@ -125,6 +126,47 @@ describe('buildColorSwatch', () => {
     expect(sw.style.width).toBe('100%');
     sw.click();
     expect(onClick).toHaveBeenCalledOnce();
+  });
+});
+
+describe('buildSlider', () => {
+  it('renders rail + fill + handle + value display', () => {
+    const onChange = vi.fn();
+    const sl = buildSlider({ value: 0.5, min: 0, max: 1, onChange });
+    expect(sl.className).toBe('pyr3-slider');
+    expect(sl.querySelector('.pyr3-slider-rail')).toBeTruthy();
+    expect(sl.querySelector('.pyr3-slider-fill')).toBeTruthy();
+    expect(sl.querySelector('.pyr3-slider-handle')).toBeTruthy();
+    const val = sl.querySelector('.pyr3-slider-value') as HTMLElement;
+    expect(val).toBeTruthy();
+    // value display reads the default-format (drop trailing zeros)
+    expect(val.textContent).toBe('0.5');
+  });
+
+  it('value display uses the supplied format() callback', () => {
+    const sl = buildSlider({
+      value: 0.42,
+      min: 0,
+      max: 1,
+      format: (v) => `${(v * 100).toFixed(0)}%`,
+      onChange: vi.fn(),
+    });
+    const val = sl.querySelector('.pyr3-slider-value') as HTMLElement;
+    expect(val.textContent).toBe('42%');
+  });
+
+  it('delegates the numeric control to a scrubby input (drag-to-scrub)', () => {
+    const sl = buildSlider({ value: 0.5, min: 0, max: 1, onChange: vi.fn() });
+    // The scrubby span lives inside the value display so the user can drag
+    // OR double-click-to-type the number.
+    const scrubby = sl.querySelector('.pyr3-scrubby');
+    expect(scrubby).toBeTruthy();
+  });
+
+  it('fill width tracks the value position between min and max', () => {
+    const sl = buildSlider({ value: 0.25, min: 0, max: 1, onChange: vi.fn() });
+    const fill = sl.querySelector('.pyr3-slider-fill') as HTMLElement;
+    expect(fill.style.width).toBe('25%');
   });
 });
 
