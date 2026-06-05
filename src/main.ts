@@ -31,13 +31,16 @@ import { loadFeatureIndex } from './feature-index-client';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
 import {
   corpusUrl,
+  editorUrlForFlame,
   galleryUrl,
+  galleryUrlForFlame,
   GALLERY_PAGE_SIZE,
   HERO_GEN,
   HERO_ID,
   parseLoadIntent,
   type LoadIntent,
 } from './load-intent';
+import { getCurrentFlame, setCurrentFlame } from './app-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { readGlobalQuality, writeGlobalQuality } from './prefs';
@@ -52,6 +55,7 @@ import {
   type CorpusNav,
   type CostEstimate,
   type GalleryBarHandle,
+  type TabSurface,
 } from './ui-bar';
 import { checkWebGPU } from './webgpu-check';
 
@@ -166,6 +170,60 @@ async function main(): Promise<void> {
     console.warn('pyr3: save invoked before canvas init');
   };
 
+  // #103 Phase 2 Task 2.3 — tab-navigation contract. Reads the path to
+  // classify the current surface, then for viewer-origin clicks transfers
+  // the app-state.currentFlame context to the destination surface (gallery
+  // pages to the flame's corpus page; editor preloads via ?gen=&id=). All
+  // other transitions fall through to the bare surface URL.
+  const SURFACE_FALLBACK: Record<TabSurface, string> = {
+    viewer:  '/',
+    gallery: '/showcase',
+    editor:  '/v1/edit',
+    about:   '/about',
+  };
+  function currentTabSurface(): TabSurface {
+    const p = window.location.pathname;
+    if (p === '/showcase' || p.startsWith('/showcase/')) return 'gallery';
+    if (p === '/v1/edit' || p.startsWith('/v1/edit/')) return 'editor';
+    if (p === '/about' || p.startsWith('/about/')) return 'about';
+    // /v1/gen/<gen>/id/<id> deep-links are still the viewer surface; bare
+    // `/` and any unrecognized path also resolve to viewer.
+    return 'viewer';
+  }
+  function handleTabClick(target: TabSurface): void {
+    const here = currentTabSurface();
+    const cf = getCurrentFlame();
+
+    // Viewer-only transfer rule: when leaving the viewer with a known flame,
+    // carry it into the destination surface.
+    if (here === 'viewer' && target === 'gallery' && cf?.corpusId) {
+      const { gen, id } = cf.corpusId;
+      // The gallery anchor needs the flame's corpus-list index to land on
+      // the page containing it. pageForSheep does that resolution async; we
+      // fire-and-forget — if it resolves promptly we anchor, otherwise we
+      // fall back to /showcase bare. Done via Promise.race against a 0ms
+      // tick so callers don't see a perceptible delay.
+      void pageForSheep(gen, id).then((page) => {
+        // pageForSheep returns a 1-indexed page. galleryUrlForFlame expects
+        // the 0-indexed corpus list index. Convert by (page - 1) * GALLERY_PAGE_SIZE
+        // — close enough to land on the right page (any in-page offset is a
+        // cosmetic concern, not a navigational one).
+        const approxIndex = (page - 1) * GALLERY_PAGE_SIZE;
+        window.location.href = galleryUrlForFlame({ gen, id }, approxIndex);
+      }).catch(() => {
+        window.location.href = SURFACE_FALLBACK.gallery;
+      });
+      return;
+    }
+    if (here === 'viewer' && target === 'editor') {
+      window.location.href = editorUrlForFlame(cf?.corpusId);
+      return;
+    }
+
+    // All other transitions: bare surface URL.
+    window.location.href = SURFACE_FALLBACK[target];
+  }
+
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     onOpenFile: () => openFilePicker(),
@@ -185,9 +243,9 @@ async function main(): Promise<void> {
         navigateCorpus(pick.gen, pick.id);
       });
     },
-    // #103 Task 1.4: chrome substrate tab clicks. Phase 2 wires the real
-    // viewer-only currentFlame transfer rule; stubbed for now.
-    onTabClick: () => {},
+    // #103 Phase 2 Task 2.3 — chrome substrate tab clicks wire to
+    // handleTabClick (viewer-only currentFlame transfer rule above).
+    onTabClick: handleTabClick,
   });
 
   if (!webgpu.available) {
@@ -242,9 +300,9 @@ async function main(): Promise<void> {
         editorRef?.setNick(nick);
         persistNick(nick);
       },
-      // #103 Task 1.4: chrome substrate tab clicks; Phase 2 wires the
-      // real handler.
-      onTabClick: () => {},
+      // #103 Phase 2 Task 2.3 — editor tab clicks fall through to
+      // handleTabClick (no transfer rules apply when leaving editor).
+      onTabClick: handleTabClick,
     });
 
     const { mountEditPage } = await import('./edit-mount');
@@ -755,6 +813,10 @@ async function main(): Promise<void> {
     // dims); applyLoadResult just updates activeGenome + meta then kicks
     // the render path, which resizes if needed.
     activeGenome = result.genome;
+    // #103 Phase 2 Task 2.3 — viewer writes the cross-surface currentFlame
+    // context whenever it loads a flame. corpusId is omitted here; loadCorpus
+    // refines this entry with its (gen, id) right after this call returns.
+    setCurrentFlame({ genome: result.genome });
     if (result.kind === 'flame' && result.report) {
       const dropCount = result.report.droppedVariations.length;
       const ignoredCount = result.report.ignoredFields.length;
@@ -966,6 +1028,9 @@ async function main(): Promise<void> {
         const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
         if (heroFile) {
           await loadFromFile(heroFile); // hides the missing panel on success
+          // #103 Phase 2 Task 2.3 — tag the bundled hero load with its
+          // corpusId so a viewer→editor tab click preloads the right sheep.
+          setCurrentFlame({ genome: activeGenome, corpusId: { gen, id } });
           await updateCorpusNav(gen, id);
           return;
         }
@@ -981,6 +1046,11 @@ async function main(): Promise<void> {
 
     const file = new File([xml], `electricsheep.${gen}.${id}.flam3`, { type: 'text/xml' });
     await loadFromFile(file); // hides the missing panel on success
+    // #103 Phase 2 Task 2.3 — refine the just-stored currentFlame entry
+    // with its corpus identity. applyLoadResult wrote the bare {genome};
+    // we overwrite with the (gen, id) tag so tab-click transfers know
+    // this flame is corpus-resolvable.
+    setCurrentFlame({ genome: activeGenome, corpusId: { gen, id } });
     await updateCorpusNav(gen, id);
   };
   // Serialize ALL corpus loads through one promise chain so two rapid nav
@@ -1178,9 +1248,9 @@ async function main(): Promise<void> {
       },
       activeAxes: countActiveAxes(currentFilter),
       onFilterToggle: () => drawerHandle?.toggleOpen(),
-      // #103 Task 1.4: chrome substrate tab clicks; Phase 2 wires the
-      // real handler.
-      onTabClick: () => {},
+      // #103 Phase 2 Task 2.3 — gallery tab clicks fall through to
+      // handleTabClick (no transfer rules apply when leaving gallery).
+      onTabClick: handleTabClick,
     });
 
     // #49 Phase B6 — mount drawer EAGERLY with loading=true, before

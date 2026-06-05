@@ -23,6 +23,7 @@ import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import { genomeToJson, genomeFromJson } from './serialize';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
+import { setCurrentFlame } from './app-state';
 
 export interface MountEditPageOpts {
   /** Root container the editor takes over (replaceChildren). The caller
@@ -118,6 +119,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
   state.preview = preview;
+  // #103 Phase 2 Task 2.3 — editor writes the cross-surface currentFlame
+  // context so an editor→viewer tab click can carry the WIP genome over.
+  // corpusId is omitted: the editor doesn't track its load source today
+  // (a future enhancement could preserve corpusId across the open/load
+  // path; this initial seam writes bare {genome} per the design spec).
+  setCurrentFlame({ genome: initialGenome });
 
   // Resolve render dims from genome — when the user picks a size preset in
   // the Render section, the preview canvas re-sizes + re-iterates to match.
@@ -395,6 +402,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
 
   async function applyNewGenome(genome: Genome, seed?: number): Promise<void> {
     state.genome = genome;
+    // #103 Phase 2 Task 2.3 — re-publish the editor's WIP genome whenever
+    // a fresh genome lands (reroll / open file). In-place mutations of
+    // existing fields don't need a re-publish: app-state stores the
+    // reference and observers re-read on tab click.
+    setCurrentFlame({ genome });
     if (seed !== undefined) state.seed = seed;
     rebuildPanel();
     inflightTicket++;
