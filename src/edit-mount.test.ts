@@ -35,6 +35,10 @@ import {
   resolveColdStartGenome,
   resolveColdStartCollapse,
   WIP_KEY,
+  PENDING_TRANSFER_KEY,
+  PENDING_TRANSFER_TTL_MS,
+  writePendingTransfer,
+  consumePendingTransfer,
 } from './edit-state';
 
 describe('resolveColdStartGenome (Task 6.5)', () => {
@@ -72,6 +76,92 @@ describe('resolveColdStartGenome (Task 6.5)', () => {
     const got = resolveColdStartGenome(reroll);
     expect(got.name).toBe('after-malformed');
     expect(reroll).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('viewer→editor pending-transfer (B3)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('write+consume round-trips the genome + corpusId payload', () => {
+    const g = generateRandomGenome(seededRng(11));
+    g.name = 'opened-from-file';
+    writePendingTransfer({
+      genome: g,
+      corpusId: { gen: 248, id: 12345 },
+      timestamp: Date.now(),
+    });
+    const consumed = consumePendingTransfer();
+    expect(consumed).not.toBeNull();
+    expect(consumed!.genome.name).toBe('opened-from-file');
+    expect(consumed!.corpusId).toEqual({ gen: 248, id: 12345 });
+  });
+
+  it('consume deletes the slot (single-shot — refresh does NOT replay)', () => {
+    const g = generateRandomGenome(seededRng(13));
+    writePendingTransfer({ genome: g, corpusId: null, timestamp: Date.now() });
+    expect(localStorage.getItem(PENDING_TRANSFER_KEY)).not.toBeNull();
+    consumePendingTransfer();
+    expect(localStorage.getItem(PENDING_TRANSFER_KEY)).toBeNull();
+  });
+
+  it('returns null when the stash is older than TTL', () => {
+    const g = generateRandomGenome(seededRng(17));
+    writePendingTransfer({
+      genome: g,
+      corpusId: null,
+      timestamp: Date.now() - PENDING_TRANSFER_TTL_MS - 1000,
+    });
+    expect(consumePendingTransfer()).toBeNull();
+  });
+
+  it('returns null when the slot is empty', () => {
+    expect(consumePendingTransfer()).toBeNull();
+  });
+
+  it('returns null and clears slot when JSON is malformed', () => {
+    localStorage.setItem(PENDING_TRANSFER_KEY, '{not json');
+    expect(consumePendingTransfer()).toBeNull();
+    // Slot got removed even though it was malformed — so a refresh won't
+    // keep returning null forever on the same corrupt blob.
+    expect(localStorage.getItem(PENDING_TRANSFER_KEY)).toBeNull();
+  });
+
+  it('resolveColdStartGenome prefers a fresh pending-transfer over WIP', () => {
+    const wip = generateRandomGenome(seededRng(21));
+    wip.name = 'persisted-wip';
+    localStorage.setItem(WIP_KEY, JSON.stringify(wip));
+    const transferred = generateRandomGenome(seededRng(22));
+    transferred.name = 'viewer-handoff';
+    writePendingTransfer({ genome: transferred, corpusId: null, timestamp: Date.now() });
+    const reroll = vi.fn(() => generateRandomGenome(seededRng(99)));
+    const got = resolveColdStartGenome(reroll);
+    expect(got.name).toBe('viewer-handoff');
+    expect(reroll).not.toHaveBeenCalled();
+    // And the slot is consumed — a second cold-start falls back to WIP.
+    expect(resolveColdStartGenome(reroll).name).toBe('persisted-wip');
+  });
+
+  it('resolveColdStartGenome ignores a stale pending-transfer and falls through to WIP', () => {
+    const wip = generateRandomGenome(seededRng(31));
+    wip.name = 'persisted-wip';
+    localStorage.setItem(WIP_KEY, JSON.stringify(wip));
+    const stale = generateRandomGenome(seededRng(32));
+    stale.name = 'stale-handoff';
+    writePendingTransfer({
+      genome: stale,
+      corpusId: null,
+      timestamp: Date.now() - PENDING_TRANSFER_TTL_MS - 100,
+    });
+    const reroll = vi.fn(() => generateRandomGenome(seededRng(99)));
+    const got = resolveColdStartGenome(reroll);
+    expect(got.name).toBe('persisted-wip');
+    expect(reroll).not.toHaveBeenCalled();
   });
 });
 

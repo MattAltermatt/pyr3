@@ -220,6 +220,64 @@ export function restoreWip(): Genome | null {
   }
 }
 
+// ── Viewer → Editor pending-transfer ──────────────────────────────────
+// When the user clicks the editor tab from the viewer with a file-opened (not
+// corpus) genome loaded, we need to carry that genome across the navigation.
+// The cross-surface in-memory CurrentFlame context doesn't survive a full page
+// nav, so we stash the genome in localStorage under a tiny-TTL key. Cold-start
+// reads it first (ahead of restoreWip()), uses it as the initial genome, then
+// deletes the key so a refresh later doesn't resurrect it.
+
+export const PENDING_TRANSFER_KEY = 'pyr3.editor.pendingTransfer';
+
+/** TTL on the pending-transfer key. The handoff is a single click → page
+ *  load round trip — anything older than this is stale (the user backed out
+ *  and came back another way; or the cleanup below didn't run). */
+export const PENDING_TRANSFER_TTL_MS = 5000;
+
+export interface PendingTransfer {
+  genome: Genome;
+  /** Optional — preserved when the viewer's flame came from a corpus URL. */
+  corpusId: { gen: number; id: number } | null;
+  /** Date.now() at write time; consumer checks freshness. */
+  timestamp: number;
+}
+
+/** Stash a pending-transfer payload. Best-effort (private mode / quota). */
+export function writePendingTransfer(payload: PendingTransfer): void {
+  try {
+    localStorage.setItem(PENDING_TRANSFER_KEY, JSON.stringify(payload));
+  } catch {
+    // localStorage disabled / full — silently no-op; the editor falls back
+    // to the normal WIP/random cold-start path.
+  }
+}
+
+/** Consume a pending-transfer payload — read it, validate it, delete it,
+ *  return the genome (or null when the slot is empty / stale / malformed).
+ *  Deleting on read makes the handoff a single-shot, so a subsequent refresh
+ *  doesn't keep replaying it. */
+export function consumePendingTransfer(): PendingTransfer | null {
+  try {
+    const raw = localStorage.getItem(PENDING_TRANSFER_KEY);
+    if (!raw) return null;
+    // Remove first so a malformed / stale slot still clears.
+    localStorage.removeItem(PENDING_TRANSFER_KEY);
+    const parsed = JSON.parse(raw) as Partial<PendingTransfer>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.timestamp !== 'number') return null;
+    if (Date.now() - parsed.timestamp > PENDING_TRANSFER_TTL_MS) return null;
+    if (!parsed.genome) return null;
+    return {
+      genome: parsed.genome as Genome,
+      corpusId: parsed.corpusId ?? null,
+      timestamp: parsed.timestamp,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Debounced persistence — coalesces a rapid edit stream into a single
 // localStorage write 200ms after the LAST edit. The timer lives at module
 // scope so consecutive schedulePersist() calls share / reset the same timer.
@@ -287,12 +345,18 @@ export function restoreSectionCollapse(): Record<SectionKey, boolean> {
 // a missing or malformed WIP triggers a fresh random reroll; a missing or
 // malformed collapse map yields the default all-collapsed (#102 preserved).
 
-/** Resolve the starting genome at editor mount. Returns the persisted WIP if
- *  one is available, otherwise the result of `rerollFn()`. `rerollFn` is the
- *  caller's fresh-random-genome generator — kept as a parameter so this
- *  helper stays free of edit-seed coupling and so tests can spy on whether
- *  the fallback ran. */
+/** Resolve the starting genome at editor mount. Priority:
+ *    1. A fresh viewer→editor pending-transfer (TTL-checked, single-shot)
+ *    2. The persisted WIP from a prior editor session
+ *    3. `rerollFn()` — caller's fresh-random-genome fallback
+ *
+ *  The pending-transfer slot is CONSUMED on read so a later refresh doesn't
+ *  replay the same handoff. The transfer takes priority over WIP because the
+ *  user's action ("open file in viewer → click editor tab") is more explicit
+ *  than "fall back to whatever I was last editing". */
 export function resolveColdStartGenome(rerollFn: () => Genome): Genome {
+  const pending = consumePendingTransfer();
+  if (pending) return pending.genome;
   const wip = restoreWip();
   return wip ?? rerollFn();
 }

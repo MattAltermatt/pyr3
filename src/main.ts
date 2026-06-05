@@ -44,6 +44,7 @@ import {
   type LoadIntent,
 } from './load-intent';
 import { getCurrentFlame, setCurrentFlame } from './app-state';
+import { writePendingTransfer } from './edit-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { readGlobalQuality, writeGlobalQuality } from './prefs';
@@ -221,6 +222,18 @@ async function main(): Promise<void> {
       return;
     }
     if (here === 'viewer' && target === 'editor') {
+      // When the viewer has a genome loaded (corpus OR file-opened), carry it
+      // across the navigation via localStorage. The editor's cold-start path
+      // (resolveColdStartGenome → consumePendingTransfer) reads this back
+      // ahead of WIP / random-reroll. Without this stash, file-opened genomes
+      // would be lost on tab click — only the corpusId is in the URL.
+      if (cf?.genome) {
+        writePendingTransfer({
+          genome: cf.genome,
+          corpusId: cf.corpusId ?? null,
+          timestamp: Date.now(),
+        });
+      }
       window.location.href = editorUrlForFlame(cf?.corpusId);
       return;
     }
