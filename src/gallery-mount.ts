@@ -396,7 +396,14 @@ const CELL_STYLE = `
   grid-template-columns:repeat(3, 1fr);
   gap:26px;
   padding:28px;
-  max-width:1200px;
+  /* Width derived from viewport height so the 3×3 grid (tiles + labels +
+     gaps + padding) always fits within the gallery zone, no scroll. The
+     grid zone has height = viewport - topbar(44) - inforow(48) = vh-92.
+     For 3 rows of squareTile + 10px label-gap + 14px label-height + 26px
+     row-gap + 28px padding, the per-row contribution is
+     squareTile + (10+14+26 or 28-bottom-padding). Solving gives a max
+     width upper bound of vh-164 — capped at 1200px on wide viewports. */
+  max-width:min(1200px, calc(100vh - 164px));
   width:100%;
   box-sizing:border-box;
   margin:0 auto;
@@ -479,12 +486,13 @@ function buildCell(cellDim: number): CellHandle {
   root.className = 'pyr3-tile-wrap pyr3-gallery-cell empty';
   root.target = '_blank';
   root.rel = 'noopener noreferrer';
-  // Pin `aspect-ratio: 1` on the wrap so the whole tile (canvas + label
-  // stacked) stays in the square grid cell at any viewport width. The
-  // canvas inherits via width:100%; the label sits beneath inside the same
-  // square footprint. Inline-style so the layout-snapshot test passes
-  // without depending on stylesheet load order.
-  root.style.aspectRatio = '1';
+  // The wrap auto-sizes to canvas + gap + label (no aspect-ratio: 1 on the
+  // wrap itself — that would clip the label outside the wrap's square box
+  // and push it past the grid bounds). The CANVAS owns the square shape
+  // via `aspect-ratio: 1` in CELL_STYLE; the wrap is a flex column that
+  // naturally grows to `canvasHeight + gap + labelHeight`. The grid's
+  // `max-width: calc(100vh - 164px)` keeps the whole 3×3 inside the
+  // viewport for the no-scroll layout.
 
   const canvas = document.createElement('canvas');
   canvas.width = cellDim;
