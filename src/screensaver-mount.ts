@@ -24,6 +24,7 @@ import {
   type Renderer,
 } from './renderer';
 import type { Genome } from './genome';
+import { COLORS } from './ui-tokens';
 
 export interface MountScreensaverOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -54,42 +55,122 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
+interface KeyHint { key: string; label: string; }
+
+const KEY_HINTS: KeyHint[] = [
+  { key: 'Space',  label: 'pause' },
+  { key: '← →',    label: 'skip' },
+  { key: 'F',      label: 'fullscreen' },
+  { key: 'Esc',    label: 'exit FS' },
+  { key: 'S',      label: 'settings' },
+];
+
 function buildControlsStrip(): HTMLElement {
   const strip = el('div', 'pyr3-screensaver-strip');
-  strip.textContent =
-    'Space pause · ← → skip · F fullscreen · Esc exit FS · S settings';
   Object.assign(strip.style, {
     position: 'absolute',
     left: '0',
     right: '0',
-    bottom: '0',
-    padding: '6px 18px',
+    top: '0',
+    padding: '12px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '20px',
+    background: COLORS.bg.info,
+    borderBottom: `1px solid ${COLORS.border}`,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: '12px',
-    opacity: '0.6',
+    fontSize: '13px',
+    color: COLORS.text.primary,
     pointerEvents: 'none',
-    textAlign: 'center',
-    zIndex: '10',
+    zIndex: '12',
   });
+  for (const hint of KEY_HINTS) {
+    const group = el('span', 'pyr3-screensaver-hint');
+    Object.assign(group.style, {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+    });
+    const kbd = el('kbd', 'pyr3-screensaver-kbd');
+    kbd.textContent = hint.key;
+    Object.assign(kbd.style, {
+      padding: '3px 8px',
+      background: COLORS.bg.action,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: '4px',
+      color: COLORS.flame.top,
+      fontWeight: '600',
+      letterSpacing: '0.02em',
+      minWidth: '20px',
+      textAlign: 'center',
+    });
+    const lbl = el('span');
+    lbl.textContent = hint.label;
+    lbl.style.color = COLORS.text.muted;
+    group.append(kbd, lbl);
+    strip.append(group);
+  }
   return strip;
 }
 
-function buildNowPlayingPill(opts: { onStop: () => void }): HTMLElement {
+interface PillCallbacks {
+  onPrev: () => void;
+  onPause: () => void;
+  onNext: () => void;
+  onFullscreen: () => void;
+  onStop: () => void;
+}
+
+function buildNowPlayingPill(cb: PillCallbacks): HTMLElement {
   const pill = el('div', 'pyr3-screensaver-pill');
   Object.assign(pill.style, {
     position: 'absolute',
-    top: '12px',
-    right: '12px',
-    padding: '6px 10px',
+    top: '60px',
+    right: '16px',
+    padding: '6px',
     display: 'flex',
-    gap: '8px',
-    zIndex: '10',
+    gap: '4px',
+    background: COLORS.bg.panel,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '8px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+    zIndex: '11',
+    transition: 'opacity 0.2s',
   });
-  const stop = el('button', 'pyr3-screensaver-pill-stop');
-  stop.textContent = '⏸';
-  stop.addEventListener('click', opts.onStop);
-  pill.append(stop);
+  function btn(label: string, fn: () => void, title: string): HTMLButtonElement {
+    const b = el('button', 'pyr3-screensaver-pill-btn');
+    b.textContent = label;
+    b.title = title;
+    Object.assign(b.style, {
+      padding: '6px 10px',
+      background: COLORS.bg.input,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: '4px',
+      color: COLORS.text.primary,
+      cursor: 'pointer',
+      fontSize: '14px',
+      minWidth: '32px',
+    });
+    b.addEventListener('click', fn);
+    return b;
+  }
+  pill.append(
+    btn('⏮', cb.onPrev,       'Previous (←)'),
+    btn('⏸', cb.onPause,      'Pause / resume (Space)'),
+    btn('⏭', cb.onNext,       'Next (→)'),
+    btn('⛶', cb.onFullscreen, 'Toggle fullscreen (F)'),
+    btn('⏹', cb.onStop,       'Stop, back to settings (S)'),
+  );
   return pill;
+}
+
+async function toggleFullscreen(target: HTMLElement): Promise<void> {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  } else {
+    await target.requestFullscreen();
+  }
 }
 
 async function loadGenomeByRef(ref: SheepRef): Promise<Genome> {
@@ -118,8 +199,18 @@ function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
   return canvas;
 }
 
+interface ModeControls {
+  /** Toggle paused state. Pause freezes elapsed/hold timers; render output
+   *  is whatever was last presented. */
+  togglePause(): void;
+  /** Signal a skip — dir = 1 for next, -1 for prev. The mode picks this up
+   *  at its next loop boundary. */
+  skip(dir: -1 | 1): void;
+}
+
 interface ModeHandle {
   cancel(): void;
+  controls: ModeControls;
 }
 
 /** Final quality the slideshow renders each flame to before holding. Higher
@@ -130,13 +221,61 @@ const SLIDESHOW_TARGET_Q = 100;
 const SLIDESHOW_CHUNK_SAMPLES = 5_000_000;
 const SLIDESHOW_CROSSFADE_MS = 1500;
 
-/** Promise-based sleep that bails on cancel. */
+/** Mutable state shared between mode loops and their ModeControls. Wrapped
+ *  in an object so TS doesn't narrow `skipDir` to a literal across closures
+ *  on each assignment. */
+interface ModeState {
+  cancelled: boolean;
+  paused: boolean;
+  /** Skip-direction signal. Set by controls.skip(); cleared by the mode loop
+   *  when consumed. */
+  skipDir: -1 | 0 | 1;
+  /** Build-up only: timestamp at which the current pause began (0 = not
+   *  paused). */
+  pausedAt: number;
+  /** Build-up only: total ms accumulated across resumed pauses, applied as
+   *  an offset to the elapsed-vs-target calculation. */
+  pauseAccumMs: number;
+}
+
+/** Promise-based sleep that bails on cancel. Use for the fade-to-black
+ *  transition where pause/skip shouldn't extend or shorten the wall-clock
+ *  fade duration. */
 async function sleepCancellable(ms: number, isCancelled: () => boolean): Promise<void> {
   const end = performance.now() + ms;
   while (performance.now() < end) {
     if (isCancelled()) return;
     await new Promise<void>((r) => setTimeout(r, Math.min(50, end - performance.now())));
   }
+}
+
+/** Sleep that bails on cancel, EXTENDS while paused, and SHORTCIRCUITS on
+ *  skip. Returns the reason it exited so the caller can branch. */
+type SleepReason = 'done' | 'cancelled' | 'skipped';
+async function sleepInteractive(ms: number, state: ModeState): Promise<SleepReason> {
+  let remaining = ms;
+  while (remaining > 0) {
+    if (state.cancelled) return 'cancelled';
+    if (state.skipDir !== 0) return 'skipped';
+    if (state.paused) {
+      await new Promise<void>((r) => setTimeout(r, 100));
+      continue;
+    }
+    const step = Math.min(50, remaining);
+    await new Promise<void>((r) => setTimeout(r, step));
+    remaining -= step;
+  }
+  return 'done';
+}
+
+function createModeState(): ModeState {
+  return {
+    cancelled: false,
+    paused: false,
+    skipDir: 0,
+    pausedAt: 0,
+    pauseAccumMs: 0,
+  };
 }
 
 /** Render a single flame to the target quality in chunks, yielding to the
@@ -206,8 +345,8 @@ function startSlideshow(args: {
   prefs: ScreensaverPrefs;
 }): ModeHandle {
   const { device, format, canvasHost, prefs } = args;
-  let cancelled = false;
-  const isCancelled = () => cancelled;
+  const state = createModeState();
+  const isCancelled = () => state.cancelled;
 
   void (async () => {
     const front = makeSlideshowCanvas(canvasHost, device, format, 2);
@@ -251,11 +390,17 @@ function startSlideshow(args: {
 
     while (!isCancelled()) {
       // Pick + render the next flame into the inactive layer (prefetch).
-      const nextRef = queue.next();
-      if (!nextRef) break;
+      // Skip-back consumes the queue's history; skip-forward and natural
+      // advance both call next().
+      const pickRef =
+        state.skipDir === -1
+          ? (queue.prev() ?? queue.next())
+          : queue.next();
+      state.skipDir = 0;
+      if (!pickRef) break;
       let nextGenome: Genome;
       try {
-        nextGenome = await loadGenomeByRef(nextRef);
+        nextGenome = await loadGenomeByRef(pickRef);
       } catch {
         continue;
       }
@@ -273,11 +418,11 @@ function startSlideshow(args: {
       });
       if (isCancelled()) return;
 
-      // Wait the remainder of the hold period. Prefetch may have eaten into
-      // it — that's the point. If prefetch took longer than holdSec we
-      // crossfade immediately.
-      await sleepCancellable(prefs.holdSec * 1000, isCancelled);
-      if (isCancelled()) return;
+      // Wait the remainder of the hold period. Skip signal shortcircuits
+      // immediately; pause extends.
+      const reason = await sleepInteractive(prefs.holdSec * 1000, state);
+      if (reason === 'cancelled') return;
+      // 'done' and 'skipped' both fall through to the crossfade.
 
       // Crossfade.
       prefetchTarget.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
@@ -292,7 +437,15 @@ function startSlideshow(args: {
 
   return {
     cancel() {
-      cancelled = true;
+      state.cancelled = true;
+    },
+    controls: {
+      togglePause() {
+        state.paused = !state.paused;
+      },
+      skip(dir) {
+        state.skipDir = dir;
+      },
     },
   };
 }
@@ -304,8 +457,8 @@ function startBuildUp(args: {
   prefs: ScreensaverPrefs;
 }): ModeHandle {
   const { device, format, canvasHost, prefs } = args;
-  let cancelled = false;
-  const isCancelled = () => cancelled;
+  const state = createModeState();
+  const isCancelled = () => state.cancelled;
 
   void (async () => {
     const canvas = makeRenderCanvas(canvasHost);
@@ -329,13 +482,17 @@ function startBuildUp(args: {
     const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
 
     while (!isCancelled()) {
-      const ref = queue.next();
+      // Pick the next ref; skip-back consumes history.
+      const ref =
+        state.skipDir === -1
+          ? (queue.prev() ?? queue.next())
+          : queue.next();
+      state.skipDir = 0;
       if (!ref) break;
       let genome: Genome;
       try {
         genome = await loadGenomeByRef(ref);
       } catch {
-        // Sparse-corpus gap or transient fetch failure — skip this flame.
         continue;
       }
       if (isCancelled()) return;
@@ -343,6 +500,8 @@ function startBuildUp(args: {
       renderer.reset(genome);
       const seed = (Math.random() * 0xffffffff) >>> 0;
       const startedAt = performance.now();
+      state.pauseAccumMs = 0;
+      state.pausedAt = 0;
       let samplesAccumulated = 0;
 
       canvas.style.transition = '';
@@ -352,7 +511,17 @@ function startBuildUp(args: {
 
       // Pacing loop: each frame, catch samples up to qTarget(elapsed).
       while (!isCancelled()) {
-        const elapsed = (performance.now() - startedAt) / 1000;
+        if (state.skipDir !== 0) break;
+        if (state.paused) {
+          if (state.pausedAt === 0) state.pausedAt = performance.now();
+          await new Promise<void>((r) => setTimeout(r, 100));
+          continue;
+        }
+        if (state.pausedAt !== 0) {
+          state.pauseAccumMs += performance.now() - state.pausedAt;
+          state.pausedAt = 0;
+        }
+        const elapsed = (performance.now() - startedAt - state.pauseAccumMs) / 1000;
         const targetQ = qTarget(elapsed, prefs.buildUpSec);
         const desiredSamples = targetQ * totalPixels;
         const delta = desiredSamples - samplesAccumulated;
@@ -377,9 +546,10 @@ function startBuildUp(args: {
       }
       if (isCancelled()) return;
 
-      // Rest period — hold at full quality.
-      await sleepCancellable(prefs.restSec * 1000, isCancelled);
-      if (isCancelled()) return;
+      // Rest period — hold at full quality. Skip signal shortcircuits;
+      // pause extends.
+      const restReason = await sleepInteractive(prefs.restSec * 1000, state);
+      if (restReason === 'cancelled') return;
 
       // Fade-to-black ~2s, then advance.
       canvas.style.transition = 'opacity 2s';
@@ -390,7 +560,15 @@ function startBuildUp(args: {
 
   return {
     cancel() {
-      cancelled = true;
+      state.cancelled = true;
+    },
+    controls: {
+      togglePause() {
+        state.paused = !state.paused;
+      },
+      skip(dir) {
+        state.skipDir = dir;
+      },
     },
   };
 }
@@ -413,8 +591,15 @@ export function mountScreensaverPage(
   const landing = mountScreensaverLanding(root, {
     onPlay: (prefs: ScreensaverPrefs) => {
       landing.card.classList.add('hidden');
-      const pill = buildNowPlayingPill({ onStop: stopPlayback });
+      const pill = buildNowPlayingPill({
+        onPrev:       () => runHandle?.controls.skip(-1),
+        onPause:      () => runHandle?.controls.togglePause(),
+        onNext:       () => runHandle?.controls.skip(1),
+        onFullscreen: () => { void toggleFullscreen(root); },
+        onStop:       stopPlayback,
+      });
       root.append(pill);
+      attachPillAutohide(pill);
       if (device && format) {
         runHandle =
           prefs.mode === 'build-up'
@@ -433,9 +618,62 @@ export function mountScreensaverPage(
   });
   injectHiddenRuleOnce();
 
+  let mousemoveListener: ((ev: MouseEvent) => void) | null = null;
+  let pillHideTimer: number | undefined;
+
+  function attachPillAutohide(pill: HTMLElement): void {
+    function show(): void {
+      pill.style.opacity = '1';
+      pill.style.pointerEvents = 'auto';
+      window.clearTimeout(pillHideTimer);
+      pillHideTimer = window.setTimeout(() => {
+        pill.style.opacity = '0';
+        pill.style.pointerEvents = 'none';
+      }, 2500);
+    }
+    mousemoveListener = () => show();
+    window.addEventListener('mousemove', mousemoveListener);
+    show();
+  }
+
+  // Window-level keydown listener. Lives for the page lifetime; handlers
+  // delegate to the active mode's controls (null when not playing).
+  function onKeydown(ev: KeyboardEvent): void {
+    // Don't steal keys when the user is typing in the freeform input on the
+    // landing card.
+    const target = ev.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      // Allow Esc to fall through (browser default).
+      if (ev.key !== 'Escape') return;
+    }
+    if (ev.key === ' ' || ev.code === 'Space') {
+      ev.preventDefault();
+      runHandle?.controls.togglePause();
+      return;
+    }
+    if (ev.key === 'ArrowLeft')  { runHandle?.controls.skip(-1); return; }
+    if (ev.key === 'ArrowRight') { runHandle?.controls.skip(1);  return; }
+    if (ev.key === 'f' || ev.key === 'F') {
+      void toggleFullscreen(root);
+      return;
+    }
+    if (ev.key === 's' || ev.key === 'S') {
+      if (runHandle) stopPlayback();
+      return;
+    }
+    // Esc: browser auto-exits fullscreen. We deliberately don't handle it —
+    // playback continues, the page returns to windowed naturally.
+  }
+  window.addEventListener('keydown', onKeydown);
+
   function stopPlayback(): void {
     runHandle?.cancel();
     runHandle = null;
+    if (mousemoveListener) {
+      window.removeEventListener('mousemove', mousemoveListener);
+      mousemoveListener = null;
+    }
+    window.clearTimeout(pillHideTimer);
     root.querySelector('.pyr3-screensaver-pill')?.remove();
     canvasHost.replaceChildren();
     landing.card.classList.remove('hidden');
