@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest';
-import { densitySection } from './edit-section-density';
+import { densitySection, TONEMAP_CHANGED_EVENT } from './edit-section-density';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { DENSITY_PRESETS, DEFAULT_DENSITY } from './density';
+import { DENSITY_PRESETS as TONEMAP_PRESETS } from './edit-preset-density';
+import { DEFAULT_TONEMAP } from './tonemap';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -18,12 +20,22 @@ function seededRng(seed: number): () => number {
 }
 
 function mount() {
+  // Wrap mimics mountEditUi's section shape: a `pyr3-edit-section` wrap
+  // with a sibling `pyr3-edit-section-header` so the section's header-chip
+  // injection target exists.
+  const wrap = document.createElement('div');
+  wrap.className = 'pyr3-edit-section';
+  const header = document.createElement('div');
+  header.className = 'pyr3-edit-section-header';
+  wrap.appendChild(header);
   const host = document.createElement('div');
+  wrap.appendChild(host);
+  document.body.appendChild(wrap);
+
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
   const onChange = vi.fn();
   densitySection.build(host, state, onChange);
-  document.body.appendChild(host); // text-mode swap needs the host in the document
-  return { host, state, onChange };
+  return { host, state, onChange, header };
 }
 
 // Drive a scrubby cell by double-clicking into text mode, typing, pressing Enter.
@@ -125,6 +137,94 @@ describe('densitySection', () => {
     slider.dispatchEvent(new Event('input'));
     expect(preset.value).toBe('custom');
     expect(state.genome.density!.maxRad).toBe(17);
+  });
+
+  // ── Phase 7 task 7.10: tonemap preset strip + tooltips + chip ──────────
+
+  it('renders the tonemap preset strip with 6 buttons at top of section body', () => {
+    const { host } = mount();
+    const strip = host.querySelector('.pyr3-edit-density-preset-strip');
+    expect(strip).not.toBeNull();
+    const buttons = strip!.querySelectorAll('.pyr3-edit-density-tonemap-preset');
+    expect(buttons.length).toBe(6);
+    // Strip sits at the top of the section body — first child.
+    expect(host.firstElementChild).toBe(strip);
+    // Buttons cover the six locked preset names.
+    const names = Array.from(buttons).map((b) => b.textContent ?? '');
+    for (const n of ['default', 'soft', 'vivid', 'punchy', 'cinematic', 'crystal']) {
+      expect(names.some((label) => label.includes(n))).toBe(true);
+    }
+  });
+
+  it('clicking a tonemap preset writes gamma/gammaThreshold/vibrancy/brightness at once', () => {
+    const { host, state, onChange } = mount();
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    const btn = host.querySelector('.pyr3-edit-density-tonemap-preset-vivid') as HTMLElement;
+    btn.click();
+    expect(state.genome.tonemap?.gamma).toBe(vivid.gamma);
+    expect(state.genome.tonemap?.gammaThreshold).toBe(vivid.gammaThreshold);
+    expect(state.genome.tonemap?.vibrancy).toBe(vivid.vibrancy);
+    expect(state.genome.tonemap?.brightness).toBe(vivid.brightness);
+    // All four tonemap paths fire so the lane scheduler triggers a redraw.
+    expect(onChange).toHaveBeenCalledWith('tonemap.gamma');
+    expect(onChange).toHaveBeenCalledWith('tonemap.gammaThreshold');
+    expect(onChange).toHaveBeenCalledWith('tonemap.vibrancy');
+    expect(onChange).toHaveBeenCalledWith('tonemap.brightness');
+  });
+
+  it('section header carries a preset chip after clicking a preset', async () => {
+    const { header, state } = mount();
+    // Apply 'vivid' tonemap values directly + fire the event to refresh.
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    state.genome.tonemap = {
+      gamma: vivid.gamma,
+      gammaThreshold: vivid.gammaThreshold,
+      vibrancy: vivid.vibrancy,
+      brightness: vivid.brightness,
+      highlightPower: DEFAULT_TONEMAP.highlightPower,
+    };
+    // Wait the microtask used for chip mount.
+    await Promise.resolve();
+    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+    const chip = header.querySelector('.pyr3-edit-density-chip') as HTMLElement;
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toBe('vivid');
+  });
+
+  it('chip appends * when user manually nudges any tonemap value off-preset', async () => {
+    const { header, state } = mount();
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    state.genome.tonemap = {
+      gamma: vivid.gamma,
+      gammaThreshold: vivid.gammaThreshold,
+      vibrancy: vivid.vibrancy,
+      brightness: vivid.brightness,
+      highlightPower: DEFAULT_TONEMAP.highlightPower,
+    };
+    await Promise.resolve();
+    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+    // Nudge brightness off-preset.
+    state.genome.tonemap.brightness = vivid.brightness + 0.5;
+    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+    const chip = header.querySelector('.pyr3-edit-density-chip') as HTMLElement;
+    expect(chip.textContent).toBe('vivid*');
+  });
+
+  it('renders ? info icons next to every labeled field (preset + maxRad + minRad + curve)', () => {
+    const { host } = mount();
+    const icons = host.querySelectorAll('.pyr3-info-icon');
+    // 4 labeled fields → 4 info icons (preset / maxRad / minRad / curve).
+    expect(icons.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('clicking an info icon toggles a tooltip popover at document level', () => {
+    const { host } = mount();
+    const icon = host.querySelector('.pyr3-info-icon') as HTMLElement;
+    icon.click();
+    expect(document.querySelector('.pyr3-tooltip')).not.toBeNull();
+    // Click again — popover dismisses.
+    icon.click();
+    expect(document.querySelector('.pyr3-tooltip')).toBeNull();
   });
 
   it('editing minRad / curve also fires the matching onChange path', () => {

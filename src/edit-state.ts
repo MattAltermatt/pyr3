@@ -66,6 +66,11 @@ export interface EditState {
   soloXformSnapshot?: SoloSnapshot;
   /** Per-xform-index variation solo snapshot. Keyed by xform index. */
   soloVariationSnapshot?: Record<number, SoloSnapshot>;
+  /** Last tonemap preset applied via the Density section's preset strip
+   *  (Phase 7 task 7.10). Used by the header chip to display dirty-state
+   *  (e.g. `vivid*`) when the user manually nudges a tonemap value off
+   *  the preset's exact triple. UI-only; never serialized. */
+  lastDensityPreset?: string;
 }
 
 export function createEditState(genome: Genome, seed: number): EditState {

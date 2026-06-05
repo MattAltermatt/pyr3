@@ -76,6 +76,15 @@ export const globalSection: SectionMount = {
     const tmGet = <K extends keyof Tonemap>(k: K): Tonemap[K] =>
       state.genome.tonemap?.[k] ?? DEFAULT_TONEMAP[k];
 
+    // Notify the density section's preset chip whenever ANY tonemap
+    // field is edited here — without it the chip won't dirty-mark on
+    // brightness/gamma/vibrancy nudges. The density section listens at
+    // document level.
+    function fireTonemap(path: string): void {
+      onChange(path);
+      document.dispatchEvent(new CustomEvent('pyr3:tonemap-changed'));
+    }
+
     // Tooltips — plain-English what / effect on the picture, matching the
     // render section's hover-hint pattern.
     const TIPS = {
@@ -130,7 +139,7 @@ export const globalSection: SectionMount = {
         min: 0,
         onChange: (v) => {
           ensureTonemap(state).brightness = v;
-          onChange('tonemap.brightness');
+          fireTonemap('tonemap.brightness');
         },
       });
       host.appendChild(row('brightness', num.el, TIPS.brightness));
@@ -144,7 +153,7 @@ export const globalSection: SectionMount = {
         min: 0,
         onChange: (v) => {
           ensureTonemap(state).gamma = v;
-          onChange('tonemap.gamma');
+          fireTonemap('tonemap.gamma');
         },
       });
       host.appendChild(row('gamma', num.el, TIPS.gamma));
@@ -157,7 +166,7 @@ export const globalSection: SectionMount = {
         kind: 'generic',
         onChange: (v) => {
           ensureTonemap(state).highlightPower = v;
-          onChange('tonemap.highlightPower');
+          fireTonemap('tonemap.highlightPower');
         },
       });
       host.appendChild(row('highlightPower', num.el, TIPS.highlightPower));
@@ -171,7 +180,7 @@ export const globalSection: SectionMount = {
         min: 0,
         onChange: (v) => {
           ensureTonemap(state).gammaThreshold = v;
-          onChange('tonemap.gammaThreshold');
+          fireTonemap('tonemap.gammaThreshold');
         },
       });
       host.appendChild(row('gammaThreshold', num.el, TIPS.gammaThreshold));
@@ -193,7 +202,7 @@ export const globalSection: SectionMount = {
         onChange: (v) => {
           ensureTonemap(state).vibrancy = v;
           rangeMirror.value = String(v);
-          onChange('tonemap.vibrancy');
+          fireTonemap('tonemap.vibrancy');
         },
       });
       // Legacy range input mirror — same name attr, visually hidden, drives
