@@ -292,3 +292,112 @@ describe('palette picker — chip+search final assert', () => {
     expect(badge.textContent).toMatch(/\d+ \/ 701/);
   });
 });
+
+// Map-backed localStorage stub so favorites tests stay env-agnostic. Per the
+// project's auto-memory note on Storage.prototype spy traps in CI, we install
+// a Map-backed mock onto globalThis.localStorage instead.
+function installLocalStorageStub(): { clear: () => void } {
+  const store = new Map<string, string>();
+  const stub = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => { store.set(k, String(v)); },
+    removeItem: (k: string) => { store.delete(k); },
+    clear: () => { store.clear(); },
+    key: (i: number) => [...store.keys()][i] ?? null,
+    get length() { return store.size; },
+  };
+  (globalThis as { localStorage: Storage }).localStorage = stub as unknown as Storage;
+  return { clear: () => store.clear() };
+}
+
+describe('palette picker — favorites (Task 9.6)', () => {
+  it('star is empty (☆) when not favorited', () => {
+    installLocalStorageStub();
+    const { root } = mount();
+    const cell0 = root.querySelector('.pyr3-palette-picker-cell[data-idx="0"]') as HTMLElement;
+    const star = cell0.querySelector('.pyr3-palette-picker-cell-star') as HTMLElement;
+    expect(star.textContent).toBe('☆');
+    expect(star.classList.contains('on')).toBe(false);
+  });
+
+  it('clicking a star toggles favorite — filled ★ and .on class', () => {
+    installLocalStorageStub();
+    const { root } = mount();
+    const cell0 = root.querySelector('.pyr3-palette-picker-cell[data-idx="0"]') as HTMLElement;
+    const star = cell0.querySelector('.pyr3-palette-picker-cell-star') as HTMLElement;
+    star.click();
+    expect(star.textContent).toBe('★');
+    expect(star.classList.contains('on')).toBe(true);
+    star.click();
+    expect(star.textContent).toBe('☆');
+    expect(star.classList.contains('on')).toBe(false);
+  });
+
+  it('clicking the star does NOT also select/apply the cell', () => {
+    installLocalStorageStub();
+    const onApply = vi.fn();
+    const { root } = mount(makeOpts({ onApply }));
+    const cell0 = root.querySelector('.pyr3-palette-picker-cell[data-idx="0"]') as HTMLElement;
+    const star = cell0.querySelector('.pyr3-palette-picker-cell-star') as HTMLElement;
+    star.click();
+    // Apply should never fire from a star click.
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('favorites persist to localStorage under pyr3.palette.favorites as JSON array of source IDs', () => {
+    installLocalStorageStub();
+    const { root } = mount();
+    const cell5 = root.querySelector('.pyr3-palette-picker-cell[data-idx="5"]') as HTMLElement;
+    const star = cell5.querySelector('.pyr3-palette-picker-cell-star') as HTMLElement;
+    star.click();
+    const raw = localStorage.getItem('pyr3.palette.favorites');
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toContain('flam3:5');
+  });
+
+  it('favorites read back from localStorage on next mount', () => {
+    const { clear } = installLocalStorageStub();
+    localStorage.setItem('pyr3.palette.favorites', JSON.stringify(['flam3:42']));
+    const { root } = mount();
+    const cell42 = root.querySelector('.pyr3-palette-picker-cell[data-idx="42"]') as HTMLElement;
+    const star = cell42.querySelector('.pyr3-palette-picker-cell-star') as HTMLElement;
+    expect(star.textContent).toBe('★');
+    clear();
+  });
+
+  it('★ favorites tab filters cells to favorited only + updates count', () => {
+    installLocalStorageStub();
+    localStorage.setItem('pyr3.palette.favorites', JSON.stringify(['flam3:0', 'flam3:1', 'flam3:2']));
+    const { root } = mount();
+    const favTab = root.querySelector('.pyr3-palette-picker-tab[data-tab="favorites"]') as HTMLElement;
+    expect(favTab.textContent).toContain('3');
+    favTab.click();
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    expect(visible.length).toBe(3);
+  });
+
+  it('all tab counts the full catalog regardless of favorites', () => {
+    installLocalStorageStub();
+    localStorage.setItem('pyr3.palette.favorites', JSON.stringify(['flam3:0']));
+    const { root } = mount();
+    const allTab = root.querySelector('.pyr3-palette-picker-tab[data-tab="all"]') as HTMLElement;
+    expect(allTab.textContent).toContain('701');
+  });
+
+  it('toggling a star while on favorites tab updates the visible set live', () => {
+    installLocalStorageStub();
+    localStorage.setItem('pyr3.palette.favorites', JSON.stringify(['flam3:10']));
+    const { root } = mount();
+    const favTab = root.querySelector('.pyr3-palette-picker-tab[data-tab="favorites"]') as HTMLElement;
+    favTab.click();
+    const cell10 = root.querySelector('.pyr3-palette-picker-cell[data-idx="10"]') as HTMLElement;
+    const star = cell10.querySelector('.pyr3-palette-picker-cell-star') as HTMLElement;
+    star.click(); // unfavorite
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    const visible = [...cells].filter((c) => c.style.display !== 'none');
+    expect(visible.length).toBe(0);
+  });
+});

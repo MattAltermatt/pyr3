@@ -78,6 +78,45 @@ export interface PalettePickerHandle {
   destroy: () => void;
 }
 
+// ── Favorites persistence ─────────────────────────────────────────────────
+//
+// Favorites are stored as a JSON array of stringified PaletteSource IDs:
+//   "flam3:<N>"          for flam3 catalog entries
+//   "corpus:<gen>/<id>"  for corpus-source palettes
+//   "mine:<name>"        for user-saved (future)
+// Stored under `pyr3.palette.favorites` (separate from the variation
+// picker's localStorage key so the two pickers' favorites don't collide).
+
+const FAVORITES_KEY = 'pyr3.palette.favorites';
+
+function favoriteIdFor(source: PaletteSource): string {
+  switch (source.kind) {
+    case 'flam3':  return `flam3:${source.number}`;
+    case 'corpus': return `corpus:${source.gen}/${source.id}`;
+    case 'mine':   return `mine:${source.name}`;
+  }
+}
+
+function readFavorites(): Set<string> {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((x) => typeof x === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeFavorites(set: Set<string>): void {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...set]));
+  } catch {
+    // localStorage may be disabled (private mode); favorites silently no-op.
+  }
+}
+
 // ── Library entries (lazy-decoded once at first picker open) ──────────────
 interface LibraryEntry {
   idx: number;
@@ -213,17 +252,15 @@ export function mountPalettePicker(
   chipRow.appendChild(chipClear);
   head.appendChild(chipRow);
 
-  // Tabs: all (701) · ★ favorites (N)
+  // Tabs: all (701) · ★ favorites (N) — labels updated by refreshTabCounts.
   const tabsRow = document.createElement('div');
   tabsRow.className = 'pyr3-palette-picker-tabs';
   const allTab = document.createElement('div');
   allTab.className = 'pyr3-palette-picker-tab active';
   allTab.dataset['tab'] = 'all';
-  allTab.textContent = `all (${FLAM3_PALETTE_COUNT})`;
   const favTab = document.createElement('div');
   favTab.className = 'pyr3-palette-picker-tab';
   favTab.dataset['tab'] = 'favorites';
-  favTab.textContent = '★ favorites (0)';
   tabsRow.append(allTab, favTab);
   head.appendChild(tabsRow);
 
@@ -275,6 +312,37 @@ export function mountPalettePicker(
   const entries = getLibraryEntries();
   const activeIdx = currentActiveIdx(opts.current);
   const cellByIdx = new Map<number, HTMLElement>();
+  const starByIdx = new Map<number, HTMLElement>();
+
+  // Live favorite set + tab state ------------------------------------------
+  const favorites = readFavorites();
+  let activeTab: 'all' | 'favorites' = 'all';
+
+  function isFavorite(idx: number): boolean {
+    return favorites.has(favoriteIdFor({ kind: 'flam3', number: idx }));
+  }
+  function paintStar(idx: number): void {
+    const star = starByIdx.get(idx);
+    if (!star) return;
+    if (isFavorite(idx)) {
+      star.textContent = '★';
+      star.classList.add('on');
+      star.style.color = COLORS.flame.top;
+    } else {
+      star.textContent = '☆';
+      star.classList.remove('on');
+      star.style.color = COLORS.text.dim;
+    }
+  }
+  function toggleFavorite(idx: number): void {
+    const id = favoriteIdFor({ kind: 'flam3', number: idx });
+    if (favorites.has(id)) favorites.delete(id);
+    else favorites.add(id);
+    writeFavorites(favorites);
+    paintStar(idx);
+    refreshTabCounts();
+    applyFilter();
+  }
 
   for (const entry of entries) {
     const cell = document.createElement('div');
@@ -317,7 +385,7 @@ export function mountPalettePicker(
     nameEl.style.textAlign = 'center';
     cell.appendChild(nameEl);
 
-    // Star (top-right corner; placeholder for Task 9.6 — favorites)
+    // Star (top-right corner — favorites toggle, Task 9.6)
     const star = document.createElement('div');
     star.className = 'pyr3-palette-picker-cell-star';
     star.textContent = '☆';
@@ -328,18 +396,27 @@ export function mountPalettePicker(
     star.style.color = COLORS.text.dim;
     star.style.userSelect = 'none';
     star.style.cursor = 'pointer';
+    star.title = 'toggle favorite';
+    star.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      toggleFavorite(entry.idx);
+    });
     cell.appendChild(star);
 
     body.appendChild(cell);
     cellByIdx.set(entry.idx, cell);
+    starByIdx.set(entry.idx, star);
+    paintStar(entry.idx);
   }
   picker.appendChild(body);
 
-  // Live filter — combines search (substring AND) with chip filter (any-tag OR).
-  // No filter / search → badge shows total; otherwise `visible / total`.
+  // Live filter — search (substring AND) × chip (any-tag OR) × tab (all
+  // vs favorites). Badge shows total when nothing is filtering, else
+  // `visible / total`.
   function applyFilter(): void {
     const q = search.value.trim().toLowerCase();
     const chipsOn = activeChips.size > 0;
+    const favTab = activeTab === 'favorites';
     let visible = 0;
     for (const entry of entries) {
       const cell = cellByIdx.get(entry.idx)!;
@@ -352,16 +429,32 @@ export function mountPalettePicker(
           if (activeChips.has(t)) { chipMatch = true; break; }
         }
       }
-      const match = searchMatch && chipMatch;
+      const tabMatch = !favTab || isFavorite(entry.idx);
+      const match = searchMatch && chipMatch && tabMatch;
       cell.style.display = match ? '' : 'none';
       if (match) visible++;
     }
-    const filtering = q !== '' || chipsOn;
+    const filtering = q !== '' || chipsOn || favTab;
     badge.textContent = filtering
       ? `${visible} / ${FLAM3_PALETTE_COUNT}`
       : `${FLAM3_PALETTE_COUNT}`;
   }
   search.addEventListener('input', applyFilter);
+
+  // Tab labels (with counts) + click handlers ------------------------------
+  function refreshTabCounts(): void {
+    allTab.textContent = `all (${FLAM3_PALETTE_COUNT})`;
+    favTab.textContent = `★ favorites (${favorites.size})`;
+  }
+  function setTab(tab: 'all' | 'favorites'): void {
+    activeTab = tab;
+    allTab.classList.toggle('active', tab === 'all');
+    favTab.classList.toggle('active', tab === 'favorites');
+    applyFilter();
+  }
+  allTab.addEventListener('click', () => setTab('all'));
+  favTab.addEventListener('click', () => setTab('favorites'));
+  refreshTabCounts();
 
   // ── Footer: selected info · revert · apply&close ────────────────────────
   const foot = document.createElement('div');
