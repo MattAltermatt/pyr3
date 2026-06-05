@@ -13,7 +13,7 @@
 import { mountScreensaverLanding } from './screensaver-ui';
 import type { ScreensaverPrefs } from './screensaver-prefs';
 import { createScreensaverQueue, type SheepRef } from './screensaver-queue';
-import { BUILD_UP_TARGET_Q, samplesPerFrameForBuildUp } from './screensaver-pacing';
+import { samplesPerFrameForBuildUp } from './screensaver-pacing';
 import { loadFeatureIndex } from './feature-index-client';
 import { fetchFlameXml } from './chunk-fetch';
 import { parseFlame } from './flame-import';
@@ -326,11 +326,11 @@ interface ModeHandle {
   controls: ModeControls;
 }
 
-/** Final quality the slideshow renders each flame to before holding. Higher
- *  than build-up's BUILD_UP_TARGET_Q (50) since slideshow is "lean back at
- *  full quality"; lower than viewer's max (200) to keep prefetch within the
- *  default holdSec window. */
-const SLIDESHOW_TARGET_Q = 100;
+// Slideshow target quality is user-adjustable as of #109 (DEFAULTS.slideshowQ
+// = 100, range 10..500 via the landing card's Quality ladder). Higher than
+// build-up's DEFAULTS.buildUpQ (50) since slideshow is "lean back at full
+// quality"; high values may push per-flame render time past holdSec, which
+// is fine — the slideshow extends the hold until prefetch settles (spec §4.1).
 const SLIDESHOW_CHUNK_SAMPLES = 5_000_000;
 const SLIDESHOW_CROSSFADE_MS = 1500;
 
@@ -500,7 +500,7 @@ function startSlideshow(args: {
       ctx: front.ctx,
       W: front.W,
       H: front.H,
-      targetQ: SLIDESHOW_TARGET_Q,
+      targetQ: prefs.slideshowQ,
       isCancelled,
     });
     if (isCancelled()) return;
@@ -539,7 +539,7 @@ function startSlideshow(args: {
         ctx: prefetchTarget.ctx,
         W: prefetchTarget.W,
         H: prefetchTarget.H,
-        targetQ: SLIDESHOW_TARGET_Q,
+        targetQ: prefs.slideshowQ,
         isCancelled,
       });
       if (isCancelled()) return;
@@ -656,13 +656,15 @@ function startBuildUp(args: {
       canvas.style.opacity = '1';
 
       const totalPixels = W * H;
-      const targetTotalSamples = BUILD_UP_TARGET_Q * totalPixels;
+      const targetTotalSamples = prefs.buildUpQ * totalPixels;
 
-      // Pacing math — spec §4.2. Distribute the q=50 sample budget across
-      // buildUpSec × fps frames; each walker runs FUSE warm-up iters then
-      // splatItersPerWalker iters that actually scatter into the histogram.
+      // Pacing math — spec §4.2. Distribute the prefs.buildUpQ sample
+      // budget across buildUpSec × fps frames; each walker runs FUSE
+      // warm-up iters then splatItersPerWalker iters that actually scatter
+      // into the histogram. Quality is user-adjustable (DEFAULTS.buildUpQ
+      // = 50; range 10..500 via the landing card's Quality ladder).
       const samplesPerFrame = samplesPerFrameForBuildUp(
-        BUILD_UP_TARGET_Q, W, H, prefs.buildUpSec, BUILD_UP_TARGET_FPS,
+        prefs.buildUpQ, W, H, prefs.buildUpSec, BUILD_UP_TARGET_FPS,
       );
       const splatItersPerWalker = Math.max(1, Math.ceil(samplesPerFrame / BUILD_UP_WALKERS));
       const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;

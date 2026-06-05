@@ -5,6 +5,7 @@ import {
   writeScreensaverPrefs,
   _clearScreensaverPrefs,
   parseSecondsInput,
+  parseNumericInput,
   DEFAULTS,
   CLAMPS,
 } from './screensaver-prefs';
@@ -43,12 +44,16 @@ describe('screensaver-prefs', () => {
       buildUpSec: 60,
       restSec: 10,
       holdSec: 30,
+      buildUpQ: 75,
+      slideshowQ: 200,
     });
     expect(readScreensaverPrefs()).toEqual({
       mode: 'slideshow',
       buildUpSec: 60,
       restSec: 10,
       holdSec: 30,
+      buildUpQ: 75,
+      slideshowQ: 200,
     });
   });
 
@@ -58,11 +63,42 @@ describe('screensaver-prefs', () => {
       buildUpSec: 99999, // > max
       restSec: -5,       // < min
       holdSec: 15,
+      buildUpQ: 99999,   // > max
+      slideshowQ: 1,     // < min
     });
     const got = readScreensaverPrefs();
     expect(got.buildUpSec).toBe(CLAMPS.buildUpSec.max);
     expect(got.restSec).toBe(CLAMPS.restSec.min);
     expect(got.holdSec).toBe(15);
+    expect(got.buildUpQ).toBe(CLAMPS.buildUpQ.max);
+    expect(got.slideshowQ).toBe(CLAMPS.slideshowQ.min);
+  });
+
+  it('DEFAULTS expose the spec’d quality baselines (50 build-up, 100 slideshow)', () => {
+    expect(DEFAULTS.buildUpQ).toBe(50);
+    expect(DEFAULTS.slideshowQ).toBe(100);
+  });
+
+  it('CLAMPS bound quality 10..500 for both modes', () => {
+    expect(CLAMPS.buildUpQ.min).toBe(10);
+    expect(CLAMPS.buildUpQ.max).toBe(500);
+    expect(CLAMPS.slideshowQ.min).toBe(10);
+    expect(CLAMPS.slideshowQ.max).toBe(500);
+  });
+
+  it('v1 stored prefs trigger DEFAULTS fallback (new fields gained)', () => {
+    // Simulate a user who saved prefs under v1 (no buildUpQ / slideshowQ).
+    localStorage.setItem(
+      'pyr3.screensaver.prefs',
+      JSON.stringify({
+        version: 1,
+        mode: 'build-up',
+        buildUpSec: 60,
+        restSec: 10,
+        holdSec: 30,
+      }),
+    );
+    expect(readScreensaverPrefs()).toEqual(DEFAULTS);
   });
 
   it('falls back to DEFAULTS on version mismatch', () => {
@@ -91,5 +127,20 @@ describe('parseSecondsInput', () => {
   it('returns null for non-numeric junk', () => {
     expect(parseSecondsInput('xyz')).toBeNull();
     expect(parseSecondsInput('')).toBeNull();
+  });
+});
+
+describe('parseNumericInput', () => {
+  it('parses plain numbers', () => {
+    expect(parseNumericInput('100')).toBe(100);
+    expect(parseNumericInput('50.5')).toBe(50.5);
+  });
+  it('rejects unit-suffixed input (quality has no minutes)', () => {
+    expect(parseNumericInput('5m')).toBeNull();
+    expect(parseNumericInput('30s')).toBeNull();
+  });
+  it('returns null for junk + empty', () => {
+    expect(parseNumericInput('xyz')).toBeNull();
+    expect(parseNumericInput('')).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import {
   readScreensaverPrefs,
   writeScreensaverPrefs,
   parseSecondsInput,
+  parseNumericInput,
   CLAMPS,
   type ScreensaverPrefs,
 } from './screensaver-prefs';
@@ -31,6 +32,8 @@ const LADDERS = {
   buildUpSec: [30, 60, 300, 600],
   restSec:    [10, 30, 60, 120],
   holdSec:    [5,  15, 30, 60],
+  buildUpQ:   [50, 100, 200, 500],
+  slideshowQ: [50, 100, 200, 500],
 } as const;
 
 type LadderField = keyof typeof LADDERS;
@@ -40,6 +43,19 @@ interface LadderMeta {
   hint: string;
   /** Which mode this ladder belongs to. */
   mode: 'build-up' | 'slideshow';
+  /** Format a value for a preset-button label (e.g. 60 → "1m"). */
+  fmt: (n: number) => string;
+  /** Parse a freeform-input string back to a number; null on junk. */
+  parse: (raw: string) => number | null;
+}
+
+function fmtSec(n: number): string {
+  if (n >= 60 && n % 60 === 0) return `${n / 60}m`;
+  return `${n}s`;
+}
+
+function fmtPlain(n: number): string {
+  return String(n);
 }
 
 const LADDER_META: Record<LadderField, LadderMeta> = {
@@ -47,23 +63,38 @@ const LADDER_META: Record<LadderField, LadderMeta> = {
     label: 'Build-up time',
     hint:  'How long the chaos game takes to draw the flame, from black to full quality.',
     mode:  'build-up',
+    fmt:   fmtSec,
+    parse: parseSecondsInput,
   },
   restSec: {
     label: 'Rest period',
     hint:  'After the flame finishes building, how long it stays on screen at full quality before fading to the next one.',
     mode:  'build-up',
+    fmt:   fmtSec,
+    parse: parseSecondsInput,
   },
   holdSec: {
     label: 'Slideshow hold',
     hint:  'How long each fully-rendered flame stays on screen before crossfading to the next.',
     mode:  'slideshow',
+    fmt:   fmtSec,
+    parse: parseSecondsInput,
+  },
+  buildUpQ: {
+    label: 'Quality',
+    hint:  'Samples per pixel to reach before settling. Higher = smoother, slower build. 10–500.',
+    mode:  'build-up',
+    fmt:   fmtPlain,
+    parse: parseNumericInput,
+  },
+  slideshowQ: {
+    label: 'Quality',
+    hint:  'Samples per pixel each flame renders to before crossfading. Higher = smoother, longer render. 10–500.',
+    mode:  'slideshow',
+    fmt:   fmtPlain,
+    parse: parseNumericInput,
   },
 };
-
-function fmtSec(n: number): string {
-  if (n >= 60 && n % 60 === 0) return `${n / 60}m`;
-  return `${n}s`;
-}
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -287,7 +318,7 @@ export function mountScreensaverLanding(
     for (const v of LADDERS[field]) {
       const b = el('button', 'pyr3-screensaver-ladder-btn');
       b.dataset.value = String(v);
-      b.textContent = fmtSec(v);
+      b.textContent = meta.fmt(v);
       b.addEventListener('click', () => {
         prefs = { ...prefs, [field]: v };
         input.value = String(v);
@@ -302,7 +333,7 @@ export function mountScreensaverLanding(
     input.type = 'text';
     input.value = String(prefs[field]);
     input.addEventListener('change', () => {
-      const parsed = parseSecondsInput(input.value);
+      const parsed = meta.parse(input.value);
       if (parsed === null) {
         input.value = String(prefs[field]);
         return;
@@ -336,7 +367,9 @@ export function mountScreensaverLanding(
   card.append(modeRow);
   card.append(buildLadder('buildUpSec'));
   card.append(buildLadder('restSec'));
+  card.append(buildLadder('buildUpQ'));
   card.append(buildLadder('holdSec'));
+  card.append(buildLadder('slideshowQ'));
 
   // Play button
   const play = el('button', 'pyr3-screensaver-play');

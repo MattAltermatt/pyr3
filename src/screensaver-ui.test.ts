@@ -28,14 +28,51 @@ afterEach(() => {
 });
 
 describe('mountScreensaverLanding', () => {
-  it('renders mode picker + 3 ladders + Play button', () => {
+  it('renders mode picker + 5 ladders + Play button', () => {
     mountScreensaverLanding(document.body, { onPlay: () => {} });
     expect(document.querySelector('[data-screensaver-mode="slideshow"]')).toBeTruthy();
     expect(document.querySelector('[data-screensaver-mode="build-up"]')).toBeTruthy();
     expect(document.querySelector('[data-screensaver-ladder="buildUpSec"]')).toBeTruthy();
     expect(document.querySelector('[data-screensaver-ladder="restSec"]')).toBeTruthy();
     expect(document.querySelector('[data-screensaver-ladder="holdSec"]')).toBeTruthy();
+    expect(document.querySelector('[data-screensaver-ladder="buildUpQ"]')).toBeTruthy();
+    expect(document.querySelector('[data-screensaver-ladder="slideshowQ"]')).toBeTruthy();
     expect(document.querySelector('[data-screensaver-play]')).toBeTruthy();
+  });
+
+  it('quality ladders show the spec’d [50, 100, 200, 500] presets', () => {
+    mountScreensaverLanding(document.body, { onPlay: () => {} });
+    for (const field of ['buildUpQ', 'slideshowQ']) {
+      const presets = document.querySelectorAll<HTMLButtonElement>(
+        `[data-screensaver-ladder="${field}"] button[data-value]`,
+      );
+      const values = Array.from(presets).map((b) => Number(b.dataset.value));
+      expect(values).toEqual([50, 100, 200, 500]);
+    }
+  });
+
+  it('quality default for build-up is 50, slideshow is 100', () => {
+    mountScreensaverLanding(document.body, { onPlay: () => {} });
+    const buildUpQInput = document.querySelector<HTMLInputElement>(
+      '[data-screensaver-ladder="buildUpQ"] input',
+    );
+    const slideshowQInput = document.querySelector<HTMLInputElement>(
+      '[data-screensaver-ladder="slideshowQ"] input',
+    );
+    expect(Number(buildUpQInput!.value)).toBe(DEFAULTS.buildUpQ);
+    expect(Number(slideshowQInput!.value)).toBe(DEFAULTS.slideshowQ);
+  });
+
+  it('clicking a quality preset updates the freeform input', () => {
+    mountScreensaverLanding(document.body, { onPlay: () => {} });
+    const btn = document.querySelector<HTMLButtonElement>(
+      '[data-screensaver-ladder="buildUpQ"] button[data-value="200"]',
+    );
+    btn!.click();
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-screensaver-ladder="buildUpQ"] input',
+    );
+    expect(Number(input!.value)).toBe(200);
   });
 
   it('initializes from DEFAULTS when prefs absent', () => {
