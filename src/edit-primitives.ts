@@ -359,6 +359,79 @@ export function buildRemoveButton(opts: RemoveButtonOpts): HTMLElement {
   return btn;
 }
 
+// ── Button tiers ──────────────────────────────────────────────────────────
+// Three visual variants for the editor's action surface:
+//   plain    — dark gradient bg, dark border, normal text (default neutral)
+//   accent   — warm-tint gradient, warm border, amber text (named action)
+//   primary  — filled flame gradient, dark text, glow shadow (popped CTA)
+//
+// Hover lift logic: plain → border to flame.top; accent → border to flame.top;
+// primary keeps its bright fill but brightens the glow.
+export type ButtonVariant = 'plain' | 'accent' | 'primary';
+
+export interface ButtonOpts {
+  variant: ButtonVariant;
+  label: string;
+  onClick: () => void;
+  icon?: string;
+}
+
+export function buildButton(opts: ButtonOpts): HTMLElement {
+  const btn = document.createElement('div');
+  btn.className = `pyr3-btn pyr3-btn-${opts.variant}`;
+  btn.textContent = opts.icon ? `${opts.icon} ${opts.label}` : opts.label;
+  btn.style.display = 'inline-flex';
+  btn.style.alignItems = 'center';
+  btn.style.justifyContent = 'center';
+  btn.style.gap = '6px';
+  btn.style.padding = '5px 10px';
+  btn.style.borderRadius = '4px';
+  btn.style.cursor = 'pointer';
+  btn.style.fontSize = '12px';
+  btn.style.lineHeight = '1.2';
+  btn.style.userSelect = 'none';
+  btn.style.flex = '0 0 auto';
+
+  switch (opts.variant) {
+    case 'plain': {
+      btn.style.background = `linear-gradient(180deg, ${COLORS.bg.panel}, ${COLORS.bg.bar})`;
+      btn.style.border = `1px solid ${COLORS.border}`;
+      btn.style.color = COLORS.text.primary;
+      const rest = COLORS.border;
+      btn.addEventListener('mouseenter', () => { btn.style.borderColor = COLORS.flame.top; });
+      btn.addEventListener('mouseleave', () => { btn.style.borderColor = rest; });
+      break;
+    }
+    case 'accent': {
+      // Warm tint: a darkened blend toward flame.bot for the bg.
+      btn.style.background = `linear-gradient(180deg, ${COLORS.bg.action}, ${COLORS.bg.bar})`;
+      btn.style.border = `1px solid ${COLORS.flame.bot}`;
+      btn.style.color = COLORS.flame.top;
+      const rest = COLORS.flame.bot;
+      btn.addEventListener('mouseenter', () => { btn.style.borderColor = COLORS.flame.top; });
+      btn.addEventListener('mouseleave', () => { btn.style.borderColor = rest; });
+      break;
+    }
+    case 'primary': {
+      btn.style.background = `linear-gradient(180deg, ${COLORS.flame.top}, ${COLORS.flame.mid} 60%, ${COLORS.flame.bot})`;
+      btn.style.border = `1px solid ${COLORS.flame.bot}`;
+      btn.style.color = COLORS.bg.page;
+      btn.style.fontWeight = '600';
+      btn.style.boxShadow = `0 0 12px ${COLORS.flame.mid}66, 0 1px 0 ${COLORS.flame.top}99 inset`;
+      btn.addEventListener('mouseenter', () => {
+        btn.style.boxShadow = `0 0 18px ${COLORS.flame.top}aa, 0 1px 0 ${COLORS.flame.top} inset`;
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.boxShadow = `0 0 12px ${COLORS.flame.mid}66, 0 1px 0 ${COLORS.flame.top}99 inset`;
+      });
+      break;
+    }
+  }
+
+  btn.addEventListener('click', opts.onClick);
+  return btn;
+}
+
 // ── Pair ──────────────────────────────────────────────────────────────────
 // Sub-grid `1fr auto 1fr` for W×H, position x/y, etc. The separator is a
 // plain span; callers pass any character ('×', ',', '/').

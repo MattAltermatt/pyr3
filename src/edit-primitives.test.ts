@@ -18,6 +18,7 @@ import {
   buildSlider,
   buildToggle,
   buildRemoveButton,
+  buildButton,
 } from './edit-primitives';
 
 describe('buildRow', () => {
@@ -233,6 +234,45 @@ describe('buildRemoveButton', () => {
   it('accepts an optional title attr', () => {
     const r = buildRemoveButton({ onClick: vi.fn(), title: 'remove this xform' });
     expect(r.title).toBe('remove this xform');
+  });
+});
+
+describe('buildButton', () => {
+  it('plain variant: pyr3-btn class, normal text color, dark border', () => {
+    const onClick = vi.fn();
+    const b = buildButton({ variant: 'plain', label: 'open', onClick });
+    expect(b.classList.contains('pyr3-btn')).toBe(true);
+    expect(b.classList.contains('pyr3-btn-plain')).toBe(true);
+    expect(b.textContent).toBe('open');
+    expect(b.style.color.toLowerCase()).toContain('d8d8de'); // primary text
+    // border = COLORS.border = #26262c
+    expect(b.style.border.toLowerCase()).toContain('26262c');
+    b.click();
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('accent variant: pyr3-btn-accent class, amber text', () => {
+    const b = buildButton({ variant: 'accent', label: 'fit', onClick: vi.fn() });
+    expect(b.classList.contains('pyr3-btn')).toBe(true);
+    expect(b.classList.contains('pyr3-btn-accent')).toBe(true);
+    // amber text = COLORS.flame.top = #ffbe3e
+    expect(b.style.color.toLowerCase()).toContain('ffbe3e');
+  });
+
+  it('primary variant: pyr3-btn-primary class, dark text on flame gradient, glow shadow', () => {
+    const b = buildButton({ variant: 'primary', label: 'Save Render', onClick: vi.fn() });
+    expect(b.classList.contains('pyr3-btn')).toBe(true);
+    expect(b.classList.contains('pyr3-btn-primary')).toBe(true);
+    // primary uses a gradient background — check we set background
+    expect(b.style.background).not.toBe('');
+    expect(b.style.background.toLowerCase()).toContain('gradient');
+    // glow shadow present
+    expect(b.style.boxShadow).not.toBe('');
+  });
+
+  it('supports an optional icon prefix', () => {
+    const b = buildButton({ variant: 'plain', label: 'Open', icon: '📂', onClick: vi.fn() });
+    expect(b.textContent).toBe('📂 Open');
   });
 });
 
