@@ -513,13 +513,22 @@ function startBuildUp(args: {
       state.pauseAccumMs = 0;
       state.pausedAt = 0;
       let samplesAccumulated = 0;
+      let lastIterAt = 0;
+      let lastPresentAt = 0;
 
       canvas.style.transition = '';
       canvas.style.opacity = '1';
 
       const totalPixels = W * H;
 
-      // Pacing loop: each frame, catch samples up to qTarget(elapsed).
+      // Decoupled iterate + present loop. Dispatch (iterate) at ITER_INTERVAL_MS
+      // — each renderer.iterate carries a fixed ~44ms GPU overhead, so
+      // dispatching every rAF (60Hz) saturated the GPU at 99%. Present
+      // (visualize-only) is cheap, so we re-tone-map at PRESENT_INTERVAL_MS
+      // for smooth visible brightness ramp between dispatches.
+      const ITER_INTERVAL_MS = 250;
+      const PRESENT_INTERVAL_MS = 100;
+
       while (!isCancelled()) {
         if (state.skipDir !== 0) break;
         if (state.paused) {
@@ -531,35 +540,50 @@ function startBuildUp(args: {
           state.pauseAccumMs += performance.now() - state.pausedAt;
           state.pausedAt = 0;
         }
-        const elapsed = (performance.now() - startedAt - state.pauseAccumMs) / 1000;
+        const now = performance.now();
+        const elapsed = (now - startedAt - state.pauseAccumMs) / 1000;
         const targetQ = qTarget(elapsed, prefs.buildUpSec);
-        const desiredSamples = targetQ * totalPixels;
-        const delta = desiredSamples - samplesAccumulated;
-        if (delta > 0) {
-          // Fractional spp is fine — computeDispatch rounds to sample count
-          // internally and floors at MIN_ITERS_PER_WALKER. Passing the raw
-          // fraction lets per-frame deltas stay small (tens of K samples,
-          // not millions) so the brightness ramps smoothly instead of
-          // jumping on the first dispatch.
-          const sppToAdd = delta / totalPixels;
-          const dispatch = computeDispatch(sppToAdd, W, H);
-          renderer.iterate({
-            genome,
-            seed,
-            walkers: dispatch.dispatchWalkers,
-            itersPerWalker: dispatch.dispatchIters,
-          });
-          samplesAccumulated += dispatch.actualSamples;
+
+        // Iterate paced — catch up to qTarget once every ITER_INTERVAL_MS.
+        if (now - lastIterAt >= ITER_INTERVAL_MS) {
+          const desiredSamples = targetQ * totalPixels;
+          const delta = desiredSamples - samplesAccumulated;
+          if (delta > 0) {
+            const sppToAdd = delta / totalPixels;
+            const dispatch = computeDispatch(sppToAdd, W, H);
+            renderer.iterate({
+              genome,
+              seed,
+              walkers: dispatch.dispatchWalkers,
+              itersPerWalker: dispatch.dispatchIters,
+            });
+            samplesAccumulated += dispatch.actualSamples;
+          }
+          lastIterAt = now;
         }
-        renderer.present({
-          genome,
-          outputView: ctx.getCurrentTexture().createView(),
-          totalSamples: Math.max(1, samplesAccumulated),
-        });
+
+        // Present paced — visualize the current histogram at 10fps. Cheap
+        // (no chaos iteration); just density + visualize passes.
+        if (now - lastPresentAt >= PRESENT_INTERVAL_MS && samplesAccumulated > 0) {
+          renderer.present({
+            genome,
+            outputView: ctx.getCurrentTexture().createView(),
+            totalSamples: samplesAccumulated,
+          });
+          lastPresentAt = now;
+        }
+
         if (targetQ >= BUILD_UP_TARGET_Q && elapsed >= prefs.buildUpSec) break;
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        await new Promise<void>((r) => setTimeout(r, 50));
       }
       if (isCancelled()) return;
+
+      // Final full-quality present before rest.
+      renderer.present({
+        genome,
+        outputView: ctx.getCurrentTexture().createView(),
+        totalSamples: Math.max(1, samplesAccumulated),
+      });
 
       // Rest period — hold at full quality. Skip signal shortcircuits;
       // pause extends.
@@ -713,8 +737,9 @@ function injectHiddenRuleOnce(): void {
   const style = document.createElement('style');
   style.textContent = `
 .pyr3-screensaver-card.hidden { display: none; }
-/* In fullscreen, hide the top strip — the flame owns the whole screen. */
-.pyr3-screensaver-fs .pyr3-screensaver-strip { display: none; }
+/* In fullscreen, hide the top strip — the flame owns the whole screen.
+   !important overrides the inline display:flex on the strip element. */
+.pyr3-screensaver-fs .pyr3-screensaver-strip { display: none !important; }
 `;
   document.head.append(style);
 }
