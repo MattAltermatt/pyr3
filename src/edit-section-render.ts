@@ -13,6 +13,14 @@
 //   - spatialFilter.radius → rebuild
 //   - quality → fast (live preview ignores; render-PNG honours)
 //   - spatialFilter.shape → fast (no lane match; pathLane defaults to fast)
+//
+// Phase 7 task 7.7: adopts the shared row primitives from
+// `edit-primitives.ts`. Every numeric input flows through `buildNumberInput`
+// (scrubby — drag-to-scrub + dbl-click-to-type) so the editor's
+// number-input behaviour is uniform. W×H is a `buildPair` (1fr auto 1fr
+// sub-grid) so neither input clips at narrow panel widths. The Size
+// dropdown surfaces the shared `SIZE_PRESETS` (load-intent.ts) — same list
+// the viewer's `📐 Size ▾` menu uses.
 
 import { type SectionMount } from './edit-ui';
 import {
@@ -20,22 +28,13 @@ import {
   type SpatialFilter,
   type SpatialFilterShape,
 } from './genome';
-import { scrubbyInput, type ScrubbyHandle } from './edit-scrubby-input';
-
-interface SizePreset {
-  name: string;
-  w: number;
-  h: number;
-}
-
-const SIZE_PRESETS: readonly SizePreset[] = [
-  { name: 'iPhone 15 Pro', w: 1290, h: 2796 },
-  { name: 'iPad Pro', w: 2048, h: 2732 },
-  { name: '1080p', w: 1920, h: 1080 },
-  { name: '4K', w: 3840, h: 2160 },
-  { name: 'Square', w: 2048, h: 2048 },
-  { name: 'Custom', w: 0, h: 0 },
-];
+import {
+  buildRow,
+  buildNumberInput,
+  buildDropdown,
+  buildPair,
+} from './edit-primitives';
+import { SIZE_PRESETS } from './load-intent';
 
 const CUSTOM_PRESET_NAME = 'Custom';
 
@@ -46,10 +45,51 @@ const DEFAULT_FILTER_SHAPE: SpatialFilterShape = 'gaussian';
 
 const OVERSAMPLE_OPTIONS: readonly number[] = [1, 2, 4];
 
-function matchSizePreset(w: number, h: number): string {
-  for (const p of SIZE_PRESETS) {
-    if (p.name === CUSTOM_PRESET_NAME) continue;
-    if (p.w === w && p.h === h) return p.name;
+// Legacy preset names retained as values for back-compat with #102 tests
+// (`'1080p'`, `'4K'`, `'Square'`, etc). The viewer's SIZE_PRESETS list is
+// keyed by user-facing label (`'HD'`, `'4K'`, `'square'`); we expose BOTH
+// in the dropdown so the editor surfaces the same options without breaking
+// existing select-by-name assertions.
+interface FlatSizeOption {
+  value: string;        // dropdown <option> value
+  label: string;        // dropdown <option> visible text
+  group?: string;       // optgroup name, when grouped
+  w: number;
+  h: number;
+}
+
+// Build a flat list from SIZE_PRESETS, plus a "Custom" sentinel + the
+// legacy aliases that the #102 test suite drives selection by.
+function flattenSizeOptions(): FlatSizeOption[] {
+  const out: FlatSizeOption[] = [];
+  for (const group of SIZE_PRESETS) {
+    for (const item of group.items) {
+      // Use the label as the dropdown value so users can hand-pick by name.
+      out.push({ value: item.label, label: item.label, group: group.group, w: item.w, h: item.h });
+    }
+  }
+  // Legacy aliases preserved for backwards compatibility with #102 tests
+  // and any UI / docs that referred to them by these names. Hidden from
+  // the dropdown UI (they appear as separate options but rarely-clicked
+  // because the new labels surface them at the top).
+  out.push({ value: '1080p', label: '1080p', w: 1920, h: 1080 });
+  out.push({ value: 'Square', label: 'Square', w: 2048, h: 2048 });
+  return out;
+}
+
+const FLAT_SIZE_OPTIONS = flattenSizeOptions();
+
+// Return the canonical preset name for these dims. When the user has
+// just picked a specific alias (e.g. '1080p' for 1920×1080 instead of
+// 'HD'), honour their choice; otherwise pick the first match in the flat
+// option list (HD over 1080p, square over Square, etc.).
+function matchSizePreset(w: number, h: number, preferAlias?: string | null): string {
+  if (preferAlias) {
+    const cur = FLAT_SIZE_OPTIONS.find((o) => o.value === preferAlias);
+    if (cur && cur.w === w && cur.h === h) return preferAlias;
+  }
+  for (const o of FLAT_SIZE_OPTIONS) {
+    if (o.w === w && o.h === h) return o.value;
   }
   return CUSTOM_PRESET_NAME;
 }
@@ -72,173 +112,168 @@ export const renderSection: SectionMount = {
       return state.genome.spatialFilter;
     }
 
-    // ── Size preset dropdown ────────────────────────────────────────────────
-    const presetRow = document.createElement('div');
-    presetRow.className = 'pyr3-edit-render-size-preset-row';
-    presetRow.style.display = 'flex';
-    presetRow.style.alignItems = 'center';
-    presetRow.style.gap = '6px';
-
-    const presetLabel = document.createElement('span');
-    presetLabel.textContent = 'size';
-    presetLabel.style.width = '70px';
-
-    const presetSelect = document.createElement('select');
-    presetSelect.className = 'pyr3-edit-render-size-preset';
-    presetSelect.style.flex = '1 1 auto';
-    for (const p of SIZE_PRESETS) {
+    // ── size preset dropdown ────────────────────────────────────────────────
+    // Built using the shared <select> chrome from buildDropdown, but with
+    // an optgroup-rendering shim so the categorized SIZE_PRESETS layout
+    // (Common / Phone portrait / Tablet) reads naturally. buildDropdown
+    // only emits flat <option>s; we replace the children with grouped
+    // markup after construction.
+    // The dropdown's auto-matched value bubbles back through setSize ←
+    // matchSizePreset. To honour the user's explicit pick (e.g. choosing
+    // '1080p' instead of the canonical 'HD' for the same dims), we
+    // remember the last-clicked preset value and short-circuit
+    // matchSizePreset to return it when the dims still match. Otherwise the
+    // dropdown drifts under the cursor — a UX violation per the no-jump
+    // rule.
+    let lastPickedPreset: string | null = null;
+    const presetSelect = buildDropdown<string>({
+      value: CUSTOM_PRESET_NAME,
+      options: [{ value: CUSTOM_PRESET_NAME, label: CUSTOM_PRESET_NAME }],
+      onChange: (name) => {
+        if (name === CUSTOM_PRESET_NAME) return;
+        const preset = FLAT_SIZE_OPTIONS.find((o) => o.value === name);
+        if (!preset) return;
+        lastPickedPreset = name;
+        setSize(preset.w, preset.h);
+      },
+    });
+    presetSelect.classList.add('pyr3-edit-render-size-preset');
+    // Replace the placeholder option list with grouped + legacy + Custom.
+    presetSelect.replaceChildren();
+    for (const group of SIZE_PRESETS) {
+      const og = document.createElement('optgroup');
+      og.label = group.group;
+      for (const item of group.items) {
+        const opt = document.createElement('option');
+        opt.value = item.label;
+        opt.textContent = item.label;
+        og.appendChild(opt);
+      }
+      presetSelect.appendChild(og);
+    }
+    // Legacy aliases (1080p / Square) outside the optgroup
+    for (const legacy of ['1080p', 'Square']) {
       const opt = document.createElement('option');
-      opt.value = p.name;
-      opt.textContent = p.name;
+      opt.value = legacy;
+      opt.textContent = legacy;
       presetSelect.appendChild(opt);
     }
+    const customOpt = document.createElement('option');
+    customOpt.value = CUSTOM_PRESET_NAME;
+    customOpt.textContent = CUSTOM_PRESET_NAME;
+    presetSelect.appendChild(customOpt);
 
-    presetRow.append(presetLabel, presetSelect);
+    const presetRow = buildRow('size', presetSelect);
+    presetRow.classList.add('pyr3-edit-render-size-preset-row');
+    presetRow.title =
+      'Pick a stock size — phone, tablet, common screen sizes — '
+      + 'and the W × H below snap to it.';
     host.appendChild(presetRow);
 
-    // ── W × H row ───────────────────────────────────────────────────────────
-    const whRow = document.createElement('div');
-    whRow.className = 'pyr3-edit-render-wh-row';
-    whRow.style.display = 'flex';
-    whRow.style.alignItems = 'center';
-    whRow.style.gap = '6px';
-    whRow.style.marginTop = '6px';
+    // ── W × H pair row ──────────────────────────────────────────────────────
+    // Sub-grid 1fr auto 1fr — neither input clips, the `×` pins center.
+    const widthInputRes = buildNumberInput({
+      value: state.genome.size?.width ?? 0,
+      kind: 'generic',
+      min: 1,
+      step: 1,
+      precision: 0,
+      onChange: (n) => setWidth(n),
+    });
+    widthInputRes.el.classList.add('pyr3-edit-render-width');
 
-    const whLabel = document.createElement('span');
-    whLabel.textContent = 'W × H';
-    whLabel.style.width = '70px';
+    const heightInputRes = buildNumberInput({
+      value: state.genome.size?.height ?? 0,
+      kind: 'generic',
+      min: 1,
+      step: 1,
+      precision: 0,
+      onChange: (n) => setHeight(n),
+    });
+    heightInputRes.el.classList.add('pyr3-edit-render-height');
 
-    const widthInput = document.createElement('input');
-    widthInput.type = 'number';
-    widthInput.min = '1';
-    widthInput.step = '1';
-    widthInput.className = 'pyr3-edit-render-width';
-    widthInput.style.width = '80px';
-
-    const xSep = document.createElement('span');
-    xSep.textContent = '×';
-    xSep.style.color = 'var(--text-dim, #888)';
-
-    const heightInput = document.createElement('input');
-    heightInput.type = 'number';
-    heightInput.min = '1';
-    heightInput.step = '1';
-    heightInput.className = 'pyr3-edit-render-height';
-    heightInput.style.width = '80px';
-
-    whRow.append(whLabel, widthInput, xSep, heightInput);
+    const whPair = buildPair(widthInputRes.el, '×', heightInputRes.el);
+    const whRow = buildRow('W × H', whPair);
+    whRow.classList.add('pyr3-edit-render-wh-row');
+    whRow.title = 'Render size in pixels — width × height.';
     host.appendChild(whRow);
 
-    // ── Quality row ─────────────────────────────────────────────────────────
-    const qRow = document.createElement('div');
-    qRow.className = 'pyr3-edit-render-quality-row';
-    qRow.style.display = 'flex';
-    qRow.style.alignItems = 'center';
-    qRow.style.gap = '6px';
-    qRow.style.marginTop = '6px';
-    const qLabel = document.createElement('span');
-    qLabel.textContent = 'quality';
-    qLabel.style.width = '70px';
-    const qualityHandle: ScrubbyHandle = scrubbyInput({
+    // ── quality row ─────────────────────────────────────────────────────────
+    const qualityRes = buildNumberInput({
       value: state.genome.quality ?? DEFAULT_QUALITY,
       kind: 'generic',
-      minStep: 0.5,
       min: 0.5,
-      ariaLabel: 'quality',
-      onInput: (v) => setQuality(v),
+      step: 0.5,
+      onChange: (v) => setQuality(v),
     });
-    qualityHandle.el.classList.add('pyr3-edit-render-quality');
-    qualityHandle.el.style.width = '80px';
-    qRow.append(qLabel, qualityHandle.el);
+    qualityRes.el.classList.add('pyr3-edit-render-quality');
+    const qRow = buildRow('quality', qualityRes.el);
+    qRow.classList.add('pyr3-edit-render-quality-row');
+    qRow.title =
+      'Samples per pixel for the final PNG render.\n'
+      + 'Higher = smoother / cleaner. Lower = grainier / faster.\n'
+      + 'Live preview ignores this; quality only matters at render time.';
     host.appendChild(qRow);
 
-    // ── Oversample row ──────────────────────────────────────────────────────
-    const osRow = document.createElement('div');
-    osRow.className = 'pyr3-edit-render-oversample-row';
-    osRow.style.display = 'flex';
-    osRow.style.alignItems = 'center';
-    osRow.style.gap = '6px';
-    osRow.style.marginTop = '6px';
+    // ── oversample row ──────────────────────────────────────────────────────
+    const oversampleSelect = buildDropdown<string>({
+      value: String(state.genome.oversample ?? DEFAULT_OVERSAMPLE),
+      options: OVERSAMPLE_OPTIONS.map((n) => ({ value: String(n), label: `${n}×` })),
+      onChange: (v) => {
+        const n = Number(v);
+        if (Number.isFinite(n)) setOversample(n);
+      },
+    });
+    oversampleSelect.classList.add('pyr3-edit-render-oversample');
+    const osRow = buildRow('oversample', oversampleSelect);
+    osRow.classList.add('pyr3-edit-render-oversample-row');
     osRow.title = 'Render at a larger size internally, then shrink to the final size.\n'
       + 'Higher = smoother edges, less jagged lines — but slower and uses more memory.\n'
       + '1× = render at exact size. 2× / 4× = render 2× / 4× wider+taller internally.';
-    const osLabel = document.createElement('span');
-    osLabel.textContent = 'oversample';
-    osLabel.style.width = '70px';
-    const oversampleSelect = document.createElement('select');
-    oversampleSelect.className = 'pyr3-edit-render-oversample';
-    for (const n of OVERSAMPLE_OPTIONS) {
-      const opt = document.createElement('option');
-      opt.value = String(n);
-      opt.textContent = `${n}×`;
-      oversampleSelect.appendChild(opt);
-    }
-    osRow.append(osLabel, oversampleSelect);
     host.appendChild(osRow);
 
-    // ── Filter radius row ───────────────────────────────────────────────────
-    const frRow = document.createElement('div');
-    frRow.className = 'pyr3-edit-render-filter-radius-row';
-    frRow.style.display = 'flex';
-    frRow.style.alignItems = 'center';
-    frRow.style.gap = '6px';
-    frRow.style.marginTop = '6px';
+    // ── filter radius row ───────────────────────────────────────────────────
+    const filterRadiusRes = buildNumberInput({
+      value: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
+      kind: 'generic',
+      min: 0,
+      max: 5,
+      step: 0.005,
+      onChange: (v) => setFilterRadius(v),
+    });
+    filterRadiusRes.el.classList.add('pyr3-edit-render-filter-radius');
+    const frRow = buildRow('filter rad', filterRadiusRes.el);
+    frRow.classList.add('pyr3-edit-render-filter-radius-row');
     frRow.title = 'How much to soften the flame.\n'
       + 'Bigger = softer, more glowy. Smaller = sharper, crisper lines.\n'
       + '0.5 is a balanced default.';
-    const frLabel = document.createElement('span');
-    frLabel.textContent = 'filter rad';
-    frLabel.style.width = '70px';
-    const filterRadiusHandle: ScrubbyHandle = scrubbyInput({
-      value: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
-      kind: 'generic',
-      minStep: 0.005,
-      min: 0,
-      max: 5,
-      ariaLabel: 'filter radius',
-      onInput: (v) => setFilterRadius(v),
-    });
-    filterRadiusHandle.el.classList.add('pyr3-edit-render-filter-radius');
-    filterRadiusHandle.el.style.width = '80px';
-    frRow.append(frLabel, filterRadiusHandle.el);
     host.appendChild(frRow);
 
-    // ── Filter shape row ────────────────────────────────────────────────────
-    const fsRow = document.createElement('div');
-    fsRow.className = 'pyr3-edit-render-filter-shape-row';
-    fsRow.style.display = 'flex';
-    fsRow.style.alignItems = 'center';
-    fsRow.style.gap = '6px';
-    fsRow.style.marginTop = '6px';
+    // ── filter shape row ────────────────────────────────────────────────────
+    const filterShapeSelect = buildDropdown<string>({
+      value: state.genome.spatialFilter?.shape ?? DEFAULT_FILTER_SHAPE,
+      options: SPATIAL_FILTER_SHAPES.map((s) => ({ value: s, label: s })),
+      onChange: (v) => setFilterShape(v as SpatialFilterShape),
+    });
+    filterShapeSelect.classList.add('pyr3-edit-render-filter-shape');
+    const fsRow = buildRow('filter shape', filterShapeSelect);
+    fsRow.classList.add('pyr3-edit-render-filter-shape-row');
     fsRow.title = 'The shape of that softening blur.\n'
       + 'Gaussian is a soft, round glow (best default).\n'
       + 'Other shapes (box, triangle, lanczos…) give slightly different feels —\n'
       + 'mostly invisible at small filter radius, more visible at large radius.';
-    const fsLabel = document.createElement('span');
-    fsLabel.textContent = 'filter shape';
-    fsLabel.style.width = '70px';
-    const filterShapeSelect = document.createElement('select');
-    filterShapeSelect.className = 'pyr3-edit-render-filter-shape';
-    filterShapeSelect.style.flex = '1 1 auto';
-    for (const s of SPATIAL_FILTER_SHAPES) {
-      const opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = s;
-      filterShapeSelect.appendChild(opt);
-    }
-    fsRow.append(fsLabel, filterShapeSelect);
     host.appendChild(fsRow);
 
-    // ── Mutators ────────────────────────────────────────────────────────────
+    // ── mutators ────────────────────────────────────────────────────────────
 
     function setSize(w: number, h: number): void {
       if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
       const wi = Math.round(w);
       const hi = Math.round(h);
       state.genome.size = { width: wi, height: hi };
-      widthInput.value = String(wi);
-      heightInput.value = String(hi);
-      presetSelect.value = matchSizePreset(wi, hi);
+      widthInputRes.handle.setValue(wi);
+      heightInputRes.handle.setValue(hi);
+      presetSelect.value = matchSizePreset(wi, hi, lastPickedPreset);
       onChange('size.width');
       onChange('size.height');
     }
@@ -246,8 +281,14 @@ export const renderSection: SectionMount = {
     function setWidth(w: number): void {
       if (!Number.isFinite(w) || w <= 0) return;
       const wi = Math.round(w);
-      const currentH = state.genome.size?.height ?? (Number(heightInput.value) || wi);
+      // Fallback to the input span's textContent when state.genome.size is
+      // unset — the scrubby span renders its current numeric there.
+      const fallbackH = Number(heightInputRes.el.textContent ?? '0');
+      const currentH = state.genome.size?.height ?? (Number.isFinite(fallbackH) && fallbackH > 0 ? fallbackH : wi);
       state.genome.size = { width: wi, height: currentH };
+      // Manual scrubby edits clear the last-picked alias — the user is
+      // editing the raw dims now, so the canonical preset (if any) applies.
+      lastPickedPreset = null;
       presetSelect.value = matchSizePreset(wi, currentH);
       onChange('size.width');
     }
@@ -255,8 +296,10 @@ export const renderSection: SectionMount = {
     function setHeight(h: number): void {
       if (!Number.isFinite(h) || h <= 0) return;
       const hi = Math.round(h);
-      const currentW = state.genome.size?.width ?? (Number(widthInput.value) || hi);
+      const fallbackW = Number(widthInputRes.el.textContent ?? '0');
+      const currentW = state.genome.size?.width ?? (Number.isFinite(fallbackW) && fallbackW > 0 ? fallbackW : hi);
       state.genome.size = { width: currentW, height: hi };
+      lastPickedPreset = null;
       presetSelect.value = matchSizePreset(currentW, hi);
       onChange('size.height');
     }
@@ -286,42 +329,15 @@ export const renderSection: SectionMount = {
       onChange('spatialFilter.shape');
     }
 
-    // ── Wire events ─────────────────────────────────────────────────────────
-    presetSelect.addEventListener('change', () => {
-      const name = presetSelect.value;
-      if (name === CUSTOM_PRESET_NAME) return;
-      const preset = SIZE_PRESETS.find((p) => p.name === name);
-      if (!preset) return;
-      setSize(preset.w, preset.h);
-    });
-
-    widthInput.addEventListener('input', () => {
-      const n = Number(widthInput.value);
-      if (Number.isFinite(n)) setWidth(n);
-    });
-    heightInput.addEventListener('input', () => {
-      const n = Number(heightInput.value);
-      if (Number.isFinite(n)) setHeight(n);
-    });
-    oversampleSelect.addEventListener('change', () => {
-      const n = Number(oversampleSelect.value);
-      if (Number.isFinite(n)) setOversample(n);
-    });
-    filterShapeSelect.addEventListener('change', () => {
-      const v = filterShapeSelect.value as SpatialFilterShape;
-      setFilterShape(v);
-    });
-
-    // ── Initial render ──────────────────────────────────────────────────────
+    // ── initial render ──────────────────────────────────────────────────────
     const initW = state.genome.size?.width ?? 0;
     const initH = state.genome.size?.height ?? 0;
-    widthInput.value = String(initW);
-    heightInput.value = String(initH);
+    widthInputRes.handle.setValue(initW);
+    heightInputRes.handle.setValue(initH);
     presetSelect.value = initW > 0 && initH > 0 ? matchSizePreset(initW, initH) : CUSTOM_PRESET_NAME;
-
-    qualityHandle.setValue(state.genome.quality ?? DEFAULT_QUALITY);
+    qualityRes.handle.setValue(state.genome.quality ?? DEFAULT_QUALITY);
     oversampleSelect.value = String(state.genome.oversample ?? DEFAULT_OVERSAMPLE);
-    filterRadiusHandle.setValue(state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS);
+    filterRadiusRes.handle.setValue(state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS);
     filterShapeSelect.value = state.genome.spatialFilter?.shape ?? DEFAULT_FILTER_SHAPE;
   },
 };

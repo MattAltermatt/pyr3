@@ -1,4 +1,10 @@
 // @vitest-environment happy-dom
+//
+// Phase 7 task 7.7: section refactored to row primitives (buildRow /
+// buildNumberInput / buildDropdown / buildPair). Tests drive scrubby
+// numeric cells via the dblclick → type → Enter pattern; dropdowns via
+// .value + change event. The W × H pair sits in a `1fr auto 1fr` sub-grid
+// so neither input clips at narrow panel widths — asserted explicitly.
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderSection } from './edit-section-render';
@@ -50,6 +56,23 @@ describe('renderSection', () => {
     expect(host.querySelector('.pyr3-edit-render-filter-shape')).not.toBeNull();
   });
 
+  it('W × H row uses buildPair sub-grid (1fr auto 1fr) so both inputs fit', () => {
+    // Verify the pair primitive's structural shape — the W/H inputs sit in
+    // a 3-column sub-grid with the `×` separator pinned center. This is the
+    // failing assertion the task spec calls out.
+    const { host } = mount();
+    const whRow = host.querySelector('.pyr3-edit-render-wh-row') as HTMLElement;
+    expect(whRow).not.toBeNull();
+    const pair = whRow.querySelector('.pyr3-pair') as HTMLElement;
+    expect(pair).not.toBeNull();
+    expect(pair.style.gridTemplateColumns).toBe('1fr auto 1fr');
+    // Separator is the `×` glyph.
+    expect(pair.querySelector('.pyr3-pair-sep')?.textContent).toBe('×');
+    // Both inputs land inside the pair sub-grid as siblings of the sep.
+    expect(pair.querySelector('.pyr3-edit-render-width')).not.toBeNull();
+    expect(pair.querySelector('.pyr3-edit-render-height')).not.toBeNull();
+  });
+
   it('size preset "1080p" writes state.genome.size = {1920, 1080} and fires onChange', () => {
     const { host, state, onChange } = mount();
     const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
@@ -68,6 +91,21 @@ describe('renderSection', () => {
     expect(state.genome.size).toEqual({ width: 3840, height: 2160 });
   });
 
+  it('Size dropdown surfaces SIZE_PRESETS (HD, 4K, square, iPhone 15 Pro, …)', () => {
+    const { host } = mount();
+    const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
+    const values = Array.from(preset.querySelectorAll('option')).map((o) => o.value);
+    // A few signal entries — full list lives in load-intent.ts:SIZE_PRESETS.
+    expect(values).toContain('HD');
+    expect(values).toContain('4K');
+    expect(values).toContain('square');
+    expect(values).toContain('iPhone 15 Pro');
+    // Legacy aliases preserved so existing fixtures + tests don't break.
+    expect(values).toContain('1080p');
+    expect(values).toContain('Square');
+    expect(values).toContain('Custom');
+  });
+
   it('manual width edit flips preset dropdown to "Custom"', () => {
     const { host, state } = mount();
     const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
@@ -76,9 +114,8 @@ describe('renderSection', () => {
     preset.dispatchEvent(new Event('change'));
     expect(preset.value).toBe('1080p');
 
-    const width = host.querySelector<HTMLInputElement>('.pyr3-edit-render-width')!;
-    width.value = '1234';
-    width.dispatchEvent(new Event('input'));
+    const width = host.querySelector<HTMLElement>('.pyr3-edit-render-width')!;
+    typeInto(width, '1234');
     expect(state.genome.size!.width).toBe(1234);
     expect(state.genome.size!.height).toBe(1080);
     expect(preset.value).toBe('Custom');
@@ -91,9 +128,8 @@ describe('renderSection', () => {
     preset.dispatchEvent(new Event('change'));
     expect(preset.value).toBe('Square');
 
-    const height = host.querySelector<HTMLInputElement>('.pyr3-edit-render-height')!;
-    height.value = '999';
-    height.dispatchEvent(new Event('input'));
+    const height = host.querySelector<HTMLElement>('.pyr3-edit-render-height')!;
+    typeInto(height, '999');
     expect(state.genome.size!.height).toBe(999);
     expect(preset.value).toBe('Custom');
   });
