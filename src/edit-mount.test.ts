@@ -4,10 +4,28 @@
 // run under happy-dom (no GPUDevice), so we cover the DOM-shell behaviour
 // via mountEditUi directly.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { mountEditUi, type SectionMount } from './edit-ui';
-import { createEditState, type SectionKey } from './edit-state';
+import {
+  createEditState,
+  SECTION_COLLAPSE_KEY,
+  type SectionKey,
+} from './edit-state';
 import { generateRandomGenome } from './edit-seed';
+
+// Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
+// globally under vitest. See src/prefs.test.ts for the canonical pattern.
+function makeStorageStub(): Storage {
+  const store = new Map<string, string>();
+  return {
+    get length() { return store.size; },
+    clear: () => store.clear(),
+    getItem: (k: string) => store.get(k) ?? null,
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    removeItem: (k: string) => { store.delete(k); },
+    setItem: (k: string, v: string) => { store.set(k, String(v)); },
+  };
+}
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -121,6 +139,35 @@ describe('mountEditUi shell', () => {
     expect(host.children.length).toBeGreaterThan(0);
     ui.destroy();
     expect(host.children.length).toBe(0);
+  });
+
+  it('section-toggle persists the section-collapse map to localStorage', () => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+    try {
+      const host = document.createElement('div');
+      const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+      mountEditUi(host, state, makeSections(['palette', 'viewport']), { onChange: () => {} });
+
+      // Nothing written yet.
+      expect(localStorage.getItem(SECTION_COLLAPSE_KEY)).toBeNull();
+
+      // Click the palette header → toggles palette to expanded → persists.
+      const headers = host.querySelectorAll('.pyr3-edit-section-header');
+      (headers[0] as HTMLElement).click();
+      const raw = localStorage.getItem(SECTION_COLLAPSE_KEY);
+      expect(raw).not.toBeNull();
+      const parsed = JSON.parse(raw!);
+      expect(parsed.palette).toBe(false);
+      expect(parsed.viewport).toBe(true);
+
+      // Click viewport too — the next persisted map reflects both.
+      (headers[1] as HTMLElement).click();
+      const parsed2 = JSON.parse(localStorage.getItem(SECTION_COLLAPSE_KEY)!);
+      expect(parsed2.palette).toBe(false);
+      expect(parsed2.viewport).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('reroll/open/save/png buttons render and fire their callbacks', () => {

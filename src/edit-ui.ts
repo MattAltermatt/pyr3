@@ -5,7 +5,11 @@
 // top-bar buttons. Per-section content (palette picker, xform card,
 // sliders) lives in src/edit-section-*.ts modules.
 
-import { type EditState, type SectionKey } from './edit-state';
+import {
+  persistSectionCollapse,
+  type EditState,
+  type SectionKey,
+} from './edit-state';
 import { scrubbyInput } from './edit-scrubby-input';
 import { COLORS } from './ui-tokens';
 
@@ -150,6 +154,10 @@ export function mountEditUi(
       state.sectionCollapse[sec.key] = collapsed;
       chev.textContent = collapsed ? '▶' : '▼';
       body.style.display = collapsed ? 'none' : 'block';
+      // #103 Phase 6 Task 6.4 — persist the collapse map on every toggle so a
+      // reload restores the user's open sections. Best-effort; localStorage
+      // failures are swallowed inside persistSectionCollapse.
+      persistSectionCollapse(state.sectionCollapse);
     });
 
     sec.build(body, state, callbacks.onChange);
