@@ -94,31 +94,8 @@ describe('xformsSection — header weight + delete', () => {
     expect(onChange).toHaveBeenCalledWith('xforms.0.weight');
   });
 
-  it('delete button removes the xform + emits .removed', () => {
-    const { host, state, onChange } = mount(1);
-    const initial = state.genome.xforms.length;
-    expect(initial).toBeGreaterThan(1);
-    const card1 = cards(host)[1]!;
-    const delBtn = card1.querySelector(
-      '.pyr3-edit-xform-header .pyr3-edit-xform-del',
-    ) as HTMLButtonElement;
-    delBtn.click();
-    expect(state.genome.xforms.length).toBe(initial - 1);
-    expect(onChange).toHaveBeenCalledWith('xforms.1.removed');
-    expect(cards(host).length).toBe(initial - 1);
-  });
-
-  it('delete button is disabled when only one xform remains', () => {
-    const genome = generateRandomGenome(seededRng(1));
-    // Trim to one xform.
-    genome.xforms = [genome.xforms[0]!];
-    const { host } = mount(genome);
-    const card0 = cards(host)[0]!;
-    const delBtn = card0.querySelector(
-      '.pyr3-edit-xform-header .pyr3-edit-xform-del',
-    ) as HTMLButtonElement;
-    expect(delBtn.disabled).toBe(true);
-  });
+  // delete-button-disabled + delete-removes tests moved to the v3 header
+  // describe-block (.pyr3-remove-btn primitive supersedes .pyr3-edit-xform-del).
 });
 
 describe('xformsSection — add xform', () => {
@@ -522,27 +499,30 @@ describe('xforms section v2 — variation rows', () => {
   });
 });
 
-describe('xforms section v2 — header active + solo', () => {
-  it('renders an active checkbox in the card header', () => {
+describe('xforms section v2 — header toggle + solo + remove (v3)', () => {
+  it('renders a pyr3-toggle widget in the card header', () => {
     const { host } = mount();
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    expect(card.querySelector('.pyr3-edit-xform-active')).toBeTruthy();
+    const toggle = card.querySelector('.pyr3-edit-xform-header .pyr3-toggle');
+    expect(toggle).toBeTruthy();
   });
 
-  it('plain click toggles xform.active', () => {
+  it('plain click on toggle inactivates xform + adds inactive class to card', () => {
     const { host, state } = mount();
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const cbx = card.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
-    cbx.click();
+    const toggle = card.querySelector('.pyr3-edit-xform-active') as HTMLElement;
+    toggle.click();
     expect(state.genome.xforms[0]!.active).toBe(false);
+    // The card gets the inactive class so the body dims.
+    expect(card.classList.contains('pyr3-edit-xform-inactive')).toBe(true);
   });
 
   it('shift-click activates solo: all others go inactive', () => {
     const { host, state } = mount();
     expect(state.genome.xforms.length).toBeGreaterThanOrEqual(3);
     const firstCard = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const cbx = firstCard.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
-    cbx.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
+    const toggle = firstCard.querySelector('.pyr3-edit-xform-active') as HTMLElement;
+    toggle.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
     for (let i = 1; i < state.genome.xforms.length; i++) {
       expect(state.genome.xforms[i]!.active).toBe(false);
     }
@@ -550,18 +530,49 @@ describe('xforms section v2 — header active + solo', () => {
     expect(state.soloXformSnapshot).toBeTruthy();
   });
 
-  it('shift-click same checkbox again restores the snapshot', () => {
+  it('shift-click same toggle again restores the snapshot', () => {
     const { host, state } = mount();
     const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const cbx = card.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
-    cbx.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
-    // After rebuild, query the (new) checkbox.
+    const toggle = card.querySelector('.pyr3-edit-xform-active') as HTMLElement;
+    toggle.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
     const card2 = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
-    const cbx2 = card2.querySelector('.pyr3-edit-xform-active') as HTMLInputElement;
-    cbx2.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
+    const toggle2 = card2.querySelector('.pyr3-edit-xform-active') as HTMLElement;
+    toggle2.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true }));
     for (const xf of state.genome.xforms.slice(1)) {
       expect(xf.active).not.toBe(false);
     }
     expect(state.soloXformSnapshot).toBeUndefined();
+  });
+
+  it('remove button uses pyr3-remove-btn class (buildRemoveButton primitive)', () => {
+    const { host } = mount();
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const remove = card.querySelector('.pyr3-edit-xform-header .pyr3-remove-btn');
+    expect(remove).toBeTruthy();
+  });
+
+  it('remove button click removes xform without confirmation', () => {
+    const { host, state, onChange } = mount();
+    const before = state.genome.xforms.length;
+    expect(before).toBeGreaterThan(1);
+    const card1 = cards(host)[1]!;
+    const remove = card1.querySelector(
+      '.pyr3-edit-xform-header .pyr3-remove-btn',
+    ) as HTMLElement;
+    remove.click();
+    expect(state.genome.xforms.length).toBe(before - 1);
+    expect(onChange).toHaveBeenCalledWith('xforms.1.removed');
+  });
+
+  it('remove button no-ops when only one xform remains', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    genome.xforms = [genome.xforms[0]!];
+    const { host, state } = mount(genome);
+    const card = host.querySelector('.pyr3-edit-xform-card') as HTMLElement;
+    const remove = card.querySelector(
+      '.pyr3-edit-xform-header .pyr3-remove-btn',
+    ) as HTMLElement;
+    remove.click();
+    expect(state.genome.xforms.length).toBe(1);
   });
 });

@@ -31,7 +31,7 @@ import {
 } from './edit-xform-quickops';
 import { openVariationPicker } from './edit-variation-picker';
 import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
-import { buildButton } from './edit-primitives';
+import { buildButton, buildToggle, buildRemoveButton } from './edit-primitives';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -592,57 +592,49 @@ function buildXformCard(
   weightInput.el.addEventListener('click', (e) => e.stopPropagation());
   weightInput.el.addEventListener('pointerdown', (e) => e.stopPropagation());
 
-  const delBtn = makeIconButton('🗑️', () => {
-    if (state.genome.xforms.length <= 1) return;
-    state.genome.xforms.splice(xformIndex, 1);
-    // xaos arrays on the surviving xforms still index by destination;
-    // splice them too so the row count stays in sync.
-    for (const x of state.genome.xforms) {
-      if (x.xaos) x.xaos.splice(xformIndex, 1);
-    }
-    onChange(`xforms.${xformIndex}.removed`);
-    rebuildSection();
+  // ── Active toggle (pyr3-toggle pill; shift-click solos) ──────────────
+  // buildToggle's internal click handler flips boolean state + calls
+  // onChange(next). We intercept shift-click in the CAPTURE phase to drive
+  // solo behavior before the toggle's own handler runs.
+  const activeToggle = buildToggle({
+    value: xform.active !== false,
+    onChange: (next) => {
+      xform.active = next ? undefined : false;
+      card.classList.toggle('pyr3-edit-xform-inactive', xform.active === false);
+      onChange(`xforms.${xformIndex}.active`);
+    },
   });
-  delBtn.disabled = totalXforms <= 1;
-  delBtn.classList.add('pyr3-edit-xform-del');
-  delBtn.title = 'Remove this xform from the genome.';
-  delBtn.addEventListener('click', (e) => e.stopPropagation());
-
-  // ── Active checkbox (with shift-click solo) ──
-  const activeCbx = document.createElement('input');
-  activeCbx.type = 'checkbox';
-  activeCbx.className = 'pyr3-edit-xform-active';
-  activeCbx.checked = xform.active !== false;
-  activeCbx.title = 'Click to toggle this xform. Shift-click to solo (turn off all others).';
-  activeCbx.addEventListener('click', (ev) => {
+  // Legacy compatibility class (#102 contract): keep `pyr3-edit-xform-active`
+  // on the new toggle widget so existing tests + shift-click solo wiring
+  // remain stable. Tests query by this class.
+  activeToggle.classList.add('pyr3-edit-xform-active');
+  activeToggle.title = 'Click to toggle this xform. Shift-click to solo (turn off all others).';
+  // Don't propagate clicks up to the collapse-toggle handler on the header.
+  activeToggle.addEventListener('click', (e) => e.stopPropagation());
+  // Capture-phase shift-click → solo (intercept before buildToggle's listener).
+  activeToggle.addEventListener('click', (ev) => {
     const me = ev as MouseEvent;
-    me.stopPropagation(); // don't toggle collapse
-    if (me.shiftKey) {
-      me.preventDefault();
-      if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === xformIndex) {
+    if (!me.shiftKey) return;
+    me.preventDefault();
+    me.stopImmediatePropagation();
+    if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === xformIndex) {
+      restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+      state.soloXformSnapshot = undefined;
+    } else {
+      if (state.soloXformSnapshot) {
         restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
-        state.soloXformSnapshot = undefined;
-      } else {
-        if (state.soloXformSnapshot) {
-          restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
-        }
-        state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, xformIndex);
-        for (let i = 0; i < state.genome.xforms.length; i++) {
-          if (i !== xformIndex) state.genome.xforms[i]!.active = false;
-        }
-        // Ensure the soloed xform is active.
-        xform.active = undefined;
       }
-      onChange(`xforms.${xformIndex}.solo`);
-      rebuildSection();
-      return;
+      state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, xformIndex);
+      for (let i = 0; i < state.genome.xforms.length; i++) {
+        if (i !== xformIndex) state.genome.xforms[i]!.active = false;
+      }
+      xform.active = undefined;
     }
-    xform.active = activeCbx.checked ? undefined : false;
-    card.classList.toggle('pyr3-edit-xform-inactive', xform.active === false);
-    onChange(`xforms.${xformIndex}.active`);
-  });
+    onChange(`xforms.${xformIndex}.solo`);
+    rebuildSection();
+  }, true);
 
-  // ── Duplicate icon ──
+  // ── Duplicate icon (kept from v1; not in spec but shipped) ──
   const dupBtn = makeIconButton('⎘', () => {
     const clone: Xform = JSON.parse(JSON.stringify(xform));
     state.genome.xforms.splice(xformIndex + 1, 0, clone);
@@ -653,7 +645,32 @@ function buildXformCard(
   dupBtn.classList.add('pyr3-edit-xform-dup');
   dupBtn.addEventListener('click', (e) => e.stopPropagation());
 
-  header.append(chev, titleSpan, weightLabel, weightInput.el, activeCbx, dupBtn, delBtn);
+  // ── Remove × button (buildRemoveButton primitive) ──
+  const removeBtn = buildRemoveButton({
+    title: 'Remove this xform from the genome.',
+    onClick: () => {
+      if (state.genome.xforms.length <= 1) return;
+      state.genome.xforms.splice(xformIndex, 1);
+      // xaos arrays on the surviving xforms still index by destination;
+      // splice them too so the row count stays in sync.
+      for (const x of state.genome.xforms) {
+        if (x.xaos) x.xaos.splice(xformIndex, 1);
+      }
+      onChange(`xforms.${xformIndex}.removed`);
+      rebuildSection();
+    },
+  });
+  removeBtn.classList.add('pyr3-edit-xform-del');
+  // Dim + visually disable when only one xform remains (removing would
+  // leave the genome empty).
+  if (totalXforms <= 1) {
+    removeBtn.style.opacity = '0.35';
+    removeBtn.style.cursor = 'not-allowed';
+    removeBtn.setAttribute('aria-disabled', 'true');
+  }
+  removeBtn.addEventListener('click', (e) => e.stopPropagation());
+
+  header.append(chev, titleSpan, weightLabel, weightInput.el, activeToggle, dupBtn, removeBtn);
   card.appendChild(header);
 
   // ── Body (collapsible) ───────────────────────────────────────────────
@@ -931,6 +948,45 @@ const XFORM_CSS = `
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.pyr3-edit-xform-inactive .pyr3-edit-xform-body {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.pyr3-edit-xform-inactive .pyr3-edit-xform-header {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bar-bg-3, #0f0f13),
+    var(--bar-bg-3, #0f0f13) 4px,
+    var(--bar-bg-2, #1a1a20) 4px,
+    var(--bar-bg-2, #1a1a20) 8px
+  );
+}
+/* Quick-ops strip + reset-to-identity button (Phase 8). */
+.pyr3-edit-aff-quickops {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin-top: 3px;
+}
+.pyr3-edit-quickop {
+  background: var(--bar-bg-2, #1a1a20);
+  color: var(--text, #ddd);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 2px;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  text-align: center;
+}
+.pyr3-edit-quickop:hover {
+  background: var(--accent-soft, rgba(255, 140, 26, 0.18));
+  border-color: var(--accent-border, #884a1a);
+}
+.pyr3-edit-aff-reset {
+  margin-top: 6px;
+  align-self: flex-start;
 }
 .pyr3-edit-field { display: flex; align-items: center; gap: 4px; }
 .pyr3-edit-field-label { color: var(--text-dim, #888); font-size: 10px; }
