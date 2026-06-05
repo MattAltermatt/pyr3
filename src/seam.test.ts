@@ -51,6 +51,8 @@ const SEAM_EXEMPT = new Set<string>([
   'ui-bar.ts',            // viewer bar — uses document
   'about-mount.ts',       // /about page body — DOM-mounting (#103 visual overhaul)
   'variation-picker.ts',  // DOM-mounting variation picker (#79)
+  'screensaver-mount.ts', // /v1/screensaver page body — DOM-mounting (#109)
+  'screensaver-ui.ts',    // /v1/screensaver landing card — DOM-mounting (#109)
   'webgpu-check.ts',      // probes navigator.gpu — checking is its job
   'brotli.ts',            // platform-aware decoder probe (native vs wasm)
   'device.ts',            // viewer-side device acquisition uses navigator.gpu
