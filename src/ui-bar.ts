@@ -1027,6 +1027,8 @@ function buildBrand(): HTMLElement {
 function buildAboutLink(): HTMLElement {
   const a = el('a', 'pyr3-about-link') as HTMLAnchorElement;
   a.href = `${import.meta.env.BASE_URL}about`;
+  a.target = '_blank';
+  a.rel = 'noopener';
   a.textContent = 'about';
   return a;
 }
