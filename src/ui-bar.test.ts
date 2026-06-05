@@ -280,6 +280,124 @@ describe('mountAboutBar', () => {
   });
 });
 
+describe('viewer action row — Size + QUALITY (#103 Phase 3 Task 3.2)', () => {
+  it('does NOT render an Advanced button', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts());
+    const allText = root.textContent ?? '';
+    expect(allText).not.toContain('Advanced');
+    expect(root.querySelector('.pyr3-bar-advanced')).toBeNull();
+  });
+
+  it('renders a Size dropdown showing current dimensions with a ▾ caret', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const bar = mountBar(root, makeBarOpts());
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+
+    const sizeBtn = root.querySelector('.pyr3-bar-size') as HTMLElement;
+    expect(sizeBtn).not.toBeNull();
+    const txt = sizeBtn.textContent ?? '';
+    expect(txt).toContain('1920×1080');
+    expect(txt).toContain('▾');
+  });
+
+  it('renders a QUALITY label + numeric button group 10/25/50/75/100', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts());
+
+    const qLabel = root.querySelector('.pyr3-bar-quality-label') as HTMLElement;
+    expect(qLabel?.textContent?.toLowerCase()).toBe('quality');
+
+    const qGroup = root.querySelectorAll('.pyr3-bar-quality-btn') as NodeListOf<HTMLButtonElement>;
+    const labels = Array.from(qGroup).map((b) => b.textContent);
+    expect(labels).toEqual(['10', '25', '50', '75', '100']);
+  });
+
+  it('highlights the active quality button in amber based on current spp', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const bar = mountBar(root, makeBarOpts());
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-quality-btn'),
+    ) as HTMLButtonElement[];
+    const active = buttons.filter((b) => b.classList.contains('on'));
+    expect(active).toHaveLength(1);
+    expect(active[0]!.textContent).toBe('50');
+  });
+
+  it('clicking a quality button fires onRenderQuality with that spp', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onRenderQuality = vi.fn();
+    const bar = mountBar(root, makeBarOpts({ onRenderQuality }));
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+
+    const buttons = Array.from(
+      root.querySelectorAll('.pyr3-bar-quality-btn'),
+    ) as HTMLButtonElement[];
+    const q100 = buttons.find((b) => b.textContent === '100')!;
+    q100.click();
+    expect(onRenderQuality).toHaveBeenCalledTimes(1);
+    const req = onRenderQuality.mock.calls[0]![0];
+    expect(req.kind).toBe('custom');
+    expect(req.spp).toBe(100);
+  });
+
+  it('clicking the Size button opens a categorized preset menu', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const bar = mountBar(root, makeBarOpts());
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+
+    const sizeBtn = root.querySelector('.pyr3-bar-size') as HTMLElement;
+    sizeBtn.click();
+    const menu = document.querySelector('.pyr3-size-menu') as HTMLElement;
+    expect(menu).not.toBeNull();
+    // Group headers present
+    const headers = Array.from(menu.querySelectorAll('.pyr3-size-group')).map((g) => g.textContent);
+    expect(headers).toContain('Common');
+    expect(headers).toContain('Phone portrait');
+    expect(headers).toContain('Tablet');
+    // Footer link to Editor
+    expect(menu.textContent ?? '').toContain('Custom size');
+  });
+
+  it('size menu item click fires onRenderQuality with the chosen dimensions long-edge', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onRenderQuality = vi.fn();
+    const bar = mountBar(root, makeBarOpts({ onRenderQuality }));
+    bar.setQuality({ width: 1920, height: 1080, spp: 50, tierLabel: 'Standard' });
+
+    const sizeBtn = root.querySelector('.pyr3-bar-size') as HTMLElement;
+    sizeBtn.click();
+    const items = Array.from(
+      document.querySelectorAll('.pyr3-size-item'),
+    ) as HTMLElement[];
+    const fourK = items.find((i) => i.textContent?.includes('4K'))!;
+    fourK.click();
+    expect(onRenderQuality).toHaveBeenCalledTimes(1);
+    const req = onRenderQuality.mock.calls[0]![0];
+    expect(req.kind).toBe('custom');
+    // 4K → 3840×2160; longEdge = 3840
+    expect(req.longEdge).toBe(3840);
+    expect(req.spp).toBe(50);
+  });
+
+  it('keeps the 🔥 surprise me and prev/next pills (does not remove the right cluster)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts());
+    expect(root.querySelector('.pyr3-bar-viewer-dice')).not.toBeNull();
+    expect(root.querySelector('.pyr3-bar-nav')).not.toBeNull();
+  });
+});
+
 describe('viewer info row — all variations expanded (#103 Phase 3 Task 3.1)', () => {
   it('renders every variation inline with no +N collapse', () => {
     document.body.innerHTML = '<div id="root"></div>';

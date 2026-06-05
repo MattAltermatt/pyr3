@@ -10,8 +10,8 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
-import { corpusUrl, galleryUrl } from './load-intent';
-import { QUALITY_TIERS, type QualityRequest } from './presets';
+import { corpusUrl, galleryUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
+import type { QualityRequest } from './presets';
 import { composeSaveFilename } from './save-image';
 import { COLORS } from './ui-tokens';
 import type { WebGPUStatus } from './webgpu-check';
@@ -328,36 +328,54 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 
   infoRow.append(infoLeft);
 
-  // ══ bar ② — actions (Open · quality ladder · corpus nav) ══
+  // ══ bar ② — actions (Open · Size ▾ · QUALITY [10·25·50·75·100] · save · nav) ══
+  //
+  // #103 Phase 3 Task 3.2 overhaul: the legacy 5-tier quality ladder (Draft …
+  // 4K) + Advanced sub-row collapsed into two complementary controls:
+  //   - 📐 Size ▾ — categorized dropdown of canonical render dims
+  //   - QUALITY 10 · 25 · 50 · 75 · 100 — explicit SPP picks
+  // Size and SPP are orthogonal: changing one preserves the other. Custom
+  // explicit-aspect picks deflect to the editor via a footer link.
   const actionRow = el('div', 'pyr3-bar-action');
   const actionLeft = el('div', 'pyr3-zone-actleft');
   const openBtn = button('📂 Open', 'pyr3-bar-btn', opts.onOpenFile);
-  // Quality ladder (PYR3-050) — replaces the standalone 🎯 4K button; 4K is its
-  // top tier. Each tap requests a render at that tier's dims/SPP.
-  const qLabel = el('span', 'pyr3-bar-qlabel');
-  qLabel.textContent = 'quality';
-  const ladder = el('div', 'pyr3-bar-ladder');
-  const tierBtns = new Map<string, HTMLButtonElement>();
-  for (const tier of QUALITY_TIERS) {
+
+  // 📐 Size ▾ — dropdown button. Label shows current `{W}×{H}` in amber.
+  // Click opens a categorized menu (Common / Phone portrait / Tablet) plus a
+  // footer link that deflects "I need explicit non-preset dims" to /v1/edit.
+  const sizeBtn = button('📐 1920×1080 ▾', 'pyr3-bar-size', () => toggleSizeMenu());
+  sizeBtn.title = 'pick a canvas size';
+
+  // QUALITY label + numeric SPP button group.
+  const qualityLabel = el('span', 'pyr3-bar-quality-label');
+  qualityLabel.textContent = 'QUALITY';
+  const qualityGroup = el('div', 'pyr3-bar-quality-group');
+  const qualityBtns = new Map<number, HTMLButtonElement>();
+  for (const spp of QUALITY_PRESETS) {
     const b = document.createElement('button');
-    b.className = 'pyr3-tier-btn';
-    b.textContent = tier.name;
-    b.title = `${tier.longEdge}px long edge · q${tier.spp}`;
-    b.onclick = () => opts.onRenderQuality({ kind: 'tier', tier });
-    tierBtns.set(tier.name, b);
-    ladder.append(b);
+    b.className = 'pyr3-bar-quality-btn';
+    b.type = 'button';
+    b.textContent = String(spp);
+    b.title = `render at ${spp} samples per pixel`;
+    b.onclick = () => {
+      const longEdge = Math.max(currentSize.w, currentSize.h);
+      opts.onRenderQuality({ kind: 'custom', longEdge, spp });
+    };
+    qualityBtns.set(spp, b);
+    qualityGroup.append(b);
   }
-  // Advanced ▾ — toggles the custom resolution/SPP sub-row (PYR3-050).
-  const advBtn = button('Advanced ▾', 'pyr3-bar-btn', () => toggleAdvanced());
-  // #22: 💾 Save — download the current canvas as PNG with a hint filename
-  // (flame name + tier/custom quality). Disabled until a render lands and while
-  // any render is in flight.
+
+  // #22: 💾 Save — download the current canvas as PNG. Phase 3 Task 3.3 will
+  // wrap this in a "Save Render (primary)" + "Save Flame (secondary)" pair;
+  // for Task 3.2 we keep the single Save in place and Task 3.3 swaps it out.
   const saveBtn = button('💾 Save', 'pyr3-bar-btn', () => {
     opts.onSave(composeSaveFilename(currentFlameName, currentQuality));
   });
   saveBtn.disabled = true;
   saveBtn.title = 'Download the current render as a PNG';
-  actionLeft.append(openBtn, qLabel, ladder, advBtn, saveBtn);
+
+  actionLeft.append(openBtn, sizeBtn, qualityLabel, qualityGroup, saveBtn);
+
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
   // curated showcase set (sibling of the gallery dice #50, which picks from
   // the full corpus). Lives in the action row right-side cluster next to the
@@ -377,63 +395,87 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const navSlot = el('div', 'pyr3-bar-nav');
   actionRow.append(actionLeft, dicePill, navSlot);
 
-  // ══ bar ②b — Advanced custom resolution/SPP (PYR3-050); hidden until toggled ══
-  const advRow = el('div', 'pyr3-bar-advanced');
-  advRow.hidden = true;
-  const advLabel = el('span', 'pyr3-bar-qlabel');
-  advLabel.textContent = 'custom';
-  const longEdgeInput = document.createElement('input');
-  longEdgeInput.type = 'number';
-  longEdgeInput.className = 'pyr3-adv-num';
-  longEdgeInput.min = '64';
-  longEdgeInput.max = '8192';
-  longEdgeInput.step = '64';
-  longEdgeInput.value = '2048';
-  longEdgeInput.title = 'Long edge in px (short edge follows the flame’s aspect)';
-  const leUnit = el('span', 'pyr3-adv-unit');
-  leUnit.textContent = 'px long edge';
-  const sppLabel = el('span', 'pyr3-bar-qlabel');
-  sppLabel.textContent = 'spp';
-  const sppInput = document.createElement('input');
-  sppInput.type = 'range';
-  sppInput.className = 'pyr3-adv-range';
-  sppInput.min = '4';
-  sppInput.max = '400';
-  sppInput.step = '1';
-  sppInput.value = '100';
-  const sppVal = el('span', 'pyr3-adv-sppval');
-  const costSpan = el('span', 'pyr3-adv-cost');
-  const renderBtn = button('Render', 'pyr3-adv-render', () => {
-    opts.onRenderQuality({ kind: 'custom', longEdge: readLongEdge(), spp: readSpp() });
-  });
-  advRow.append(advLabel, longEdgeInput, leUnit, sppLabel, sppInput, sppVal, costSpan, renderBtn);
-
-  const readLongEdge = (): number => Math.max(1, Math.round(Number(longEdgeInput.value) || 0));
-  const readSpp = (): number => Math.max(1, Math.round(Number(sppInput.value) || 0));
-  // Render is gated by BOTH a render-in-flight (setBusy) and the cost fit, so
-  // it can't interrupt an in-flight tier render or dispatch an OOM request.
-  let advBusy = false;
-  let lastFits = false;
-  const recompute = (): void => {
-    const spp = readSpp();
-    sppVal.textContent = `q${spp}`;
-    const est = opts.estimateCost(readLongEdge(), spp);
-    costSpan.textContent = `≈ ${est.width}×${est.height} · ${est.mb.toFixed(0)} MB · ${est.fits ? '✓ fits GPU' : '✗ exceeds limit'}`;
-    costSpan.classList.toggle('over', !est.fits);
-    lastFits = est.fits;
-    renderBtn.disabled = advBusy || !est.fits;
+  // Size dropdown menu — lazy-built on first click. Lives outside the action
+  // row in `document.body` so the overflow/clip context of the bar doesn't
+  // truncate it. Anchored to the sizeBtn via getBoundingClientRect on open.
+  let sizeMenu: HTMLElement | null = null;
+  let sizeMenuOpen = false;
+  const closeSizeMenu = (): void => {
+    if (sizeMenu) {
+      sizeMenu.remove();
+      sizeMenu = null;
+    }
+    sizeMenuOpen = false;
+    sizeBtn.classList.remove('open');
   };
-  longEdgeInput.oninput = recompute;
-  sppInput.oninput = recompute;
-  let advOpen = false;
-  const toggleAdvanced = (): void => {
-    advOpen = !advOpen;
-    advRow.hidden = !advOpen;
-    advBtn.textContent = advOpen ? 'Advanced ▴' : 'Advanced ▾';
-    if (advOpen) recompute();
+  const buildSizeMenu = (): HTMLElement => {
+    const menu = el('div', 'pyr3-size-menu');
+    for (const group of SIZE_PRESETS) {
+      const header = el('div', 'pyr3-size-group');
+      header.textContent = group.group;
+      menu.append(header);
+      for (const item of group.items) {
+        const row = el('div', 'pyr3-size-item');
+        const label = el('span', 'pyr3-size-label');
+        label.textContent = item.label;
+        const dims = el('span', 'pyr3-size-dims');
+        dims.textContent = `${item.w}×${item.h}`;
+        row.append(label, dims);
+        row.onclick = () => {
+          if (barBusy) return;
+          // Optimistically reflect the pick in the button label; setQuality
+          // will overwrite this once the render lands.
+          currentSize = { w: item.w, h: item.h };
+          renderSizeLabel();
+          closeSizeMenu();
+          const longEdge = Math.max(item.w, item.h);
+          opts.onRenderQuality({
+            kind: 'custom',
+            longEdge,
+            spp: currentSpp,
+          });
+        };
+        menu.append(row);
+      }
+    }
+    // Footer — deflects explicit non-preset sizing to the editor.
+    const footer = el('a', 'pyr3-size-footer') as HTMLAnchorElement;
+    footer.href = '/v1/edit';
+    footer.textContent = '⚙ Custom size & quality → open in Editor';
+    menu.append(footer);
+    return menu;
+  };
+  const toggleSizeMenu = (): void => {
+    if (sizeMenuOpen) {
+      closeSizeMenu();
+      return;
+    }
+    if (barBusy) return;
+    sizeMenu = buildSizeMenu();
+    document.body.append(sizeMenu);
+    // Position the menu below the sizeBtn. The bar is position:sticky so
+    // viewport coords map directly to body coords.
+    const rect = sizeBtn.getBoundingClientRect();
+    sizeMenu.style.position = 'fixed';
+    sizeMenu.style.top = `${rect.bottom + 4}px`;
+    sizeMenu.style.left = `${rect.left}px`;
+    sizeMenu.style.zIndex = '60';
+    sizeMenuOpen = true;
+    sizeBtn.classList.add('open');
+    // Dismiss on outside click — registered next tick so the opening click
+    // itself doesn't fire it.
+    setTimeout(() => {
+      const onDocClick = (ev: MouseEvent): void => {
+        if (!sizeMenu) return;
+        if (sizeMenu.contains(ev.target as Node) || sizeBtn.contains(ev.target as Node)) return;
+        closeSizeMenu();
+        document.removeEventListener('click', onDocClick);
+      };
+      document.addEventListener('click', onDocClick);
+    }, 0);
   };
 
-  chrome.middleSlot.append(infoRow, actionRow, advRow);
+  chrome.middleSlot.append(infoRow, actionRow);
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -452,6 +494,21 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   // download filename on click and gate itself on "is there something to save?".
   let currentFlameName: string | null = null;
   let currentQuality: QualityReadout | null = null;
+  // #103 Phase 3 Task 3.2: orthogonal size + spp state for the new action row.
+  // Size drives the 📐 button label + the long-edge passed to onRenderQuality
+  // when a QUALITY pick changes only the spp. spp drives the active highlight
+  // on the QUALITY group + the spp passed when a SIZE pick changes only dims.
+  // Both sync to setQuality once a render lands.
+  let currentSize: { w: number; h: number } = { w: 1920, h: 1080 };
+  let currentSpp: number = QUALITY_PRESETS[2] /* 50 */;
+  const renderSizeLabel = (): void => {
+    sizeBtn.textContent = `📐 ${currentSize.w}×${currentSize.h} ▾`;
+  };
+  const renderQualityHighlight = (): void => {
+    for (const [spp, b] of qualityBtns) b.classList.toggle('on', spp === currentSpp);
+  };
+  renderSizeLabel();
+  renderQualityHighlight();
   const refreshSave = (): void => {
     saveBtn.disabled = barBusy || currentQuality === null;
   };
@@ -463,11 +520,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       refreshSave(); // #22
     },
     setBusy(busy) {
-      advBusy = busy;
       barBusy = busy;
       openBtn.disabled = busy;
-      for (const b of tierBtns.values()) b.disabled = busy;
-      renderBtn.disabled = busy || !lastFits;
+      for (const b of qualityBtns.values()) b.disabled = busy;
+      sizeBtn.disabled = busy;
       applyNavBusy(); // #8: grey out + disable ‹ prev / next › while busy
       refreshSave(); // #22: no Save click mid-render
     },
@@ -540,7 +596,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     },
     setQuality(q) {
       metaQuality.textContent = ` · ${q.width}×${q.height} · q${q.spp} · ${q.tierLabel}`;
-      for (const [name, b] of tierBtns) b.classList.toggle('on', name === q.tierLabel);
+      // #103 Phase 3 Task 3.2: reflect the resolved render in the new size +
+      // quality controls. Size label shows the actual rendered dims; quality
+      // highlight tracks the resolved spp (exact match on QUALITY_PRESETS
+      // lights up; a non-preset spp from a programmatic dispatch lights none).
+      currentSize = { w: q.width, h: q.height };
+      currentSpp = q.spp;
+      renderSizeLabel();
+      renderQualityHighlight();
       currentQuality = q; // #22
       refreshSave();
     },
@@ -1154,6 +1217,61 @@ const BAR_CSS = `
 }
 .pyr3-bar-btn:hover:not(:disabled) { background: #2a2a30; }
 .pyr3-bar-btn:disabled { background: #1a1a1f; color: #555; border-color: #2a2a30; cursor: not-allowed; }
+
+/* #103 Phase 3 Task 3.2 — Size dropdown button.
+   Current dims rendered in amber; ▾ caret to the right. Hover shifts the bg
+   tone like the other secondary buttons. */
+.pyr3-bar-size {
+  font-size: 11px; padding: 4px 14px; border-radius: 3px;
+  background: #222; color: var(--accent); border: 1px solid #444;
+  cursor: pointer; font-family: ui-monospace, monospace; white-space: nowrap;
+}
+.pyr3-bar-size:hover:not(:disabled) { background: #2a2a30; }
+.pyr3-bar-size:disabled { background: #1a1a1f; color: #555; border-color: #2a2a30; cursor: not-allowed; }
+.pyr3-bar-size.open { background: #2a2a30; border-color: var(--accent-border); }
+
+/* #103 Phase 3 Task 3.2 — QUALITY label + numeric SPP button group. */
+.pyr3-bar-quality-label {
+  font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.pyr3-bar-quality-group {
+  display: inline-flex; border: 1px solid #3a3a42; border-radius: 6px; overflow: hidden;
+}
+.pyr3-bar-quality-btn {
+  font: 11px ui-monospace, monospace; padding: 4px 11px; cursor: pointer;
+  background: #202026; color: var(--text-muted); border: 0;
+  border-right: 1px solid #3a3a42; min-width: 36px; text-align: center;
+}
+.pyr3-bar-quality-btn:last-child { border-right: 0; }
+.pyr3-bar-quality-btn:hover:not(:disabled):not(.on) { background: #2a2a30; color: var(--text); }
+.pyr3-bar-quality-btn.on { background: var(--accent); color: ${COLORS.bg.page}; font-weight: 700; }
+.pyr3-bar-quality-btn:disabled { color: #555; cursor: not-allowed; }
+
+/* #103 Phase 3 Task 3.2 — Size dropdown menu (lives on document.body). */
+.pyr3-size-menu {
+  background: ${COLORS.bg.panel}; border: 1px solid var(--bar-border); border-radius: 6px;
+  padding: 6px 0; min-width: 240px;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.pyr3-size-group {
+  padding: 6px 12px 2px; color: var(--text-dim); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+}
+.pyr3-size-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 12px; cursor: pointer; gap: 14px;
+}
+.pyr3-size-item:hover { background: rgba(255, 190, 62, 0.10); }
+.pyr3-size-label { color: var(--text); }
+.pyr3-size-dims { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; }
+.pyr3-size-footer {
+  display: block; margin-top: 4px; padding: 8px 12px;
+  border-top: 1px solid var(--bar-border);
+  color: var(--text-muted); font-size: 11px; text-decoration: none;
+}
+.pyr3-size-footer:hover { color: var(--accent); background: rgba(255, 190, 62, 0.06); }
 
 .pyr3-bar-toast { color: var(--accent); font-size: 10px; opacity: 0; margin-left: 10px; transition: opacity 0.15s ease; }
 .pyr3-bar-toast.visible { opacity: 1; }

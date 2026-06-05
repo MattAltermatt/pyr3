@@ -40,6 +40,41 @@ export type LoadIntent =
  *  the corpus walker that resolves a page's 9 sheep, and any future caller. */
 export const GALLERY_PAGE_SIZE = 9;
 
+/**
+ * Categorized canvas-size presets surfaced by the viewer/editor `📐 Size ▾`
+ * dropdown (#103 Phase 3 Task 3.2). Each item carries an explicit width+
+ * height pair. The viewer's render-quality dispatch only consumes the long
+ * edge today (genome aspect drives the short edge via applyPreset); the
+ * explicit w/h pair is kept for the label and any future explicit-dims
+ * dispatch path. "⚙ Custom size & quality → open in Editor" footer link
+ * defers explicit-aspect picks to the editor surface.
+ */
+export const SIZE_PRESETS = [
+  { group: 'Common', items: [
+    { label: 'HD',                  w: 1920, h: 1080 },
+    { label: '2K',                  w: 2560, h: 1440 },
+    { label: '4K',                  w: 3840, h: 2160 },
+    { label: 'square',              w: 1080, h: 1080 },
+  ]},
+  { group: 'Phone portrait', items: [
+    { label: 'iPhone 15 Pro',       w: 1290, h: 2796 },
+    { label: 'iPhone 14 Pro Max',   w: 1284, h: 2778 },
+    { label: 'FHD portrait',        w: 1080, h: 1920 },
+    { label: 'Pixel 8 Pro',         w: 1440, h: 3120 },
+  ]},
+  { group: 'Tablet', items: [
+    { label: 'iPad Pro 11"',        w: 1668, h: 2388 },
+    { label: 'iPad Pro 12.9"',      w: 2048, h: 2732 },
+  ]},
+] as const;
+
+/** Render-quality presets surfaced by the viewer/editor `QUALITY 10·25·50·75·
+ *  100` numeric button group (#103 Phase 3 Task 3.2). Values are SPP (samples
+ *  per pixel) — dispatched as `kind: 'custom'` requests through the existing
+ *  onRenderQuality API; the current size's long edge is preserved on each
+ *  pick. */
+export const QUALITY_PRESETS = [10, 25, 50, 75, 100] as const;
+
 /** Returns true iff the segment is a string of one-or-more decimal digits. */
 function isNonNegInt(segment: string): boolean {
   return /^\d+$/.test(segment);
