@@ -119,6 +119,49 @@ function classify(r: number, g: number, b: number): ColorTag {
   return 'red';
 }
 
+/** Mean H/S/L across the same SAMPLE_COUNT positions computeTags samples.
+ *  Used by the palette picker's sort dropdown (hue / saturation / lightness
+ *  modes). Hue is averaged via the unit-circle mean (sin/cos sums) so the
+ *  wrap-around at 360°→0° doesn't dominate; saturation and lightness are
+ *  arithmetic means.
+ *
+ *  Achromatic samples (s == 0) contribute their lightness/saturation but
+ *  not their (undefined) hue; if every sample is achromatic, hue defaults
+ *  to 0. */
+export function computeMeanHsl(
+  rgb: Uint8Array | Uint8ClampedArray,
+): { h: number; s: number; l: number } {
+  const n = Math.min(256, Math.floor(rgb.length / 3));
+  if (n === 0) return { h: 0, s: 0, l: 0 };
+  let sumSin = 0;
+  let sumCos = 0;
+  let sumS = 0;
+  let sumL = 0;
+  let hueCount = 0;
+  for (let k = 0; k < SAMPLE_COUNT; k++) {
+    let i = Math.min(n - 1, Math.floor((k * n) / SAMPLE_COUNT));
+    if (k % 2 === 1 && i + 1 < n) i += 1;
+    const r = rgb[i * 3]!;
+    const g = rgb[i * 3 + 1]!;
+    const b = rgb[i * 3 + 2]!;
+    const hsl = rgbToHsl(r, g, b);
+    sumS += hsl.s;
+    sumL += hsl.l;
+    if (hsl.s > 0) {
+      const rad = (hsl.h * Math.PI) / 180;
+      sumSin += Math.sin(rad);
+      sumCos += Math.cos(rad);
+      hueCount++;
+    }
+  }
+  let h = 0;
+  if (hueCount > 0) {
+    h = (Math.atan2(sumSin / hueCount, sumCos / hueCount) * 180) / Math.PI;
+    if (h < 0) h += 360;
+  }
+  return { h, s: sumS / SAMPLE_COUNT, l: sumL / SAMPLE_COUNT };
+}
+
 /** Compute the unique dominant-color tags present in a 256-entry palette
  *  expressed as raw RGB byte triples (length = 768). The sample count is
  *  SAMPLE_COUNT; tags are returned in COLOR_TAGS canonical order so callers
@@ -150,6 +193,36 @@ export function computeTags(rgb: Uint8Array | Uint8ClampedArray): ColorTag[] {
 // are pre-computed lazily so search filtering stays O(N) across chip combos.
 
 const _flam3TagsCache = new Map<number, readonly ColorTag[]>();
+const _flam3HslCache = new Map<number, { h: number; s: number; l: number }>();
+
+function buildFlam3Rgb(idx: number): Uint8Array | null {
+  if (idx < 0 || idx >= FLAM3_PALETTE_COUNT || !Number.isInteger(idx)) {
+    return null;
+  }
+  const stops = getLibraryStops(idx);
+  if (!stops || stops.length === 0) return null;
+  const rgb = new Uint8Array(256 * 3);
+  for (const s of stops) {
+    const i = Math.round(s.t * 255);
+    if (i < 0 || i > 255) continue;
+    rgb[i * 3] = Math.round(s.r * 255);
+    rgb[i * 3 + 1] = Math.round(s.g * 255);
+    rgb[i * 3 + 2] = Math.round(s.b * 255);
+  }
+  return rgb;
+}
+
+/** Cached mean H/S/L for a flam3 catalog palette. Returns `{h:0, s:0, l:0}`
+ *  for indices with no stops; the sort dropdown treats those as low values
+ *  consistently. */
+export function getFlam3PaletteHsl(idx: number): { h: number; s: number; l: number } {
+  const cached = _flam3HslCache.get(idx);
+  if (cached) return cached;
+  const rgb = buildFlam3Rgb(idx);
+  const hsl = rgb ? computeMeanHsl(rgb) : { h: 0, s: 0, l: 0 };
+  _flam3HslCache.set(idx, hsl);
+  return hsl;
+}
 
 export function getFlam3PaletteTags(idx: number): readonly ColorTag[] {
   if (idx < 0 || idx >= FLAM3_PALETTE_COUNT || !Number.isInteger(idx)) {

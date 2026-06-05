@@ -502,3 +502,66 @@ describe('palette picker — auto-apply / revert / apply&close (Task 9.8)', () =
     expect(visible.length).toBe(0);
   });
 });
+
+describe('palette picker — sort dropdown re-orders the cell grid', () => {
+  function cellIdxOrder(root: HTMLElement): number[] {
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    return [...cells].map((c) => Number(c.dataset['idx']));
+  }
+
+  it('default sort = number → cells in idx ascending order', () => {
+    const { root } = mount();
+    const order = cellIdxOrder(root);
+    // First few must be 0,1,2,3,4 (catalog default).
+    expect(order.slice(0, 5)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('changing sort dropdown reorders the cells in the DOM', () => {
+    const { root } = mount();
+    const before = cellIdxOrder(root);
+    const sort = root.querySelector('.pyr3-palette-picker-sort') as HTMLSelectElement;
+    sort.value = 'name';
+    sort.dispatchEvent(new Event('change', { bubbles: true }));
+    const after = cellIdxOrder(root);
+    // Same set, different order.
+    expect(after).toHaveLength(before.length);
+    expect(new Set(after)).toEqual(new Set(before));
+    expect(after).not.toEqual(before);
+  });
+
+  it('sort: name produces a locale-sorted searchName order (tiebreak by idx)', () => {
+    const { root } = mount();
+    const sort = root.querySelector('.pyr3-palette-picker-sort') as HTMLSelectElement;
+    sort.value = 'name';
+    sort.dispatchEvent(new Event('change', { bubbles: true }));
+    const cells = root.querySelectorAll<HTMLElement>('.pyr3-palette-picker-cell');
+    const names = [...cells].map((c) => c.dataset['name'] ?? '');
+    // Assert monotone non-decreasing by localeCompare.
+    for (let i = 1; i < names.length; i++) {
+      expect(names[i - 1]!.localeCompare(names[i]!)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('switching back to sort: number restores ascending idx order', () => {
+    const { root } = mount();
+    const sort = root.querySelector('.pyr3-palette-picker-sort') as HTMLSelectElement;
+    sort.value = 'hue';
+    sort.dispatchEvent(new Event('change', { bubbles: true }));
+    sort.value = 'number';
+    sort.dispatchEvent(new Event('change', { bubbles: true }));
+    const order = cellIdxOrder(root);
+    expect(order.slice(0, 5)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('sort: hue / sat / light all reorder differently from sort: number', () => {
+    const { root } = mount();
+    const baseline = cellIdxOrder(root);
+    const sort = root.querySelector('.pyr3-palette-picker-sort') as HTMLSelectElement;
+    for (const mode of ['hue', 'sat', 'light'] as const) {
+      sort.value = mode;
+      sort.dispatchEvent(new Event('change', { bubbles: true }));
+      const after = cellIdxOrder(root);
+      expect(after).not.toEqual(baseline);
+    }
+  });
+});

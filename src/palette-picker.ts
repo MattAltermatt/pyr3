@@ -46,6 +46,7 @@ import {
   COLOR_TAGS,
   type ColorTag,
   getFlam3PaletteTags,
+  getFlam3PaletteHsl,
 } from './palette-tags';
 
 // Canonical chip swatch colors (visible nub on each chip). One sample per
@@ -268,6 +269,11 @@ export function mountPalettePicker(
   const controlsRow = document.createElement('div');
   controlsRow.className = 'pyr3-palette-picker-controls';
 
+  // sortMode drives the cell DOM order. 'number' is the catalog default
+  // (entries already arrive in idx order); other modes re-append cells in
+  // the computed order before `applyFilter()` re-paints visibility.
+  type SortMode = 'number' | 'name' | 'hue' | 'sat' | 'light';
+  let sortMode: SortMode = 'number';
   const sort = buildDropdown({
     value: 'number',
     options: [
@@ -277,7 +283,11 @@ export function mountPalettePicker(
       { value: 'sat',    label: 'sort: saturation' },
       { value: 'light',  label: 'sort: lightness' },
     ],
-    onChange: () => { /* Task 9.4+ wires the body re-sort */ },
+    onChange: (next) => {
+      sortMode = next as SortMode;
+      applySortOrder();
+      applyFilter();
+    },
   });
   sort.classList.add('pyr3-palette-picker-sort');
 
@@ -445,6 +455,51 @@ export function mountPalettePicker(
     selected.textContent = ident.prefix
       ? `${ident.prefix} ${ident.name}`
       : ident.name;
+  }
+
+  // Re-append cells in the order dictated by sortMode. Pure DOM reorder —
+  // visibility (display:none) is the filter's job.
+  function applySortOrder(): void {
+    const sorted = [...entries];
+    switch (sortMode) {
+      case 'number':
+        sorted.sort((a, b) => a.idx - b.idx);
+        break;
+      case 'name':
+        // Use idx as tiebreaker so unnamed entries (`flame #N`) stay stable.
+        // searchName is lowercased; localeCompare keeps it locale-aware for
+        // accented catalog names.
+        sorted.sort((a, b) => {
+          const cmp = a.searchName.localeCompare(b.searchName);
+          return cmp !== 0 ? cmp : a.idx - b.idx;
+        });
+        break;
+      case 'hue':
+        sorted.sort((a, b) => {
+          const ha = getFlam3PaletteHsl(a.idx).h;
+          const hb = getFlam3PaletteHsl(b.idx).h;
+          return ha - hb || a.idx - b.idx;
+        });
+        break;
+      case 'sat':
+        sorted.sort((a, b) => {
+          const sa = getFlam3PaletteHsl(a.idx).s;
+          const sb = getFlam3PaletteHsl(b.idx).s;
+          return sa - sb || a.idx - b.idx;
+        });
+        break;
+      case 'light':
+        sorted.sort((a, b) => {
+          const la = getFlam3PaletteHsl(a.idx).l;
+          const lb = getFlam3PaletteHsl(b.idx).l;
+          return la - lb || a.idx - b.idx;
+        });
+        break;
+    }
+    for (const entry of sorted) {
+      const cell = cellByIdx.get(entry.idx);
+      if (cell) body.appendChild(cell); // appendChild moves existing nodes
+    }
   }
 
   // Live filter — search (substring AND) × chip (any-tag OR) × tab (all
