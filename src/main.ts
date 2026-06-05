@@ -16,6 +16,7 @@ import {
   GALLERY_NAV_COALESCE_MS,
   mountGallery,
   pageForSheep,
+  pageForSheepFiltered,
   totalPagesFiltered,
   type GalleryMountHandle,
 } from './gallery-mount';
@@ -232,17 +233,21 @@ async function main(): Promise<void> {
     if (here === 'viewer' && target === 'gallery' && corpusId) {
       const { gen, id } = corpusId;
       // The gallery anchor needs the flame's corpus-list index to land on
-      // the page containing it. pageForSheep does that resolution async.
-      // Bound it with a 150ms timeout so a slow / hung index lookup falls
-      // through to the bare /showcase URL instead of stalling — and guard
-      // with a `settled` flag so a late resolve doesn't pull the user back
-      // to gallery after they've moved on (e.g. clicked another tab).
+      // the page containing it. pageForSheepFiltered does that resolution
+      // under the live filter+sort (currentFilter) — the unfiltered
+      // pageForSheep walks gens in native order, which mismatches the
+      // gallery's default time-desc sort and lands on the wrong page on
+      // cold-start (no sessionStorage lastUrl). Bound the lookup with a
+      // 2000ms timeout so a slow / hung index fetch falls through to the
+      // bare /v1/gallery URL instead of stalling — and guard with a
+      // `settled` flag so a late resolve doesn't pull the user back to
+      // gallery after they've moved on (e.g. clicked another tab).
       let settled = false;
       const onResolve = (page: number): void => {
         if (settled) return;
         settled = true;
-        // pageForSheep returns a 1-indexed page. galleryUrlForFlame expects
-        // the 0-indexed corpus list index. Convert by (page - 1) *
+        // pageForSheepFiltered returns a 1-indexed page. galleryUrlForFlame
+        // expects the 0-indexed corpus list index. Convert by (page - 1) *
         // GALLERY_PAGE_SIZE — close enough to land on the right page (any
         // in-page offset is a cosmetic concern, not a navigational one).
         const approxIndex = (page - 1) * GALLERY_PAGE_SIZE;
@@ -253,13 +258,11 @@ async function main(): Promise<void> {
         settled = true;
         window.location.href = SURFACE_FALLBACK.gallery;
       };
-      // 2000ms upper bound — pageForSheep is normally <500ms (manifest fetch
-      // + array scan) but cold cache can take longer. The previous 150ms was
-      // too aggressive; users routinely fell back to bare gallery instead of
-      // landing on the flame's page. If the lookup genuinely hangs, the user
-      // still has an escape after 2s.
       setTimeout(onFallback, 2000);
-      void pageForSheep(gen, id).then(onResolve).catch(onFallback);
+      void ensureFeatureIndex()
+        .then((index) => pageForSheepFiltered(gen, id, GALLERY_PAGE_SIZE, currentFilter, { index }))
+        .then(onResolve)
+        .catch(onFallback);
       return;
     }
     if (here === 'viewer' && target === 'editor') {
