@@ -463,6 +463,13 @@ export function mountFilterDrawer(
 
   function rebuildMetricRow(axis: MetricAxis): void {
     const wrap = metricRowWraps[axis];
+    // Preserve expansion across rebuild — a brush-select drag dispatches
+    // onChange → setFilter → rebuildAllMetricRows. Without snapshotting
+    // the prior expansion state, the newly-built row defaults to collapsed
+    // and the drawer slams shut mid-selection. (User-flagged 2026-06-05.)
+    const prevBody = wrap.querySelector('.pyr3-metric-body') as HTMLElement | null;
+    const wasExpanded = prevBody !== null && prevBody.style.display === 'block';
+
     let min: number;
     let max: number | null;
     let buckets: Map<number, number>;
@@ -510,6 +517,7 @@ export function mountFilterDrawer(
       formatValue,
       bucketCount: axis === 'xforms' ? XFORM_BUCKETS : undefined,
       bucketLabels: axis === 'xforms' ? xformBucketLabel : undefined,
+      initiallyExpanded: wasExpanded,
     });
     // Preserve metric key on the row's dataset for downstream test
     // assertions / event delegation (buildMetricRow stamps a fallback type
@@ -1144,6 +1152,25 @@ const METRIC_ROW_STYLES = `
   margin-top: 4px;
   color: #8a8a92;
   font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pyr3-metric-reset {
+  background: transparent;
+  border: 1px solid #3a3a44;
+  color: #8a8a92;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 80ms ease-out, border-color 80ms ease-out;
+}
+.pyr3-metric-reset:hover {
+  color: #ffbe3e;
+  border-color: #ffbe3e;
 }
 .pyr3-metric-tooltip {
   display: none;
@@ -1321,7 +1348,28 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 
   const readout = document.createElement('div');
   readout.className = 'pyr3-metric-readout';
-  readout.textContent = `range · ${opts.formatValue ? opts.formatValue(opts.min, opts.max) : formatMetricRange(opts.min, opts.max)}`;
+  const readoutText = document.createElement('span');
+  readoutText.textContent = `range · ${opts.formatValue ? opts.formatValue(opts.min, opts.max) : formatMetricRange(opts.min, opts.max)}`;
+  readout.appendChild(readoutText);
+
+  // Per-row reset — only rendered when this axis is actually constrained
+  // (min>0 or max!==null). Click clears just this axis, leaving every
+  // other filter intact. The global "✕ reset" in the drawer footer clears
+  // everything; this is the targeted alternative.
+  const isAxisDefault = opts.min === 0 && opts.max === null;
+  if (!isAxisDefault) {
+    const resetLink = document.createElement('button');
+    resetLink.type = 'button';
+    resetLink.className = 'pyr3-metric-reset';
+    resetLink.textContent = '✕ reset';
+    resetLink.title = `reset ${opts.label} to all`;
+    resetLink.onclick = (ev) => {
+      ev.stopPropagation();
+      opts.onRange(0, null);
+    };
+    readout.appendChild(resetLink);
+  }
+
   body.appendChild(readout);
 
   row.appendChild(body);

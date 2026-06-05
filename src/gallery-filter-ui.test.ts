@@ -412,6 +412,29 @@ describe('mountFilterDrawer — progressive-disclosure structure (Task 5.6)', ()
     ) as HTMLElement;
     expect((wrap.querySelector('.pyr3-metric-value') as HTMLElement).textContent).toContain('0.4');
   });
+
+  it('a rebuild preserves per-row expansion (brush-select drag does not slam the row closed)', () => {
+    const root = document.createElement('div');
+    const handle = mountFilterDrawer(root, {
+      initialFilter: DEFAULT_FILTER_SPEC,
+      facetCounts: makeCounts(),
+      onChange: vi.fn(),
+    });
+    const wrap = root.querySelector(
+      '.pyr3-filter-metric-row-wrap[data-metric="colorVar"]',
+    ) as HTMLElement;
+    // Open the row by clicking its header (mimics what the user did).
+    (wrap.querySelector('.pyr3-metric-header') as HTMLElement).click();
+    expect((wrap.querySelector('.pyr3-metric-body') as HTMLElement).style.display).toBe('block');
+    // A drag would dispatch onChange → main.ts re-routes through setFilter.
+    // Without expansion-state preservation, the rebuilt row would default
+    // back to collapsed; we want it to stay open.
+    handle.setFilter({ ...DEFAULT_FILTER_SPEC, colorVarMin: 0.3, colorVarMax: 0.7 });
+    const reopened = root.querySelector(
+      '.pyr3-filter-metric-row-wrap[data-metric="colorVar"]',
+    ) as HTMLElement;
+    expect((reopened.querySelector('.pyr3-metric-body') as HTMLElement).style.display).toBe('block');
+  });
 });
 
 describe('mountFilterDrawer — loading state', () => {
@@ -966,6 +989,48 @@ describe('buildMetricRow (Task 5.4) — collapsible metric row with histogram', 
     const counts = row.querySelectorAll('.pyr3-metric-count');
     expect(counts).toHaveLength(10);
     for (const el of counts) expect(el.textContent).toBe('0');
+  });
+
+  it('renders a per-row reset link only when the axis is constrained', () => {
+    const defaultRow = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0,
+      max: null,
+      counts: makeBuckets([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    expect(defaultRow.querySelector('.pyr3-metric-reset')).toBeNull();
+
+    const narrowedRow = buildMetricRow({
+      metric: 'coverage',
+      label: 'coverage',
+      min: 0.3,
+      max: 0.7,
+      counts: makeBuckets([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+      onRange: vi.fn(),
+      initiallyExpanded: true,
+    });
+    const reset = narrowedRow.querySelector('.pyr3-metric-reset') as HTMLButtonElement;
+    expect(reset).toBeTruthy();
+    expect(reset.textContent).toContain('reset');
+  });
+
+  it('clicking the per-row reset fires onRange(0, null) to clear just that axis', () => {
+    const onRange = vi.fn();
+    const row = buildMetricRow({
+      metric: 'colorVar',
+      label: 'color variation',
+      min: 0.3,
+      max: 0.7,
+      counts: makeBuckets([1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
+      onRange,
+      initiallyExpanded: true,
+    });
+    const reset = row.querySelector('.pyr3-metric-reset') as HTMLButtonElement;
+    reset.click();
+    expect(onRange).toHaveBeenCalledWith(0, null);
   });
 });
 
