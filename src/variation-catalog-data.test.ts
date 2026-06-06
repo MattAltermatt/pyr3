@@ -18,11 +18,12 @@ describe('CATALOG_DATA seed entries', () => {
     expect(doc!.blurb).toBeTruthy();
   });
 
-  it('julian declares params with flam3-canonical defaults', () => {
+  it('julian declares params with the catalog-specific defaults', () => {
     const julian = getCatalogDoc(V.julian)!;
     expect(julian.params).toHaveLength(2);
-    // VARIATION_DEFAULTS.julian = [1, 1] in src/serialize.ts.
-    expect(julian.params![0]).toMatchObject({ name: 'power', default: 1 });
+    // Catalog uses power=2 (recognizable 2-fold julian); VARIATION_DEFAULTS
+    // is [1, 1] which would render as degenerate identity.
+    expect(julian.params![0]).toMatchObject({ name: 'power', default: 2 });
     expect(julian.params![1]).toMatchObject({ name: 'dist',  default: 1 });
   });
 

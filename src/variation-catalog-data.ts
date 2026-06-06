@@ -29,6 +29,17 @@ export interface VariationDoc {
    *  positional mapping in src/serialize.ts:VARIATION_PARAMS — values are
    *  fed straight into Variation.param0..param7 at scaffold-build time. */
   params?: ParamDoc[];
+  /** Catalog-specific initial weight slider value. Default 1 (full
+   *  substitution). Used for variations like cell + pre_blur where the
+   *  best showcase is at weight < 1 — e.g. pre_blur's natural pairing is
+   *  ~25% mix-in. Doesn't affect the engine; this is a display knob. */
+  defaultWeight?: number;
+  /** When true, the catalog hides the weight slider entirely for this
+   *  variation. Used for the DC color-only family (V99/V100/V101) whose
+   *  position contribution is zero — the slider would do nothing visible
+   *  anyway, so removing it avoids the "moving the slider isn't doing
+   *  anything" confusion. */
+  hideWeight?: boolean;
   /** Deterministic 2D warp impl for the catalog's grid-warp SVG pane.
    *  Omit for RNG-driven variations (the catalog renders a "warp not
    *  applicable" note instead). MUST NOT use Math.random. */
@@ -91,11 +102,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{14}(x, y) = r^{c/n}\\,(\\cos t,\\; \\sin t),\\quad t = \\tfrac{\\phi + 2\\pi \\, \\mathrm{rand}(n)}{n}',
     blurb: 'Generalized Julia — splits each input into n rotationally symmetric branches, picked at random per iteration. The signature flame pattern of countless production flames. Drag power to change branch count; dist controls radial scaling.',
     params: [
-      // Defaults match VARIATION_DEFAULTS.julian = [1, 1] in serialize.ts
-      // (flam3-canonical). With power=1 the variation is degenerate (returns
-      // r·(cos φ, sin φ) = identity in polar), so the warp diagram shows
-      // power=2 below; the slider lets users explore the interesting range.
-      { name: 'power', default: 1, min: -10, max: 10, step: 1 },
+      // User-requested catalog default: power=2 (produces the recognizable
+      // 2-fold julian symmetry). Diverges from VARIATION_DEFAULTS.julian=[1,1]
+      // (which would be degenerate-identity at power=1).
+      { name: 'power', default: 2, min: -10, max: 10, step: 1 },
       { name: 'dist',  default: 1, min: -2,  max: 2,  step: 0.05 },
     ],
     // Deterministic branch-0 visualization for the warp diagram at power=2
@@ -322,11 +332,13 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{22}(x, y) = \\tfrac{\\phi}{\\pi}\\,(\\sin t + c_a,\\; \\cos t + s_a),\\; t = \\pi\\,\\mathrm{rot}(x+y)',
     blurb: 'Disc warp with extra rotation and twist parameters. The disc bands rotate by rot×π and shear by twist — extends disc with controllable spin.',
     params: [
-      { name: 'rot',   default: 0, min: -5, max: 5, step: 0.05 },
-      { name: 'twist', default: 0, min: -5, max: 5, step: 0.05 },
+      // User-curated defaults — non-zero rot+twist produces the
+      // characteristic disc2 spiral fan instead of degenerate disc.
+      { name: 'rot',   default: 1, min: -5, max: 5, step: 0.05 },
+      { name: 'twist', default: 1, min: -5, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const rot = 0, twist = 0;
+      const rot = 1, twist = 1;
       const TAU = 2 * Math.PI;
       const timespi = rot * Math.PI;
       let cosadd = Math.cos(twist) - 1.0;
@@ -352,10 +364,14 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       // — but all-zero collapses the variation to (-1,-1) for every input,
       // pounding a single histogram bucket with severe atomic contention
       // (reported to freeze laptops on Apple Silicon, #119 2026-06-06).
-      { name: 'a', default: 1.4, min: -3, max: 3, step: 0.05 },
-      { name: 'b', default: 1.6, min: -3, max: 3, step: 0.05 },
-      { name: 'c', default: 1.0, min: -3, max: 3, step: 0.05 },
-      { name: 'd', default: 0.7, min: -3, max: 3, step: 0.05 },
+      // User-curated defaults: a=b=c=d=-1 produces a recognizable
+      // four-fold attractor figure. (Earlier rev used the canonical
+      // a=1.4, b=1.6, c=1.0, d=0.7 to escape the all-zero degeneracy;
+      // these values keep the same non-degenerate property.)
+      { name: 'a', default: -1, min: -3, max: 3, step: 0.05 },
+      { name: 'b', default: -1, min: -3, max: 3, step: 0.05 },
+      { name: 'c', default: -1, min: -3, max: 3, step: 0.05 },
+      { name: 'd', default: -1, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
       const a = 1.4, b = 1.6, c = 1.0, d = 0.7;
@@ -475,7 +491,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{32}(x, y) = r\\,(\\sin\\alpha,\\; \\cos\\alpha),\\quad r = r_0 - 2dx\\,\\lfloor(r_0+dx)/(2dx)\\rfloor + r_0(1-dx)',
     blurb: 'Like rings but with an explicit val parameter setting ring spacing (vs reading c). Output axes swap vs rings.',
     params: [
-      { name: 'val', default: 0, min: -3, max: 3, step: 0.05 },
+      { name: 'val', default: 0.45, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
       const val = 0.5;
@@ -494,11 +510,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{33}(x, y) = r\\,(\\sin a,\\; \\cos a),\\; dx = \\pi(x^2+\\epsilon),\\; a = \\phi \\pm dx/2',
     blurb: 'Fan with explicit x/y parameters (vs reading the xform affine). x sets the wedge width, y the rotational offset. Axes swap vs fan.',
     params: [
-      { name: 'x', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'y', default: 0, min: -3, max: 3, step: 0.05 },
+      { name: 'x', default: 0.5, min: -3, max: 3, step: 0.05 },
+      { name: 'y', default: 0.5, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (X, Y) => {
-      const x = 0.5, y = 0.0;
+      const x = 0.5, y = 0.5;
       const phi = Math.atan2(X, Y);
       const r = Math.hypot(X, Y);
       const dx = Math.PI * (x * x + 1e-10);
@@ -515,11 +531,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{34}(x, y) = \\tfrac{1}{d - y\\sin\\theta}\\,(d\\,x,\\; d\\cos\\theta\\,y),\\; \\theta = \\tfrac{\\pi}{2}\\,\\mathrm{angle}',
     blurb: 'Projects the plane through a virtual camera tilted by angle, at distance dist. Lower edges recede; upper edges loom — classic perspective foreshortening.',
     params: [
-      { name: 'angle', default: 0, min: -1, max: 1, step: 0.02 },
-      { name: 'dist',  default: 0, min: -5, max: 5, step: 0.05 },
+      { name: 'angle', default: 0.24, min: -1, max: 1, step: 0.02 },
+      { name: 'dist',  default: 1,    min: -5, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const angle = 0.3, dist = 1.5;
+      const angle = 0.24, dist = 1;
       const ha = angle * (Math.PI * 0.5);
       const vsin = Math.sin(ha);
       const vfcos = dist * Math.cos(ha);
@@ -592,12 +608,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{38}(x, y) = r\\,(\\sin\\alpha,\\; \\cos\\alpha),\\; r = r_0\\big(\\text{low} + (\\text{high}-\\text{low})\\,\\tfrac{1+\\sin(\\text{waves}\\cdot \\phi)}{2}\\big)',
     blurb: 'Modulates the radius by a sinusoid of the polar angle — produces lobed, blob-like attractors with a controllable number of waves.',
     params: [
-      { name: 'low',   default: 0, min: 0, max: 2, step: 0.05 },
-      { name: 'high',  default: 1, min: 0, max: 2, step: 0.05 },
-      { name: 'waves', default: 1, min: 1, max: 16, step: 1 },
+      { name: 'low',   default: 0.30, min: 0, max: 2, step: 0.05 },
+      { name: 'high',  default: 1.30, min: 0, max: 2, step: 0.05 },
+      { name: 'waves', default: 5,    min: 1, max: 16, step: 1 },
     ],
     warpFn: (x, y) => {
-      const low = 0.3, high = 1, waves = 6;
+      const low = 0.3, high = 1.3, waves = 5;
       const r0 = Math.hypot(x, y);
       const r_eps = r0 + 1e-10;
       const sina = x / r_eps, cosa = y / r_eps;
@@ -637,13 +653,13 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{40}(x, y) = (r + \\text{hole})\\,(\\cos a,\\; \\sin a),\\; a = \\phi\\,(1 - \\tfrac{\\text{angle}\\cdot\\text{count}}{2\\pi}) + c\\cdot\\text{angle}',
     blurb: 'Polar wedges with adjustable angle, count, and a central hole. swirl tilts each wedge along its radial axis — produces fan-blade attractors.',
     params: [
-      { name: 'angle', default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
-      { name: 'hole',  default: 0, min: -1, max: 1, step: 0.02 },
-      { name: 'count', default: 1, min: 1, max: 16, step: 1 },
-      { name: 'swirl', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'angle', default: 0.01, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'hole',  default: 0.24, min: -1, max: 1, step: 0.02 },
+      { name: 'count', default: 1,    min: 1, max: 16, step: 1 },
+      { name: 'swirl', default: 0.20, min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const angle = 0.6, hole = 0, count = 4, swirl = 0;
+      const angle = 0.01, hole = 0.24, count = 1, swirl = 0.20;
       const r0 = Math.hypot(x, y);
       let a = Math.atan2(y, x) + swirl * r0;
       const ONE_OVER_PI = 1.0 / Math.PI;
@@ -663,10 +679,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     params: [
       { name: 'r',     default: 1, min: -3, max: 3, step: 0.05 },
       { name: 'i',     default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'power', default: 1, min: -10, max: 10, step: 1 },
+      { name: 'power', default: 2, min: -10, max: 10, step: 1 },
     ],
     warpFn: (x, y) => {
-      const r_p = 1, i_p = 1, power = 3;
+      const r_p = 1, i_p = 0, power = 2;
       const a = Math.atan2(y, x);
       const sumsq = x * x + y * y;
       const lnr = 0.5 * Math.log(sumsq);
@@ -684,13 +700,13 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{42}(x, y) = (\\,x + x_a e^{-y^2/x_l^2},\\; y + y_a e^{-x^2/y_l^2}\\,)',
     blurb: 'Adds Gaussian-falloff bumps along each axis — produces gentle bulges parameterized independently per axis. Good for adding organic, non-singular curl.',
     params: [
-      { name: 'xamp',    default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'yamp',    default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'xlength', default: 1, min: 0.05, max: 5, step: 0.05 },
-      { name: 'ylength', default: 1, min: 0.05, max: 5, step: 0.05 },
+      { name: 'xamp',    default: 0.20, min: -2, max: 2, step: 0.05 },
+      { name: 'yamp',    default: 0.20, min: -2, max: 2, step: 0.05 },
+      { name: 'xlength', default: 0.30, min: 0.05, max: 5, step: 0.05 },
+      { name: 'ylength', default: 0.30, min: 0.05, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const xamp = 0.6, yamp = 0.6, xlen = 1, ylen = 1;
+      const xamp = 0.2, yamp = 0.2, xlen = 0.3, ylen = 0.3;
       const pc_xlen = Math.max(xlen * xlen, 1e-20);
       const pc_ylen = Math.max(ylen * ylen, 1e-20);
       return [
@@ -746,11 +762,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{48}(x, y) = r\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\theta = \\tfrac{\\pm\\phi + 2\\pi n}{\\text{power}},\\; r = (x^2+y^2)^{\\text{dist}/(2\\,\\text{power})}',
     blurb: 'Like julian, but the parity of the random branch flips the sign of the input angle — produces mirrored fractal lobes the regular julian can\'t reach.',
     params: [
-      { name: 'power', default: 1, min: -10, max: 10, step: 1 },
+      { name: 'power', default: 2, min: -10, max: 10, step: 1 },
       { name: 'dist',  default: 1, min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const power = 3, dist = 1;
+      const power = 2, dist = 1;
       const phi = Math.atan2(y, x);
       const sumsq = x * x + y * y;
       // Branch t_rnd=0 — even, so the (t_rnd & 1) === 0 path applies.
@@ -1052,11 +1068,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{74}(x, y) = (\\,x<0?\\,x\\cdot x_p:x,\\; y<0?\\,y\\cdot y_p:y\\,)',
     blurb: 'Parameterized bent — x and y scale factors apply only to negative inputs. Generalizes V15 bent\'s fixed (2, 0.5) scaling.',
     params: [
-      { name: 'x', default: 1, min: -3, max: 3, step: 0.05 },
-      { name: 'y', default: 1, min: -3, max: 3, step: 0.05 },
+      { name: 'x', default: 1.35, min: -3, max: 3, step: 0.05 },
+      { name: 'y', default: 1.35, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const bx = 2, by = 0.5;
+      const bx = 1.35, by = 1.35;
       const nx = x < 0 ? x * bx : x;
       const ny = y < 0 ? y * by : y;
       return [nx, ny];
@@ -1068,11 +1084,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.cell),
     formula: 'V_{75}(x, y) = (\\Delta_x + X\\cdot \\text{size},\\; -(\\Delta_y + Y\\cdot \\text{size}))',
     blurb: 'Tiles the plane into cells of fixed size and reshuffles each cell to a new global position based on signed quadrant. Produces a checkerboard-shuffle tiling.',
+    // User-curated: weight=0.07 + size=0.40 — the natural showcase weight
+    // for cell is small (full-weight cell at default size produces a
+    // single bright stamp; the mix with linear at small weight shows the
+    // tile-shuffle structure clearly).
+    defaultWeight: 0.07,
     params: [
-      { name: 'size', default: 1, min: 0.1, max: 4, step: 0.05 },
+      { name: 'size', default: 0.40, min: 0.1, max: 4, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const size = 1;
+      const size = 0.40;
       const inv = 1.0 / size;
       let X = Math.floor(x * inv);
       let Y = Math.floor(y * inv);
@@ -1093,10 +1114,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{76}(x, y) = e^{v_c \\ln r - v_d \\phi}\\,(\\cos\\theta,\\; \\sin\\theta),\\; v_c = (1+\\cos\\beta)/2,\\; v_d = \\sin\\beta/2',
     blurb: 'Escher-style logarithmic spiral parameterised by beta. Like cpow but without the random branch — produces a single, deterministic spiral arm.',
     params: [
-      { name: 'beta', default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'beta', default: -0.49, min: -Math.PI, max: Math.PI, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const beta = 0.5;
+      const beta = -0.49;
       const a = Math.atan2(y, x);
       const sumsq = x * x + y * y + 1e-10;
       const lnr = 0.5 * Math.log(sumsq);
@@ -1116,11 +1137,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{77}(x, y) = (\\,x \\bmod 2 x_p \\text{ within } [-x_p, x_p],\\; y \\bmod 2 y_p \\text{ within } [-y_p, y_p]\\,)',
     blurb: 'Wraps each coordinate into a parameterized strip. Outside the strip, mirrors back inward — like a sawtooth on each axis.',
     params: [
-      { name: 'x', default: 0, min: 0.05, max: 3, step: 0.05 },
-      { name: 'y', default: 0, min: 0.05, max: 3, step: 0.05 },
+      { name: 'x', default: 0.65, min: 0.05, max: 3, step: 0.05 },
+      { name: 'y', default: 0.25, min: 0.05, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const mx = 1, my = 1;
+      const mx = 0.65, my = 0.25;
       const xr = 2 * mx, yr = 2 * my;
       let outX: number;
       if (x > mx) outX = -mx + ((x + mx) % xr);
@@ -1140,11 +1161,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{78}(x, y) = (\\pm x,\\; \\pm y),\\; \\text{sign by } \\cos(x x_s\\pi)\\text{ and }\\cos(y y_s\\pi)',
     blurb: 'Flips the sign of each axis based on the sign of cos on the other axis × π × size. Produces hard-edge symmetric tilings.',
     params: [
-      { name: 'xsize', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'ysize', default: 0, min: -3, max: 3, step: 0.05 },
+      { name: 'xsize', default: -0.80, min: -3, max: 3, step: 0.05 },
+      { name: 'ysize', default: -0.80, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const xs = 0.6, ys = 0.6;
+      const xs = -0.8, ys = -0.8;
       const outY = Math.cos(x * xs * Math.PI) >= 0 ? y : -y;
       const outX = Math.cos(y * ys * Math.PI) >= 0 ? x : -x;
       return [outX, outY];
@@ -1157,11 +1178,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{79}(x, y) = (\\,x \\pm x_p,\\; y \\pm y_p\\,)',
     blurb: 'Pushes each axis outward by ±param based on sign. Splits the plane into four quadrants spaced apart — leaves a gap at the origin.',
     params: [
-      { name: 'x', default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'y', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'x', default: 0.15, min: -2, max: 2, step: 0.05 },
+      { name: 'y', default: 0.15, min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const sx = 0.4, sy = 0.4;
+      const sx = 0.15, sy = 0.15;
       const outX = x >= 0 ? x + sx : x - sx;
       const outY = y >= 0 ? y + sy : y - sy;
       return [outX, outY];
@@ -1174,11 +1195,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{80}(x, y) = (\\,\\delta_x(1-s) + \\lfloor x\\rceil,\\; y + \\delta_x^2 \\cdot w\\,),\\; \\delta_x = x - \\lfloor x\\rceil',
     blurb: 'Snaps x to the nearest integer with a compressible offset; warps y by the square of that offset. Produces vertical stripe attractors.',
     params: [
-      { name: 'space', default: 0, min: -1, max: 1, step: 0.02 },
-      { name: 'warp',  default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'space', default: -0.58, min: -1, max: 1, step: 0.02 },
+      { name: 'warp',  default: 0.30,  min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const space = 0.3, warp = 0.5;
+      const space = -0.58, warp = 0.30;
       const roundx = Math.floor(x + 0.5);
       const offsetx = x - roundx;
       return [offsetx * (1.0 - space) + roundx, y + offsetx * offsetx * warp];
@@ -1191,15 +1212,15 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{81}(x, y) = r\\,(\\cos a,\\; \\sin a),\\; a = \\phi + \\tfrac{\\text{inside or outside}}{1-r}',
     blurb: 'Radius-dependent angular twist with separate inside/outside knobs at the unit circle (r=1). Produces tight inner curls relaxing into wider outer spirals.',
     params: [
-      { name: 'inside',  default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'outside', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'inside',  default: -0.10, min: -2, max: 2, step: 0.05 },
+      { name: 'outside', default: -0.10, min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
       // `threshold` is the unit-circle radius the WGSL kernel uses to
       // switch between inside/outside knobs — NOT the variation weight
       // (which the catalog applies separately via the genome). Avoid
       // calling this `w` so it doesn't alias with the WGSL `w` (weight).
-      const inside = 0.5, outside = 0.5, threshold = 1;
+      const inside = -0.10, outside = -0.10, threshold = 1;
       const r = Math.hypot(x, y);
       const baseAng = Math.atan2(y, x);
       const a = r < threshold
@@ -1215,10 +1236,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{82}(x, y) = \\bar{r}\\,(\\cos\\bar{a},\\; \\sin\\bar{a}),\\; \\bar{r} = (2+s)\\sqrt[4]{(y^2+(x+w)^2)/(y^2+(x-w)^2)}',
     blurb: 'Magnetic-flux-style splay around two foci on the x axis. spread controls the bulge factor — produces winged, flowing structure.',
     params: [
-      { name: 'spread', default: 0, min: -3, max: 3, step: 0.05 },
+      { name: 'spread', default: -1.10, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const spread = 0.5, w = 1;
+      const spread = -1.10, w = 1;
       const xpw = x + w, xmw = x - w;
       const tysq = y * y;
       const avgr = (2 + spread) * Math.sqrt(Math.sqrt(tysq + xpw * xpw) / Math.sqrt(tysq + xmw * xmw + 1e-10));
@@ -1234,12 +1255,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{83}(x, y) = (\\,x + x_p\\sin(\\tan(y c)),\\; y + y_p\\sin(\\tan(x c))\\,)',
     blurb: 'Like V18 popcorn but with explicit amplitude and frequency parameters (vs reading the xform affine). c sets tan frequency.',
     params: [
-      { name: 'x', default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'y', default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'c', default: 0, min: -5, max: 5, step: 0.05 },
+      { name: 'x', default: 0.35, min: -2, max: 2, step: 0.05 },
+      { name: 'y', default: 0.35, min: -2, max: 2, step: 0.05 },
+      { name: 'c', default: 2.10, min: -5, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const px = 0.3, py = 0.3, pc = 3;
+      const px = 0.35, py = 0.35, pc = 2.10;
       return [
         x + px * Math.sin(Math.tan(y * pc)),
         y + py * Math.sin(Math.tan(x * pc)),
@@ -1253,14 +1274,14 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{84}(x, y) = \\begin{cases} r(\\cos a + l_x,\\; \\sin a - l_y) & r<w \\\\ (1+\\text{space}/r)(x, y) + (l_x, -l_y) & \\text{else}\\end{cases}',
     blurb: 'Spinning lazysusan platter centered at (x, y). Inside the disc r<w, rotates by spin+twist·(w−r); outside, pushes radially by space. Five params.',
     params: [
-      { name: 'x',     default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'y',     default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'spin',  default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
-      { name: 'twist', default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
-      { name: 'space', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'x',     default: 0,    min: -2, max: 2, step: 0.05 },
+      { name: 'y',     default: 0,    min: -2, max: 2, step: 0.05 },
+      { name: 'spin',  default: 0.16, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'twist', default: 0.21, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'space', default: 0,    min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const lx = 0, ly = 0, spin = 0.5, twist = 0, space = 0, w = 1;
+      const lx = 0, ly = 0, spin = 0.16, twist = 0.21, space = 0, w = 1;
       const X = x - lx, Y = y + ly;
       let r = Math.hypot(X, Y);
       if (r < w) {
@@ -1279,13 +1300,13 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{85}(x, y) = (\\,x + s_x\\sin(y f_x),\\; y + s_y\\sin(x f_y)\\,)',
     blurb: 'V16 waves with explicit scale + frequency parameters per axis. Decouples amplitude from the xform\'s affine, giving direct control over the texture.',
     params: [
-      { name: 'scalex', default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'freqx',  default: 0, min: 0,  max: 16, step: 0.1 },
-      { name: 'scaley', default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'freqy',  default: 0, min: 0,  max: 16, step: 0.1 },
+      { name: 'scalex', default: 0.30, min: -2, max: 2, step: 0.05 },
+      { name: 'freqx',  default: 1.20, min: 0,  max: 16, step: 0.1 },
+      { name: 'scaley', default: 0.30, min: -2, max: 2, step: 0.05 },
+      { name: 'freqy',  default: 1.20, min: 0,  max: 16, step: 0.1 },
     ],
     warpFn: (x, y) => {
-      const sx = 0.4, fx = 2, sy = 0.4, fy = 2;
+      const sx = 0.30, fx = 1.20, sy = 0.30, fy = 1.20;
       return [x + sx * Math.sin(y * fx), y + sy * Math.sin(x * fy)];
     },
   },
@@ -1317,13 +1338,13 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{87}(x, y) = (\\,\\pm(\\sqrt{x^2+s_x^2} \\mp x x_i),\\; \\pm(\\sqrt{y^2+s_y^2} \\mp y y_i)\\,)',
     blurb: 'Pushes each axis outward from origin with a smooth radial offset — separation params control distance, inside params control inward pull on near-origin points.',
     params: [
-      { name: 'x',        default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'xinside',  default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'y',        default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'yinside',  default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'x',        default: 0.10, min: -2, max: 2, step: 0.05 },
+      { name: 'xinside',  default: 0,    min: -2, max: 2, step: 0.05 },
+      { name: 'y',        default: 0.15, min: -2, max: 2, step: 0.05 },
+      { name: 'yinside',  default: 0,    min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const sx = 0.5, sxi = 0.2, sy = 0.5, syi = 0.2;
+      const sx = 0.10, sxi = 0, sy = 0.15, syi = 0;
       const sx2 = sx * sx, sy2 = sy * sy;
       const outX = x > 0
         ? Math.sqrt(x * x + sx2) - x * sxi
@@ -1389,7 +1410,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     blurb: 'Superformula attractor — Gielis\'s generalization of the n-sided polygon. Generates organic, flower- and shell-like silhouettes from six parameters.',
     params: [
       { name: 'rnd',   default: 0, min: 0, max: 1, step: 0.05 },
-      { name: 'm',     default: 0, min: 0, max: 16, step: 0.5 },
+      { name: 'm',     default: 2, min: 0, max: 16, step: 0.5 },
       { name: 'n1',    default: 1, min: 0.1, max: 16, step: 0.1 },
       { name: 'n2',    default: 1, min: 0.1, max: 16, step: 0.1 },
       { name: 'n3',    default: 1, min: 0.1, max: 16, step: 0.1 },
@@ -1403,8 +1424,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{91}(x, y) = \\tfrac{(r_0 - \\text{holes})\\cos(\\text{petals}\\,\\theta)}{r}(x, y)',
     blurb: 'Floral attractor — petals lobes around the origin, holes blanks the center. Pure RNG-modulated radial scaling.',
     params: [
-      { name: 'petals', default: 0, min: 0, max: 12, step: 1 },
-      { name: 'holes',  default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'petals', default: 3,     min: 0, max: 12, step: 1 },
+      { name: 'holes',  default: -0.60, min: -2, max: 2, step: 0.05 },
     ],
   },
   {
@@ -1425,8 +1446,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{93}(x, y) = (h\\sin^2 r\\cdot r_0,\\; w\\cos r\\cdot r_1)',
     blurb: 'Parabolic trace — sin²(r) on x, cos(r) on y, each multiplied by an independent random sample. Produces parabolic-arc clouds.',
     params: [
-      { name: 'height', default: 0, min: -2, max: 2, step: 0.05 },
-      { name: 'width',  default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'height', default: 0.55, min: -2, max: 2, step: 0.05 },
+      { name: 'width',  default: 0.55, min: -2, max: 2, step: 0.05 },
     ],
   },
   {
@@ -1455,10 +1476,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{96}(x, y) = r\\,(\\cos a,\\; \\sin a),\\; r = (x^2+y^2)^{\\text{dist}/(2p)},\\; a = (\\phi + 2\\pi n)/p \\cdot \\text{cf} + c\\cdot\\text{angle}',
     blurb: 'Julian crossed with wedge — random Julia branch then wedge-fold the resulting angle. Produces wedge attractors with Julia-style self-similarity.',
     params: [
-      { name: 'angle', default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
-      { name: 'count', default: 1, min: 1, max: 16, step: 1 },
-      { name: 'power', default: 1, min: -10, max: 10, step: 1 },
-      { name: 'dist',  default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'angle', default: 0.01, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'count', default: 1,    min: 1, max: 16, step: 1 },
+      { name: 'power', default: 1,    min: -10, max: 10, step: 1 },
+      { name: 'dist',  default: 0.25, min: -2, max: 2, step: 0.05 },
     ],
   },
   // Batch J — pre_blur (RNG-only).
@@ -1468,6 +1489,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.pre_blur),
     formula: 'V_{97}(x, y) = (x, y) + r_g\\,(\\cos(2\\pi r_4),\\; \\sin(2\\pi r_4)),\\; r_g = w(r_0+r_1+r_2+r_3-2)',
     blurb: 'Special-case structural variation — mutates the chain INPUT position with a Gaussian blur before the rest of the xform runs. Used to soften incoming jitter.',
+    // pre_blur's natural showcase weight is small — at weight=1 the random
+    // pre-jitter dominates the iteration, masking the rest of the chain.
+    defaultWeight: 0.24,
   },
   // Batch K — mobius.
   {
@@ -1477,18 +1501,18 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{98}(x, y) = \\frac{a\\,p + b}{c\\,p + d},\\; p = x + iy,\\; a, b, c, d \\in \\mathbb{C}',
     blurb: 'Möbius transformation — the most general conformal map of the plane. Eight params for the complex coefficients of a, b, c, d. Produces beautiful, structure-preserving warps.',
     params: [
-      { name: 're_a', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'im_a', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 're_b', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'im_b', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 're_c', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'im_c', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 're_d', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'im_d', default: 0, min: -3, max: 3, step: 0.05 },
+      { name: 're_a', default: 0.15,  min: -3, max: 3, step: 0.05 },
+      { name: 'im_a', default: 0.15,  min: -3, max: 3, step: 0.05 },
+      { name: 're_b', default: 0.15,  min: -3, max: 3, step: 0.05 },
+      { name: 'im_b', default: 0,     min: -3, max: 3, step: 0.05 },
+      { name: 're_c', default: 0,     min: -3, max: 3, step: 0.05 },
+      { name: 'im_c', default: -0.35, min: -3, max: 3, step: 0.05 },
+      { name: 're_d', default: 0,     min: -3, max: 3, step: 0.05 },
+      { name: 'im_d', default: 0,     min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const re_a = 1, im_a = 0.3, re_b = 0.2, im_b = 0;
-      const re_c = 0.1, im_c = 0, re_d = 1, im_d = 0;
+      const re_a = 0.15, im_a = 0.15, re_b = 0.15, im_b = 0;
+      const re_c = 0, im_c = -0.35, re_d = 0, im_d = 0;
       const re_u = re_a * x - im_a * y + re_b;
       const im_u = re_a * y + im_a * x + im_b;
       const re_v = re_c * x - im_c * y + re_d;
@@ -1511,6 +1535,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.dc_linear),
     formula: 'V_{99}(x, y) = (x, y);\\quad \\text{RGB} = \\mathrm{clamp}(\\tfrac{1}{2} + \\tfrac{1}{2}(x, y, -\\tfrac{1}{2}(x+y)))',
     blurb: 'Direct-color identity — passes position through, overrides RGB linearly from (x, y). Red rises with x, green with y, blue from −(x+y)/2; clamped to [0, 1].',
+    hideWeight: true,
     warpFn: (x, y) => [x, y],
   },
   {
@@ -1519,6 +1544,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.dc_perlin),
     formula: 'V_{100}(x, y) = (x, y);\\quad \\text{hue} = \\tfrac{1}{2}(1 + \\text{fBm}(p, \\text{octaves}, \\text{scale})) + \\text{seed}',
     blurb: 'Direct-color from a 2D Perlin fBm noise field. Position passes through unchanged; hue from noise, saturation 1, lightness 0.55. seed rotates the hue cycle.',
+    hideWeight: true,
     params: [
       { name: 'scale',      default: 0, min: 0.1, max: 8, step: 0.1 },
       { name: 'octaves',    default: 0, min: 1,   max: 8, step: 1 },
@@ -1532,6 +1558,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.dc_gridout),
     formula: 'V_{101}(x, y) = (x, y);\\quad \\text{RGB} = \\mathrm{hash}(\\lfloor x\\cdot n\\rfloor,\\; \\lfloor y\\cdot n\\rfloor)',
     blurb: 'Direct-color from a hashed grid of cells. Each integer cell gets a random RGB triple; produces a pixelated, tile-mosaic coloring.',
+    hideWeight: true,
     params: [
       { name: 'cells', default: 0, min: 1, max: 32, step: 1 },
     ],
@@ -1555,10 +1582,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{103}(x, y) = e^{c/2 \\cdot \\ln r^2 - d \\cdot a}\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\text{range-driven RNG branching}',
     blurb: 'Numbered variant of V41 cpow by Peter Sdobnov (Zueuk). Adds a range parameter that controls how many randomized angular branches are sampled — produces denser spiral attractors.',
     params: [
-      { name: 'r',       default: 1, min: -3, max: 3, step: 0.05 },
-      { name: 'a',       default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'divisor', default: 1, min: -10, max: 10, step: 0.5 },
-      { name: 'range',   default: 1, min: 1, max: 8, step: 1 },
+      { name: 'r',       default: 1,    min: -3, max: 3, step: 0.05 },
+      { name: 'a',       default: 0,    min: -3, max: 3, step: 0.05 },
+      { name: 'divisor', default: 0.50, min: -10, max: 10, step: 0.5 },
+      { name: 'range',   default: 1,    min: 1, max: 8, step: 1 },
     ],
   },
   {
@@ -1568,10 +1595,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{104}(x, y) = e^{c/2 \\cdot \\ln r^2 - d \\cdot a}\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\text{log-distributed branch picker}',
     blurb: 'Log-distribution branch picker variant of cpow2, by Peter Sdobnov. spread controls the angular branch distribution; produces wide, fanned-out spirals.',
     params: [
-      { name: 'r',       default: 1, min: -3, max: 3, step: 0.05 },
-      { name: 'd',       default: 1, min: -3, max: 3, step: 0.05 },
-      { name: 'divisor', default: 1, min: -10, max: 10, step: 0.5 },
-      { name: 'spread',  default: 1, min: 0, max: 4, step: 0.05 },
+      { name: 'r',       default: 1.15, min: -3, max: 3, step: 0.05 },
+      { name: 'd',       default: 1,    min: -3, max: 3, step: 0.05 },
+      { name: 'divisor', default: 1,    min: -10, max: 10, step: 0.5 },
+      { name: 'spread',  default: 1,    min: 0, max: 4, step: 0.05 },
     ],
   },
   {
@@ -1623,9 +1650,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{106}(x, y) = t\\,(\\cos\\theta,\\; \\sin\\theta),\\; t = -\\text{holes} + 1/\\cos(n\\theta)\\;[\\cdot r_0\\text{thickness}]',
     blurb: 'Polar epicycloid via 1/cos(n·θ), by cyberxaos (Apophysis 7X.15C). n sets petal count; thickness adds RNG-modulated band; holes carves out the center.',
     params: [
-      { name: 'n',         default: 6, min: 1, max: 16, step: 1 },
-      { name: 'thickness', default: 0, min: 0, max: 2, step: 0.05 },
-      { name: 'holes',     default: 1, min: -2, max: 2, step: 0.05 },
+      { name: 'n',         default: 6,    min: 1, max: 16, step: 1 },
+      { name: 'thickness', default: 0.20, min: 0, max: 2, step: 0.05 },
+      { name: 'holes',     default: 1,    min: -2, max: 2, step: 0.05 },
     ],
   },
   // #114 batch 2a — Worley/Voronoi cellular family.

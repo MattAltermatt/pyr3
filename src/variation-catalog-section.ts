@@ -70,7 +70,7 @@ export function mountSection(
   opts: SectionOptions,
 ): SectionHandle {
   const state: SectionState = {
-    weight: 1,
+    weight: doc.defaultWeight ?? 1,
     params: (doc.params ?? []).map((p) => p.default),
   };
 
@@ -133,13 +133,21 @@ export function mountSection(
   flamePane.append(liveDot);
   rightCol.append(flamePane);
 
-  // Controls (right column, under flame). V0 linear has no useful
-  // controls — render the empty note instead of sliders.
+  // Controls (right column, under flame).
+  //   V0 linear   → empty note (no warp to tune, no params)
+  //   DC color-only (V99) → empty note (weight hidden, no params)
+  //   everything else → mountControls (weight + params, less weight when hidden)
   const controlsHost = el('div', 'pyr3-cat-controls-host');
   let teardownControls: (() => void) | null = null;
+  const hasParams = (doc.params?.length ?? 0) > 0;
+  const showsWeight = !doc.hideWeight;
   if (doc.idx === V.linear) {
     controlsHost.append(
       el('div', 'pyr3-cat-controls-empty', 'no controls — linear is the reference (no warp to tune)'),
+    );
+  } else if (!showsWeight && !hasParams) {
+    controlsHost.append(
+      el('div', 'pyr3-cat-controls-empty', 'no controls — this variation overrides color only; position passes through'),
     );
   } else {
     teardownControls = mountControls(controlsHost, doc, state, () => {
@@ -190,7 +198,15 @@ function mountControls(
   onChange: () => void,
 ): () => void {
   const controls = el('div', 'pyr3-cat-controls');
-  controls.append(buildControlRow('weight', state.weight, 0, 1, 0.01, 1, true, (v) => { state.weight = v; }));
+  // Weight slider's "default" (reset target) uses the doc's defaultWeight
+  // when set, falling back to 1 (full substitution) for the common case.
+  // doc.hideWeight (e.g. DC color-only family V99-V101) suppresses the
+  // slider entirely — the variation's position contribution is zero so
+  // a weight slider would do nothing visible.
+  if (!doc.hideWeight) {
+    const weightDefault = doc.defaultWeight ?? 1;
+    controls.append(buildControlRow('weight', state.weight, 0, 1, 0.01, weightDefault, true, (v) => { state.weight = v; }));
+  }
   (doc.params ?? []).forEach((p, i) => {
     controls.append(buildControlRow(p.name, state.params[i] ?? p.default, p.min, p.max, p.step, p.default, false, (v) => {
       state.params[i] = v;
