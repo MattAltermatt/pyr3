@@ -1792,11 +1792,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.falloff),
     formula: 'V_{112}(x, y) = (x, y) + d\\,(\\mu_x r_0,\\; \\mu_y r_1),\\; d = \\max(0,(|p - p_0| - m)\\,r_{max})',
     blurb: 'Distance-weighted random scatter by Xyrus02 (JWildfire Falloff2 type=0 path). Outside the mindist radius around (x0,y0), each iterate gets a random displacement that grows with distance — produces a soft-edged "halo" around the center point. Z-axis params (mul_z, z0) and the color/invert flags dropped to fit pyr3\'s 2D 8-slot seam; the type=1 (radial) and type=2 (gaussian) branches live on the sibling V113 falloff2.',
+    // Catalog defaults diverge from JWildfire baseline (scatter=1, muls=1)
+    // to produce a visible halo against the sierpinski scaffold — kernel
+    // bakes a 0.04*scatter scale, so JWF defaults render imperceptibly
+    // close to V0 linear. scatter=5 + asymmetric muls + max upped to 20
+    // reveals falloff's signature scatter halo around the attractor.
     params: [
-      { name: 'scatter', default: 1,   min: 0,  max: 4,  step: 0.05 },
-      { name: 'mindist', default: 0.5, min: 0,  max: 4,  step: 0.05 },
-      { name: 'mul_x',   default: 1,   min: -4, max: 4,  step: 0.05 },
-      { name: 'mul_y',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'scatter', default: 5,   min: 0,  max: 20, step: 0.5  },
+      { name: 'mindist', default: 0.2, min: 0,  max: 4,  step: 0.05 },
+      { name: 'mul_x',   default: 1.5, min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 0.8, min: -4, max: 4,  step: 0.05 },
       { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
       { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
     ],
@@ -1807,14 +1812,18 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.falloff2),
     formula: 'V_{113}: \\text{type } 0 = (x,y)+d(\\mu_x r_0,\\mu_y r_1),\\; 1 = \\text{radial rotate},\\; 2 = \\text{gaussian 2}\\pi\\pi\\text{ shell}',
     blurb: 'Three-branch falloff by Xyrus02 (JWildfire Falloff2Func). type=0 reproduces V112 falloff; type=1 rotates each iterate around (x0,y0) by a d-weighted angle; type=2 scatters inside a gaussian-shaped angular shell. Z-axis params + invert + mul_c dropped per pyr3\'s 2D 8-slot seam.',
+    // Catalog defaults: type=2 (gaussian shell) is more visually
+    // distinctive against the sierpinski scaffold than type=0 (= V112);
+    // scatter=5 with max=20 mirrors V112's `rmax = 0.04 * scatter`
+    // kernel scaling so the shell is visible.
     params: [
-      { name: 'scatter', default: 1,   min: 0,  max: 4, step: 0.05 },
-      { name: 'type',    default: 0,   min: 0,  max: 2, step: 1 },
-      { name: 'mul_x',   default: 1,   min: -4, max: 4, step: 0.05 },
-      { name: 'mul_y',   default: 1,   min: -4, max: 4, step: 0.05 },
-      { name: 'x0',      default: 0,   min: -4, max: 4, step: 0.05 },
-      { name: 'y0',      default: 0,   min: -4, max: 4, step: 0.05 },
-      { name: 'mindist', default: 0.5, min: 0,  max: 4, step: 0.05 },
+      { name: 'scatter', default: 5,   min: 0,  max: 20, step: 0.5  },
+      { name: 'type',    default: 2,   min: 0,  max: 2,  step: 1    },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mindist', default: 0.2, min: 0,  max: 4,  step: 0.05 },
     ],
   },
   {
@@ -1823,14 +1832,17 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.falloff3),
     formula: 'V_{114}(x, y) = (x, y) + d\\,\\mu \\cdot r_0\\cos(d r_1\\,2\\pi)\\,(\\cos(d r_2 \\pi),\\; \\sin(d r_2 \\pi))',
     blurb: 'Gaussian-shell falloff by JWildfire AbstractFalloff3Func, blur_type=0 (gaussian) + blur_shape=0 (circle) default-mode port. Scatters each iterate inside a 2π·π angular shell scaled by the circle-distance — produces a soft-shell glow around (x0,y0). invert=1 flips inside/outside. The blur_type 1/2 (radial/log) and blur_shape 1 (square) selectors, along with Z-axis params + alpha + mul_c, dropped to fit pyr3\'s 2D 8-slot seam.',
+    // Catalog defaults: same kernel `rmax = 0.04 * scatter` scaling as
+    // V112/V113 — JWF baseline (scatter=1) is invisible against the
+    // sierpinski scaffold. scatter=5 + max=20 reveals the gaussian shell.
     params: [
-      { name: 'scatter', default: 1,   min: 0,  max: 4, step: 0.05 },
-      { name: 'mul_x',   default: 1,   min: -4, max: 4, step: 0.05 },
-      { name: 'mul_y',   default: 1,   min: -4, max: 4, step: 0.05 },
-      { name: 'x0',      default: 0,   min: -4, max: 4, step: 0.05 },
-      { name: 'y0',      default: 0,   min: -4, max: 4, step: 0.05 },
-      { name: 'mindist', default: 0.5, min: 0,  max: 4, step: 0.05 },
-      { name: 'invert',  default: 0,   min: 0,  max: 1, step: 1 },
+      { name: 'scatter', default: 5,   min: 0,  max: 20, step: 0.5  },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mindist', default: 0.2, min: 0,  max: 4,  step: 0.05 },
+      { name: 'invert',  default: 0,   min: 0,  max: 1,  step: 1    },
     ],
   },
   // #114 batch 2b-b — S-tier kaleidoscope/circle family.
@@ -1840,13 +1852,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.collideoscope),
     formula: 'V_{115}(x, y) = r\\,(\\cos a^{*},\\; \\sin a^{*}),\\; a^{*} = \\text{fold}_{2n}(\\theta, a)',
     blurb: 'Kaleidoscope-collide by Michael Faber (JWildfire). Folds the polar angle into 2·num pie slices with alternating-sign offsets — two adjacent slices "collide" in mirror-image, producing the eponymous splayed-petal pattern. JWF\'s class default a=0.20, num=1 (with randomize() spreading num∈[1,10]).',
+    // Catalog defaults: num=5 produces the canonical kaleidoscope rosette
+    // (JWF's class-default num=1 is mostly symmetric-pair; randomize()
+    // spreads num∈[1,10], so num=5 is a typical "wild" pick).
     params: [
-      { name: 'a',   default: 0.20, min: 0, max: 1,  step: 0.01 },
-      { name: 'num', default: 1,    min: 1, max: 10, step: 1 },
+      { name: 'a',   default: 0.45, min: 0, max: 1,  step: 0.01 },
+      { name: 'num', default: 5,    min: 1, max: 10, step: 1 },
     ],
     warpFn: (x, y) => {
-      const num = 1;
-      const a_param = 0.20;
+      const num = 5;
+      const a_param = 0.45;
       const kn_pi = num / Math.PI;
       const pi_kn = Math.PI / num;
       const ka = Math.PI * a_param;
@@ -1909,12 +1924,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.circlize2),
     formula: 'V_{117}(x, y) = w(\\text{side}+h)\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
     blurb: 'Companion variation to V116 circlize by Michael Faber (Angle Pack). Same square → circle perimeter parameterization, but the radius is w·(side+h) instead of (4w/π)·side+h — the `hole` offset IS scaled by the weight here, correcting the sibling\'s quirk. Produces a more uniform ring at non-zero hole.',
+    // Catalog default hole=0.25 produces a clear annulus that
+    // visually contrasts with V116 circlize (hole=0.40) — both ring,
+    // both readable; the difference highlights the corrected weight
+    // scaling that distinguishes circlize2 from its sibling.
     params: [
-      { name: 'hole', default: 0.0, min: -1, max: 1, step: 0.01 },
+      { name: 'hole', default: 0.25, min: -1, max: 1, step: 0.01 },
     ],
     warpFn: (x, y) => {
       const w = 1;
-      const hole = 0.0;
+      const hole = 0.25;
       const absx = Math.abs(x);
       const absy = Math.abs(y);
       let perimeter: number;
@@ -1989,12 +2008,17 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.bcircle),
     formula: 'V_{120}(x, y) = \\begin{cases} w\\,(sx, sy) & r \\leq 1 \\\\ w\\omega\\,(\\cos\\theta, \\sin\\theta) & r > 1 \\end{cases}',
     blurb: 'Bordered-circle projection by Xyrus02 (Apophysis plugin pack). Inside the scale-adjusted unit disk, the iterate passes through verbatim; outside, it gets snapped onto the unit circle (or — when `borderwidth ≠ 0` — onto a random-radius shell just outside it). At borderwidth=0 the deterministic disk path produces a clean filled circle; non-zero borderwidth adds a halo. RNG path activates only for borderwidth ≠ 0.',
+    // Catalog defaults: scale=2 shrinks the inside-disk region so the
+    // sierpinski corners spill onto the bcircle perimeter; borderwidth=0.4
+    // activates the RNG halo so the outside snaps to a randomized shell
+    // — produces a visible bordered-disk silhouette instead of plain
+    // sierpinski.
     params: [
-      { name: 'scale',       default: 1.0, min: 0.1, max: 4,    step: 0.05 },
-      { name: 'borderwidth', default: 0.0, min: 0,   max: 1,    step: 0.05 },
+      { name: 'scale',       default: 2.0, min: 0.1, max: 4,    step: 0.05 },
+      { name: 'borderwidth', default: 0.4, min: 0,   max: 1,    step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const scale = 1.0;
+      const scale = 2.0;
       // borderwidth=0 path is deterministic; the catalog scaffold renders
       // exactly that shape (inside-disk passthrough + outside-disk
       // identity-zero). Non-zero-bw users see the RNG halo only at runtime.
@@ -2012,15 +2036,19 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.curl2),
     formula: 'V_{121}(x, y) = \\tfrac{w}{|p(z)|^2}\\,(x\\,\\Re p + y\\,\\Im p,\\; y\\,\\Re p - x\\,\\Im p),\\; p(z) = c_3 z^3 + c_2 z^2 + c_1 z + 1',
     blurb: 'Cubic-polynomial complex inverse by Xyrus02 / Georg Kiehne. The c1-only path collapses to flam3\'s classic `curl`; non-zero c2 and c3 add quadratic and cubic shaping, producing the eponymous "tighter scroll" / "double bend" silhouettes. Defaults c1=1, c2=c3=0 reproduce the standard curl shape; users discover the richer family by dialing c2/c3 up.',
+    // Catalog defaults: c1=1, c2=0.5, c3=0.3 lights up the full cubic
+    // polynomial — non-zero c2/c3 reveal the eponymous "tighter scroll"
+    // and "double bend" curl2 silhouettes that distinguish this from
+    // the c1-only classic curl shape.
     params: [
       { name: 'c1', default: 1.0, min: -2, max: 2, step: 0.05 },
-      { name: 'c2', default: 0.0, min: -2, max: 2, step: 0.05 },
-      { name: 'c3', default: 0.0, min: -1, max: 1, step: 0.02 },
+      { name: 'c2', default: 0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'c3', default: 0.3, min: -1, max: 1, step: 0.02 },
     ],
     warpFn: (x, y) => {
       const c1 = 1.0;
-      const c2 = 0.0;
-      const c3 = 0.0;
+      const c2 = 0.5;
+      const c3 = 0.3;
       const cc2 = 2 * c2;
       const cc3 = 3 * c3;
       const x2 = x * x;
@@ -2041,13 +2069,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.murl),
     formula: 'V_{122}(x, y) = \\tfrac{w(c+1)}{|1 + r e^{ip\\theta}|^2 + \\epsilon}\\,((x\\,\\Re,\\; y\\,\\Im) + (y\\,\\Im,\\; -x\\,\\Re)),\\; r = c\\,(x^2+y^2)^{p/2}',
     blurb: 'Polar-power murl by Peter Sdobnov (Zueuk), ported into JWildfire by chronologicaldot. The polar angle is multiplied by an integer power and a complex-inverse blend through (re, im) folds back to Cartesian — produces the "spiraling braid" look characteristic of murl-family flames. Defaults c=0.1, power=1 give a gentle deterministic spiral; higher power values multiply the angular folding.',
+    // Catalog defaults: power=3, c=0.3 produces the characteristic
+    // murl-family braid silhouette (power=1, c=0.1 from JWF baseline is
+    // close to identity — barely distinguishable from V0 linear).
     params: [
-      { name: 'c',     default: 0.1, min: -1, max: 2, step: 0.05 },
-      { name: 'power', default: 1,   min: 1,  max: 8, step: 1 },
+      { name: 'c',     default: 0.3, min: -1, max: 2, step: 0.05 },
+      { name: 'power', default: 3,   min: 1,  max: 8, step: 1 },
     ],
     warpFn: (x, y) => {
-      const c_in = 0.1;
-      const power = 1;
+      const c_in = 0.3;
+      const power: number = 3;
       const c = power !== 1 ? c_in / (power - 1) : c_in;
       const p2 = power / 2.0;
       const vp = 1.0 * (c + 1);

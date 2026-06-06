@@ -262,6 +262,35 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     setActive(next);
   }
 
+  // ────────────────────────────────────────────────────────────
+  // URL hash → initial section + hashchange navigation
+  // ────────────────────────────────────────────────────────────
+  // The browser's native anchor-scroll fires before this mount finishes
+  // imperatively building the section DOM, so `#v109-juliaq` lands on the
+  // top of the page instead of the section. Read the hash explicitly after
+  // mount and after any hashchange.
+  function jumpToHash(hash: string): void {
+    const m = hash.match(/^#?v(\d+)(?:-|$)/);
+    if (!m) return;
+    const idx = Number(m[1]);
+    if (!Number.isFinite(idx)) return;
+    const target = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
+    if (!target) return;
+    // No smooth scroll on initial deep-link — jump straight there so the
+    // user lands where they expected without a janky animation.
+    catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'auto' });
+    setActive(idx);
+  }
+  function onHashChange(): void {
+    jumpToHash(window.location.hash);
+  }
+  window.addEventListener('hashchange', onHashChange);
+  // Initial deep-link: fire after a microtask so the IntersectionObserver
+  // has registered all sections (so the scroll lands cleanly).
+  if (window.location.hash) {
+    queueMicrotask(() => jumpToHash(window.location.hash));
+  }
+
   function onKey(e: KeyboardEvent): void {
     const focused = document.activeElement;
     const isSearchFocused = focused instanceof HTMLInputElement && focused.classList.contains('pyr3-cat-search');
@@ -291,6 +320,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   return {
     destroy(): void {
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('hashchange', onHashChange);
       pauseActive();
       io.disconnect();
       sidebar.destroy();
