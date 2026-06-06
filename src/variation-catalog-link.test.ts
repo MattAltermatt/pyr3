@@ -30,9 +30,10 @@ describe('parseCatalogEntry', () => {
   });
 
   it('rejects out-of-range variation indices (review finding #1)', () => {
+    const maxIdx = Math.max(...Object.values(V));
     expect(parseCatalogEntry(q('from=catalog&v=9999'))).toBeNull();
-    expect(parseCatalogEntry(q('from=catalog&v=107'))).toBeNull();   // one past the last
-    expect(parseCatalogEntry(q('from=catalog&v=106'))).not.toBeNull(); // V.epispiral OK
+    expect(parseCatalogEntry(q(`from=catalog&v=${maxIdx + 1}`))).toBeNull();
+    expect(parseCatalogEntry(q(`from=catalog&v=${maxIdx}`))).not.toBeNull();
   });
 
   it('defaults weight to 1 when missing', () => {

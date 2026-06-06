@@ -27,7 +27,7 @@ describe('mountVariationCatalog', () => {
 
   it('emits one wrapper per variation in numeric order', () => {
     const wrappers = host.querySelectorAll('.pyr3-cat-catalog > [data-idx]');
-    expect(wrappers.length).toBe(107);
+    expect(wrappers.length).toBe(Object.keys(V).length);
     const indices = Array.from(wrappers).map((w) => Number((w as HTMLElement).dataset.idx));
     expect(indices).toEqual([...indices].sort((a, b) => a - b));
   });

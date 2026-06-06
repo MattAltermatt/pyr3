@@ -156,6 +156,12 @@ export const V = {
   cpow3: 104,
   loonie2: 105,
   epispiral: 106,
+  // #114 batch 2a — Worley/Voronoi cellular family. One WGSL helper
+  // (worley2d_F1) unlocks the cellular long-tail; bwraps + crackle are
+  // the first two consumers. Reference: Apophysis 7X plugin pack /
+  // JWildfire BWraps2Func + CrackleFunc (LGPL-2.1+, see NOTICE.md).
+  bwraps: 107,
+  crackle: 108,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

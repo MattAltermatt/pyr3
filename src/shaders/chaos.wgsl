@@ -1701,6 +1701,119 @@ fn var_epispiral(p: vec2f, w: f32, n: f32, thickness: f32, holes: f32, wi: u32) 
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 2a — Worley/Voronoi cellular primitive + dependent kernels.
+//
+// `worley2d_F1` returns the nearest-feature-point distance and position
+// using the canonical 3x3-neighborhood scan. Hash is an integer XOR mix
+// (Wang/Murmur-style) — deliberately NOT sin-based, since Dawn's f32 trig
+// has a range cliff that silently zeros large arguments (see safe_sin
+// note above + reference-dawn-f32-trig-range-cliff). One helper unlocks
+// the cellular family — bwraps and crackle here, ~25 more in the
+// long-tail. License: pyr3-original implementation (the hash + scan are
+// textbook, no port).
+
+fn _worley_hash2(cx: i32, cy: i32) -> vec2f {
+  var s: u32 = u32(cx) * 2654435769u;
+  s = s ^ (u32(cy) * 2246822519u);
+  s = s ^ (s >> 16u);
+  s = s * 0x85ebca6bu;
+  s = s ^ (s >> 13u);
+  s = s * 0xc2b2ae35u;
+  s = s ^ (s >> 16u);
+  let h1 = f32(s & 0xffffu) * (1.0 / 65535.0);
+  let h2 = f32((s >> 16u) & 0xffffu) * (1.0 / 65535.0);
+  return vec2f(h1, h2);
+}
+
+// Returns vec4f(F1, _padding, feat_x, feat_y) for the nearest cell
+// feature point. F1 = euclidean distance from p to that feature.
+fn worley2d_F1(p: vec2f) -> vec4f {
+  let ix = i32(floor(p.x));
+  let iy = i32(floor(p.y));
+  var bestD2: f32 = 1.0e9;
+  var bestFx: f32 = 0.0;
+  var bestFy: f32 = 0.0;
+  for (var dx: i32 = -1; dx <= 1; dx = dx + 1) {
+    for (var dy: i32 = -1; dy <= 1; dy = dy + 1) {
+      let cx = ix + dx;
+      let cy = iy + dy;
+      let h = _worley_hash2(cx, cy);
+      let featX = f32(cx) + h.x;
+      let featY = f32(cy) + h.y;
+      let ddx = featX - p.x;
+      let ddy = featY - p.y;
+      let d2 = ddx * ddx + ddy * ddy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        bestFx = featX;
+        bestFy = featY;
+      }
+    }
+  }
+  return vec4f(sqrt(bestD2), 0.0, bestFx, bestFy);
+}
+
+// var_bwraps — bubble-wrap lattice (Apophysis 7X / community plugin pack;
+// porting tradition: JWildfire BWraps2Func.java). 5 params:
+// cellsize / space / gain / inner_twist / outer_twist. Inside each
+// hash-spaced bubble the point gets pulled toward the bubble center with
+// a hyperbolic gain + a radius-dependent twist; outside, passes through.
+fn var_bwraps(
+  p: vec2f, w: f32,
+  cellsize: f32, space: f32, gain: f32,
+  inner_twist: f32, outer_twist: f32,
+) -> vec2f {
+  if (abs(cellsize) < 1.0e-30) { return vec2f(w * p.x, w * p.y); }
+  let radius = 0.5 * (cellsize / (1.0 + space * space));
+  let g2 = gain * gain / max(radius * radius, 1.0e-30) + 1.0e-30;
+  let r2 = radius * radius;
+  // Cell coordinates (each cell of size `cellsize`).
+  let xx = p.x / cellsize;
+  let yy = p.y / cellsize;
+  let cx = (floor(xx) + 0.5) * cellsize;
+  let cy = (floor(yy) + 0.5) * cellsize;
+  let lx = p.x - cx;
+  let ly = p.y - cy;
+  // Outside the inner bubble → unchanged.
+  if ((lx * lx + ly * ly) > r2) { return vec2f(w * p.x, w * p.y); }
+  // Inside → hyperbolic pull toward (cx,cy) + radius-dependent twist.
+  let denom = lx * lx + ly * ly + 1.0;
+  let s = g2 / denom;
+  let sx = lx * s;
+  let sy = ly * s;
+  let r_frac = (sx * sx + sy * sy) / max(r2, 1.0e-30);
+  let theta = inner_twist * (1.0 - r_frac) + outer_twist * r_frac;
+  let st = safe_sin(theta);
+  let ct = safe_cos(theta);
+  return vec2f(
+    w * (cx + (sx * ct + sy * st)),
+    w * (cy + (-sx * st + sy * ct)),
+  );
+}
+
+// var_crackle — Voronoi-cell scatter (Neil Slater / "slobo777").
+// 4 params (cellsize / power / distort / scale): jumps each iterate to
+// the nearest Worley feature point, with a distance-power-weighted
+// distort blend back toward the original input. Produces the
+// crystalline / cracked-tile look that JWildfire flames are known for.
+fn var_crackle(
+  p: vec2f, w: f32,
+  cellsize: f32, power: f32, distort: f32, scale: f32,
+) -> vec2f {
+  let cs = max(abs(cellsize), 1.0e-6);
+  let scaled = vec2f(p.x / cs, p.y / cs);
+  let wo = worley2d_F1(scaled);
+  let feat_x = wo.z * cs;
+  let feat_y = wo.w * cs;
+  // Distort factor: pow(F1, power) gives near-zero at cell boundaries
+  // (the "crack") and grows toward 1 near the feature center.
+  let d_scale = pow(wo.x + 1.0e-6, power) * distort;
+  let out_x = feat_x + (p.x - feat_x) * d_scale;
+  let out_y = feat_y + (p.y - feat_y) * d_scale;
+  return vec2f(w * scale * out_x, w * scale * out_y);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -1842,6 +1955,9 @@ fn apply_variation(
     case 104u: { return var_cpow3(p, w, p0, p1, p2, p3, wi); }
     case 105u: { return var_loonie2(p, w, p0, p1, p2); }
     case 106u: { return var_epispiral(p, w, p0, p1, p2, wi); }
+    // #114 batch 2a — Worley/Voronoi cellular family.
+    case 107u: { return var_bwraps(p, w, p0, p1, p2, p3, p4); }
+    case 108u: { return var_crackle(p, w, p0, p1, p2, p3); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

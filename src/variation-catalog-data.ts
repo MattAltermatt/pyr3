@@ -1618,6 +1618,86 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'holes',     default: 1, min: -2, max: 2, step: 0.05 },
     ],
   },
+  // #114 batch 2a — Worley/Voronoi cellular family.
+  {
+    idx: V.bwraps,
+    name: 'bwraps',
+    source: sourceForIdx(V.bwraps),
+    formula: 'V_{107}: \\text{inside a hash-spaced bubble of radius } r,\\; p \\to c + R(\\theta(|p-c|))\\cdot \\tfrac{g^2}{|p-c|^2+1}(p-c);\\; \\text{else identity}',
+    blurb: 'Bubble-wrap lattice (Apophysis 7X / JWildfire). Cellular grid where each cell carries a circular "bubble" — inside, the point gets hyperbolically pulled toward the bubble center with an inner/outer twist; outside, it passes through. Produces the soap-bubble / lens-array texture.',
+    params: [
+      { name: 'cellsize',     default: 1, min: 0.1, max: 4, step: 0.05 },
+      { name: 'space',        default: 0, min: 0,   max: 2, step: 0.05 },
+      { name: 'gain',         default: 1, min: 0,   max: 4, step: 0.05 },
+      { name: 'inner_twist',  default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'outer_twist',  default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const cellsize = 1, space = 0, gain = 1, inner_twist = 0, outer_twist = 0;
+      const radius = 0.5 * (cellsize / (1 + space * space));
+      const g2 = (gain * gain) / Math.max(radius * radius, 1e-30) + 1e-30;
+      const r2 = radius * radius;
+      const xx = x / cellsize;
+      const yy = y / cellsize;
+      const cx = (Math.floor(xx) + 0.5) * cellsize;
+      const cy = (Math.floor(yy) + 0.5) * cellsize;
+      const lx = x - cx;
+      const ly = y - cy;
+      if (lx * lx + ly * ly > r2) return [x, y];
+      const denom = lx * lx + ly * ly + 1;
+      const s = g2 / denom;
+      const sx = lx * s, sy = ly * s;
+      const r_frac = (sx * sx + sy * sy) / Math.max(r2, 1e-30);
+      const theta = inner_twist * (1 - r_frac) + outer_twist * r_frac;
+      const st = Math.sin(theta), ct = Math.cos(theta);
+      return [cx + (sx * ct + sy * st), cy + (-sx * st + sy * ct)];
+    },
+  },
+  {
+    idx: V.crackle,
+    name: 'crackle',
+    source: sourceForIdx(V.crackle),
+    formula: 'V_{108}: p \\to s\\cdot(\\mathbf{f} + (p - \\mathbf{f})\\cdot d\\cdot F_1^{\\,\\text{power}});\\; \\mathbf{f} = \\text{nearest Worley feature of } p/c',
+    blurb: 'Voronoi-cell scatter (Neil Slater / "slobo777"). Snaps each iterate to the nearest Worley feature point with a distance-power-weighted blend back toward the input — produces the crystalline / cracked-tile texture that JWildfire flames are known for.',
+    params: [
+      { name: 'cellsize', default: 1,   min: 0.1, max: 4, step: 0.05 },
+      { name: 'power',    default: 0.2, min: -2,  max: 2, step: 0.05 },
+      { name: 'distort',  default: 1,   min: 0,   max: 4, step: 0.05 },
+      { name: 'scale',    default: 1,   min: 0,   max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const cellsize = 1, power = 0.2, distort = 1, scale = 1;
+      const cs = Math.max(Math.abs(cellsize), 1e-6);
+      // Mirror the WGSL XOR hash so the JS warp diagram matches.
+      const hash = (cx: number, cy: number): [number, number] => {
+        let s = ((cx >>> 0) * 2654435769) >>> 0;
+        s = (s ^ (((cy >>> 0) * 2246822519) >>> 0)) >>> 0;
+        s = (s ^ (s >>> 16)) >>> 0;
+        s = ((s * 0x85ebca6b) >>> 0);
+        s = (s ^ (s >>> 13)) >>> 0;
+        s = ((s * 0xc2b2ae35) >>> 0);
+        s = (s ^ (s >>> 16)) >>> 0;
+        return [(s & 0xffff) / 65535, ((s >>> 16) & 0xffff) / 65535];
+      };
+      const sx = x / cs, sy = y / cs;
+      const ix = Math.floor(sx), iy = Math.floor(sy);
+      let bestD2 = 1e9, bestFx = 0, bestFy = 0;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const cx = ix + dx, cy = iy + dy;
+          const [hx, hy] = hash(cx, cy);
+          const fx = cx + hx, fy = cy + hy;
+          const ddx = fx - sx, ddy = fy - sy;
+          const d2 = ddx * ddx + ddy * ddy;
+          if (d2 < bestD2) { bestD2 = d2; bestFx = fx; bestFy = fy; }
+        }
+      }
+      const F1 = Math.sqrt(bestD2);
+      const feat_x = bestFx * cs, feat_y = bestFy * cs;
+      const dScale = Math.pow(F1 + 1e-6, power) * distort;
+      return [scale * (feat_x + (x - feat_x) * dScale), scale * (feat_y + (y - feat_y) * dScale)];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

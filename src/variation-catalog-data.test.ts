@@ -72,7 +72,7 @@ describe('CATALOG_DATA shape invariants', () => {
   });
 
   it('has a complete entry for every variation V0-V106', () => {
-    for (let idx = 0; idx <= V.epispiral; idx++) {
+    for (let idx = 0; idx <= V.crackle; idx++) {
       const doc = getCatalogDoc(idx);
       expect(doc, `V${idx} missing`).toBeDefined();
       expect(doc!.formula, `V${idx} formula empty`).toBeTruthy();

@@ -16,10 +16,13 @@ describe('listVariations', () => {
     expect(idxs).toEqual([...idxs].sort((a, b) => a - b));
   });
 
-  it('classifies all 4 DC entries + all 4 JWF entries', () => {
+  it('classifies the DC family + at least the original JWF batch', () => {
     const rows = listVariations();
+    // DC family is fixed at 4 (dc_linear..dc_cylinder); the JWF count grows
+    // as batches ship — assert lower-bound + correct membership rather
+    // than a brittle exact count.
     expect(rows.filter(r => r.source === 'dc')).toHaveLength(4);
-    expect(rows.filter(r => r.source === 'jwf')).toHaveLength(4);
+    expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });
 });
 
@@ -35,13 +38,14 @@ describe('mountSidebar', () => {
     handle = mountSidebar(host, { onJump: idx => jumpedTo.push(idx) });
   });
 
-  it('renders all 107 variations across three groups', () => {
-    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(107);
+  it('renders every variation across three groups', () => {
+    const total = Object.keys(V).length;
+    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(total);
     expect(host.querySelectorAll('.pyr3-cat-group-head').length).toBe(3);
   });
 
   it('header count shows the grand total', () => {
-    expect(host.querySelector('.pyr3-cat-sidebar-count')!.textContent).toBe('107');
+    expect(host.querySelector('.pyr3-cat-sidebar-count')!.textContent).toBe(String(Object.keys(V).length));
   });
 
   it('search filters by name', () => {
@@ -52,8 +56,9 @@ describe('mountSidebar', () => {
 
   it('search filters by V-number prefix', () => {
     handle.setSearch('v10');
-    // V10 hyperbolic + V100..V106 = 8 matches
-    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(8);
+    // V10 hyperbolic + every V10x — count all V10..V10? matches dynamically.
+    const expected = Object.values(V).filter(idx => ('v' + idx).includes('v10')).length;
+    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(expected);
   });
 
   it('section with zero search matches hides its header', () => {
@@ -66,7 +71,9 @@ describe('mountSidebar', () => {
     const flam3Head = host.querySelector('.pyr3-cat-group-head[data-source="flam3"]') as HTMLElement;
     flam3Head.click();
     expect(host.querySelectorAll('.pyr3-cat-group-head.collapsed').length).toBe(1);
-    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(8); // only DC + JWF
+    // Only DC + JWF items visible.
+    const nonFlam3 = Object.values(V).filter(idx => idx > 98).length;
+    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(nonFlam3);
   });
 
   it('collapsed header still renders + can be re-expanded', () => {
