@@ -1735,6 +1735,620 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [scale * (feat_x + (x - feat_x) * dScale), scale * (feat_y + (y - feat_y) * dScale)];
     },
   },
+  // #114 batch 2b-a — JWildfire S-tier first half.
+  {
+    idx: V.juliaq,
+    name: 'juliaq',
+    source: sourceForIdx(V.juliaq),
+    formula: 'V_{109}(x, y) = r^{q/2p}\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{q}{p}\\,\\theta + n\\tfrac{2\\pi}{p},\\; n \\in [0, |p|)',
+    blurb: 'Generalized julia by Peter Sdobnov (Zueuk). divisor q decouples rotation step from branch count p — produces denser or sparser julia-style attractors at fractional ratios than V14 julian can reach. RNG selects the branch index each iterate; the catalog "warp" diagram is omitted since the visual signal is the per-branch superposition.',
+    params: [
+      { name: 'power',   default: 3, min: 2, max: 8,  step: 1 },
+      { name: 'divisor', default: 2, min: 1, max: 8,  step: 1 },
+    ],
+  },
+  {
+    idx: V.glynnia,
+    name: 'glynnia',
+    source: sourceForIdx(V.glynnia),
+    formula: 'V_{110}(x, y) = \\begin{cases} \\tfrac{w\\sqrt{2}}{2}(\\sqrt{r+x},\\; -\\tfrac{y}{\\sqrt{r+x}}) & r\\geq 1,\\, \\text{coin}>0.5 \\\\ \\tfrac{w}{\\sqrt{r(y^2+(r+x)^2)}}(r+x,\\; y) & r\\geq 1,\\, \\text{coin}\\leq 0.5 \\\\ \\text{mirrored sign inside disk} \\end{cases}',
+    blurb: 'Glynn-inspired bipolar warp by eralex61. Coin-flips between a √(r+x) split and a 1/√(...) split, with mirrored signs inside the unit disk — produces the four-leaf clover and arc-pair textures characteristic of the Apophysis 7X glynn family. The diagram shows the dominant outside-disk, coin>0.5 branch — the other three branches superimpose at render time.',
+    warpFn: (x, y) => {
+      const vvar2 = Math.SQRT2 * 0.5;
+      const r = Math.sqrt(x * x + y * y);
+      // Dominant branch: r>=1, coin>0.5 — the most visually-loaded leaf.
+      const inner = r + x;
+      if (inner <= 1e-30) return [x, y];
+      const d = Math.sqrt(inner);
+      return [vvar2 * d, -(vvar2 / d) * y];
+    },
+  },
+  {
+    idx: V.loonie3,
+    name: 'loonie3',
+    source: sourceForIdx(V.loonie3),
+    formula: 'V_{111}(x, y) = w\\sqrt{w^2/r_2 - 1}\\,(x, y),\\; r_2 = (x^2+y^2)^2/x^2 \\text{ if } x>\\varepsilon\\text{, else identity}',
+    blurb: 'Half-plane gated loonie variant by dark-beam. Like V71 loonie but uses (r²/x)² as the radius proxy when x is positive, identity branch outside — produces a sharp asymmetric cutout that the symmetric loonie/loonie2 family lacks.',
+    warpFn: (x, y) => {
+      const w = 1;
+      const sqrvvar = w * w;
+      const SMALL_EPSILON = 1e-30;
+      let r2 = 2 * sqrvvar;
+      if (x > SMALL_EPSILON) {
+        const num = x * x + y * y;
+        const q = num / x;
+        r2 = q * q;
+      }
+      if (r2 < sqrvvar) {
+        const r = Math.sqrt(sqrvvar / r2 - 1.0);
+        return [r * x, r * y];
+      }
+      return [x, y];
+    },
+  },
+  {
+    idx: V.falloff,
+    name: 'falloff',
+    source: sourceForIdx(V.falloff),
+    formula: 'V_{112}(x, y) = (x, y) + d\\,(\\mu_x r_0,\\; \\mu_y r_1),\\; d = \\max(0,(|p - p_0| - m)\\,r_{max})',
+    blurb: 'Distance-weighted random scatter by Xyrus02 (JWildfire Falloff2 type=0 path). Outside the mindist radius around (x0,y0), each iterate gets a random displacement that grows with distance — produces a soft-edged "halo" around the center point. Z-axis params (mul_z, z0) and the color/invert flags dropped to fit pyr3\'s 2D 8-slot seam; the type=1 (radial) and type=2 (gaussian) branches live on the sibling V113 falloff2.',
+    // Catalog defaults diverge from JWildfire baseline (scatter=1, muls=1)
+    // to produce a visible halo against the sierpinski scaffold — kernel
+    // bakes a 0.04*scatter scale, so JWF defaults render imperceptibly
+    // close to V0 linear. scatter=5 + asymmetric muls + max upped to 20
+    // reveals falloff's signature scatter halo around the attractor.
+    params: [
+      { name: 'scatter', default: 5,   min: 0,  max: 20, step: 0.5  },
+      { name: 'mindist', default: 0.2, min: 0,  max: 4,  step: 0.05 },
+      { name: 'mul_x',   default: 1.5, min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 0.8, min: -4, max: 4,  step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+    ],
+  },
+  {
+    idx: V.falloff2,
+    name: 'falloff2',
+    source: sourceForIdx(V.falloff2),
+    formula: 'V_{113}: \\text{type } 0 = (x,y)+d(\\mu_x r_0,\\mu_y r_1),\\; 1 = \\text{radial rotate},\\; 2 = \\text{gaussian 2}\\pi\\pi\\text{ shell}',
+    blurb: 'Three-branch falloff by Xyrus02 (JWildfire Falloff2Func). type=0 reproduces V112 falloff; type=1 rotates each iterate around (x0,y0) by a d-weighted angle; type=2 scatters inside a gaussian-shaped angular shell. Z-axis params + invert + mul_c dropped per pyr3\'s 2D 8-slot seam.',
+    // Catalog defaults: type=2 (gaussian shell) is more visually
+    // distinctive against the sierpinski scaffold than type=0 (= V112);
+    // scatter=5 with max=20 mirrors V112's `rmax = 0.04 * scatter`
+    // kernel scaling so the shell is visible.
+    params: [
+      { name: 'scatter', default: 5,   min: 0,  max: 20, step: 0.5  },
+      { name: 'type',    default: 2,   min: 0,  max: 2,  step: 1    },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mindist', default: 0.2, min: 0,  max: 4,  step: 0.05 },
+    ],
+  },
+  {
+    idx: V.falloff3,
+    name: 'falloff3',
+    source: sourceForIdx(V.falloff3),
+    formula: 'V_{114}(x, y) = (x, y) + d\\,\\mu \\cdot r_0\\cos(d r_1\\,2\\pi)\\,(\\cos(d r_2 \\pi),\\; \\sin(d r_2 \\pi))',
+    blurb: 'Gaussian-shell falloff by JWildfire AbstractFalloff3Func, blur_type=0 (gaussian) + blur_shape=0 (circle) default-mode port. Scatters each iterate inside a 2π·π angular shell scaled by the circle-distance — produces a soft-shell glow around (x0,y0). invert=1 flips inside/outside. The blur_type 1/2 (radial/log) and blur_shape 1 (square) selectors, along with Z-axis params + alpha + mul_c, dropped to fit pyr3\'s 2D 8-slot seam.',
+    // Catalog defaults: same kernel `rmax = 0.04 * scatter` scaling as
+    // V112/V113 — JWF baseline (scatter=1) is invisible against the
+    // sierpinski scaffold. scatter=5 + max=20 reveals the gaussian shell.
+    params: [
+      { name: 'scatter', default: 5,   min: 0,  max: 20, step: 0.5  },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mindist', default: 0.2, min: 0,  max: 4,  step: 0.05 },
+      { name: 'invert',  default: 0,   min: 0,  max: 1,  step: 1    },
+    ],
+  },
+  // #114 batch 2b-b — S-tier kaleidoscope/circle family.
+  {
+    idx: V.collideoscope,
+    name: 'collideoscope',
+    source: sourceForIdx(V.collideoscope),
+    formula: 'V_{115}(x, y) = r\\,(\\cos a^{*},\\; \\sin a^{*}),\\; a^{*} = \\text{fold}_{2n}(\\theta, a)',
+    blurb: 'Kaleidoscope-collide by Michael Faber (JWildfire). Folds the polar angle into 2·num pie slices with alternating-sign offsets — two adjacent slices "collide" in mirror-image, producing the eponymous splayed-petal pattern. JWF\'s class default a=0.20, num=1 (with randomize() spreading num∈[1,10]).',
+    // Catalog defaults: num=5 produces the canonical kaleidoscope rosette
+    // (JWF's class-default num=1 is mostly symmetric-pair; randomize()
+    // spreads num∈[1,10], so num=5 is a typical "wild" pick).
+    params: [
+      { name: 'a',   default: 0.45, min: 0, max: 1,  step: 0.01 },
+      { name: 'num', default: 5,    min: 1, max: 10, step: 1 },
+    ],
+    warpFn: (x, y) => {
+      const num = 5;
+      const a_param = 0.45;
+      const kn_pi = num / Math.PI;
+      const pi_kn = Math.PI / num;
+      const ka = Math.PI * a_param;
+      const ka_kn = ka / num;
+      let a = Math.atan2(y, x);
+      const r = Math.sqrt(x * x + y * y);
+      if (a >= 0.0) {
+        const alt = Math.trunc(a * kn_pi);
+        if (alt % 2 === 0) {
+          a = alt * pi_kn + ((ka_kn + a) % pi_kn);
+        } else {
+          a = alt * pi_kn + ((-ka_kn + a) % pi_kn);
+        }
+      } else {
+        const alt = Math.trunc(-a * kn_pi);
+        if (alt % 2 !== 0) {
+          a = -(alt * pi_kn + ((-ka_kn - a) % pi_kn));
+        } else {
+          a = -(alt * pi_kn + ((ka_kn - a) % pi_kn));
+        }
+      }
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.circlize,
+    name: 'circlize',
+    source: sourceForIdx(V.circlize),
+    formula: 'V_{116}(x, y) = (r\\cos a,\\; r\\sin a),\\; r = \\tfrac{4w}{\\pi}\\,\\text{side} + h,\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
+    blurb: 'Square → circle perimeter map by Michael Faber (JWildfire). Each iterate picks the dominant axis (the L∞-norm "side"), computes its position along the unit square\'s perimeter, then maps that perimeter → polar angle and side → radius. Note the canonical JWF quirk: the `hole` offset is intentionally NOT scaled by the variation weight (the corrected sibling circlize2 fixes this).',
+    params: [
+      { name: 'hole', default: 0.40, min: -1, max: 1, step: 0.01 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const hole = 0.40;
+      const var4_PI = w / (Math.PI / 4);
+      const absx = Math.abs(x);
+      const absy = Math.abs(y);
+      let perimeter: number;
+      let side: number;
+      if (absx >= absy) {
+        if (x >= absy) perimeter = absx + y;
+        else perimeter = 5.0 * absx - y;
+        side = absx;
+      } else {
+        if (y >= absx) perimeter = 3.0 * absy - x;
+        else perimeter = 7.0 * absy + x;
+        side = absy;
+      }
+      if (side === 0) return [0, 0];
+      const r = var4_PI * side + hole;
+      const a = (Math.PI / 4) * perimeter / side - Math.PI / 4;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.circlize2,
+    name: 'circlize2',
+    source: sourceForIdx(V.circlize2),
+    formula: 'V_{117}(x, y) = w(\\text{side}+h)\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
+    blurb: 'Companion variation to V116 circlize by Michael Faber (Angle Pack). Same square → circle perimeter parameterization, but the radius is w·(side+h) instead of (4w/π)·side+h — the `hole` offset IS scaled by the weight here, correcting the sibling\'s quirk. Produces a more uniform ring at non-zero hole.',
+    // Catalog default hole=0.25 produces a clear annulus that
+    // visually contrasts with V116 circlize (hole=0.40) — both ring,
+    // both readable; the difference highlights the corrected weight
+    // scaling that distinguishes circlize2 from its sibling.
+    params: [
+      { name: 'hole', default: 0.25, min: -1, max: 1, step: 0.01 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const hole = 0.25;
+      const absx = Math.abs(x);
+      const absy = Math.abs(y);
+      let perimeter: number;
+      let side: number;
+      if (absx >= absy) {
+        if (x >= absy) perimeter = absx + y;
+        else perimeter = 5.0 * absx - y;
+        side = absx;
+      } else {
+        if (y >= absx) perimeter = 3.0 * absy - x;
+        else perimeter = 7.0 * absy + x;
+        side = absy;
+      }
+      if (side === 0) return [0, 0];
+      const r = w * (side + hole);
+      const a = (Math.PI / 4) * perimeter / side - Math.PI / 4;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.eswirl,
+    name: 'eswirl',
+    source: sourceForIdx(V.eswirl),
+    formula: 'V_{118}(x, y) = w\\,(\\cosh\\mu\\cos\\nu^{*},\\; \\sinh\\mu\\sin\\nu^{*}),\\; \\nu^{*} = \\nu + \\mu\\cdot o + i/\\mu',
+    blurb: 'Extended swirl by Michael Faber (JWildfire "eSeries"). Converts (x, y) to elliptic coords (μ, ν), twists ν by (μ·out + in/μ), then maps back — the in/μ term creates a strong inward spiral, the μ·out term a gentler outward one. Default in=1.2, out=0.2 strikes the canonical "smooth flow" balance.',
+    params: [
+      { name: 'in',  default: 1.2, min: 0, max: 4, step: 0.05 },
+      { name: 'out', default: 0.2, min: 0, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const in_p = 1.2;
+      const out_p = 0.2;
+      const tmp = y * y + x * x + 1.0;
+      const tmp2 = 2.0 * x;
+      const r1_in = tmp + tmp2;
+      const r2_in = tmp - tmp2;
+      const r1_sqrt = r1_in > 0 ? Math.sqrt(r1_in) : 0;
+      const r2_sqrt = r2_in > 0 ? Math.sqrt(r2_in) : 0;
+      let xmax = (r1_sqrt + r2_sqrt) * 0.5;
+      if (xmax < 1.0) xmax = 1.0;
+      const mu = Math.acosh(xmax);
+      let t = x / xmax;
+      if (t > 1.0) t = 1.0;
+      else if (t < -1.0) t = -1.0;
+      let nu = Math.acos(t);
+      if (y < 0) nu = -nu;
+      const mu_safe = mu === 0 ? 1e-30 : mu;
+      const nu_warp = nu + mu * out_p + in_p / mu_safe;
+      return [w * Math.cosh(mu) * Math.cos(nu_warp), w * Math.sinh(mu) * Math.sin(nu_warp)];
+    },
+  },
+  {
+    idx: V.petal,
+    name: 'petal',
+    source: sourceForIdx(V.petal),
+    formula: 'V_{119}(x, y) = w\\cos x\\,((\\cos x \\cos y)^3,\\; (\\sin x \\cos y)^3)',
+    blurb: 'Lobed-petal attractor by Raykoid666 (JWildfire). Cubes the (cos x · cos y) and (sin x · cos y) products, then modulates by cos x — produces the eponymous radially-symmetric petal lobes when paired with linear-family co-variations. Parameter-free; weight controls the overall lobe size.',
+    warpFn: (x, y) => {
+      const a = Math.cos(x);
+      const cxcy = Math.cos(x) * Math.cos(y);
+      const sxcy = Math.sin(x) * Math.cos(y);
+      const bx = cxcy * cxcy * cxcy;
+      const by = sxcy * sxcy * sxcy;
+      return [a * bx, a * by];
+    },
+  },
+  // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular.
+  {
+    idx: V.bcircle,
+    name: 'bcircle',
+    source: sourceForIdx(V.bcircle),
+    formula: 'V_{120}(x, y) = \\begin{cases} w\\,(sx, sy) & r \\leq 1 \\\\ w\\omega\\,(\\cos\\theta, \\sin\\theta) & r > 1 \\end{cases}',
+    blurb: 'Bordered-circle projection by Xyrus02 (Apophysis plugin pack). Inside the scale-adjusted unit disk, the iterate passes through verbatim; outside, it gets snapped onto the unit circle (or — when `borderwidth ≠ 0` — onto a random-radius shell just outside it). At borderwidth=0 the deterministic disk path produces a clean filled circle; non-zero borderwidth adds a halo. RNG path activates only for borderwidth ≠ 0.',
+    // Catalog defaults: scale=2 shrinks the inside-disk region so the
+    // sierpinski corners spill onto the bcircle perimeter; borderwidth=0.4
+    // activates the RNG halo so the outside snaps to a randomized shell
+    // — produces a visible bordered-disk silhouette instead of plain
+    // sierpinski.
+    params: [
+      { name: 'scale',       default: 2.0, min: 0.1, max: 4,    step: 0.05 },
+      { name: 'borderwidth', default: 0.4, min: 0,   max: 1,    step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const scale = 2.0;
+      // borderwidth=0 path is deterministic; the catalog scaffold renders
+      // exactly that shape (inside-disk passthrough + outside-disk
+      // identity-zero). Non-zero-bw users see the RNG halo only at runtime.
+      if (x === 0 && y === 0) return [0, 0];
+      const xs = x * scale;
+      const ys = y * scale;
+      const r = Math.sqrt(xs * xs + ys * ys);
+      if (r <= 1.0) return [xs, ys];
+      return [0, 0];
+    },
+  },
+  {
+    idx: V.curl2,
+    name: 'curl2',
+    source: sourceForIdx(V.curl2),
+    formula: 'V_{121}(x, y) = \\tfrac{w}{|p(z)|^2}\\,(x\\,\\Re p + y\\,\\Im p,\\; y\\,\\Re p - x\\,\\Im p),\\; p(z) = c_3 z^3 + c_2 z^2 + c_1 z + 1',
+    blurb: 'Cubic-polynomial complex inverse by Xyrus02 / Georg Kiehne. The c1-only path collapses to flam3\'s classic `curl`; non-zero c2 and c3 add quadratic and cubic shaping, producing the eponymous "tighter scroll" / "double bend" silhouettes. Defaults c1=1, c2=c3=0 reproduce the standard curl shape; users discover the richer family by dialing c2/c3 up.',
+    // Catalog defaults: c1=1, c2=0.5, c3=0.3 lights up the full cubic
+    // polynomial — non-zero c2/c3 reveal the eponymous "tighter scroll"
+    // and "double bend" curl2 silhouettes that distinguish this from
+    // the c1-only classic curl shape.
+    params: [
+      { name: 'c1', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c2', default: 0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'c3', default: 0.3, min: -1, max: 1, step: 0.02 },
+    ],
+    warpFn: (x, y) => {
+      const c1 = 1.0;
+      const c2 = 0.5;
+      const c3 = 0.3;
+      const cc2 = 2 * c2;
+      const cc3 = 3 * c3;
+      const x2 = x * x;
+      const x3 = x2 * x;
+      const y2 = y * y;
+      const y3 = y2 * y;
+      const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
+      const im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+      const denom = re * re + im * im;
+      if (denom === 0) return [0, 0];
+      const r = 1.0 / denom;
+      return [(x * re + y * im) * r, (y * re - x * im) * r];
+    },
+  },
+  {
+    idx: V.murl,
+    name: 'murl',
+    source: sourceForIdx(V.murl),
+    formula: 'V_{122}(x, y) = \\tfrac{w(c+1)}{|1 + r e^{ip\\theta}|^2 + \\epsilon}\\,((x\\,\\Re,\\; y\\,\\Im) + (y\\,\\Im,\\; -x\\,\\Re)),\\; r = c\\,(x^2+y^2)^{p/2}',
+    blurb: 'Polar-power murl by Peter Sdobnov (Zueuk), ported into JWildfire by chronologicaldot. The polar angle is multiplied by an integer power and a complex-inverse blend through (re, im) folds back to Cartesian — produces the "spiraling braid" look characteristic of murl-family flames. Defaults c=0.1, power=1 give a gentle deterministic spiral; higher power values multiply the angular folding.',
+    // Catalog defaults: power=3, c=0.3 produces the characteristic
+    // murl-family braid silhouette (power=1, c=0.1 from JWF baseline is
+    // close to identity — barely distinguishable from V0 linear).
+    params: [
+      { name: 'c',     default: 0.3, min: -1, max: 2, step: 0.05 },
+      { name: 'power', default: 3,   min: 1,  max: 8, step: 1 },
+    ],
+    warpFn: (x, y) => {
+      const c_in = 0.3;
+      const power: number = 3;
+      const c = power !== 1 ? c_in / (power - 1) : c_in;
+      const p2 = power / 2.0;
+      const vp = 1.0 * (c + 1);
+      const a = Math.atan2(y, x) * power;
+      const sina = Math.sin(a);
+      const cosa = Math.cos(a);
+      const r = c * Math.pow(x * x + y * y, p2);
+      const re = r * cosa + 1;
+      const im = r * sina;
+      const r1 = vp / (re * re + im * im + 1e-29);
+      return [r1 * (x * re + y * im), r1 * (y * re - x * im)];
+    },
+  },
+  {
+    idx: V.stwins,
+    name: 'stwins',
+    source: sourceForIdx(V.stwins),
+    formula: 'V_{123}(x, y) = w(x, y) + \\frac{(s_x^2 - s_y^2)\\sin(2\\pi\\,d\\,(s_x+s_y))}{s_x^2 + s_y^2}\\,(1, 1),\\; s = 0.05\\,wp',
+    blurb: 'Twin-sine ratio by Xyrus02 (Apophysis plugin pack). Mixes a (x²−y²)·sin(2π·distort·(x+y)) / (x²+y²) component back into both x and y in lockstep — produces the characteristic "diagonal pinch" pattern. The fixed 0.05 scale factor prevents overlap at distort=1 (source comment). Canonical name in the Xyrus02 source is `stwin`; pyr3 follows the plugin directory name `stwins` per survey doc + community alignment.',
+    params: [
+      { name: 'distort', default: 1.0, min: 0, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const distort = 1.0;
+      const mult = 0.05;
+      const sx = x * w * mult;
+      const sy = y * w * mult;
+      const x2 = sx * sx;
+      const y2 = sy * sy;
+      const xpy = sx + sy;
+      const xn = x2 - y2;
+      const xd = x2 + y2;
+      const result_num = xn * Math.sin(2 * Math.PI * distort * xpy);
+      const divident = xd === 0 ? 1 : xd;
+      const result = result_num / divident;
+      return [w * x + result, w * y + result];
+    },
+  },
+  {
+    idx: V.hexes,
+    name: 'hexes',
+    source: sourceForIdx(V.hexes),
+    formula: 'V_{124}(x, y) = w\\,(P_0 + R\\cdot(D_x\\cos\\phi + D_y\\sin\\phi,\\, -D_x\\sin\\phi + D_y\\cos\\phi)),\\; \\phi = 2\\pi r',
+    blurb: 'Hex-grid voronoi warp by Neil Slater / slobo777, via JWildfire. Breaks the plane into a hexagonal lattice, finds the closest hex center to each iterate, then applies a per-cell power scaling + rotation expressed via voronoi-edge distance. The "rosette removal" blend at the cell edge (L ∈ [0.5, 0.8]) smooths the transition between closest-vs-second-closest-hex regions. Defaults cellsize=1, power=1, rotate=0.166 (≈ π/19), scale=1 reproduce JWildfire\'s class-level shape.',
+    params: [
+      { name: 'cellsize', default: 1.0,   min: 0.1, max: 4, step: 0.05 },
+      { name: 'power',    default: 1.0,   min: 0,   max: 4, step: 0.05 },
+      { name: 'rotate',   default: 0.166, min: 0,   max: 1, step: 0.01 },
+      { name: 'scale',    default: 1.0,   min: 0.1, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      // Catalog uses fixed defaults — cellsize=1 always, so the source's
+      // cellsize==0 guard is dead code here. Kernel preserves the guard.
+      const cellsize = 1.0;
+      const power = 1.0;
+      const rotate = 0.166;
+      const scale = 1.0;
+      const SQRT3 = 1.7320508075688772935;
+      const a_hex = 1.0 / 3.0;
+      const b_hex = SQRT3 / 3.0;
+      const c_hex = -1.0 / 3.0;
+      const d_hex = SQRT3 / 3.0;
+      const a_cart = 1.5;
+      const b_cart = -1.5;
+      const c_cart = SQRT3 / 2.0;
+      const d_cart = SQRT3 / 2.0;
+      const rotSin = Math.sin(rotate * 2 * Math.PI);
+      const rotCos = Math.cos(rotate * 2 * Math.PI);
+      const s = cellsize;
+      const hx0 = Math.floor((a_hex * x + b_hex * y) / s);
+      const hy0 = Math.floor((c_hex * x + d_hex * y) / s);
+      let bestD2 = Infinity;
+      let q = 0;
+      for (let di = -1; di < 2; di++) {
+        for (let dj = -1; dj < 2; dj++) {
+          const cx = (a_cart * (hx0 + di) + b_cart * (hy0 + dj)) * s;
+          const cy = (c_cart * (hx0 + di) + d_cart * (hy0 + dj)) * s;
+          const dx = cx - x;
+          const dy = cy - y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) { bestD2 = d2; q = (di + 1) * 3 + (dj + 1); }
+        }
+      }
+      const hx = hx0 + (Math.floor(q / 3) - 1);
+      const hy = hy0 + ((q % 3) - 1);
+      const cc = (hxi: number, hyi: number): [number, number] =>
+        [(a_cart * hxi + b_cart * hyi) * s, (c_cart * hxi + d_cart * hyi) * s];
+      const P0 = cc(hx, hy);
+      const ring: [number, number][] = [
+        cc(hx, hy + 1),
+        cc(hx + 1, hy + 1),
+        cc(hx + 1, hy),
+        cc(hx, hy - 1),
+        cc(hx - 1, hy - 1),
+        cc(hx - 1, hy),
+      ];
+      const vor = (Ux: number, Uy: number): number => {
+        let ratiomax = -1e20;
+        for (const Pp of ring) {
+          const PmQx = Pp[0] - P0[0];
+          const PmQy = Pp[1] - P0[1];
+          if (PmQx === 0 && PmQy === 0) { if (1 > ratiomax) ratiomax = 1; continue; }
+          const ratio = 2 * ((Ux - P0[0]) * PmQx + (Uy - P0[1]) * PmQy) / (PmQx * PmQx + PmQy * PmQy);
+          if (ratio > ratiomax) ratiomax = ratio;
+        }
+        return ratiomax;
+      };
+      const L1 = vor(x, y);
+      const DXo = x - P0[0];
+      const DYo = y - P0[1];
+      const trgL = Math.pow(L1 + 1e-30, power) * scale;
+      const Vx0 = DXo * rotCos + DYo * rotSin;
+      const Vy0 = -DXo * rotSin + DYo * rotCos;
+      const L2 = vor(Vx0 + P0[0], Vy0 + P0[1]);
+      const L = Math.max(L1, L2);
+      let R: number;
+      if (L < 0.5) R = trgL / L1;
+      else if (L > 0.8) R = trgL / L2;
+      else R = ((trgL / L1) * (0.8 - L) + (trgL / L2) * (L - 0.5)) / 0.3;
+      return [Vx0 * R + P0[0], Vy0 * R + P0[1]];
+    },
+  },
+  // #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+  {
+    idx: V.xheart,
+    name: 'xheart',
+    source: sourceForIdx(V.xheart),
+    formula: 'V_{125}(x, y) = w\\,R(\\alpha)\\,\\left(\\tfrac{4x}{r^2+4},\\; \\tfrac{6+2\\rho}{r^2+4}\\,y\\right)\\cdot \\sigma,\\; \\alpha = \\tfrac{\\pi}{4}(1 + \\tfrac{\\theta}{2}),\\; \\sigma = \\mathrm{sign}(x_{\\mathrm{rot}})',
+    blurb: 'Extended heart by Xyrus02 (Apophysis plugin pack). Folds the iterate through a (4/r²+4, rat/r²+4) projection then rotates by a θ-driven angle, then re-mirrors y when the rotated x is non-positive — producing the characteristic heart-curve attractor. Defaults angle=ratio=0 give the Xyrus02 baseline (rotation = π/4, ratio multiplier = 6); higher angle pushes the heart toward a tilted lobe, higher ratio elongates the bottom point.',
+    params: [
+      { name: 'xheart_angle', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'xheart_ratio', default: 0.0, min: -2, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const angle = 0.0;
+      const ratio = 0.0;
+      const PI = Math.PI;
+      const ang = PI / 4 + (0.5 * (PI / 4) * angle);
+      const cosa = Math.cos(ang);
+      const sina = Math.sin(ang);
+      const rat = 6 + 2 * ratio;
+      let r2_4 = x * x + y * y + 4;
+      if (r2_4 === 0) r2_4 = 1;
+      const bx = 4 / r2_4;
+      const by = rat / r2_4;
+      const xRot = cosa * (bx * x) - sina * (by * y);
+      const yRot = sina * (bx * x) + cosa * (by * y);
+      if (xRot > 0) return [xRot, yRot];
+      return [xRot, -yRot];
+    },
+  },
+  {
+    idx: V.xhyperbol,
+    name: 'xhyperbol',
+    source: sourceForIdx(V.xhyperbol),
+    formula: 'V_{126}(x, y) = \\tfrac{w}{|z\'|^2 + \\epsilon}\\,(\\cos\\alpha, \\sin\\alpha),\\; z\' = M\\cdot\\tfrac{z}{|z|^2 + \\epsilon} + t,\\; \\alpha = \\arg z\'',
+    blurb: 'Extended hyperbolic by Xyrus02 (Apophysis plugin pack). Composes a unit-disc inversion (z → z/|z|²) with a 2x3 affine M·(·) + t — then emits a |z\'|⁻² reflection of the affine\'d direction. Defaults M = identity (m00=m11=1) give the simplest hyperbolic shape; non-zero m20/m21 translate the inversion center.',
+    params: [
+      { name: 'm00', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm01', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm10', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm11', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm20', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm21', default: 0.0, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const m00 = 1.0;
+      const m01 = 0.0;
+      const m10 = 0.0;
+      const m11 = 1.0;
+      const m20 = 0.0;
+      const m21 = 0.0;
+      const EPS = 1e-10;
+      const r = 1 / (x * x + y * y + EPS);
+      const xi = x * r;
+      const yi = y * r;
+      const re = m00 * xi + m01 * yi + m20;
+      const im = m10 * xi + m11 * yi + m21;
+      const alpha = Math.atan2(im, re) + 2 * Math.PI;
+      const sa = Math.sin(alpha);
+      const ca = Math.cos(alpha);
+      const rsq = re * re + im * im;
+      const xout = rsq * ca;
+      const yout = rsq * sa;
+      const rinv = 1 / (xout * xout + yout * yout + EPS);
+      return [xout * rinv, yout * rinv];
+    },
+  },
+  {
+    idx: V.xcurl2,
+    name: 'xcurl2',
+    source: sourceForIdx(V.xcurl2),
+    formula: 'V_{127}(x, y) = \\tfrac{w}{re^2 + im^2}\\,(x\\,re + y\\,im,\\; y\\,re + x\\,im),\\; re = 1 + c_1 x + c_2(x^2-y^2) + c_3(x^3 - 3x)',
+    blurb: 'Older / alternate curl² by Xyrus02 (the source\'s own header reads "old, probably wrong version of curl2") — but the visual character differs from V121 `curl2` (Georg Kiehne), so pyr3 ships both. Polynomial shape: re mixes linear + (x²−y²) + (x³−3x) terms with c1/c2/c3 weights, im mixes the conjugate trio. Note the `y·re + x·im` SUM in the output (not the standard Cartesian-inverse SIGN flip in V121). Catalog defaults to c1=1 (linear path active) so the first slider drag produces a visible response.',
+    params: [
+      { name: 'c1', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c2', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c3', default: 0.0, min: -1, max: 1, step: 0.02 },
+    ],
+    warpFn: (x, y) => {
+      const c1 = 1.0;
+      const c2 = 0.0;
+      const c3 = 0.0;
+      const x2 = x * x;
+      const y2 = y * y;
+      const x3 = x2 * x;
+      const re = 1 + c1 * x + c2 * (x2 - y2) + c3 * (x3 - 3 * x);
+      const im = c1 * y + c2 * (2 * x * y) + c3 * (3 * x * y - 1);
+      const denom = re * re + im * im;
+      if (denom === 0) return [0, 0];
+      const r = 1 / denom;
+      return [(x * re + y * im) * r, (y * re + x * im) * r];
+    },
+  },
+  {
+    idx: V.xtrb,
+    name: 'xtrb',
+    source: sourceForIdx(V.xtrb),
+    formula: 'V_{128}(x, y) = w\\,r\'\\,(\\cos\\phi, \\sin\\phi),\\; r\' = (in_x^2 + in_y^2)^{c_N},\\; \\phi = \\tfrac{\\arctan(in_y, in_x) + 2\\pi k}{p}',
+    blurb: 'TriBorders by Xyrus02 — builds a dual tessellation on a triangular grid (the way `boarders` does on a square grid) using trilinear coordinates. Six params shape the triangle (radius, a, b for angle), the border blend (width), the angle-modulo (power), and the radial reach (dist). RNG drives both the width-blend branch and the power-modulo index. Defaults reproduce the Xyrus02 source baseline (power=2, equilateral-ish triangle, width=0.5).',
+    params: [
+      { name: 'xtrb_power',  default: 2,   min: 1,   max: 8, step: 1 },
+      { name: 'xtrb_dist',   default: 1.0, min: 0.1, max: 2, step: 0.05 },
+      { name: 'xtrb_radius', default: 1.0, min: 0.1, max: 2, step: 0.05 },
+      { name: 'xtrb_width',  default: 0.5, min: 0,   max: 1, step: 0.05 },
+      { name: 'xtrb_a',      default: 1.0, min: 0.1, max: 2, step: 0.05 },
+      { name: 'xtrb_b',      default: 1.0, min: 0.1, max: 2, step: 0.05 },
+    ],
+    // RNG-driven — no warpFn. The catalog renders "warp not applicable"
+    // for the static SVG diagram; live flame still iterates.
+  },
+  {
+    idx: V.gridout,
+    name: 'gridout',
+    source: sourceForIdx(V.gridout),
+    formula: 'V_{129}(x, y) = w\\,(x + \\delta_x, y + \\delta_y),\\; (\\delta_x, \\delta_y) \\in \\{(\\pm 1, 0), (0, \\pm 1)\\}\\; \\text{by quadrant}',
+    blurb: 'Grid quantization by Xyrus02 (authors Michael + Joel Faber). Snaps the iterate by ±1 along x or y depending on which integer-grid quadrant (rint(x), rint(y)) it falls into — stair-step / cubist look. NOT the same as pyr3\'s V101 `dc_gridout` (that\'s a color variation; this is a pure position warp). 0 params: dial the variation weight instead.',
+    warpFn: (x, y) => {
+      const rx = x >= 0 ? Math.floor(x + 0.5) : Math.ceil(x - 0.5);
+      const ry = y >= 0 ? Math.floor(y + 0.5) : Math.ceil(y - 0.5);
+      let dx = 0;
+      let dy = 0;
+      if (ry <= 0) {
+        if (rx > 0) {
+          if (-ry >= rx) dx = 1; else dy = 1;
+        } else {
+          if (ry <= rx) dx = 1; else dy = -1;
+        }
+      } else {
+        if (rx > 0) {
+          if (ry >= rx) dx = -1; else dy = 1;
+        } else {
+          if (ry > -rx) dx = -1; else dy = -1;
+        }
+      }
+      return [x + dx, y + dy];
+    },
+  },
+  {
+    idx: V.blur_circle,
+    name: 'blur_circle',
+    source: sourceForIdx(V.blur_circle),
+    formula: 'V_{130}(x, y) = (r\\cos\\phi, r\\sin\\phi),\\; r = \\tfrac{4w}{\\pi}\\,s + \\text{hole},\\; \\phi = \\tfrac{\\pi}{4}\\,\\tfrac{p_s}{s} - \\pi',
+    blurb: 'Disc-uniform blur by Xyrus02 (Apophysis plugin pack). Uniformly samples a unit square, runs a square→circle perimeter parameterization (same family as circlize / circlize2), then emits onto a hole-offset circle. Input iterate is ignored — the variation\'s output is purely RNG-driven. The 4/π scale factor matches a unit-disc area density; non-zero hole adds a concentric annulus offset.',
+    params: [
+      { name: 'hole', default: 0.0, min: -1, max: 1, step: 0.05 },
+    ],
+    // RNG-driven (input p is ignored, output is pure RNG) — no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

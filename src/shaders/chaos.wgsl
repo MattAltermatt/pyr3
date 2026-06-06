@@ -1814,6 +1814,947 @@ fn var_crackle(
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 2b-a — JWildfire S-tier first half. Sources: JWildfire
+// (LGPL-2.1+); see NOTICE.md. pyr3 reimplements each formula in WGSL;
+// no JWF code is byte-copied. Z-axis params dropped per pyr3's 2D
+// engine; selected per-variation drops noted inline.
+// ---------------------------------------------------------------------
+
+// var_juliaq — JWildfire JuliaQFunc.java. 2 params (power, divisor)
+// + 1 RNG call. Author: Peter Sdobnov ("Zueuk"). Generalized julia
+// where `divisor` decouples the rotation step from the branch count.
+// JWF's `random(Integer.MAX_VALUE) * inv_power_2pi` folds mod 2π —
+// equivalent to picking a discrete branch index n in [0, |power|)
+// and rotating by n·(2π/power). `power` is an int (cast at use).
+// `divisor` is a real number (JWF int but accepts non-integer values
+// at runtime); we keep it f32.
+fn var_juliaq(p: vec2f, w: f32, power: f32, divisor: f32, wi: u32) -> vec2f {
+  let power_safe = select(power, 1.0, abs(power) < 1.0e-30);
+  let abs_pow = max(1.0, abs(power_safe));
+  let inv_power = divisor / power_safe;
+  let half_inv_power = 0.5 * inv_power;
+  let inv_power_2pi = TAU / power_safe;
+  let r01 = rand01(wi);
+  let n = floor(r01 * abs_pow);
+  let a = atan2(p.y, p.x) * inv_power + n * inv_power_2pi;
+  // Folded back to bounded range manually before safe_*.
+  let r = w * pow(p.x * p.x + p.y * p.y, half_inv_power);
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_glynnia — JWildfire GlynniaFunc.java. 0 params, 1 RNG call
+// (discrete coin-flip branch). Author: eralex61. Two sub-formulas
+// inside/outside the unit disk, each with a 50/50 secondary branch
+// → 4 leaves total. precalc: vvar2 = w·√2/2. Math-degenerate cases
+// (d==0 in either branch) return (0,0); the chaos game's bad-value
+// reseed handles the propagation.
+fn var_glynnia(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let vvar2 = w * 0.7071067811865476;
+  let r = sqrt(p.x * p.x + p.y * p.y);
+  let coin = rand01(wi);
+  if (r >= 1.0) {
+    if (coin > 0.5) {
+      let inner = r + p.x;
+      if (inner <= 0.0) { return vec2f(0.0, 0.0); }
+      let d = sqrt(inner);
+      if (d == 0.0) { return vec2f(0.0, 0.0); }
+      return vec2f(vvar2 * d, -(vvar2 / d) * p.y);
+    } else {
+      let d = r + p.x;
+      let radicand = r * (p.y * p.y + d * d);
+      if (radicand <= 0.0) { return vec2f(0.0, 0.0); }
+      let dx = sqrt(radicand);
+      if (dx == 0.0) { return vec2f(0.0, 0.0); }
+      let rr = w / dx;
+      return vec2f(rr * d, rr * p.y);
+    }
+  } else {
+    if (coin > 0.5) {
+      let inner = r + p.x;
+      if (inner <= 0.0) { return vec2f(0.0, 0.0); }
+      let d = sqrt(inner);
+      if (d == 0.0) { return vec2f(0.0, 0.0); }
+      return vec2f(-vvar2 * d, -(vvar2 / d) * p.y);
+    } else {
+      let d = r + p.x;
+      let radicand = r * (p.y * p.y + d * d);
+      if (radicand <= 0.0) { return vec2f(0.0, 0.0); }
+      let dx = sqrt(radicand);
+      if (dx == 0.0) { return vec2f(0.0, 0.0); }
+      let rr = w / dx;
+      return vec2f(-rr * d, rr * p.y);
+    }
+  }
+}
+
+// var_loonie3 — JWildfire Loonie3Func.java. 0 params, no RNG.
+// Author: dark-beam. Numbered variant of loonie/loonie2. The
+// "radius" is (r²/x)² when x > tiny eps (a half-plane gating),
+// else 2·w² (outside-half-plane escape branch). precalc: sqrvvar = w².
+// Identity branch when r2 >= sqrvvar.
+fn var_loonie3(p: vec2f, w: f32) -> vec2f {
+  let sqrvvar = w * w;
+  let SMALL_EPSILON: f32 = 1.0e-30;
+  var r2: f32 = 2.0 * sqrvvar;
+  if (p.x > SMALL_EPSILON) {
+    let num = p.x * p.x + p.y * p.y;
+    let q = num / p.x;
+    r2 = q * q;
+  }
+  if (r2 < sqrvvar) {
+    let r = w * sqrt(sqrvvar / r2 - 1.0);
+    return vec2f(r * p.x, r * p.y);
+  }
+  return vec2f(w * p.x, w * p.y);
+}
+
+// var_falloff — JWildfire Falloff2Func.java type=0 (default) branch
+// (Xyrus02-origin). 6 params (scatter, mindist, mul_x, mul_y, x0, y0)
+// + 2 RNG calls. Distance-weighted random scatter outside a circle
+// centered at (x0,y0). Z-axis params (mul_z/z0) + the invert flag +
+// mul_c (color jitter, no analog in pyr3's chain) dropped to fit the
+// 2D engine and 8-slot seam — kept in `var_falloff2` where they're
+// part of the type-branch surface.
+fn var_falloff(
+  p: vec2f, w: f32,
+  scatter: f32, mindist: f32,
+  mul_x: f32, mul_y: f32,
+  x0: f32, y0: f32,
+  wi: u32,
+) -> vec2f {
+  let rmax = 0.04 * scatter;
+  let dx = p.x - x0;
+  let dy = p.y - y0;
+  var d = sqrt(dx * dx + dy * dy);
+  if (d < 0.0) { d = 0.0; }
+  d = (d - mindist) * rmax;
+  if (d < 0.0) { d = 0.0; }
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  return vec2f(
+    w * (p.x + mul_x * r0 * d),
+    w * (p.y + mul_y * r1 * d),
+  );
+}
+
+// var_falloff2 — JWildfire Falloff2Func.java, ALL THREE type
+// branches (0=default, 1=radial, 2=gaussian). 7 params (scatter,
+// type, mul_x, mul_y, x0, y0, mindist). 2–3 RNG calls depending
+// on branch. Author: Xyrus02. Z-axis params + invert + mul_c
+// dropped per the 2D-only engine and 8-slot seam.
+fn var_falloff2(
+  p: vec2f, w: f32,
+  scatter: f32, typ: f32,
+  mul_x: f32, mul_y: f32,
+  x0: f32, y0: f32,
+  mindist: f32,
+  wi: u32,
+) -> vec2f {
+  let rmax = 0.04 * scatter;
+  let dx = p.x - x0;
+  let dy = p.y - y0;
+  var d = sqrt(dx * dx + dy * dy);
+  if (d < 0.0) { d = 0.0; }
+  d = (d - mindist) * rmax;
+  if (d < 0.0) { d = 0.0; }
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  let r2 = rand01(wi);
+  let t = i32(clamp(typ, 0.0, 2.0));
+  if (t == 1) {
+    // radial: JWildfire Falloff2Func.calcFunctionRadial rotates around ORIGIN
+    // (not (x0,y0)) — phi/r come from absolute coords + atan2(y, x).
+    let r_abs = sqrt(p.x * p.x + p.y * p.y);
+    let phi = atan2(p.y, p.x) + mul_y * d * r1;
+    let rr = r_abs + mul_x * r0 * d;
+    return vec2f(
+      w * rr * safe_cos(phi),
+      w * rr * safe_sin(phi),
+    );
+  } else if (t == 2) {
+    // gaussian: 2π·π angular scatter
+    let sigma = d * r1 * TAU;
+    let phi = d * r2 * PI;
+    let rad = d * r0;
+    let sigma_c = safe_cos(sigma);
+    return vec2f(
+      w * (p.x + mul_x * rad * sigma_c * safe_cos(phi)),
+      w * (p.y + mul_y * rad * sigma_c * safe_sin(phi)),
+    );
+  }
+  // default type=0: plain distance-weighted scatter (matches var_falloff)
+  return vec2f(
+    w * (p.x + mul_x * r0 * d),
+    w * (p.y + mul_y * r1 * d),
+  );
+}
+
+// var_falloff3 — JWildfire AbstractFalloff3Func, blur_type=0 (gaussian)
+// + blur_shape=0 (circle) default-mode path. 7 params (scatter, mul_x,
+// mul_y, x0, y0, mindist, invert). 3 RNG calls. The "blur_type" and
+// "blur_shape" selectors are folded down to the most-common defaults
+// (the JWildfire UI ships these at 0/0); Z-axis params + alpha + mul_c
+// dropped per pyr3's 2D-only engine. invert (0/1) kept since it's a
+// load-bearing visual switch — `invert=1` puts the scatter INSIDE the
+// circle rather than outside.
+fn var_falloff3(
+  p: vec2f, w: f32,
+  scatter: f32, mul_x: f32, mul_y: f32,
+  x0: f32, y0: f32, mindist: f32, invertFlag: f32,
+  wi: u32,
+) -> vec2f {
+  let rmax = 0.04 * scatter;
+  let dx = p.x - x0;
+  let dy = p.y - y0;
+  let radius = sqrt(dx * dx + dy * dy);
+  let base_pos = max(radius, 0.0);
+  let base_inv = max(1.0 - radius, 0.0);
+  let base = select(base_pos, base_inv, invertFlag > 0.5);
+  let dist = max((base - mindist) * rmax, 0.0);
+  // JWildfire AbstractFalloff3Func centers RNG samples at 0 (range [-0.5, 0.5))
+  // — preserves rotational symmetry of the scatter shell. Bare [0,1) shifts it.
+  let r0 = rand01(wi) - 0.5;
+  let r1 = rand01(wi) - 0.5;
+  let r2 = rand01(wi) - 0.5;
+  let sigma = dist * r1 * TAU;
+  let phi = dist * r2 * PI;
+  let rad = dist * r0;
+  let sigma_c = safe_cos(sigma);
+  return vec2f(
+    w * (p.x + mul_x * rad * sigma_c * safe_cos(phi)),
+    w * (p.y + mul_y * rad * sigma_c * safe_sin(phi)),
+  );
+}
+
+// ---------------------------------------------------------------------
+// #114 batch 2b-b — S-tier kaleidoscope/circle family. Sources:
+// JWildfire (LGPL-2.1+); see NOTICE.md. pyr3 reimplements each formula
+// in WGSL; no JWF code is byte-copied. petal is 0-param. `loc` was
+// originally scoped here but dropped — no varLoc.pas in Apophysis 7X
+// core or JWildfire (see V table comment in src/variations.ts).
+// ---------------------------------------------------------------------
+
+// var_collideoscope — JWildfire CollideoscopeFunc.java. 2 params
+// (a, num) + no RNG. Author: Michael Faber. The "collide" twin of
+// kaleidoscope — folds the polar angle into 2·num pie slices with
+// alternating-sign offsets. `num` is an integer count (≥1); `a` is
+// a real shift (UI-limited to [0,1] in JWF, but math is well-defined
+// across the line). Precalc kn_pi/pi_kn/ka_kn live inside the kernel
+// since they depend on the per-iterate param read.
+fn var_collideoscope(p: vec2f, w: f32, a_param: f32, num_param: f32) -> vec2f {
+  let num_i = max(1, i32(num_param));
+  let num_f = f32(num_i);
+  let kn_pi = num_f / PI;
+  let pi_kn = PI / num_f;
+  let ka = PI * a_param;
+  let ka_kn = ka / num_f;
+  var a = atan2(p.y, p.x);
+  let r = w * sqrt(p.x * p.x + p.y * p.y);
+  if (a >= 0.0) {
+    let alt = i32(a * kn_pi);
+    if ((alt % 2) == 0) {
+      a = f32(alt) * pi_kn + ((ka_kn + a) % pi_kn);
+    } else {
+      a = f32(alt) * pi_kn + ((-ka_kn + a) % pi_kn);
+    }
+  } else {
+    let alt = i32(-a * kn_pi);
+    if ((alt % 2) != 0) {
+      a = -(f32(alt) * pi_kn + ((-ka_kn - a) % pi_kn));
+    } else {
+      a = -(f32(alt) * pi_kn + ((ka_kn - a) % pi_kn));
+    }
+  }
+  // `a` is now folded into [-π, π]-ish — safe trig OK but plain trig
+  // would also be correct since |a| ≤ 2π·num. Use safe_* defensively
+  // for high `num` values.
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_circlize — JWildfire CirclizeFunc.java. 1 param (hole) + no RNG.
+// Author: Michael Faber. Square → circle perimeter map: each iterate
+// picks the dominant axis, walks the unit square's perimeter
+// accordingly, then maps perimeter → angle + axis → radius. Note JWF
+// quirk: `hole` is intentionally NOT scaled by the weight (`pAmount`)
+// — comment in JWF source reads "tsk tsk... hole is not scaled by
+// vvar." We preserve that behavior for parity. side==0 (origin)
+// degenerates → return (0,0).
+fn var_circlize(p: vec2f, w: f32, hole: f32) -> vec2f {
+  let var4_PI = w / (PI * 0.25);
+  let absx = abs(p.x);
+  let absy = abs(p.y);
+  var perimeter: f32 = 0.0;
+  var side: f32 = 0.0;
+  if (absx >= absy) {
+    if (p.x >= absy) {
+      perimeter = absx + p.y;
+    } else {
+      perimeter = 5.0 * absx - p.y;
+    }
+    side = absx;
+  } else {
+    if (p.y >= absx) {
+      perimeter = 3.0 * absy - p.x;
+    } else {
+      perimeter = 7.0 * absy + p.x;
+    }
+    side = absy;
+  }
+  if (side == 0.0) { return vec2f(0.0, 0.0); }
+  let r = var4_PI * side + hole;
+  let a = (PI * 0.25) * perimeter / side - (PI * 0.25);
+  // |a| is bounded ≤ π/2 so plain trig is safe — keep safe_* for
+  // defense against extreme `hole`/weight scaling at the call site.
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_circlize2 — JWildfire Circlize2Func.java. 1 param (hole) + no RNG.
+// Author: Michael Faber (Angle Pack). Companion to circlize: identical
+// perimeter parameterization, but the radius is w·(side+hole) instead
+// of w·(4/π)·side+hole — `hole` IS scaled by the weight here (the
+// "tsk tsk" quirk corrected in this sibling).
+fn var_circlize2(p: vec2f, w: f32, hole: f32) -> vec2f {
+  let absx = abs(p.x);
+  let absy = abs(p.y);
+  var perimeter: f32 = 0.0;
+  var side: f32 = 0.0;
+  if (absx >= absy) {
+    if (p.x >= absy) {
+      perimeter = absx + p.y;
+    } else {
+      perimeter = 5.0 * absx - p.y;
+    }
+    side = absx;
+  } else {
+    if (p.y >= absx) {
+      perimeter = 3.0 * absy - p.x;
+    } else {
+      perimeter = 7.0 * absy + p.x;
+    }
+    side = absy;
+  }
+  if (side == 0.0) { return vec2f(0.0, 0.0); }
+  let r = w * (side + hole);
+  let a = (PI * 0.25) * perimeter / side - (PI * 0.25);
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_eswirl — JWildfire ESwirlFunc.java. 2 params (in, out). No RNG.
+// Author: Michael Faber ("eSeries"). Extended swirl: converts (x,y)
+// to elliptic coords (μ, ν), twists ν by (μ·out + in/μ), maps back.
+// JWF uses a safe_sqrt to dodge NaN at floating-point underflow.
+// Trig args (μ·out + in/μ + acos(...)) can grow large for tiny μ —
+// route through safe_* to dodge the Dawn f32 trig range cliff.
+fn var_eswirl(p: vec2f, w: f32, in_p: f32, out_p: f32) -> vec2f {
+  let tmp = p.y * p.y + p.x * p.x + 1.0;
+  let tmp2 = 2.0 * p.x;
+  let r1_in = tmp + tmp2;
+  let r2_in = tmp - tmp2;
+  let r1_sqrt = select(0.0, sqrt(max(r1_in, 0.0)), r1_in > 0.0);
+  let r2_sqrt = select(0.0, sqrt(max(r2_in, 0.0)), r2_in > 0.0);
+  var xmax = (r1_sqrt + r2_sqrt) * 0.5;
+  if (xmax < 1.0) { xmax = 1.0; }
+  // acosh(xmax) = log(xmax + sqrt(xmax^2 - 1)). xmax ≥ 1 so the radical
+  // is non-negative; xmax==1.0 → mu==0 (cusp).
+  let radicand = max(xmax * xmax - 1.0, 0.0);
+  let mu = log(xmax + sqrt(radicand));
+  var t = p.x / xmax;
+  if (t > 1.0) { t = 1.0; }
+  if (t < -1.0) { t = -1.0; }
+  // acos(t) for t∈[-1,1] — bounded [0, π], plain acos is fine.
+  var nu = acos(t);
+  if (p.y < 0.0) { nu = -nu; }
+  // Guard mu==0 (xmax==1.0 cusp): `in/mu` → ±Inf. JWF lets the chaos
+  // game's bad-value reseed clean it up; we mirror by clamping mu to
+  // 1e-30 (tiny but finite) so the iterate just diverges loudly instead
+  // of poisoning the buffer.
+  let mu_safe = select(mu, 1.0e-30, mu == 0.0);
+  let nu_warp = nu + mu * out_p + in_p / mu_safe;
+  // sinh/cosh of mu — mu = log(xmax + sqrt(xmax^2 - 1)) is bounded ≈
+  // log(2·xmax) for large xmax, so for f32-representable xmax (<~1e38)
+  // mu < ~88; sinh/cosh stay finite. Plain math.
+  let sinhmu = sinh(mu);
+  let coshmu = cosh(mu);
+  return vec2f(w * coshmu * safe_cos(nu_warp), w * sinhmu * safe_sin(nu_warp));
+}
+
+// var_petal — JWildfire PetalFunc.java. 0 params, no RNG. Author:
+// Raykoid666. Lobed-petal attractor: x = w·cos(x)·(cos(x)·cos(y))³,
+// y = w·cos(x)·(sin(x)·cos(y))³. Trig args are raw coords — for
+// large radii the trig cliff applies, route through safe_*.
+fn var_petal(p: vec2f, w: f32) -> vec2f {
+  let cx = safe_cos(p.x);
+  let sx = safe_sin(p.x);
+  let cy = safe_cos(p.y);
+  let cxcy = cx * cy;
+  let sxcy = sx * cy;
+  let bx = cxcy * cxcy * cxcy;
+  let by = sxcy * sxcy * sxcy;
+  return vec2f(w * cx * bx, w * cx * by);
+}
+
+// ---------------------------------------------------------------------
+// #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular. Sources:
+// xyrus02/apophysis-plugins (GPL-2+); JWildfire HexesFunc (LGPL-2.1+);
+// see NOTICE.md. pyr3 reimplements each formula in WGSL; no source
+// code is byte-copied. `juni` was originally scoped here but dropped —
+// no JuniFunc.java in JWildfire, and the Xyrus02 juni source requires
+// xform-affine context that pyr3's apply_variation seam doesn't expose
+// (see V table comment in src/variations.ts).
+// ---------------------------------------------------------------------
+
+// var_bcircle — Xyrus02 bcircle plugin (apophysis-plugins).
+// 2 params (scale, borderwidth). RNG only when borderwidth ≠ 0.
+// Inside the unit disk (after scale), passthrough w·(x,y); outside,
+// optionally emit a point on the unit circle perturbed by border noise.
+// Origin guard matches source: (0,0) input → no contribution.
+fn var_bcircle(p: vec2f, w: f32, scale: f32, borderwidth: f32, wi: u32) -> vec2f {
+  let bcbw = abs(borderwidth);
+  if (p.x == 0.0 && p.y == 0.0) { return vec2f(0.0, 0.0); }
+  let x = p.x * scale;
+  let y = p.y * scale;
+  let r = sqrt(x * x + y * y);
+  if (r <= 1.0) {
+    return vec2f(w * x, w * y);
+  }
+  if (bcbw == 0.0) { return vec2f(0.0, 0.0); }
+  let ang = atan2(y, x);
+  let rand = rand01(wi);
+  let omega = 0.2 * bcbw * rand + 1.0;
+  // ang from atan2 is bounded in [-π, π] — plain trig fine; keep safe_*
+  // defensively in case future call-sites scale the angle further.
+  return vec2f(w * omega * safe_cos(ang), w * omega * safe_sin(ang));
+}
+
+// var_curl2 — Xyrus02 curl2 plugin (apophysis-plugins). 3 params
+// (c1, c2, c3). No RNG. Author: Georg Kiehne / Xyrus-Worx.
+// Cubic-polynomial complex inverse — the c2/c3 generalization of
+// flam3's `curl` (which is the c1-only path).
+fn var_curl2(p: vec2f, w: f32, c1: f32, c2: f32, c3: f32) -> vec2f {
+  let cc2 = 2.0 * c2;
+  let cc3 = 3.0 * c3;
+  let x = p.x;
+  let y = p.y;
+  let x2 = x * x;
+  let x3 = x2 * x;
+  let y2 = y * y;
+  let y3 = y2 * y;
+  let re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
+  let im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+  let denom = re * re + im * im;
+  // Match source: no explicit guard; the chaos game reseed handles
+  // ±Inf from a true zero denominator.
+  let r = w / denom;
+  return vec2f((x * re + y * im) * r, (y * re - x * im) * r);
+}
+
+// var_murl — JWildfire MurlFunc / Xyrus02 murl plugin. 2 params
+// (c, power). No RNG. Author: Peter Sdobnov (Zueuk); ported to Java
+// by Nic Anderson (chronologicaldot). Polar power + complex inverse
+// blend. JWildfire's port adds the `power == 1` branch (c is NOT
+// divided by power-1 there); pyr3 follows the JWildfire form.
+fn var_murl(p: vec2f, w: f32, c_in: f32, power_in: f32) -> vec2f {
+  let power_i = i32(power_in);
+  let power_f = f32(power_i);
+  let c = select(c_in / (power_f - 1.0), c_in, power_i == 1);
+  let p2 = power_f / 2.0;
+  let vp = w * (c + 1.0);
+  let a = atan2(p.y, p.x) * power_f;
+  // `a` can exceed [-π·power, π·power] — safe_* dodges Dawn's trig cliff
+  // at high power counts.
+  let sina = safe_sin(a);
+  let cosa = safe_cos(a);
+  let r = c * pow(p.x * p.x + p.y * p.y, p2);
+  let re = r * cosa + 1.0;
+  let im = r * sina;
+  // Murl source uses 1e-29 to dodge degeneracy at (c=0, r=0). f32 floor
+  // is ~1.18e-38, so 1e-29 is well-representable; but the Dawn FTZ
+  // cliff (subnormals → 0) applies to any value ≤ ~1.18e-38, NOT 1e-29.
+  // 1e-29 is safe — round-trips as a normal f32.
+  let r1 = vp / (re * re + im * im + 1.0e-29);
+  return vec2f(r1 * (p.x * re + p.y * im), r1 * (p.y * re - p.x * im));
+}
+
+// var_stwins — Xyrus02 stwins plugin (apophysis-plugins). 1 param
+// (distort). No RNG. Author: xyrus02. Twin-sine ratio: scales the
+// iterate by a fixed 0.05 multiplier, then mixes
+// (x²−y²)·sin(2π·distort·(x+y)) / (x²+y²) back into (w·x, w·y).
+fn var_stwins(p: vec2f, w: f32, distort: f32) -> vec2f {
+  let multiplier: f32 = 0.05;
+  let x = p.x * w * multiplier;
+  let y = p.y * w * multiplier;
+  let x2 = x * x;
+  let y2 = y * y;
+  let x_plus_y = x + y;
+  let x2_minus_y2 = x2 - y2;
+  let x2_plus_y2 = x2 + y2;
+  // Trig arg `2π·distort·(x+y)` is unbounded for distort or coords away
+  // from origin — Dawn trig cliff applies. safe_sin guards it.
+  let result_num = x2_minus_y2 * safe_sin(TAU * distort * x_plus_y);
+  let divident = select(x2_plus_y2, 1.0, x2_plus_y2 == 0.0);
+  let result = result_num / divident;
+  return vec2f(w * p.x + result, w * p.y + result);
+}
+
+// var_hexes — JWildfire HexesFunc (port of slobo777's Apophysis
+// hexes plugin). 4 params (cellsize, power, rotate, scale). No RNG.
+// Author: Neil Slater / slobo777.
+//
+// Breaks the plane into a hex lattice, finds the closest hex center
+// to the iterate, then applies a per-cell power scaling + rotation
+// expressed via voronoi-edge distance. The "rosette removal" blend
+// at the cell edge (L ∈ [0.5, 0.8]) smooths the transition between
+// closest-vs-second-closest-hex regions.
+//
+// pyr3 uses its OWN hex-grid helper, NOT worley2d_F1 — hexes is
+// deterministic per-cell-center (no per-cell RNG hash) and uses an
+// affine map to convert Cartesian ↔ hex coords. worley2d's
+// hash-based feature points would produce a completely different
+// (and wrong) lattice.
+fn var_hexes(p: vec2f, w: f32, cellsize: f32, power: f32, rotate: f32, scale: f32) -> vec2f {
+  if (cellsize == 0.0) { return vec2f(0.0, 0.0); }
+  // Local consts (extractWgslFn doesn't pull module-scope const into
+  // the test kernel — declare as let).
+  let SQRT3: f32 = 1.7320508075688772935;
+  let a_hex: f32 = 1.0 / 3.0;
+  let b_hex: f32 = SQRT3 / 3.0;
+  let c_hex: f32 = -1.0 / 3.0;
+  let d_hex: f32 = SQRT3 / 3.0;
+  let a_cart: f32 = 1.5;
+  let b_cart: f32 = -1.5;
+  let c_cart: f32 = SQRT3 / 2.0;
+  let d_cart: f32 = SQRT3 / 2.0;
+  // `rotate · 2π` — bounded for sane rotate inputs, plain trig fine.
+  let rotSin = safe_sin(rotate * TAU);
+  let rotCos = safe_cos(rotate * TAU);
+  let Ux = p.x;
+  let Uy = p.y;
+  let s = cellsize;
+
+  let hx0 = i32(floor((a_hex * Ux + b_hex * Uy) / s));
+  let hy0 = i32(floor((c_hex * Ux + d_hex * Uy) / s));
+
+  // Step 1: 3x3 candidate hex centers, find the closest.
+  var bestD2: f32 = 1.0e30;
+  var q: i32 = 0;
+  for (var di: i32 = -1; di < 2; di = di + 1) {
+    for (var dj: i32 = -1; dj < 2; dj = dj + 1) {
+      let cx = (a_cart * f32(hx0 + di) + b_cart * f32(hy0 + dj)) * s;
+      let cy = (c_cart * f32(hx0 + di) + d_cart * f32(hy0 + dj)) * s;
+      let dx = cx - Ux;
+      let dy = cy - Uy;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        q = (di + 1) * 3 + (dj + 1);
+      }
+    }
+  }
+  // Convert q back to (di, dj). Same enumeration as the source's
+  // `cell_choice` table: q=0..8 → (di,dj) ∈ [-1,1]².
+  let chosen_di = q / 3 - 1;
+  let chosen_dj = q % 3 - 1;
+  let hx = hx0 + chosen_di;
+  let hy = hy0 + chosen_dj;
+
+  // Step 2: 7-point ring centered on the chosen hex. Order matches the
+  // JWF source: [center, +y, +x+y, +x, -y, -x-y, -x].
+  let P0 = vec2f((a_cart * f32(hx) + b_cart * f32(hy)) * s, (c_cart * f32(hx) + d_cart * f32(hy)) * s);
+  let P1 = vec2f((a_cart * f32(hx) + b_cart * f32(hy + 1)) * s, (c_cart * f32(hx) + d_cart * f32(hy + 1)) * s);
+  let P2 = vec2f((a_cart * f32(hx + 1) + b_cart * f32(hy + 1)) * s, (c_cart * f32(hx + 1) + d_cart * f32(hy + 1)) * s);
+  let P3 = vec2f((a_cart * f32(hx + 1) + b_cart * f32(hy)) * s, (c_cart * f32(hx + 1) + d_cart * f32(hy)) * s);
+  let P4 = vec2f((a_cart * f32(hx) + b_cart * f32(hy - 1)) * s, (c_cart * f32(hx) + d_cart * f32(hy - 1)) * s);
+  let P5 = vec2f((a_cart * f32(hx - 1) + b_cart * f32(hy - 1)) * s, (c_cart * f32(hx - 1) + d_cart * f32(hy - 1)) * s);
+  let P6 = vec2f((a_cart * f32(hx - 1) + b_cart * f32(hy)) * s, (c_cart * f32(hx - 1) + d_cart * f32(hy)) * s);
+
+  // voronoiL: half-plane projection vs each of the other 6 centers.
+  // Inlined twice (no functions inside functions in WGSL).
+  let L1 = hexes_voronoi_max(P0, P1, P2, P3, P4, P5, P6, Ux, Uy);
+
+  let DXo = Ux - P0.x;
+  let DYo = Uy - P0.y;
+  // `power` is user-controlled — the source guards L1==0 with `L1 + 1e-100`.
+  // 1e-100 is below f32 representable normals; we use 1.0e-30 (smallest
+  // value that survives Dawn's FTZ cliff per reference-dawn-f32-ftz-cliff).
+  let trgL = pow(L1 + 1.0e-30, power) * scale;
+  let Vx0 = DXo * rotCos + DYo * rotSin;
+  let Vy0 = -DXo * rotSin + DYo * rotCos;
+
+  let L2 = hexes_voronoi_max(P0, P1, P2, P3, P4, P5, P6, Vx0 + P0.x, Vy0 + P0.y);
+  let L = max(L1, L2);
+  var R: f32 = 0.0;
+  if (L < 0.5) {
+    R = trgL / L1;
+  } else if (L > 0.8) {
+    R = trgL / L2;
+  } else {
+    R = ((trgL / L1) * (0.8 - L) + (trgL / L2) * (L - 0.5)) / 0.3;
+  }
+  let Vx = Vx0 * R + P0.x;
+  let Vy = Vy0 * R + P0.y;
+  return vec2f(w * Vx, w * Vy);
+}
+
+// Hex Voronoi half-plane max-ratio helper. Takes the chosen center P0
+// plus the 6 ring centers (P1..P6) and the query point U; returns the
+// max half-plane projection ratio across the 6 edges. Matches the JWF
+// `hexes_voronoi` / `hexes_vratio` pair.
+fn hexes_voronoi_max(P0: vec2f, P1: vec2f, P2: vec2f, P3: vec2f, P4: vec2f, P5: vec2f, P6: vec2f, Ux: f32, Uy: f32) -> f32 {
+  var ratiomax: f32 = -1.0e20;
+  ratiomax = hexes_vratio_step(P1, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P2, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P3, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P4, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P5, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P6, P0, Ux, Uy, ratiomax);
+  return ratiomax;
+}
+
+fn hexes_vratio_step(P: vec2f, Q: vec2f, Ux: f32, Uy: f32, prev: f32) -> f32 {
+  let PmQx = P.x - Q.x;
+  let PmQy = P.y - Q.y;
+  if (PmQx == 0.0 && PmQy == 0.0) {
+    return select(prev, 1.0, 1.0 > prev);
+  }
+  // (PmQx)·(U−Q).x  + (PmQy)·(U−Q).y, doubled, divided by |P−Q|².
+  // Parens around the dot product to avoid Dawn's `* ^ /` ambiguity.
+  let num = 2.0 * ((Ux - Q.x) * PmQx + (Uy - Q.y) * PmQy);
+  let den = PmQx * PmQx + PmQy * PmQy;
+  let ratio = num / den;
+  return select(prev, ratio, ratio > prev);
+}
+
+// ---------------------------------------------------------------------
+// #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+// V125..V130. Sources: xyrus02/apophysis-plugins (GPL-2+); see
+// NOTICE.md. pyr3 reimplements each formula in WGSL; no source code is
+// byte-copied.
+// ---------------------------------------------------------------------
+
+// var_xheart — Xyrus02 xheart plugin (apophysis-plugins). 2 params
+// (xheart_angle, xheart_ratio). No RNG. "Extended heart" — projects
+// (x,y) through a (4/r²+4, rat/r²+4) folding then rotates by an angle
+// precomputed from `xheart_angle`. Source's `r2_4 == 0` branch is dead
+// (r²+4 ≥ 4) — kept defensively.
+fn var_xheart(p: vec2f, w: f32, angle: f32, ratio: f32) -> vec2f {
+  let ang = PI / 4.0 + (0.5 * (PI / 4.0) * angle);
+  // ang is bounded ≈ [π/4 - π/8·|angle|, ...] — for sane inputs well
+  // within the safe trig range; keep safe_* defensively.
+  let cosa = safe_cos(ang);
+  let sina = safe_sin(ang);
+  let rat = 6.0 + 2.0 * ratio;
+  var r2_4 = p.x * p.x + p.y * p.y + 4.0;
+  if (r2_4 == 0.0) { r2_4 = 1.0; }
+  let bx = 4.0 / r2_4;
+  let by = rat / r2_4;
+  let xRot = cosa * (bx * p.x) - sina * (by * p.y);
+  let yRot = sina * (bx * p.x) + cosa * (by * p.y);
+  // Per source: positive x preserves y, non-positive x mirrors y.
+  let y_signed = select(-yRot, yRot, xRot > 0.0);
+  return vec2f(w * xRot, w * y_signed);
+}
+
+// var_xhyperbol — Xyrus02 xhyperbol plugin (apophysis-plugins). 6
+// params (m00, m01, m10, m11, m20, m21). No RNG. "Extended hyperbolic":
+// applies a unit-disc inversion, runs the result through a 2x3 affine,
+// then re-emits as |z'|²·(cos α, sin α). Source's epsilon (1e-300) is
+// f64; pyr3 uses EPS (1e-10) — same role (avoid /0 at origin) and
+// safely above Dawn's FTZ cliff (~1.18e-38).
+fn var_xhyperbol(p: vec2f, w: f32, m00: f32, m01: f32, m10: f32, m11: f32, m20: f32, m21: f32) -> vec2f {
+  let r = 1.0 / (p.x * p.x + p.y * p.y + EPS);
+  let x = p.x * r;
+  let y = p.y * r;
+  let re = m00 * x + m01 * y + m20;
+  let im = m10 * x + m11 * y + m21;
+  // Source adds M_2PI to the angle: 2π-periodic for cos/sin so this is
+  // mathematically a no-op; preserve for parity.
+  let alpha = atan2(im, re) + TAU;
+  // |alpha| ≤ 3π — plain trig is fine; safe_* defensively.
+  let sa = safe_sin(alpha);
+  let ca = safe_cos(alpha);
+  let rsq = re * re + im * im;
+  let xout = rsq * ca;
+  let yout = rsq * sa;
+  let rinv = w / (xout * xout + yout * yout + EPS);
+  return vec2f(xout * rinv, yout * rinv);
+}
+
+// var_xcurl2 — Xyrus02 xcurl2 plugin (apophysis-plugins). 3 params
+// (c1, c2, c3). No RNG. DIFFERENT polynomial from V121 `curl2` (see
+// V table comment). Source's own header says "old, probably wrong
+// version of curl2" — but pyr3 ships both because the visual character
+// differs. Also note the `y·re + x·im` SUM (not the standard Cartesian-
+// inverse SIGN flip) — preserved verbatim from source.
+fn var_xcurl2(p: vec2f, w: f32, c1: f32, c2: f32, c3: f32) -> vec2f {
+  let x = p.x;
+  let y = p.y;
+  let x2 = x * x;
+  let y2 = y * y;
+  let x3 = x2 * x;
+  let re = 1.0 + c1 * x + c2 * (x2 - y2) + c3 * (x3 - 3.0 * x);
+  let im = c1 * y + c2 * (2.0 * x * y) + c3 * (3.0 * x * y - 1.0);
+  let denom = re * re + im * im;
+  let r = w / denom;
+  return vec2f((x * re + y * im) * r, (y * re + x * im) * r);
+}
+
+// var_xtrb — Xyrus02 xtrb plugin (apophysis-plugins). 6 params
+// (xtrb_power, xtrb_dist, xtrb_radius, xtrb_width, xtrb_a, xtrb_b).
+// RNG: 2 calls per iter (one rand01 for the width-blend branch, one
+// for the angle-modulo index in [0, abs(power))). Heavy precalc — 18
+// derived geometry values computed inline (flam3 caches at xform
+// load; pyr3 recomputes per iter since GPU params are per-dispatch).
+//
+// The Hex routine has 16 conditional branches doing tri-linear coord
+// transforms; structure mirrors the source verbatim. xtrb_power must
+// be a nonzero integer (source default 2); we trunc + min(1).
+fn var_xtrb(p: vec2f, w: f32, power_in: f32, dist: f32, radius: f32, width: f32, a_param: f32, b_param: f32, wi: u32) -> vec2f {
+  let power_i = max(1, i32(power_in));
+  let power_f = f32(power_i);
+
+  let angle_Br = 0.047 + a_param;
+  let angle_Cr = 0.047 + b_param;
+  let angle_Ar = PI - angle_Br - angle_Cr;
+
+  // 0.5·angle_* ∈ small bounded range for sane (a, b) — plain trig fine.
+  let sinA2 = safe_sin(0.5 * angle_Ar);
+  let cosA2 = safe_cos(0.5 * angle_Ar);
+  let sinB2 = safe_sin(0.5 * angle_Br);
+  let cosB2 = safe_cos(0.5 * angle_Br);
+  let sinC2 = safe_sin(0.5 * angle_Cr);
+  let cosC2 = safe_cos(0.5 * angle_Cr);
+  let sinC = safe_sin(angle_Cr);
+  let cosC = safe_cos(angle_Cr);
+
+  let aSide = radius * (sinC2 / cosC2 + sinB2 / cosB2);
+  let bSide = radius * (sinC2 / cosC2 + sinA2 / cosA2);
+  let cSide = radius * (sinB2 / cosB2 + sinA2 / cosA2);
+
+  let width1 = 1.0 - width;
+  let width2 = 2.0 * width;
+  let width3 = 1.0 - width * width;
+
+  let S2 = radius * (aSide + bSide + cSide);
+  let Ha = S2 / aSide / 6.0;
+  let Hb = S2 / bSide / 6.0;
+  let Hc = S2 / cSide / 6.0;
+
+  let ab = aSide / bSide;
+  let ac = aSide / cSide;
+  let ba = bSide / aSide;
+  let bc = bSide / cSide;
+  let ca = cSide / aSide;
+  let cb = cSide / bSide;
+  let S2a = 6.0 * Ha;
+  let S2b = 6.0 * Hb;
+  let S2c = 6.0 * Hc;
+  let S2bc = S2 / (bSide + cSide) / 6.0;
+  let S2ab = S2 / (aSide + bSide) / 6.0;
+  let S2ac = S2 / (aSide + cSide) / 6.0;
+
+  let absN = u32(abs(power_i));
+  let cN = dist / power_f / 2.0;
+
+  // DirectTrilinear inline:
+  let U = p.y + radius;
+  let V = p.x * sinC - p.y * cosC + radius;
+  let Alpha0 = U;
+  let Beta0 = V;
+
+  let M = floor(Alpha0 / S2a);
+  var OffsetAl = Alpha0 - M * S2a;
+  let N = floor(Beta0 / S2b);
+  var OffsetBe = Beta0 - N * S2b;
+  var OffsetGa = S2c - ac * OffsetAl - bc * OffsetBe;
+
+  let R = rand01(wi);
+
+  // Track whether we entered the negative-Ga (mirrored) branch — the
+  // final Alpha/Beta reassembly differs in that case.
+  let neg = OffsetGa <= 0.0;
+  if (neg) {
+    OffsetAl = S2a - OffsetAl;
+    OffsetBe = S2b - OffsetBe;
+    OffsetGa = -OffsetGa;
+  }
+
+  // Hex routine (inlined). Local Al/Be/Ga = offset values; Al1/Be1 =
+  // hex-transformed; De1/Ga1 are scratch.
+  let Al = OffsetAl;
+  let Be = OffsetBe;
+  let Ga = OffsetGa;
+  var Al1: f32 = 0.0;
+  var Be1: f32 = 0.0;
+  var Ga1: f32 = 0.0;
+  var De1: f32 = 0.0;
+  if (Be < Al) {
+    if (Ga < Be) {
+      if (R >= width3) {
+        De1 = width * Be;
+        Ga1 = width * Ga;
+      } else {
+        Ga1 = width1 * Ga + width2 * Hc * Ga / Be;
+        De1 = width1 * Be + width2 * S2ab * (3.0 - Ga / Be);
+      }
+      Al1 = S2a - ba * De1 - ca * Ga1;
+      Be1 = De1;
+    } else {
+      if (Ga < Al) {
+        if (R >= width3) {
+          Ga1 = width * Ga;
+          De1 = width * Be;
+        } else {
+          De1 = width1 * Be + width2 * Hb * Be / Ga;
+          Ga1 = width1 * Ga + width2 * S2ac * (3.0 - Be / Ga);
+        }
+        Al1 = S2a - ba * De1 - ca * Ga1;
+        Be1 = De1;
+      } else {
+        if (R >= width3) {
+          Al1 = width * Al;
+          Be1 = width * Be;
+        } else {
+          Be1 = width1 * Be + width2 * Hb * Be / Al;
+          Al1 = width1 * Al + width2 * S2ac * (3.0 - Be / Al);
+        }
+      }
+    }
+  } else {
+    if (Ga < Al) {
+      if (R >= width3) {
+        De1 = width * Al;
+        Ga1 = width * Ga;
+      } else {
+        Ga1 = width1 * Ga + width2 * Hc * Ga / Al;
+        De1 = width1 * Al + width2 * S2ab * (3.0 - Ga / Al);
+      }
+      Be1 = S2b - ab * De1 - cb * Ga1;
+      Al1 = De1;
+    } else {
+      if (Ga < Be) {
+        if (R >= width3) {
+          Ga1 = width * Ga;
+          De1 = width * Al;
+        } else {
+          De1 = width1 * Al + width2 * Ha * Al / Ga;
+          Ga1 = width1 * Ga + width2 * S2bc * (3.0 - Al / Ga);
+        }
+        Be1 = S2b - ab * De1 - cb * Ga1;
+        Al1 = De1;
+      } else {
+        if (R >= width3) {
+          Be1 = width * Be;
+          Al1 = width * Al;
+        } else {
+          Al1 = width1 * Al + width2 * Ha * Al / Be;
+          Be1 = width1 * Be + width2 * S2bc * (3.0 - Al / Be);
+        }
+      }
+    }
+  }
+
+  var Alpha = Al1;
+  var Beta = Be1;
+  if (neg) {
+    Alpha = S2a - Alpha;
+    Beta = S2b - Beta;
+  }
+  Alpha = Alpha + M * S2a;
+  Beta = Beta + N * S2b;
+
+  // InverseTrilinear inline:
+  let inx = (Beta - radius + (Alpha - radius) * cosC) / sinC;
+  let iny = Alpha - radius;
+  // Source: `rand() % absN`. Use a second rand01 sample modulo absN.
+  // Cast to u32 (absN ≥ 1) — sample lands in [0, absN-1].
+  let branch_u = select(0u, u32(rand01(wi) * f32(absN)), absN > 0u);
+  let branch_f = f32(branch_u);
+  // Angle arg is bounded by 2π·branch/|power| + atan2 ∈ [-π, π], scaled
+  // by 1/power → safe trig OK below ~ 2π·256 even at large counts.
+  let angle = (atan2(iny, inx) + TAU * branch_f) / power_f;
+  // Source: pow(inx² + iny², cN). cN can be negative or fractional;
+  // pow handles both, but a zero base with negative exponent → ±Inf.
+  // Source has no guard; we follow (chaos game reseed handles it).
+  let r_pow = pow(inx * inx + iny * iny, cN);
+  return vec2f(w * r_pow * safe_cos(angle), w * r_pow * safe_sin(angle));
+}
+
+// var_xyrus_gridout — Xyrus02 gridout plugin (apophysis-plugins).
+// 0 params. No RNG. Quantizes the iterate by ±1 in x or y depending
+// on which integer-grid quadrant (rint(x), rint(y)) it falls into.
+// Stair-step / cubist look.
+//
+// NOT the same as pyr3's V101 `dc_gridout` (color variation). Source's
+// rint() = half-away-from-zero (NOT C99 default half-to-even); we
+// mirror via floor/ceil with 0.5 bias.
+fn var_xyrus_gridout(p: vec2f, w: f32) -> vec2f {
+  let x = p.x;
+  let y = p.y;
+  let rx = select(ceil(x - 0.5), floor(x + 0.5), x >= 0.0);
+  let ry = select(ceil(y - 0.5), floor(y + 0.5), y >= 0.0);
+  var dx: f32 = 0.0;
+  var dy: f32 = 0.0;
+  if (ry <= 0.0) {
+    if (rx > 0.0) {
+      if (-ry >= rx) { dx = 1.0; } else { dy = 1.0; }
+    } else {
+      if (ry <= rx) { dx = 1.0; } else { dy = -1.0; }
+    }
+  } else {
+    if (rx > 0.0) {
+      if (ry >= rx) { dx = -1.0; } else { dy = 1.0; }
+    } else {
+      if (ry > -rx) { dx = -1.0; } else { dy = -1.0; }
+    }
+  }
+  return vec2f(w * (x + dx), w * (y + dy));
+}
+
+// var_blur_circle — Xyrus02 blur_circle plugin (apophysis-plugins).
+// 1 param (hole). RNG: 2 calls per iter (the (x,y) samples uniformly
+// from [-1,1]²). Input p is IGNORED — output is purely RNG-driven.
+//
+// Author: xyrus02. "Disc-uniform blur" via square→circle perimeter
+// parameterization (same family as circlize / circlize2). Source uses
+// precomputed VVAR4_PI = w · 4/π; we inline.
+//
+// The kernel needs two distinct rand01 samples. We derive them from
+// `wi` and (wi ^ 0xA5A5A5A5u) — the same pattern used in other
+// 2-sample kernels (no module-scope salt const that extractWgslFn
+// would skip).
+fn var_blur_circle(p: vec2f, w: f32, hole: f32, wi: u32) -> vec2f {
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  let x = 2.0 * r0 - 1.0;
+  let y = 2.0 * r1 - 1.0;
+  let absx = abs(x);
+  let absy = abs(y);
+  let s = select(absy, absx, absx > absy);
+  let a = atan2(y, x);
+  let PI3_4: f32 = 3.0 * PI / 4.0;
+  let PI_4: f32 = PI / 4.0;
+  var ps: f32 = 0.0;
+  if (a < -PI3_4) {
+    ps = absy;
+  } else if (a < -PI_4) {
+    ps = 2.0 * s + x;
+  } else if (a < PI_4) {
+    ps = 4.0 * s + y;
+  } else if (a < PI3_4) {
+    ps = 6.0 * s - x;
+  } else {
+    ps = 8.0 * s - y;
+  }
+  // Source has no s==0 guard; produces NaN there (both rands == 0.5
+  // exactly). Mirror — chaos-game reseed cleans up.
+  let r = (w * 4.0 / PI) * s + hole;
+  let phi = PI_4 * ps / s - PI;
+  // phi ∈ [-π, +π/2]-ish (bounded by ps/s and the constant offset);
+  // plain trig is safe.
+  return vec2f(r * safe_cos(phi), r * safe_sin(phi));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -1958,6 +2899,32 @@ fn apply_variation(
     // #114 batch 2a — Worley/Voronoi cellular family.
     case 107u: { return var_bwraps(p, w, p0, p1, p2, p3, p4); }
     case 108u: { return var_crackle(p, w, p0, p1, p2, p3); }
+    // #114 batch 2b-a — JWildfire S-tier first half.
+    case 109u: { return var_juliaq(p, w, p0, p1, wi); }
+    case 110u: { return var_glynnia(p, w, wi); }
+    case 111u: { return var_loonie3(p, w); }
+    case 112u: { return var_falloff(p, w, p0, p1, p2, p3, p4, p5, wi); }
+    case 113u: { return var_falloff2(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
+    case 114u: { return var_falloff3(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
+    // #114 batch 2b-b — S-tier kaleidoscope/circle family.
+    case 115u: { return var_collideoscope(p, w, p0, p1); }
+    case 116u: { return var_circlize(p, w, p0); }
+    case 117u: { return var_circlize2(p, w, p0); }
+    case 118u: { return var_eswirl(p, w, p0, p1); }
+    case 119u: { return var_petal(p, w); }
+    // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular.
+    case 120u: { return var_bcircle(p, w, p0, p1, wi); }
+    case 121u: { return var_curl2(p, w, p0, p1, p2); }
+    case 122u: { return var_murl(p, w, p0, p1); }
+    case 123u: { return var_stwins(p, w, p0); }
+    case 124u: { return var_hexes(p, w, p0, p1, p2, p3); }
+    // #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+    case 125u: { return var_xheart(p, w, p0, p1); }
+    case 126u: { return var_xhyperbol(p, w, p0, p1, p2, p3, p4, p5); }
+    case 127u: { return var_xcurl2(p, w, p0, p1, p2); }
+    case 128u: { return var_xtrb(p, w, p0, p1, p2, p3, p4, p5, wi); }
+    case 129u: { return var_xyrus_gridout(p, w); }
+    case 130u: { return var_blur_circle(p, w, p0, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

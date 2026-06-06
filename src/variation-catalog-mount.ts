@@ -201,6 +201,20 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     rafHandle = requestAnimationFrame(loop);
   }
 
+  // Sync the URL hash to the currently-active section using replaceState
+  // (NOT pushState / location.hash assignment — those flood the back-button
+  // history with every scrolled-past section). The URL stays shareable and
+  // matches what the user is looking at; back button still goes to the
+  // page the user came from.
+  function syncUrlHashTo(idx: number): void {
+    const wrap = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
+    if (!wrap || !wrap.id) return;
+    const target = `#${wrap.id}`;
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  }
+
   // IntersectionObserver picks the section closest to viewport center.
   // The catalog scroll container is the root; threshold steps make us
   // re-evaluate at multiple visibility crossings.
@@ -213,7 +227,10 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
       }
       if (best) {
         const idx = Number((best.target as HTMLElement).dataset.idx);
-        if (Number.isFinite(idx)) setActive(idx);
+        if (Number.isFinite(idx)) {
+          setActive(idx);
+          syncUrlHashTo(idx);
+        }
       }
     },
     {
@@ -230,14 +247,14 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     onJump: (idx) => {
       const target = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
       if (target) {
+        // Instant jump — over 131 variations a smooth scroll is too long
+        // to be useful. Matches deep-link initial load behavior.
         catalogHost.scrollTo({
           top: target.offsetTop - 16,
-          behavior: 'smooth',
+          behavior: 'auto',
         });
-        // IntersectionObserver will fire after scroll lands and set the
-        // active section; we still call setActive directly so the sidebar
-        // highlight updates immediately even before the scroll settles.
         setActive(idx);
+        syncUrlHashTo(idx);
       }
     },
   });
@@ -258,8 +275,37 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     const next = ALL_INDICES[Math.max(0, Math.min(ALL_INDICES.length - 1, cur + dir))]!;
     if (next === here) return;
     const target = catalogHost.querySelector(`[data-idx="${next}"]`) as HTMLElement | null;
-    if (target) catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
+    if (target) catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'auto' });
     setActive(next);
+  }
+
+  // ────────────────────────────────────────────────────────────
+  // URL hash → initial section + hashchange navigation
+  // ────────────────────────────────────────────────────────────
+  // The browser's native anchor-scroll fires before this mount finishes
+  // imperatively building the section DOM, so `#v109-juliaq` lands on the
+  // top of the page instead of the section. Read the hash explicitly after
+  // mount and after any hashchange.
+  function jumpToHash(hash: string): void {
+    const m = hash.match(/^#?v(\d+)(?:-|$)/);
+    if (!m) return;
+    const idx = Number(m[1]);
+    if (!Number.isFinite(idx)) return;
+    const target = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
+    if (!target) return;
+    // No smooth scroll on initial deep-link — jump straight there so the
+    // user lands where they expected without a janky animation.
+    catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'auto' });
+    setActive(idx);
+  }
+  function onHashChange(): void {
+    jumpToHash(window.location.hash);
+  }
+  window.addEventListener('hashchange', onHashChange);
+  // Initial deep-link: fire after a microtask so the IntersectionObserver
+  // has registered all sections (so the scroll lands cleanly).
+  if (window.location.hash) {
+    queueMicrotask(() => jumpToHash(window.location.hash));
   }
 
   function onKey(e: KeyboardEvent): void {
@@ -291,6 +337,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   return {
     destroy(): void {
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('hashchange', onHashChange);
       pauseActive();
       io.disconnect();
       sidebar.destroy();

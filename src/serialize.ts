@@ -167,6 +167,47 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #114 batch 2a — Worley/Voronoi cellular family.
   bwraps: ['cellsize', 'space', 'gain', 'inner_twist', 'outer_twist'],
   crackle: ['cellsize', 'power', 'distort', 'scale'],
+  // #114 batch 2b-a — JWildfire S-tier first half. loonie3 + glynnia
+  // are 0-param (no entries). Z-axis params dropped from falloff
+  // family per pyr3's 2D-only engine; mul_c + invert dropped from
+  // falloff/falloff2 to fit the 8-slot seam (kept on falloff3 since
+  // its blur-type=0+shape=0 default-mode port is the most parameter-
+  // light of the three).
+  juliaq: ['power', 'divisor'],
+  falloff: ['scatter', 'mindist', 'mul_x', 'mul_y', 'x0', 'y0'],
+  falloff2: ['scatter', 'type', 'mul_x', 'mul_y', 'x0', 'y0', 'mindist'],
+  falloff3: ['scatter', 'mul_x', 'mul_y', 'x0', 'y0', 'mindist', 'invert'],
+  // #114 batch 2b-b — S-tier kaleidoscope/circle family. petal is
+  // 0-param (no entry). loc was originally scoped here but dropped —
+  // no varLoc.pas in Apophysis 7X core or JWildfire (see V table
+  // comment in src/variations.ts).
+  collideoscope: ['a', 'num'],
+  circlize: ['hole'],
+  circlize2: ['hole'],
+  eswirl: ['in', 'out'],
+  // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular. juni was
+  // originally scoped here but dropped — it requires xform-affine
+  // context (vp->a..f) + a Z-axis coordinate that pyr3's 2D-only
+  // apply_variation seam doesn't expose. See V table comment in
+  // src/variations.ts.
+  bcircle: ['scale', 'borderwidth'],
+  curl2: ['c1', 'c2', 'c3'],
+  murl: ['c', 'power'],
+  stwins: ['distort'],
+  hexes: ['cellsize', 'power', 'rotate', 'scale'],
+  // #114 batch 2b-d — Xyrus02 X-family + blur_circle. Final #114
+  // batch. xtrb is at the 6-param tightness ceiling (would need 8 if
+  // we tried to expose all canonical xtrb fields; pyr3 ships the
+  // canonical 6 and uses precalc inside the kernel for the 18 derived
+  // values). gridout is 0-param (no entry). xcurl2 has its own polynomial
+  // shape DIFFERENT from V121 `curl2` despite the suffix — see the V
+  // table comment in src/variations.ts. xhyperbol's 6 params encode
+  // a 2x3 affine the iterate runs through inside the kernel.
+  xheart: ['xheart_angle', 'xheart_ratio'],
+  xhyperbol: ['m00', 'm01', 'm10', 'm11', 'm20', 'm21'],
+  xcurl2: ['c1', 'c2', 'c3'],
+  xtrb: ['xtrb_power', 'xtrb_dist', 'xtrb_radius', 'xtrb_width', 'xtrb_a', 'xtrb_b'],
+  blur_circle: ['hole'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -211,6 +252,58 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #114 batch 2a — JWildfire-canonical defaults.
   bwraps: [1, 0, 1, 0, 0],                   // cellsize=1, space, gain=1, inner_twist, outer_twist
   crackle: [1, 0.2, 1, 1],                   // cellsize=1, power=0.2, distort=1, scale=1
+  // #114 batch 2b-a — JWildfire-canonical defaults. juliaq's JWF
+  // default is a random power 2..7; pyr3 picks power=3/divisor=2 as
+  // a visually-active centered default (matches the canonical julia2
+  // showcase shape). The falloff trio's JWF UI defaults match here
+  // 1:1 (scatter=1, mindist=0.5, mul_*=1, x0=y0=0). For falloff2 the
+  // type=0 default reproduces the simplest (and most-rendered) of the
+  // three branches; users discover types 1/2 via the catalog slider.
+  juliaq: [3, 2],                            // power=3, divisor=2
+  falloff: [1, 0.5, 1, 1, 0, 0],             // scatter=1, mindist=0.5, mul_x=1, mul_y=1, x0, y0
+  falloff2: [1, 0, 1, 1, 0, 0, 0.5],         // scatter=1, type=0, mul_x=1, mul_y=1, x0, y0, mindist=0.5
+  falloff3: [1, 1, 1, 0, 0, 0.5, 0],         // scatter=1, mul_x=1, mul_y=1, x0, y0, mindist=0.5, invert
+  // #114 batch 2b-b — JWildfire-canonical defaults. circlize/circlize2
+  // ship JWF's UI defaults (hole=0.40 / 0.0 respectively); collideoscope
+  // ships JWF's class-level defaults a=0.20, num=1 (JWF's randomize()
+  // picks num∈[1,10] at random — pyr3 picks the deterministic lower
+  // bound for the visually-active centered scaffold). eswirl ships
+  // JWF's class defaults in=1.2, out=0.2.
+  collideoscope: [0.20, 1],                  // a=0.20, num=1
+  circlize: [0.40],                          // hole=0.40
+  circlize2: [0.0],                          // hole=0.0
+  eswirl: [1.2, 0.2],                        // in=1.2, out=0.2
+  // #114 batch 2b-c — Xyrus02-canonical defaults. bcircle ships
+  // borderwidth=0 (deterministic disk path; the RNG random-circle path
+  // activates when the user dials borderwidth up). curl2 ships
+  // c1=1, c2=c3=0 (= flam3's `curl` shape — additive growth from
+  // c2/c3 is discoverable). murl ships c=0.1, power=1 — matches
+  // JWildfire's class-level defaults more nicely than the Xyrus02
+  // source's c=0 (no warp) / power=2 baseline; gives a visually
+  // active scaffold without a degenerate division. stwins ships
+  // distort=1 (Xyrus02 default). hexes ships the JWF class defaults
+  // cellsize=1, power=1, rotate=0.166, scale=1.
+  bcircle: [1.0, 0.0],                       // scale=1, borderwidth=0
+  curl2: [1.0, 0.0, 0.0],                    // c1=1, c2, c3
+  murl: [0.1, 1],                            // c=0.1, power=1
+  stwins: [1.0],                             // distort=1
+  hexes: [1.0, 1.0, 0.166, 1.0],             // cellsize=1, power=1, rotate=0.166, scale=1
+  // #114 batch 2b-d — Xyrus02-canonical defaults. xheart ships
+  // angle=ratio=0 (Xyrus02 baseline: rotation = π/4, ratio multiplier =
+  // 6). xhyperbol ships the identity affine (m00=m11=1, others=0; the
+  // Xyrus02 default). xcurl2 ships c1=c2=c3=0 — that's the source's
+  // VAR_REAL default, but at all zeros the (re,im)=(1,0) so the
+  // variation reduces to linear (no warp); the catalog scaffold
+  // overrides to c1=1 to make the first slider drag visually active.
+  // xtrb ships xtrb_power=2 (source default; also the simplest tessellation)
+  // + xtrb_dist=1, xtrb_radius=1, xtrb_width=0.5, xtrb_a=xtrb_b=1
+  // (Xyrus02 source defaults). blur_circle ships hole=0 (Xyrus02
+  // source default; the disc shape is most visible there).
+  xheart: [0.0, 0.0],                                // angle, ratio
+  xhyperbol: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],         // m00=1, m01, m10, m11=1, m20, m21
+  xcurl2: [0.0, 0.0, 0.0],                           // c1, c2, c3
+  xtrb: [2, 1.0, 1.0, 0.5, 1.0, 1.0],                // power=2, dist=1, radius=1, width=0.5, a=1, b=1
+  blur_circle: [0.0],                                // hole
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
