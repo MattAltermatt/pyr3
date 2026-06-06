@@ -24,6 +24,7 @@ import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer
 import { createEditRenderer, type EditRenderer } from './edit-render';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import { genomeToJson, genomeFromJson } from './serialize';
+import { injectPngTextChunk } from './png-text-chunk';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { createSlowRenderNudge, type SlowRenderNudgeHandle } from './edit-slow-render-nudge';
@@ -689,12 +690,31 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       const filename = resolveCurrentFilename();
       const template = state.genome.name;
       await new Promise<void>((resolve, reject) => {
-        canvas.toBlob((blob) => {
+        canvas.toBlob(async (blob) => {
           if (!blob) {
             reject(new Error('toBlob returned null — canvas was not snapshottable'));
             return;
           }
-          const url = URL.createObjectURL(blob);
+          // #123 — embed the source genome as a `pyr3`-keyed tEXt chunk so
+          // the saved PNG is self-describing and round-trips via a future
+          // PNG-import reader.
+          let finalBlob: Blob = blob;
+          try {
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            const pyr3Json = JSON.stringify(genomeToJson(state.genome));
+            const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
+            // Cast to BlobPart: TS strict-mode types Uint8Array<ArrayBufferLike>
+            // (the runtime union includes SharedArrayBuffer) which Blob's
+            // constructor signature rejects. At runtime the array is always
+            // ArrayBuffer-backed.
+            finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
+          } catch (err) {
+            // Metadata injection should never fail in practice (we just
+            // produced the PNG from a working canvas), but if it does,
+            // fall back to the unannotated blob — the image still saves.
+            console.warn('pyr3-edit: PNG metadata injection failed; saving without metadata', err);
+          }
+          const url = URL.createObjectURL(finalBlob);
           const a = document.createElement('a');
           a.href = url;
           a.download = `${filename}.png`;

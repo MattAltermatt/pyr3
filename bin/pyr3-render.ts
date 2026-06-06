@@ -15,6 +15,8 @@ import { PNG } from 'pngjs';
 import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch } from '../src/renderer';
 import { type Genome } from '../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../src/chaos';
+import { genomeToJson } from '../src/serialize';
+import { injectPngTextChunk } from '../src/png-text-chunk';
 import {
   applyPreset,
   customSpec,
@@ -253,11 +255,21 @@ async function main(): Promise<void> {
     tight.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
   }
 
-  // 7. Encode PNG.
+  // 7. Encode PNG. Embed the source genome as a `pyr3`-keyed tEXt chunk
+  // (#123) so the output is self-describing — a future PNG-import reader
+  // can pull the JSON straight back out and round-trip to a Genome via
+  // genomeFromJson(). Source XML is NOT embedded (pyr3 has no Genome→XML
+  // serializer; only the JSON path is canonical).
   const png = new PNG({ width, height });
   png.data = Buffer.from(tight.buffer, tight.byteOffset, tight.byteLength);
   const pngBuf = PNG.sync.write(png);
-  writeFileSync(outPath, pngBuf);
+  const pyr3Json = JSON.stringify(genomeToJson(genome));
+  const withMetadata = injectPngTextChunk(
+    new Uint8Array(pngBuf.buffer, pngBuf.byteOffset, pngBuf.byteLength),
+    'pyr3',
+    pyr3Json,
+  );
+  writeFileSync(outPath, withMetadata);
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
   console.log(`[pyr3-render] wrote ${outPath} in ${elapsed}s`);
