@@ -147,6 +147,15 @@ export const V = {
   dc_perlin: 100,
   dc_gridout: 101,
   dc_cylinder: 102,
+  // #114 batch 1 (post-flam3 plugin pack) — three numbered-variant siblings
+  // of existing pyr3 vars + epispiral. Sources: JWildfire (LGPL-2.1+).
+  // cpow2/cpow3 = Peter Sdobnov ("Zueuk"); loonie2 = dark-beam;
+  // epispiral = cyberxaos / Apophysis 7X.15C. All 3–4 params, no new
+  // packing infra needed — same seam as #117 DC family.
+  cpow2: 103,
+  cpow3: 104,
+  loonie2: 105,
+  epispiral: 106,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

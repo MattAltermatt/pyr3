@@ -158,6 +158,12 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // means "no params", consistent with linear/spherical/etc.).
   dc_perlin: ['scale', 'octaves', 'color_seed'],
   dc_gridout: ['cells'],
+  // #114 batch 1 — post-flam3 plugin pack. Names match the JWildfire +
+  // Apophysis attribute conventions (e.g. `cpow2_r`, `loonie2_sides`).
+  cpow2: ['r', 'a', 'divisor', 'range'],
+  cpow3: ['r', 'd', 'divisor', 'spread'],
+  loonie2: ['sides', 'star', 'circle'],
+  epispiral: ['n', 'thickness', 'holes'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -194,6 +200,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   wedge_julia: [0, 1, 1, 0],                 // angle, count=1, power=1, dist
   wedge_sph: [0, 0, 1, 0],                   // angle, hole, count=1, swirl
   cpow: [1, 0, 1],                           // r=1, i, power=1
+  // #114 batch 1 — JWildfire-canonical defaults.
+  cpow2: [1, 0, 1, 1],                       // r=1, a, divisor=1, range=1
+  cpow3: [1, 1, 1, 1],                       // r=1, d=1, divisor=1, spread=1
+  loonie2: [4, 0.15, 0.25],                  // sides=4, star=0.15, circle=0.25
+  epispiral: [6, 0, 1],                      // n=6, thickness, holes=1
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

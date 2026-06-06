@@ -1555,6 +1555,152 @@ fn var_dc_cylinder_color(p: vec2f) -> vec3f {
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 1 — post-flam3 plugin pack. Sources: JWildfire (LGPL-2.1+);
+// see NOTICE.md for attribution. pyr3 reimplements each formula in WGSL;
+// no JWF code is byte-copied.
+// ---------------------------------------------------------------------
+
+// var_cpow2 — JWildfire CPow2Func.java. 4 params + RNG (3 calls). Author:
+// Peter Sdobnov ("Zueuk"). Numbered variant of pyr3's `cpow` (V41) with
+// range-driven RNG branching. JWF caches precalc in init(); pyr3 has no
+// per-xform init hook so we recompute each iter — all f32 mul/cos/sin,
+// negligible cost.
+fn var_cpow2(p: vec2f, w: f32, p_r: f32, p_a: f32, divisor: f32, range: f32, wi: u32) -> vec2f {
+  let div = select(divisor, 1.0, divisor == 0.0);
+  let rng_max = max(range, 1.0);
+  let ang_step = TAU / div;
+  let c = p_r * safe_cos(PI * 0.5 * p_a) / div;
+  let d = p_r * safe_sin(PI * 0.5 * p_a) / div;
+  let half_c = c * 0.5;
+  let inv_range = 0.5 / rng_max;
+  let full_range = TAU * rng_max;
+
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  let r2 = rand01(wi);
+
+  var a = atan2(p.y, p.x);
+  let n = floor(r0 * rng_max) + select(0.0, 1.0, a < 0.0);
+  a = a + TAU * n;
+  if (safe_cos(a * inv_range) < (r1 * 2.0 - 1.0)) {
+    a = a - full_range;
+  }
+  let sumsq = dot(p, p);
+  let lnr2 = log(sumsq);
+  let r = w * exp(half_c * lnr2 - d * a);
+  let th = c * a + (d * 0.5) * lnr2 + ang_step * floor(div * r2);
+  return vec2f(r * safe_cos(th), r * safe_sin(th));
+}
+
+// var_cpow3 — JWildfire CPow3Func.java. 4 params + RNG (4 calls). Author:
+// Peter Sdobnov ("Zueuk"). Log-distribution branch picker variant of
+// cpow2.
+fn var_cpow3(p: vec2f, w: f32, p_r: f32, p_d: f32, divisor: f32, spread: f32, wi: u32) -> vec2f {
+  let div = select(divisor, 1.0, divisor == 0.0);
+  let ang_step = TAU / div;
+  // JWF precalc: p_a = atan2((d<0 ? -log(-d) : log(d)) * r, 2π).
+  // log(|d|) guards against d=0 by clamping to a tiny f32 floor.
+  let d_abs = max(abs(p_d), 1e-30);
+  let signed_log = select(log(d_abs), -log(d_abs), p_d < 0.0);
+  let pa = atan2(signed_log * p_r, TAU);
+  let cos_pa = safe_cos(pa);
+  let sin_pa = safe_sin(pa);
+  let tc = cos_pa * p_r * cos_pa / div;
+  let td = cos_pa * p_r * sin_pa / div;
+  let half_c = tc * 0.5;
+  let half_d = td * 0.5;
+  let coeff = select(-0.095 * spread / td, 0.0, td == 0.0);
+
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  let r2 = rand01(wi);
+  let r3 = rand01(wi);
+
+  var a = atan2(p.y, p.x);
+  if (a < 0.0) { a = a + TAU; }
+  if (safe_cos(a * 0.5) < (r0 * 2.0 - 1.0)) {
+    a = a - TAU;
+  }
+  let branch_sign = select(-TAU, TAU, r1 < 0.5);
+  a = a + branch_sign * round(log(max(r2, 1e-30)) * coeff);
+  let sumsq = dot(p, p);
+  let lnr2 = log(sumsq);
+  let r = w * exp(half_c * lnr2 - td * a);
+  let th = tc * a + half_d * lnr2 + ang_step * floor(div * r3);
+  return vec2f(r * safe_cos(th), r * safe_sin(th));
+}
+
+// var_loonie2 — JWildfire Loonie2Func.java. 3 params (sides=int, star,
+// circle). Author: dark-beam. N-sided loonie with star + circle blends.
+// `sides` is stored as f32 in the registry; cast to integer at use site.
+// MAX_LOONIE2_SIDES caps the inner loop at compile time — practical
+// `sides` is 3–8, 16 is generous headroom. Inlined as a `let` (not a
+// module-scope `const`) so extractWgslFn-based unit tests pull it
+// alongside the function body.
+fn var_loonie2(p: vec2f, w: f32, sides_f: f32, star: f32, circle: f32) -> vec2f {
+  let MAX_LOONIE2_SIDES: i32 = 16;
+  let sides = clamp(i32(sides_f), 1, MAX_LOONIE2_SIDES);
+  let a = TAU / f32(sides);
+  let sina = safe_sin(a);
+  let cosa = safe_cos(a);
+  let sins = safe_sin(star * PI * 0.5);
+  let coss = safe_cos(star * PI * 0.5);
+  let sinc = safe_sin(circle * PI * 0.5);
+  let cosc = safe_cos(circle * PI * 0.5);
+  let sqrvvar = w * w;
+
+  var xrt = p.x;
+  var yrt = p.y;
+  var r2 = xrt * coss + abs(yrt) * sins;
+  let circle_r = sqrt(xrt * xrt + yrt * yrt);
+
+  // JWF iterates `for (i = 0; i < sides - 1; i++)`. Loop bound is
+  // dynamic; WGSL needs a compile-time cap to avoid unbounded analysis.
+  for (var i: i32 = 0; i < MAX_LOONIE2_SIDES; i = i + 1) {
+    if (i >= sides - 1) { break; }
+    let swp = xrt * cosa - yrt * sina;
+    yrt = xrt * sina + yrt * cosa;
+    xrt = swp;
+    r2 = max(r2, xrt * coss + abs(yrt) * sins);
+  }
+  r2 = r2 * cosc + circle_r * sinc;
+  // JWF post-loop `if (i > 1)` means "did the loop execute more than
+  // once" — equivalent to sides > 2 since i ends at sides-1.
+  if (sides > 2) {
+    r2 = r2 * r2;
+  } else {
+    r2 = abs(r2) * r2;
+  }
+
+  if (r2 > 0.0 && r2 < sqrvvar) {
+    let r = w * sqrt(abs(sqrvvar / r2 - 1.0));
+    return vec2f(r * p.x, r * p.y);
+  } else if (r2 < 0.0) {
+    let r = w / sqrt(abs(sqrvvar / r2) - 1.0);
+    return vec2f(r * p.x, r * p.y);
+  }
+  return vec2f(w * p.x, w * p.y);
+}
+
+// var_epispiral — JWildfire EpispiralFunc.java. 3 params (n, thickness,
+// holes) + 1 rand call when thickness > 0. Author: cyberxaos. Polar
+// epicycloid via 1/cos(n·θ). Apophysis 7X.15C added this as a built-in.
+// Routed through safe_cos per the Dawn f32 trig range cliff convention
+// (#72) — n*θ is theoretically bounded by ±π·n but the discipline holds.
+fn var_epispiral(p: vec2f, w: f32, n: f32, thickness: f32, holes: f32, wi: u32) -> vec2f {
+  let theta = atan2(p.y, p.x);
+  let d = safe_cos(n * theta);
+  // d ≈ 0 produces 1/d ≈ ±Inf — chaos-game bad-value check reseeds the
+  // walker, matching flam3's policy for div-by-zero guarded variations.
+  let r0 = rand01(wi);
+  let recip = 1.0 / d;
+  let t_thick = -holes + (r0 * thickness) * recip;
+  let t_no_thick = -holes + recip;
+  let t = select(t_no_thick, t_thick, abs(thickness) > 1e-30);
+  return vec2f(w * t * safe_cos(theta), w * t * safe_sin(theta));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -1691,6 +1837,11 @@ fn apply_variation(
     case 101u: { return vec2f(0.0, 0.0); }
     // dc_cylinder (102) warps position like flam3's var_cylinder.
     case 102u: { return var_dc_cylinder_pos(p, w); }
+    // #114 batch 1 — post-flam3 plugin pack.
+    case 103u: { return var_cpow2(p, w, p0, p1, p2, p3, wi); }
+    case 104u: { return var_cpow3(p, w, p0, p1, p2, p3, wi); }
+    case 105u: { return var_loonie2(p, w, p0, p1, p2); }
+    case 106u: { return var_epispiral(p, w, p0, p1, p2, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
