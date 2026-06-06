@@ -17,9 +17,19 @@ import {
 } from './screensaver-prefs';
 import { rampLabel } from './screensaver-pacing';
 import { COLORS } from './ui-tokens';
+import type { SheepRef } from './gallery-mount';
+import { isRecordingSupported } from './screensaver-record';
+import { loadFeatureIndex } from './feature-index-client';
+import { fetchFlameXml } from './chunk-fetch';
+import { parseFlame } from './flame-import';
+import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 
 export interface ScreensaverLandingOpts {
-  onPlay: (prefs: ScreensaverPrefs) => void;
+  onPlay: (prefs: ScreensaverPrefs, pickedRef?: SheepRef) => void;
+  device?: GPUDevice;
+  format?: GPUTextureFormat;
+  /** Test hook — defaults to import from screensaver-record. */
+  isRecordingSupported?: () => boolean;
 }
 
 export interface ScreensaverLandingHandle {
@@ -27,6 +37,10 @@ export interface ScreensaverLandingHandle {
   card: HTMLElement;
   /** Re-render values from current prefs (used when reopening via "S" key). */
   refresh(): void;
+  /** Tear down WebGPU resources held by the picker thumbnail renderer
+   *  (#111). Idempotent — safe to call multiple times or when no renderer
+   *  was ever instantiated. */
+  destroy(): void;
 }
 
 const LADDERS = {
@@ -36,6 +50,9 @@ const LADDERS = {
   buildUpQ:   [50, 100, 200, 500],
   slideshowQ: [50, 100, 200, 500],
   buildUpRamp:[1,  2,  3,  5],
+  recordTimeSec: [10, 30, 60, 300],
+  recordQ:       [50, 100, 200, 500],
+  recordRamp:    [1,  2,  3,  5],
 } as const;
 
 type LadderField = keyof typeof LADDERS;
@@ -44,7 +61,7 @@ interface LadderMeta {
   label: string;
   hint: string;
   /** Which mode this ladder belongs to. */
-  mode: 'build-up' | 'slideshow';
+  mode: 'build-up' | 'slideshow' | 'record';
   /** Format a value for a preset-button label (e.g. 60 → "1m"). */
   fmt: (n: number) => string;
   /** Parse a freeform-input string back to a number; null on junk. */
@@ -103,6 +120,27 @@ const LADDER_META: Record<LadderField, LadderMeta> = {
     fmt:   rampLabel,
     parse: parseNumericInput,
   },
+  recordTimeSec: {
+    label: 'Build-up time',
+    hint:  'How long the recorded clip is — the chaos game draws over this duration.',
+    mode:  'record',
+    fmt:   fmtSec,
+    parse: parseSecondsInput,
+  },
+  recordQ: {
+    label: 'Quality',
+    hint:  'Samples per pixel to reach by settle. Higher = denser, smoother flame. 10–500.',
+    mode:  'record',
+    fmt:   fmtPlain,
+    parse: parseNumericInput,
+  },
+  recordRamp: {
+    label: 'Ramp',
+    hint:  'Shape of how samples land over time during the recorded clip.',
+    mode:  'record',
+    fmt:   rampLabel,
+    parse: parseNumericInput,
+  },
 };
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -145,7 +183,7 @@ function injectStyles(): void {
 
 .pyr3-screensaver-mode-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 .pyr3-screensaver-mode-btn {
@@ -168,6 +206,52 @@ function injectStyles(): void {
   border-color: ${COLORS.flame.top};
   color: #1a0d04;
   font-weight: 700;
+}
+.pyr3-screensaver-mode-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pyr3-screensaver-mode-btn[disabled]:hover {
+  color: ${COLORS.text.muted};
+  border-color: ${COLORS.border};
+}
+
+.pyr3-screensaver-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: ${COLORS.bg.input};
+  border: 1px solid ${COLORS.border};
+  border-radius: 8px;
+}
+.pyr3-screensaver-picker.hidden { display: none; }
+.pyr3-screensaver-thumb {
+  width: 300px;
+  height: 300px;
+  background: #000;
+  border-radius: 4px;
+  display: block;
+}
+.pyr3-screensaver-thumb-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: ${COLORS.text.muted};
+  text-align: center;
+  min-height: 16px;
+}
+.pyr3-screensaver-random {
+  padding: 6px 14px;
+  background: ${COLORS.bg.panel};
+  border: 1px solid ${COLORS.border};
+  border-radius: 4px;
+  color: ${COLORS.text.primary};
+  font-size: 13px;
+  cursor: pointer;
+}
+.pyr3-screensaver-random:hover {
+  border-color: ${COLORS.flame.mid};
 }
 
 .pyr3-screensaver-ladder-block {
@@ -260,6 +344,11 @@ function injectStyles(): void {
 .pyr3-screensaver-play:active {
   transform: translateY(1px);
 }
+.pyr3-screensaver-play[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
 `;
   document.head.append(style);
 }
@@ -284,17 +373,39 @@ export function mountScreensaverLanding(
   const buildUpBtn = el('button', 'pyr3-screensaver-mode-btn');
   buildUpBtn.dataset.screensaverMode = 'build-up';
   buildUpBtn.textContent = 'Build-up';
-  modeRow.append(slideshowBtn, buildUpBtn);
+  const recordBtn = el('button', 'pyr3-screensaver-mode-btn');
+  recordBtn.dataset.screensaverMode = 'record';
+  recordBtn.textContent = 'Record';
+
+  const checkSupport = opts.isRecordingSupported ?? isRecordingSupported;
+  const recordingOk = checkSupport();
+  if (!recordingOk) {
+    recordBtn.disabled = true;
+    recordBtn.title = 'Recording requires a Chromium-based browser';
+    // If prefs were stored as 'record' but recording isn't available, fall
+    // back to build-up so the user can still use the page.
+    if (prefs.mode === 'record') prefs = { ...prefs, mode: 'build-up' };
+  }
+
+  modeRow.append(slideshowBtn, buildUpBtn, recordBtn);
+
+  // Picked-flame state for Record mode. Set by the picker (Task 5); read at
+  // Start time and handed to onPlay. Stays null in slideshow/build-up modes.
+  let pickedRef: SheepRef | undefined = undefined;
 
   function refreshModeButtons(): void {
     slideshowBtn.classList.toggle('on', prefs.mode === 'slideshow');
     buildUpBtn.classList.toggle('on', prefs.mode === 'build-up');
+    recordBtn.classList.toggle('on', prefs.mode === 'record');
     // Hide ladder blocks that don't belong to the current mode.
     for (const field of Object.keys(LADDER_META) as LadderField[]) {
       const block = ladderBlocks[field];
       if (!block) continue;
       block.classList.toggle('hidden', LADDER_META[field].mode !== prefs.mode);
     }
+    // Picker container: visible only in record mode.
+    pickerContainer.classList.toggle('hidden', prefs.mode !== 'record');
+    refreshPlayability();
   }
   slideshowBtn.addEventListener('click', () => {
     prefs = { ...prefs, mode: 'slideshow' };
@@ -303,6 +414,16 @@ export function mountScreensaverLanding(
   buildUpBtn.addEventListener('click', () => {
     prefs = { ...prefs, mode: 'build-up' };
     refreshModeButtons();
+  });
+  recordBtn.addEventListener('click', () => {
+    if (recordBtn.disabled) return;
+    prefs = { ...prefs, mode: 'record' };
+    refreshModeButtons();
+    // Auto-pick a flame on first activation so the user sees a thumbnail
+    // immediately instead of an empty canvas.
+    if (!pickedRef && opts.device && opts.format) {
+      void pickAndRenderRandom();
+    }
   });
 
   // Ladder rows
@@ -373,6 +494,22 @@ export function mountScreensaverLanding(
     }
   }
 
+  // Picker container — visible only in Record mode. Live thumbnail rendering
+  // is wired by Task 5 (#111); for now the canvas + label + Random button
+  // mount as scaffolding so the mode-switch UX works.
+  const pickerContainer = el('div', 'pyr3-screensaver-picker');
+  pickerContainer.dataset.screensaverPicker = '';
+  const thumbCanvas = el('canvas', 'pyr3-screensaver-thumb');
+  thumbCanvas.width = 300;
+  thumbCanvas.height = 300;
+  const thumbLabel = el('div', 'pyr3-screensaver-thumb-label');
+  thumbLabel.textContent = '(select Record to load)';
+  const randomBtn = el('button', 'pyr3-screensaver-random');
+  randomBtn.textContent = '🎲 Random';
+  randomBtn.title = 'Pick a different flame to record';
+  randomBtn.dataset.screensaverRandom = '';
+  pickerContainer.append(thumbCanvas, thumbLabel, randomBtn);
+
   card.append(modeRow);
   card.append(buildLadder('buildUpSec'));
   card.append(buildLadder('restSec'));
@@ -380,16 +517,116 @@ export function mountScreensaverLanding(
   card.append(buildLadder('buildUpRamp'));
   card.append(buildLadder('holdSec'));
   card.append(buildLadder('slideshowQ'));
+  card.append(buildLadder('recordTimeSec'));
+  card.append(buildLadder('recordQ'));
+  card.append(buildLadder('recordRamp'));
+  card.append(pickerContainer);
+
+  // Picker — live thumbnail renderer. Lazily initialised on first
+  // pickAndRenderRandom call so the WebGPU canvas context stays unallocated
+  // until the user actually enters Record mode. Re-rolls on Random click.
+  const THUMB_DIM = 300;
+  const THUMB_Q   = 50;
+  const THUMB_OVS = 1;
+  const THUMB_WALKERS = 4096;
+
+  let thumbRenderer: Renderer | null = null;
+  let thumbCtx: GPUCanvasContext | null = null;
+
+  async function ensureThumbRenderer(): Promise<Renderer | null> {
+    if (!opts.device || !opts.format) return null;
+    if (thumbRenderer) return thumbRenderer;
+    const ctx = thumbCanvas.getContext('webgpu');
+    if (!ctx) return null;
+    ctx.configure({ device: opts.device, format: opts.format, alphaMode: 'opaque' });
+    thumbCtx = ctx;
+    thumbRenderer = createRenderer(opts.device, opts.format, {
+      width: THUMB_DIM,
+      height: THUMB_DIM,
+      oversample: THUMB_OVS,
+      filterRadius: DEFAULT_FILTER_RADIUS,
+    });
+    return thumbRenderer;
+  }
+
+  async function pickAndRenderRandom(): Promise<void> {
+    if (!opts.device || !opts.format) {
+      thumbLabel.textContent = '(WebGPU unavailable)';
+      return;
+    }
+    thumbLabel.textContent = 'Loading…';
+    const renderer = await ensureThumbRenderer();
+    if (!renderer || !thumbCtx) {
+      thumbLabel.textContent = '(thumbnail unavailable)';
+      return;
+    }
+    const index = await loadFeatureIndex();
+    if (index.recordCount === 0) {
+      thumbLabel.textContent = '(corpus unavailable)';
+      return;
+    }
+    const allRefs = index.filter(() => true);
+    if (allRefs.length === 0) {
+      thumbLabel.textContent = '(corpus empty)';
+      return;
+    }
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ref = allRefs[Math.floor(Math.random() * allRefs.length)]!;
+      try {
+        const xml = await fetchFlameXml(ref.gen, ref.id);
+        const { genome } = parseFlame(xml);
+        const targetSamples = THUMB_Q * THUMB_DIM * THUMB_DIM;
+        const iters = Math.max(64, Math.ceil(targetSamples / THUMB_WALKERS));
+        renderer.reset(genome);
+        renderer.iterate({
+          genome,
+          seed:           (Math.random() * 0xffffffff) >>> 0,
+          walkers:        THUMB_WALKERS,
+          itersPerWalker: iters,
+        });
+        renderer.present({
+          genome,
+          outputView:   thumbCtx.getCurrentTexture().createView(),
+          totalSamples: THUMB_WALKERS * iters,
+          forceDeOff:   false,
+        });
+        pickedRef = ref;
+        thumbLabel.textContent = `${genome.nick || '(unnamed)'} · ${ref.gen}/${ref.id}`;
+        refreshPlayability();
+        return;
+      } catch {
+        // Try a different flame.
+      }
+    }
+    thumbLabel.textContent = "(couldn't load — try again)";
+  }
+
+  randomBtn.addEventListener('click', () => { void pickAndRenderRandom(); });
 
   // Play button
   const play = el('button', 'pyr3-screensaver-play');
   play.dataset.screensaverPlay = '';
   play.textContent = '▶ Start screensaver';
   play.addEventListener('click', () => {
+    if (play.disabled) return;
     writeScreensaverPrefs(prefs);
-    opts.onPlay(prefs);
+    opts.onPlay(prefs, pickedRef);
   });
   card.append(play);
+
+  // Disable / re-label the Play button when Record mode is selected but no
+  // flame has been picked yet. Task 5 will fire pickedRef-update via the
+  // picker's Random + auto-pick paths.
+  function refreshPlayability(): void {
+    if (prefs.mode === 'record') {
+      play.disabled = !pickedRef;
+      play.textContent = pickedRef ? '▶ Start recording' : '(pick a flame)';
+    } else {
+      play.disabled = false;
+      play.textContent = '▶ Start screensaver';
+    }
+  }
 
   host.append(card);
 
@@ -402,6 +639,13 @@ export function mountScreensaverLanding(
       prefs = readScreensaverPrefs();
       refreshModeButtons();
       (Object.keys(LADDERS) as LadderField[]).forEach(refreshLadder);
+    },
+    destroy() {
+      if (thumbRenderer) {
+        thumbRenderer.destroy();
+        thumbRenderer = null;
+        thumbCtx = null;
+      }
     },
   };
 }

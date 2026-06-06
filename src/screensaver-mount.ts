@@ -26,6 +26,8 @@ import {
 import type { Genome } from './genome';
 import { COLORS } from './ui-tokens';
 import { HERO_GEN, HERO_ID } from './load-intent';
+import { createRecorder, type RecorderHandle } from './screensaver-record';
+import { deriveRecordingFilename } from './screensaver-record-filename';
 
 export interface MountScreensaverOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -219,6 +221,58 @@ function buildNowPlayingPill(cb: PillCallbacks): PillHandle {
   };
 }
 
+interface RecordPillCallbacks {
+  onFullscreen: () => void;
+  /** Stop & save — explicit click intent. Saves the partial blob. */
+  onStop: () => void;
+}
+
+interface RecordPillHandle {
+  el: HTMLElement;
+}
+
+/** Simplified pill for record mode: just Fullscreen + Stop & save. No
+ *  Prev/Pause/Next — see spec Q5 for the rationale (pause yields held
+ *  frames in the .webm; skip mid-record splices flames). */
+function buildRecordPill(cb: RecordPillCallbacks): RecordPillHandle {
+  const pill = el('div', 'pyr3-screensaver-pill');
+  Object.assign(pill.style, {
+    position: 'absolute',
+    top: '60px',
+    right: '16px',
+    padding: '6px',
+    display: 'flex',
+    gap: '4px',
+    background: COLORS.bg.panel,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '8px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+    zIndex: '11',
+  });
+  function btn(label: string, fn: () => void, title: string): HTMLButtonElement {
+    const b = el('button', 'pyr3-screensaver-pill-btn');
+    b.textContent = label;
+    b.title = title;
+    Object.assign(b.style, {
+      padding: '6px 10px',
+      background: COLORS.bg.input,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: '4px',
+      color: COLORS.text.primary,
+      cursor: 'pointer',
+      fontSize: '14px',
+      minWidth: '32px',
+    });
+    b.addEventListener('click', fn);
+    return b;
+  }
+  pill.append(
+    btn('⛶', cb.onFullscreen, 'Toggle fullscreen (F)'),
+    btn('⏹', cb.onStop,       'Stop & save (S)'),
+  );
+  return { el: pill };
+}
+
 /** Per-page tracker so the fullscreenchange listener can tell apart "user
  *  pressed F to toggle off" (no stop) from "user pressed Esc / browser
  *  exited" (stop playback). Set true just before our toggle calls
@@ -319,6 +373,9 @@ interface ModeControls {
   /** Signal a skip — dir = 1 for next, -1 for prev. The mode picks this up
    *  at its next loop boundary. */
   skip(dir: -1 | 1): void;
+  /** Record-mode only: request the current recording finish + save the
+   *  partial blob. Build-up / slideshow modes implement as a no-op. */
+  requestStopAndSave?(): void;
 }
 
 interface ModeHandle {
@@ -349,6 +406,10 @@ interface ModeState {
   /** Build-up only: total ms accumulated across resumed pauses, applied as
    *  an offset to the elapsed-vs-target calculation. */
   pauseAccumMs: number;
+  /** Record-mode only: ⏹ button (or S key) was pressed during recording —
+   *  exit the build-up loop AND save the partial blob. Distinct from
+   *  cancelled (which discards). */
+  manualStopAndSave: boolean;
 }
 
 /** Promise-based sleep that bails on cancel. Use for the fade-to-black
@@ -388,6 +449,7 @@ function createModeState(): ModeState {
     skipDir: 0,
     pausedAt: 0,
     pauseAccumMs: 0,
+    manualStopAndSave: false,
   };
 }
 
@@ -798,6 +860,155 @@ function startBuildUp(args: {
   };
 }
 
+/** Record mode (#111). Loads the user-picked flame, runs a build-up loop
+ *  parameterised on prefs.recordTimeSec/recordQ/recordRamp, wraps with a
+ *  MediaRecorder. End triggers:
+ *    - settle (cumTarget reached or recordTimeSec elapsed)  → save + download
+ *    - state.manualStopAndSave (⏹ button or S key)          → save + download
+ *    - state.cancelled (Esc / navigate-away)                → abort, no save */
+function runRecordSession(args: {
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  canvasHost: HTMLElement;
+  prefs: ScreensaverPrefs;
+  status: StatusPanel;
+  pickedRef: SheepRef;
+  onDone: () => void;
+}): ModeHandle {
+  const { device, format, canvasHost, prefs, status, pickedRef, onDone } = args;
+  const state = createModeState();
+  const isCancelled = () => state.cancelled;
+  let recorder: RecorderHandle | null = null;
+  // Guard so the IIFE's onDone doesn't double-fire stopPlayback when the
+  // user explicitly stopped via Esc / S — caller's stopPlayback already tore
+  // down the pill + landing card before recorder.stop's onstop resolved.
+  let doneFired = false;
+  const fireOnce = () => { if (!doneFired) { doneFired = true; onDone(); } };
+
+  void (async () => {
+    const canvas = makeRenderCanvas(canvasHost);
+    const W = canvas.width;
+    const H = canvas.height;
+    const ctx = canvas.getContext('webgpu');
+    if (!ctx) { fireOnce(); return; }
+    ctx.configure({ device, format, alphaMode: 'opaque' });
+
+    const renderer: Renderer = createRenderer(device, format, {
+      width: W, height: H, oversample: 1, filterRadius: DEFAULT_FILTER_RADIUS,
+    });
+
+    let genome: Genome;
+    try {
+      status.setText(`Loading flame ${pickedRef.gen}/${pickedRef.id}…`);
+      genome = await loadGenomeByRef(pickedRef);
+    } catch {
+      status.setText('Failed to load flame.');
+      fireOnce();
+      return;
+    }
+    if (isCancelled()) { fireOnce(); return; }
+
+    const overs = Math.min(SCREENSAVER_MAX_OS, genome.oversample ?? 1);
+    const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+    renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
+    renderer.reset(genome);
+
+    const filename = deriveRecordingFilename({ genome, ref: pickedRef, now: new Date() });
+    recorder = createRecorder({ canvas, filename });
+    recorder.start();
+
+    const startedAt = performance.now();
+    let samplesAccumulated = 0;
+    canvas.style.transition = '';
+    canvas.style.opacity = '1';
+
+    const totalPixels = W * H;
+    const targetTotalSamples = prefs.recordQ * totalPixels;
+    const FRAME_INTERVAL_MS  = 1000 / BUILD_UP_TARGET_FPS;
+    let reachedSettle = false;
+
+    const mmss = (s: number): string => {
+      const m = Math.floor(s / 60);
+      const r = Math.floor(s % 60).toString().padStart(2, '0');
+      return `${m}:${r}`;
+    };
+    const displayName = genome.nick || `${pickedRef.gen}/${pickedRef.id}`;
+
+    while (!isCancelled() && !state.manualStopAndSave) {
+      const frameStart = performance.now();
+      const frameElapsedSec = (frameStart - startedAt) / 1000;
+      const cumTarget = cumulativeSamplesAt(
+        frameElapsedSec, prefs.recordTimeSec, targetTotalSamples, prefs.recordRamp,
+      );
+      const neededThisFrame   = Math.max(0, cumTarget - samplesAccumulated);
+      const splatItersPerWalker = Math.max(1, Math.ceil(neededThisFrame / BUILD_UP_WALKERS));
+      const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
+
+      const seed = (Math.random() * 0xffffffff) >>> 0;
+      renderer.iterate({
+        genome, seed,
+        walkers: BUILD_UP_WALKERS,
+        itersPerWalker: totalItersPerWalker,
+      });
+      samplesAccumulated += BUILD_UP_WALKERS * splatItersPerWalker;
+
+      renderer.present({
+        genome,
+        outputView:   ctx.getCurrentTexture().createView(),
+        totalSamples: Math.max(1, samplesAccumulated),
+        forceDeOff:   true,
+      });
+
+      const elapsedSec = recorder.elapsedMs() / 1000;
+      const pct  = Math.min(100, Math.round(100 * samplesAccumulated / targetTotalSamples));
+      const mb   = (recorder.bytesAccumulated() / (1024 * 1024)).toFixed(2);
+      status.setText(
+        `Recording ${displayName}\n` +
+        `● ${mmss(elapsedSec)} / ${mmss(prefs.recordTimeSec)} · ` +
+        `samples ${(samplesAccumulated / 1e6).toFixed(1)}M / ${(targetTotalSamples / 1e6).toFixed(1)}M · ${pct}% · ` +
+        `~${mb} MB`,
+      );
+
+      if (samplesAccumulated >= targetTotalSamples) { reachedSettle = true; break; }
+      if (elapsedSec >= prefs.recordTimeSec)        { reachedSettle = true; break; }
+
+      const frameElapsed = performance.now() - frameStart;
+      const sleepFor     = Math.max(1, FRAME_INTERVAL_MS - frameElapsed);
+      await new Promise<void>((r) => setTimeout(r, sleepFor));
+    }
+
+    if (isCancelled() && !state.manualStopAndSave) {
+      // Abort path — Esc / navigate-away. Discard, no download.
+      await recorder.stop(false);
+      fireOnce();
+      return;
+    }
+
+    if (reachedSettle) {
+      // Settle present: density ON, tone-normalize to actual accumulated samples.
+      renderer.present({
+        genome,
+        outputView:   ctx.getCurrentTexture().createView(),
+        totalSamples: Math.max(1, samplesAccumulated),
+        forceDeOff:   false,
+      });
+    }
+    status.setText('Saving recording…');
+    await recorder.stop(true);
+    fireOnce();
+  })();
+
+  return {
+    cancel() { state.cancelled = true; },
+    controls: {
+      togglePause() { /* no-op: pausing yields held frames in the .webm */ },
+      isPaused() { return false; },
+      skip(_dir) { /* no-op: skipping mid-record would splice flames */ },
+      requestStopAndSave() { state.manualStopAndSave = true; },
+    },
+  };
+}
+
 export function mountScreensaverPage(
   opts: MountScreensaverOpts,
 ): ScreensaverPageHandle {
@@ -813,21 +1024,61 @@ export function mountScreensaverPage(
 
   let runHandle: ModeHandle | null = null;
 
-  let pillHandle: PillHandle | null = null;
+  let pillHandle: PillHandle | RecordPillHandle | null = null;
   let pillSyncTimer: number | undefined;
+  let isRecordMode = false;
 
   const landing = mountScreensaverLanding(root, {
-    onPlay: (prefs: ScreensaverPrefs) => {
+    device,
+    format,
+    onPlay: (prefs: ScreensaverPrefs, pickedRef) => {
       landing.card.classList.add('hidden');
-      pillHandle = buildNowPlayingPill({
+      isRecordMode = prefs.mode === 'record';
+
+      // Record mode mounts its own simplified pill (⛶ ⏹) and gates on
+      // both WebGPU + a picked flame. Build-up / slideshow share the
+      // 5-button NowPlaying pill regardless of WebGPU availability so
+      // the UI shape stays stable in preview mode.
+      if (isRecordMode) {
+        const status = buildStatusPanel();
+        root.append(status.el);
+        if (!device || !format) {
+          status.setText('WebGPU unavailable — recording requires WebGPU.');
+          return;
+        }
+        if (!pickedRef) {
+          status.setText('Record mode requires a picked flame.');
+          return;
+        }
+        const recordPill = buildRecordPill({
+          onFullscreen: () => { void toggleFullscreen(root); },
+          onStop:       () => {
+            // Don't cancel — the loop sees manualStopAndSave and exits cleanly
+            // through the save path. onDone fires stopPlayback when the
+            // recorder finishes its blob assembly.
+            runHandle?.controls.requestStopAndSave?.();
+          },
+        });
+        pillHandle = recordPill;
+        root.append(recordPill.el);
+        attachPillAutohide(recordPill.el);
+        runHandle = runRecordSession({
+          device, format, canvasHost, prefs, status, pickedRef,
+          onDone: () => { stopPlayback(); },
+        });
+        return;
+      }
+
+      const nowPlaying = buildNowPlayingPill({
         onPrev:       () => runHandle?.controls.skip(-1),
         onPause:      () => runHandle?.controls.togglePause(),
         onNext:       () => runHandle?.controls.skip(1),
         onFullscreen: () => { void toggleFullscreen(root); },
         onStop:       stopPlayback,
       });
-      root.append(pillHandle.el);
-      attachPillAutohide(pillHandle.el);
+      pillHandle = nowPlaying;
+      root.append(nowPlaying.el);
+      attachPillAutohide(nowPlaying.el);
       const status = buildStatusPanel();
       root.append(status.el);
       if (device && format) {
@@ -842,7 +1093,7 @@ export function mountScreensaverPage(
       // in sync regardless of who toggled pause (keyboard / pill click).
       pillSyncTimer = window.setInterval(() => {
         if (!pillHandle || !runHandle) return;
-        pillHandle.setPaused(runHandle.controls.isPaused());
+        (pillHandle as PillHandle).setPaused?.(runHandle.controls.isPaused());
       }, 100);
     },
   });
@@ -896,17 +1147,31 @@ export function mountScreensaverPage(
       return;
     }
     if (ev.key === 's' || ev.key === 'S') {
-      if (runHandle) stopPlayback();
+      if (runHandle) {
+        if (isRecordMode) {
+          // S = Stop & save in record mode; let runRecordSession's save
+          // path land before stopPlayback tears down.
+          runHandle.controls.requestStopAndSave?.();
+        } else {
+          stopPlayback();
+        }
+      }
       return;
     }
-    // Esc: browser auto-exits fullscreen. We deliberately don't handle it —
-    // playback continues, the page returns to windowed naturally.
+    // Esc: in record mode → abort (no save), per spec Q5. In other modes,
+    // browser auto-exits fullscreen and playback continues — no explicit
+    // handling needed there.
+    if (ev.key === 'Escape' && isRecordMode && runHandle) {
+      stopPlayback();
+      return;
+    }
   }
   window.addEventListener('keydown', onKeydown);
 
   function stopPlayback(): void {
     runHandle?.cancel();
     runHandle = null;
+    isRecordMode = false;
     if (mousemoveListener) {
       window.removeEventListener('mousemove', mousemoveListener);
       mousemoveListener = null;
@@ -934,7 +1199,13 @@ export function mountScreensaverPage(
     { key: '← →',   label: 'skip',       onClick: () => runHandle?.controls.skip(1) },
     { key: 'F',     label: 'fullscreen', onClick: () => { void toggleFullscreen(root); } },
     { key: 'Esc',   label: 'exit FS',    onClick: () => { if (runHandle) stopPlayback(); } },
-    { key: 'S',     label: 'settings',   onClick: () => { if (runHandle) stopPlayback(); } },
+    { key: 'S',     label: 'settings',   onClick: () => {
+      // In record mode, S = Stop & save (matches the ⏹ pill button + keyboard S);
+      // anywhere else, S returns to the landing card.
+      if (!runHandle) return;
+      if (isRecordMode) runHandle.controls.requestStopAndSave?.();
+      else stopPlayback();
+    } },
   ]);
   root.append(strip);
 

@@ -8,6 +8,8 @@ import {
   parseNumericInput,
   DEFAULTS,
   CLAMPS,
+  PREFS_KEY,
+  PREFS_VERSION,
 } from './screensaver-prefs';
 
 // Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
@@ -47,6 +49,9 @@ describe('screensaver-prefs', () => {
       buildUpQ: 75,
       slideshowQ: 200,
       buildUpRamp: 1.5,
+      recordTimeSec: 30,
+      recordQ: 200,
+      recordRamp: 3.0,
     });
     expect(readScreensaverPrefs()).toEqual({
       mode: 'slideshow',
@@ -56,6 +61,9 @@ describe('screensaver-prefs', () => {
       buildUpQ: 75,
       slideshowQ: 200,
       buildUpRamp: 1.5,
+      recordTimeSec: 30,
+      recordQ: 200,
+      recordRamp: 3.0,
     });
   });
 
@@ -68,6 +76,9 @@ describe('screensaver-prefs', () => {
       buildUpQ: 99999,   // > max
       slideshowQ: 1,     // < min
       buildUpRamp: 99,   // > max
+      recordTimeSec: 30,
+      recordQ: 200,
+      recordRamp: 3.0,
     });
     const got = readScreensaverPrefs();
     expect(got.buildUpSec).toBe(CLAMPS.buildUpSec.max);
@@ -160,5 +171,49 @@ describe('parseNumericInput', () => {
   it('returns null for junk + empty', () => {
     expect(parseNumericInput('xyz')).toBeNull();
     expect(parseNumericInput('')).toBeNull();
+  });
+});
+
+describe('ScreensaverPrefs v3→v4 migration', () => {
+  it('PREFS_VERSION bumped to 4', () => {
+    expect(PREFS_VERSION).toBe(4);
+  });
+
+  it('DEFAULTS includes record fields', () => {
+    expect(DEFAULTS.recordTimeSec).toBe(30);  // 30s — short default fits "I just want a quick clip"
+    expect(DEFAULTS.recordQ).toBe(200);       // Match buildUpQ — same perceptual target
+    expect(DEFAULTS.recordRamp).toBe(3);      // Medium — same as buildUp default
+  });
+
+  it('mode union accepts "record"', () => {
+    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record' });
+    const out = readScreensaverPrefs();
+    expect(out.mode).toBe('record');
+  });
+
+  it('v3 payload (no record fields, version=3) falls back to DEFAULTS', () => {
+    const v3 = { version: 3, mode: 'build-up', buildUpSec: 120, restSec: 30, holdSec: 15,
+                 buildUpQ: 300, slideshowQ: 100, buildUpRamp: 5 };
+    localStorage.setItem(PREFS_KEY, JSON.stringify(v3));
+    const out = readScreensaverPrefs();
+    // version mismatch → full DEFAULTS reset (matches existing v2→v3 policy)
+    expect(out).toEqual(DEFAULTS);
+  });
+
+  it('clamps recordTimeSec to [5, 3600]', () => {
+    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordTimeSec: 999999 });
+    expect(readScreensaverPrefs().recordTimeSec).toBe(3600);
+    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordTimeSec: 0 });
+    expect(readScreensaverPrefs().recordTimeSec).toBe(5);
+  });
+
+  it('clamps recordQ to [10, 500]', () => {
+    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordQ: 9999 });
+    expect(readScreensaverPrefs().recordQ).toBe(500);
+  });
+
+  it('clamps recordRamp to [1, 10]', () => {
+    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordRamp: 999 });
+    expect(readScreensaverPrefs().recordRamp).toBe(10);
   });
 });

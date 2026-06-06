@@ -121,3 +121,73 @@ describe('mountScreensaverLanding', () => {
     expect(stored).toContain('"holdSec":30');
   });
 });
+
+describe('mountScreensaverLanding — Record mode tab (#111)', () => {
+  it('renders 3 mode buttons (Slideshow, Build-up, Record)', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountScreensaverLanding(host, { onPlay: () => {}, isRecordingSupported: () => true });
+    const btns = host.querySelectorAll<HTMLElement>('[data-screensaver-mode]');
+    expect(btns.length).toBe(3);
+    expect(btns[0]!.dataset.screensaverMode).toBe('slideshow');
+    expect(btns[1]!.dataset.screensaverMode).toBe('build-up');
+    expect(btns[2]!.dataset.screensaverMode).toBe('record');
+  });
+
+  it('disables Record button when recording is not supported', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountScreensaverLanding(host, { onPlay: () => {}, isRecordingSupported: () => false });
+    const recordBtn = host.querySelector<HTMLButtonElement>('[data-screensaver-mode="record"]');
+    expect(recordBtn?.disabled).toBe(true);
+    expect(recordBtn?.title).toMatch(/Chromium/);
+  });
+
+  it('shows picker container only when mode = record', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountScreensaverLanding(host, { onPlay: () => {}, isRecordingSupported: () => true });
+    const picker = host.querySelector('[data-screensaver-picker]');
+    expect(picker?.classList.contains('hidden')).toBe(true);
+    host.querySelector<HTMLButtonElement>('[data-screensaver-mode="record"]')!.click();
+    expect(picker?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('shows record ladders only in record mode; hides rest period', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountScreensaverLanding(host, { onPlay: () => {}, isRecordingSupported: () => true });
+    host.querySelector<HTMLButtonElement>('[data-screensaver-mode="record"]')!.click();
+    const visible = Array.from(
+      host.querySelectorAll<HTMLElement>('[data-screensaver-ladder-block]')
+    ).filter((el) => !el.classList.contains('hidden'));
+    const fields = visible.map((el) => el.dataset.screensaverLadderBlock);
+    expect(fields).toEqual(['recordTimeSec', 'recordQ', 'recordRamp']);
+    const restBlock = host.querySelector<HTMLElement>(
+      '[data-screensaver-ladder-block="restSec"]'
+    );
+    expect(restBlock?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('Start button is disabled in record mode until a flame is picked', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountScreensaverLanding(host, { onPlay: () => {}, isRecordingSupported: () => true });
+    host.querySelector<HTMLButtonElement>('[data-screensaver-mode="record"]')!.click();
+    const play = host.querySelector<HTMLButtonElement>('[data-screensaver-play]');
+    expect(play?.disabled).toBe(true);
+    expect(play?.textContent).toContain('pick a flame');
+  });
+
+  it('falls back to build-up mode when stored prefs say record but support is missing', () => {
+    localStorage.setItem(
+      'pyr3.screensaver.prefs',
+      JSON.stringify({ version: 4, ...DEFAULTS, mode: 'record' }),
+    );
+    const host = document.createElement('div');
+    document.body.append(host);
+    mountScreensaverLanding(host, { onPlay: () => {}, isRecordingSupported: () => false });
+    const buildUpBtn = host.querySelector<HTMLButtonElement>('[data-screensaver-mode="build-up"]');
+    expect(buildUpBtn?.classList.contains('on')).toBe(true);
+  });
+});
