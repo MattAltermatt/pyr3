@@ -42,9 +42,26 @@ Sensitivity is magnitude-relative: `delta_per_pixel = max(MIN_STEP_kind, |value|
 > Note: `ctrl` is NOT a modifier for fine-scrub. On macOS ctrl-click is
 > the OS context-menu gesture and pre-empts any drag. Use `alt/option`.
 
-## /v1/viewer (gallery + showcase)
+## /v1/edit — global ([#108](https://github.com/MattAltermatt/pyr3/issues/108))
 
-Currently keyless. Add bindings as they're introduced.
+| Binding              | Behavior                                                   | Status   |
+| -------------------- | ---------------------------------------------------------- | -------- |
+| **Cmd/Ctrl-Z**       | Undo last editor edit                                      | shipped  |
+| **Cmd/Ctrl-Shift-Z** | Redo                                                       | shipped  |
+
+## /v1/viewer (corpus)
+
+| Binding              | Behavior                                                   | Status   |
+| -------------------- | ---------------------------------------------------------- | -------- |
+| **← / →**            | Previous / next flame in the corpus                        | shipped  |
+
+## /v1/screensaver ([#111](https://github.com/MattAltermatt/pyr3/issues/111))
+
+| Binding              | Behavior                                                   | Status   |
+| -------------------- | ---------------------------------------------------------- | -------- |
+| **R**                | Start / stop recording the canvas to `.webm`               | shipped  |
+| **Esc**              | Stop the session and exit fullscreen                       | shipped  |
+| **Space**            | Pause / resume playback                                    | shipped  |
 
 ---
 
