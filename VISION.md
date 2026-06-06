@@ -90,10 +90,6 @@ editor, mobile rework).
   (`dc_linear` · `dc_perlin` · `dc_gridout` · `dc_cylinder`), live + settled render lanes,
   undo/redo, name templates, save to `.pyr3.json`. The "much-later post-v1" editor arc that
   shipped earlier than planned across many small issues.
-- **`/v1/evolve` — a Picbreeder-style creator surface.** A 3×3 grid of mutated children
-  around a center flame, with click-to-promote, lockable axes (palette, variations, xforms,
-  viewport), an inline structural inspector, and `.pyr3.json` save/load. Currently parked
-  off-main on `feature/issue-73-evolve-page` — to be unparked when focus returns to it.
 - **`/v1/screensaver` — build-up or slideshow over the corpus.** Watch one flame paint over
   a minute (literal pixel-landing → smooth settle) or crossfade through the corpus. Press
   **R** to record any session to `.webm` (#111).

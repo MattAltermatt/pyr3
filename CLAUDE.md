@@ -51,9 +51,7 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.4
   have all shipped** (latest: `v1.4.0` on 2026-06-02 — render improvements). The active
   themed milestones are **Apophysis and JWildfire** (plugin pack #114, gradient editor #115,
-  channel curves #116) and **Mobile rework** (#33). Two parked milestones live off-main and
-  wait on the evolve unpark: **evolve - picbreeder editor surface** and **parked —
-  evolve-page cleanup**. No Project board — milestone-only planning.
+  channel curves #116) and **Mobile rework** (#33). No Project board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
 - **In-repo docs that survive:** `VISION` · `CLAUDE` · `README` (+ `HISTORY.md`, `NOTICE.md`).

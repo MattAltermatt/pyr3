@@ -1,11 +1,10 @@
 // pyr3 — procedural seed generator for the /v1/edit page.
 //
 // Produces a fresh, visually-interesting Genome from an injectable rng so
-// tests stay deterministic. Mirrors the /v1/evolve seed recipe from the
-// parked feature/issue-73-evolve-page branch — the original edit-seed
-// (uniform-random affine in [-1, 1]) produced lots of degenerate / blank
-// flames because uncontrolled affines escape to infinity or collapse to
-// fixed points. The recipe below guarantees a real attractor every time:
+// tests stay deterministic. The original edit-seed (uniform-random affine
+// in [-1, 1]) produced lots of degenerate / blank flames because
+// uncontrolled affines escape to infinity or collapse to fixed points. The
+// recipe below guarantees a real attractor every time:
 //
 //   1. Contractive affine via rotation × scale ∈ [0.55, 0.88]. Eigenvalues
 //      strictly < 1 → bounded orbits → an actual fractal, not a divergence.

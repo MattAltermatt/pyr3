@@ -27,9 +27,6 @@ GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through th
   scale / rotation / position), affine + post-affine, the full **99-variation flam3 library**
   plus pyr3's **direct-color (DC) family** (`dc_linear` · `dc_perlin` · `dc_gridout` ·
   `dc_cylinder`), palette picker, undo/redo, name templates, save to `.pyr3.json`.
-- 🌱 **[Evolve a flame](https://pyr3.app/v1/evolve)** — Picbreeder-style 3×3 mutation grid
-  around a center flame: click to promote, lock axes (palette / variations / xforms /
-  viewport), inline genome inspector.
 - 📺 **[Run as a screensaver](https://pyr3.app/v1/screensaver)** — build-up mode (watch one
   flame paint over a minute) or slideshow mode (prefetch + crossfade through the corpus).
   Press **R** to record any session to `.webm`.
