@@ -223,7 +223,7 @@ function curl2Oracle(x: number, y: number, w: number, c1: number, c2: number, c3
   const y2 = y * y;
   const y3 = y2 * y;
   const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
-  const im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+  const im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
   const denom = re * re + im * im;
   const r = w / denom;
   return [(x * re + y * im) * r, (y * re - x * im) * r];

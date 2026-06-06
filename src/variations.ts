@@ -2038,13 +2038,15 @@ export function ts_var_falloff2(i: VarInput): VarOutput {
   const r2 = i.randValues?.[2] ?? 0;
   const r3 = i.randValues?.[3] ?? 0;
   if (typ === 1) {
-    // radial: rotate around (x0,y0) by a d-scaled random angle, scale radius
-    const phi = Math.atan2(dy, dx) + mul_y * d * r1;
-    const r_in = Math.sqrt(dx * dx + dy * dy);
-    const rr = r_in + mul_x * r0 * d;
+    // radial: JWildfire's calcFunctionRadial rotates around ORIGIN (absolute
+    // coords + atan2(y, x)). The (x0, y0) offset shifts only the distance
+    // gate above, not the rotation pivot.
+    const r_abs = Math.sqrt(i.tx * i.tx + i.ty * i.ty);
+    const phi = Math.atan2(i.ty, i.tx) + mul_y * d * r1;
+    const rr = r_abs + mul_x * r0 * d;
     return {
-      x: i.weight * (x0 + rr * Math.cos(phi)),
-      y: i.weight * (y0 + rr * Math.sin(phi)),
+      x: i.weight * rr * Math.cos(phi),
+      y: i.weight * rr * Math.sin(phi),
     };
   } else if (typ === 2) {
     // gaussian: 2π-spread angular scatter
@@ -2085,9 +2087,10 @@ export function ts_var_falloff3(i: VarInput): VarOutput {
   const radius = Math.sqrt(dx * dx + dy * dy);
   const base = invertFlag ? Math.max(1 - radius, 0) : Math.max(radius, 0);
   const dist = Math.max((base - mindist) * rmax, 0);
-  const r0 = i.randValues?.[0] ?? 0;
-  const r1 = i.randValues?.[1] ?? 0;
-  const r2 = i.randValues?.[2] ?? 0;
+  // JWildfire centers samples at 0 (range [-0.5, 0.5)) per AbstractFalloff3Func.
+  const r0 = (i.randValues?.[0] ?? 0) - 0.5;
+  const r1 = (i.randValues?.[1] ?? 0) - 0.5;
+  const r2 = (i.randValues?.[2] ?? 0) - 0.5;
   // BT_GAUSSIAN (blur_type=0): scatter inside a 2π·π angular window
   const sigma = dist * r1 * 2 * PI;
   const phi = dist * r2 * PI;
@@ -2227,10 +2230,11 @@ export function ts_var_eswirl(i: VarInput): VarOutput {
   else if (t < -1.0) t = -1.0;
   let nu = Math.acos(t);  // -π < ν < π
   if (i.ty < 0) nu *= -1.0;
-  // Guard against mu→0 (xmax==1.0 edge) — JWF divides by mu, returning
-  // ±Inf which the chaos game's bad-value reseed cleans up. We mirror
-  // by passing through; tests use weight=1 and inputs that avoid the cusp.
-  nu = nu + mu * out_p + (mu === 0 ? 0 : in_p / mu);
+  // Guard against mu→0 (xmax==1.0 edge) by matching the WGSL kernel's
+  // 1e-30 epsilon — keeps TS↔WGSL parity at the cusp. JWF originally divides
+  // by raw mu returning ±Inf which the chaos game reseed cleans up.
+  const mu_safe = mu === 0 ? 1e-30 : mu;
+  nu = nu + mu * out_p + in_p / mu_safe;
   const sinhmu = Math.sinh(mu);
   const coshmu = Math.cosh(mu);
   return {
@@ -2311,7 +2315,7 @@ export function ts_var_curl2(i: VarInput): VarOutput {
   const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
   // Imaginary part: c3·(x²y−y³)·1 (factor 3 lives in cc3 elsewhere; matches
   // Xyrus02 source: `c3*x²·y − c3·y³ + cc2·x·y + c1·y`).
-  const im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+  const im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
   const denom = re * re + im * im;
   // Source has no explicit guard; division by zero produces ±Inf which the
   // chaos game's bad-value reseed handles. We follow.

@@ -2028,7 +2028,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       const y2 = y * y;
       const y3 = y2 * y;
       const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
-      const im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+      const im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
       const denom = re * re + im * im;
       if (denom === 0) return [0, 0];
       const r = 1.0 / denom;
@@ -2204,8 +2204,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.xhyperbol,
     name: 'xhyperbol',
     source: sourceForIdx(V.xhyperbol),
-    formula: 'V_{126}(x, y) = \\tfrac{w}{|z\'|^2 + \\epsilon}\\,|z\'|^2\\,(\\cos\\alpha, \\sin\\alpha),\\; z\' = M\\cdot\\tfrac{z}{|z|^2 + \\epsilon} + t,\\; \\alpha = \\arg z\'',
-    blurb: 'Extended hyperbolic by Xyrus02 (Apophysis plugin pack). Composes a unit-disc inversion (z → z/|z|²) with a 2x3 affine M·(·) + t — then re-emits the iterate as |z\'|²·(cos α, sin α) so the radius scales with the affine\'s magnitude. A final |z|⁻² reflection (the second "flip" in the source) wraps output back. Defaults M = identity (m00=m11=1) give the simplest hyperbolic shape; non-zero m20/m21 translate the inversion center.',
+    formula: 'V_{126}(x, y) = \\tfrac{w}{|z\'|^2 + \\epsilon}\\,(\\cos\\alpha, \\sin\\alpha),\\; z\' = M\\cdot\\tfrac{z}{|z|^2 + \\epsilon} + t,\\; \\alpha = \\arg z\'',
+    blurb: 'Extended hyperbolic by Xyrus02 (Apophysis plugin pack). Composes a unit-disc inversion (z → z/|z|²) with a 2x3 affine M·(·) + t — then emits a |z\'|⁻² reflection of the affine\'d direction. Defaults M = identity (m00=m11=1) give the simplest hyperbolic shape; non-zero m20/m21 translate the inversion center.',
     params: [
       { name: 'm00', default: 1.0, min: -2, max: 2, step: 0.05 },
       { name: 'm01', default: 0.0, min: -2, max: 2, step: 0.05 },

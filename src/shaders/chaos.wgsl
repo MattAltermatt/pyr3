@@ -1962,13 +1962,14 @@ fn var_falloff2(
   let r2 = rand01(wi);
   let t = i32(clamp(typ, 0.0, 2.0));
   if (t == 1) {
-    // radial: rotate around (x0,y0) by a distance-weighted random angle
-    let phi = atan2(dy, dx) + mul_y * d * r1;
-    let r_in = sqrt(dx * dx + dy * dy);
-    let rr = r_in + mul_x * r0 * d;
+    // radial: JWildfire Falloff2Func.calcFunctionRadial rotates around ORIGIN
+    // (not (x0,y0)) — phi/r come from absolute coords + atan2(y, x).
+    let r_abs = sqrt(p.x * p.x + p.y * p.y);
+    let phi = atan2(p.y, p.x) + mul_y * d * r1;
+    let rr = r_abs + mul_x * r0 * d;
     return vec2f(
-      w * (x0 + rr * safe_cos(phi)),
-      w * (y0 + rr * safe_sin(phi)),
+      w * rr * safe_cos(phi),
+      w * rr * safe_sin(phi),
     );
   } else if (t == 2) {
     // gaussian: 2π·π angular scatter
@@ -2010,9 +2011,11 @@ fn var_falloff3(
   let base_inv = max(1.0 - radius, 0.0);
   let base = select(base_pos, base_inv, invertFlag > 0.5);
   let dist = max((base - mindist) * rmax, 0.0);
-  let r0 = rand01(wi);
-  let r1 = rand01(wi);
-  let r2 = rand01(wi);
+  // JWildfire AbstractFalloff3Func centers RNG samples at 0 (range [-0.5, 0.5))
+  // — preserves rotational symmetry of the scatter shell. Bare [0,1) shifts it.
+  let r0 = rand01(wi) - 0.5;
+  let r1 = rand01(wi) - 0.5;
+  let r2 = rand01(wi) - 0.5;
   let sigma = dist * r1 * TAU;
   let phi = dist * r2 * PI;
   let rad = dist * r0;
@@ -2237,7 +2240,7 @@ fn var_curl2(p: vec2f, w: f32, c1: f32, c2: f32, c3: f32) -> vec2f {
   let y2 = y * y;
   let y3 = y2 * y;
   let re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
-  let im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+  let im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
   let denom = re * re + im * im;
   // Match source: no explicit guard; the chaos game reseed handles
   // ±Inf from a true zero denominator.
@@ -2721,7 +2724,7 @@ fn var_xyrus_gridout(p: vec2f, w: f32) -> vec2f {
 // would skip).
 fn var_blur_circle(p: vec2f, w: f32, hole: f32, wi: u32) -> vec2f {
   let r0 = rand01(wi);
-  let r1 = rand01(wi ^ 0xA5A5A5A5u);
+  let r1 = rand01(wi);
   let x = 2.0 * r0 - 1.0;
   let y = 2.0 * r1 - 1.0;
   let absx = abs(x);
