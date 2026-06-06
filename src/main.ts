@@ -361,7 +361,12 @@ async function main(): Promise<void> {
     });
     screensaverBar.middleSlot.appendChild(ssContainer);
     const { mountScreensaverPage } = await import('./screensaver-mount');
-    mountScreensaverPage({ root: ssContainer, device: ssDevice, format: ssFormat });
+    const screensaverHandle = mountScreensaverPage({ root: ssContainer, device: ssDevice, format: ssFormat });
+    // #113: tear down the picker's thumbnail renderer + in-flight playback
+    // before the page unmounts. pagehide fires reliably on full-page nav
+    // (current SPA exit path); also positions us for a future in-place
+    // SPA route-leave to call screensaverHandle.destroy() the same way.
+    window.addEventListener('pagehide', () => { screensaverHandle.destroy(); }, { once: true });
     setDocTitle('screensaver');
     return;
   }

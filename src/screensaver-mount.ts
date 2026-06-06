@@ -43,6 +43,10 @@ export interface MountScreensaverOpts {
 export interface ScreensaverPageHandle {
   /** Returns to the landing state (hides pill + canvas, re-shows card). */
   stop(): void;
+  /** Tear down GPU resources held by the picker thumbnail renderer + any
+   *  in-flight playback. Idempotent. Wire to SPA route-leave / pagehide
+   *  so the picker's GPU buffers don't leak when the page unmounts. */
+  destroy(): void;
 }
 
 // Canvas backing-store dims target HD by default — CSS scales 100% to fill
@@ -1209,7 +1213,13 @@ export function mountScreensaverPage(
   ]);
   root.append(strip);
 
-  return { stop: stopPlayback };
+  return {
+    stop: stopPlayback,
+    destroy() {
+      runHandle?.cancel();
+      landing.destroy();
+    },
+  };
 }
 
 let hiddenRuleInjected = false;
