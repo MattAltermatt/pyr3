@@ -193,6 +193,42 @@ export const V = {
   circlize2: 117,
   eswirl: 118,
   petal: 119,
+  // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular. Five
+  // variations ported from `xyrus02/apophysis-plugins` (GPL-2+, see
+  // NOTICE.md) and JWildfire HexesFunc (LGPL-2.1+):
+  //   - bcircle      — Xyrus02. Inside-disk passthrough + outside-disk
+  //                    optional random-border emit (RNG when bw≠0).
+  //   - curl2        — Xyrus02 / Georg Kiehne. Cubic polynomial inverse
+  //                    a la curl, 3 coeffs c1/c2/c3.
+  //   - murl         — Xyrus02 / Peter Sdobnov, ported by chronologicaldot
+  //                    into JWildfire's MurlFunc. Polar power + complex
+  //                    inverse blend.
+  //   - stwins       — Xyrus02. "Stwin" twin-sine ratio with 1 param
+  //                    (distort). Note canonical name in the Xyrus02
+  //                    source is "stwin"; the plugin DIRECTORY ships
+  //                    as `stwins`, and pyr3 follows the directory name
+  //                    for consistency with the survey doc + community use.
+  //   - hexes        — Neil Slater / slobo777, via JWildfire HexesFunc.
+  //                    Hex-grid voronoi warp with rotate/power/scale
+  //                    per cell. Uses its own hex-grid helper, not
+  //                    worley2d_F1 — Hexes is deterministic per-cell-
+  //                    center (no per-cell RNG hash), so the cell
+  //                    centers come from an integer affine transform.
+  //
+  // The originally-scoped `juni` variation was dropped: the Xyrus02
+  // source (`xyrus02/apophysis-plugins/plugins/juni`) requires the
+  // xform-affine context (`vp->a, b, c, d, e, f`) and a Z-axis
+  // coordinate that pyr3's 2D-only `apply_variation` seam does not
+  // expose. JWildfire has no `JuniFunc.java` either (verified against
+  // the JWildfire variation directory listing 2026-06-06). The
+  // appropriate place for juni would be a future xform-pre-affine
+  // seam extension, tracked separately. V125 stays unassigned this
+  // batch — keeps the dense numbering for whatever Sub D ships.
+  bcircle: 120,
+  curl2: 121,
+  murl: 122,
+  stwins: 123,
+  hexes: 124,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -2178,4 +2214,257 @@ export function ts_var_petal(i: VarInput): VarOutput {
   const bx = cxcy * cxcy * cxcy;
   const by = sxcy * sxcy * sxcy;
   return { x: i.weight * a * bx, y: i.weight * a * by };
+}
+
+// =====================================================================
+// #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular.
+// V120..V124. Sources: xyrus02/apophysis-plugins (GPL-2+); JWildfire
+// HexesFunc (LGPL-2.1+); see NOTICE.md.
+// =====================================================================
+
+// var_bcircle (chaos.wgsl) — Xyrus02 bcircle plugin (apophysis-plugins).
+// 2 params (scale, borderwidth). RNG only when borderwidth ≠ 0.
+// Inside the unit disk (after scale), passthrough w·(x,y); outside,
+// optionally emit a point on the unit circle perturbed by border noise.
+// The `borderwidth=0` path is fully deterministic and tested with parity.
+// Caller MUST supply `randValues[0] ∈ [0,1]` when borderwidth ≠ 0;
+// matches the source's `random01()` call.
+export function ts_var_bcircle(i: VarInput): VarOutput {
+  const scale = i.params?.["scale"] ?? 1.0;
+  const borderwidth = i.params?.["borderwidth"] ?? 0.0;
+  const bcbw = Math.abs(borderwidth);
+  // Origin guard: source returns (0,0) contribution.
+  if (i.tx === 0 && i.ty === 0) return { x: 0, y: 0 };
+  const x = i.tx * scale;
+  const y = i.ty * scale;
+  const r = Math.sqrt(x * x + y * y);
+  if (r <= 1.0) {
+    return { x: i.weight * x, y: i.weight * y };
+  }
+  if (bcbw === 0) {
+    // Outside disk + no border = identity contribution (no warp).
+    return { x: 0, y: 0 };
+  }
+  const ang = Math.atan2(y, x);
+  const rand = i.randValues?.[0] ?? 0.5;
+  const omega = 0.2 * bcbw * rand + 1;
+  return { x: i.weight * omega * Math.cos(ang), y: i.weight * omega * Math.sin(ang) };
+}
+
+// var_curl2 (chaos.wgsl) — Xyrus02 curl2 plugin (apophysis-plugins).
+// 3 params (c1, c2, c3). No RNG. Author: Georg Kiehne / Xyrus-Worx.
+// Cubic-polynomial complex inverse — the c2/c3 generalization of
+// flam3's `curl` (which is the c1-only path). Returns
+// (x·re + y·im, y·re − x·im) / (re² + im²), where re/im are the
+// real/imaginary parts of the cubic polynomial
+// (c3·(x+iy)³ + c2·(x+iy)² + c1·(x+iy) + 1) evaluated at the iterate.
+export function ts_var_curl2(i: VarInput): VarOutput {
+  const c1 = i.params?.["c1"] ?? 1.0;
+  const c2 = i.params?.["c2"] ?? 0.0;
+  const c3 = i.params?.["c3"] ?? 0.0;
+  const cc2 = 2 * c2;
+  const cc3 = 3 * c3;
+  const x = i.tx;
+  const y = i.ty;
+  const x2 = x * x;
+  const x3 = x2 * x;
+  const y2 = y * y;
+  const y3 = y2 * y;
+  // Real part: c3·(x³−3xy²) + c2·(x²−y²) + c1·x + 1
+  const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
+  // Imaginary part: c3·(x²y−y³)·1 (factor 3 lives in cc3 elsewhere; matches
+  // Xyrus02 source: `c3*x²·y − c3·y³ + cc2·x·y + c1·y`).
+  const im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+  const denom = re * re + im * im;
+  // Source has no explicit guard; division by zero produces ±Inf which the
+  // chaos game's bad-value reseed handles. We follow.
+  const r = i.weight / denom;
+  return { x: (x * re + y * im) * r, y: (y * re - x * im) * r };
+}
+
+// var_murl (chaos.wgsl) — JWildfire MurlFunc / Xyrus02 murl plugin.
+// 2 params (c, power). No RNG. Author: Peter Sdobnov (Zueuk);
+// ported into Java by Nic Anderson (chronologicaldot). Polar power
+// (rotation by `power·atan2(y,x)`) combined with a complex inverse
+// blend through the (re, im) intermediate. JWildfire's port adds the
+// `power = 1` special case (c is NOT divided by power-1 in that
+// branch). pyr3 follows the JWildfire form for consistency with the
+// other Faber-pack ports in this batch.
+export function ts_var_murl(i: VarInput): VarOutput {
+  const c_raw = i.params?.["c"] ?? 0.0;
+  const power_raw = i.params?.["power"] ?? 2.0;
+  // JWildfire applies floor()/trunc() on power before use; matches the
+  // C source which stores `int murl_power`. We use trunc with a min of 1
+  // (Xyrus02 default = 2; pyr3 catalog default = 1 for a simpler shape).
+  const power = Math.trunc(power_raw);
+  // The c-scaling path differs between the source (power != 1) and the
+  // JWildfire port (power != 1) — both gate on `power != 1`.
+  const c = power !== 1 ? c_raw / (power - 1) : c_raw;
+  const p2 = power / 2.0;
+  const vp = i.weight * (c + 1);
+  const a = Math.atan2(i.ty, i.tx) * power;
+  const sina = Math.sin(a);
+  const cosa = Math.cos(a);
+  const r = c * Math.pow(i.tx * i.tx + i.ty * i.ty, p2);
+  const re = r * cosa + 1;
+  const im = r * sina;
+  // Murl source guard: re² + im² + 1e-29 to dodge degeneracy at c=0,r=0.
+  const r1 = vp / (re * re + im * im + 1e-29);
+  return {
+    x: r1 * (i.tx * re + i.ty * im),
+    y: r1 * (i.ty * re - i.tx * im),
+  };
+}
+
+// var_stwins (chaos.wgsl) — Xyrus02 stwins plugin (apophysis-plugins).
+// 1 param (distort). No RNG. Author: xyrus02. Twin-sine ratio: scales
+// the iterate by a fixed 0.05 multiplier, then mixes
+// (x²−y²)·sin(2π·distort·(x+y)) / (x²+y²) back into (w·x, w·y). The
+// fixed multiplier prevents overlap at distort=1 (source comment:
+// "at multiplier=1 the function begins to overlap at 0.05").
+// Note: the canonical Xyrus02 plugin registers as "stwin" (singular);
+// the source directory + survey doc + community use prefer "stwins"
+// (plural). pyr3 ships under "stwins" for ecosystem alignment.
+export function ts_var_stwins(i: VarInput): VarOutput {
+  const distort = i.params?.["distort"] ?? 1.0;
+  const multiplier = 0.05;
+  const x = i.tx * i.weight * multiplier;
+  const y = i.ty * i.weight * multiplier;
+  const x2 = x * x;
+  const y2 = y * y;
+  const x_plus_y = x + y;
+  const x2_minus_y2 = x2 - y2;
+  const x2_plus_y2 = x2 + y2;
+  let divident = 1.0;
+  if (x2_plus_y2 !== 0) divident = x2_plus_y2;
+  const result = (x2_minus_y2 * Math.sin(2 * PI * distort * x_plus_y)) / divident;
+  return {
+    x: i.weight * i.tx + result,
+    y: i.weight * i.ty + result,
+  };
+}
+
+// var_hexes (chaos.wgsl) — JWildfire HexesFunc (port of slobo777's
+// Apophysis hexes plugin). 4 params (cellsize, power, rotate, scale).
+// No RNG. Author: Neil Slater / slobo777, ported to JWildfire by
+// Andreas Maschke.
+//
+// Breaks the plane into a hex lattice, finds the closest hex center
+// to the iterate, then applies a per-cell power scaling + rotation
+// expressed via voronoi-edge distance. The "rosette removal" blend
+// at the cell edge (L ∈ [0.5, 0.8]) smooths the transition between
+// closest-vs-second-closest-hex regions.
+//
+// Coord conversion (Cartesian ↔ hex) uses an affine matrix; these are
+// the constants from the JWildfire source:
+//   a_hex = 1/3,        b_hex = √3/3
+//   c_hex = -1/3,       d_hex = √3/3
+//   a_cart = 1.5,       b_cart = -1.5
+//   c_cart = √3/2,      d_cart = √3/2
+// At cellsize=0 the source returns (0,0) — we follow.
+export function ts_var_hexes(i: VarInput): VarOutput {
+  const cellsize = i.params?.["cellsize"] ?? 1.0;
+  const power = i.params?.["power"] ?? 1.0;
+  const rotate = i.params?.["rotate"] ?? 0.166;
+  const scale = i.params?.["scale"] ?? 1.0;
+  if (cellsize === 0) return { x: 0, y: 0 };
+
+  const SQRT3 = 1.7320508075688772935;
+  const a_hex = 1.0 / 3.0;
+  const b_hex = SQRT3 / 3.0;
+  const c_hex = -1.0 / 3.0;
+  const d_hex = SQRT3 / 3.0;
+  const a_cart = 1.5;
+  const b_cart = -1.5;
+  const c_cart = SQRT3 / 2.0;
+  const d_cart = SQRT3 / 2.0;
+
+  const rotSin = Math.sin(rotate * 2.0 * PI);
+  const rotCos = Math.cos(rotate * 2.0 * PI);
+
+  const Ux = i.tx;
+  const Uy = i.ty;
+  const s = cellsize;
+
+  const cellCentre = (hx: number, hy: number): [number, number] => {
+    return [(a_cart * hx + b_cart * hy) * s, (c_cart * hx + d_cart * hy) * s];
+  };
+
+  const hx0 = Math.floor((a_hex * Ux + b_hex * Uy) / s);
+  const hy0 = Math.floor((c_hex * Ux + d_hex * Uy) / s);
+
+  // Step 1: build the 3x3 grid of candidate centers, find the closest.
+  const P_init: [number, number][] = [];
+  const cell_choice: [number, number][] = [];
+  for (let di = -1; di < 2; di++) {
+    for (let dj = -1; dj < 2; dj++) {
+      P_init.push(cellCentre(hx0 + di, hy0 + dj));
+      cell_choice.push([di, dj]);
+    }
+  }
+  let q = 0;
+  let bestD2 = Infinity;
+  for (let k = 0; k < 9; k++) {
+    const dx = P_init[k]![0] - Ux;
+    const dy = P_init[k]![1] - Uy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; q = k; }
+  }
+  const hx = hx0 + cell_choice[q]![0];
+  const hy = hy0 + cell_choice[q]![1];
+
+  // Step 2: rebuild the 7-point ring centered on the chosen hex.
+  // Order matches the JWF source: [center, +y, +x+y, +x, -y, -x-y, -x].
+  const P: [number, number][] = [
+    cellCentre(hx, hy),
+    cellCentre(hx, hy + 1),
+    cellCentre(hx + 1, hy + 1),
+    cellCentre(hx + 1, hy),
+    cellCentre(hx, hy - 1),
+    cellCentre(hx - 1, hy - 1),
+    cellCentre(hx - 1, hy),
+  ];
+
+  // Voronoi ratio against the chosen hex (index 0) — finds the maximum
+  // half-plane projection vs the other 6 centers. JWF inlines this.
+  const voronoiL = (Ux2: number, Uy2: number): number => {
+    const Qx = P[0]![0];
+    const Qy = P[0]![1];
+    let ratiomax = -1.0e20;
+    for (let k = 1; k < 7; k++) {
+      const PmQx = P[k]![0] - Qx;
+      const PmQy = P[k]![1] - Qy;
+      if (PmQx === 0 && PmQy === 0) {
+        if (1.0 > ratiomax) ratiomax = 1.0;
+        continue;
+      }
+      const ratio = 2.0 * ((Ux2 - Qx) * PmQx + (Uy2 - Qy) * PmQy) / (PmQx * PmQx + PmQy * PmQy);
+      if (ratio > ratiomax) ratiomax = ratio;
+    }
+    return ratiomax;
+  };
+
+  const L1 = voronoiL(Ux, Uy);
+
+  // Delta from center, rotated by `rotate·2π`.
+  const DXo = Ux - P[0]![0];
+  const DYo = Uy - P[0]![1];
+  const trgL = Math.pow(L1 + 1e-100, power) * scale;
+  const Vx0 = DXo * rotCos + DYo * rotSin;
+  const Vy0 = -DXo * rotSin + DYo * rotCos;
+
+  const L2 = voronoiL(Vx0 + P[0]![0], Vy0 + P[0]![1]);
+  const L = L1 > L2 ? L1 : L2;
+  let R: number;
+  if (L < 0.5) {
+    R = trgL / L1;
+  } else if (L > 0.8) {
+    R = trgL / L2;
+  } else {
+    R = ((trgL / L1) * (0.8 - L) + (trgL / L2) * (L - 0.5)) / 0.3;
+  }
+
+  const Vx = Vx0 * R + P[0]![0];
+  const Vy = Vy0 * R + P[0]![1];
+  return { x: i.weight * Vx, y: i.weight * Vy };
 }

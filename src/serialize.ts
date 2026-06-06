@@ -185,6 +185,16 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   circlize: ['hole'],
   circlize2: ['hole'],
   eswirl: ['in', 'out'],
+  // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular. juni was
+  // originally scoped here but dropped — it requires xform-affine
+  // context (vp->a..f) + a Z-axis coordinate that pyr3's 2D-only
+  // apply_variation seam doesn't expose. See V table comment in
+  // src/variations.ts.
+  bcircle: ['scale', 'borderwidth'],
+  curl2: ['c1', 'c2', 'c3'],
+  murl: ['c', 'power'],
+  stwins: ['distort'],
+  hexes: ['cellsize', 'power', 'rotate', 'scale'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -250,6 +260,21 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   circlize: [0.40],                          // hole=0.40
   circlize2: [0.0],                          // hole=0.0
   eswirl: [1.2, 0.2],                        // in=1.2, out=0.2
+  // #114 batch 2b-c — Xyrus02-canonical defaults. bcircle ships
+  // borderwidth=0 (deterministic disk path; the RNG random-circle path
+  // activates when the user dials borderwidth up). curl2 ships
+  // c1=1, c2=c3=0 (= flam3's `curl` shape — additive growth from
+  // c2/c3 is discoverable). murl ships c=0.1, power=1 — matches
+  // JWildfire's class-level defaults more nicely than the Xyrus02
+  // source's c=0 (no warp) / power=2 baseline; gives a visually
+  // active scaffold without a degenerate division. stwins ships
+  // distort=1 (Xyrus02 default). hexes ships the JWF class defaults
+  // cellsize=1, power=1, rotate=0.166, scale=1.
+  bcircle: [1.0, 0.0],                       // scale=1, borderwidth=0
+  curl2: [1.0, 0.0, 0.0],                    // c1=1, c2, c3
+  murl: [0.1, 1],                            // c=0.1, power=1
+  stwins: [1.0],                             // distort=1
+  hexes: [1.0, 1.0, 0.166, 1.0],             // cellsize=1, power=1, rotate=0.166, scale=1
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

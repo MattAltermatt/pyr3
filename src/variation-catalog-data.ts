@@ -1982,6 +1982,195 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [a * bx, a * by];
     },
   },
+  // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular.
+  {
+    idx: V.bcircle,
+    name: 'bcircle',
+    source: sourceForIdx(V.bcircle),
+    formula: 'V_{120}(x, y) = \\begin{cases} w\\,(sx, sy) & r \\leq 1 \\\\ w\\omega\\,(\\cos\\theta, \\sin\\theta) & r > 1 \\end{cases}',
+    blurb: 'Bordered-circle projection by Xyrus02 (Apophysis plugin pack). Inside the scale-adjusted unit disk, the iterate passes through verbatim; outside, it gets snapped onto the unit circle (or — when `borderwidth ≠ 0` — onto a random-radius shell just outside it). At borderwidth=0 the deterministic disk path produces a clean filled circle; non-zero borderwidth adds a halo. RNG path activates only for borderwidth ≠ 0.',
+    params: [
+      { name: 'scale',       default: 1.0, min: 0.1, max: 4,    step: 0.05 },
+      { name: 'borderwidth', default: 0.0, min: 0,   max: 1,    step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const scale = 1.0;
+      // borderwidth=0 path is deterministic; the catalog scaffold renders
+      // exactly that shape (inside-disk passthrough + outside-disk
+      // identity-zero). Non-zero-bw users see the RNG halo only at runtime.
+      if (x === 0 && y === 0) return [0, 0];
+      const xs = x * scale;
+      const ys = y * scale;
+      const r = Math.sqrt(xs * xs + ys * ys);
+      if (r <= 1.0) return [xs, ys];
+      return [0, 0];
+    },
+  },
+  {
+    idx: V.curl2,
+    name: 'curl2',
+    source: sourceForIdx(V.curl2),
+    formula: 'V_{121}(x, y) = \\tfrac{w}{|p(z)|^2}\\,(x\\,\\Re p + y\\,\\Im p,\\; y\\,\\Re p - x\\,\\Im p),\\; p(z) = c_3 z^3 + c_2 z^2 + c_1 z + 1',
+    blurb: 'Cubic-polynomial complex inverse by Xyrus02 / Georg Kiehne. The c1-only path collapses to flam3\'s classic `curl`; non-zero c2 and c3 add quadratic and cubic shaping, producing the eponymous "tighter scroll" / "double bend" silhouettes. Defaults c1=1, c2=c3=0 reproduce the standard curl shape; users discover the richer family by dialing c2/c3 up.',
+    params: [
+      { name: 'c1', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c2', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c3', default: 0.0, min: -1, max: 1, step: 0.02 },
+    ],
+    warpFn: (x, y) => {
+      const c1 = 1.0;
+      const c2 = 0.0;
+      const c3 = 0.0;
+      const cc2 = 2 * c2;
+      const cc3 = 3 * c3;
+      const x2 = x * x;
+      const x3 = x2 * x;
+      const y2 = y * y;
+      const y3 = y2 * y;
+      const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
+      const im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+      const denom = re * re + im * im;
+      if (denom === 0) return [0, 0];
+      const r = 1.0 / denom;
+      return [(x * re + y * im) * r, (y * re - x * im) * r];
+    },
+  },
+  {
+    idx: V.murl,
+    name: 'murl',
+    source: sourceForIdx(V.murl),
+    formula: 'V_{122}(x, y) = \\tfrac{w(c+1)}{|1 + r e^{ip\\theta}|^2 + \\epsilon}\\,((x\\,\\Re,\\; y\\,\\Im) + (y\\,\\Im,\\; -x\\,\\Re)),\\; r = c\\,(x^2+y^2)^{p/2}',
+    blurb: 'Polar-power murl by Peter Sdobnov (Zueuk), ported into JWildfire by chronologicaldot. The polar angle is multiplied by an integer power and a complex-inverse blend through (re, im) folds back to Cartesian — produces the "spiraling braid" look characteristic of murl-family flames. Defaults c=0.1, power=1 give a gentle deterministic spiral; higher power values multiply the angular folding.',
+    params: [
+      { name: 'c',     default: 0.1, min: -1, max: 2, step: 0.05 },
+      { name: 'power', default: 1,   min: 1,  max: 8, step: 1 },
+    ],
+    warpFn: (x, y) => {
+      const c_in = 0.1;
+      const power = 1;
+      const c = power !== 1 ? c_in / (power - 1) : c_in;
+      const p2 = power / 2.0;
+      const vp = 1.0 * (c + 1);
+      const a = Math.atan2(y, x) * power;
+      const sina = Math.sin(a);
+      const cosa = Math.cos(a);
+      const r = c * Math.pow(x * x + y * y, p2);
+      const re = r * cosa + 1;
+      const im = r * sina;
+      const r1 = vp / (re * re + im * im + 1e-29);
+      return [r1 * (x * re + y * im), r1 * (y * re - x * im)];
+    },
+  },
+  {
+    idx: V.stwins,
+    name: 'stwins',
+    source: sourceForIdx(V.stwins),
+    formula: 'V_{123}(x, y) = w(x, y) + \\frac{(s_x^2 - s_y^2)\\sin(2\\pi\\,d\\,(s_x+s_y))}{s_x^2 + s_y^2}\\,(1, 1),\\; s = 0.05\\,wp',
+    blurb: 'Twin-sine ratio by Xyrus02 (Apophysis plugin pack). Mixes a (x²−y²)·sin(2π·distort·(x+y)) / (x²+y²) component back into both x and y in lockstep — produces the characteristic "diagonal pinch" pattern. The fixed 0.05 scale factor prevents overlap at distort=1 (source comment). Canonical name in the Xyrus02 source is `stwin`; pyr3 follows the plugin directory name `stwins` per survey doc + community alignment.',
+    params: [
+      { name: 'distort', default: 1.0, min: 0, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const distort = 1.0;
+      const mult = 0.05;
+      const sx = x * w * mult;
+      const sy = y * w * mult;
+      const x2 = sx * sx;
+      const y2 = sy * sy;
+      const xpy = sx + sy;
+      const xn = x2 - y2;
+      const xd = x2 + y2;
+      const result_num = xn * Math.sin(2 * Math.PI * distort * xpy);
+      const divident = xd === 0 ? 1 : xd;
+      const result = result_num / divident;
+      return [w * x + result, w * y + result];
+    },
+  },
+  {
+    idx: V.hexes,
+    name: 'hexes',
+    source: sourceForIdx(V.hexes),
+    formula: 'V_{124}(x, y) = w\\,(P_0 + R\\cdot(D_x\\cos\\phi + D_y\\sin\\phi,\\, -D_x\\sin\\phi + D_y\\cos\\phi)),\\; \\phi = 2\\pi r',
+    blurb: 'Hex-grid voronoi warp by Neil Slater / slobo777, via JWildfire. Breaks the plane into a hexagonal lattice, finds the closest hex center to each iterate, then applies a per-cell power scaling + rotation expressed via voronoi-edge distance. The "rosette removal" blend at the cell edge (L ∈ [0.5, 0.8]) smooths the transition between closest-vs-second-closest-hex regions. Defaults cellsize=1, power=1, rotate=0.166 (≈ π/19), scale=1 reproduce JWildfire\'s class-level shape.',
+    params: [
+      { name: 'cellsize', default: 1.0,   min: 0.1, max: 4, step: 0.05 },
+      { name: 'power',    default: 1.0,   min: 0,   max: 4, step: 0.05 },
+      { name: 'rotate',   default: 0.166, min: 0,   max: 1, step: 0.01 },
+      { name: 'scale',    default: 1.0,   min: 0.1, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      // Catalog uses fixed defaults — cellsize=1 always, so the source's
+      // cellsize==0 guard is dead code here. Kernel preserves the guard.
+      const cellsize = 1.0;
+      const power = 1.0;
+      const rotate = 0.166;
+      const scale = 1.0;
+      const SQRT3 = 1.7320508075688772935;
+      const a_hex = 1.0 / 3.0;
+      const b_hex = SQRT3 / 3.0;
+      const c_hex = -1.0 / 3.0;
+      const d_hex = SQRT3 / 3.0;
+      const a_cart = 1.5;
+      const b_cart = -1.5;
+      const c_cart = SQRT3 / 2.0;
+      const d_cart = SQRT3 / 2.0;
+      const rotSin = Math.sin(rotate * 2 * Math.PI);
+      const rotCos = Math.cos(rotate * 2 * Math.PI);
+      const s = cellsize;
+      const hx0 = Math.floor((a_hex * x + b_hex * y) / s);
+      const hy0 = Math.floor((c_hex * x + d_hex * y) / s);
+      let bestD2 = Infinity;
+      let q = 0;
+      for (let di = -1; di < 2; di++) {
+        for (let dj = -1; dj < 2; dj++) {
+          const cx = (a_cart * (hx0 + di) + b_cart * (hy0 + dj)) * s;
+          const cy = (c_cart * (hx0 + di) + d_cart * (hy0 + dj)) * s;
+          const dx = cx - x;
+          const dy = cy - y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) { bestD2 = d2; q = (di + 1) * 3 + (dj + 1); }
+        }
+      }
+      const hx = hx0 + (Math.floor(q / 3) - 1);
+      const hy = hy0 + ((q % 3) - 1);
+      const cc = (hxi: number, hyi: number): [number, number] =>
+        [(a_cart * hxi + b_cart * hyi) * s, (c_cart * hxi + d_cart * hyi) * s];
+      const P0 = cc(hx, hy);
+      const ring: [number, number][] = [
+        cc(hx, hy + 1),
+        cc(hx + 1, hy + 1),
+        cc(hx + 1, hy),
+        cc(hx, hy - 1),
+        cc(hx - 1, hy - 1),
+        cc(hx - 1, hy),
+      ];
+      const vor = (Ux: number, Uy: number): number => {
+        let ratiomax = -1e20;
+        for (const Pp of ring) {
+          const PmQx = Pp[0] - P0[0];
+          const PmQy = Pp[1] - P0[1];
+          if (PmQx === 0 && PmQy === 0) { if (1 > ratiomax) ratiomax = 1; continue; }
+          const ratio = 2 * ((Ux - P0[0]) * PmQx + (Uy - P0[1]) * PmQy) / (PmQx * PmQx + PmQy * PmQy);
+          if (ratio > ratiomax) ratiomax = ratio;
+        }
+        return ratiomax;
+      };
+      const L1 = vor(x, y);
+      const DXo = x - P0[0];
+      const DYo = y - P0[1];
+      const trgL = Math.pow(L1 + 1e-30, power) * scale;
+      const Vx0 = DXo * rotCos + DYo * rotSin;
+      const Vy0 = -DXo * rotSin + DYo * rotCos;
+      const L2 = vor(Vx0 + P0[0], Vy0 + P0[1]);
+      const L = Math.max(L1, L2);
+      let R: number;
+      if (L < 0.5) R = trgL / L1;
+      else if (L > 0.8) R = trgL / L2;
+      else R = ((trgL / L1) * (0.8 - L) + (trgL / L2) * (L - 0.5)) / 0.3;
+      return [Vx0 * R + P0[0], Vy0 * R + P0[1]];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

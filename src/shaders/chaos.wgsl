@@ -2191,6 +2191,237 @@ fn var_petal(p: vec2f, w: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular. Sources:
+// xyrus02/apophysis-plugins (GPL-2+); JWildfire HexesFunc (LGPL-2.1+);
+// see NOTICE.md. pyr3 reimplements each formula in WGSL; no source
+// code is byte-copied. `juni` was originally scoped here but dropped —
+// no JuniFunc.java in JWildfire, and the Xyrus02 juni source requires
+// xform-affine context that pyr3's apply_variation seam doesn't expose
+// (see V table comment in src/variations.ts).
+// ---------------------------------------------------------------------
+
+// var_bcircle — Xyrus02 bcircle plugin (apophysis-plugins).
+// 2 params (scale, borderwidth). RNG only when borderwidth ≠ 0.
+// Inside the unit disk (after scale), passthrough w·(x,y); outside,
+// optionally emit a point on the unit circle perturbed by border noise.
+// Origin guard matches source: (0,0) input → no contribution.
+fn var_bcircle(p: vec2f, w: f32, scale: f32, borderwidth: f32, wi: u32) -> vec2f {
+  let bcbw = abs(borderwidth);
+  if (p.x == 0.0 && p.y == 0.0) { return vec2f(0.0, 0.0); }
+  let x = p.x * scale;
+  let y = p.y * scale;
+  let r = sqrt(x * x + y * y);
+  if (r <= 1.0) {
+    return vec2f(w * x, w * y);
+  }
+  if (bcbw == 0.0) { return vec2f(0.0, 0.0); }
+  let ang = atan2(y, x);
+  let rand = rand01(wi);
+  let omega = 0.2 * bcbw * rand + 1.0;
+  // ang from atan2 is bounded in [-π, π] — plain trig fine; keep safe_*
+  // defensively in case future call-sites scale the angle further.
+  return vec2f(w * omega * safe_cos(ang), w * omega * safe_sin(ang));
+}
+
+// var_curl2 — Xyrus02 curl2 plugin (apophysis-plugins). 3 params
+// (c1, c2, c3). No RNG. Author: Georg Kiehne / Xyrus-Worx.
+// Cubic-polynomial complex inverse — the c2/c3 generalization of
+// flam3's `curl` (which is the c1-only path).
+fn var_curl2(p: vec2f, w: f32, c1: f32, c2: f32, c3: f32) -> vec2f {
+  let cc2 = 2.0 * c2;
+  let cc3 = 3.0 * c3;
+  let x = p.x;
+  let y = p.y;
+  let x2 = x * x;
+  let x3 = x2 * x;
+  let y2 = y * y;
+  let y3 = y2 * y;
+  let re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
+  let im = c3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
+  let denom = re * re + im * im;
+  // Match source: no explicit guard; the chaos game reseed handles
+  // ±Inf from a true zero denominator.
+  let r = w / denom;
+  return vec2f((x * re + y * im) * r, (y * re - x * im) * r);
+}
+
+// var_murl — JWildfire MurlFunc / Xyrus02 murl plugin. 2 params
+// (c, power). No RNG. Author: Peter Sdobnov (Zueuk); ported to Java
+// by Nic Anderson (chronologicaldot). Polar power + complex inverse
+// blend. JWildfire's port adds the `power == 1` branch (c is NOT
+// divided by power-1 there); pyr3 follows the JWildfire form.
+fn var_murl(p: vec2f, w: f32, c_in: f32, power_in: f32) -> vec2f {
+  let power_i = i32(power_in);
+  let power_f = f32(power_i);
+  let c = select(c_in / (power_f - 1.0), c_in, power_i == 1);
+  let p2 = power_f / 2.0;
+  let vp = w * (c + 1.0);
+  let a = atan2(p.y, p.x) * power_f;
+  // `a` can exceed [-π·power, π·power] — safe_* dodges Dawn's trig cliff
+  // at high power counts.
+  let sina = safe_sin(a);
+  let cosa = safe_cos(a);
+  let r = c * pow(p.x * p.x + p.y * p.y, p2);
+  let re = r * cosa + 1.0;
+  let im = r * sina;
+  // Murl source uses 1e-29 to dodge degeneracy at (c=0, r=0). f32 floor
+  // is ~1.18e-38, so 1e-29 is well-representable; but the Dawn FTZ
+  // cliff (subnormals → 0) applies to any value ≤ ~1.18e-38, NOT 1e-29.
+  // 1e-29 is safe — round-trips as a normal f32.
+  let r1 = vp / (re * re + im * im + 1.0e-29);
+  return vec2f(r1 * (p.x * re + p.y * im), r1 * (p.y * re - p.x * im));
+}
+
+// var_stwins — Xyrus02 stwins plugin (apophysis-plugins). 1 param
+// (distort). No RNG. Author: xyrus02. Twin-sine ratio: scales the
+// iterate by a fixed 0.05 multiplier, then mixes
+// (x²−y²)·sin(2π·distort·(x+y)) / (x²+y²) back into (w·x, w·y).
+fn var_stwins(p: vec2f, w: f32, distort: f32) -> vec2f {
+  let multiplier: f32 = 0.05;
+  let x = p.x * w * multiplier;
+  let y = p.y * w * multiplier;
+  let x2 = x * x;
+  let y2 = y * y;
+  let x_plus_y = x + y;
+  let x2_minus_y2 = x2 - y2;
+  let x2_plus_y2 = x2 + y2;
+  // Trig arg `2π·distort·(x+y)` is unbounded for distort or coords away
+  // from origin — Dawn trig cliff applies. safe_sin guards it.
+  let result_num = x2_minus_y2 * safe_sin(TAU * distort * x_plus_y);
+  let divident = select(x2_plus_y2, 1.0, x2_plus_y2 == 0.0);
+  let result = result_num / divident;
+  return vec2f(w * p.x + result, w * p.y + result);
+}
+
+// var_hexes — JWildfire HexesFunc (port of slobo777's Apophysis
+// hexes plugin). 4 params (cellsize, power, rotate, scale). No RNG.
+// Author: Neil Slater / slobo777.
+//
+// Breaks the plane into a hex lattice, finds the closest hex center
+// to the iterate, then applies a per-cell power scaling + rotation
+// expressed via voronoi-edge distance. The "rosette removal" blend
+// at the cell edge (L ∈ [0.5, 0.8]) smooths the transition between
+// closest-vs-second-closest-hex regions.
+//
+// pyr3 uses its OWN hex-grid helper, NOT worley2d_F1 — hexes is
+// deterministic per-cell-center (no per-cell RNG hash) and uses an
+// affine map to convert Cartesian ↔ hex coords. worley2d's
+// hash-based feature points would produce a completely different
+// (and wrong) lattice.
+fn var_hexes(p: vec2f, w: f32, cellsize: f32, power: f32, rotate: f32, scale: f32) -> vec2f {
+  if (cellsize == 0.0) { return vec2f(0.0, 0.0); }
+  // Local consts (extractWgslFn doesn't pull module-scope const into
+  // the test kernel — declare as let).
+  let SQRT3: f32 = 1.7320508075688772935;
+  let a_hex: f32 = 1.0 / 3.0;
+  let b_hex: f32 = SQRT3 / 3.0;
+  let c_hex: f32 = -1.0 / 3.0;
+  let d_hex: f32 = SQRT3 / 3.0;
+  let a_cart: f32 = 1.5;
+  let b_cart: f32 = -1.5;
+  let c_cart: f32 = SQRT3 / 2.0;
+  let d_cart: f32 = SQRT3 / 2.0;
+  // `rotate · 2π` — bounded for sane rotate inputs, plain trig fine.
+  let rotSin = safe_sin(rotate * TAU);
+  let rotCos = safe_cos(rotate * TAU);
+  let Ux = p.x;
+  let Uy = p.y;
+  let s = cellsize;
+
+  let hx0 = i32(floor((a_hex * Ux + b_hex * Uy) / s));
+  let hy0 = i32(floor((c_hex * Ux + d_hex * Uy) / s));
+
+  // Step 1: 3x3 candidate hex centers, find the closest.
+  var bestD2: f32 = 1.0e30;
+  var q: i32 = 0;
+  for (var di: i32 = -1; di < 2; di = di + 1) {
+    for (var dj: i32 = -1; dj < 2; dj = dj + 1) {
+      let cx = (a_cart * f32(hx0 + di) + b_cart * f32(hy0 + dj)) * s;
+      let cy = (c_cart * f32(hx0 + di) + d_cart * f32(hy0 + dj)) * s;
+      let dx = cx - Ux;
+      let dy = cy - Uy;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        q = (di + 1) * 3 + (dj + 1);
+      }
+    }
+  }
+  // Convert q back to (di, dj). Same enumeration as the source's
+  // `cell_choice` table: q=0..8 → (di,dj) ∈ [-1,1]².
+  let chosen_di = q / 3 - 1;
+  let chosen_dj = q % 3 - 1;
+  let hx = hx0 + chosen_di;
+  let hy = hy0 + chosen_dj;
+
+  // Step 2: 7-point ring centered on the chosen hex. Order matches the
+  // JWF source: [center, +y, +x+y, +x, -y, -x-y, -x].
+  let P0 = vec2f((a_cart * f32(hx) + b_cart * f32(hy)) * s, (c_cart * f32(hx) + d_cart * f32(hy)) * s);
+  let P1 = vec2f((a_cart * f32(hx) + b_cart * f32(hy + 1)) * s, (c_cart * f32(hx) + d_cart * f32(hy + 1)) * s);
+  let P2 = vec2f((a_cart * f32(hx + 1) + b_cart * f32(hy + 1)) * s, (c_cart * f32(hx + 1) + d_cart * f32(hy + 1)) * s);
+  let P3 = vec2f((a_cart * f32(hx + 1) + b_cart * f32(hy)) * s, (c_cart * f32(hx + 1) + d_cart * f32(hy)) * s);
+  let P4 = vec2f((a_cart * f32(hx) + b_cart * f32(hy - 1)) * s, (c_cart * f32(hx) + d_cart * f32(hy - 1)) * s);
+  let P5 = vec2f((a_cart * f32(hx - 1) + b_cart * f32(hy - 1)) * s, (c_cart * f32(hx - 1) + d_cart * f32(hy - 1)) * s);
+  let P6 = vec2f((a_cart * f32(hx - 1) + b_cart * f32(hy)) * s, (c_cart * f32(hx - 1) + d_cart * f32(hy)) * s);
+
+  // voronoiL: half-plane projection vs each of the other 6 centers.
+  // Inlined twice (no functions inside functions in WGSL).
+  let L1 = hexes_voronoi_max(P0, P1, P2, P3, P4, P5, P6, Ux, Uy);
+
+  let DXo = Ux - P0.x;
+  let DYo = Uy - P0.y;
+  // `power` is user-controlled — the source guards L1==0 with `L1 + 1e-100`.
+  // 1e-100 is below f32 representable normals; we use 1.0e-30 (smallest
+  // value that survives Dawn's FTZ cliff per reference-dawn-f32-ftz-cliff).
+  let trgL = pow(L1 + 1.0e-30, power) * scale;
+  let Vx0 = DXo * rotCos + DYo * rotSin;
+  let Vy0 = -DXo * rotSin + DYo * rotCos;
+
+  let L2 = hexes_voronoi_max(P0, P1, P2, P3, P4, P5, P6, Vx0 + P0.x, Vy0 + P0.y);
+  let L = max(L1, L2);
+  var R: f32 = 0.0;
+  if (L < 0.5) {
+    R = trgL / L1;
+  } else if (L > 0.8) {
+    R = trgL / L2;
+  } else {
+    R = ((trgL / L1) * (0.8 - L) + (trgL / L2) * (L - 0.5)) / 0.3;
+  }
+  let Vx = Vx0 * R + P0.x;
+  let Vy = Vy0 * R + P0.y;
+  return vec2f(w * Vx, w * Vy);
+}
+
+// Hex Voronoi half-plane max-ratio helper. Takes the chosen center P0
+// plus the 6 ring centers (P1..P6) and the query point U; returns the
+// max half-plane projection ratio across the 6 edges. Matches the JWF
+// `hexes_voronoi` / `hexes_vratio` pair.
+fn hexes_voronoi_max(P0: vec2f, P1: vec2f, P2: vec2f, P3: vec2f, P4: vec2f, P5: vec2f, P6: vec2f, Ux: f32, Uy: f32) -> f32 {
+  var ratiomax: f32 = -1.0e20;
+  ratiomax = hexes_vratio_step(P1, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P2, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P3, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P4, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P5, P0, Ux, Uy, ratiomax);
+  ratiomax = hexes_vratio_step(P6, P0, Ux, Uy, ratiomax);
+  return ratiomax;
+}
+
+fn hexes_vratio_step(P: vec2f, Q: vec2f, Ux: f32, Uy: f32, prev: f32) -> f32 {
+  let PmQx = P.x - Q.x;
+  let PmQy = P.y - Q.y;
+  if (PmQx == 0.0 && PmQy == 0.0) {
+    return select(prev, 1.0, 1.0 > prev);
+  }
+  // (PmQx)·(U−Q).x  + (PmQy)·(U−Q).y, doubled, divided by |P−Q|².
+  // Parens around the dot product to avoid Dawn's `* ^ /` ambiguity.
+  let num = 2.0 * ((Ux - Q.x) * PmQx + (Uy - Q.y) * PmQy);
+  let den = PmQx * PmQx + PmQy * PmQy;
+  let ratio = num / den;
+  return select(prev, ratio, ratio > prev);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -2348,6 +2579,12 @@ fn apply_variation(
     case 117u: { return var_circlize2(p, w, p0); }
     case 118u: { return var_eswirl(p, w, p0, p1); }
     case 119u: { return var_petal(p, w); }
+    // #114 batch 2b-c — Xyrus02 mid-tier + hexes cellular.
+    case 120u: { return var_bcircle(p, w, p0, p1, wi); }
+    case 121u: { return var_curl2(p, w, p0, p1, p2); }
+    case 122u: { return var_murl(p, w, p0, p1); }
+    case 123u: { return var_stwins(p, w, p0); }
+    case 124u: { return var_hexes(p, w, p0, p1, p2, p3); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
