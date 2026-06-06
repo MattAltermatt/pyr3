@@ -2,7 +2,13 @@
 // into a 4-channel u32 atomic histogram (R, G, B, count). Each hit
 // samples the palette at the iterated color coord and atomically accumulates.
 
-import shaderCode from './shaders/chaos.wgsl?raw';
+import chaosCore from './shaders/chaos.wgsl?raw';
+import noisePerlinSrc from './shaders/noise_perlin.wgsl?raw';
+// #114 — prepend the standalone Perlin noise WGSL so var_dc_perlin can
+// call perlin_fbm. Keeping noise_perlin.wgsl as a separate file gives us
+// isolated unit tests (noise-perlin.gpu.test.ts) without needing the
+// full chaos kernel scaffolding.
+const shaderCode = `${noisePerlinSrc}\n${chaosCore}`;
 import {
   type Genome,
   MAX_XFORMS,

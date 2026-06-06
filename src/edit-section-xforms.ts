@@ -15,7 +15,7 @@
 import { type SectionMount } from './edit-ui';
 import { type EditState, snapshotForSolo, restoreFromSolo } from './edit-state';
 import { type Xform } from './genome';
-import { type Variation, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM } from './variations';
+import { type Variation, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM, DC_VARIATION_SET } from './variations';
 import { VARIATION_PARAMS, PARAM_KEYS } from './serialize';
 import {
   decomposedToRaw,
@@ -230,6 +230,28 @@ function buildVariationRow(
   });
 
   headerRow.append(activeToggle, kindBtn, weightInput.el, removeBtn);
+
+  // #114 — DC chip next to the kindBtn when this row is a DC variation.
+  // Hover explains the override; click opens canonical docs in a new tab.
+  if (DC_VARIATION_SET.has(v.index)) {
+    const dcChip = document.createElement('span');
+    dcChip.className = 'pyr3-edit-var-dc-chip';
+    dcChip.textContent = 'DC ⓘ';
+    dcChip.title = `This xform's color is computed from spatial position by ${VARIATION_NAMES[v.index] ?? 'a DC variation'} instead of the palette. Click to learn more.`;
+    dcChip.style.cursor = 'help';
+    dcChip.style.fontSize = '10px';
+    dcChip.style.padding = '0 4px';
+    dcChip.style.marginLeft = '4px';
+    dcChip.style.borderRadius = '3px';
+    dcChip.style.border = '1px solid currentColor';
+    dcChip.style.opacity = '0.7';
+    dcChip.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      window.open('/help/direct-color-variations.html', '_blank', 'noopener,noreferrer');
+    });
+    headerRow.appendChild(dcChip);
+  }
+
   wrap.appendChild(headerRow);
 
   // Param row — labels + inputs per VARIATION_PARAMS[kind]. Rebuilt on
@@ -800,7 +822,20 @@ function buildXformCard(
   body.appendChild(postWrap);
 
   // ── 4. Color block (buildRow + buildSlider) ────────────────────────
-  body.appendChild(makeSectionLabel('color'));
+  // #114 — when any variation in the chain is a DC kind, color +
+  // color_speed are overridden at render time by the dc_*'s RGB. The
+  // values are still editable (they stay on the genome so removing
+  // the DC variation restores them) — the label just tells the user
+  // they're inactive right now.
+  const dcVarInChain = xform.variations.find(v => DC_VARIATION_SET.has(v.index));
+  const dcKindName = dcVarInChain ? (VARIATION_NAMES[dcVarInChain.index] ?? 'a DC variation') : null;
+  const colorLabelText = dcKindName ? `color (overridden by ${dcKindName})` : 'color';
+  const colorLabel = makeSectionLabel(colorLabelText);
+  if (dcKindName) {
+    colorLabel.style.opacity = '0.7';
+    colorLabel.title = `This xform's color is computed from position by ${dcKindName}; the slider values below are kept on the genome but not in effect.`;
+  }
+  body.appendChild(colorLabel);
 
   const colorSliderEl = buildSlider({
     value: xform.color,

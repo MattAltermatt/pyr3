@@ -151,6 +151,13 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   wedge_julia: ['angle', 'count', 'power', 'dist'],
   // Phase 9b Batch K — mobius (8 params).
   mobius: ['re_a', 'im_a', 're_b', 'im_b', 're_c', 'im_c', 're_d', 'im_d'],
+  // #114 — DC (direct-color) variation params. JWildfire .flame XML
+  // serializes these as `dc_perlin_scale`, `dc_perlin_octaves`, etc. —
+  // the standard `${var}_${param}` convention.
+  // dc_linear and dc_cylinder are 0-param (no entries needed; absence
+  // means "no params", consistent with linear/spherical/etc.).
+  dc_perlin: ['scale', 'octaves', 'color_seed'],
+  dc_gridout: ['cells'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.

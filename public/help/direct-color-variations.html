@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffbe3e'/%3E%3Cstop offset='1' stop-color='%23bf2408'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M16 2c4 7 8 9.5 6.5 17C21.4 25.8 11 26.5 9.6 19 8.5 13 13 10 16 2Z' fill='url(%23g)'/%3E%3Cpath d='M16 9.5c3.4 0 4 4 .8 5.2 M16 22c-3.4 0-4-4-.8-5.2' fill='none' stroke='%230a0a0c' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <title>pyr3 — direct-color variations</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0a0c;
+        --text: #ddd;
+        --text-dim: #888;
+        --accent: #ff8c1a;
+        --card-bg: #15151a;
+        --card-border: #2a2a30;
+      }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg); color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.55;
+      }
+      .page { max-width: 760px; margin: 0 auto; padding: 32px 22px 80px; }
+      .back {
+        display: inline-block; color: var(--accent); text-decoration: none;
+        font-size: 13px; margin-bottom: 22px;
+      }
+      .back:hover { text-decoration: underline; }
+      h1 { font-size: 28px; margin: 0 0 8px; color: var(--text); font-weight: 600; }
+      .subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 30px; }
+      h2 {
+        font-size: 18px; margin: 32px 0 10px; color: var(--text);
+        font-weight: 600;
+      }
+      h3 {
+        font-size: 15px; margin: 22px 0 6px; color: var(--text);
+        font-weight: 600;
+      }
+      p { margin: 10px 0; font-size: 14px; }
+      a { color: var(--accent); }
+      strong { color: var(--text); }
+      code {
+        background: var(--card-bg); padding: 1px 6px; border-radius: 3px;
+        font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      ul { padding-left: 22px; }
+      li { margin: 6px 0; font-size: 14px; }
+      .examples {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 6px; padding: 14px 18px; margin: 18px 0;
+      }
+      .examples h3 { margin-top: 0; }
+      .examples ul { margin: 4px 0 0; }
+      .colophon {
+        background: var(--card-bg); border: 1px solid var(--card-border);
+        border-radius: 6px; padding: 14px 18px; margin-top: 28px;
+        font-size: 13px; color: var(--text-dim);
+      }
+      .colophon strong { color: var(--text); }
+      .dc-pill {
+        display: inline-block; background: var(--card-bg);
+        border: 1px solid var(--accent); color: var(--accent);
+        padding: 0 6px; border-radius: 3px; font-size: 10px;
+        font-weight: 700; vertical-align: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <a class="back" href="../">← Back to pyr3</a>
+
+      <h1>Direct-color variations</h1>
+      <p class="subtitle">A class of variations that color a flame xform from spatial position instead of the palette.</p>
+
+      <h2>What palette-indexed coloring does</h2>
+      <p>
+        Every standard flam3 variation (the 99 in pyr3's core set —
+        <code>linear</code>, <code>spherical</code>, <code>julia</code>,
+        and so on) lets the chaos game color each scatter by sampling the
+        genome's 256-stop <strong>palette</strong>. Each xform has a
+        <code>color</code> value that picks where it sits on that palette,
+        and a <code>color_speed</code> value that controls how fast the
+        iterated color tracker is pulled toward it. Colors emerge from the
+        palette gradient — the artist designs the palette, the genome chooses
+        slices of it.
+      </p>
+
+      <h2>What direct-color (DC) variations do</h2>
+      <p>
+        <strong>Direct-color variations bypass the palette entirely.</strong>
+        They compute RGB <em>directly</em> from the scatter's spatial
+        position, then write that color into the histogram instead of the
+        palette lookup. The result is a class of flames that palette-indexed
+        coloring simply cannot make — marbled noise fields, discrete tiled
+        regions, color that flows with geometry rather than with the
+        xform's firing history.
+      </p>
+      <p>
+        DC variations originated in
+        <a href="https://www.deviantart.com/slobo777">Neil Slater's</a>
+        Apophysis 7X plugin pack and became signature features of the
+        <a href="https://jwildfire.overwhale.com">JWildfire</a> user
+        community. pyr3's first wave ports four of the family.
+      </p>
+
+      <h2>The four DC variations in pyr3</h2>
+
+      <h3><span class="dc-pill">DC</span> dc_linear</h3>
+      <p>
+        Color from spatial coord, mapped through a clamped affine to RGB.
+        The simplest possible DC variation — proves the override path with
+        a one-line formula. No parameters.
+      </p>
+
+      <h3><span class="dc-pill">DC</span> dc_perlin</h3>
+      <p>
+        Color from a 2D Perlin noise field. The hue cycles with the noise
+        value; saturation is full, lightness sits at 0.55 so colors read
+        clearly against a dark background. Parameters: <code>scale</code>
+        (noise frequency), <code>octaves</code> (fractional-Brownian-motion
+        depth, 1–8), and <code>color_seed</code> (rotates the hue cycle —
+        two dc_perlin xforms with different seeds produce different
+        palettes from the same field).
+      </p>
+      <p>
+        This is the marquee DC look. The "marbled / painterly" texture in
+        most JWildfire-era gallery flames comes from one or more
+        dc_perlin xforms layered over a chaos-game attractor.
+      </p>
+
+      <h3><span class="dc-pill">DC</span> dc_gridout</h3>
+      <p>
+        Color by canvas quadrant. Floor the scatter position into integer
+        cells (<code>cells</code> parameter controls density), then hash
+        each cell to an RGB triple. Produces a tile / pixelated look,
+        completely different visual register from the smooth perlin field.
+      </p>
+
+      <h3><span class="dc-pill">DC</span> dc_cylinder</h3>
+      <p>
+        The DC analog of flam3's <code>cylinder</code> — same position
+        warp (<code>(sin(x), y)</code>) plus a color derived from the
+        warped coordinates. Demonstrates the "DC + shape" pattern: a
+        single variation contributing both a position change AND a color
+        override. The hue spirals along x, lightness modulates with y.
+      </p>
+
+      <h2>How to use them</h2>
+      <p>
+        In the editor, open any xform's variation picker — the four DC
+        variations live in their own
+        <strong>Direct color</strong> category and each carries a
+        <span class="dc-pill">DC</span> badge. Add one to a chain like any
+        other variation; the chain's <code>color</code> /
+        <code>color_speed</code> rows annotate "(overridden by dc_*)" to
+        signal that the palette lookup is bypassed for that xform.
+      </p>
+
+      <h2>Override semantics</h2>
+      <p>
+        When an xform's variation chain contains any DC variation, every
+        scatter from that xform writes <strong>DC RGB</strong> instead of
+        <code>palette[color_index]</code> at histogram time. The position
+        contribution from each variation in the chain still sums normally
+        — DC variations affect color only (the cylinder one is the
+        exception: it warps position too). If a chain contains multiple
+        DC variations, the last one in the chain wins for the color.
+      </p>
+      <p>
+        Existing genomes are unaffected. None of the 99 standard flam3
+        variations are DC, so any flame from before this feature renders
+        bit-for-bit identically. The full parity test rig (26 flames
+        rendered with pyr3 vs flam3-C) passes byte-identically with this
+        feature live.
+      </p>
+
+      <div class="examples">
+        <h3>See it in the wild</h3>
+        <ul>
+          <li>
+            <a href="https://www.deviantart.com/wolfepaw/art/LogTile-Perlin-Spiral-903174997">LogTile Perlin Spiral</a>
+            — wolfepaw, dc_perlin filling a log-tile spiral
+          </li>
+          <li>
+            <a href="https://www.deviantart.com/wolfepaw/art/Sparkly-Perlin-Spiral-882594970">Sparkly Perlin Spiral</a>
+            — wolfepaw, dc_perlin sparkle texture along the arms
+          </li>
+          <li>
+            <a href="https://www.deviantart.com/wolfepaw/art/JWildfire-Fractal-Quilt-765672811">JWildfire Fractal Quilt</a>
+            — wolfepaw, per-pixel DC noise blocks
+          </li>
+          <li>
+            <a href="https://fractalformulas.wordpress.com/flame-variations/dc_perlin/">fractalformulas: dc_perlin</a>
+            — Neil Slater's original mechanism explanation with example noise fields
+          </li>
+        </ul>
+      </div>
+
+      <div class="colophon">
+        <strong>Authored:</strong> Direct-color variation family by
+        Neil Slater (slobo777), ported into JWildfire by Andreas Maschke
+        and the JWildfire community.<br />
+        <strong>License:</strong> pyr3's WGSL implementation is GPL-3.0-or-later,
+        independent reimplementation. <br />
+        <strong>Issue:</strong>
+        <a href="https://github.com/MattAltermatt/pyr3/issues/114">#114</a> on GitHub.
+      </div>
+    </div>
+  </body>
+</html>

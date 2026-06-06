@@ -104,7 +104,7 @@ struct Uniforms {
 struct Xform {
   affine0: vec4f,            // a, b, c, weight
   affine1: vec4f,            // d, e, f, num_active_vars (as f32)
-  color_params: vec4f,       // color, colorSpeed, opacity, _   (Phase 9d: opacity in slot 2)
+  color_params: vec4f,       // color, colorSpeed, opacity, dc_flag   (Phase 9d: opacity in slot 2; #114: dc_flag in slot 3)
   // Phase 9c: per-xform post-affine. Applied to (qx, qy) AFTER the variation
   // chain, before splat (matches flam3 variations.c:2412-2418). post0.w
   // doubles as the has_post flag (0 = skip, 1 = apply).
@@ -1452,10 +1452,117 @@ fn var_wedge_julia(p: vec2f, w: f32, angle: f32, count: f32, power: f32, dist: f
 }
 
 // ---------------------------------------------------------------------
-// Variation dispatcher — runtime switch over 99 indices (V=0..98).
+// DC (direct-color) variation color helpers. #114.
+//
+// Each DC variation has two sides: a position contribution (the chain
+// just sums weights × var_*_pos, like any flam3-99 variation) and an
+// RGB output (used to override palette[color_index] at splat time when
+// the xform's dc_flag in color_params.w is non-zero). Position lives in
+// apply_variation (cases 99-102 — most are identity / zero); color is
+// computed here from the chain's input position pa_mut.
+//
+// dc_linear: simplest — maps spatial coord (x, y) to (R, G, B) via a
+// clamped affine. No params.
+// ---------------------------------------------------------------------
+
+fn var_dc_linear_color(p: vec2f) -> vec3f {
+  return clamp(
+    vec3f(
+      0.5 + 0.5 * p.x,
+      0.5 + 0.5 * p.y,
+      0.5 - 0.25 * (p.x + p.y),
+    ),
+    vec3f(0.0),
+    vec3f(1.0),
+  );
+}
+
+// HSL → RGB. h, s, l in [0, 1]. Standard conversion (no perceptual
+// correction). Used by var_dc_perlin_color and var_dc_cylinder_color.
+fn hsl_to_rgb(hsl: vec3f) -> vec3f {
+  let h = fract(hsl.x);
+  let s = clamp(hsl.y, 0.0, 1.0);
+  let l = clamp(hsl.z, 0.0, 1.0);
+  let c = (1.0 - abs(2.0 * l - 1.0)) * s;
+  let h6 = h * 6.0;
+  let x = c * (1.0 - abs((h6 - 2.0 * floor(h6 * 0.5)) - 1.0));
+  let m = l - c * 0.5;
+  var rgb: vec3f;
+  if (h6 < 1.0)      { rgb = vec3f(c, x, 0.0); }
+  else if (h6 < 2.0) { rgb = vec3f(x, c, 0.0); }
+  else if (h6 < 3.0) { rgb = vec3f(0.0, c, x); }
+  else if (h6 < 4.0) { rgb = vec3f(0.0, x, c); }
+  else if (h6 < 5.0) { rgb = vec3f(x, 0.0, c); }
+  else               { rgb = vec3f(c, 0.0, x); }
+  return rgb + vec3f(m);
+}
+
+// dc_perlin: hue from a 2D Perlin fBm noise field; saturation 1.0,
+// lightness 0.55 → bright color, easy to read against a dark background.
+// `scale` and `octaves` shape the noise frequency / detail; `color_seed`
+// rotates the hue cycle so two dc_perlin xforms with different seeds
+// produce different palettes from the same field. Uses the noise helpers
+// from src/shaders/noise_perlin.wgsl (prepended by chaos.ts at module
+// load — see "#114" comment there).
+fn var_dc_perlin_color(p: vec2f, scale: f32, octaves: f32, color_seed: f32) -> vec3f {
+  let n = perlin_fbm(p, octaves, max(scale, 1e-6));
+  // Map noise [-1, 1] → hue [0, 1], cycle by color_seed.
+  let hue = fract(0.5 + 0.5 * n + color_seed);
+  return hsl_to_rgb(vec3f(hue, 1.0, 0.55));
+}
+
+// dc_gridout: discrete quadrant coloring. Floor position into integer
+// cells (cells parameter controls density), hash each cell to an RGB
+// triple. Produces a tile / pixelated look distinct from the smooth
+// perlin field. cells <= 0 → fallback to 1 cell so we never divide-by-0.
+fn var_dc_gridout_color(p: vec2f, cells: f32) -> vec3f {
+  let n = max(cells, 1.0);
+  let cx = i32(floor(p.x * n));
+  let cy = i32(floor(p.y * n));
+  // Mix the two cell coordinates with large primes then hash. The
+  // 0x9e3779b9 offset (golden-ratio fractional bits, the canonical
+  // Knuth hash seed) ensures cell (0,0) maps to a non-zero hash —
+  // hash01(0) = 0 would otherwise give the origin cell pure black.
+  let mixed = u32((cx * 73856093) ^ (cy * 19349663)) + 0x9e3779b9u;
+  let h0 = hash01(mixed);
+  let h1 = hash01(mixed ^ 0xdeadbeefu);
+  let h2 = hash01(mixed ^ 0x13579bdfu);
+  return vec3f(h0, h1, h2);
+}
+
+// dc_cylinder: position warp matches the original var_cylinder
+// (out = (sin(x), y)); color is derived from the warped coords →
+// hue spirals along the x dimension and lightness modulates with y.
+// This is the "DC + shape" pattern — the variation contributes BOTH a
+// position change AND a color override.
+fn var_dc_cylinder_pos(p: vec2f, w: f32) -> vec2f {
+  return w * vec2f(safe_sin(p.x), p.y);
+}
+
+fn var_dc_cylinder_color(p: vec2f) -> vec3f {
+  // Use the cylinder-mapped coords for the color — fold p.x via sin to
+  // get a periodic hue cycle along x, modulate lightness by y.
+  //
+  // Raw `tanh` (not `safe_tanh`) on p.y is intentional: the Dawn f32
+  // trig range cliff (#72) is a range-reduction issue specific to
+  // sin/cos/tan (periodic functions reduced via π mod). tanh is
+  // monotonic, saturates asymptotically toward ±1 for any finite arg,
+  // and has no periodic range-reduction step → no Dawn cliff. The outer
+  // clamp [0.2, 0.85] is the final guard regardless of tanh output.
+  let hue = fract(0.5 + 0.5 * safe_sin(p.x));
+  let lit = clamp(0.5 + 0.25 * tanh(p.y * 0.5), 0.2, 0.85);
+  return hsl_to_rgb(vec3f(hue, 0.9, lit));
+}
+
+// ---------------------------------------------------------------------
+// Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
 // default → (0,0) so it contributes nothing to pv.
+// V=99..102 (DC variations) — most return (0,0) position (color-only);
+// dc_cylinder (102) warps position like the original cylinder. Color is
+// computed in the chain loop via the var_dc_*_color helpers above when
+// xf.color_params.w (dc_flag) is set.
 // p0/p1 come from xf.vars[k].zw; p2..p5 come from xf.vars_extra[k];
 // p6/p7 come from xf.vars_extra2[k].xy (Phase 9b Batch K seam extension).
 // ---------------------------------------------------------------------
@@ -1575,6 +1682,15 @@ fn apply_variation(
     case 95u: { return var_boarders(p, w, wi); }
     case 96u: { return var_wedge_julia(p, w, p0, p1, p2, p3, wi); }
     case 98u: { return var_mobius(p, w, p0, p1, p2, p3, p4, p5, p6, p7); }
+    // #114 DC variations — position contributions.
+    // dc_linear (99), dc_perlin (100), dc_gridout (101) are color-only:
+    // identity contribution (0, 0). The visible effect comes from
+    // rgb_override at splat time.
+    case 99u:  { return vec2f(0.0, 0.0); }
+    case 100u: { return vec2f(0.0, 0.0); }
+    case 101u: { return vec2f(0.0, 0.0); }
+    // dc_cylinder (102) warps position like flam3's var_cylinder.
+    case 102u: { return var_dc_cylinder_pos(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
@@ -1710,6 +1826,12 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       }
     }
     var pv = vec2f(0.0, 0.0);
+    // #114 — DC override accumulator for THIS xform's chain. When the
+    // xform's dc_flag (color_params.w) is set, the chain has at least
+    // one DC variation; the last DC variation in the chain wins (last
+    // write to dc_rgb_override). When dc_flag = 0, this stays unused.
+    var dc_rgb_override: vec3f = vec3f(0.0);
+    var dc_override_active: bool = false;
     for (var k = 0u; k < num_vars; k = k + 1u) {
       let v = xforms[fn_idx].vars[k];
       let ve = xforms[fn_idx].vars_extra[k];
@@ -1717,6 +1839,36 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       let var_idx = u32(v.x);
       if (var_idx != 97u) {
         pv = pv + apply_variation(var_idx, pa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, a0, a1, walker_id);
+      }
+      // #114 — DC color computation. Only when this xform is flagged DC
+      // (cheap branch: 0.0 for all flam3-99-only xforms, ie almost all)
+      // AND this specific variation's weight is non-zero. The weight
+      // gate is the load-bearing part of the editor's active-toggle: the
+      // expand pass (symmetry.ts:expandGenomeForGPU) zeroes weight for
+      // any variation the user toggled off, so checking v.y > 0 here
+      // turns DC off for inactive variations alongside the normal
+      // position-contribution path (which is already implicitly gated
+      // by w being threaded through apply_variation). Without this
+      // gate, an inactive dc_perlin still recolored the xform.
+      // Last DC variation in the chain wins (sequential writes to
+      // dc_rgb_override). For dc_cylinder, color is computed from pa_mut
+      // (the input coord), NOT the post-warp coord — matches JWildfire.
+      if (xf.color_params.w > 0.5 && v.y > 0.0) {
+        if (var_idx == 99u) {
+          dc_rgb_override = var_dc_linear_color(pa_mut);
+          dc_override_active = true;
+        } else if (var_idx == 100u) {
+          // dc_perlin params: scale (v.z), octaves (v.w), color_seed (ve.x).
+          dc_rgb_override = var_dc_perlin_color(pa_mut, v.z, v.w, ve.x);
+          dc_override_active = true;
+        } else if (var_idx == 101u) {
+          // dc_gridout params: cells (v.z).
+          dc_rgb_override = var_dc_gridout_color(pa_mut, v.z);
+          dc_override_active = true;
+        } else if (var_idx == 102u) {
+          dc_rgb_override = var_dc_cylinder_color(pa_mut);
+          dc_override_active = true;
+        }
       }
     }
 
@@ -1864,6 +2016,11 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
           }
         }
         var fpv = vec2f(0.0, 0.0);
+        // #114 — DC override on the finalxform. Same mechanism as the
+        // main chain (last active DC wins, color computed from the
+        // variation's input coord); preempts the main xform's
+        // dc_override when set, since the finalxform is the "lens" that
+        // colors the splat post-chain.
         for (var k = 0u; k < f_num_vars; k = k + 1u) {
           let v = xforms[u.final_xform_idx].vars[k];
           let ve = xforms[u.final_xform_idx].vars_extra[k];
@@ -1871,6 +2028,21 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
           let var_idx = u32(v.x);
           if (var_idx != 97u) {
             fpv = fpv + apply_variation(var_idx, fpa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, fa0, fa1, walker_id);
+          }
+          if (fxf.color_params.w > 0.5 && v.y > 0.0) {
+            if (var_idx == 99u) {
+              dc_rgb_override = var_dc_linear_color(fpa_mut);
+              dc_override_active = true;
+            } else if (var_idx == 100u) {
+              dc_rgb_override = var_dc_perlin_color(fpa_mut, v.z, v.w, ve.x);
+              dc_override_active = true;
+            } else if (var_idx == 101u) {
+              dc_rgb_override = var_dc_gridout_color(fpa_mut, v.z);
+              dc_override_active = true;
+            } else if (var_idx == 102u) {
+              dc_rgb_override = var_dc_cylinder_color(fpa_mut);
+              dc_override_active = true;
+            }
           }
         }
 
@@ -1972,6 +2144,15 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         } else {
           let pal_idx = min(u32(cx_f), PALETTE_LAST_U);
           pal = palette[pal_idx];
+        }
+        // #114 — DC (direct-color) override. When this xform's chain
+        // contains a DC variation, replace the palette-indexed RGB with
+        // the position-computed dc_rgb_override. Alpha (pal.w) keeps the
+        // palette's value; only RGB is overridden. dc_override_active is
+        // false for every flam3-99-only xform, so the existing render
+        // path is unchanged.
+        if (dc_override_active) {
+          pal = vec4f(dc_rgb_override, pal.w);
         }
         // PYR3-015 alpha-scaling: rgb AND count (alpha) channels scaled by
         // xform opacity. Scaling count too is load-bearing — at opacity=0,

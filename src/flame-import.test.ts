@@ -139,6 +139,64 @@ describe('parseFlame xform translation', () => {
     expect(genome.xforms[0]!.variations).toEqual([{ index: 0, weight: 1 }]);
     expect(report.droppedVariations).toEqual([]);
   });
+
+  // #114 — DC (direct-color) variations imported from JWildfire / Apophysis
+  // .flame files. The 4 new names + their `${var}_${param}` suffixes must
+  // round-trip through parseFlame without being misclassified as unknown.
+  it('parses dc_linear (no params) without dropping it', () => {
+    const xml = wrapFlame(
+      '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" dc_linear="1.0"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([{ index: 99, weight: 1 }]);
+    expect(report.droppedVariations).toEqual([]);
+  });
+
+  it('parses dc_perlin with its three params (scale, octaves, color_seed)', () => {
+    const xml = wrapFlame(
+      '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" ' +
+      'dc_perlin="0.8" dc_perlin_scale="2.5" dc_perlin_octaves="4" dc_perlin_color_seed="0.3"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([
+      { index: 100, weight: 0.8, param0: 2.5, param1: 4, param2: 0.3 },
+    ]);
+    expect(report.droppedVariations).toEqual([]);
+  });
+
+  it('parses dc_gridout with its cells param', () => {
+    const xml = wrapFlame(
+      '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" ' +
+      'dc_gridout="1.0" dc_gridout_cells="6"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([
+      { index: 101, weight: 1, param0: 6 },
+    ]);
+    expect(report.droppedVariations).toEqual([]);
+  });
+
+  it('parses dc_cylinder (no params) without dropping it', () => {
+    const xml = wrapFlame(
+      '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" dc_cylinder="1.0"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([{ index: 102, weight: 1 }]);
+    expect(report.droppedVariations).toEqual([]);
+  });
+
+  it('parses an xform mixing flam3-99 and DC variations', () => {
+    const xml = wrapFlame(
+      '<xform weight="1" color="0" color_speed="0.5" coefs="1 0 0 1 0 0" ' +
+      'linear="0.5" dc_perlin="1.0" dc_perlin_scale="1.5"/>',
+    );
+    const { genome, report } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toEqual([
+      { index: 0, weight: 0.5 },
+      { index: 100, weight: 1, param0: 1.5 },
+    ]);
+    expect(report.droppedVariations).toEqual([]);
+  });
 });
 
 describe('parseFlame xform scalar recovery (malformed defaults to 0/1)', () => {

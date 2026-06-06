@@ -138,6 +138,15 @@ export const V = {
   // Phase 9b Batch K — mobius (var98, 8 params). Drove the seam extension
   // 6 → 8 (new vars_extra2 slot).
   mobius: 98,
+  // #114 — DC (direct-color) variations. These override the per-scatter
+  // histogram RGB with a position-computed color instead of looking up
+  // palette[color_index]. Detection is per-xform via the dc_flag slot
+  // baked at pack time (genome.ts) and read by chaos.wgsl. Origin: Neil
+  // Slater's Apophysis 7X plugin pack; JWildfire signature feature.
+  dc_linear: 99,
+  dc_perlin: 100,
+  dc_gridout: 101,
+  dc_cylinder: 102,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -145,6 +154,16 @@ export type VariationIndex = (typeof V)[keyof typeof V];
 export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
+
+/** #114 — variations whose RGB overrides the palette-indexed coloring per
+ *  scatter. Used by genome.packXformInto to bake the per-xform dc_flag, and
+ *  by edit-section-xforms to render the "(overridden by …)" annotation. */
+export const DC_VARIATION_SET: ReadonlySet<number> = new Set<number>([
+  V.dc_linear,
+  V.dc_perlin,
+  V.dc_gridout,
+  V.dc_cylinder,
+]);
 
 export interface Variation {
   index: VariationIndex;

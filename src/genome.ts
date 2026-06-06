@@ -7,6 +7,7 @@ import {
   type Variation,
   MAX_VARIATIONS_PER_XFORM,
   VARIATION_NAMES,
+  DC_VARIATION_SET,
   julian,
   spherical,
   linear,
@@ -294,7 +295,21 @@ function packXformInto(buf: Float32Array, slotIndex: number, x: Xform): void {
   // Malformed `.flame` input may pass finiteness validation in flame-import
   // but still carry out-of-range opacity; valid flames are unaffected.
   buf[o + 10] = Math.max(0, Math.min(1, x.opacity ?? 1.0));
-  // 11 is pad (already zero from ArrayBuffer init)
+  // #114 — slot 11 is dc_flag: 1.0 iff this xform's variation chain
+  // contains an ACTIVE DC (direct-color) variation. Chaos kernel reads
+  // it to pick rgb_override vs palette[color_index] at histogram-write
+  // time. For xforms without any active DC variation, slot stays 0 →
+  // identical behavior to the prior render path.
+  //
+  // Active-gate is intentional: it makes hasDc self-consistent with the
+  // weight-gate in chaos.wgsl (which skips DC color when v.y === 0).
+  // Both the FE expand-pass (symmetry.ts:expandGenomeForGPU zeros the
+  // weight for active=false variations) AND any caller that hand-builds
+  // a genome with v.active=false produce the same dc_flag now.
+  const hasDc = x.variations.some(
+    v => v.active !== false && DC_VARIATION_SET.has(v.index),
+  );
+  buf[o + 11] = hasDc ? 1.0 : 0.0;
 
   // Phase 9c — post-affine slots. has_post flag (slot 15) gates application
   // in the chaos shader; 0 = identity / skip, 1 = apply.

@@ -23,7 +23,24 @@
 
 import { COLORS } from './ui-tokens';
 import { buildDropdown, buildToggle, buildButton } from './edit-primitives';
-import { V, VARIATION_NAMES } from './variations';
+import { V, VARIATION_NAMES, DC_VARIATION_SET } from './variations';
+
+// #114 — per-variation descriptive tooltips for the picker. Adds the
+// human-readable explanation alongside the raw variation name, mostly
+// for the DC family where the name (`dc_perlin`) doesn't convey the
+// mechanism. flam3-99 variations fall back to the bare name title.
+export const VARIATION_TOOLTIPS: Record<string, string> = {
+  dc_linear: 'Color from spatial coord (simplest direct-color variation)',
+  dc_perlin: 'Color from a Perlin noise field — the marbled / painterly look',
+  dc_gridout: 'Color by canvas quadrant — discrete-region direct color',
+  dc_cylinder: 'Direct-color version of cylinder (shape + color combined)',
+};
+
+/** Canonical reference for the DC (direct-color) variation family.
+ *  Points at pyr3's own help page (self-contained explanation + examples
+ *  + author credits + the canonical external link onward). Linked from
+ *  the picker tile badge and the xforms-section DC chip. */
+export const DC_DOCS_URL = '/help/direct-color-variations.html';
 
 // ──────────────────────────────────────────────────────────────────────
 // Tier data (preserved from the previous picker version)
@@ -52,6 +69,10 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     'Blur / random': [V.blur, V.gaussian_blur, V.noise, V.pre_blur ?? -1, V.square, V.rays, V.blade, V.twintrian, V.radial_blur].filter(i => i >= 0),
     'Transcendental': [V.exp ?? -1, V.log ?? -1, V.sin ?? -1, V.cos ?? -1, V.tan ?? -1, V.sec ?? -1, V.csc ?? -1, V.cot ?? -1, V.sinh ?? -1, V.cosh ?? -1, V.tanh ?? -1, V.sech ?? -1, V.csch ?? -1, V.coth ?? -1].filter(i => i >= 0),
     'Linear / basic': [V.linear, V.sinusoidal, V.swirl, V.horseshoe, V.ex, V.fisheye],
+    // #114 — DC (direct-color) family. JWildfire-origin; color comes from
+    // spatial position instead of the palette index for any xform that
+    // includes one of these. See VARIATION_TOOLTIPS and DC_DOCS_URL above.
+    'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder],
   };
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();
@@ -316,7 +337,10 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     cell.className = 'pyr3-picker-cell';
     cell.dataset['vidx'] = String(entry.idx);
     cell.dataset['vname'] = entry.name;
-    cell.title = entry.name;
+    // #114 — enriched tooltip for variations with a registered description
+    // (the DC family). Bare name as fallback for the flam3-99 set.
+    const desc = VARIATION_TOOLTIPS[entry.name];
+    cell.title = desc ? `${entry.name} — ${desc}` : entry.name;
     cell.style.cursor = 'pointer';
     cell.style.padding = '4px';
     cell.style.borderRadius = '3px';
@@ -390,6 +414,35 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
 
     starByIdx.set(entry.idx, star);
     paintStar(entry.idx);
+
+    // #114 — DC chip on direct-color variations. Small "DC" badge at the
+    // top-left + clickable "ⓘ" to open the canonical docs page in a new
+    // tab. Visually distinguishes the family without forcing a category
+    // re-skin of the rest of the picker.
+    if (DC_VARIATION_SET.has(entry.idx)) {
+      const badge = document.createElement('div');
+      badge.className = 'pyr3-picker-cell-dc-badge';
+      badge.textContent = 'DC';
+      badge.title = 'Direct-color variation — colors this xform from spatial position, not the palette';
+      badge.style.position = 'absolute';
+      badge.style.top = '2px';
+      badge.style.left = '4px';
+      badge.style.fontSize = '9px';
+      badge.style.fontWeight = 'bold';
+      badge.style.color = COLORS.flame.top;
+      badge.style.background = COLORS.bg.input;
+      badge.style.padding = '0 3px';
+      badge.style.borderRadius = '2px';
+      badge.style.border = `1px solid ${COLORS.border}`;
+      badge.style.userSelect = 'none';
+      badge.style.pointerEvents = 'auto';
+      badge.style.cursor = 'help';
+      badge.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        window.open(DC_DOCS_URL, '_blank', 'noopener,noreferrer');
+      });
+      cell.appendChild(badge);
+    }
     return cell;
   }
 
