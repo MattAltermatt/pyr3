@@ -31,6 +31,11 @@ describe('PYR3-022 — flam3 palette library lookup', () => {
     expect(getLibraryStops(1.5)).toBeNull();
   });
 
+  // 701 palettes × 256 stops × base64 decode + 6 range assertions per stop =
+  // ~1M ops. Comfortably <1s on fast hardware but flakily exceeds the default
+  // 5s timeout on slower GitHub-Actions runners (observed 2026-06-06 in the
+  // pyr3.app deploy verify step). Bump to 30s so the test passes regardless
+  // of runner specs without losing the coverage.
   it('every library palette decodes to 256 in-range stops', () => {
     for (let i = 0; i < FLAM3_PALETTE_COUNT; i++) {
       const stops = getLibraryStops(i);
@@ -41,5 +46,5 @@ describe('PYR3-022 — flam3 palette library lookup', () => {
         expect(s.r).toBeLessThanOrEqual(1);
       }
     }
-  });
+  }, 30_000);
 });
