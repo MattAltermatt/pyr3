@@ -51,10 +51,12 @@ not the default.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
 same" contract holds across engines too. Both gates went green for v1.0,
-and the v1.0–v1.4 line has shipped — the viewer is live at
-[pyr3.app](https://pyr3.app/), tagged releases are published, and the
+and the v1.0 → v1.4 line has shipped — the viewer is live at
+[pyr3.app](https://pyr3.app/), tagged releases are published through
+**v1.4.0** (2026-06-02), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
-tracks themed follow-on work.
+tracks themed follow-on work (Apophysis/JWildfire plugin pack, gradient
+editor, mobile rework).
 
 ## 🔥 Keep (the soul)
 
@@ -82,20 +84,28 @@ tracks themed follow-on work.
   Electric Sheep flame; the viewer fetches that one chunk and renders it. Paste anywhere;
   always the same flame. (The legacy inline `?flame=<encoded>` codec was removed in v0.32,
   superseded by the corpus URL.)
-- **`/v1/evolve` — a lightweight Picbreeder-style creator surface.** A 3×3 grid of
-  mutated children around a center flame, with click-to-promote, lockable axes (palette,
-  variations, xforms, viewport), an inline structural inspector, and `.pyr3.json`
-  save/load. In flight on `feature/issue-73-evolve-page` as the first half-step toward
-  the deferred full editor.
+- **`/v1/edit` — the visual flame editor (shipped).** Xforms with decomposed
+  affine (scale / rotation / position + optional shear), the **fitting-room** variation
+  picker over the full 99-variation flam3 library plus pyr3's **direct-color (DC) family**
+  (`dc_linear` · `dc_perlin` · `dc_gridout` · `dc_cylinder`), live + settled render lanes,
+  undo/redo, name templates, save to `.pyr3.json`. The "much-later post-v1" editor arc that
+  shipped earlier than planned across many small issues.
+- **`/v1/evolve` — a Picbreeder-style creator surface.** A 3×3 grid of mutated children
+  around a center flame, with click-to-promote, lockable axes (palette, variations, xforms,
+  viewport), an inline structural inspector, and `.pyr3.json` save/load. Currently parked
+  off-main on `feature/issue-73-evolve-page` — to be unparked when focus returns to it.
+- **`/v1/screensaver` — build-up or slideshow over the corpus.** Watch one flame paint over
+  a minute (literal pixel-landing → smooth settle) or crossfade through the corpus. Press
+  **R** to record any session to `.webm` (#111).
 
 ## 🗃️ Explicitly defer
 
-- **Visual flame editor.** Comes later as its own arc. See issue
-  [#37](https://github.com/MattAltermatt/pyr3/issues/37) (`post-v1`).
 - **Markov-chain flame generation research.** Much-later research arc. See issue
   [#36](https://github.com/MattAltermatt/pyr3/issues/36) (`post-v1`).
 - **CPU fallback path.** Not happening. WebGPU is the only path.
 - **flam3 bit-faithful parity.** "Similar but not the same" is the standing contract.
+- **Mobile / touch layout.** Tracked in the **Mobile rework** milestone; desktop-first
+  through v1.x.
 
 ## Lineage
 
