@@ -33,6 +33,8 @@ import {
 } from './gallery-filter-ui';
 import { loadFeatureIndex } from './feature-index-client';
 import { distinctVariationNames, SPIRAL_GALAXY, type Genome } from './genome';
+import { genomeToJson } from './serialize';
+import { injectPngTextChunk } from './png-text-chunk';
 import {
   corpusUrl,
   editorUrlForFlame,
@@ -632,14 +634,27 @@ async function main(): Promise<void> {
   // readable post-render" note was stale once WebGPU canvas snapshotting
   // landed). A null blob (toBlob can fail on a clobbered swap-chain) surfaces
   // as a toast rather than a silent no-op.
+  //
+  // #123 — the resulting PNG carries a `pyr3`-keyed tEXt chunk with the
+  // current genome serialized as JSON. Self-describing output; round-trips
+  // via a future PNG-import reader.
   saveCanvas = (filename) => {
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) {
         bar.showToast('Save failed — canvas was not snapshottable');
         return;
       }
+      let finalBlob: Blob = blob;
+      try {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const pyr3Json = JSON.stringify(genomeToJson(activeGenome));
+        const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
+        finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
+      } catch (err) {
+        console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
+      }
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = URL.createObjectURL(finalBlob);
       a.download = filename;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 0);
