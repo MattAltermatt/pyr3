@@ -346,10 +346,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{23}(x, y) = (\\sin(a y) - \\cos(b x),\\; \\sin(c x) - \\cos(d y))',
     blurb: 'Peter de Jong attractor map — four-parameter trigonometric coupling. Generates organic, looping shell-like attractors; small tweaks to a/b/c/d produce dramatically different forms.',
     params: [
-      { name: 'a', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'b', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'c', default: 0, min: -3, max: 3, step: 0.05 },
-      { name: 'd', default: 0, min: -3, max: 3, step: 0.05 },
+      // Catalog-specific defaults: the canonical Peter de Jong attractor
+      // values (a=1.4, b=1.6, c=1.0, d=0.7). flam3 has no entry in
+      // VARIATION_DEFAULTS for pdj, so the importer falls back to all-zero
+      // — but all-zero collapses the variation to (-1,-1) for every input,
+      // pounding a single histogram bucket with severe atomic contention
+      // (reported to freeze laptops on Apple Silicon, #119 2026-06-06).
+      { name: 'a', default: 1.4, min: -3, max: 3, step: 0.05 },
+      { name: 'b', default: 1.6, min: -3, max: 3, step: 0.05 },
+      { name: 'c', default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'd', default: 0.7, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
       const a = 1.4, b = 1.6, c = 1.0, d = 0.7;

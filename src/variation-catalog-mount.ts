@@ -27,8 +27,15 @@ export interface MountHandle {
 }
 
 const CANVAS_DIM = 384;
-const WALKERS_PER_FRAME = 4096;
-const ITERS_PER_WALKER = 256;
+// Catalog iteration budget. Conservative because some variations have
+// degenerate dynamics that pound a single histogram bucket (e.g. pdj at
+// all-zero params collapses to a constant) or trigger high bad-value
+// retry rates (e.g. exponential / exp family growing past the f32
+// bad-value threshold faster than the chaos game settles). 1M iter/frame
+// was reported to freeze laptop GPUs on those sections (#119, 2026-06-06);
+// 128k is plenty to converge a 384² catalog tile over a few seconds.
+const WALKERS_PER_FRAME = 1024;
+const ITERS_PER_WALKER = 128;
 
 export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): MountHandle {
   host.replaceChildren();
