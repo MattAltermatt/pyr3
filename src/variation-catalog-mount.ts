@@ -247,13 +247,12 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     onJump: (idx) => {
       const target = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
       if (target) {
+        // Instant jump — over 131 variations a smooth scroll is too long
+        // to be useful. Matches deep-link initial load behavior.
         catalogHost.scrollTo({
           top: target.offsetTop - 16,
-          behavior: 'smooth',
+          behavior: 'auto',
         });
-        // IntersectionObserver will fire after scroll lands and set the
-        // active section; we still call setActive directly so the sidebar
-        // highlight updates immediately even before the scroll settles.
         setActive(idx);
         syncUrlHashTo(idx);
       }
@@ -276,7 +275,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     const next = ALL_INDICES[Math.max(0, Math.min(ALL_INDICES.length - 1, cur + dir))]!;
     if (next === here) return;
     const target = catalogHost.querySelector(`[data-idx="${next}"]`) as HTMLElement | null;
-    if (target) catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
+    if (target) catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'auto' });
     setActive(next);
   }
 
