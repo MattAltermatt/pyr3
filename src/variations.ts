@@ -229,6 +229,43 @@ export const V = {
   murl: 122,
   stwins: 123,
   hexes: 124,
+  // #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+  // Six variations from xyrus02/apophysis-plugins (GPL-2+, NOTICE.md):
+  //   - xheart       — Xyrus02. "Extended heart" — 2 params (angle, ratio)
+  //                    drive a rotated heart-curve fold.
+  //   - xhyperbol    — Xyrus02. "Extended hyperbolic" — 6 params encode
+  //                    a 2x3 affine the iterate goes through before
+  //                    the |z|⁻² reflection.
+  //   - xcurl2       — Xyrus02. The author's own comment in xcurl2.h
+  //                    reads "old, probably wrong version of curl2" —
+  //                    a DIFFERENT polynomial shape from V121 `curl2`
+  //                    (which is the Georg Kiehne formulation). pyr3
+  //                    ships both since the visual character differs.
+  //   - xtrb         — Xyrus02. Triangle-borders (boarders-on-a-triangle-
+  //                    lattice). 6 params + RNG. Most complex of the
+  //                    batch — precalcs 18 derived geometry values per
+  //                    iter (xform-precalc is not exposed in pyr3's GPU
+  //                    seam, so we recompute inline).
+  //   - gridout      — Xyrus02 (Michael + Joel Faber). 0 params. Snaps
+  //                    iterate to the nearest grid cell-edge step,
+  //                    producing a stair-step quantization look. NOT
+  //                    the same as pyr3's V101 `dc_gridout` — that one
+  //                    is a COLOR variation (position contribution
+  //                    (0,0) + per-cell hue hash); this is a position
+  //                    warp with no color override.
+  //   - blur_circle  — Xyrus02. 1 param (hole). Disc-uniform blur:
+  //                    uniformly samples a unit square, square→circle
+  //                    perimeter parameterization (similar to circlize),
+  //                    emits onto a hole-offset circle.
+  //
+  // No drops this batch. All 6 fit the 8-param seam (xhyperbol+xtrb
+  // are the tightest at 6).
+  xheart: 125,
+  xhyperbol: 126,
+  xcurl2: 127,
+  xtrb: 128,
+  gridout: 129,
+  blur_circle: 130,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -2467,4 +2504,359 @@ export function ts_var_hexes(i: VarInput): VarOutput {
   const Vx = Vx0 * R + P[0]![0];
   const Vy = Vy0 * R + P[0]![1];
   return { x: i.weight * Vx, y: i.weight * Vy };
+}
+
+// =====================================================================
+// #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+// V125..V130. All sourced from xyrus02/apophysis-plugins (GPL-2+);
+// see NOTICE.md. pyr3 reimplements each formula in WGSL + TS; no
+// source code is byte-copied.
+// =====================================================================
+
+// var_xheart (chaos.wgsl) — Xyrus02 xheart plugin (apophysis-plugins).
+// 2 params (xheart_angle, xheart_ratio). No RNG. "Extended heart" —
+// projects (x,y) through a (4/r²+4, rat/r²+4) folding then rotates by
+// an angle precomputed from `xheart_angle`. The x-sign branch
+// re-mirrors the y component: positive x keeps y, negative x flips it.
+// Origin guard matches source: r²+4 = 4 ≠ 0 so the `r2_4 == 0` branch
+// is dead code; we keep it defensively.
+export function ts_var_xheart(i: VarInput): VarOutput {
+  const angle = i.params?.["xheart_angle"] ?? 0.0;
+  const ratio = i.params?.["xheart_ratio"] ?? 0.0;
+  const ang = PI / 4 + (0.5 * (PI / 4) * angle);
+  const cosa = Math.cos(ang);
+  const sina = Math.sin(ang);
+  const rat = 6 + 2 * ratio;
+  let r2_4 = i.tx * i.tx + i.ty * i.ty + 4;
+  if (r2_4 === 0) r2_4 = 1;
+  const bx = 4 / r2_4;
+  const by = rat / r2_4;
+  const xRot = cosa * (bx * i.tx) - sina * (by * i.ty);
+  const yRot = sina * (bx * i.tx) + cosa * (by * i.ty);
+  if (xRot > 0) {
+    return { x: i.weight * xRot, y: i.weight * yRot };
+  }
+  return { x: i.weight * xRot, y: -i.weight * yRot };
+}
+
+// var_xhyperbol (chaos.wgsl) — Xyrus02 xhyperbol plugin
+// (apophysis-plugins). 6 params (m00, m01, m10, m11, m20, m21). No RNG.
+// "Extended hyperbolic" — applies a unit-disc inversion (z → z/|z|²),
+// runs the result through a 2x3 affine, then re-emits as
+// |z'|² · (cos α, sin α) with α = atan2(im, re) + 2π. A final |z|⁻²
+// reflection (the second `flip`) wraps the output back. Source uses
+// `epsilon = 1e-300` in flip's denominator; f32 has no 1e-300, we use
+// `EPS` (1e-10) — same role (avoid /0 at origin), still well-
+// representable.
+export function ts_var_xhyperbol(i: VarInput): VarOutput {
+  const m00 = i.params?.["m00"] ?? 1.0;
+  const m01 = i.params?.["m01"] ?? 0.0;
+  const m10 = i.params?.["m10"] ?? 0.0;
+  const m11 = i.params?.["m11"] ?? 1.0;
+  const m20 = i.params?.["m20"] ?? 0.0;
+  const m21 = i.params?.["m21"] ?? 0.0;
+  const EPS_FLIP = VAR_EPS;
+  const r = 1.0 / (i.tx * i.tx + i.ty * i.ty + EPS_FLIP);
+  const x = i.tx * r;
+  const y = i.ty * r;
+  const re = m00 * x + m01 * y + m20;
+  const im = m10 * x + m11 * y + m21;
+  // Source adds M_2PI to the angle; the cos/sin are 2π-periodic so this
+  // is a no-op mathematically. Preserve verbatim for parity.
+  const alpha = Math.atan2(im, re) + 2 * PI;
+  const sa = Math.sin(alpha);
+  const ca = Math.cos(alpha);
+  const rsq = re * re + im * im;
+  const xout = rsq * ca;
+  const yout = rsq * sa;
+  const rinv = i.weight / (xout * xout + yout * yout + EPS_FLIP);
+  return { x: xout * rinv, y: yout * rinv };
+}
+
+// var_xcurl2 (chaos.wgsl) — Xyrus02 xcurl2 plugin (apophysis-plugins).
+// 3 params (c1, c2, c3). No RNG. Author: xyrus02.
+//
+// IMPORTANT: this is a DIFFERENT shape from V121 `curl2` (the Georg
+// Kiehne formulation). The xcurl2 source carries the author's own
+// comment: "old, probably wrong version of curl2..." — pyr3 ships
+// both because the visual character differs. xcurl2's polynomial:
+//   re = 1 + c1·x + c2·(x²−y²) + c3·(x³ − 3x)
+//   im =     c1·y + c2·2xy     + c3·(3xy − 1)
+// (NOT the cubic-conjugate form used by V121).
+//
+// Note also the source's `FPy += (FTy * re + FTx * im) * r` uses a
+// SUM (not the standard Cartesian-inverse SIGN flip in V121's
+// `y·Re − x·Im`). Preserved verbatim.
+export function ts_var_xcurl2(i: VarInput): VarOutput {
+  const c1 = i.params?.["c1"] ?? 0.0;
+  const c2 = i.params?.["c2"] ?? 0.0;
+  const c3 = i.params?.["c3"] ?? 0.0;
+  const x = i.tx;
+  const y = i.ty;
+  const x2 = x * x;
+  const y2 = y * y;
+  const x3 = x2 * x;
+  const re = 1 + c1 * x + c2 * (x2 - y2) + c3 * (x3 - 3 * x);
+  const im = c1 * y + c2 * (2 * x * y) + c3 * (3 * x * y - 1);
+  const denom = re * re + im * im;
+  const r = i.weight / denom;
+  return {
+    x: (x * re + y * im) * r,
+    y: (y * re + x * im) * r,
+  };
+}
+
+// var_xtrb (chaos.wgsl) — Xyrus02 xtrb plugin (apophysis-plugins).
+// 6 params (xtrb_power, xtrb_dist, xtrb_radius, xtrb_width, xtrb_a,
+// xtrb_b). RNG: 2 calls per iter (rand_irand for the angle modulo and
+// rand01 for the width-blend branch).
+//
+// Author: xyrus02. "TriBorders" — builds a dual tessellation on a
+// triangular grid (the way `boarders` does on a square grid) using
+// trilinear coordinates. Heavy precalc (18 derived values from the 6
+// params) — flam3 caches these at xform-load; pyr3 recomputes inline
+// per iter (the param read happens per-iter anyway in the GPU
+// dispatcher).
+//
+// Caller MUST supply `randValues[0] ∈ [0,1]` for the `R` width-blend
+// sample AND `randBranch ∈ {0..power-1}` for the angle modulo.
+export function ts_var_xtrb(i: VarInput): VarOutput {
+  const power_in = i.params?.["xtrb_power"] ?? 2;
+  const dist = i.params?.["xtrb_dist"] ?? 1.0;
+  const radius = i.params?.["xtrb_radius"] ?? 1.0;
+  const width = i.params?.["xtrb_width"] ?? 0.5;
+  const aParam = i.params?.["xtrb_a"] ?? 1.0;
+  const bParam = i.params?.["xtrb_b"] ?? 1.0;
+  const power = Math.trunc(power_in) || 1;
+
+  const angle_Br = 0.047 + aParam;
+  const angle_Cr = 0.047 + bParam;
+  const angle_Ar = PI - angle_Br - angle_Cr;
+
+  const sinA2 = Math.sin(0.5 * angle_Ar);
+  const cosA2 = Math.cos(0.5 * angle_Ar);
+  const sinB2 = Math.sin(0.5 * angle_Br);
+  const cosB2 = Math.cos(0.5 * angle_Br);
+  const sinC2 = Math.sin(0.5 * angle_Cr);
+  const cosC2 = Math.cos(0.5 * angle_Cr);
+  const sinC = Math.sin(angle_Cr);
+  const cosC = Math.cos(angle_Cr);
+
+  const aSide = radius * (sinC2 / cosC2 + sinB2 / cosB2);
+  const bSide = radius * (sinC2 / cosC2 + sinA2 / cosA2);
+  const cSide = radius * (sinB2 / cosB2 + sinA2 / cosA2);
+
+  const width1 = 1 - width;
+  const width2 = 2 * width;
+  const width3 = 1 - width * width;
+
+  const S2 = radius * (aSide + bSide + cSide);
+  const Ha = S2 / aSide / 6.0;
+  const Hb = S2 / bSide / 6.0;
+  const Hc = S2 / cSide / 6.0;
+
+  const ab = aSide / bSide;
+  const ac = aSide / cSide;
+  const ba = bSide / aSide;
+  const bc = bSide / cSide;
+  const ca = cSide / aSide;
+  const cb = cSide / bSide;
+  const S2a = 6.0 * Ha;
+  const S2b = 6.0 * Hb;
+  const S2c = 6.0 * Hc;
+  const S2bc = S2 / (bSide + cSide) / 6.0;
+  const S2ab = S2 / (aSide + bSide) / 6.0;
+  const S2ac = S2 / (aSide + cSide) / 6.0;
+
+  const absN = Math.abs(power);
+  const cN = dist / power / 2;
+
+  // DirectTrilinear: (x,y) → (Alpha, Beta, Gamma).
+  const directTrilinear = (xv: number, yv: number): [number, number, number] => {
+    const U = yv + radius;
+    const V = xv * sinC - yv * cosC + radius;
+    return [U, V, S2c - ac * U - bc * V];
+  };
+
+  // Hex routine — see source. Mutates Al/Be to Al1/Be1.
+  const hex = (Al: number, Be: number, Ga: number, R: number): [number, number] => {
+    let Al1 = 0.0;
+    let Be1 = 0.0;
+    let Ga1 = 0.0;
+    let De1 = 0.0;
+    if (Be < Al) {
+      if (Ga < Be) {
+        if (R >= width3) {
+          De1 = width * Be;
+          Ga1 = width * Ga;
+        } else {
+          Ga1 = width1 * Ga + width2 * Hc * Ga / Be;
+          De1 = width1 * Be + width2 * S2ab * (3 - Ga / Be);
+        }
+        Al1 = S2a - ba * De1 - ca * Ga1;
+        Be1 = De1;
+      } else {
+        if (Ga < Al) {
+          if (R >= width3) {
+            Ga1 = width * Ga;
+            De1 = width * Be;
+          } else {
+            De1 = width1 * Be + width2 * Hb * Be / Ga;
+            Ga1 = width1 * Ga + width2 * S2ac * (3 - Be / Ga);
+          }
+          Al1 = S2a - ba * De1 - ca * Ga1;
+          Be1 = De1;
+        } else {
+          if (R >= width3) {
+            Al1 = width * Al;
+            Be1 = width * Be;
+          } else {
+            Be1 = width1 * Be + width2 * Hb * Be / Al;
+            Al1 = width1 * Al + width2 * S2ac * (3 - Be / Al);
+          }
+        }
+      }
+    } else {
+      if (Ga < Al) {
+        if (R >= width3) {
+          De1 = width * Al;
+          Ga1 = width * Ga;
+        } else {
+          Ga1 = width1 * Ga + width2 * Hc * Ga / Al;
+          De1 = width1 * Al + width2 * S2ab * (3 - Ga / Al);
+        }
+        Be1 = S2b - ab * De1 - cb * Ga1;
+        Al1 = De1;
+      } else {
+        if (Ga < Be) {
+          if (R >= width3) {
+            Ga1 = width * Ga;
+            De1 = width * Al;
+          } else {
+            De1 = width1 * Al + width2 * Ha * Al / Ga;
+            Ga1 = width1 * Ga + width2 * S2bc * (3 - Al / Ga);
+          }
+          Be1 = S2b - ab * De1 - cb * Ga1;
+          Al1 = De1;
+        } else {
+          if (R >= width3) {
+            Be1 = width * Be;
+            Al1 = width * Al;
+          } else {
+            Al1 = width1 * Al + width2 * Ha * Al / Be;
+            Be1 = width1 * Be + width2 * S2bc * (3 - Al / Be);
+          }
+        }
+      }
+    }
+    return [Al1, Be1];
+  };
+
+  const [Alpha0, Beta0, _Gamma0] = directTrilinear(i.tx, i.ty);
+  const M = Math.floor(Alpha0 / S2a);
+  let OffsetAl = Alpha0 - M * S2a;
+  const N = Math.floor(Beta0 / S2b);
+  let OffsetBe = Beta0 - N * S2b;
+  let OffsetGa = S2c - ac * OffsetAl - bc * OffsetBe;
+
+  const R = i.randValues?.[0] ?? 0.5;
+  let Alpha: number;
+  let Beta: number;
+  if (OffsetGa > 0) {
+    [Alpha, Beta] = hex(OffsetAl, OffsetBe, OffsetGa, R);
+  } else {
+    OffsetAl = S2a - OffsetAl;
+    OffsetBe = S2b - OffsetBe;
+    OffsetGa = -OffsetGa;
+    const [Al1, Be1] = hex(OffsetAl, OffsetBe, OffsetGa, R);
+    Alpha = S2a - Al1;
+    Beta = S2b - Be1;
+  }
+  Alpha = Alpha + M * S2a;
+  Beta = Beta + N * S2b;
+
+  // InverseTrilinear: (Alpha, Beta) → (x, y) via power-modulo angle + r·power.
+  const inx = (Beta - radius + (Alpha - radius) * cosC) / sinC;
+  const iny = Alpha - radius;
+  // Source: rand() % absN — integer in [0, absN). Caller supplies via randBranch.
+  const branch = absN > 0 ? Math.floor((i.randBranch ?? 0) % absN) : 0;
+  const angle = (Math.atan2(iny, inx) + 2 * PI * branch) / power;
+  const rOut = Math.pow(inx * inx + iny * iny, cN);
+  return {
+    x: i.weight * rOut * Math.cos(angle),
+    y: i.weight * rOut * Math.sin(angle),
+  };
+}
+
+// var_gridout (chaos.wgsl) — Xyrus02 gridout plugin (apophysis-plugins,
+// authors Michael Faber + Joel Faber). 0 params. No RNG. Snaps the
+// iterate by ±1 along x or y depending on which integer-grid quadrant
+// (`rint(x), rint(y)`) it falls into. Produces a stair-step / cubist
+// look.
+//
+// NOT the same as pyr3's V101 `dc_gridout` — that one is a COLOR
+// variation (position passthrough + per-cell hash hue); this is a pure
+// position warp with no DC behavior.
+//
+// rint() in C rounds to nearest integer with ties-to-even by default;
+// the source's `rint` macro here uses round-half-away-from-zero
+// (`(int)(x + 0.5)` for x>=0, `(int)(x - 0.5)` for x<0). We mirror.
+export function ts_var_xyrus_gridout(i: VarInput): VarOutput {
+  const x = i.tx;
+  const y = i.ty;
+  // Source rint: half-away-from-zero (NOT half-to-even).
+  const rx = x >= 0 ? Math.floor(x + 0.5) : Math.ceil(x - 0.5);
+  const ry = y >= 0 ? Math.floor(y + 0.5) : Math.ceil(y - 0.5);
+  let dx = 0.0;
+  let dy = 0.0;
+  if (ry <= 0.0) {
+    if (rx > 0.0) {
+      if (-ry >= rx) { dx = 1.0; } else { dy = 1.0; }
+    } else {
+      if (ry <= rx) { dx = 1.0; } else { dy = -1.0; }
+    }
+  } else {
+    if (rx > 0.0) {
+      if (ry >= rx) { dx = -1.0; } else { dy = 1.0; }
+    } else {
+      if (ry > -rx) { dx = -1.0; } else { dy = -1.0; }
+    }
+  }
+  return { x: i.weight * (x + dx), y: i.weight * (y + dy) };
+}
+
+// var_blur_circle (chaos.wgsl) — Xyrus02 blur_circle plugin
+// (apophysis-plugins). 1 param (hole). RNG: 2 calls per iter (the
+// (x,y) samples uniformly from the [-1,1]² square).
+//
+// Author: xyrus02. "Disc-uniform blur": uniformly samples a unit
+// square, runs a square→circle perimeter parameterization (same family
+// as circlize / circlize2), then emits onto a hole-offset circle.
+// Input (i.tx, i.ty) is IGNORED — output is purely RNG-driven.
+//
+// Source uses precomputed `VVAR4_PI = w · 4/π`; we inline.
+// Caller MUST supply `randValues[0]` and `randValues[1]` (each ∈ [0,1]).
+export function ts_var_blur_circle(i: VarInput): VarOutput {
+  const hole = i.params?.["hole"] ?? 0.0;
+  const r0 = i.randValues?.[0] ?? 0.5;
+  const r1 = i.randValues?.[1] ?? 0.5;
+  const x = 2.0 * r0 - 1.0;
+  const y = 2.0 * r1 - 1.0;
+  const absx = Math.abs(x);
+  const absy = Math.abs(y);
+  const s = absx > absy ? absx : absy;
+  const a = Math.atan2(y, x);
+  const PI3_4 = 3 * PI / 4;
+  const PI_4 = PI / 4;
+  let ps: number;
+  if (a < -PI3_4) ps = absy;
+  else if (a < -PI_4) ps = 2.0 * s + x;
+  else if (a < PI_4) ps = 4.0 * s + y;
+  else if (a < PI3_4) ps = 6.0 * s - x;
+  else ps = 8.0 * s - y;
+  // s could be 0 if both rands sample exactly to 0.5 (degenerate);
+  // source has no guard but produces NaN there. Mirror.
+  const r = (i.weight * 4.0 / PI) * s + hole;
+  const phi = PI_4 * ps / s - PI;
+  return { x: r * Math.cos(phi), y: r * Math.sin(phi) };
 }

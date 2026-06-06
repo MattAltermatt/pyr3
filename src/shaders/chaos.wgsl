@@ -2422,6 +2422,336 @@ fn hexes_vratio_step(P: vec2f, Q: vec2f, Ux: f32, Uy: f32, prev: f32) -> f32 {
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+// V125..V130. Sources: xyrus02/apophysis-plugins (GPL-2+); see
+// NOTICE.md. pyr3 reimplements each formula in WGSL; no source code is
+// byte-copied.
+// ---------------------------------------------------------------------
+
+// var_xheart — Xyrus02 xheart plugin (apophysis-plugins). 2 params
+// (xheart_angle, xheart_ratio). No RNG. "Extended heart" — projects
+// (x,y) through a (4/r²+4, rat/r²+4) folding then rotates by an angle
+// precomputed from `xheart_angle`. Source's `r2_4 == 0` branch is dead
+// (r²+4 ≥ 4) — kept defensively.
+fn var_xheart(p: vec2f, w: f32, angle: f32, ratio: f32) -> vec2f {
+  let ang = PI / 4.0 + (0.5 * (PI / 4.0) * angle);
+  // ang is bounded ≈ [π/4 - π/8·|angle|, ...] — for sane inputs well
+  // within the safe trig range; keep safe_* defensively.
+  let cosa = safe_cos(ang);
+  let sina = safe_sin(ang);
+  let rat = 6.0 + 2.0 * ratio;
+  var r2_4 = p.x * p.x + p.y * p.y + 4.0;
+  if (r2_4 == 0.0) { r2_4 = 1.0; }
+  let bx = 4.0 / r2_4;
+  let by = rat / r2_4;
+  let xRot = cosa * (bx * p.x) - sina * (by * p.y);
+  let yRot = sina * (bx * p.x) + cosa * (by * p.y);
+  // Per source: positive x preserves y, non-positive x mirrors y.
+  let y_signed = select(-yRot, yRot, xRot > 0.0);
+  return vec2f(w * xRot, w * y_signed);
+}
+
+// var_xhyperbol — Xyrus02 xhyperbol plugin (apophysis-plugins). 6
+// params (m00, m01, m10, m11, m20, m21). No RNG. "Extended hyperbolic":
+// applies a unit-disc inversion, runs the result through a 2x3 affine,
+// then re-emits as |z'|²·(cos α, sin α). Source's epsilon (1e-300) is
+// f64; pyr3 uses EPS (1e-10) — same role (avoid /0 at origin) and
+// safely above Dawn's FTZ cliff (~1.18e-38).
+fn var_xhyperbol(p: vec2f, w: f32, m00: f32, m01: f32, m10: f32, m11: f32, m20: f32, m21: f32) -> vec2f {
+  let r = 1.0 / (p.x * p.x + p.y * p.y + EPS);
+  let x = p.x * r;
+  let y = p.y * r;
+  let re = m00 * x + m01 * y + m20;
+  let im = m10 * x + m11 * y + m21;
+  // Source adds M_2PI to the angle: 2π-periodic for cos/sin so this is
+  // mathematically a no-op; preserve for parity.
+  let alpha = atan2(im, re) + TAU;
+  // |alpha| ≤ 3π — plain trig is fine; safe_* defensively.
+  let sa = safe_sin(alpha);
+  let ca = safe_cos(alpha);
+  let rsq = re * re + im * im;
+  let xout = rsq * ca;
+  let yout = rsq * sa;
+  let rinv = w / (xout * xout + yout * yout + EPS);
+  return vec2f(xout * rinv, yout * rinv);
+}
+
+// var_xcurl2 — Xyrus02 xcurl2 plugin (apophysis-plugins). 3 params
+// (c1, c2, c3). No RNG. DIFFERENT polynomial from V121 `curl2` (see
+// V table comment). Source's own header says "old, probably wrong
+// version of curl2" — but pyr3 ships both because the visual character
+// differs. Also note the `y·re + x·im` SUM (not the standard Cartesian-
+// inverse SIGN flip) — preserved verbatim from source.
+fn var_xcurl2(p: vec2f, w: f32, c1: f32, c2: f32, c3: f32) -> vec2f {
+  let x = p.x;
+  let y = p.y;
+  let x2 = x * x;
+  let y2 = y * y;
+  let x3 = x2 * x;
+  let re = 1.0 + c1 * x + c2 * (x2 - y2) + c3 * (x3 - 3.0 * x);
+  let im = c1 * y + c2 * (2.0 * x * y) + c3 * (3.0 * x * y - 1.0);
+  let denom = re * re + im * im;
+  let r = w / denom;
+  return vec2f((x * re + y * im) * r, (y * re + x * im) * r);
+}
+
+// var_xtrb — Xyrus02 xtrb plugin (apophysis-plugins). 6 params
+// (xtrb_power, xtrb_dist, xtrb_radius, xtrb_width, xtrb_a, xtrb_b).
+// RNG: 2 calls per iter (one rand01 for the width-blend branch, one
+// for the angle-modulo index in [0, abs(power))). Heavy precalc — 18
+// derived geometry values computed inline (flam3 caches at xform
+// load; pyr3 recomputes per iter since GPU params are per-dispatch).
+//
+// The Hex routine has 16 conditional branches doing tri-linear coord
+// transforms; structure mirrors the source verbatim. xtrb_power must
+// be a nonzero integer (source default 2); we trunc + min(1).
+fn var_xtrb(p: vec2f, w: f32, power_in: f32, dist: f32, radius: f32, width: f32, a_param: f32, b_param: f32, wi: u32) -> vec2f {
+  let power_i = max(1, i32(power_in));
+  let power_f = f32(power_i);
+
+  let angle_Br = 0.047 + a_param;
+  let angle_Cr = 0.047 + b_param;
+  let angle_Ar = PI - angle_Br - angle_Cr;
+
+  // 0.5·angle_* ∈ small bounded range for sane (a, b) — plain trig fine.
+  let sinA2 = safe_sin(0.5 * angle_Ar);
+  let cosA2 = safe_cos(0.5 * angle_Ar);
+  let sinB2 = safe_sin(0.5 * angle_Br);
+  let cosB2 = safe_cos(0.5 * angle_Br);
+  let sinC2 = safe_sin(0.5 * angle_Cr);
+  let cosC2 = safe_cos(0.5 * angle_Cr);
+  let sinC = safe_sin(angle_Cr);
+  let cosC = safe_cos(angle_Cr);
+
+  let aSide = radius * (sinC2 / cosC2 + sinB2 / cosB2);
+  let bSide = radius * (sinC2 / cosC2 + sinA2 / cosA2);
+  let cSide = radius * (sinB2 / cosB2 + sinA2 / cosA2);
+
+  let width1 = 1.0 - width;
+  let width2 = 2.0 * width;
+  let width3 = 1.0 - width * width;
+
+  let S2 = radius * (aSide + bSide + cSide);
+  let Ha = S2 / aSide / 6.0;
+  let Hb = S2 / bSide / 6.0;
+  let Hc = S2 / cSide / 6.0;
+
+  let ab = aSide / bSide;
+  let ac = aSide / cSide;
+  let ba = bSide / aSide;
+  let bc = bSide / cSide;
+  let ca = cSide / aSide;
+  let cb = cSide / bSide;
+  let S2a = 6.0 * Ha;
+  let S2b = 6.0 * Hb;
+  let S2c = 6.0 * Hc;
+  let S2bc = S2 / (bSide + cSide) / 6.0;
+  let S2ab = S2 / (aSide + bSide) / 6.0;
+  let S2ac = S2 / (aSide + cSide) / 6.0;
+
+  let absN = u32(abs(power_i));
+  let cN = dist / power_f / 2.0;
+
+  // DirectTrilinear inline:
+  let U = p.y + radius;
+  let V = p.x * sinC - p.y * cosC + radius;
+  let Alpha0 = U;
+  let Beta0 = V;
+
+  let M = floor(Alpha0 / S2a);
+  var OffsetAl = Alpha0 - M * S2a;
+  let N = floor(Beta0 / S2b);
+  var OffsetBe = Beta0 - N * S2b;
+  var OffsetGa = S2c - ac * OffsetAl - bc * OffsetBe;
+
+  let R = rand01(wi);
+
+  // Track whether we entered the negative-Ga (mirrored) branch — the
+  // final Alpha/Beta reassembly differs in that case.
+  let neg = OffsetGa <= 0.0;
+  if (neg) {
+    OffsetAl = S2a - OffsetAl;
+    OffsetBe = S2b - OffsetBe;
+    OffsetGa = -OffsetGa;
+  }
+
+  // Hex routine (inlined). Local Al/Be/Ga = offset values; Al1/Be1 =
+  // hex-transformed; De1/Ga1 are scratch.
+  let Al = OffsetAl;
+  let Be = OffsetBe;
+  let Ga = OffsetGa;
+  var Al1: f32 = 0.0;
+  var Be1: f32 = 0.0;
+  var Ga1: f32 = 0.0;
+  var De1: f32 = 0.0;
+  if (Be < Al) {
+    if (Ga < Be) {
+      if (R >= width3) {
+        De1 = width * Be;
+        Ga1 = width * Ga;
+      } else {
+        Ga1 = width1 * Ga + width2 * Hc * Ga / Be;
+        De1 = width1 * Be + width2 * S2ab * (3.0 - Ga / Be);
+      }
+      Al1 = S2a - ba * De1 - ca * Ga1;
+      Be1 = De1;
+    } else {
+      if (Ga < Al) {
+        if (R >= width3) {
+          Ga1 = width * Ga;
+          De1 = width * Be;
+        } else {
+          De1 = width1 * Be + width2 * Hb * Be / Ga;
+          Ga1 = width1 * Ga + width2 * S2ac * (3.0 - Be / Ga);
+        }
+        Al1 = S2a - ba * De1 - ca * Ga1;
+        Be1 = De1;
+      } else {
+        if (R >= width3) {
+          Al1 = width * Al;
+          Be1 = width * Be;
+        } else {
+          Be1 = width1 * Be + width2 * Hb * Be / Al;
+          Al1 = width1 * Al + width2 * S2ac * (3.0 - Be / Al);
+        }
+      }
+    }
+  } else {
+    if (Ga < Al) {
+      if (R >= width3) {
+        De1 = width * Al;
+        Ga1 = width * Ga;
+      } else {
+        Ga1 = width1 * Ga + width2 * Hc * Ga / Al;
+        De1 = width1 * Al + width2 * S2ab * (3.0 - Ga / Al);
+      }
+      Be1 = S2b - ab * De1 - cb * Ga1;
+      Al1 = De1;
+    } else {
+      if (Ga < Be) {
+        if (R >= width3) {
+          Ga1 = width * Ga;
+          De1 = width * Al;
+        } else {
+          De1 = width1 * Al + width2 * Ha * Al / Ga;
+          Ga1 = width1 * Ga + width2 * S2bc * (3.0 - Al / Ga);
+        }
+        Be1 = S2b - ab * De1 - cb * Ga1;
+        Al1 = De1;
+      } else {
+        if (R >= width3) {
+          Be1 = width * Be;
+          Al1 = width * Al;
+        } else {
+          Al1 = width1 * Al + width2 * Ha * Al / Be;
+          Be1 = width1 * Be + width2 * S2bc * (3.0 - Al / Be);
+        }
+      }
+    }
+  }
+
+  var Alpha = Al1;
+  var Beta = Be1;
+  if (neg) {
+    Alpha = S2a - Alpha;
+    Beta = S2b - Beta;
+  }
+  Alpha = Alpha + M * S2a;
+  Beta = Beta + N * S2b;
+
+  // InverseTrilinear inline:
+  let inx = (Beta - radius + (Alpha - radius) * cosC) / sinC;
+  let iny = Alpha - radius;
+  // Source: `rand() % absN`. Use a second rand01 sample modulo absN.
+  // Cast to u32 (absN ≥ 1) — sample lands in [0, absN-1].
+  let branch_u = select(0u, u32(rand01(wi) * f32(absN)), absN > 0u);
+  let branch_f = f32(branch_u);
+  // Angle arg is bounded by 2π·branch/|power| + atan2 ∈ [-π, π], scaled
+  // by 1/power → safe trig OK below ~ 2π·256 even at large counts.
+  let angle = (atan2(iny, inx) + TAU * branch_f) / power_f;
+  // Source: pow(inx² + iny², cN). cN can be negative or fractional;
+  // pow handles both, but a zero base with negative exponent → ±Inf.
+  // Source has no guard; we follow (chaos game reseed handles it).
+  let r_pow = pow(inx * inx + iny * iny, cN);
+  return vec2f(w * r_pow * safe_cos(angle), w * r_pow * safe_sin(angle));
+}
+
+// var_xyrus_gridout — Xyrus02 gridout plugin (apophysis-plugins).
+// 0 params. No RNG. Quantizes the iterate by ±1 in x or y depending
+// on which integer-grid quadrant (rint(x), rint(y)) it falls into.
+// Stair-step / cubist look.
+//
+// NOT the same as pyr3's V101 `dc_gridout` (color variation). Source's
+// rint() = half-away-from-zero (NOT C99 default half-to-even); we
+// mirror via floor/ceil with 0.5 bias.
+fn var_xyrus_gridout(p: vec2f, w: f32) -> vec2f {
+  let x = p.x;
+  let y = p.y;
+  let rx = select(ceil(x - 0.5), floor(x + 0.5), x >= 0.0);
+  let ry = select(ceil(y - 0.5), floor(y + 0.5), y >= 0.0);
+  var dx: f32 = 0.0;
+  var dy: f32 = 0.0;
+  if (ry <= 0.0) {
+    if (rx > 0.0) {
+      if (-ry >= rx) { dx = 1.0; } else { dy = 1.0; }
+    } else {
+      if (ry <= rx) { dx = 1.0; } else { dy = -1.0; }
+    }
+  } else {
+    if (rx > 0.0) {
+      if (ry >= rx) { dx = -1.0; } else { dy = 1.0; }
+    } else {
+      if (ry > -rx) { dx = -1.0; } else { dy = -1.0; }
+    }
+  }
+  return vec2f(w * (x + dx), w * (y + dy));
+}
+
+// var_blur_circle — Xyrus02 blur_circle plugin (apophysis-plugins).
+// 1 param (hole). RNG: 2 calls per iter (the (x,y) samples uniformly
+// from [-1,1]²). Input p is IGNORED — output is purely RNG-driven.
+//
+// Author: xyrus02. "Disc-uniform blur" via square→circle perimeter
+// parameterization (same family as circlize / circlize2). Source uses
+// precomputed VVAR4_PI = w · 4/π; we inline.
+//
+// The kernel needs two distinct rand01 samples. We derive them from
+// `wi` and (wi ^ 0xA5A5A5A5u) — the same pattern used in other
+// 2-sample kernels (no module-scope salt const that extractWgslFn
+// would skip).
+fn var_blur_circle(p: vec2f, w: f32, hole: f32, wi: u32) -> vec2f {
+  let r0 = rand01(wi);
+  let r1 = rand01(wi ^ 0xA5A5A5A5u);
+  let x = 2.0 * r0 - 1.0;
+  let y = 2.0 * r1 - 1.0;
+  let absx = abs(x);
+  let absy = abs(y);
+  let s = select(absy, absx, absx > absy);
+  let a = atan2(y, x);
+  let PI3_4: f32 = 3.0 * PI / 4.0;
+  let PI_4: f32 = PI / 4.0;
+  var ps: f32 = 0.0;
+  if (a < -PI3_4) {
+    ps = absy;
+  } else if (a < -PI_4) {
+    ps = 2.0 * s + x;
+  } else if (a < PI_4) {
+    ps = 4.0 * s + y;
+  } else if (a < PI3_4) {
+    ps = 6.0 * s - x;
+  } else {
+    ps = 8.0 * s - y;
+  }
+  // Source has no s==0 guard; produces NaN there (both rands == 0.5
+  // exactly). Mirror — chaos-game reseed cleans up.
+  let r = (w * 4.0 / PI) * s + hole;
+  let phi = PI_4 * ps / s - PI;
+  // phi ∈ [-π, +π/2]-ish (bounded by ps/s and the constant offset);
+  // plain trig is safe.
+  return vec2f(r * safe_cos(phi), r * safe_sin(phi));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -2585,6 +2915,13 @@ fn apply_variation(
     case 122u: { return var_murl(p, w, p0, p1); }
     case 123u: { return var_stwins(p, w, p0); }
     case 124u: { return var_hexes(p, w, p0, p1, p2, p3); }
+    // #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+    case 125u: { return var_xheart(p, w, p0, p1); }
+    case 126u: { return var_xhyperbol(p, w, p0, p1, p2, p3, p4, p5); }
+    case 127u: { return var_xcurl2(p, w, p0, p1, p2); }
+    case 128u: { return var_xtrb(p, w, p0, p1, p2, p3, p4, p5, wi); }
+    case 129u: { return var_xyrus_gridout(p, w); }
+    case 130u: { return var_blur_circle(p, w, p0, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

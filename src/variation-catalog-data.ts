@@ -2171,6 +2171,153 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [Vx0 * R + P0[0], Vy0 * R + P0[1]];
     },
   },
+  // #114 batch 2b-d — Xyrus02 X-family + blur_circle (FINAL #114 batch).
+  {
+    idx: V.xheart,
+    name: 'xheart',
+    source: sourceForIdx(V.xheart),
+    formula: 'V_{125}(x, y) = w\\,R(\\alpha)\\,\\left(\\tfrac{4x}{r^2+4},\\; \\tfrac{6+2\\rho}{r^2+4}\\,y\\right)\\cdot \\sigma,\\; \\alpha = \\tfrac{\\pi}{4}(1 + \\tfrac{\\theta}{2}),\\; \\sigma = \\mathrm{sign}(x_{\\mathrm{rot}})',
+    blurb: 'Extended heart by Xyrus02 (Apophysis plugin pack). Folds the iterate through a (4/r²+4, rat/r²+4) projection then rotates by a θ-driven angle, then re-mirrors y when the rotated x is non-positive — producing the characteristic heart-curve attractor. Defaults angle=ratio=0 give the Xyrus02 baseline (rotation = π/4, ratio multiplier = 6); higher angle pushes the heart toward a tilted lobe, higher ratio elongates the bottom point.',
+    params: [
+      { name: 'xheart_angle', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'xheart_ratio', default: 0.0, min: -2, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const angle = 0.0;
+      const ratio = 0.0;
+      const PI = Math.PI;
+      const ang = PI / 4 + (0.5 * (PI / 4) * angle);
+      const cosa = Math.cos(ang);
+      const sina = Math.sin(ang);
+      const rat = 6 + 2 * ratio;
+      let r2_4 = x * x + y * y + 4;
+      if (r2_4 === 0) r2_4 = 1;
+      const bx = 4 / r2_4;
+      const by = rat / r2_4;
+      const xRot = cosa * (bx * x) - sina * (by * y);
+      const yRot = sina * (bx * x) + cosa * (by * y);
+      if (xRot > 0) return [xRot, yRot];
+      return [xRot, -yRot];
+    },
+  },
+  {
+    idx: V.xhyperbol,
+    name: 'xhyperbol',
+    source: sourceForIdx(V.xhyperbol),
+    formula: 'V_{126}(x, y) = \\tfrac{w}{|z\'|^2 + \\epsilon}\\,|z\'|^2\\,(\\cos\\alpha, \\sin\\alpha),\\; z\' = M\\cdot\\tfrac{z}{|z|^2 + \\epsilon} + t,\\; \\alpha = \\arg z\'',
+    blurb: 'Extended hyperbolic by Xyrus02 (Apophysis plugin pack). Composes a unit-disc inversion (z → z/|z|²) with a 2x3 affine M·(·) + t — then re-emits the iterate as |z\'|²·(cos α, sin α) so the radius scales with the affine\'s magnitude. A final |z|⁻² reflection (the second "flip" in the source) wraps output back. Defaults M = identity (m00=m11=1) give the simplest hyperbolic shape; non-zero m20/m21 translate the inversion center.',
+    params: [
+      { name: 'm00', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm01', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm10', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm11', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm20', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'm21', default: 0.0, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const m00 = 1.0;
+      const m01 = 0.0;
+      const m10 = 0.0;
+      const m11 = 1.0;
+      const m20 = 0.0;
+      const m21 = 0.0;
+      const EPS = 1e-10;
+      const r = 1 / (x * x + y * y + EPS);
+      const xi = x * r;
+      const yi = y * r;
+      const re = m00 * xi + m01 * yi + m20;
+      const im = m10 * xi + m11 * yi + m21;
+      const alpha = Math.atan2(im, re) + 2 * Math.PI;
+      const sa = Math.sin(alpha);
+      const ca = Math.cos(alpha);
+      const rsq = re * re + im * im;
+      const xout = rsq * ca;
+      const yout = rsq * sa;
+      const rinv = 1 / (xout * xout + yout * yout + EPS);
+      return [xout * rinv, yout * rinv];
+    },
+  },
+  {
+    idx: V.xcurl2,
+    name: 'xcurl2',
+    source: sourceForIdx(V.xcurl2),
+    formula: 'V_{127}(x, y) = \\tfrac{w}{re^2 + im^2}\\,(x\\,re + y\\,im,\\; y\\,re + x\\,im),\\; re = 1 + c_1 x + c_2(x^2-y^2) + c_3(x^3 - 3x)',
+    blurb: 'Older / alternate curl² by Xyrus02 (the source\'s own header reads "old, probably wrong version of curl2") — but the visual character differs from V121 `curl2` (Georg Kiehne), so pyr3 ships both. Polynomial shape: re mixes linear + (x²−y²) + (x³−3x) terms with c1/c2/c3 weights, im mixes the conjugate trio. Note the `y·re + x·im` SUM in the output (not the standard Cartesian-inverse SIGN flip in V121). Catalog defaults to c1=1 (linear path active) so the first slider drag produces a visible response.',
+    params: [
+      { name: 'c1', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c2', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c3', default: 0.0, min: -1, max: 1, step: 0.02 },
+    ],
+    warpFn: (x, y) => {
+      const c1 = 1.0;
+      const c2 = 0.0;
+      const c3 = 0.0;
+      const x2 = x * x;
+      const y2 = y * y;
+      const x3 = x2 * x;
+      const re = 1 + c1 * x + c2 * (x2 - y2) + c3 * (x3 - 3 * x);
+      const im = c1 * y + c2 * (2 * x * y) + c3 * (3 * x * y - 1);
+      const denom = re * re + im * im;
+      if (denom === 0) return [0, 0];
+      const r = 1 / denom;
+      return [(x * re + y * im) * r, (y * re + x * im) * r];
+    },
+  },
+  {
+    idx: V.xtrb,
+    name: 'xtrb',
+    source: sourceForIdx(V.xtrb),
+    formula: 'V_{128}(x, y) = w\\,r\'\\,(\\cos\\phi, \\sin\\phi),\\; r\' = (in_x^2 + in_y^2)^{c_N},\\; \\phi = \\tfrac{\\arctan(in_y, in_x) + 2\\pi k}{p}',
+    blurb: 'TriBorders by Xyrus02 — builds a dual tessellation on a triangular grid (the way `boarders` does on a square grid) using trilinear coordinates. Six params shape the triangle (radius, a, b for angle), the border blend (width), the angle-modulo (power), and the radial reach (dist). RNG drives both the width-blend branch and the power-modulo index. Defaults reproduce the Xyrus02 source baseline (power=2, equilateral-ish triangle, width=0.5).',
+    params: [
+      { name: 'xtrb_power',  default: 2,   min: 1,   max: 8, step: 1 },
+      { name: 'xtrb_dist',   default: 1.0, min: 0.1, max: 2, step: 0.05 },
+      { name: 'xtrb_radius', default: 1.0, min: 0.1, max: 2, step: 0.05 },
+      { name: 'xtrb_width',  default: 0.5, min: 0,   max: 1, step: 0.05 },
+      { name: 'xtrb_a',      default: 1.0, min: 0.1, max: 2, step: 0.05 },
+      { name: 'xtrb_b',      default: 1.0, min: 0.1, max: 2, step: 0.05 },
+    ],
+    // RNG-driven — no warpFn. The catalog renders "warp not applicable"
+    // for the static SVG diagram; live flame still iterates.
+  },
+  {
+    idx: V.gridout,
+    name: 'gridout',
+    source: sourceForIdx(V.gridout),
+    formula: 'V_{129}(x, y) = w\\,(x + \\delta_x, y + \\delta_y),\\; (\\delta_x, \\delta_y) \\in \\{(\\pm 1, 0), (0, \\pm 1)\\}\\; \\text{by quadrant}',
+    blurb: 'Grid quantization by Xyrus02 (authors Michael + Joel Faber). Snaps the iterate by ±1 along x or y depending on which integer-grid quadrant (rint(x), rint(y)) it falls into — stair-step / cubist look. NOT the same as pyr3\'s V101 `dc_gridout` (that\'s a color variation; this is a pure position warp). 0 params: dial the variation weight instead.',
+    warpFn: (x, y) => {
+      const rx = x >= 0 ? Math.floor(x + 0.5) : Math.ceil(x - 0.5);
+      const ry = y >= 0 ? Math.floor(y + 0.5) : Math.ceil(y - 0.5);
+      let dx = 0;
+      let dy = 0;
+      if (ry <= 0) {
+        if (rx > 0) {
+          if (-ry >= rx) dx = 1; else dy = 1;
+        } else {
+          if (ry <= rx) dx = 1; else dy = -1;
+        }
+      } else {
+        if (rx > 0) {
+          if (ry >= rx) dx = -1; else dy = 1;
+        } else {
+          if (ry > -rx) dx = -1; else dy = -1;
+        }
+      }
+      return [x + dx, y + dy];
+    },
+  },
+  {
+    idx: V.blur_circle,
+    name: 'blur_circle',
+    source: sourceForIdx(V.blur_circle),
+    formula: 'V_{130}(x, y) = (r\\cos\\phi, r\\sin\\phi),\\; r = \\tfrac{4w}{\\pi}\\,s + \\text{hole},\\; \\phi = \\tfrac{\\pi}{4}\\,\\tfrac{p_s}{s} - \\pi',
+    blurb: 'Disc-uniform blur by Xyrus02 (Apophysis plugin pack). Uniformly samples a unit square, runs a square→circle perimeter parameterization (same family as circlize / circlize2), then emits onto a hole-offset circle. Input iterate is ignored — the variation\'s output is purely RNG-driven. The 4/π scale factor matches a unit-disc area density; non-zero hole adds a concentric annulus offset.',
+    params: [
+      { name: 'hole', default: 0.0, min: -1, max: 1, step: 0.05 },
+    ],
+    // RNG-driven (input p is ignored, output is pure RNG) — no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

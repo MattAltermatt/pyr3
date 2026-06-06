@@ -195,6 +195,19 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   murl: ['c', 'power'],
   stwins: ['distort'],
   hexes: ['cellsize', 'power', 'rotate', 'scale'],
+  // #114 batch 2b-d — Xyrus02 X-family + blur_circle. Final #114
+  // batch. xtrb is at the 6-param tightness ceiling (would need 8 if
+  // we tried to expose all canonical xtrb fields; pyr3 ships the
+  // canonical 6 and uses precalc inside the kernel for the 18 derived
+  // values). gridout is 0-param (no entry). xcurl2 has its own polynomial
+  // shape DIFFERENT from V121 `curl2` despite the suffix — see the V
+  // table comment in src/variations.ts. xhyperbol's 6 params encode
+  // a 2x3 affine the iterate runs through inside the kernel.
+  xheart: ['xheart_angle', 'xheart_ratio'],
+  xhyperbol: ['m00', 'm01', 'm10', 'm11', 'm20', 'm21'],
+  xcurl2: ['c1', 'c2', 'c3'],
+  xtrb: ['xtrb_power', 'xtrb_dist', 'xtrb_radius', 'xtrb_width', 'xtrb_a', 'xtrb_b'],
+  blur_circle: ['hole'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -275,6 +288,22 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   murl: [0.1, 1],                            // c=0.1, power=1
   stwins: [1.0],                             // distort=1
   hexes: [1.0, 1.0, 0.166, 1.0],             // cellsize=1, power=1, rotate=0.166, scale=1
+  // #114 batch 2b-d — Xyrus02-canonical defaults. xheart ships
+  // angle=ratio=0 (Xyrus02 baseline: rotation = π/4, ratio multiplier =
+  // 6). xhyperbol ships the identity affine (m00=m11=1, others=0; the
+  // Xyrus02 default). xcurl2 ships c1=c2=c3=0 — that's the source's
+  // VAR_REAL default, but at all zeros the (re,im)=(1,0) so the
+  // variation reduces to linear (no warp); the catalog scaffold
+  // overrides to c1=1 to make the first slider drag visually active.
+  // xtrb ships xtrb_power=2 (source default; also the simplest tessellation)
+  // + xtrb_dist=1, xtrb_radius=1, xtrb_width=0.5, xtrb_a=xtrb_b=1
+  // (Xyrus02 source defaults). blur_circle ships hole=0 (Xyrus02
+  // source default; the disc shape is most visible there).
+  xheart: [0.0, 0.0],                                // angle, ratio
+  xhyperbol: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],         // m00=1, m01, m10, m11=1, m20, m21
+  xcurl2: [0.0, 0.0, 0.0],                           // c1, c2, c3
+  xtrb: [2, 1.0, 1.0, 0.5, 1.0, 1.0],                // power=2, dist=1, radius=1, width=0.5, a=1, b=1
+  blur_circle: [0.0],                                // hole
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
