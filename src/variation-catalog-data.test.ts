@@ -18,10 +18,11 @@ describe('CATALOG_DATA seed entries', () => {
     expect(doc!.blurb).toBeTruthy();
   });
 
-  it('julian declares params with defaults', () => {
+  it('julian declares params with flam3-canonical defaults', () => {
     const julian = getCatalogDoc(V.julian)!;
     expect(julian.params).toHaveLength(2);
-    expect(julian.params![0]).toMatchObject({ name: 'power', default: 2 });
+    // VARIATION_DEFAULTS.julian = [1, 1] in src/serialize.ts.
+    expect(julian.params![0]).toMatchObject({ name: 'power', default: 1 });
     expect(julian.params![1]).toMatchObject({ name: 'dist',  default: 1 });
   });
 

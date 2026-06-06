@@ -91,12 +91,16 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{14}(x, y) = r^{c/n}\\,(\\cos t,\\; \\sin t),\\quad t = \\tfrac{\\phi + 2\\pi \\, \\mathrm{rand}(n)}{n}',
     blurb: 'Generalized Julia — splits each input into n rotationally symmetric branches, picked at random per iteration. The signature flame pattern of countless production flames. Drag power to change branch count; dist controls radial scaling.',
     params: [
-      { name: 'power', default: 2, min: -10, max: 10, step: 1 },
+      // Defaults match VARIATION_DEFAULTS.julian = [1, 1] in serialize.ts
+      // (flam3-canonical). With power=1 the variation is degenerate (returns
+      // r·(cos φ, sin φ) = identity in polar), so the warp diagram shows
+      // power=2 below; the slider lets users explore the interesting range.
+      { name: 'power', default: 1, min: -10, max: 10, step: 1 },
       { name: 'dist',  default: 1, min: -2,  max: 2,  step: 0.05 },
     ],
-    // Deterministic branch-0 visualization for the warp diagram (real
-    // chaos game samples randBranch ∈ [0..n-1] per iter; one branch is
-    // enough to read the variation's character).
+    // Deterministic branch-0 visualization for the warp diagram at power=2
+    // (real chaos game samples randBranch ∈ [0..n-1] per iter; one branch
+    // is enough to read the variation's character).
     warpFn: (x, y) => {
       const r = Math.sqrt(x * x + y * y);
       const phi = Math.atan2(y, x);
@@ -521,7 +525,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.bipolar,
     name: 'bipolar',
     source: sourceForIdx(V.bipolar),
-    formula: 'V_{35}(x, y) = \\tfrac{2}{\\pi}\\,\\big(\\tfrac{1}{4}\\ln\\tfrac{t+2x}{t-2x},\\; y\\big),\\; t = x^2+y^2+1',
+    formula: 'V_{35}(x, y) = \\tfrac{2}{\\pi}\\,\\big(\\tfrac{1}{4}\\ln\\tfrac{t+2x}{t-2x},\\; \\tfrac{1}{2}\\mathrm{atan2}(2y, x^2+y^2-1) + \\mathrm{shift}\\big),\\; t = x^2+y^2+1',
     blurb: 'Bipolar coordinates — maps the plane onto two foci. A log-warped horizontal slab plus angular wrapping; the shift parameter rolls the angular phase.',
     params: [
       { name: 'shift', default: 0, min: -2, max: 2, step: 0.05 },
@@ -722,7 +726,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.radial_blur,
     name: 'radial_blur',
     source: sourceForIdx(V.radial_blur),
-    formula: 'V_{47}(x, y) \\approx r\\,(\\cos(\\phi + s\\cdot G),\\; \\sin(\\phi + s\\cdot G)) + zG\\,(x,y)',
+    formula: 'V_{47}(x, y) \\approx r\\,(\\cos(\\phi + s\\cdot G),\\; \\sin(\\phi + s\\cdot G)) + (z\\cdot G - 1)\\,(x,y),\\; G = \\sqrt{\\text{rand}}\\cdot|\\text{angle}|',
     blurb: 'Tangential + radial Gaussian blur — angle controls the spin/zoom ratio. A staple flame finisher that softens hard structure without destroying it.',
     params: [
       { name: 'angle', default: 0, min: -1, max: 1, step: 0.02 },

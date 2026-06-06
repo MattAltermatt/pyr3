@@ -83,7 +83,9 @@ describe('mountSection', () => {
     // the weight row's reset). Use the power row's own scope.
     const powerRow = power.closest('.pyr3-cat-control-row') as HTMLElement;
     (powerRow.querySelector('.pyr3-cat-reset') as HTMLElement).click();
-    expect(lastChange?.params[0]).toBe(2);
+    // julian's flam3-canonical default for `power` is 1 (see
+    // VARIATION_DEFAULTS in src/serialize.ts).
+    expect(lastChange?.params[0]).toBe(1);
   });
 
   it('updates the open-in-editor link as state changes', () => {
