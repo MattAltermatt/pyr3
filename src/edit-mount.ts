@@ -52,6 +52,13 @@ export interface MountEditPageOpts {
    *  sessions. Files opened with their own nick keep that nick — defaultNick
    *  only fills in when genome.nick is undefined. */
   defaultNick?: string;
+  /** #119 — caller-supplied initial genome. When present, overrides the
+   *  normal cold-start chain (pending / wip / reroll) — the editor mounts
+   *  this genome verbatim. The catalog page uses this to hand off a
+   *  sierpinski + variation built from URL params; treated as a non-reroll
+   *  source so the user's stored defaultNick is NOT stamped over the
+   *  catalog identity. */
+  initialGenome?: Genome;
   /** Fires on init + after every genome change (lane fire / reroll / open) so
    *  the host can sync external chrome (e.g. /v1/edit's top bar) with the
    *  current name + dimensions. */
@@ -172,7 +179,13 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // The defaultNick stamp only fires on `reroll` so opens preserve the
   // original author (or stay blank). applyEditorDefaults is harmless on
   // all three paths (fills only undefined size/quality).
-  const initial = resolveColdStartGenomeWithSource(() => generateRandomGenome());
+  //
+  // #119 — caller-supplied initialGenome (catalog handoff) wins over all
+  // three normal sources. Treated like a pending transfer for nick
+  // semantics: don't stamp defaultNick, keep what the catalog provided.
+  const initial = opts.initialGenome
+    ? { genome: opts.initialGenome, source: 'pending' as const }
+    : resolveColdStartGenomeWithSource(() => generateRandomGenome());
   const initialGenome = initial.genome;
   if (initial.source === 'reroll') applyDefaultNick(initialGenome);
   applyEditorDefaults(initialGenome);

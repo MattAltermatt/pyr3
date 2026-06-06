@@ -30,6 +30,7 @@
     "gen:variation-thumbs": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs scripts/gen-variation-thumbs.mjs"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
     "@types/node": "^22.10.0",
     "@types/pngjs": "^6.0.5",
     "@webgpu/types": "^0.1.50",
@@ -44,6 +45,7 @@
     "webgpu": "^0.4.0"
   },
   "dependencies": {
-    "brotli-dec-wasm": "^2.3.2"
+    "brotli-dec-wasm": "^2.3.2",
+    "katex": "^0.16.47"
   }
 }

@@ -16,6 +16,7 @@ import {
   parseFilterSpec,
   type FilterSpec,
 } from './gallery-filter';
+import { parseCatalogEntry, type CatalogEntry } from './variation-catalog-link';
 
 // The canonical "welcome" hero sheep. Bare root (`/`, the `default` intent)
 // forwards to this corpus leaf so the landing page is a real, shareable,
@@ -33,6 +34,8 @@ export type LoadIntent =
   | { kind: 'gen-browse'; gen: number }
   | { kind: 'gallery'; page: number; filter: FilterSpec }
   | { kind: 'edit' }
+  | { kind: 'catalog-entry'; entry: CatalogEntry }
+  | { kind: 'variations' }
   | { kind: 'custom-reserved' }
   | { kind: 'default' };
 
@@ -150,9 +153,23 @@ export function parseLoadIntent(input: string): LoadIntent | null {
     } else if (sub === 'edit') {
       // /v1/edit — single-flame editor page (spec 2026-06-03-flame-editor-v1-design.md)
       if (parts.length === 2) {
+        // #119 — catalog → editor deep-link. The catalog's "Open in editor"
+        // link encodes the live variation state in the query; the editor's
+        // cold-start (in mountEditPage) consumes it to rebuild a matching
+        // sierpinski + variation genome. Malformed query falls through to
+        // the bare edit intent.
+        const entry = parseCatalogEntry(new URLSearchParams(search));
+        if (entry) return { kind: 'catalog-entry', entry };
         return { kind: 'edit' };
       }
       // Malformed (/v1/edit/anything) — fall through to default
+    } else if (sub === 'variations') {
+      // #119 — variation catalog page. Bare /v1/variations only; deeper
+      // paths fall through to default. Deep-link to a specific variation
+      // is handled by hash (#v14-julian), not by the path grammar.
+      if (parts.length === 2) {
+        return { kind: 'variations' };
+      }
     } else if (sub === 'gallery') {
       const filter = parseFilterSpec(new URLSearchParams(search));
       // /v1/gallery → page 1 (canonical default — no /p/1 suffix)

@@ -286,6 +286,44 @@ describe('parseLoadIntent – /v1/edit grammar', () => {
     expect(p('/v1/edit/foo')).toEqual({ kind: 'default' });
     expect(p('/v1/edit/sub/path')).toEqual({ kind: 'default' });
   });
+
+  // #119 — catalog → editor deep-link
+  it('/v1/edit?from=catalog&v=14&w=0.8&p=5,0.7 → catalog-entry intent', () => {
+    expect(p('/v1/edit?from=catalog&v=14&w=0.8&p=5,0.7')).toEqual({
+      kind: 'catalog-entry',
+      entry: { idx: 14, weight: 0.8, params: [5, 0.7] },
+    });
+  });
+
+  it('/v1/edit?from=catalog&v=0&w=1 → catalog-entry with no params', () => {
+    expect(p('/v1/edit?from=catalog&v=0&w=1')).toEqual({
+      kind: 'catalog-entry',
+      entry: { idx: 0, weight: 1, params: [] },
+    });
+  });
+
+  it('/v1/edit?from=other (foreign query) → bare edit intent', () => {
+    expect(p('/v1/edit?from=other&v=14')).toEqual({ kind: 'edit' });
+  });
+
+  it('/v1/edit?from=catalog with malformed v → bare edit intent', () => {
+    expect(p('/v1/edit?from=catalog&v=abc')).toEqual({ kind: 'edit' });
+  });
+});
+
+// #119
+describe('parseLoadIntent – /v1/variations grammar', () => {
+  it('parses /v1/variations', () => {
+    expect(p('/v1/variations')).toEqual({ kind: 'variations' });
+  });
+
+  it('parses /v1/variations/ (trailing slash)', () => {
+    expect(p('/v1/variations/')).toEqual({ kind: 'variations' });
+  });
+
+  it('/v1/variations/anything → default', () => {
+    expect(p('/v1/variations/foo')).toEqual({ kind: 'default' });
+  });
 });
 
 describe('galleryUrl — filter round-trip', () => {

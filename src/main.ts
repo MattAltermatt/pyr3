@@ -418,7 +418,7 @@ async function main(): Promise<void> {
   // into #pyr3-bar; the rest of main() (viewer renderer, gallery dispatch,
   // corpus nav) doesn't run.
   const initialIntent = parseLoadIntent(window.location.pathname + window.location.search);
-  if (initialIntent?.kind === 'edit') {
+  if (initialIntent?.kind === 'edit' || initialIntent?.kind === 'catalog-entry') {
     const { device: editDevice, format: editFormat } = await acquireGpu();
     const editRoot = document.getElementById('pyr3-edit');
     if (!editRoot) {
@@ -501,11 +501,23 @@ async function main(): Promise<void> {
     const { globalSection } = await import('./edit-section-global');
     const { densitySection } = await import('./edit-section-density');
     const { renderSection } = await import('./edit-section-render');
+    // #119 — catalog → editor handoff. When the URL is
+    // /v1/edit?from=catalog&v=&w=&p=, build the catalog genome and feed
+    // it to the editor as initialGenome. Otherwise mountEditPage falls
+    // through to its normal cold-start (pending / wip / reroll).
+    const catalogInitialGenome = initialIntent.kind === 'catalog-entry'
+      ? (await import('./variation-catalog-scaffold')).buildCatalogGenome(
+          initialIntent.entry.idx,
+          initialIntent.entry.weight,
+          initialIntent.entry.params,
+        )
+      : undefined;
     const editor = mountEditPage({
       root: editRoot,
       device: editDevice,
       format: editFormat,
       defaultNick: savedNick,
+      initialGenome: catalogInitialGenome,
       sections: [
         renderSection,
         paletteSection,
@@ -582,6 +594,24 @@ async function main(): Promise<void> {
       document.removeEventListener('keydown', onEditorKeydown);
       originalDestroy.call(editor);
     };
+    return;
+  }
+
+  // #119 — /v1/variations catalog surface. Same early-dispatch pattern as
+  // the editor: mount the variations root, hide the viewer chrome, return
+  // before the viewer setup runs. The catalog needs a WebGPU device for
+  // its live flame previews; acquired here on entry.
+  if (initialIntent?.kind === 'variations') {
+    const { device: catDevice, format: catFormat } = await acquireGpu();
+    const catRoot = document.getElementById('pyr3-variations');
+    if (!catRoot) {
+      console.error('pyr3: #pyr3-variations missing from index.html — catalog cannot mount');
+      return;
+    }
+    catRoot.hidden = false;
+    document.body.classList.add('pyr3-variations-mode');
+    const { mountVariationCatalog } = await import('./variation-catalog-mount');
+    mountVariationCatalog(catRoot, { device: catDevice, format: catFormat });
     return;
   }
 
@@ -1818,11 +1848,14 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       console.error(`pyr3: gallery intent reached resolveLoadIntent — dispatch order broken (page ${intent.page})`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'edit':
-      // /v1/edit dispatches via mountEditPage() BEFORE this function is
-      // called (see the early-dispatch block at the top of main()). Reaching
-      // here is a routing bug — log + paint welcome as a safe fallback so
-      // the page isn't blank.
-      console.error('pyr3: edit intent reached resolveLoadIntent — dispatch order broken');
+    case 'catalog-entry':
+    case 'variations':
+      // /v1/edit (and the /v1/edit?from=catalog catalog-handoff variant) +
+      // /v1/variations all dispatch via their own mount() BEFORE this function
+      // is called (see the early-dispatch block at the top of main()).
+      // Reaching here is a routing bug — log + paint welcome as a safe fallback
+      // so the page isn't blank.
+      console.error(`pyr3: ${intent.kind} intent reached resolveLoadIntent — dispatch order broken`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':
       // Bare root is handled directly in main() (replaceState root-forward +
