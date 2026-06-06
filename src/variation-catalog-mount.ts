@@ -61,7 +61,15 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     if (doc) {
       const h = mountSection(wrap, doc, {
         onParamsChange: () => {
-          if (active && active.idx === row.idx) rebuildActiveGenome();
+          // User interaction always wins: if THIS section's slider moved,
+          // make it the active iterator immediately. Without this, a
+          // visible-but-not-yet-IO-picked section's slider would only
+          // update local state without re-rendering — confusing UX.
+          if (!active || active.idx !== row.idx) {
+            setActive(row.idx);
+          } else {
+            rebuildActiveGenome();
+          }
         },
       });
       sections.set(row.idx, h);
