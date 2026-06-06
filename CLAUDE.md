@@ -10,7 +10,8 @@ npm run test:parity             # 26-fixture BE-vs-flam3-C parity rig, ~91s wall
 npm run test:fe-be-smoke        # 3-fixture FE↔BE smoke (~90s) — run when the FE viewer changes
 npm run test:parity-fe-be       # FULL 26-fixture FE↔BE sweep, ~13min — PRE-RELEASE ONLY
 npm run test:all                # union of test + parity (excludes the slow FE↔BE full sweep)
-npm run typecheck               # tsc --noEmit
+npm run typecheck               # tsc --noEmit (full project)
+npm run typecheck:engine        # no-DOM kernel typecheck — enforces the FE/BE seam (#15)
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims
 npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
 npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (reference SHOWCASE_4K)
