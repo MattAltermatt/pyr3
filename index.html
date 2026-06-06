@@ -80,6 +80,11 @@
       body.pyr3-variations-mode #pyr3-gallery,
       body.pyr3-variations-mode #pyr3-fallback,
       body.pyr3-variations-mode #pyr3-missing { display: none !important; }
+      /* Hide the viewer's info + action rows on the catalog — Open / Size /
+         Quality / Save Flame / Save Render / surprise-me don't apply to
+         the catalog browse surface (only the top nav tab strip stays). */
+      body.pyr3-variations-mode .pyr3-bar-info,
+      body.pyr3-variations-mode .pyr3-bar-action { display: none !important; }
 
       /* Two-pane layout: sticky 280px sidebar on the left, scrollable
          catalog column on the right. */

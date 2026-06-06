@@ -157,7 +157,9 @@ export function mountSection(
 
   // Open-in-editor link. Opens in a new tab so the catalog stays put —
   // users typically want to A/B between catalog tile and editor surface.
-  const openLink = el('a', 'pyr3-cat-open-link', '▸ Open in editor with this variation');
+  // The trailing ↗ matches the convention used elsewhere (about page,
+  // picker "explore catalog" link) for new-tab destinations.
+  const openLink = el('a', 'pyr3-cat-open-link', 'Open in editor with this variation ↗');
   openLink.href = linkToEditor({ idx: doc.idx, weight: state.weight, params: state.params });
   openLink.target = '_blank';
   openLink.rel = 'noopener noreferrer';
