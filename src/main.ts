@@ -47,6 +47,7 @@ import {
 import { getCurrentFlame, setCurrentFlame } from './app-state';
 import { writePendingTransfer } from './edit-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
+import { createLoadSequencer } from './load-sequencer';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { readGlobalQuality, writeGlobalQuality } from './prefs';
 import { pickSurpriseFlame } from './viewer-dice';
@@ -618,7 +619,7 @@ async function main(): Promise<void> {
 
   let runHandle: RunHandle | null = null;
   // #8: true for the duration of a quality-ladder / custom (e.g. 4K) render.
-  // Corpus loads track their own in-flight state via loadInFlight; this covers
+  // Corpus loads track their own in-flight state via the load sequencer; this covers
   // the standalone ladder path so arrow-key / pill nav can't queue behind a
   // heavy render that was started without a flame load.
   let renderInFlight = false;
@@ -1103,26 +1104,15 @@ async function main(): Promise<void> {
   // canvas while keeping all three bars. Hidden whenever a real flame loads.
   const missingPanel = makeMissingPanel();
 
-  let loadInFlight = false;
-  const loadFromFile = async (file: File): Promise<void> => {
-    console.log(`pyr3: loadFromFile("${file.name}") · loadInFlight=${loadInFlight}`);
-    if (loadInFlight) {
-      console.warn(`pyr3: load already in flight; ignoring ${file.name}`);
-      return;
-    }
+  // #70: sequencing state (loadInFlight / loadHookQueue / corpusQueue /
+  // navLocked) is extracted to src/load-sequencer.ts. `loadFromFileImpl` is
+  // the body of a load — re-entrancy guard + GPU drain live in the sequencer.
+  const loadFromFileImpl = async (file: File): Promise<void> => {
     missingPanel.hide(); // a real flame is loading — clear any missing state
-    loadInFlight = true;
     bar.setBusy(true);
     try {
       const result = await loadFileFromUser(file);
       await applyLoadResult(result, file.name);
-      // Wait for the GPU to drain the queued work before releasing the
-      // loadInFlight guard. The orchestrator's promise resolves when
-      // JS-side iterate calls finish; GPU may still be processing.
-      // Without this drain, the NEXT load's renderer.resize() can
-      // destroyPipelines() while previous commands still reference
-      // those buffers (Phase 2 verify, 2026-05-26).
-      await device.queue.onSubmittedWorkDone();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`pyr3: failed to load ${file.name}: ${msg}`);
@@ -1138,20 +1128,15 @@ async function main(): Promise<void> {
       // Idempotent via the firstPaintDone guard.
       clearFirstPaintCue();
       bar.setBusy(false);
-      loadInFlight = false;
     }
   };
+  const sequencer = createLoadSequencer({ device, loadFromFile: loadFromFileImpl });
+  const loadFromFile = (file: File): Promise<void> => sequencer.loadFile(file);
 
   // PYR3-026 FE↔BE parity rig: programmatic flame-load hook (dev-only).
-  // Mirrors the file-picker path (loadFromFile → applyLoadResult →
-  // rerender) but takes raw text so Playwright can inject each fixture
-  // without touching the OS file dialog. Serialized via an internal
-  // queue so the test rig's `__pyr3LoadFlame(A); __pyr3LoadFlame(B)`
-  // sequence does NOT hit loadFromFile's in-flight rejection — and
-  // waits for the initial welcome-flame load to settle before its
-  // first call. Awaiting resolves once the render completes (rerender
-  // awaits the orchestrator promise).
-  let loadHookQueue: Promise<void> = Promise.resolve();
+  // Delegates to the load sequencer (#70) so the test rig's
+  // `__pyr3LoadFlame(A); __pyr3LoadFlame(B)` sequence serializes through
+  // the same chain as the file-picker path.
   if (import.meta.env.DEV) {
     // #35: pin the session seed for deterministic FE↔BE parity. Call BEFORE
     // __pyr3LoadFlame on each fixture so both engines render the same RNG
@@ -1164,19 +1149,7 @@ async function main(): Promise<void> {
 
     (window as unknown as {
       __pyr3LoadFlame?: (text: string, label?: string) => Promise<void>;
-    }).__pyr3LoadFlame = (text: string, label = 'test.flame') => {
-      const next = loadHookQueue.then(async () => {
-        // If a non-hook caller (welcome flame, file picker) is still
-        // in flight, wait it out — loadFromFile would otherwise reject.
-        while (loadInFlight) {
-          await new Promise((r) => setTimeout(r, 25));
-        }
-        const file = new File([text], label, { type: 'text/xml' });
-        await loadFromFile(file);
-      });
-      loadHookQueue = next.catch(() => {});
-      return next;
-    };
+    }).__pyr3LoadFlame = (text, label) => sequencer.enqueueHook(text, label);
   }
 
   openFilePicker = (): void => {
@@ -1233,10 +1206,10 @@ async function main(): Promise<void> {
 
   const loadCorpus = async (gen: number, id: number, push: boolean): Promise<void> => {
     // Wait out any in-flight load (e.g. a multi-second 4K render drain or a
-    // file-picker load) BEFORE mutating history — otherwise loadFromFile's
+    // file-picker load) BEFORE mutating history — otherwise the sequencer's
     // in-flight guard would silently drop this load while the URL + nav still
-    // advanced, desyncing them from the canvas. Mirrors __pyr3LoadFlame.
-    while (loadInFlight) {
+    // advanced, desyncing them from the canvas.
+    while (sequencer.inFlight()) {
       await new Promise((r) => setTimeout(r, 25));
     }
     if (push) {
@@ -1294,27 +1267,16 @@ async function main(): Promise<void> {
     await updateCorpusNav(gen, id);
   };
   // Serialize ALL corpus loads through one promise chain so two rapid nav
-  // clicks can't both pushState + advance the nav before either renders (the
-  // while-loop above only waits if loadInFlight is ALREADY set, which a
-  // concurrently-entering loadCorpus has not yet done). Same idiom as the
-  // __pyr3LoadFlame loadHookQueue.
-  let corpusQueue: Promise<void> = Promise.resolve();
-  const enqueueCorpus = (gen: number, id: number, push: boolean): Promise<void> => {
-    const next = corpusQueue.then(() => loadCorpus(gen, id, push));
-    corpusQueue = next.catch(() => {}); // keep the chain alive past a failure
-    return next;
-  };
+  // clicks can't both pushState + advance the nav before either renders.
+  // The chain + #8 nav lock live in the sequencer (#70).
+  const enqueueCorpus = (gen: number, id: number, push: boolean): Promise<void> =>
+    sequencer.enqueueCorpus(() => loadCorpus(gen, id, push));
   // #8: a synchronous lock that engages the instant a nav is dispatched and
   // releases only when that load + its render fully settle — so rapid pill
   // clicks or arrow presses can't stack navigations behind the in-flight load.
-  // (loadInFlight flips too late — only after the chunk fetch resolves, leaving
-  // a window where several navs slip through and queue.) Also refuses while a
-  // standalone quality-ladder render (e.g. 4K) is running.
-  let navLocked = false;
+  // Also refuses while a standalone quality-ladder render (e.g. 4K) is running.
   navigateCorpus = (gen, id) => {
-    if (navLocked || renderInFlight) return;
-    navLocked = true;
-    void enqueueCorpus(gen, id, true).finally(() => { navLocked = false; });
+    sequencer.tryNavigateCorpus(() => loadCorpus(gen, id, true), () => renderInFlight);
   };
   // ── Gallery surface state (v1.2 #47) ──
   // When the gallery is active, the viewer bar's DOM is cleared and replaced

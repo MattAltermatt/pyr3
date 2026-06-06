@@ -7,7 +7,10 @@ name: CI
 #
 # The gated parity rigs (test:parity / test:parity-fe-be) are NOT run here: they
 # need a real/software GPU and take ~91s / ~13min. They stay opt-in (run locally
-# when the render path changes).
+# when the render path changes). #71 attempted to wire test:parity into CI on
+# ubuntu-latest via Dawn + lavapipe (software Vulkan); each fixture's render
+# exceeded the per-spawn 120s cap on lavapipe, so the gate cannot run in any
+# reasonable CI budget. The local gate remains the v1.x contract.
 
 on:
   push:

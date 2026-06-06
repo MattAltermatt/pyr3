@@ -163,6 +163,11 @@ Per the global workflow:
 - ✅ Hand the user a clickable `http://localhost:5173/` URL when a verify is needed
   (pyr3 has no audio — global `?mute=1` default doesn't apply)
 - ✅ Backend renders verified by `npm run render` + R-comparison to flam3-C golden
+- ⚠️ BE parity gate is **local-only** (`npm run test:parity`, ~91s on a real GPU).
+  #71 attempted to wire it into CI on `ubuntu-latest` (Dawn + lavapipe software
+  Vulkan); each fixture's render exceeded the per-spawn 120s cap on lavapipe,
+  so the gate cannot run in any reasonable CI budget. Run locally before any
+  PR that touches the render path; pre-release manual sweep before tagging.
 - ✅ **Eyeball-verify gates default to HTML pages.** Any moment the user
   needs to visually compare images (FF-merge gate, parity gallery, before/
   after, diff PNG vs golden vs render) → build a self-contained HTML page
