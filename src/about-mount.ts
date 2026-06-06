@@ -67,10 +67,29 @@ export function mountAbout(root: HTMLElement, opts: AboutOpts): void {
   page.appendChild(buildWhatItIs());
   page.appendChild(buildLineage());
   page.appendChild(buildCredits());
+  page.appendChild(buildExplore());
   page.appendChild(buildLinks());
   page.appendChild(buildNotes());
 
   root.appendChild(page);
+}
+
+function buildExplore(): HTMLElement {
+  const sec = buildSection('explore', 'Explore');
+  const ul = document.createElement('ul');
+  applyStyle(ul, listStyle());
+  const li = document.createElement('li');
+  applyStyle(li, { margin: '6px 0' });
+  // makeExternalLink opens in a new tab; reuse it even for the internal
+  // /v1/variations URL so the about page stays put as a reference surface.
+  li.appendChild(makeExternalLink('/v1/variations', 'Variation catalog'));
+  const detail = document.createElement('span');
+  detail.textContent = ' · live demo of every variation in the engine — formula, warp diagram, real-time flame, weight + param scrubbies';
+  applyStyle(detail, { color: COLORS.text.muted });
+  li.appendChild(detail);
+  ul.appendChild(li);
+  sec.appendChild(ul);
+  return sec;
 }
 
 // ----- section builders -----

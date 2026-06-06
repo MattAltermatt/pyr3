@@ -290,7 +290,22 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   autoApply.classList.add('pyr3-picker-auto-apply');
   autoApplyWrap.append(autoApplyLabel, autoApply);
 
-  controlsRow.append(sort, autoApplyWrap);
+  // Catalog link — opens the live catalog (/v1/variations) in a new tab so
+  // the user can preview every variation rendered + with controls before
+  // picking one here.
+  const catalogLink = document.createElement('a');
+  catalogLink.className = 'pyr3-picker-catalog-link';
+  catalogLink.href = '/v1/variations';
+  catalogLink.target = '_blank';
+  catalogLink.rel = 'noopener noreferrer';
+  catalogLink.textContent = 'explore catalog ↗';
+  catalogLink.title = 'See every variation rendered live in the catalog page (opens in a new tab)';
+  catalogLink.style.fontSize = '11px';
+  catalogLink.style.color = COLORS.flame.mid;
+  catalogLink.style.textDecoration = 'none';
+  catalogLink.style.marginLeft = 'auto';
+
+  controlsRow.append(sort, autoApplyWrap, catalogLink);
   head.appendChild(controlsRow);
 
   picker.appendChild(head);

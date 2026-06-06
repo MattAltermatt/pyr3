@@ -155,9 +155,12 @@ export function mountSection(
   // Blurb
   const blurb = el('p', 'pyr3-cat-section-blurb', doc.blurb);
 
-  // Open-in-editor link
+  // Open-in-editor link. Opens in a new tab so the catalog stays put —
+  // users typically want to A/B between catalog tile and editor surface.
   const openLink = el('a', 'pyr3-cat-open-link', '▸ Open in editor with this variation');
   openLink.href = linkToEditor({ idx: doc.idx, weight: state.weight, params: state.params });
+  openLink.target = '_blank';
+  openLink.rel = 'noopener noreferrer';
 
   host.append(head, formula, panes, blurb, openLink);
 
