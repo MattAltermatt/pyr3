@@ -1735,6 +1735,104 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [scale * (feat_x + (x - feat_x) * dScale), scale * (feat_y + (y - feat_y) * dScale)];
     },
   },
+  // #114 batch 2b-a — JWildfire S-tier first half.
+  {
+    idx: V.juliaq,
+    name: 'juliaq',
+    source: sourceForIdx(V.juliaq),
+    formula: 'V_{109}(x, y) = r^{q/2p}\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{q}{p}\\,\\theta + n\\tfrac{2\\pi}{p},\\; n \\in [0, |p|)',
+    blurb: 'Generalized julia by Peter Sdobnov (Zueuk). divisor q decouples rotation step from branch count p — produces denser or sparser julia-style attractors at fractional ratios than V14 julian can reach. RNG selects the branch index each iterate; the catalog "warp" diagram is omitted since the visual signal is the per-branch superposition.',
+    params: [
+      { name: 'power',   default: 3, min: 2, max: 8,  step: 1 },
+      { name: 'divisor', default: 2, min: 1, max: 8,  step: 1 },
+    ],
+  },
+  {
+    idx: V.glynnia,
+    name: 'glynnia',
+    source: sourceForIdx(V.glynnia),
+    formula: 'V_{110}(x, y) = \\begin{cases} \\tfrac{w\\sqrt{2}}{2}(\\sqrt{r+x},\\; -\\tfrac{y}{\\sqrt{r+x}}) & r\\geq 1,\\, \\text{coin}>0.5 \\\\ \\tfrac{w}{\\sqrt{r(y^2+(r+x)^2)}}(r+x,\\; y) & r\\geq 1,\\, \\text{coin}\\leq 0.5 \\\\ \\text{mirrored sign inside disk} \\end{cases}',
+    blurb: 'Glynn-inspired bipolar warp by eralex61. Coin-flips between a √(r+x) split and a 1/√(...) split, with mirrored signs inside the unit disk — produces the four-leaf clover and arc-pair textures characteristic of the Apophysis 7X glynn family. The diagram shows the dominant outside-disk, coin>0.5 branch — the other three branches superimpose at render time.',
+    warpFn: (x, y) => {
+      const vvar2 = Math.SQRT2 * 0.5;
+      const r = Math.sqrt(x * x + y * y);
+      // Dominant branch: r>=1, coin>0.5 — the most visually-loaded leaf.
+      const inner = r + x;
+      if (inner <= 1e-30) return [x, y];
+      const d = Math.sqrt(inner);
+      return [vvar2 * d, -(vvar2 / d) * y];
+    },
+  },
+  {
+    idx: V.loonie3,
+    name: 'loonie3',
+    source: sourceForIdx(V.loonie3),
+    formula: 'V_{111}(x, y) = w\\sqrt{w^2/r_2 - 1}\\,(x, y),\\; r_2 = (x^2+y^2)^2/x^2 \\text{ if } x>\\varepsilon\\text{, else identity}',
+    blurb: 'Half-plane gated loonie variant by dark-beam. Like V71 loonie but uses (r²/x)² as the radius proxy when x is positive, identity branch outside — produces a sharp asymmetric cutout that the symmetric loonie/loonie2 family lacks.',
+    warpFn: (x, y) => {
+      const w = 1;
+      const sqrvvar = w * w;
+      const SMALL_EPSILON = 1e-30;
+      let r2 = 2 * sqrvvar;
+      if (x > SMALL_EPSILON) {
+        const num = x * x + y * y;
+        const q = num / x;
+        r2 = q * q;
+      }
+      if (r2 < sqrvvar) {
+        const r = Math.sqrt(sqrvvar / r2 - 1.0);
+        return [r * x, r * y];
+      }
+      return [x, y];
+    },
+  },
+  {
+    idx: V.falloff,
+    name: 'falloff',
+    source: sourceForIdx(V.falloff),
+    formula: 'V_{112}(x, y) = (x, y) + d\\,(\\mu_x r_0,\\; \\mu_y r_1),\\; d = \\max(0,(|p - p_0| - m)\\,r_{max})',
+    blurb: 'Distance-weighted random scatter by Xyrus02 (JWildfire Falloff2 type=0 path). Outside the mindist radius around (x0,y0), each iterate gets a random displacement that grows with distance — produces a soft-edged "halo" around the center point. Z-axis params (mul_z, z0) and the color/invert flags dropped to fit pyr3\'s 2D 8-slot seam; the type=1 (radial) and type=2 (gaussian) branches live on the sibling V113 falloff2.',
+    params: [
+      { name: 'scatter', default: 1,   min: 0,  max: 4,  step: 0.05 },
+      { name: 'mindist', default: 0.5, min: 0,  max: 4,  step: 0.05 },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4,  step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4,  step: 0.05 },
+    ],
+  },
+  {
+    idx: V.falloff2,
+    name: 'falloff2',
+    source: sourceForIdx(V.falloff2),
+    formula: 'V_{113}: \\text{type } 0 = (x,y)+d(\\mu_x r_0,\\mu_y r_1),\\; 1 = \\text{radial rotate},\\; 2 = \\text{gaussian 2}\\pi\\pi\\text{ shell}',
+    blurb: 'Three-branch falloff by Xyrus02 (JWildfire Falloff2Func). type=0 reproduces V112 falloff; type=1 rotates each iterate around (x0,y0) by a d-weighted angle; type=2 scatters inside a gaussian-shaped angular shell. Z-axis params + invert + mul_c dropped per pyr3\'s 2D 8-slot seam.',
+    params: [
+      { name: 'scatter', default: 1,   min: 0,  max: 4, step: 0.05 },
+      { name: 'type',    default: 0,   min: 0,  max: 2, step: 1 },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4, step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4, step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4, step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4, step: 0.05 },
+      { name: 'mindist', default: 0.5, min: 0,  max: 4, step: 0.05 },
+    ],
+  },
+  {
+    idx: V.falloff3,
+    name: 'falloff3',
+    source: sourceForIdx(V.falloff3),
+    formula: 'V_{114}(x, y) = (x, y) + d\\,\\mu \\cdot r_0\\cos(d r_1\\,2\\pi)\\,(\\cos(d r_2 \\pi),\\; \\sin(d r_2 \\pi))',
+    blurb: 'Gaussian-shell falloff by JWildfire AbstractFalloff3Func, blur_type=0 (gaussian) + blur_shape=0 (circle) default-mode port. Scatters each iterate inside a 2π·π angular shell scaled by the circle-distance — produces a soft-shell glow around (x0,y0). invert=1 flips inside/outside. The blur_type 1/2 (radial/log) and blur_shape 1 (square) selectors, along with Z-axis params + alpha + mul_c, dropped to fit pyr3\'s 2D 8-slot seam.',
+    params: [
+      { name: 'scatter', default: 1,   min: 0,  max: 4, step: 0.05 },
+      { name: 'mul_x',   default: 1,   min: -4, max: 4, step: 0.05 },
+      { name: 'mul_y',   default: 1,   min: -4, max: 4, step: 0.05 },
+      { name: 'x0',      default: 0,   min: -4, max: 4, step: 0.05 },
+      { name: 'y0',      default: 0,   min: -4, max: 4, step: 0.05 },
+      { name: 'mindist', default: 0.5, min: 0,  max: 4, step: 0.05 },
+      { name: 'invert',  default: 0,   min: 0,  max: 1, step: 1 },
+    ],
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

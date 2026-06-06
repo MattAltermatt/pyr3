@@ -167,6 +167,16 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #114 batch 2a — Worley/Voronoi cellular family.
   bwraps: ['cellsize', 'space', 'gain', 'inner_twist', 'outer_twist'],
   crackle: ['cellsize', 'power', 'distort', 'scale'],
+  // #114 batch 2b-a — JWildfire S-tier first half. loonie3 + glynnia
+  // are 0-param (no entries). Z-axis params dropped from falloff
+  // family per pyr3's 2D-only engine; mul_c + invert dropped from
+  // falloff/falloff2 to fit the 8-slot seam (kept on falloff3 since
+  // its blur-type=0+shape=0 default-mode port is the most parameter-
+  // light of the three).
+  juliaq: ['power', 'divisor'],
+  falloff: ['scatter', 'mindist', 'mul_x', 'mul_y', 'x0', 'y0'],
+  falloff2: ['scatter', 'type', 'mul_x', 'mul_y', 'x0', 'y0', 'mindist'],
+  falloff3: ['scatter', 'mul_x', 'mul_y', 'x0', 'y0', 'mindist', 'invert'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -211,6 +221,17 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #114 batch 2a — JWildfire-canonical defaults.
   bwraps: [1, 0, 1, 0, 0],                   // cellsize=1, space, gain=1, inner_twist, outer_twist
   crackle: [1, 0.2, 1, 1],                   // cellsize=1, power=0.2, distort=1, scale=1
+  // #114 batch 2b-a — JWildfire-canonical defaults. juliaq's JWF
+  // default is a random power 2..7; pyr3 picks power=3/divisor=2 as
+  // a visually-active centered default (matches the canonical julia2
+  // showcase shape). The falloff trio's JWF UI defaults match here
+  // 1:1 (scatter=1, mindist=0.5, mul_*=1, x0=y0=0). For falloff2 the
+  // type=0 default reproduces the simplest (and most-rendered) of the
+  // three branches; users discover types 1/2 via the catalog slider.
+  juliaq: [3, 2],                            // power=3, divisor=2
+  falloff: [1, 0.5, 1, 1, 0, 0],             // scatter=1, mindist=0.5, mul_x=1, mul_y=1, x0, y0
+  falloff2: [1, 0, 1, 1, 0, 0, 0.5],         // scatter=1, type=0, mul_x=1, mul_y=1, x0, y0, mindist=0.5
+  falloff3: [1, 1, 1, 0, 0, 0.5, 0],         // scatter=1, mul_x=1, mul_y=1, x0, y0, mindist=0.5, invert
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

@@ -162,6 +162,20 @@ export const V = {
   // JWildfire BWraps2Func + CrackleFunc (LGPL-2.1+, see NOTICE.md).
   bwraps: 107,
   crackle: 108,
+  // #114 batch 2b-a — JWildfire S-tier first half. Six well-loved
+  // community variations from JWildfire's plugin pack (LGPL-2.1+,
+  // see NOTICE.md). juliaq/glynnia/loonie3 are 0–2 param mathematical
+  // siblings of existing pyr3 vars; the falloff trio (falloff =
+  // Falloff2-type0 / falloff2 = full Falloff2Func / falloff3 =
+  // AbstractFalloff3Func gaussian-circle path) are RNG-driven 2D-only
+  // ports — Z-axis params and the rarely-used invert/mul_c/blur-type-
+  // shape selectors dropped to fit the 8-slot seam.
+  juliaq: 109,
+  glynnia: 110,
+  loonie3: 111,
+  falloff: 112,
+  falloff2: 113,
+  falloff3: 114,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -1792,5 +1806,205 @@ export function ts_var_mobius(i: VarInput): VarOutput {
   return {
     x: rad_v * (re_u * re_v + im_u * im_v),
     y: rad_v * (im_u * re_v - re_u * im_v),
+  };
+}
+
+// =====================================================================
+// #114 batch 2b-a — JWildfire S-tier first half.
+// V109..V114. Source: JWildfire (LGPL-2.1+); see NOTICE.md.
+// =====================================================================
+
+// var_juliaq (chaos.wgsl) — JWildfire JuliaQFunc.java. 2 params
+// (power, divisor) + 1 RNG call. Author: Peter Sdobnov ("Zueuk").
+// Generalized julia — divisor over power decouples branch count
+// from rotation. JWF's `random(Integer.MAX_VALUE) * inv_power_2pi`
+// reduces to "pick discrete branch n in [0, power), rotate by
+// n·(2π/power)" since adjacent integers fold mod 2π — equivalent
+// to `floor(rand01() * |power|)`. randBranch (∈ [0, |power|)) is
+// supplied externally so the impl is deterministic.
+export function ts_var_juliaq(i: VarInput): VarOutput {
+  const power = i.params?.["power"] ?? 3;
+  const divisor = i.params?.["divisor"] ?? 2;
+  const absPower = Math.max(1, Math.abs(power));
+  const inv_power = divisor / power;
+  const half_inv_power = 0.5 * inv_power;
+  const inv_power_2pi = (2 * PI) / power;
+  const branch = i.randBranch ?? 0;
+  const a = Math.atan2(i.ty, i.tx) * inv_power + branch * inv_power_2pi;
+  const r = i.weight * Math.pow(i.tx * i.tx + i.ty * i.ty, half_inv_power);
+  // unused but referenced to keep eslint quiet on the precalc
+  void absPower;
+  return { x: r * Math.cos(a), y: r * Math.sin(a) };
+}
+
+// var_glynnia (chaos.wgsl) — JWildfire GlynniaFunc.java. 0 params,
+// 1 RNG call (discrete coin-flip branch). Author: eralex61. Two
+// nested branches: outside vs inside unit disk × coin-flip → 4
+// sub-formulas. precalc: _vvar2 = w·√2/2. randBranch ∈ {0, 1}.
+export function ts_var_glynnia(i: VarInput): VarOutput {
+  const branch = i.randBranch ?? 0;
+  const vvar2 = i.weight * Math.SQRT2 * 0.5;
+  const r = Math.sqrt(i.tx * i.tx + i.ty * i.ty);
+  if (r >= 1.0) {
+    if (branch === 1) {
+      const d = Math.sqrt(r + i.tx);
+      if (d === 0) return { x: 0, y: 0 };
+      return { x: vvar2 * d, y: -(vvar2 / d) * i.ty };
+    } else {
+      const d = r + i.tx;
+      const dx = Math.sqrt(r * (i.ty * i.ty + d * d));
+      if (dx === 0) return { x: 0, y: 0 };
+      const rr = i.weight / dx;
+      return { x: rr * d, y: rr * i.ty };
+    }
+  } else {
+    if (branch === 1) {
+      const d = Math.sqrt(r + i.tx);
+      if (d === 0) return { x: 0, y: 0 };
+      return { x: -vvar2 * d, y: -(vvar2 / d) * i.ty };
+    } else {
+      const d = r + i.tx;
+      const dx = Math.sqrt(r * (i.ty * i.ty + d * d));
+      if (dx === 0) return { x: 0, y: 0 };
+      const rr = i.weight / dx;
+      return { x: -rr * d, y: rr * i.ty };
+    }
+  }
+}
+
+// var_loonie3 (chaos.wgsl) — JWildfire Loonie3Func.java. 0 params,
+// no RNG. Author: dark-beam. Like loonie but the "radius" is
+// (r²/x)² when x > SMALL_EPSILON, else 2·w² (escape-shape outside
+// the right half-plane). precalc: _sqrvvar = w².
+export function ts_var_loonie3(i: VarInput): VarOutput {
+  const sqrvvar = i.weight * i.weight;
+  let r2 = 2 * sqrvvar;
+  const SMALL_EPSILON = 1e-30;
+  if (i.tx > SMALL_EPSILON) {
+    const num = i.tx * i.tx + i.ty * i.ty;
+    const q = num / i.tx;
+    r2 = q * q;
+  }
+  if (r2 < sqrvvar) {
+    const rr = i.weight * Math.sqrt(sqrvvar / r2 - 1.0);
+    return { x: rr * i.tx, y: rr * i.ty };
+  }
+  return { x: i.weight * i.tx, y: i.weight * i.ty };
+}
+
+// var_falloff (chaos.wgsl) — JWildfire Falloff2Func.java type=0 path
+// (Xyrus02-origin). 6 params (scatter, mindist, mul_x, mul_y, x0, y0).
+// 2 RNG calls. The simplest of the falloff family — moves each iterate
+// away from (x0,y0) by a distance-weighted random offset. Z-axis
+// params (mul_z/z0/mul_c/invert) dropped to fit pyr3's 2D engine;
+// the type selector is dropped here (caller wants only type=0); the
+// `falloff2` entry handles all three branches. Documented in the
+// catalog blurb. randValues[0..1] supply the two pContext.random()
+// draws.
+export function ts_var_falloff(i: VarInput): VarOutput {
+  const scatter = i.params?.["scatter"] ?? 1;
+  const mindist = i.params?.["mindist"] ?? 0.5;
+  const mul_x = i.params?.["mul_x"] ?? 1;
+  const mul_y = i.params?.["mul_y"] ?? 1;
+  const x0 = i.params?.["x0"] ?? 0;
+  const y0 = i.params?.["y0"] ?? 0;
+  const rmax = 0.04 * scatter;
+  const dx = i.tx - x0;
+  const dy = i.ty - y0;
+  let d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 0) d = 0;
+  d = (d - mindist) * rmax;
+  if (d < 0) d = 0;
+  const r0 = i.randValues?.[0] ?? 0;
+  const r1 = i.randValues?.[1] ?? 0;
+  return {
+    x: i.weight * (i.tx + mul_x * r0 * d),
+    y: i.weight * (i.ty + mul_y * r1 * d),
+  };
+}
+
+// var_falloff2 (chaos.wgsl) — JWildfire Falloff2Func.java FULL (all 3
+// type branches: 0=default, 1=radial, 2=gaussian). 7 params
+// (scatter, type, mul_x, mul_y, x0, y0, mindist). 2–4 RNG calls
+// depending on branch. Author: Xyrus02. Z-axis params + invert + mul_c
+// dropped to fit the 2D engine and 8-slot seam.
+export function ts_var_falloff2(i: VarInput): VarOutput {
+  const scatter = i.params?.["scatter"] ?? 1;
+  const typ = Math.max(0, Math.min(2, Math.trunc(i.params?.["type"] ?? 0)));
+  const mul_x = i.params?.["mul_x"] ?? 1;
+  const mul_y = i.params?.["mul_y"] ?? 1;
+  const x0 = i.params?.["x0"] ?? 0;
+  const y0 = i.params?.["y0"] ?? 0;
+  const mindist = i.params?.["mindist"] ?? 0.5;
+  const rmax = 0.04 * scatter;
+  const dx = i.tx - x0;
+  const dy = i.ty - y0;
+  let d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 0) d = 0;
+  d = (d - mindist) * rmax;
+  if (d < 0) d = 0;
+  const r0 = i.randValues?.[0] ?? 0;
+  const r1 = i.randValues?.[1] ?? 0;
+  const r2 = i.randValues?.[2] ?? 0;
+  const r3 = i.randValues?.[3] ?? 0;
+  if (typ === 1) {
+    // radial: rotate around (x0,y0) by a d-scaled random angle, scale radius
+    const phi = Math.atan2(dy, dx) + mul_y * d * r1;
+    const r_in = Math.sqrt(dx * dx + dy * dy);
+    const rr = r_in + mul_x * r0 * d;
+    return {
+      x: i.weight * (x0 + rr * Math.cos(phi)),
+      y: i.weight * (y0 + rr * Math.sin(phi)),
+    };
+  } else if (typ === 2) {
+    // gaussian: 2π-spread angular scatter
+    const sigma = d * r1 * 2 * PI;
+    const phi = d * r2 * PI;
+    const rad = d * r0;
+    return {
+      x: i.weight * (i.tx + mul_x * rad * Math.cos(sigma) * Math.cos(phi)),
+      y: i.weight * (i.ty + mul_y * rad * Math.cos(sigma) * Math.sin(phi)),
+    };
+  }
+  // default (type=0): plain distance-weighted scatter
+  void r3;
+  return {
+    x: i.weight * (i.tx + mul_x * r0 * d),
+    y: i.weight * (i.ty + mul_y * r1 * d),
+  };
+}
+
+// var_falloff3 (chaos.wgsl) — JWildfire AbstractFalloff3Func, blur_type=0
+// (gaussian) + blur_shape=0 (circle) path. 7 params (scatter, mul_x,
+// mul_y, x0, y0, mindist, invert). 3 RNG calls. Default-mode port —
+// blur_type 1/2 (radial/log) and blur_shape 1 (square) dropped to keep
+// behavior matching the JWildfire UI default, plus Z params dropped per
+// the 2D constraint. Documented in blurb.
+export function ts_var_falloff3(i: VarInput): VarOutput {
+  const scatter = i.params?.["scatter"] ?? 1;
+  const mul_x = i.params?.["mul_x"] ?? 1;
+  const mul_y = i.params?.["mul_y"] ?? 1;
+  const x0 = i.params?.["x0"] ?? 0;
+  const y0 = i.params?.["y0"] ?? 0;
+  const mindist = i.params?.["mindist"] ?? 0.5;
+  const invertFlag = (i.params?.["invert"] ?? 0) !== 0;
+  const rmax = 0.04 * scatter;
+  // BS_CIRCLE distance
+  const dx = i.tx - x0;
+  const dy = i.ty - y0;
+  const radius = Math.sqrt(dx * dx + dy * dy);
+  const base = invertFlag ? Math.max(1 - radius, 0) : Math.max(radius, 0);
+  const dist = Math.max((base - mindist) * rmax, 0);
+  const r0 = i.randValues?.[0] ?? 0;
+  const r1 = i.randValues?.[1] ?? 0;
+  const r2 = i.randValues?.[2] ?? 0;
+  // BT_GAUSSIAN (blur_type=0): scatter inside a 2π·π angular window
+  const sigma = dist * r1 * 2 * PI;
+  const phi = dist * r2 * PI;
+  const rad = dist * r0;
+  const sigma_c = Math.cos(sigma);
+  return {
+    x: i.weight * (i.tx + mul_x * rad * sigma_c * Math.cos(phi)),
+    y: i.weight * (i.ty + mul_y * rad * sigma_c * Math.sin(phi)),
   };
 }

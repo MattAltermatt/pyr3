@@ -1814,6 +1814,216 @@ fn var_crackle(
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 2b-a — JWildfire S-tier first half. Sources: JWildfire
+// (LGPL-2.1+); see NOTICE.md. pyr3 reimplements each formula in WGSL;
+// no JWF code is byte-copied. Z-axis params dropped per pyr3's 2D
+// engine; selected per-variation drops noted inline.
+// ---------------------------------------------------------------------
+
+// var_juliaq — JWildfire JuliaQFunc.java. 2 params (power, divisor)
+// + 1 RNG call. Author: Peter Sdobnov ("Zueuk"). Generalized julia
+// where `divisor` decouples the rotation step from the branch count.
+// JWF's `random(Integer.MAX_VALUE) * inv_power_2pi` folds mod 2π —
+// equivalent to picking a discrete branch index n in [0, |power|)
+// and rotating by n·(2π/power). `power` is an int (cast at use).
+// `divisor` is a real number (JWF int but accepts non-integer values
+// at runtime); we keep it f32.
+fn var_juliaq(p: vec2f, w: f32, power: f32, divisor: f32, wi: u32) -> vec2f {
+  let power_safe = select(power, 1.0, abs(power) < 1.0e-30);
+  let abs_pow = max(1.0, abs(power_safe));
+  let inv_power = divisor / power_safe;
+  let half_inv_power = 0.5 * inv_power;
+  let inv_power_2pi = TAU / power_safe;
+  let r01 = rand01(wi);
+  let n = floor(r01 * abs_pow);
+  let a = atan2(p.y, p.x) * inv_power + n * inv_power_2pi;
+  // Folded back to bounded range manually before safe_*.
+  let r = w * pow(p.x * p.x + p.y * p.y, half_inv_power);
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_glynnia — JWildfire GlynniaFunc.java. 0 params, 1 RNG call
+// (discrete coin-flip branch). Author: eralex61. Two sub-formulas
+// inside/outside the unit disk, each with a 50/50 secondary branch
+// → 4 leaves total. precalc: vvar2 = w·√2/2. Math-degenerate cases
+// (d==0 in either branch) return (0,0); the chaos game's bad-value
+// reseed handles the propagation.
+fn var_glynnia(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let vvar2 = w * 0.7071067811865476;
+  let r = sqrt(p.x * p.x + p.y * p.y);
+  let coin = rand01(wi);
+  if (r >= 1.0) {
+    if (coin > 0.5) {
+      let inner = r + p.x;
+      if (inner <= 0.0) { return vec2f(0.0, 0.0); }
+      let d = sqrt(inner);
+      if (d == 0.0) { return vec2f(0.0, 0.0); }
+      return vec2f(vvar2 * d, -(vvar2 / d) * p.y);
+    } else {
+      let d = r + p.x;
+      let radicand = r * (p.y * p.y + d * d);
+      if (radicand <= 0.0) { return vec2f(0.0, 0.0); }
+      let dx = sqrt(radicand);
+      if (dx == 0.0) { return vec2f(0.0, 0.0); }
+      let rr = w / dx;
+      return vec2f(rr * d, rr * p.y);
+    }
+  } else {
+    if (coin > 0.5) {
+      let inner = r + p.x;
+      if (inner <= 0.0) { return vec2f(0.0, 0.0); }
+      let d = sqrt(inner);
+      if (d == 0.0) { return vec2f(0.0, 0.0); }
+      return vec2f(-vvar2 * d, -(vvar2 / d) * p.y);
+    } else {
+      let d = r + p.x;
+      let radicand = r * (p.y * p.y + d * d);
+      if (radicand <= 0.0) { return vec2f(0.0, 0.0); }
+      let dx = sqrt(radicand);
+      if (dx == 0.0) { return vec2f(0.0, 0.0); }
+      let rr = w / dx;
+      return vec2f(-rr * d, rr * p.y);
+    }
+  }
+}
+
+// var_loonie3 — JWildfire Loonie3Func.java. 0 params, no RNG.
+// Author: dark-beam. Numbered variant of loonie/loonie2. The
+// "radius" is (r²/x)² when x > tiny eps (a half-plane gating),
+// else 2·w² (outside-half-plane escape branch). precalc: sqrvvar = w².
+// Identity branch when r2 >= sqrvvar.
+fn var_loonie3(p: vec2f, w: f32) -> vec2f {
+  let sqrvvar = w * w;
+  let SMALL_EPSILON: f32 = 1.0e-30;
+  var r2: f32 = 2.0 * sqrvvar;
+  if (p.x > SMALL_EPSILON) {
+    let num = p.x * p.x + p.y * p.y;
+    let q = num / p.x;
+    r2 = q * q;
+  }
+  if (r2 < sqrvvar) {
+    let r = w * sqrt(sqrvvar / r2 - 1.0);
+    return vec2f(r * p.x, r * p.y);
+  }
+  return vec2f(w * p.x, w * p.y);
+}
+
+// var_falloff — JWildfire Falloff2Func.java type=0 (default) branch
+// (Xyrus02-origin). 6 params (scatter, mindist, mul_x, mul_y, x0, y0)
+// + 2 RNG calls. Distance-weighted random scatter outside a circle
+// centered at (x0,y0). Z-axis params (mul_z/z0) + the invert flag +
+// mul_c (color jitter, no analog in pyr3's chain) dropped to fit the
+// 2D engine and 8-slot seam — kept in `var_falloff2` where they're
+// part of the type-branch surface.
+fn var_falloff(
+  p: vec2f, w: f32,
+  scatter: f32, mindist: f32,
+  mul_x: f32, mul_y: f32,
+  x0: f32, y0: f32,
+  wi: u32,
+) -> vec2f {
+  let rmax = 0.04 * scatter;
+  let dx = p.x - x0;
+  let dy = p.y - y0;
+  var d = sqrt(dx * dx + dy * dy);
+  if (d < 0.0) { d = 0.0; }
+  d = (d - mindist) * rmax;
+  if (d < 0.0) { d = 0.0; }
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  return vec2f(
+    w * (p.x + mul_x * r0 * d),
+    w * (p.y + mul_y * r1 * d),
+  );
+}
+
+// var_falloff2 — JWildfire Falloff2Func.java, ALL THREE type
+// branches (0=default, 1=radial, 2=gaussian). 7 params (scatter,
+// type, mul_x, mul_y, x0, y0, mindist). 2–3 RNG calls depending
+// on branch. Author: Xyrus02. Z-axis params + invert + mul_c
+// dropped per the 2D-only engine and 8-slot seam.
+fn var_falloff2(
+  p: vec2f, w: f32,
+  scatter: f32, typ: f32,
+  mul_x: f32, mul_y: f32,
+  x0: f32, y0: f32,
+  mindist: f32,
+  wi: u32,
+) -> vec2f {
+  let rmax = 0.04 * scatter;
+  let dx = p.x - x0;
+  let dy = p.y - y0;
+  var d = sqrt(dx * dx + dy * dy);
+  if (d < 0.0) { d = 0.0; }
+  d = (d - mindist) * rmax;
+  if (d < 0.0) { d = 0.0; }
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  let r2 = rand01(wi);
+  let t = i32(clamp(typ, 0.0, 2.0));
+  if (t == 1) {
+    // radial: rotate around (x0,y0) by a distance-weighted random angle
+    let phi = atan2(dy, dx) + mul_y * d * r1;
+    let r_in = sqrt(dx * dx + dy * dy);
+    let rr = r_in + mul_x * r0 * d;
+    return vec2f(
+      w * (x0 + rr * safe_cos(phi)),
+      w * (y0 + rr * safe_sin(phi)),
+    );
+  } else if (t == 2) {
+    // gaussian: 2π·π angular scatter
+    let sigma = d * r1 * TAU;
+    let phi = d * r2 * PI;
+    let rad = d * r0;
+    let sigma_c = safe_cos(sigma);
+    return vec2f(
+      w * (p.x + mul_x * rad * sigma_c * safe_cos(phi)),
+      w * (p.y + mul_y * rad * sigma_c * safe_sin(phi)),
+    );
+  }
+  // default type=0: plain distance-weighted scatter (matches var_falloff)
+  return vec2f(
+    w * (p.x + mul_x * r0 * d),
+    w * (p.y + mul_y * r1 * d),
+  );
+}
+
+// var_falloff3 — JWildfire AbstractFalloff3Func, blur_type=0 (gaussian)
+// + blur_shape=0 (circle) default-mode path. 7 params (scatter, mul_x,
+// mul_y, x0, y0, mindist, invert). 3 RNG calls. The "blur_type" and
+// "blur_shape" selectors are folded down to the most-common defaults
+// (the JWildfire UI ships these at 0/0); Z-axis params + alpha + mul_c
+// dropped per pyr3's 2D-only engine. invert (0/1) kept since it's a
+// load-bearing visual switch — `invert=1` puts the scatter INSIDE the
+// circle rather than outside.
+fn var_falloff3(
+  p: vec2f, w: f32,
+  scatter: f32, mul_x: f32, mul_y: f32,
+  x0: f32, y0: f32, mindist: f32, invertFlag: f32,
+  wi: u32,
+) -> vec2f {
+  let rmax = 0.04 * scatter;
+  let dx = p.x - x0;
+  let dy = p.y - y0;
+  let radius = sqrt(dx * dx + dy * dy);
+  let base_pos = max(radius, 0.0);
+  let base_inv = max(1.0 - radius, 0.0);
+  let base = select(base_pos, base_inv, invertFlag > 0.5);
+  let dist = max((base - mindist) * rmax, 0.0);
+  let r0 = rand01(wi);
+  let r1 = rand01(wi);
+  let r2 = rand01(wi);
+  let sigma = dist * r1 * TAU;
+  let phi = dist * r2 * PI;
+  let rad = dist * r0;
+  let sigma_c = safe_cos(sigma);
+  return vec2f(
+    w * (p.x + mul_x * rad * sigma_c * safe_cos(phi)),
+    w * (p.y + mul_y * rad * sigma_c * safe_sin(phi)),
+  );
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -1958,6 +2168,13 @@ fn apply_variation(
     // #114 batch 2a — Worley/Voronoi cellular family.
     case 107u: { return var_bwraps(p, w, p0, p1, p2, p3, p4); }
     case 108u: { return var_crackle(p, w, p0, p1, p2, p3); }
+    // #114 batch 2b-a — JWildfire S-tier first half.
+    case 109u: { return var_juliaq(p, w, p0, p1, wi); }
+    case 110u: { return var_glynnia(p, w, wi); }
+    case 111u: { return var_loonie3(p, w); }
+    case 112u: { return var_falloff(p, w, p0, p1, p2, p3, p4, p5, wi); }
+    case 113u: { return var_falloff2(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
+    case 114u: { return var_falloff3(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
