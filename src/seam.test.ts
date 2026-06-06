@@ -79,6 +79,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-primitives.ts',        // /v1/edit shared row/input/dropdown/swatch/pair builders (#103 Phase 7)
   'edit-tooltip.ts',           // /v1/edit info-icon + anchored popover (#103 Phase 7)
   'palette-picker.ts',         // /v1/edit docked palette picker (#103 Phase 9)
+  'edit-slow-render-nudge.ts', // /v1/edit slow-render UX nudge — owns toast DOM (#118)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND

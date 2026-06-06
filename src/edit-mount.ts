@@ -26,6 +26,7 @@ import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import { genomeToJson, genomeFromJson } from './serialize';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
+import { createSlowRenderNudge, type SlowRenderNudgeHandle } from './edit-slow-render-nudge';
 import { setCurrentFlame } from './app-state';
 import { createHistory, type History } from './edit-history';
 import { hasTemplate, resolveTemplate } from './flame-name-template';
@@ -127,6 +128,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const panelHost = document.createElement('div');
   const canvasHost = document.createElement('div');
   canvasHost.className = 'pyr3-edit-canvas-host';
+  // #118 — slow-render nudge needs an absolutely-positioned parent.
+  canvasHost.style.position = 'relative';
   const canvas = document.createElement('canvas');
   canvas.width = preview.width;
   canvas.height = preview.height;
@@ -353,7 +356,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
     opts.onStateChange?.(state);
+    // #118 — measure settle-render wall-clock so the slow-render nudge
+    // can detect a pattern of slow renders during active editing.
+    const renderStart = performance.now();
     await awaitGpuThenMaybeHide(myTicket);
+    nudge?.recordRender(performance.now() - renderStart);
   }
 
   // Lane scheduler. Slow + rebuild lanes now render at LIVE dims (fast). The
@@ -408,7 +415,26 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     }, HISTORY_DEBOUNCE_MS);
   }
 
+  // #118 — slow-render nudge handle. Created once at mount and torn
+  // down with destroy() below. Hosts in the canvas wrapper so it sits
+  // over the render canvas, not the side panel.
+  const nudge: SlowRenderNudgeHandle = createSlowRenderNudge({
+    host: canvasHost,
+    getQuality: () => state.genome.quality ?? 50,
+    setQuality: (q) => {
+      state.genome.quality = q;
+      onPathChange('quality');
+      // The bar's QUALITY ladder re-reads from state.genome via
+      // onStateChange (already called inside onPathChange's downstream
+      // render path), so no separate echo is needed here.
+    },
+  });
+
   function onPathChange(path: string): void {
+    // #118 — record this as user-edit activity for the slow-render nudge
+    // (pan/zoom does NOT route through onPathChange and so does NOT
+    // count as "actively editing").
+    nudge.recordEdit();
     // #103 Phase 6 Task 6.3 — persist the WIP genome to localStorage on every
     // edit. Debounced inside schedulePersist so a slider drag doesn't burn
     // a setItem call per frame; cold-start (below) reads the result back via
@@ -836,6 +862,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       panZoom.destroy();
       scheduler.cancel();
       ui?.destroy();
+      nudge.destroy();
       renderer.destroy();
     },
   };
