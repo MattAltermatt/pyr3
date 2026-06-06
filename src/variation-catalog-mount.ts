@@ -201,6 +201,20 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     rafHandle = requestAnimationFrame(loop);
   }
 
+  // Sync the URL hash to the currently-active section using replaceState
+  // (NOT pushState / location.hash assignment — those flood the back-button
+  // history with every scrolled-past section). The URL stays shareable and
+  // matches what the user is looking at; back button still goes to the
+  // page the user came from.
+  function syncUrlHashTo(idx: number): void {
+    const wrap = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
+    if (!wrap || !wrap.id) return;
+    const target = `#${wrap.id}`;
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  }
+
   // IntersectionObserver picks the section closest to viewport center.
   // The catalog scroll container is the root; threshold steps make us
   // re-evaluate at multiple visibility crossings.
@@ -213,7 +227,10 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
       }
       if (best) {
         const idx = Number((best.target as HTMLElement).dataset.idx);
-        if (Number.isFinite(idx)) setActive(idx);
+        if (Number.isFinite(idx)) {
+          setActive(idx);
+          syncUrlHashTo(idx);
+        }
       }
     },
     {
@@ -238,6 +255,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
         // active section; we still call setActive directly so the sidebar
         // highlight updates immediately even before the scroll settles.
         setActive(idx);
+        syncUrlHashTo(idx);
       }
     },
   });

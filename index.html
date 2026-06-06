@@ -254,6 +254,35 @@
         font-weight: 400;
         margin-left: 0.35rem;
       }
+      .pyr3-cat-section-anchor {
+        color: var(--text-muted);
+        font-family: ui-monospace, monospace;
+        font-weight: 400;
+        font-size: 0.95rem;
+        text-decoration: none;
+        margin-left: 0.55rem;
+        opacity: 0;
+        transition: opacity 120ms, color 120ms;
+        cursor: pointer;
+      }
+      .pyr3-cat-section-head:hover .pyr3-cat-section-anchor,
+      .pyr3-cat-section-anchor:focus-visible {
+        opacity: 0.7;
+      }
+      .pyr3-cat-section-anchor:hover {
+        opacity: 1;
+        color: var(--accent, #f7a23a);
+      }
+      .pyr3-cat-section-anchor.copied {
+        opacity: 1;
+        color: var(--accent, #f7a23a);
+      }
+      .pyr3-cat-section-anchor.copied::after {
+        content: ' copied';
+        font-size: 0.7rem;
+        margin-left: 0.3rem;
+        color: var(--text-muted);
+      }
       .pyr3-cat-section-source {
         font-family: ui-monospace, monospace;
         font-size: 0.7rem;

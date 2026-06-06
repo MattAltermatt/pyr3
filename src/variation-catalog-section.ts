@@ -84,6 +84,28 @@ export function mountSection(
   const name = el('div', 'pyr3-cat-section-name');
   name.append(document.createTextNode(doc.name));
   name.append(el('span', 'pyr3-cat-section-vnum', `· V${doc.idx}`));
+  // Anchor link — copies the deep-link URL to clipboard on click;
+  // hidden on idle, visible on hover (GitHub-style).
+  const anchor = document.createElement('a');
+  anchor.className = 'pyr3-cat-section-anchor';
+  anchor.href = `#v${doc.idx}-${doc.name}`;
+  anchor.textContent = '#';
+  anchor.title = 'copy link to this variation';
+  anchor.setAttribute('aria-label', `permalink to ${doc.name}`);
+  anchor.addEventListener('click', (e) => {
+    // Default href-jump updates the hash. Also copy to clipboard so the
+    // user can paste it elsewhere without scraping the URL bar.
+    const url = `${window.location.origin}${window.location.pathname}#v${doc.idx}-${doc.name}`;
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(url).catch(() => { /* clipboard blocked — silent OK */ });
+    }
+    // Briefly tag the anchor for a "copied!" visual hint.
+    anchor.classList.add('copied');
+    setTimeout(() => anchor.classList.remove('copied'), 800);
+    // Let default navigation update the hash; don't preventDefault.
+    void e;
+  });
+  name.append(anchor);
   head.append(name);
   head.append(el('span', 'pyr3-cat-section-source', SOURCE_LABEL[doc.source] ?? doc.source));
 
