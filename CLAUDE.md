@@ -33,9 +33,8 @@ tests in `npm test` catch the class of regressions it used to guard.
 If the request would add a CPU fallback, fork the engine into separate FE/BE copies, or
 introduce a WASM bridge — push back. Those are not in scope.
 
-If the request would build the visual editor / mutator / vault before the v1.0 ship gate
-passes — push back. Those are explicit GitHub issues (editor #37, Markov-gen #36) in the
-`post-v1` milestone with a hard "much-later" status.
+Markov-chain flame generation (#36) stays a deferred research arc. The visual editor (`/v1/edit`)
+already shipped across many small issues post-v1.0 — `#37` is closed as superseded.
 
 ## Planning lives in GitHub (2026-05-30 pivot)
 
@@ -48,9 +47,12 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. v1.0 and v1.1 have
-  shipped; `v1.2 - gallery and discovery` is the current theme. `post-v1` is the deferred backlog
-  (re-sort into themed milestones as they form). No Project board — milestone-only planning.
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.4
+  have all shipped** (latest: `v1.4.0` on 2026-06-02 — render improvements). The active
+  themed milestones are **Apophysis and JWildfire** (plugin pack #114, gradient editor #115,
+  channel curves #116) and **Mobile rework** (#33). Two parked milestones live off-main and
+  wait on the evolve unpark: **evolve - picbreeder editor surface** and **parked —
+  evolve-page cleanup**. No Project board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
 - **In-repo docs that survive:** `VISION` · `CLAUDE` · `README` (+ `HISTORY.md`, `NOTICE.md`).
