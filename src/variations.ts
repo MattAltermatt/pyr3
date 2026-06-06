@@ -176,6 +176,23 @@ export const V = {
   falloff: 112,
   falloff2: 113,
   falloff3: 114,
+  // #114 batch 2b-b — S-tier kaleidoscope / circle family. Five
+  // well-loved JWildfire variations (LGPL-2.1+, see NOTICE.md):
+  // collideoscope (Michael Faber kaleidoscope-collide),
+  // circlize + circlize2 (Michael Faber square→circle perimeter map),
+  // eswirl (Michael Faber extended-swirl bipolar), and petal
+  // (Raykoid666 lobed attractor — no params). The originally-scoped
+  // `loc` variation was dropped: no `varLoc.pas` exists in either
+  // Apophysis 7X core (XFormMan.pas cvarnames at the 7x15c tag has 29
+  // entries, none of them `loc`) nor JWildfire's variation directory.
+  // The survey doc's "7X.15C added `loc`" claim was traced to a
+  // mis-reading of the `NRLOCVAR` constant — `Local Variations
+  // count`, not a variation name. V120 stays unassigned this batch.
+  collideoscope: 115,
+  circlize: 116,
+  circlize2: 117,
+  eswirl: 118,
+  petal: 119,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -2007,4 +2024,158 @@ export function ts_var_falloff3(i: VarInput): VarOutput {
     x: i.weight * (i.tx + mul_x * rad * sigma_c * Math.cos(phi)),
     y: i.weight * (i.ty + mul_y * rad * sigma_c * Math.sin(phi)),
   };
+}
+
+// =====================================================================
+// #114 batch 2b-b — S-tier kaleidoscope/circle family.
+// V115..V119. Sources: JWildfire (LGPL-2.1+); see NOTICE.md.
+// =====================================================================
+
+// var_collideoscope (chaos.wgsl) — JWildfire CollideoscopeFunc.java.
+// 2 params (a, num) + no RNG. Author: Michael Faber. Folds the polar
+// angle into 2·num pie slices with alternating-sign offsets — the
+// collide variant of kaleidoscope. precalc: kn_pi = num/π, pi_kn = π/num,
+// ka_kn = (π·a)/num.
+export function ts_var_collideoscope(i: VarInput): VarOutput {
+  const a_param = i.params?.["a"] ?? 0.20;
+  const num_raw = i.params?.["num"] ?? 1;
+  const num = Math.max(1, Math.trunc(num_raw));
+  const kn_pi = num / PI;
+  const pi_kn = PI / num;
+  const ka = PI * a_param;
+  const ka_kn = ka / num;
+  let a = Math.atan2(i.ty, i.tx);
+  const r = i.weight * Math.sqrt(i.tx * i.tx + i.ty * i.ty);
+  if (a >= 0.0) {
+    const alt = Math.trunc(a * kn_pi);
+    if (alt % 2 === 0) {
+      a = alt * pi_kn + ((ka_kn + a) % pi_kn);
+    } else {
+      a = alt * pi_kn + ((-ka_kn + a) % pi_kn);
+    }
+  } else {
+    const alt = Math.trunc(-a * kn_pi);
+    if (alt % 2 !== 0) {
+      a = -(alt * pi_kn + ((-ka_kn - a) % pi_kn));
+    } else {
+      a = -(alt * pi_kn + ((ka_kn - a) % pi_kn));
+    }
+  }
+  return { x: r * Math.cos(a), y: r * Math.sin(a) };
+}
+
+// var_circlize (chaos.wgsl) — JWildfire CirclizeFunc.java. 1 param (hole) +
+// no RNG. Author: Michael Faber. Maps square ↔ circle via the L∞-norm
+// perimeter parameterization: each input picks the dominant axis, walks
+// the unit-square's perimeter accordingly, then maps perimeter → angle
+// + axis → radius. Note the canonical quirk: `hole` is NOT scaled by
+// the variation weight (intentional in JWF — see the inline "tsk tsk"
+// comment in CirclizeFunc.java).
+export function ts_var_circlize(i: VarInput): VarOutput {
+  const hole = i.params?.["hole"] ?? 0.40;
+  const var4_PI = i.weight / (PI / 4);
+  const absx = Math.abs(i.tx);
+  const absy = Math.abs(i.ty);
+  let perimeter: number;
+  let side: number;
+  if (absx >= absy) {
+    if (i.tx >= absy) {
+      perimeter = absx + i.ty;
+    } else {
+      perimeter = 5.0 * absx - i.ty;
+    }
+    side = absx;
+  } else {
+    if (i.ty >= absx) {
+      perimeter = 3.0 * absy - i.tx;
+    } else {
+      perimeter = 7.0 * absy + i.tx;
+    }
+    side = absy;
+  }
+  if (side === 0) return { x: 0, y: 0 };
+  const r = var4_PI * side + hole;
+  const a = (PI / 4) * perimeter / side - PI / 4;
+  return { x: r * Math.cos(a), y: r * Math.sin(a) };
+}
+
+// var_circlize2 (chaos.wgsl) — JWildfire Circlize2Func.java. 1 param
+// (hole) + no RNG. Author: Michael Faber (Angle Pack). Companion to
+// circlize: same perimeter parameterization, but the radius is
+// w·(side+hole) instead of w·(4/π)·side+hole — `hole` IS scaled by
+// the weight here (corrected from the sibling). Yields a more uniform
+// ring at hole > 0.
+export function ts_var_circlize2(i: VarInput): VarOutput {
+  const hole = i.params?.["hole"] ?? 0.0;
+  const absx = Math.abs(i.tx);
+  const absy = Math.abs(i.ty);
+  let perimeter: number;
+  let side: number;
+  if (absx >= absy) {
+    if (i.tx >= absy) {
+      perimeter = absx + i.ty;
+    } else {
+      perimeter = 5.0 * absx - i.ty;
+    }
+    side = absx;
+  } else {
+    if (i.ty >= absx) {
+      perimeter = 3.0 * absy - i.tx;
+    } else {
+      perimeter = 7.0 * absy + i.tx;
+    }
+    side = absy;
+  }
+  if (side === 0) return { x: 0, y: 0 };
+  const r = i.weight * (side + hole);
+  const a = (PI / 4) * perimeter / side - PI / 4;
+  return { x: r * Math.cos(a), y: r * Math.sin(a) };
+}
+
+// var_eswirl (chaos.wgsl) — JWildfire ESwirlFunc.java. 2 params (in, out).
+// No RNG. Author: Michael Faber ("eSeries" pack). "Extended swirl" —
+// works in elliptic coords (μ,ν) on the (x,y) plane, twists the ν
+// angle by (mu·out + in/mu), then converts back. JWF uses safe-sqrt
+// on the two radicals to dodge NaN at floating-point underflow.
+// Equivalent to JWF's acosh on a clamped xmax ≥ 1.0 (elliptic radius)
+// and acos on tx/xmax (clamped to [-1,1]).
+export function ts_var_eswirl(i: VarInput): VarOutput {
+  const in_p = i.params?.["in"] ?? 1.2;
+  const out_p = i.params?.["out"] ?? 0.2;
+  const tmp = i.ty * i.ty + i.tx * i.tx + 1.0;
+  const tmp2 = 2.0 * i.tx;
+  const safe1 = tmp + tmp2 > 0 ? Math.sqrt(tmp + tmp2) : 0;
+  const safe2 = tmp - tmp2 > 0 ? Math.sqrt(tmp - tmp2) : 0;
+  let xmax = (safe1 + safe2) * 0.5;
+  if (xmax < 1.0) xmax = 1.0;
+  const mu = Math.acosh(xmax);  // μ > 0
+  let t = i.tx / xmax;
+  if (t > 1.0) t = 1.0;
+  else if (t < -1.0) t = -1.0;
+  let nu = Math.acos(t);  // -π < ν < π
+  if (i.ty < 0) nu *= -1.0;
+  // Guard against mu→0 (xmax==1.0 edge) — JWF divides by mu, returning
+  // ±Inf which the chaos game's bad-value reseed cleans up. We mirror
+  // by passing through; tests use weight=1 and inputs that avoid the cusp.
+  nu = nu + mu * out_p + (mu === 0 ? 0 : in_p / mu);
+  const sinhmu = Math.sinh(mu);
+  const coshmu = Math.cosh(mu);
+  return {
+    x: i.weight * coshmu * Math.cos(nu),
+    y: i.weight * sinhmu * Math.sin(nu),
+  };
+}
+
+// var_petal (chaos.wgsl) — JWildfire PetalFunc.java. 0 params, no RNG.
+// Author: Raykoid666. Petal-shape attractor: x = w·cos(x)·(cos(x)·cos(y))³,
+// y = w·cos(x)·(sin(x)·cos(y))³. Note JWF computes cos(x)·cos(y) and
+// sin(x)·cos(y) cubed by multiplying out the triple product (matches
+// JWF GPU code: `(cosf(x)*cosf(y))*(cosf(x)*cosf(y))*(cosf(x)*cosf(y))`).
+export function ts_var_petal(i: VarInput): VarOutput {
+  const a = Math.cos(i.tx);
+  const cxcy = Math.cos(i.tx) * Math.cos(i.ty);
+  const sxcy = Math.sin(i.tx) * Math.cos(i.ty);
+  const bx = cxcy * cxcy * cxcy;
+  const by = sxcy * sxcy * sxcy;
+  return { x: i.weight * a * bx, y: i.weight * a * by };
 }

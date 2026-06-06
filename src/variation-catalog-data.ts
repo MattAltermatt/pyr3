@@ -1833,6 +1833,155 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'invert',  default: 0,   min: 0,  max: 1, step: 1 },
     ],
   },
+  // #114 batch 2b-b — S-tier kaleidoscope/circle family.
+  {
+    idx: V.collideoscope,
+    name: 'collideoscope',
+    source: sourceForIdx(V.collideoscope),
+    formula: 'V_{115}(x, y) = r\\,(\\cos a^{*},\\; \\sin a^{*}),\\; a^{*} = \\text{fold}_{2n}(\\theta, a)',
+    blurb: 'Kaleidoscope-collide by Michael Faber (JWildfire). Folds the polar angle into 2·num pie slices with alternating-sign offsets — two adjacent slices "collide" in mirror-image, producing the eponymous splayed-petal pattern. JWF\'s class default a=0.20, num=1 (with randomize() spreading num∈[1,10]).',
+    params: [
+      { name: 'a',   default: 0.20, min: 0, max: 1,  step: 0.01 },
+      { name: 'num', default: 1,    min: 1, max: 10, step: 1 },
+    ],
+    warpFn: (x, y) => {
+      const num = 1;
+      const a_param = 0.20;
+      const kn_pi = num / Math.PI;
+      const pi_kn = Math.PI / num;
+      const ka = Math.PI * a_param;
+      const ka_kn = ka / num;
+      let a = Math.atan2(y, x);
+      const r = Math.sqrt(x * x + y * y);
+      if (a >= 0.0) {
+        const alt = Math.trunc(a * kn_pi);
+        if (alt % 2 === 0) {
+          a = alt * pi_kn + ((ka_kn + a) % pi_kn);
+        } else {
+          a = alt * pi_kn + ((-ka_kn + a) % pi_kn);
+        }
+      } else {
+        const alt = Math.trunc(-a * kn_pi);
+        if (alt % 2 !== 0) {
+          a = -(alt * pi_kn + ((-ka_kn - a) % pi_kn));
+        } else {
+          a = -(alt * pi_kn + ((ka_kn - a) % pi_kn));
+        }
+      }
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.circlize,
+    name: 'circlize',
+    source: sourceForIdx(V.circlize),
+    formula: 'V_{116}(x, y) = (r\\cos a,\\; r\\sin a),\\; r = \\tfrac{4w}{\\pi}\\,\\text{side} + h,\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
+    blurb: 'Square → circle perimeter map by Michael Faber (JWildfire). Each iterate picks the dominant axis (the L∞-norm "side"), computes its position along the unit square\'s perimeter, then maps that perimeter → polar angle and side → radius. Note the canonical JWF quirk: the `hole` offset is intentionally NOT scaled by the variation weight (the corrected sibling circlize2 fixes this).',
+    params: [
+      { name: 'hole', default: 0.40, min: -1, max: 1, step: 0.01 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const hole = 0.40;
+      const var4_PI = w / (Math.PI / 4);
+      const absx = Math.abs(x);
+      const absy = Math.abs(y);
+      let perimeter: number;
+      let side: number;
+      if (absx >= absy) {
+        if (x >= absy) perimeter = absx + y;
+        else perimeter = 5.0 * absx - y;
+        side = absx;
+      } else {
+        if (y >= absx) perimeter = 3.0 * absy - x;
+        else perimeter = 7.0 * absy + x;
+        side = absy;
+      }
+      if (side === 0) return [0, 0];
+      const r = var4_PI * side + hole;
+      const a = (Math.PI / 4) * perimeter / side - Math.PI / 4;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.circlize2,
+    name: 'circlize2',
+    source: sourceForIdx(V.circlize2),
+    formula: 'V_{117}(x, y) = w(\\text{side}+h)\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
+    blurb: 'Companion variation to V116 circlize by Michael Faber (Angle Pack). Same square → circle perimeter parameterization, but the radius is w·(side+h) instead of (4w/π)·side+h — the `hole` offset IS scaled by the weight here, correcting the sibling\'s quirk. Produces a more uniform ring at non-zero hole.',
+    params: [
+      { name: 'hole', default: 0.0, min: -1, max: 1, step: 0.01 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const hole = 0.0;
+      const absx = Math.abs(x);
+      const absy = Math.abs(y);
+      let perimeter: number;
+      let side: number;
+      if (absx >= absy) {
+        if (x >= absy) perimeter = absx + y;
+        else perimeter = 5.0 * absx - y;
+        side = absx;
+      } else {
+        if (y >= absx) perimeter = 3.0 * absy - x;
+        else perimeter = 7.0 * absy + x;
+        side = absy;
+      }
+      if (side === 0) return [0, 0];
+      const r = w * (side + hole);
+      const a = (Math.PI / 4) * perimeter / side - Math.PI / 4;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.eswirl,
+    name: 'eswirl',
+    source: sourceForIdx(V.eswirl),
+    formula: 'V_{118}(x, y) = w\\,(\\cosh\\mu\\cos\\nu^{*},\\; \\sinh\\mu\\sin\\nu^{*}),\\; \\nu^{*} = \\nu + \\mu\\cdot o + i/\\mu',
+    blurb: 'Extended swirl by Michael Faber (JWildfire "eSeries"). Converts (x, y) to elliptic coords (μ, ν), twists ν by (μ·out + in/μ), then maps back — the in/μ term creates a strong inward spiral, the μ·out term a gentler outward one. Default in=1.2, out=0.2 strikes the canonical "smooth flow" balance.',
+    params: [
+      { name: 'in',  default: 1.2, min: 0, max: 4, step: 0.05 },
+      { name: 'out', default: 0.2, min: 0, max: 4, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1;
+      const in_p = 1.2;
+      const out_p = 0.2;
+      const tmp = y * y + x * x + 1.0;
+      const tmp2 = 2.0 * x;
+      const r1_in = tmp + tmp2;
+      const r2_in = tmp - tmp2;
+      const r1_sqrt = r1_in > 0 ? Math.sqrt(r1_in) : 0;
+      const r2_sqrt = r2_in > 0 ? Math.sqrt(r2_in) : 0;
+      let xmax = (r1_sqrt + r2_sqrt) * 0.5;
+      if (xmax < 1.0) xmax = 1.0;
+      const mu = Math.acosh(xmax);
+      let t = x / xmax;
+      if (t > 1.0) t = 1.0;
+      else if (t < -1.0) t = -1.0;
+      let nu = Math.acos(t);
+      if (y < 0) nu = -nu;
+      const mu_safe = mu === 0 ? 1e-30 : mu;
+      const nu_warp = nu + mu * out_p + in_p / mu_safe;
+      return [w * Math.cosh(mu) * Math.cos(nu_warp), w * Math.sinh(mu) * Math.sin(nu_warp)];
+    },
+  },
+  {
+    idx: V.petal,
+    name: 'petal',
+    source: sourceForIdx(V.petal),
+    formula: 'V_{119}(x, y) = w\\cos x\\,((\\cos x \\cos y)^3,\\; (\\sin x \\cos y)^3)',
+    blurb: 'Lobed-petal attractor by Raykoid666 (JWildfire). Cubes the (cos x · cos y) and (sin x · cos y) products, then modulates by cos x — produces the eponymous radially-symmetric petal lobes when paired with linear-family co-variations. Parameter-free; weight controls the overall lobe size.',
+    warpFn: (x, y) => {
+      const a = Math.cos(x);
+      const cxcy = Math.cos(x) * Math.cos(y);
+      const sxcy = Math.sin(x) * Math.cos(y);
+      const bx = cxcy * cxcy * cxcy;
+      const by = sxcy * sxcy * sxcy;
+      return [a * bx, a * by];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

@@ -177,6 +177,14 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   falloff: ['scatter', 'mindist', 'mul_x', 'mul_y', 'x0', 'y0'],
   falloff2: ['scatter', 'type', 'mul_x', 'mul_y', 'x0', 'y0', 'mindist'],
   falloff3: ['scatter', 'mul_x', 'mul_y', 'x0', 'y0', 'mindist', 'invert'],
+  // #114 batch 2b-b — S-tier kaleidoscope/circle family. petal is
+  // 0-param (no entry). loc was originally scoped here but dropped —
+  // no varLoc.pas in Apophysis 7X core or JWildfire (see V table
+  // comment in src/variations.ts).
+  collideoscope: ['a', 'num'],
+  circlize: ['hole'],
+  circlize2: ['hole'],
+  eswirl: ['in', 'out'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -232,6 +240,16 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   falloff: [1, 0.5, 1, 1, 0, 0],             // scatter=1, mindist=0.5, mul_x=1, mul_y=1, x0, y0
   falloff2: [1, 0, 1, 1, 0, 0, 0.5],         // scatter=1, type=0, mul_x=1, mul_y=1, x0, y0, mindist=0.5
   falloff3: [1, 1, 1, 0, 0, 0.5, 0],         // scatter=1, mul_x=1, mul_y=1, x0, y0, mindist=0.5, invert
+  // #114 batch 2b-b — JWildfire-canonical defaults. circlize/circlize2
+  // ship JWF's UI defaults (hole=0.40 / 0.0 respectively); collideoscope
+  // ships JWF's class-level defaults a=0.20, num=1 (JWF's randomize()
+  // picks num∈[1,10] at random — pyr3 picks the deterministic lower
+  // bound for the visually-active centered scaffold). eswirl ships
+  // JWF's class defaults in=1.2, out=0.2.
+  collideoscope: [0.20, 1],                  // a=0.20, num=1
+  circlize: [0.40],                          // hole=0.40
+  circlize2: [0.0],                          // hole=0.0
+  eswirl: [1.2, 0.2],                        // in=1.2, out=0.2
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

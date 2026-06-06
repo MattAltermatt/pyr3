@@ -2024,6 +2024,173 @@ fn var_falloff3(
 }
 
 // ---------------------------------------------------------------------
+// #114 batch 2b-b — S-tier kaleidoscope/circle family. Sources:
+// JWildfire (LGPL-2.1+); see NOTICE.md. pyr3 reimplements each formula
+// in WGSL; no JWF code is byte-copied. petal is 0-param. `loc` was
+// originally scoped here but dropped — no varLoc.pas in Apophysis 7X
+// core or JWildfire (see V table comment in src/variations.ts).
+// ---------------------------------------------------------------------
+
+// var_collideoscope — JWildfire CollideoscopeFunc.java. 2 params
+// (a, num) + no RNG. Author: Michael Faber. The "collide" twin of
+// kaleidoscope — folds the polar angle into 2·num pie slices with
+// alternating-sign offsets. `num` is an integer count (≥1); `a` is
+// a real shift (UI-limited to [0,1] in JWF, but math is well-defined
+// across the line). Precalc kn_pi/pi_kn/ka_kn live inside the kernel
+// since they depend on the per-iterate param read.
+fn var_collideoscope(p: vec2f, w: f32, a_param: f32, num_param: f32) -> vec2f {
+  let num_i = max(1, i32(num_param));
+  let num_f = f32(num_i);
+  let kn_pi = num_f / PI;
+  let pi_kn = PI / num_f;
+  let ka = PI * a_param;
+  let ka_kn = ka / num_f;
+  var a = atan2(p.y, p.x);
+  let r = w * sqrt(p.x * p.x + p.y * p.y);
+  if (a >= 0.0) {
+    let alt = i32(a * kn_pi);
+    if ((alt % 2) == 0) {
+      a = f32(alt) * pi_kn + ((ka_kn + a) % pi_kn);
+    } else {
+      a = f32(alt) * pi_kn + ((-ka_kn + a) % pi_kn);
+    }
+  } else {
+    let alt = i32(-a * kn_pi);
+    if ((alt % 2) != 0) {
+      a = -(f32(alt) * pi_kn + ((-ka_kn - a) % pi_kn));
+    } else {
+      a = -(f32(alt) * pi_kn + ((ka_kn - a) % pi_kn));
+    }
+  }
+  // `a` is now folded into [-π, π]-ish — safe trig OK but plain trig
+  // would also be correct since |a| ≤ 2π·num. Use safe_* defensively
+  // for high `num` values.
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_circlize — JWildfire CirclizeFunc.java. 1 param (hole) + no RNG.
+// Author: Michael Faber. Square → circle perimeter map: each iterate
+// picks the dominant axis, walks the unit square's perimeter
+// accordingly, then maps perimeter → angle + axis → radius. Note JWF
+// quirk: `hole` is intentionally NOT scaled by the weight (`pAmount`)
+// — comment in JWF source reads "tsk tsk... hole is not scaled by
+// vvar." We preserve that behavior for parity. side==0 (origin)
+// degenerates → return (0,0).
+fn var_circlize(p: vec2f, w: f32, hole: f32) -> vec2f {
+  let var4_PI = w / (PI * 0.25);
+  let absx = abs(p.x);
+  let absy = abs(p.y);
+  var perimeter: f32 = 0.0;
+  var side: f32 = 0.0;
+  if (absx >= absy) {
+    if (p.x >= absy) {
+      perimeter = absx + p.y;
+    } else {
+      perimeter = 5.0 * absx - p.y;
+    }
+    side = absx;
+  } else {
+    if (p.y >= absx) {
+      perimeter = 3.0 * absy - p.x;
+    } else {
+      perimeter = 7.0 * absy + p.x;
+    }
+    side = absy;
+  }
+  if (side == 0.0) { return vec2f(0.0, 0.0); }
+  let r = var4_PI * side + hole;
+  let a = (PI * 0.25) * perimeter / side - (PI * 0.25);
+  // |a| is bounded ≤ π/2 so plain trig is safe — keep safe_* for
+  // defense against extreme `hole`/weight scaling at the call site.
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_circlize2 — JWildfire Circlize2Func.java. 1 param (hole) + no RNG.
+// Author: Michael Faber (Angle Pack). Companion to circlize: identical
+// perimeter parameterization, but the radius is w·(side+hole) instead
+// of w·(4/π)·side+hole — `hole` IS scaled by the weight here (the
+// "tsk tsk" quirk corrected in this sibling).
+fn var_circlize2(p: vec2f, w: f32, hole: f32) -> vec2f {
+  let absx = abs(p.x);
+  let absy = abs(p.y);
+  var perimeter: f32 = 0.0;
+  var side: f32 = 0.0;
+  if (absx >= absy) {
+    if (p.x >= absy) {
+      perimeter = absx + p.y;
+    } else {
+      perimeter = 5.0 * absx - p.y;
+    }
+    side = absx;
+  } else {
+    if (p.y >= absx) {
+      perimeter = 3.0 * absy - p.x;
+    } else {
+      perimeter = 7.0 * absy + p.x;
+    }
+    side = absy;
+  }
+  if (side == 0.0) { return vec2f(0.0, 0.0); }
+  let r = w * (side + hole);
+  let a = (PI * 0.25) * perimeter / side - (PI * 0.25);
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// var_eswirl — JWildfire ESwirlFunc.java. 2 params (in, out). No RNG.
+// Author: Michael Faber ("eSeries"). Extended swirl: converts (x,y)
+// to elliptic coords (μ, ν), twists ν by (μ·out + in/μ), maps back.
+// JWF uses a safe_sqrt to dodge NaN at floating-point underflow.
+// Trig args (μ·out + in/μ + acos(...)) can grow large for tiny μ —
+// route through safe_* to dodge the Dawn f32 trig range cliff.
+fn var_eswirl(p: vec2f, w: f32, in_p: f32, out_p: f32) -> vec2f {
+  let tmp = p.y * p.y + p.x * p.x + 1.0;
+  let tmp2 = 2.0 * p.x;
+  let r1_in = tmp + tmp2;
+  let r2_in = tmp - tmp2;
+  let r1_sqrt = select(0.0, sqrt(max(r1_in, 0.0)), r1_in > 0.0);
+  let r2_sqrt = select(0.0, sqrt(max(r2_in, 0.0)), r2_in > 0.0);
+  var xmax = (r1_sqrt + r2_sqrt) * 0.5;
+  if (xmax < 1.0) { xmax = 1.0; }
+  // acosh(xmax) = log(xmax + sqrt(xmax^2 - 1)). xmax ≥ 1 so the radical
+  // is non-negative; xmax==1.0 → mu==0 (cusp).
+  let radicand = max(xmax * xmax - 1.0, 0.0);
+  let mu = log(xmax + sqrt(radicand));
+  var t = p.x / xmax;
+  if (t > 1.0) { t = 1.0; }
+  if (t < -1.0) { t = -1.0; }
+  // acos(t) for t∈[-1,1] — bounded [0, π], plain acos is fine.
+  var nu = acos(t);
+  if (p.y < 0.0) { nu = -nu; }
+  // Guard mu==0 (xmax==1.0 cusp): `in/mu` → ±Inf. JWF lets the chaos
+  // game's bad-value reseed clean it up; we mirror by clamping mu to
+  // 1e-30 (tiny but finite) so the iterate just diverges loudly instead
+  // of poisoning the buffer.
+  let mu_safe = select(mu, 1.0e-30, mu == 0.0);
+  let nu_warp = nu + mu * out_p + in_p / mu_safe;
+  // sinh/cosh of mu — mu = log(xmax + sqrt(xmax^2 - 1)) is bounded ≈
+  // log(2·xmax) for large xmax, so for f32-representable xmax (<~1e38)
+  // mu < ~88; sinh/cosh stay finite. Plain math.
+  let sinhmu = sinh(mu);
+  let coshmu = cosh(mu);
+  return vec2f(w * coshmu * safe_cos(nu_warp), w * sinhmu * safe_sin(nu_warp));
+}
+
+// var_petal — JWildfire PetalFunc.java. 0 params, no RNG. Author:
+// Raykoid666. Lobed-petal attractor: x = w·cos(x)·(cos(x)·cos(y))³,
+// y = w·cos(x)·(sin(x)·cos(y))³. Trig args are raw coords — for
+// large radii the trig cliff applies, route through safe_*.
+fn var_petal(p: vec2f, w: f32) -> vec2f {
+  let cx = safe_cos(p.x);
+  let sx = safe_sin(p.x);
+  let cy = safe_cos(p.y);
+  let cxcy = cx * cy;
+  let sxcy = sx * cy;
+  let bx = cxcy * cxcy * cxcy;
+  let by = sxcy * sxcy * sxcy;
+  return vec2f(w * cx * bx, w * cx * by);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -2175,6 +2342,12 @@ fn apply_variation(
     case 112u: { return var_falloff(p, w, p0, p1, p2, p3, p4, p5, wi); }
     case 113u: { return var_falloff2(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
     case 114u: { return var_falloff3(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
+    // #114 batch 2b-b — S-tier kaleidoscope/circle family.
+    case 115u: { return var_collideoscope(p, w, p0, p1); }
+    case 116u: { return var_circlize(p, w, p0); }
+    case 117u: { return var_circlize2(p, w, p0); }
+    case 118u: { return var_eswirl(p, w, p0, p1); }
+    case 119u: { return var_petal(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
