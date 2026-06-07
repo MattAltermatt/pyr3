@@ -3864,6 +3864,46 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     // — no warpFn (skip; multi-modulo fold).
   },
+  // ============================================================
+  // #121 batch L12 — JWildfire 2D continuing (V205..V206).
+  // ============================================================
+  {
+    idx: V.intersection,
+    name: 'intersection',
+    source: sourceForIdx(V.intersection),
+    formula: "V_{205}: \\text{50/50 RNG: x-axis or y-axis tile mode; log-random step + 3-zone fmod fold on perpendicular axis}",
+    blurb: "Brad Stefanov's intersection — 10-param tile intersector. Each iter a 50/50 RNG branch picks 'x-axis tile mode' or 'y-axis tile mode'. Within each mode, applies a log-scaled random translation on one axis and a 3-zone fmod-fold on the other. Produces intricate grid-intersection patterns.",
+    params: [
+      { name: 'xwidth',    default: 5.0,  min: 0.1, max: 10, step: 0.1  },
+      { name: 'xtilesize', default: 0.50, min: 0,   max: 2,  step: 0.05 },
+      { name: 'xmod1',     default: 0.30, min: 0,   max: 2,  step: 0.05 },
+      { name: 'xmod2',     default: 1.0,  min: 0.1, max: 5,  step: 0.05 },
+      { name: 'xheight',   default: 0.50, min: 0,   max: 2,  step: 0.05 },
+      { name: 'yheight',   default: 5.0,  min: 0.1, max: 10, step: 0.1  },
+      { name: 'ytilesize', default: 0.50, min: 0,   max: 2,  step: 0.05 },
+      { name: 'ymod1',     default: 0.30, min: 0,   max: 2,  step: 0.05 },
+      { name: 'ymod2',     default: 1.0,  min: 0.1, max: 5,  step: 0.05 },
+      { name: 'ywidth',    default: 0.50, min: 0,   max: 2,  step: 0.05 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.inv_squircular,
+    name: 'inv_squircular',
+    source: sourceForIdx(V.inv_squircular),
+    formula: "V_{206}: r_2 = \\sqrt{r(w^2 r - 4 u^2 v^2)/w};\\; r = \\sqrt{r - r_2}/\\sqrt{2};\\; \\text{emit }r/u, r/v",
+    blurb: "Inverse squircular projection — maps the plane into the unit squircle. Combines a quartic radial discriminant with per-axis inverse-coordinate projection. Produces squircle-shaped projections.",
+    warpFn: (x, y) => {
+      const u = x, v = y;
+      const r = u * u + v * v;
+      const r2Arg = r * (r - 4 * u * u * v * v);
+      const r2 = Math.sqrt(Math.max(r2Arg, 0));
+      const rOut = Math.sqrt(Math.max(r - r2, 0)) / Math.SQRT2;
+      const uSafe = u === 0 ? 1e-30 : u;
+      const vSafe = v === 0 ? 1e-30 : v;
+      return [rOut / uSafe, rOut / vSafe];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

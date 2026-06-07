@@ -306,6 +306,8 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   cannabis_curve_wf: ['filled'],
   e_collide: ['num', 'a'],
   e_mod: ['radius', 'distance'],
+  // #121 L-tier batch L12. inv_squircular is 0-param.
+  intersection: ['xwidth', 'xtilesize', 'xmod1', 'xmod2', 'xheight', 'yheight', 'ytilesize', 'ymod1', 'ymod2', 'ywidth'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -517,6 +519,8 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   cannabis_curve_wf: [0.85],                             // filled=0.85
   e_collide: [1, 0.0],                                   // num=1, a=0 — Faber defaults
   e_mod: [1.0, 0.0],                                     // radius=1, distance=0 — Faber defaults
+  // #121 L-tier batch L12 — JWildfire init values verbatim.
+  intersection: [5.0, 0.50, 0.30, 1.0, 0.50, 5.0, 0.50, 0.30, 1.0, 0.50],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

@@ -4533,6 +4533,74 @@ fn var_e_mod(p: vec2f, w: f32, radius: f32, distance: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L12 — 2 vars: intersection (Stefanov 10-param tile RNG),
+// inv_squircular (0-param inverse squircular).
+// ---------------------------------------------------------------------
+
+// intersection — Brad Stefanov. 10 params. 50/50 split between
+// "x-axis tile" mode and "y-axis tile" mode, each applying a log-scaled
+// random horizontal/vertical step + a 3-zone fmod fold on the other axis.
+fn var_intersection(
+  p: vec2f, w: f32,
+  xwidth: f32, xtilesize: f32, xmod1: f32, xmod2: f32, xheight: f32,
+  yheight: f32, ytilesize: f32, ymod1: f32, ymod2: f32, ywidth: f32,
+  wi: u32,
+) -> vec2f {
+  let xr1 = xmod2 * xmod1;
+  let yr1 = ymod2 * ymod1;
+  if (rand01(wi) < 0.5) {
+    let x = select(-xwidth, xwidth, rand01(wi) < 0.5);
+    let ox = w * xtilesize * (p.x + round(x * log(max(rand01(wi), 1e-30))));
+    var oy: f32;
+    if (p.y > xmod1) {
+      let arg = p.y + xmod1;
+      let r1_safe = max(xr1, 1e-30);
+      oy = w * xheight * (-xmod1 + (arg - floor(arg / r1_safe) * r1_safe));
+    } else if (p.y < -xmod1) {
+      let arg = xmod1 - p.y;
+      let r1_safe = max(xr1, 1e-30);
+      oy = w * xheight * (xmod1 - (arg - floor(arg / r1_safe) * r1_safe));
+    } else {
+      oy = w * xheight * p.y;
+    }
+    return vec2f(ox, oy);
+  }
+  let y = select(-yheight, yheight, rand01(wi) < 0.5);
+  let oy = w * ytilesize * (p.y + round(y * log(max(rand01(wi), 1e-30))));
+  var ox: f32;
+  if (p.x > ymod1) {
+    let arg = p.x + ymod1;
+    let r1_safe = max(yr1, 1e-30);
+    ox = w * ywidth * (-ymod1 + (arg - floor(arg / r1_safe) * r1_safe));
+  } else if (p.x < -ymod1) {
+    let arg = ymod1 - p.x;
+    let r1_safe = max(yr1, 1e-30);
+    ox = w * ywidth * (ymod1 - (arg - floor(arg / r1_safe) * r1_safe));
+  } else {
+    ox = w * ywidth * p.x;
+  }
+  return vec2f(ox, oy);
+}
+
+// inv_squircular — 0 params. Inverse squircular projection: maps the
+// plane into a squircle-shaped region. Uses sqrt(squircular formula).
+fn var_inv_squircular(p: vec2f, w: f32) -> vec2f {
+  if (w == 0.0) {
+    return vec2f(0.0, 0.0);
+  }
+  let SQRT2: f32 = 1.41421356237;
+  let u = p.x;
+  let v = p.y;
+  let r_in = u * u + v * v;
+  let r2_arg = r_in * (w * w * r_in - 4.0 * u * u * v * v) / w;
+  let r2 = sqrt(max(r2_arg, 0.0));
+  let r = sqrt(max(r_in - r2, 0.0)) / SQRT2;
+  let u_safe = select(u, 1e-30, u == 0.0);
+  let v_safe = select(v, 1e-30, v == 0.0);
+  return vec2f(r / u_safe, r / v_safe);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4780,6 +4848,8 @@ fn apply_variation(
     case 202u: { return var_cannabis_curve_wf(p, w, p0, wi); }
     case 203u: { return var_e_collide(p, w, p0, p1); }
     case 204u: { return var_e_mod(p, w, p0, p1); }
+    case 205u: { return var_intersection(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, wi); }
+    case 206u: { return var_inv_squircular(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -441,6 +441,12 @@ export const V = {
   cannabis_curve_wf: 202,
   e_collide: 203,
   e_mod: 204,
+  // #121 L-tier batch L12. intersection (Stefanov 10-param tile
+  // intersector with RNG), inv_squircular (inverse squircular projection).
+  // Triaged: ex_blur (3D), x/y (15+ params), log/separation/pre_blur
+  // (already shipped), mobius_strip/ortho (3D).
+  intersection: 205,
+  inv_squircular: 206,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
