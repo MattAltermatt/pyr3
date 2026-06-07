@@ -250,12 +250,14 @@ export const SPIRAL_GALAXY: Genome = {
 //   post1         = vec4f [pd, pe, pf, _]          (Phase 9c)          offset  64
 //   vars[8]       = 8 × vec4f [index_as_f32, weight, param0, param1]   offset  80
 //   vars_extra[8]  = 8 × vec4f [param2, param3, param4, param5]        offset 208
-//   vars_extra2[8] = 8 × vec4f [param6, param7, _, _]                   offset 336
+//   vars_extra2[8] = 8 × vec4f [param6, param7, param8, param9]         offset 336
 // Total: 20 + 32 + 32 + 32 = 116 floats = 464 bytes per xform. Phase 9b
 // extended the per-variation param seam 2 → 6 (pdj/blob/ngon/wedge/etc.)
-// then 6 → 8 (mobius=8) — same array-split pattern; vars_extra2 carries
-// the 2 high-param slots, two unused tail floats per slot reserved for
-// future kernels needing 9 or 10 params (super_super_shape, anyone?).
+// then 6 → 8 (mobius=8) — same array-split pattern. #120 (2026-06-06) wired
+// up the 2 reserved tail floats per slot to lift the cap to 10 (unblocks
+// bipolar2 = 9 params and the rest of the M-tier port). The wire-up is free:
+// no buffer growth, no struct change, no bind group change — those floats
+// were pre-allocated in Batch K's vars_extra2 array.
 const VARS_OFFSET = 20;
 const VARS_EXTRA_OFFSET = VARS_OFFSET + MAX_VARIATIONS_PER_XFORM * 4;
 const VARS_EXTRA2_OFFSET = VARS_EXTRA_OFFSET + MAX_VARIATIONS_PER_XFORM * 4;
@@ -344,10 +346,14 @@ function packXformInto(buf: Float32Array, slotIndex: number, x: Xform): void {
     buf[ve + 2] = vr.param4 ?? 0;
     buf[ve + 3] = vr.param5 ?? 0;
     // Phase 9b Batch K — vars_extra2 slot for params 6..7 (mobius=8 params).
-    // 2 floats per slot used; the remaining 2 are reserved.
+    // #120 — slots 8..9 wired up too (free; the floats were already reserved
+    // here as pad). Lifts the per-variation param cap from 8 to 10 — unblocks
+    // bipolar2 (9 params) + remaining M-tier vars that need a 9th/10th slot.
     const ve2 = o + VARS_EXTRA2_OFFSET + v * 4;
     buf[ve2 + 0] = vr.param6 ?? 0;
     buf[ve2 + 1] = vr.param7 ?? 0;
+    buf[ve2 + 2] = vr.param8 ?? 0;
+    buf[ve2 + 3] = vr.param9 ?? 0;
   }
 }
 

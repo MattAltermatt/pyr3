@@ -300,10 +300,15 @@ export interface Variation {
   param5?: number;
   // Phase 9b Batch K (2026-05-12): seam extended 6 → 8 to support `mobius`
   // (var98, 8 params re_a / im_a / re_b / im_b / re_c / im_c / re_d / im_d).
-  // Backed by a new `vars_extra2: array<vec4f, 8>` WGSL slot (2 floats per
-  // slot used, 2 reserved for future >8-param kernels).
+  // Backed by a new `vars_extra2: array<vec4f, 8>` WGSL slot.
   param6?: number;
   param7?: number;
+  // #120 (2026-06-06): seam extended 8 → 10 to support `bipolar2` (9 params)
+  // and the rest of the M-tier port. Free wire-up — `vars_extra2[k].zw` were
+  // reserved as pad in Batch K (see `vars_extra2: array<vec4f, 8>` comment in
+  // chaos.wgsl and the layout block in src/genome.ts).
+  param8?: number;
+  param9?: number;
   /** Editor-only on/off toggle. When `false`, the packer zeros this
    *  variation's weight in the chain. Default: undefined = active. */
   active?: boolean;

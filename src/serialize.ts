@@ -308,8 +308,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
  *  Used by serialize / importer to map between the positional in-memory
- *  shape and the named-params on-disk shape. Max 8 slots (extended 6 → 8 in
- *  Phase 9b Batch K for mobius) — see `Variation` in src/variations.ts. */
+ *  shape and the named-params on-disk shape. Max 10 slots — see `Variation`
+ *  in src/variations.ts. Seam history: 2 → 6 (Phase 9b, multi-param flam3
+ *  classics) → 8 (Phase 9b Batch K, mobius=8 params) → 10 (#120, bipolar2=9
+ *  params + M-tier port; free wire-up of pre-reserved vars_extra2.zw). */
 export const PARAM_KEYS = [
   'param0',
   'param1',
@@ -320,6 +322,9 @@ export const PARAM_KEYS = [
   // Phase 9b Batch K (2026-05-12): seam extended 6 → 8 for mobius (8 params).
   'param6',
   'param7',
+  // #120 (2026-06-06): seam extended 8 → 10 for bipolar2 (9 params) + M-tier.
+  'param8',
+  'param9',
 ] as const;
 export type ParamKey = (typeof PARAM_KEYS)[number];
 export const MAX_VARIATION_PARAMS = PARAM_KEYS.length;

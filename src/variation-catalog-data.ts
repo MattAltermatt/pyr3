@@ -27,7 +27,7 @@ export interface VariationDoc {
   blurb: string;
   /** Only present for parameterized variations. Order MUST match the
    *  positional mapping in src/serialize.ts:VARIATION_PARAMS — values are
-   *  fed straight into Variation.param0..param7 at scaffold-build time. */
+   *  fed straight into Variation.param0..param9 at scaffold-build time. */
   params?: ParamDoc[];
   /** Catalog-specific initial weight slider value. Default 1 (full
    *  substitution). Used for variations like cell + pre_blur where the

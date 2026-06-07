@@ -94,13 +94,16 @@ struct Uniforms {
 };
 
 // Variation slots:
-//   vars[k]       = (index_as_f32, weight, param0, param1)
-//   vars_extra[k] = (param2, param3, param4, param5)
-// Both are MAX_VARIATIONS_PER_XFORM long (currently 8). Phase 9b grew the
-// per-variation param seam from 2 → 6 to unlock multi-param variations
-// (pdj=4, blob=3, ngon=4, wedge=4, cpow=3, …). The pack layout in
-// src/genome.ts emits these in lockstep — bumping MAX_VARIATIONS_PER_XFORM
-// requires updating BOTH `8`s here AND src/genome.ts XFORM_FLOATS together.
+//   vars[k]        = (index_as_f32, weight, param0, param1)
+//   vars_extra[k]  = (param2, param3, param4, param5)
+//   vars_extra2[k] = (param6, param7, param8, param9)
+// All three are MAX_VARIATIONS_PER_XFORM long (currently 8). Phase 9b grew
+// the per-variation param seam from 2 → 6 to unlock multi-param variations
+// (pdj=4, blob=3, ngon=4, wedge=4, cpow=3, …); Batch K extended 6 → 8 for
+// mobius; #120 extended 8 → 10 (free wire-up of pre-reserved tail floats)
+// for bipolar2 + M-tier port. The pack layout in src/genome.ts emits these
+// in lockstep — bumping MAX_VARIATIONS_PER_XFORM requires updating BOTH `8`s
+// here AND src/genome.ts XFORM_FLOATS together.
 struct Xform {
   affine0: vec4f,            // a, b, c, weight
   affine1: vec4f,            // d, e, f, num_active_vars (as f32)
@@ -112,7 +115,7 @@ struct Xform {
   post1: vec4f,              // pd, pe, pf, _
   vars: array<vec4f, 8>,         // index, weight, param0, param1
   vars_extra: array<vec4f, 8>,   // param2, param3, param4, param5  (Phase 9b)
-  vars_extra2: array<vec4f, 8>,  // param6, param7, _, _            (Phase 9b Batch K)
+  vars_extra2: array<vec4f, 8>,  // param6, param7, param8, param9  (Phase 9b Batch K; #120 wired .zw)
 };
 
 // ISAAC RNG state — one stream per walker. flam3 also uses ISAAC (RANDSIZL=4)

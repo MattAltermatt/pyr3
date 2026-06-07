@@ -70,7 +70,7 @@ describe('buildCatalogGenome', () => {
     expect(g.xforms.map(x => x.color)).toEqual([0, 0.5, 1]);
   });
 
-  it('all 8 positional params land on param0..param7', () => {
+  it('all 8 positional params land on param0..param7 (mobius)', () => {
     const g = buildCatalogGenome(V.mobius, 1, [1, 2, 3, 4, 5, 6, 7, 8]);
     const mob = g.xforms[0]!.variations.find(v => v.index === V.mobius)!;
     expect(mob.param0).toBe(1);
@@ -81,5 +81,15 @@ describe('buildCatalogGenome', () => {
     expect(mob.param5).toBe(6);
     expect(mob.param6).toBe(7);
     expect(mob.param7).toBe(8);
+  });
+
+  it('extra slots param8/param9 land when 10 positional params are supplied (#120 seam expand)', () => {
+    // Use V.mobius as a vehicle for the slot test — mobius itself only reads
+    // 0..7, but the scaffold's positional-param routing extends to 8/9 after
+    // the #120 seam expand. param8/param9 should land on the Variation regardless.
+    const g = buildCatalogGenome(V.mobius, 1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const mob = g.xforms[0]!.variations.find(v => v.index === V.mobius)!;
+    expect(mob.param8).toBe(9);
+    expect(mob.param9).toBe(10);
   });
 });

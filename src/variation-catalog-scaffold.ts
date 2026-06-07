@@ -5,7 +5,7 @@
 // linear↔variation mix per xform — at w=1 the variation fully replaces
 // linear; at w=0 we render the plain sierpinski. Positional params arrive
 // flat from the URL contract (`?p=5,0.7`) and map directly onto
-// Variation.param0..param7.
+// Variation.param0..param9.
 
 import type { Genome, Xform } from './genome';
 import { V, type Variation, type VariationIndex } from './variations';
@@ -98,7 +98,7 @@ function buildVariation(
   params: readonly number[],
 ): Variation {
   const v: Variation = { index: idx as VariationIndex, weight };
-  // Variation seam holds up to 8 positional params (param0..param7); the
+  // Variation seam holds up to 10 positional params (param0..param9); the
   // ordered mapping lives in src/serialize.ts:VARIATION_PARAMS.
   if (params.length > 0) v.param0 = params[0];
   if (params.length > 1) v.param1 = params[1];
@@ -108,5 +108,7 @@ function buildVariation(
   if (params.length > 5) v.param5 = params[5];
   if (params.length > 6) v.param6 = params[6];
   if (params.length > 7) v.param7 = params[7];
+  if (params.length > 8) v.param8 = params[8];
+  if (params.length > 9) v.param9 = params[9];
   return v;
 }
