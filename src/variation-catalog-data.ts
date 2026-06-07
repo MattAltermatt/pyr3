@@ -3789,6 +3789,45 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [xs, ys];
     },
   },
+  // ============================================================
+  // #121 batch L10 — JWildfire 2D continuing (V199..V201).
+  // V200 catalog-milestone passed.
+  // ============================================================
+  {
+    idx: V.tancos,
+    name: 'tancos',
+    source: sourceForIdx(V.tancos),
+    formula: "V_{199}: d_1 = \\epsilon + x^2+y^2;\\; d_2 = w/d_1;\\; \\text{emit }d_2(\\tanh d_1 \\cdot 2x,\\; \\cos d_1 \\cdot 2y)",
+    blurb: "Raykoid666's tancos — mixed tanh + cos radial projection. Uses tanh on the x-axis and cos on the y-axis, both modulated by d=x²+y².",
+    warpFn: (x, y) => {
+      const d1 = 1e-6 + x * x + y * y;
+      const d2 = 1 / d1;
+      return [d2 * Math.tanh(d1) * 2 * x, d2 * Math.cos(d1) * 2 * y];
+    },
+  },
+  {
+    idx: V.twoface,
+    name: 'twoface',
+    source: sourceForIdx(V.twoface),
+    formula: "V_{200}: x > 0 \\Rightarrow w\\,p / r^2;\\; \\text{else } w\\,p",
+    blurb: "DarkBeam's twoface. Half-spherical: when x > 0 acts as spherical (inverse-r²); else passes through. Creates a sharp asymmetric 'inverted right half-plane' effect.",
+    warpFn: (x, y) => {
+      let v = 1;
+      if (x > 0) v = v / Math.max(x * x + y * y, 1e-30);
+      return [v * x, v * y];
+    },
+  },
+  {
+    idx: V.e_julia,
+    name: 'e_julia',
+    source: sourceForIdx(V.e_julia),
+    formula: "V_{201}: \\mu = \\text{acosh}(x_{max})/p;\\; \\nu = (\\text{acos}(x/x_{max}) + 2\\pi k)/p;\\; \\text{emit }w(\\cosh\\mu \\cos\\nu, \\sinh\\mu\\sin\\nu)",
+    blurb: "Michael Faber's eJulia (eSeries). Hyperbolic Julian variant — uses (acosh, acos) for elliptic-coordinate mu/nu, then projects via (cosh, sinh) and (cos, sin). Per-iter randint branch picks angular slice 0..|power|-1.",
+    params: [
+      { name: 'power', default: 2, min: -8, max: 8, step: 1 },
+    ],
+    // RNG-using — no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

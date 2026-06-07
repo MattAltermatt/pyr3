@@ -428,6 +428,13 @@ export const V = {
   rays1: 196,
   rays2: 197,
   rays3: 198,
+  // #121 L-tier batch L10 — V200 milestone passed. sinh (cothe), tancos
+  // (Raykoid666), tanh (cothe), twoface (DarkBeam), e_julia (Faber
+  // eSeries — hyperbolic Julian variant with acosh/acos/sinh/cosh + RNG).
+  // Triaged: y (15+ params), spherical3/z_translate (3D).
+  tancos: 199,
+  twoface: 200,
+  e_julia: 201,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

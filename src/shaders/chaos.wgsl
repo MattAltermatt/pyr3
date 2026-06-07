@@ -4391,6 +4391,73 @@ fn var_rays3(p: vec2f, w: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L10 — JWildfire 2D continuing (3 vars). Sources: TancosFunc
+// (Raykoid666), TwoFaceFunc (DarkBeam), EJuliaFunc (Faber eSeries).
+// All LGPL-2.1+, NOTICE.md. tancos/twoface deterministic; e_julia
+// uses 1 RNG per iter (julian-style randint branch).
+// ---------------------------------------------------------------------
+
+// tancos — Raykoid666. 0 params. Mixed tanh + cos projection.
+fn var_tancos(p: vec2f, w: f32) -> vec2f {
+  let d1 = 1e-6 + p.x * p.x + p.y * p.y;
+  let d2 = w / d1;
+  return vec2f(
+    d2 * tanh(d1) * 2.0 * p.x,
+    d2 * cos(d1) * 2.0 * p.y,
+  );
+}
+
+// twoface — DarkBeam. 0 params. Half-spherical: when x > 0, divide by
+// r²; else pass through. Creates a sharp "spherical inversion on the
+// right half-plane, identity on the left" effect.
+fn var_twoface(p: vec2f, w: f32) -> vec2f {
+  var v = w;
+  if (p.x > 0.0) {
+    v = v / max(p.x * p.x + p.y * p.y, 1e-30);
+  }
+  return vec2f(v * p.x, v * p.y);
+}
+
+// e_julia — Michael Faber's eSeries. 1 param (power int, negative
+// allowed). Hyperbolic Julian-style variant using acosh/acos for the
+// mu/nu coords, then sinh/cosh + sin/cos to project. Per-iter randint
+// branch ∈ [0, |power|-1] picks angular slice.
+fn var_e_julia(p: vec2f, w: f32, power_p: f32, wi: u32) -> vec2f {
+  let pow_safe = select(power_p, 1.0, power_p == 0.0);
+  let sign_flag = select(-1, 1, pow_safe > 0.0);
+  let pow_abs = abs(pow_safe);
+  var r2 = p.y * p.y + p.x * p.x;
+  var x: f32;
+  if (sign_flag == 1) {
+    x = p.x;
+  } else {
+    r2 = 1.0 / max(r2, 1e-30);
+    x = p.x * r2;
+  }
+  let tmp = r2 + 1.0;
+  let tmp2 = 2.0 * x;
+  let sqrt_a = sqrt(max(tmp + tmp2, 0.0));
+  let sqrt_b = sqrt(max(tmp - tmp2, 0.0));
+  var xmax = (sqrt_a + sqrt_b) * 0.5;
+  if (xmax < 1.0) {
+    xmax = 1.0;
+  }
+  let mu_raw = acosh(xmax);
+  var t = x / xmax;
+  if (t > 1.0) { t = 1.0; }
+  if (t < -1.0) { t = -1.0; }
+  var nu = acos(t);
+  if (p.y < 0.0) { nu = -nu; }
+  let randint = floor(rand01(wi) * pow_abs);
+  nu = nu / pow_safe + (2.0 * PI / pow_safe) * randint;
+  let mu = mu_raw / pow_safe;
+  return vec2f(
+    w * cosh(mu) * cos(nu),
+    w * sinh(mu) * sin(nu),
+  );
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4632,6 +4699,9 @@ fn apply_variation(
     case 196u: { return var_rays1(p, w); }
     case 197u: { return var_rays2(p, w); }
     case 198u: { return var_rays3(p, w); }
+    case 199u: { return var_tancos(p, w); }
+    case 200u: { return var_twoface(p, w); }
+    case 201u: { return var_e_julia(p, w, p0, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
