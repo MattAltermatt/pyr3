@@ -224,6 +224,18 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   acoth: [],
   acosech: [],
   arcsech2: [],
+  // #120 batch B3.5 — cell2 6-param N/S asymmetric subset. Param names
+  // are pyr3-specific (the JWildfire source uses 16 per-quadrant params
+  // we don't ship here); the importer alias map handles JWildfire's
+  // cell2_space_ya / cell2_space_xa convention by mapping the first
+  // matching pair onto pyr3's space_north_y / space_north_x.
+  cell2: ['size', 'a', 'space_north_x', 'space_north_y', 'space_south_x', 'space_south_y'],
+  // #120 batch B4 — Xyrus02 + Lu-Kout remainders.
+  curl_sp: ['pow', 'c1', 'c2', 'sx', 'sy'],                // dropped JWildfire's `dc` (color-output param)
+  murl2: ['c', 'power'],
+  lissajous: ['tmin', 'tmax', 'a', 'b', 'c', 'd', 'e'],
+  spirograph: ['a', 'b', 'd', 'tmin', 'tmax', 'ymin', 'ymax', 'c1', 'c2'],
+  waffle: ['slices', 'xthickness', 'ythickness', 'rotation'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -335,6 +347,17 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   acoth: [],
   acosech: [],
   arcsech2: [],
+  // #120 batch B3.5 — cell2 defaults from JWildfire (size=0.60, a=1, all
+  // space_* = 2). At these defaults pyr3's N/S asymmetric subset gives
+  // a symmetric output (north/south scales are equal); varying any of
+  // the four space_* sliders independently introduces the asymmetry.
+  cell2: [0.6, 1.0, 2.0, 2.0, 2.0, 2.0],                  // size, a, space_north_x, space_north_y, space_south_x, space_south_y
+  // #120 batch B4 — JWildfire-faithful defaults.
+  curl_sp: [1.0, -0.01, 0.03, 0.0, 0.0],                  // pow, c1, c2, sx, sy
+  murl2: [0.1, 3.0],                                       // c, power
+  lissajous: [-Math.PI, Math.PI, 3.0, 2.0, 0.0, 0.0, 0.0], // tmin, tmax, a, b, c, d, e
+  spirograph: [3.0, 2.0, 0.0, -1.0, 1.0, -1.0, 1.0, 0.0, 0.0], // a, b, d, tmin, tmax, ymin, ymax, c1, c2
+  waffle: [6.0, 0.5, 0.5, 0.0],                            // slices, xthickness, ythickness, rotation
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

@@ -289,6 +289,25 @@ export const V = {
   acoth: 136,
   acosech: 137,
   arcsech2: 138,
+  // #120 batch B3.5 — cell2 (6-param N/S asymmetric subset of JWildfire
+  // 16-param Cell2Func). Author: Brad Stefanov, building on "Cell in the
+  // Apophysis Plugin Pack". Per-quadrant E/W asymmetry + move offsets +
+  // mirror flags dropped to fit the 10-cap. See #127 for the seam-expand
+  // discussion if the full 16-param surface is ever needed.
+  cell2: 139,
+  // #120 batch B4 — Xyrus02 + Lu-Kout remainders. Authors: Xyrus02
+  // (curl_sp — spherical curl, drops the source's dc color param);
+  // Peter Sdobnov "Zueuk" / Nic Anderson (murl2 — polar power +
+  // complex inverse); Jed Kelsey "Lu-Kout" (lissajous + spirograph +
+  // waffle — RNG-driven parametric curves & grid texture). All from
+  // JWildfire (LGPL-2.1+, NOTICE.md). MandelbrotFunc audited and
+  // deferred — its iterative inner kernel + per-walker state is a
+  // separate architectural ship, not a drop-in.
+  curl_sp: 140,
+  murl2: 141,
+  lissajous: 142,
+  spirograph: 143,
+  waffle: 144,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

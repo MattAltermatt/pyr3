@@ -2932,6 +2932,219 @@ fn var_arcsech2(p: vec2f, w: f32) -> vec2f {
   return vec2f(px, py);
 }
 
+// var_cell2 — JWildfire Cell2Func.java (Brad Stefanov; "Cell in the
+// Apophysis Plugin Pack" + Stefanov's per-quadrant variables). The
+// source ships 16 params; pyr3 ships a 6-param N/S-asymmetric SUBSET
+// that fits the 10-cap seam. See #127 for the seam-expand discussion
+// if the full 16-param surface ever matters.
+//
+// Subset choice rationale (#120 B3.5):
+//   KEPT:    size, a, space_north_x, space_north_y, space_south_x,
+//            space_south_y — preserves cell2's distinctive top/bottom-
+//            different cellular tile, the visual identity of cell2 vs
+//            cell (V75).
+//   DROPPED: mirror_x/mirror_y (RNG-driven 50/50 flips — small effect,
+//            adds an RNG draw); per-quadrant E/W asymmetry (collapsed
+//            into single N/S scale pair); per-quadrant move offsets
+//            (move_xa/ya/xb/yb — small positional jitters); the z dim
+//            (per pyr3 2D-only convention).
+//
+// The JWildfire formula's south branch always negates y (y = -space·y);
+// the output's final y also gets a sign-flip (-w · (dy + cell·size)).
+// Both preserved here — they're load-bearing for cell2's look.
+fn var_cell2(
+  p: vec2f, w: f32,
+  size: f32, a: f32,
+  space_north_x: f32, space_north_y: f32,
+  space_south_x: f32, space_south_y: f32,
+) -> vec2f {
+  // size floor — avoid /0 if user sliders the param to 0.
+  let safe_size = select(size, 1e-30, abs(size) < 1e-30);
+  let inv_cell_size = a / safe_size;
+  let cell_x = floor(p.x * inv_cell_size);
+  let cell_y = floor(p.y * inv_cell_size);
+  let dx = p.x - cell_x * safe_size;
+  let dy = p.y - cell_y * safe_size;
+  var sx: f32 = cell_x;
+  var sy: f32 = cell_y;
+  if (sy >= 0.0) {
+    sy = sy * space_north_y;
+    sx = sx * space_north_x;
+  } else {
+    sy = -space_south_y * sy;
+    sx = sx * space_south_x;
+  }
+  return vec2f(w * (dx + sx * safe_size), -w * (dy + sy * safe_size));
+}
+
+// ---------------------------------------------------------------------
+// #120 batch B4 — Xyrus02 + Lu-Kout remainders (5 vars). Sources:
+// JWildfire CurlSpFunc / Murl2Func / LissajousFunc / SpirographFunc /
+// WaffleFunc (LGPL-2.1+, see NOTICE.md). Authors: Xyrus02 (curl_sp),
+// Peter Sdobnov a.k.a. Zueuk + Nic Anderson (murl2), Jed Kelsey
+// a.k.a. Lu-Kout (lissajous, spirograph, waffle). MandelbrotFunc was
+// audited and intentionally DEFERRED (12 params + iterative inner
+// loop + per-walker state — not a drop-in port, deserves its own
+// architectural ship).
+// ---------------------------------------------------------------------
+
+// curl_sp — Xyrus02 spherical curl. Source ships 6 params; pyr3 drops
+// `dc` (a color-output param; pyr3's chain doesn't expose color from
+// non-DC variations). Helpers powq4c / spread / range are inlined.
+// Deterministic.
+fn var_curl_sp(
+  p: vec2f, w: f32,
+  pow_p: f32, c1: f32, c2: f32, sx: f32, sy: f32,
+) -> vec2f {
+  // SMALL_EPSILON guard on power; mirrors JWildfire init().
+  let power = select(pow_p, 1e-30, pow_p == 0.0);
+  let power_inv = 1.0 / power;
+  let c2_x2 = 2.0 * c2;
+  // powq4c(x, y) = (y == 1) ? x : pow(|x|, y) * sign(x)
+  // For runtime y the fast path doesn't compile-time fold, so we
+  // always go through the slow path — that matches what JWildfire's
+  // GPU code does too.
+  let x = pow(abs(p.x), power) * sign(p.x);
+  let y = pow(abs(p.y), power) * sign(p.y);
+  let d = x * x - y * y;
+  // spread(a, b) = sqrt(a²+b²) · sign(a)
+  let s1_arg_a = c1 * x + c2 * d;
+  let s1_arg_b = sx;
+  let re = sqrt(s1_arg_a * s1_arg_a + s1_arg_b * s1_arg_b) * select(-1.0, 1.0, s1_arg_a > 0.0) + 1.0;
+  let s2_arg_a = c1 * y + c2_x2 * x * y;
+  let s2_arg_b = sy;
+  let im = sqrt(s2_arg_a * s2_arg_a + s2_arg_b * s2_arg_b) * select(-1.0, 1.0, s2_arg_a > 0.0);
+  let c = pow(abs(re * re + im * im), power_inv);
+  let r = w / max(c, 1e-30);
+  return vec2f(
+    (x * re + y * im) * r,
+    (y * re - x * im) * r,
+  );
+}
+
+// murl2 — Peter Sdobnov ("Zueuk") via Nic Anderson. 2 params (c, power).
+// Polar power + complex inverse + radial division. The power is
+// nominally an int in JWildfire (cast at setParameter); we accept f32
+// and let WGSL pow() handle non-integer values too.
+// Deterministic.
+fn var_murl2(p: vec2f, w: f32, c: f32, power_f: f32) -> vec2f {
+  let p2 = power_f * 0.5;
+  // power == 0 → degenerate branch in JWildfire (invp = 1e11, vp scaled
+  // by (c+1)^4). We use SMALL_EPSILON to avoid the explicit check while
+  // still producing a finite output.
+  let safe_pow = select(power_f, 1e-30, power_f == 0.0);
+  let invp = 1.0 / safe_pow;
+  // vp = w · (c+1)^(2/power) — JWildfire branches on c==-1 to set vp=0;
+  // pow(0, x) returns 0 for x>0 so the natural formula handles it.
+  let cp1 = c + 1.0;
+  let vp = w * pow(abs(cp1), 2.0 * invp) * select(-1.0, 1.0, cp1 >= 0.0);
+  let a1 = atan2(p.y, p.x) * safe_pow;
+  let r0 = c * pow(abs(dot(p, p)), p2);
+  let re0 = r0 * cos(a1) + 1.0;
+  let im0 = r0 * sin(a1);
+  let r1 = pow(abs(re0 * re0 + im0 * im0), invp);
+  let a2 = atan2(im0, re0) * 2.0 * invp;
+  let re1 = r1 * cos(a2);
+  let im1 = r1 * sin(a2);
+  let rl = vp / max(r1 * r1, 1e-30);
+  return vec2f(
+    rl * (p.x * re1 + p.y * im1),
+    rl * (p.y * re1 - p.x * im1),
+  );
+}
+
+// lissajous — Jed Kelsey (Lu-Kout). 7 params. RNG-driven: 2 random
+// draws per call (t and y_jitter). Coordinates lie on a 2D Lissajous
+// curve x = sin(a·t + d), y = sin(b·t), with a shared linear drift
+// (c·t + e·y_jitter) added to both. Outputs ignore the input iterate
+// (chaos-game shape comes purely from the curve geometry + drift).
+fn var_lissajous(
+  p: vec2f, w: f32,
+  tmin: f32, tmax: f32,
+  a: f32, b: f32, c: f32, d: f32, e: f32,
+  wi: u32,
+) -> vec2f {
+  let t = (tmax - tmin) * rand01(wi) + tmin;
+  let yj = rand01(wi) - 0.5;
+  let drift = c * t + e * yj;
+  return vec2f(
+    w * (safe_sin(a * t + d) + drift),
+    w * (safe_sin(b * t) + drift),
+  );
+}
+
+// spirograph — Jed Kelsey (Lu-Kout). 9 params — fills the post-#120
+// 10-cap seam. RNG-driven: 2 random draws (t in [tmin, tmax], y_jitter
+// in [ymin, ymax]). Classic spirograph parametric curve x = (a+b)cos t
+// − c₁·cos((a+b)/b · t), y = analogous with sin. Like lissajous, the
+// input iterate doesn't shape the output — the chaos game's randomness
+// drives it.
+fn var_spirograph(
+  p: vec2f, w: f32,
+  a: f32, b: f32, d: f32,
+  tmin: f32, tmax: f32,
+  ymin: f32, ymax: f32,
+  c1: f32, c2: f32,
+  wi: u32,
+) -> vec2f {
+  let t = (tmax - tmin) * rand01(wi) + tmin;
+  let yj = (ymax - ymin) * rand01(wi) + ymin;
+  let ab = a + b;
+  // Guard against b==0 (would NaN the ratio); fall back to identity.
+  let safe_b = select(b, 1e-30, abs(b) < 1e-30);
+  let ratio = ab / safe_b;
+  let x1 = ab * safe_cos(t) - c1 * safe_cos(ratio * t);
+  let y1 = ab * safe_sin(t) - c2 * safe_sin(ratio * t);
+  return vec2f(
+    w * (x1 + d * safe_cos(t) + yj),
+    w * (y1 + d * safe_sin(t) + yj),
+  );
+}
+
+// waffle — Jed Kelsey (Lu-Kout). 4 params + rotation. RNG-heavy:
+// uses rand01 + rand_int(5) to pick a "mode" (5 cell-placement
+// strategies), plus 1-3 more rand01 draws inside each mode. Produces
+// a rotated waffle / grid texture. Input iterate ignored.
+//
+// JWildfire's slices is an int — we treat as f32 with floor at the
+// `rand_int` call. The init() precalc (vcosr, vsinr) is inlined per
+// call; cheap on GPU.
+fn var_waffle(
+  p: vec2f, w: f32,
+  slices_f: f32, xthickness: f32, ythickness: f32, rotation: f32,
+  wi: u32,
+) -> vec2f {
+  // slices clamped to [1, 64] to keep rand_int range sensible.
+  let slices = max(1.0, floor(abs(slices_f)));
+  let inv_slices = 1.0 / slices;
+  let vcosr = w * safe_cos(rotation);
+  let vsinr = w * safe_sin(rotation);
+  // Mode pick: floor(rand01 · 5) ∈ {0,1,2,3,4}
+  let mode = u32(min(4.0, floor(rand01(wi) * 5.0)));
+  var a: f32 = 0.0;
+  var r: f32 = 0.0;
+  if (mode == 0u) {
+    a = (floor(rand01(wi) * slices) + rand01(wi) * xthickness) * inv_slices;
+    r = (floor(rand01(wi) * slices) + rand01(wi) * ythickness) * inv_slices;
+  } else if (mode == 1u) {
+    a = (floor(rand01(wi) * slices) + rand01(wi)) * inv_slices;
+    r = (floor(rand01(wi) * slices) + ythickness) * inv_slices;
+  } else if (mode == 2u) {
+    a = (floor(rand01(wi) * slices) + xthickness) * inv_slices;
+    r = (floor(rand01(wi) * slices) + rand01(wi)) * inv_slices;
+  } else if (mode == 3u) {
+    a = rand01(wi);
+    r = (floor(rand01(wi) * slices) + ythickness + rand01(wi) * (1.0 - ythickness)) * inv_slices;
+  } else {
+    a = (floor(rand01(wi) * slices) + xthickness + rand01(wi) * (1.0 - xthickness)) * inv_slices;
+    r = rand01(wi);
+  }
+  return vec2f(
+    vcosr * a + vsinr * r,
+    -vsinr * a + vcosr * r,
+  );
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -3114,6 +3327,12 @@ fn apply_variation(
     case 136u: { return var_acoth(p, w); }
     case 137u: { return var_acosech(p, w, wi); }
     case 138u: { return var_arcsech2(p, w); }
+    case 139u: { return var_cell2(p, w, p0, p1, p2, p3, p4, p5); }
+    case 140u: { return var_curl_sp(p, w, p0, p1, p2, p3, p4); }
+    case 141u: { return var_murl2(p, w, p0, p1); }
+    case 142u: { return var_lissajous(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
+    case 143u: { return var_spirograph(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, wi); }
+    case 144u: { return var_waffle(p, w, p0, p1, p2, p3, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

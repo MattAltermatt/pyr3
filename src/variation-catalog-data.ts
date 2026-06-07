@@ -2535,6 +2535,169 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [-lg_re, lg_im - 1.0];
     },
   },
+  // ============================================================
+  // #120 batch B3.5 — cell2 (V139). 6-param N/S asymmetric subset
+  // of JWildfire's 16-param Cell2Func.java (Brad Stefanov, "Cell in
+  // the Apophysis Plugin Pack" + Stefanov's per-quadrant variables).
+  // Source LGPL-2.1+, NOTICE.md. The full 16-param surface is parked
+  // on #127 (per-variation seam-expand decision).
+  // ============================================================
+  {
+    idx: V.cell2,
+    name: 'cell2',
+    source: sourceForIdx(V.cell2),
+    formula: 'V_{139}(x, y) = w\\big(d_x + s_x\\cdot\\text{size},\\; -(d_y + s_y\\cdot\\text{size})\\big),\\; d = p - \\lfloor p\\cdot\\tfrac{a}{\\text{size}}\\rfloor\\cdot\\text{size}',
+    blurb: 'Numbered variant of cell (V75) by Brad Stefanov. Snaps the iterate to a square grid (size · a-tuned cell pitch), then scales the cell coordinate per-hemisphere — `space_north_*` for y ≥ 0, `space_south_*` for y < 0 — producing a top/bottom-different cellular tile that\'s the visual signature of cell2 vs cell. pyr3 ships a **6-param subset** of JWildfire\'s 16-param source: the per-quadrant E/W asymmetry, per-quadrant position offsets, and RNG mirror flags are dropped; see issue #127 if the full surface ever matters. At the defaults (size=0.6, a=1, all space_*=2), the output is N/S symmetric; varying any of the four space_* sliders introduces the asymmetric look.',
+    params: [
+      { name: 'size',          default: 0.6, min: 0.05, max: 2.0, step: 0.05 },
+      { name: 'a',             default: 1.0, min: 0.1,  max: 3.0, step: 0.05 },
+      { name: 'space_north_x', default: 2.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_north_y', default: 2.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_south_x', default: 2.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_south_y', default: 2.0, min: -3,   max: 3,   step: 0.05 },
+    ],
+    // Deterministic in the 6-param subset (the dropped mirror flags
+    // were the only RNG source in JWildfire's full version).
+    warpFn: (x, y) => {
+      const size = 0.6, a = 1.0;
+      const space_north_x = 2.0, space_north_y = 2.0;
+      const space_south_x = 2.0, space_south_y = 2.0;
+      const safe_size = Math.abs(size) < 1e-30 ? 1e-30 : size;
+      const inv = a / safe_size;
+      const cx = Math.floor(x * inv);
+      const cy = Math.floor(y * inv);
+      const dx = x - cx * safe_size;
+      const dy = y - cy * safe_size;
+      let sx = cx, sy = cy;
+      if (sy >= 0) {
+        sy = sy * space_north_y;
+        sx = sx * space_north_x;
+      } else {
+        sy = -space_south_y * sy;
+        sx = sx * space_south_x;
+      }
+      return [dx + sx * safe_size, -(dy + sy * safe_size)];
+    },
+  },
+  // ============================================================
+  // #120 batch B4 — Xyrus02 + Lu-Kout remainders (V140–V144).
+  // Sources: JWildfire CurlSpFunc / Murl2Func / LissajousFunc /
+  // SpirographFunc / WaffleFunc (LGPL-2.1+, NOTICE.md). Authors:
+  // Xyrus02 (curl_sp), Peter Sdobnov "Zueuk" / Nic Anderson (murl2),
+  // Jed Kelsey "Lu-Kout" (lissajous / spirograph / waffle).
+  // ============================================================
+  {
+    idx: V.curl_sp,
+    name: 'curl_sp',
+    source: sourceForIdx(V.curl_sp),
+    formula: 'V_{140}(x, y) = \\tfrac{w}{c}\\big(x\'\\,\\mathrm{re} + y\'\\,\\mathrm{im},\\; y\'\\,\\mathrm{re} - x\'\\,\\mathrm{im}\\big),\\; x\' = |x|^{\\rho}\\mathrm{sgn}(x),\\; \\rho = \\text{pow}',
+    blurb: 'Spherical-curl variant by Xyrus02. Takes signed odd powers of both coords (so negative bases stay defined), then applies a complex-curl polynomial with magnitude reduction. pyr3 ships 5 of the 6 source params — `dc` was a color-output knob that pyr3\'s chain doesn\'t expose for non-DC variations.',
+    params: [
+      { name: 'pow', default: 1.0,   min: 0.1, max: 3.0, step: 0.05 },
+      { name: 'c1',  default: -0.01, min: -1,  max: 1,   step: 0.01 },
+      { name: 'c2',  default: 0.03,  min: -1,  max: 1,   step: 0.01 },
+      { name: 'sx',  default: 0.0,   min: -1,  max: 1,   step: 0.05 },
+      { name: 'sy',  default: 0.0,   min: -1,  max: 1,   step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      // All literal defaults — runtime guards (power==0, etc) live in the
+      // WGSL kernel where actual user params can be zero.
+      const c1 = -0.01, c2 = 0.03, sx = 0.0, sy = 0.0;
+      const power = 1.0;
+      const power_inv = 1.0 / power;
+      const c2_x2 = 2.0 * c2;
+      const xp = Math.pow(Math.abs(x), power) * Math.sign(x);
+      const yp = Math.pow(Math.abs(y), power) * Math.sign(y);
+      const d = xp * xp - yp * yp;
+      const s1a = c1 * xp + c2 * d;
+      const re = Math.sqrt(s1a * s1a + sx * sx) * (s1a > 0 ? 1 : -1) + 1.0;
+      const s2a = c1 * yp + c2_x2 * xp * yp;
+      const im = Math.sqrt(s2a * s2a + sy * sy) * (s2a > 0 ? 1 : -1);
+      const c = Math.pow(Math.abs(re * re + im * im), power_inv);
+      const r = 1.0 / Math.max(c, 1e-30);
+      return [(xp * re + yp * im) * r, (yp * re - xp * im) * r];
+    },
+  },
+  {
+    idx: V.murl2,
+    name: 'murl2',
+    source: sourceForIdx(V.murl2),
+    formula: 'V_{141}(x, y) = \\tfrac{w\\,(c+1)^{2/n}}{r_1^2}\\big(x\\cdot\\Re + y\\cdot\\Im,\\; y\\cdot\\Re - x\\cdot\\Im\\big),\\; n = \\text{power}',
+    blurb: 'Numbered companion to murl (V122) by Peter Sdobnov ("Zueuk"), transcribed from C by Nic Anderson. Computes a polar-power lift (radius^n · cos/sin of n·θ + 1), then maps through complex (·)^(1/n) and divides by radius squared. Produces tightly-wound spiral attractors that read as "curled" cellular cuts of the plane.',
+    params: [
+      { name: 'c',     default: 0.1, min: -1, max: 2, step: 0.05 },
+      { name: 'power', default: 3.0, min: 2,  max: 8, step: 1    },
+    ],
+    warpFn: (x, y) => {
+      // Literal defaults c=0.1, power=3 → all guards inert.
+      const c = 0.1;
+      const safe_pow = 3.0;
+      const p2 = safe_pow * 0.5;
+      const invp = 1.0 / safe_pow;
+      const cp1 = c + 1.0;
+      const vp = Math.pow(Math.abs(cp1), 2.0 * invp) * (cp1 >= 0 ? 1 : -1);
+      const a1 = Math.atan2(y, x) * safe_pow;
+      const r0 = c * Math.pow(Math.abs(x * x + y * y), p2);
+      const re0 = r0 * Math.cos(a1) + 1.0;
+      const im0 = r0 * Math.sin(a1);
+      const r1 = Math.pow(Math.abs(re0 * re0 + im0 * im0), invp);
+      const a2 = Math.atan2(im0, re0) * 2.0 * invp;
+      const re1 = r1 * Math.cos(a2);
+      const im1 = r1 * Math.sin(a2);
+      const rl = vp / Math.max(r1 * r1, 1e-30);
+      return [rl * (x * re1 + y * im1), rl * (y * re1 - x * im1)];
+    },
+  },
+  {
+    idx: V.lissajous,
+    name: 'lissajous',
+    source: sourceForIdx(V.lissajous),
+    formula: 'V_{142}(x, y) = w\\big(\\sin(a t + d) + c t + e u,\\; \\sin(b t) + c t + e u\\big),\\; t,u \\sim \\mathrm{rand}',
+    blurb: 'Lissajous-curve sampler by Jed Kelsey (Lu-Kout). Picks t uniformly from [tmin, tmax] and a small y-jitter; emits a point on the parametric curve (sin(at+d), sin(bt)) with a shared linear drift (c·t + e·u). Visually iconic — the chaos game samples along the full curve since the input coord is ignored.',
+    params: [
+      { name: 'tmin', default: -Math.PI, min: -10, max: 10, step: 0.1  },
+      { name: 'tmax', default: Math.PI,  min: -10, max: 10, step: 0.1  },
+      { name: 'a',    default: 3.0,      min: 1,   max: 10, step: 0.1  },
+      { name: 'b',    default: 2.0,      min: 1,   max: 10, step: 0.1  },
+      { name: 'c',    default: 0.0,      min: -1,  max: 1,  step: 0.05 },
+      { name: 'd',    default: 0.0,      min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'e',    default: 0.0,      min: -0.5, max: 0.5, step: 0.05 },
+    ],
+    // RNG-driven (2 rand01 draws) → no warpFn.
+  },
+  {
+    idx: V.spirograph,
+    name: 'spirograph',
+    source: sourceForIdx(V.spirograph),
+    formula: 'V_{143}(x, y) = w\\big((a+b)\\cos t - c_1\\cos((a+b)t/b) + d\\cos t + u,\\; \\text{sin analog}\\big)',
+    blurb: 'Classic spirograph (hypotrochoid) curve sampler by Jed Kelsey (Lu-Kout). Combines a large circle of radius (a+b) with a smaller rotating component scaled by c₁/c₂, plus an optional d-scaled circular drift and a y-jitter. Input coord is ignored — output texture comes entirely from the parametric curve + RNG. Nine params fill our seam exactly.',
+    params: [
+      { name: 'a',    default: 3.0,  min: 0,    max: 10,   step: 0.1  },
+      { name: 'b',    default: 2.0,  min: 0.05, max: 10,   step: 0.1  },
+      { name: 'd',    default: 0.0,  min: -2,   max: 2,    step: 0.05 },
+      { name: 'tmin', default: -1.0, min: -10,  max: 10,   step: 0.1  },
+      { name: 'tmax', default: 1.0,  min: -10,  max: 10,   step: 0.1  },
+      { name: 'ymin', default: -1.0, min: -2,   max: 2,    step: 0.05 },
+      { name: 'ymax', default: 1.0,  min: -2,   max: 2,    step: 0.05 },
+      { name: 'c1',   default: 0.0,  min: -2,   max: 2,    step: 0.05 },
+      { name: 'c2',   default: 0.0,  min: -2,   max: 2,    step: 0.05 },
+    ],
+    // RNG-driven (2 rand01 draws) → no warpFn.
+  },
+  {
+    idx: V.waffle,
+    name: 'waffle',
+    source: sourceForIdx(V.waffle),
+    formula: 'V_{144}(x, y) = \\big(\\cos r \\cdot a + \\sin r \\cdot \\rho,\\; -\\sin r \\cdot a + \\cos r \\cdot \\rho\\big),\\; (a, \\rho) \\sim \\text{mode-}n(\\text{slices, x}_t, \\text{y}_t)',
+    blurb: 'Rotated waffle / grid sampler by Jed Kelsey (Lu-Kout). Picks one of 5 cell-placement modes per call (RNG-heavy: ~3 rand01 draws per mode), then emits a point inside the chosen cell of a uniform grid (slice count = `slices`). Input coord is ignored. `rotation` rotates the entire grid; `xthickness` / `ythickness` control how "thick" the waffle bars are.',
+    params: [
+      { name: 'slices',     default: 6,   min: 1, max: 20, step: 1    },
+      { name: 'xthickness', default: 0.5, min: 0, max: 1,  step: 0.05 },
+      { name: 'ythickness', default: 0.5, min: 0, max: 1,  step: 0.05 },
+      { name: 'rotation',   default: 0.0, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    // RNG-driven (5 modes + nested rand draws) → no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));
