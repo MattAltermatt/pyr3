@@ -271,6 +271,12 @@ export const V = {
   // post-#120 expanded seam (8 → 10). Source: JWildfire Bipolar2Func.java
   // (LGPL-2.1+, see NOTICE.md). 9 params: shift, a, b, c, d, e, f1, g1, h.
   bipolar2: 131,
+  // #120 batch B2 — bubble2 (2D projection of JWildfire 3D Bubble2Func).
+  // Source: "bubble2 from FracFx" (LGPL-2.1+, NOTICE.md). 2 params after
+  // 2D projection (x_scale, y_scale; the original z param + output
+  // channel dropped per pyr3's 2D-only convention — same precedent as
+  // the #114 falloff family).
+  bubble2: 132,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

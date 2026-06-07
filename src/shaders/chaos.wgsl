@@ -2802,6 +2802,18 @@ fn var_bipolar2(
   );
 }
 
+// var_bubble2 — JWildfire Bubble2Func.java. 2D PROJECTION of the source
+// 3D variation (drop z dim, drop z param) — same precedent as the #114
+// falloff family. Source: "bubble2 from FracFx" (LGPL-2.1+, NOTICE.md).
+// 2 params (x_scale, y_scale). Defaults x=1, y=1 — at the defaults this
+// matches var_bubble (V20) exactly. Non-default x/y break the radial
+// symmetry into an axis-anisotropic bubble.
+fn var_bubble2(p: vec2f, w: f32, x_scale: f32, y_scale: f32) -> vec2f {
+  // T = (x² + y²) / 4 + 1 (z² dropped by 2D projection); always >= 1.
+  let r = w / (0.25 * dot(p, p) + 1.0);
+  return vec2f(p.x * r * x_scale, p.y * r * y_scale);
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -2977,6 +2989,7 @@ fn apply_variation(
     case 129u: { return var_xyrus_gridout(p, w); }
     case 130u: { return var_blur_circle(p, w, p0, wi); }
     case 131u: { return var_bipolar2(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8); }
+    case 132u: { return var_bubble2(p, w, p0, p1); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

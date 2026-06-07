@@ -2371,6 +2371,19 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'h', default: 1.0, min: -2, max: 2, step: 0.05 },
     ],
   },
+  // #120 batch B2 — bubble2 (2D projection of JWildfire 3D Bubble2Func).
+  // Source: "bubble2 from FracFx" (LGPL-2.1+, NOTICE.md).
+  {
+    idx: V.bubble2,
+    name: 'bubble2',
+    source: sourceForIdx(V.bubble2),
+    formula: 'V_{132}(x, y) = \\left(\\tfrac{w x_s\\,x}{(x^2+y^2)/4 + 1},\\; \\tfrac{w y_s\\,y}{(x^2+y^2)/4 + 1}\\right)',
+    blurb: 'Numbered variant of bubble (V20) by FracFx. Folds the plane into a unit sphere just like bubble, but with independent x/y axis scales. At x_scale = y_scale = 1 it matches bubble exactly; non-matching scales stretch the bubble along an axis, producing an anisotropic lens. Drops the z-channel and z param from the JWildfire source (pyr3 is 2D-only).',
+    params: [
+      { name: 'x', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'y', default: 1.0, min: -2, max: 2, step: 0.05 },
+    ],
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

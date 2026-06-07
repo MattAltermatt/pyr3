@@ -211,6 +211,12 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #120 batch B1 — M-tier port flagship. bipolar2 = Brad Stefanov's
   // 9-param rework of base bipolar. JWildfire param names verbatim.
   bipolar2: ['shift', 'a', 'b', 'c', 'd', 'e', 'f1', 'g1', 'h'],
+  // #120 batch B2 — bubble2 (2D projection of JWildfire 3D Bubble2Func).
+  // JWildfire ships 3 params (x, y, z); pyr3 drops the z param/output
+  // per the 2D-only convention (same precedent as the #114 falloff
+  // family). Param names left unprefixed since JWildfire uses bare 'x'
+  // / 'y' / 'z' — the import alias maps will still pick them up cleanly.
+  bubble2: ['x', 'y'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -311,6 +317,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // Mirrors the base bipolar (V35) when shift=0; the rest of the params
   // are the source's named defaults.
   bipolar2: [0.0, 1.0, 2.0, 0.5, 1.0, 2.0, 0.25, 1.0, 1.0], // shift,a,b,c,d,e,f1,g1,h
+  // #120 batch B2 — bubble2. JWildfire defaults x=1, y=1 → at these
+  // values bubble2 matches var_bubble (V20) exactly. Visual interest
+  // starts when x ≠ y (anisotropic bubble).
+  bubble2: [1.0, 1.0],                                     // x, y
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
