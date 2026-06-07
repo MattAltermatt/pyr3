@@ -339,6 +339,21 @@ export const V = {
   clifford_js: 156,
   devil_warp: 157,
   voron: 158,
+  // #121 L-tier batch L2 — more JWildfire 2D long tail. henon
+  // (TyrantWave's Hénon map, sibling of V156 clifford_js Bourke
+  // attractor family). atan (FractalDesire, 3-mode arctan saturation).
+  // cardioid (Faber, classic polar curve). chrysanthemum (Sosa via
+  // Bourke, RNG-driven base shape — well-known mathematical curve).
+  // bcollide (Faber, boundary-collision via logarithm/atan2). bsplit
+  // (Raykoid666, tan/sin shift with singularity guard). bulge (radial
+  // r^N bulge distortion).
+  henon: 159,
+  atan: 160,
+  cardioid: 161,
+  chrysanthemum: 162,
+  bcollide: 163,
+  bsplit: 164,
+  bulge: 165,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

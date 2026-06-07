@@ -253,6 +253,16 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   clifford_js: ['a', 'b', 'c', 'd'],
   devil_warp: ['a', 'b', 'effect', 'warp', 'rmin', 'rmax'],
   voron: ['k', 'step', 'num', 'xseed', 'yseed'],
+  // #121 L-tier batch L2 — chrysanthemum is 0-param (no entry needed).
+  // henon is the 3-param TyrantWave map. atan has mode (int 0..2) +
+  // stretch. cardioid has a single curve param. bcollide has num (int
+  // 1+) and a (clamped [0,1]). bsplit has x/y shifts. bulge has N=power.
+  henon: ['a', 'b', 'c'],
+  atan: ['mode', 'stretch'],
+  cardioid: ['a'],
+  bcollide: ['num', 'a'],
+  bsplit: ['x', 'y'],
+  bulge: ['N'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -417,6 +427,13 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   clifford_js: [-1.4, 1.6, 1.0, 0.7],                    // a, b, c, d — JWildfire defaults (classic Clifford attractor)
   devil_warp: [2.0, 1.0, 1.0, 0.5, -0.24, 100.0],        // a, b, effect, warp, rmin, rmax — JWildfire defaults
   voron: [0.99, 0.25, 1, 3, 7],                          // k, step=0.25, num=1, xseed=3, yseed=7 — JWildfire defaults (catalog default RETUNES step→0.5)
+  // #121 L-tier batch L2 — defaults match JWildfire init values.
+  henon: [0.5, 1.0, 1.0],                                // a=0.5, b=1, c=1 — TyrantWave defaults
+  atan: [0, 1.0],                                        // mode=0 (atan on y only), stretch=1
+  cardioid: [1.0],                                       // a=1 — Faber default
+  bcollide: [1, 0.0],                                    // num=1, a=0 — Faber defaults (catalog RETUNES num for visibility)
+  bsplit: [0.0, 0.0],                                    // x=0, y=0 — Raykoid666 defaults (catalog RETUNES for visibility)
+  bulge: [2.0],                                          // N=2 — quadratic radial bulge
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

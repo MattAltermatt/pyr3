@@ -3547,6 +3547,131 @@ fn var_voron(
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L2 — JWildfire 2D long tail (7 vars). Sources: HenonFunc
+// (TyrantWave), AtanFunc (FractalDesire via Brad Stefanov), CardioidFunc
+// (Michael Faber), ChrysanthemumFunc (Jesus Sosa via Paul Bourke),
+// BCollideFunc (Faber), BSplitFunc (Raykoid666 via Nic Anderson),
+// BulgeFunc. All LGPL-2.1+, NOTICE.md. henon/atan/cardioid/bcollide/
+// bsplit/bulge are deterministic; chrysanthemum is a base-shape RNG
+// variation (samples u ∈ [0, 21π] per iter).
+// ---------------------------------------------------------------------
+
+// henon — TyrantWave's port of the Hénon map. 3 params (a, b, c).
+//   x' = c - a·x² + y
+//   y' = b·x
+// Sibling of V156 clifford_js in the Bourke 2D attractor family.
+fn var_henon(p: vec2f, w: f32, a: f32, b: f32, c: f32) -> vec2f {
+  return vec2f(w * (c - a * p.x * p.x + p.y), w * b * p.x);
+}
+
+// atan — FractalDesire's 3-mode arctan saturation (via Brad Stefanov).
+// 2 params (mode int 0..2, stretch f32). mode 0 = atan on y only; 1 =
+// atan on x only; 2 = atan on both. Output y (or x or both) is
+// normalized by 1/(π/2), so it saturates smoothly toward ±1 as the
+// stretched coord grows. Pleasant pillar-cap squashing effect.
+fn var_atan(p: vec2f, w: f32, mode_p: f32, stretch: f32) -> vec2f {
+  let norm = w * 2.0 / PI;   // = w / (π/2)
+  let mode = i32(mode_p);
+  if (mode == 0) {
+    return vec2f(w * p.x, norm * atan(stretch * p.y));
+  }
+  if (mode == 1) {
+    return vec2f(norm * atan(stretch * p.x), w * p.y);
+  }
+  // mode == 2 (or anything else → fall through to dual atan)
+  return vec2f(norm * atan(stretch * p.x), norm * atan(stretch * p.y));
+}
+
+// cardioid — Michael Faber. 1 param (a — angle multiplier). Polar curve
+// r(θ) = √(x² + y² + sin(a·θ) + 1), output on the (cos θ, sin θ) ray.
+// At a=1 traces a cardioid-like silhouette; integer a values produce
+// multi-cusped rose shapes.
+fn var_cardioid(p: vec2f, w: f32, a: f32) -> vec2f {
+  let theta = atan2(p.y, p.x);
+  let r_sq = p.x * p.x + p.y * p.y + sin(a * theta) + 1.0;
+  let r = w * sqrt(max(r_sq, 0.0));
+  return vec2f(r * cos(theta), r * sin(theta));
+}
+
+// chrysanthemum — Jesus Sosa's port of Paul Bourke's chrysanthemum
+// curve. 0 params, fully RNG-driven (base shape). Samples u ∈ [0, 21π]
+// uniformly, then computes the namesake parametric curve. Max trig
+// arg here is 28·u ≤ 28·21π ≈ 1847 — well under SIN_SAFE_MAX = 1e6, so
+// raw sin/cos are safe.
+fn var_chrysanthemum(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let u = 21.0 * PI * rand01(wi);
+  let p4 = sin(17.0 * u / 3.0);
+  let p8 = sin(2.0 * cos(3.0 * u) - 28.0 * u);
+  let p4_4 = p4 * p4 * p4 * p4;
+  let p8_2 = p8 * p8;
+  let p8_8 = p8_2 * p8_2 * p8_2 * p8_2;
+  let r_raw = 5.0 * (1.0 + sin(11.0 * u / 5.0)) - 4.0 * p4_4 * p8_8;
+  let r = w * 0.1 * r_raw;
+  return vec2f(r * cos(u), r * sin(u));
+}
+
+// bcollide — Michael Faber. 2 params (num int 1+, a clamped [0,1]).
+// Maps the iterate into "bipolar" coordinates (tau, sigma) then folds
+// sigma into `num` equal angular wedges (with a phase offset of π·a/num
+// alternating between even/odd wedges). Returns the (sinh tau, sin sigma)
+// projection scaled by 1/(cosh tau - cos sigma) — the Möbius-style
+// bipolar inverse.
+fn var_bcollide(p: vec2f, w: f32, num_p: f32, a: f32) -> vec2f {
+  let num = max(1.0, num_p);
+  let bcn_pi = num / PI;
+  let pi_bcn = PI / num;
+  let bca_bcn = PI * a / num;
+  let xp1 = p.x + 1.0;
+  let xm1 = p.x - 1.0;
+  let y2 = p.y * p.y;
+  let tau = 0.5 * (log(max(xp1 * xp1 + y2, 1e-30)) - log(max(xm1 * xm1 + y2, 1e-30)));
+  let sigma_raw = PI - atan2(p.y, xp1) - atan2(p.y, 1.0 - p.x);
+  let alt = i32(sigma_raw * bcn_pi);
+  let alt_even = (alt & 1) == 0;
+  let offset = select(-bca_bcn, bca_bcn, alt_even);
+  // WGSL has no `%` for f32 — use the (a - floor(a/b)·b) idiom.
+  let folded = sigma_raw + offset - floor((sigma_raw + offset) / pi_bcn) * pi_bcn;
+  let sigma = f32(alt) * pi_bcn + folded;
+  let temp = cosh(tau) - cos(sigma);
+  let temp_safe = select(temp, 1e-30, abs(temp) < 1e-30);
+  return vec2f(w * sinh(tau) / temp_safe, w * sin(sigma) / temp_safe);
+}
+
+// bsplit — Raykoid666's tan/sin shift (transcribed by Nic Anderson).
+// 2 params (x, y shifts). Output is undefined when sin(x+sx) is near
+// zero (singularity of tan / sin denominators); we emit (0, 0) at the
+// singularity — mirrors JWildfire's `doHide=true` semantics (the point
+// contributes nothing to the histogram).
+fn var_bsplit(p: vec2f, w: f32, sx: f32, sy: f32) -> vec2f {
+  let arg_x = p.x + sx;
+  let sin_x = sin(arg_x);
+  if (abs(sin_x) < 1e-6) {
+    return vec2f(0.0, 0.0);
+  }
+  let cos_x = cos(arg_x);
+  let tan_x = sin_x / cos_x;
+  let tan_safe = select(tan_x, sign(tan_x) * 1e6, abs(cos_x) < 1e-6);
+  return vec2f(
+    w / tan_safe * cos(p.y + sy),
+    w / sin_x * (-1.0 * p.y + sy),
+  );
+}
+
+// bulge — radial r^N bulge effect. 1 param (N = exponent). Computes
+// r = |p|, then outputs p · r^(N-1) · w. N>1 stretches the periphery
+// outward (bulge); N<1 compresses toward the origin (pinch). r=0 is
+// degenerate; the (rn/r) factor naturally → 0 there only when N>1,
+// otherwise diverges — guard with f32-ftz floor per [[reference-
+// dawn-f32-ftz-cliff]].
+fn var_bulge(p: vec2f, w: f32, n: f32) -> vec2f {
+  let r = sqrt(p.x * p.x + p.y * p.y);
+  let r_safe = max(r, 1e-30);
+  let rn = pow(r_safe, n);
+  let scale = rn / r_safe;
+  return vec2f(w * p.x * scale, w * p.y * scale);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -3748,6 +3873,13 @@ fn apply_variation(
     case 156u: { return var_clifford_js(p, w, p0, p1, p2, p3); }
     case 157u: { return var_devil_warp(p, w, p0, p1, p2, p3, p4, p5); }
     case 158u: { return var_voron(p, w, p0, p1, p2, p3, p4); }
+    case 159u: { return var_henon(p, w, p0, p1, p2); }
+    case 160u: { return var_atan(p, w, p0, p1); }
+    case 161u: { return var_cardioid(p, w, p0); }
+    case 162u: { return var_chrysanthemum(p, w, wi); }
+    case 163u: { return var_bcollide(p, w, p0, p1); }
+    case 164u: { return var_bsplit(p, w, p0, p1); }
+    case 165u: { return var_bulge(p, w, p0); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

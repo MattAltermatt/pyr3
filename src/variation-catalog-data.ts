@@ -3034,6 +3034,150 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [k * (x - X0) + X0, k * (y - Y0) + Y0];
     },
   },
+  // ============================================================
+  // #121 batch L2 — JWildfire 2D long tail (V159..V165).
+  // henon (TyrantWave), atan (FractalDesire/Brad Stefanov), cardioid
+  // (Faber), chrysanthemum (Sosa/Bourke), bcollide (Faber), bsplit
+  // (Raykoid666/Nic Anderson), bulge. Mix of attractor + curves +
+  // boundary effects. chrysanthemum is RNG-driven base shape.
+  // ============================================================
+  {
+    idx: V.henon,
+    name: 'henon',
+    source: sourceForIdx(V.henon),
+    formula: "V_{159}(x, y) = w\\,(c - a\\,x^2 + y,\\; b\\,x)",
+    blurb: "TyrantWave's port of the Hénon map, the Bourke-attractor sibling of V156 clifford_js. The classic chaotic dynamics produce a strange-attractor cloud whose density shifts dramatically with tiny moves in the (a, b, c) tuning.",
+    params: [
+      { name: 'a', default: 0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'b', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c', default: 1.0, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const a = 0.5, b = 1.0, c = 1.0;
+      return [c - a * x * x + y, b * x];
+    },
+  },
+  {
+    idx: V.atan,
+    name: 'atan',
+    source: sourceForIdx(V.atan),
+    formula: "V_{160}: \\text{mode 0: }(w\\,x,\\; (w/(\\pi/2))\\arctan(s\\,y));\\; \\text{mode 1: swap}; \\text{mode 2: both arctan}",
+    blurb: "FractalDesire's 3-mode arctan saturation (via Brad Stefanov). Like erf, this gently squashes coords toward ±1 — but only along the axis selected by mode (0=y only, 1=x only, 2=both). The `stretch` knob controls how aggressively the saturation kicks in.",
+    params: [
+      { name: 'mode',    default: 0,   min: 0,   max: 2,  step: 1    },
+      { name: 'stretch', default: 1.0, min: 0.05, max: 5, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const stretch = 1.0;
+      const norm = 1.0 / (Math.PI / 2);
+      // mode-0 default narrows to (x, norm·atan(stretch·y)).
+      return [x, norm * Math.atan(stretch * y)];
+    },
+  },
+  {
+    idx: V.cardioid,
+    name: 'cardioid',
+    source: sourceForIdx(V.cardioid),
+    formula: "V_{161}(x, y) = w\\,r'\\,(\\cos\\theta,\\; \\sin\\theta),\\quad r' = \\sqrt{x^2 + y^2 + \\sin(a\\theta) + 1}",
+    blurb: "Michael Faber's polar curve variation. Radius is augmented by sin(a·θ) before sqrt — at a=1 traces a cardioid-like silhouette; integer a values produce multi-cusped rose shapes; non-integer a produces irregular fold patterns.",
+    params: [
+      { name: 'a', default: 1.0, min: 0.05, max: 8, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const a = 1.0;
+      const theta = Math.atan2(y, x);
+      const rSq = x * x + y * y + Math.sin(a * theta) + 1.0;
+      const r = Math.sqrt(Math.max(rSq, 0));
+      return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.chrysanthemum,
+    name: 'chrysanthemum',
+    source: sourceForIdx(V.chrysanthemum),
+    formula: "V_{162}: u \\sim U[0, 21\\pi];\\; r = w \\cdot 0.1 (5(1 + \\sin(11u/5)) - 4\\sin^4(17u/3)\\sin^8(2\\cos 3u - 28u));\\; \\text{emit }r\\,(\\cos u, \\sin u)",
+    blurb: "Jesus Sosa's port of Paul Bourke's chrysanthemum curve. RNG-driven base shape — samples u uniformly across 21π and computes the namesake parametric curve. Produces dense flower-petal silhouettes; the high-frequency p4/p8 sin products contribute the characteristic chrysanthemum scallops.",
+    // RNG-driven base shape — no warpFn (catalog renders "warp not applicable" note).
+  },
+  {
+    idx: V.bcollide,
+    name: 'bcollide',
+    source: sourceForIdx(V.bcollide),
+    formula: "V_{163}: \\text{bipolar }(\\tau, \\sigma) \\text{ on }p;\\; \\text{fold }\\sigma\\text{ into }num\\text{ wedges with phase }\\pi a/num;\\; \\text{emit }w(\\sinh \\tau, \\sin \\sigma)/(\\cosh \\tau - \\cos \\sigma)",
+    blurb: "Michael Faber's boundary-collision variation (from his bSeries). Maps the iterate into bipolar coordinates, folds the angular coordinate into `num` equal wedges with alternating phase offsets, then projects back via the Möbius-style bipolar inverse. Produces multi-petal symmetric shapes that pinch toward the focal points (±1, 0).",
+    params: [
+      // Catalog defaults RETUNED — at (num=1, a=0) the bipolar fold is
+      // near-identity on the sierpinski scaffold (verified visually).
+      // (num=4, a=0.5) surfaces the characteristic 4-wedge collision
+      // pattern with mid-strength phase offset — the namesake "collision"
+      // discontinuities at wedge boundaries become clearly visible.
+      { name: 'num', default: 4,    min: 1,    max: 16, step: 1    },
+      { name: 'a',   default: 0.5,  min: 0,    max: 1,  step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const num = 4, a = 0.5;
+      const bcn_pi = num / Math.PI;
+      const pi_bcn = Math.PI / num;
+      const bca_bcn = Math.PI * a / num;
+      const xp1 = x + 1.0, xm1 = x - 1.0, y2 = y * y;
+      const tau = 0.5 * (Math.log(Math.max(xp1 * xp1 + y2, 1e-30)) - Math.log(Math.max(xm1 * xm1 + y2, 1e-30)));
+      const sigmaRaw = Math.PI - Math.atan2(y, xp1) - Math.atan2(y, 1.0 - x);
+      const alt = Math.trunc(sigmaRaw * bcn_pi);
+      const altEven = (alt & 1) === 0;
+      const offset = altEven ? bca_bcn : -bca_bcn;
+      const arg = sigmaRaw + offset;
+      const folded = arg - Math.floor(arg / pi_bcn) * pi_bcn;
+      const sigma = alt * pi_bcn + folded;
+      const cosh = (z: number): number => 0.5 * (Math.exp(z) + Math.exp(-z));
+      const sinh = (z: number): number => 0.5 * (Math.exp(z) - Math.exp(-z));
+      const temp = cosh(tau) - Math.cos(sigma);
+      const tempSafe = Math.abs(temp) < 1e-30 ? 1e-30 : temp;
+      return [sinh(tau) / tempSafe, Math.sin(sigma) / tempSafe];
+    },
+  },
+  {
+    idx: V.bsplit,
+    name: 'bsplit',
+    source: sourceForIdx(V.bsplit),
+    formula: "V_{164}(x, y) = w\\,(\\cos(y + s_y)/\\tan(x + s_x),\\; (-y + s_y)/\\sin(x + s_x))",
+    blurb: "Raykoid666's tan/sin shift variation (transcribed by Nic Anderson). Combines a cotangent-weighted x term and a cosecant-weighted y term, producing fan-like silhouettes that radiate from the periodic singularities of sin(x+sx). Emits nothing at the singularity.",
+    params: [
+      // Catalog default RETUNED: sx=1.0 (was JWildfire 0) — at (sx,sy)=(0,0)
+      // the iterate hits the singularity at every x=0 point of the sierpinski
+      // scaffold; sx=1 shifts the singularity off-scaffold so we see the
+      // characteristic fan radiation.
+      { name: 'x', default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'y', default: 0.0, min: -3, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const sx = 1.0, sy = 0.0;
+      const argX = x + sx;
+      const sinX = Math.sin(argX);
+      if (Math.abs(sinX) < 1e-6) return [0, 0];
+      const cosX = Math.cos(argX);
+      const tanX = sinX / cosX;
+      const tanSafe = Math.abs(cosX) < 1e-6 ? Math.sign(tanX) * 1e6 : tanX;
+      return [Math.cos(y + sy) / tanSafe, (-y + sy) / sinX];
+    },
+  },
+  {
+    idx: V.bulge,
+    name: 'bulge',
+    source: sourceForIdx(V.bulge),
+    formula: "V_{165}(x, y) = w\\,p \\cdot r^{N-1},\\quad r = \\sqrt{x^2 + y^2}",
+    blurb: "Radial r^N bulge effect. N>1 stretches the periphery outward (bulge / fisheye); N<1 compresses toward the origin (pinch); N=1 is identity. At N=2 (default) acts as a smooth zoom-out from the center.",
+    params: [
+      { name: 'N', default: 2.0, min: 0.1, max: 5, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const N = 2.0;
+      const r = Math.sqrt(x * x + y * y);
+      const rSafe = Math.max(r, 1e-30);
+      const rn = Math.pow(rSafe, N);
+      const scale = rn / rSafe;
+      return [x * scale, y * scale];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));
