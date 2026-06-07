@@ -3828,6 +3828,42 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     // RNG-using — no warpFn.
   },
+  // ============================================================
+  // #121 batch L11 — JWildfire 2D continuing (V202..V204).
+  // ============================================================
+  {
+    idx: V.cannabis_curve_wf,
+    name: 'cannabis_curve_wf',
+    source: sourceForIdx(V.cannabis_curve_wf),
+    formula: "V_{202}: r = (1+0.9\\cos 8a)(1+0.1\\cos 24a)(0.9+0.1\\cos 200a)(1+\\sin a);\\; \\text{emit }r(\\sin(a+\\pi/2), \\cos(a+\\pi/2))",
+    blurb: "High-frequency parametric flower curve (the 'cannabis curve' from mathworld.wolfram.com). Combines four sin/cos terms at frequencies 1, 8, 24, 200 to produce a leaf-silhouette parametric trace. The `filled` param mixes in RNG-attenuated radii to fill the interior.",
+    params: [{ name: 'filled', default: 0.85, min: 0, max: 1, step: 0.05 }],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.e_collide,
+    name: 'e_collide',
+    source: sourceForIdx(V.e_collide),
+    formula: "V_{203}: \\text{elliptic-coord collision fold on }\\nu\\text{ with }num\\text{ wedges + phase }\\pi a/num",
+    blurb: "Michael Faber's eCollide (eSeries). Converts the iterate to elliptic coordinates (xmax, nu), folds nu into `num` equal angular wedges with alternating phase offset by `a`, then projects back via (xmax·cos nu, √(xmax²-1)·sin nu). Elliptic sibling of V163 bcollide.",
+    params: [
+      { name: 'num', default: 1, min: 1, max: 16, step: 1    },
+      { name: 'a',   default: 0,  min: 0, max: 1,  step: 0.05 },
+    ],
+    // — no warpFn (transform-style; not worth replicating in JS for catalog).
+  },
+  {
+    idx: V.e_mod,
+    name: 'e_mod',
+    source: sourceForIdx(V.e_mod),
+    formula: "V_{204}: \\text{elliptic-coord modulus fold on }\\mu\\text{ with band }[-r, r]",
+    blurb: "Michael Faber's eMod (eSeries). Converts to elliptic coordinates (mu, nu), then if |mu| < radius applies a `mod(2·radius)` fold to mu controlled by `distance`. Project back via (cosh mu·cos nu, sinh mu·sin nu). Bands the elliptic interior into repeating rings.",
+    params: [
+      { name: 'radius',   default: 1.0, min: 0.05, max: 5, step: 0.05 },
+      { name: 'distance', default: 0.0, min: 0,    max: 2, step: 0.05 },
+    ],
+    // — no warpFn (skip; multi-modulo fold).
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

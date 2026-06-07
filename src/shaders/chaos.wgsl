@@ -4458,6 +4458,81 @@ fn var_e_julia(p: vec2f, w: f32, power_p: f32, wi: u32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L11 — 3 vars: cannabis_curve_wf, e_collide, e_mod.
+// ---------------------------------------------------------------------
+
+// cannabis_curve_wf — high-freq parametric flower base shape.
+fn var_cannabis_curve_wf(p: vec2f, w: f32, filled: f32, wi: u32) -> vec2f {
+  var a = atan2(p.y, p.x);
+  var r = (1.0 + 0.9 * cos(8.0 * a)) * (1.0 + 0.1 * cos(24.0 * a)) * (0.9 + 0.1 * cos(200.0 * a)) * (1.0 + sin(a));
+  a = a + PI * 0.5;
+  if (filled > 0.0 && filled > rand01(wi)) {
+    r = r * rand01(wi);
+  }
+  return vec2f(w * sin(a) * r, w * cos(a) * r);
+}
+
+// e_collide — Faber eSeries 2-param elliptic-coord collision fold.
+fn var_e_collide(p: vec2f, w: f32, num_p: f32, a: f32) -> vec2f {
+  let num = max(1.0, num_p);
+  let ecn_pi = num / PI;
+  let pi_ecn = PI / num;
+  let eca_ecn = PI * a / num;
+  let tmp = p.y * p.y + p.x * p.x + 1.0;
+  let tmp2 = 2.0 * p.x;
+  let sqrt_a = sqrt(max(tmp + tmp2, 0.0));
+  let sqrt_b = sqrt(max(tmp - tmp2, 0.0));
+  var xmax = (sqrt_a + sqrt_b) * 0.5;
+  if (xmax < 1.0) { xmax = 1.0; }
+  var t = p.x / xmax;
+  if (t > 1.0) { t = 1.0; }
+  if (t < -1.0) { t = -1.0; }
+  var nu = acos(t);
+  let alt = i32(nu * ecn_pi);
+  let alt_even = (alt & 1) == 0;
+  let offset = select(-eca_ecn, eca_ecn, alt_even);
+  let arg = nu + offset;
+  let folded = arg - floor(arg / pi_ecn) * pi_ecn;
+  nu = f32(alt) * pi_ecn + folded;
+  if (p.y <= 0.0) { nu = -nu; }
+  return vec2f(
+    w * xmax * cos(nu),
+    w * sqrt(max(xmax - 1.0, 0.0)) * sqrt(xmax + 1.0) * sin(nu),
+  );
+}
+
+// e_mod — Faber eSeries 2-param elliptic-coord modulus fold.
+fn var_e_mod(p: vec2f, w: f32, radius: f32, distance: f32) -> vec2f {
+  let tmp = p.y * p.y + p.x * p.x + 1.0;
+  let tmp2 = 2.0 * p.x;
+  let sqrt_a = sqrt(max(tmp + tmp2, 0.0));
+  let sqrt_b = sqrt(max(tmp - tmp2, 0.0));
+  var xmax = (sqrt_a + sqrt_b) * 0.5;
+  if (xmax < 1.0) { xmax = 1.0; }
+  var mu = acosh(xmax);
+  var t = p.x / xmax;
+  if (t > 1.0) { t = 1.0; }
+  if (t < -1.0) { t = -1.0; }
+  var nu = acos(t);
+  if (p.y < 0.0) { nu = -nu; }
+  if (mu < radius && -mu < radius) {
+    let r_safe = max(radius, 1e-30);
+    let two_r = 2.0 * r_safe;
+    if (nu > 0.0) {
+      let arg = mu + r_safe + distance * r_safe;
+      mu = arg - floor(arg / two_r) * two_r - r_safe;
+    } else {
+      let arg = mu - r_safe - distance * r_safe;
+      mu = arg - floor(arg / two_r) * two_r + r_safe;
+    }
+  }
+  return vec2f(
+    w * cosh(mu) * cos(nu),
+    w * sinh(mu) * sin(nu),
+  );
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4702,6 +4777,9 @@ fn apply_variation(
     case 199u: { return var_tancos(p, w); }
     case 200u: { return var_twoface(p, w); }
     case 201u: { return var_e_julia(p, w, p0, wi); }
+    case 202u: { return var_cannabis_curve_wf(p, w, p0, wi); }
+    case 203u: { return var_e_collide(p, w, p0, p1); }
+    case 204u: { return var_e_mod(p, w, p0, p1); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

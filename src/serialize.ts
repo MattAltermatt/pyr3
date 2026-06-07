@@ -302,6 +302,10 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   pulse: ['freqx', 'freqy', 'scalex', 'scaley'],
   // #121 L-tier batch L10 — tancos + twoface are 0-param (no entry).
   e_julia: ['power'],
+  // #121 L-tier batch L11. butterfly already shipped V67 — skipped.
+  cannabis_curve_wf: ['filled'],
+  e_collide: ['num', 'a'],
+  e_mod: ['radius', 'distance'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -509,6 +513,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   pulse: [2.0, 2.0, 1.0, 1.0],                           // freqx, freqy, scalex, scaley
   // #121 L-tier batch L10 — JWildfire init values verbatim.
   e_julia: [2],                                          // power=2 — Faber default
+  // #121 L-tier batch L11 — JWildfire init values verbatim.
+  cannabis_curve_wf: [0.85],                             // filled=0.85
+  e_collide: [1, 0.0],                                   // num=1, a=0 — Faber defaults
+  e_mod: [1.0, 0.0],                                     // radius=1, distance=0 — Faber defaults
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

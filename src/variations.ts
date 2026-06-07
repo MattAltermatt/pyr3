@@ -435,6 +435,12 @@ export const V = {
   tancos: 199,
   twoface: 200,
   e_julia: 201,
+  // #121 L-tier batch L11. butterfly (classic 2D curve), cannabis_curve_wf
+  // (high-freq parametric flower), e_collide + e_mod (Faber eSeries
+  // collision/modulus elliptic-coord folds).
+  cannabis_curve_wf: 202,
+  e_collide: 203,
+  e_mod: 204,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
