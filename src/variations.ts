@@ -485,6 +485,18 @@ export const V = {
   ennepers2: 217,
   apollony: 218,
   circlecrop: 219,
+  // #133 — Conformal & complex-analytic warps. Five original (not in JWF)
+  // variations from classical complex analysis. Newton extends the
+  // dc_cylinder (V102) "position-warp + DC color" precedent: its DC basin
+  // coloring (which root of zⁿ − 1 a splat converges to) is the umbrella
+  // #128 headline shot. blaschke/cayley/complex_gamma/lambert_w are pure
+  // position warps. complex_gamma (V223) carries a Lanczos g=7 + reflection
+  // branch; lambert_w (V224) is principal-branch Halley iteration.
+  newton: 220,
+  blaschke: 221,
+  cayley: 222,
+  complex_gamma: 223,
+  lambert_w: 224,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -501,6 +513,7 @@ export const DC_VARIATION_SET: ReadonlySet<number> = new Set<number>([
   V.dc_perlin,
   V.dc_gridout,
   V.dc_cylinder,
+  V.newton,  // #133 — newton emits DC basin color when dc_flag set
 ]);
 
 export interface Variation {

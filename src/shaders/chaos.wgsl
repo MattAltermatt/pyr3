@@ -358,6 +358,37 @@ fn complex_log(z: vec2f) -> vec2f {
   return vec2f(0.5 * log(mag2), atan2(z.y, z.x));
 }
 
+// #133 — complex exp / pow / sin. Foundational for V223 complex_gamma
+// (uses all 3 + reflection branch) and V224 lambert_w (uses complex_exp
+// inside Halley iteration). Im-axis arguments can grow large during
+// intermediate computation (Γ reflection on negative-real-half inputs,
+// Lambert W's log(log(z)) initial guess for large |z|) → safe_sin/cos
+// dodge the Dawn f32 trig range cliff (#46/#72). Re-axis arg clamped to
+// ±20 to keep exp() inside f32's ~1.18e38 cap with headroom.
+fn complex_exp(z: vec2f) -> vec2f {
+  let e = exp(clamp(z.x, -20.0, 20.0));
+  return e * vec2f(safe_cos(z.y), safe_sin(z.y));
+}
+
+// complex pow: t^p = exp(p · log(t)). Principal branch (atan2 chooses
+// arg in [-π, π]; complex_log's mag2 floor handles t = 0).
+fn complex_pow(t: vec2f, p: vec2f) -> vec2f {
+  return complex_exp(complex_mul(p, complex_log(t)));
+}
+
+// complex sin: sin(z) = (sin(x)·cosh(y), cos(x)·sinh(y)).
+// cosh(y) and sinh(y) of large |y| grow exponentially in y → clamp Im
+// to ±20 for numerical safety (e^20 ≈ 4.85e8, plenty of dynamic range
+// for downstream computation without producing Inf or saturating f32).
+fn complex_sin(z: vec2f) -> vec2f {
+  let y = clamp(z.y, -20.0, 20.0);
+  let ep = exp(y);
+  let en = exp(-y);
+  let ch = 0.5 * (ep + en);
+  let sh = 0.5 * (ep - en);
+  return vec2f(safe_sin(z.x) * ch, safe_cos(z.x) * sh);
+}
+
 fn var_linear(p: vec2f, w: f32) -> vec2f {
   return p * w;
 }
@@ -5124,14 +5155,206 @@ fn var_circlecrop(
 }
 
 // ---------------------------------------------------------------------
+// #133 — Conformal & complex-analytic warps (V220–V224). Five novel
+// (not in JWildfire) variations from classical complex analysis,
+// using the complex helpers above (complex_mul/sqr/div/log/exp/pow/sin).
+// V220 newton: position warp + DC basin coloring (extends the
+//              dc_cylinder V102 "position-warp + DC" precedent).
+// V221 blaschke: 2-to-1 disk-symmetric Möbius factor.
+// V222 cayley: upper-half-plane → unit disk conformal map.
+// V223 complex_gamma: Γ(z) via Lanczos g=7 + reflection.
+// V224 lambert_w: principal branch W₀ via Halley iteration.
+// ---------------------------------------------------------------------
+
+// Repeated-squaring integer power for complex numbers. Faster than
+// complex_pow (log/exp roundtrip) for small integer exponents. Used by
+// var_newton to compute zⁿ and zⁿ⁻¹ for n in [2, 8].
+fn complex_pow_int(z: vec2f, k: i32) -> vec2f {
+  var result = vec2f(1.0, 0.0);
+  var base = z;
+  var e = k;
+  loop {
+    if (e <= 0) { break; }
+    if ((e & 1) == 1) { result = complex_mul(result, base); }
+    base = complex_sqr(base);
+    e = e >> 1;
+  }
+  return result;
+}
+
+// V220 newton: one Newton step on zⁿ − 1.
+//   z' = z − f(z)/f'(z) = z − (zⁿ − 1) / (n · zⁿ⁻¹)
+//       = ((n−1)·zⁿ + 1) / (n · zⁿ⁻¹)
+// Pole at z = 0 (zⁿ⁻¹ → 0). Guarded by complex_div's |b|² floor + an
+// explicit zero-check on the divisor's magnitude.
+fn var_newton(p: vec2f, w: f32, n_in: f32) -> vec2f {
+  let n = clamp(i32(n_in + 0.5), 2, 8);
+  let zn = complex_pow_int(p, n);
+  let znm1 = complex_pow_int(p, n - 1);
+  let nf = f32(n);
+  let nm1 = f32(n - 1);
+  let num = vec2f(nm1 * zn.x + 1.0, nm1 * zn.y);
+  let den = vec2f(nf * znm1.x, nf * znm1.y);
+  // complex_div's |b|² floor (1e-100) flushes to 0 on Dawn f32 (see
+  // reference-dawn-f32-ftz-cliff). For z=0 (the n·zⁿ⁻¹ pole), an explicit
+  // 1e-20 threshold on the denominator magnitude returns the passthrough
+  // p instead of Inf — semantically equivalent to "z stays put at the
+  // singularity" and the chaos game's bad-value check tolerates this.
+  if (dot(den, den) < 1.0e-20) { return w * p; }
+  return w * complex_div(num, den);
+}
+
+// V220 newton DC color: classify which root of zⁿ − 1 the post-step
+// coordinate is closest to. Roots are evenly-spaced on the unit
+// circle at angles 2πk/n. Hue = k/n via the existing hsl_to_rgb
+// (saturation 1, lightness 0.55 — same look as dc_perlin / dc_cylinder).
+// Called from the DC dispatch block in the chain loop AFTER the
+// position warp; we recompute the post-step coord here so the color
+// reflects which root the next chaos iter is heading toward (matches
+// the classical Newton fractal coloring algorithm).
+fn var_newton_color(p_pre: vec2f, n_in: f32) -> vec3f {
+  let n = clamp(i32(n_in + 0.5), 2, 8);
+  let z_post = var_newton(p_pre, 1.0, f32(n));
+  var best_k: i32 = 0;
+  var best_d2: f32 = 1.0e30;
+  let two_pi_over_n = 6.2831853 / f32(n);
+  for (var k: i32 = 0; k < 8; k = k + 1) {
+    if (k >= n) { break; }
+    let ang = two_pi_over_n * f32(k);
+    let r_k = vec2f(cos(ang), sin(ang));
+    let d = z_post - r_k;
+    let d2 = dot(d, d);
+    if (d2 < best_d2) { best_d2 = d2; best_k = k; }
+  }
+  let hue = f32(best_k) / f32(n);
+  return hsl_to_rgb(vec3f(hue, 1.0, 0.55));
+}
+
+// V221 blaschke: 2-to-1 disk-symmetric Möbius factor.
+//   B(z) = z · (z − a) / (1 − ā · z)
+// Two zeros: origin + a (configurable point in the unit disk). The unit
+// circle is invariant. Pole at z = 1/ā lies outside the disk for |a|<1;
+// complex_div's floor plus an explicit zero-check on the denominator
+// magnitude handles the f32 cliff (same pattern as var_newton).
+fn var_blaschke(p: vec2f, w: f32, ax: f32, ay: f32) -> vec2f {
+  let a = vec2f(ax, ay);
+  let a_conj = vec2f(ax, -ay);
+  let num = complex_mul(p, p - a);
+  let den = vec2f(1.0, 0.0) - complex_mul(a_conj, p);
+  if (dot(den, den) < 1.0e-20) { return w * p; }
+  return w * complex_div(num, den);
+}
+
+// V222 cayley: z' = (z − s·i) / (z + s·i). Conformal map from upper
+// half-plane to the open unit disk. s=1 is the textbook form; s
+// widens/narrows the strip near the real axis. Pole at z = −s·i.
+fn var_cayley(p: vec2f, w: f32, s: f32) -> vec2f {
+  let si = vec2f(0.0, s);
+  let den = p + si;
+  if (dot(den, den) < 1.0e-20) { return w * p; }
+  return w * complex_div(p - si, den);
+}
+
+// V223 complex_gamma: Γ(z) via Lanczos g=7 (9 coefficients), with
+// reflection branch Γ(z) = π / (sin(πz)·Γ(1−z)) for Re(z) < 0.5.
+// Cephes / scipy.special.gamma equivalent precision in f64; f32 here
+// suffers ~1% loss from catastrophic cancellation across the
+// alternating-sign Lanczos coefficients. The `scale` param multiplies
+// the output to keep walker trajectories bounded (Γ has factorial-like
+// growth and an unscaled |Γ(10+i)| ≈ 362880 would blow the chaos game).
+fn var_complex_gamma(p: vec2f, w: f32, scale: f32) -> vec2f {
+  let LANCZOS_G: f32 = 7.0;
+  let SQRT_2PI: f32 = 2.5066282746310002;
+  var z = p;
+  var reflect = false;
+  if (z.x < 0.5) {
+    reflect = true;
+    z = vec2f(1.0 - z.x, -z.y);
+  }
+  let x = z - vec2f(1.0, 0.0);
+  var A = vec2f(0.99999999999980993, 0.0);
+  // Lanczos g=7 series: A = p[0] + Σ_{k=1..8} p[k] / (x + k)
+  let c1: f32 = 676.5203681218851;
+  let c2: f32 = -1259.1392167224028;
+  let c3: f32 = 771.32342877765313;
+  let c4: f32 = -176.61502916214059;
+  let c5: f32 = 12.507343278686905;
+  let c6: f32 = -0.13857109526572012;
+  let c7: f32 = 9.9843695780195716e-6;
+  let c8: f32 = 1.5056327351493116e-7;
+  A = A + complex_div(vec2f(c1, 0.0), x + vec2f(1.0, 0.0));
+  A = A + complex_div(vec2f(c2, 0.0), x + vec2f(2.0, 0.0));
+  A = A + complex_div(vec2f(c3, 0.0), x + vec2f(3.0, 0.0));
+  A = A + complex_div(vec2f(c4, 0.0), x + vec2f(4.0, 0.0));
+  A = A + complex_div(vec2f(c5, 0.0), x + vec2f(5.0, 0.0));
+  A = A + complex_div(vec2f(c6, 0.0), x + vec2f(6.0, 0.0));
+  A = A + complex_div(vec2f(c7, 0.0), x + vec2f(7.0, 0.0));
+  A = A + complex_div(vec2f(c8, 0.0), x + vec2f(8.0, 0.0));
+  let t = x + vec2f(LANCZOS_G + 0.5, 0.0);
+  let t_pow = complex_pow(t, x + vec2f(0.5, 0.0));
+  let exp_neg_t = complex_exp(-t);
+  var result = SQRT_2PI * complex_mul(t_pow, complex_mul(exp_neg_t, A));
+  if (reflect) {
+    // Original (pre-reflection) z = p. sin(πp) and divide.
+    let pi_p = 3.14159265 * p;
+    let sin_pi_p = complex_sin(pi_p);
+    let pi_over_sin = complex_div(vec2f(3.14159265, 0.0), sin_pi_p);
+    result = complex_div(pi_over_sin, result);
+  }
+  return (w * scale) * result;
+}
+
+// V224 lambert_w: principal-branch Lambert W (W₀) via Halley iteration.
+// W(z) satisfies W·e^W = z. Magnitude-gated initial guess: |z| < 1 uses
+// log(1+z) (small-z series), |z| ≥ 1 uses log(z) − log(log(z))
+// (asymptotic). 2–4 Halley iterations land within ~f32 precision.
+// Halley step: w_{n+1} = w_n − f / (f' − f·f''/(2·f'))
+//   where f(w) = w·e^w − z, f'(w) = (w+1)·e^w, f''(w) = (w+2)·e^w.
+//   Simplifies to: w_{n+1} = w_n − f / ((w+1)·e^w − f·(w+2)/(2·(w+1))).
+fn var_lambert_w(p: vec2f, w: f32, iters_in: f32) -> vec2f {
+  let z = p;
+  let iters = clamp(i32(iters_in + 0.5), 1, 4);
+  let mag = length(z);
+  var wn: vec2f;
+  // Threshold 2.0 (not 1.0): the asymptotic guess log(z) − log(log(z))
+  // is degenerate at |z| ≤ e because log(z) → 0 → log(log) blows up.
+  // log(1+z) is well-defined for all z except z = −1 and gives a usable
+  // initial guess up through |z| ≈ 2; past that, Halley benefits from the
+  // sharper asymptotic start.
+  if (mag < 2.0) {
+    wn = complex_log(vec2f(1.0, 0.0) + z);
+  } else {
+    let log_z = complex_log(z);
+    wn = log_z - complex_log(log_z);
+  }
+  for (var i: i32 = 0; i < 4; i = i + 1) {
+    if (i >= iters) { break; }
+    let ew = complex_exp(wn);
+    let w_ew = complex_mul(wn, ew);
+    let f = w_ew - z;
+    let wp1 = wn + vec2f(1.0, 0.0);
+    let wp2 = wn + vec2f(2.0, 0.0);
+    let two_wp1 = 2.0 * wp1;  // scalar * vec2 = (2·wp1.x, 2·wp1.y)
+    if (dot(two_wp1, two_wp1) < 1.0e-20) { break; }
+    let inner = complex_div(complex_mul(wp2, f), two_wp1);
+    let fp = complex_mul(ew, wp1);
+    let denom = fp - inner;
+    if (dot(denom, denom) < 1.0e-20) { break; }
+    wn = wn - complex_div(f, denom);
+  }
+  return w * wn;
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
 // default → (0,0) so it contributes nothing to pv.
 // V=99..102 (DC variations) — most return (0,0) position (color-only);
-// dc_cylinder (102) warps position like the original cylinder. Color is
-// computed in the chain loop via the var_dc_*_color helpers above when
-// xf.color_params.w (dc_flag) is set.
+// dc_cylinder (102) and newton (220) are position-warp + DC variations:
+// position contribution from their normal switch case, color override
+// from the DC dispatch block in the chain loop when xf.color_params.w
+// (dc_flag) is set.
 // p0/p1 come from xf.vars[k].zw; p2..p5 come from xf.vars_extra[k];
 // p6/p7 come from xf.vars_extra2[k].xy (Phase 9b Batch K seam extension);
 // p8/p9 come from xf.vars_extra2[k].zw (#120 seam extension — bipolar2).
@@ -5387,6 +5610,12 @@ fn apply_variation(
     case 217u: { return var_ennepers2(p, w, p0, p1, p2); }
     case 218u: { return var_apollony(p, w, wi); }
     case 219u: { return var_circlecrop(p, w, p0, p1, p2, p3, p4, wi); }
+    // #133 — Conformal & complex-analytic warps.
+    case 220u: { return var_newton(p, w, p0); }
+    case 221u: { return var_blaschke(p, w, p0, p1); }
+    case 222u: { return var_cayley(p, w, p0); }
+    case 223u: { return var_complex_gamma(p, w, p0); }
+    case 224u: { return var_lambert_w(p, w, p0); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
@@ -5564,6 +5793,12 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         } else if (var_idx == 102u) {
           dc_rgb_override = var_dc_cylinder_color(pa_mut);
           dc_override_active = true;
+        } else if (var_idx == 220u) {
+          // #133 V220 newton: position-warp + DC basin color. Color
+          // helper recomputes one Newton step internally to classify
+          // the nearest root for the basin hue.
+          dc_rgb_override = var_newton_color(pa_mut, v.z);
+          dc_override_active = true;
         }
       }
     }
@@ -5737,6 +5972,11 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
               dc_override_active = true;
             } else if (var_idx == 102u) {
               dc_rgb_override = var_dc_cylinder_color(fpa_mut);
+              dc_override_active = true;
+            } else if (var_idx == 220u) {
+              // #133 V220 newton: position-warp + DC basin color
+              // (finalxform parallel).
+              dc_rgb_override = var_newton_color(fpa_mut, v.z);
               dc_override_active = true;
             }
           }

@@ -321,6 +321,14 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   b_mod: ['radius', 'distance'],
   b_transform: ['rotate', 'power', 'move', 'split'],
   parallel: ['x1width', 'x1tilesize', 'x1mod1', 'x1mod2', 'x1height', 'x1move', 'x2width', 'x2tilesize', 'x2mod1', 'x2mod2'],  // 10 params (drops x2height, x2move to fit seam)
+  // #133 — Conformal & complex-analytic warps (V220+). Original (not in
+  // JWildfire) variations. Pyr3-specific param names since JWildfire has
+  // no reference.
+  newton: ['n'],
+  blaschke: ['a_re', 'a_im'],
+  cayley: ['s'],
+  complex_gamma: ['scale'],
+  lambert_w: ['iters'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -545,6 +553,13 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   b_mod: [1.0, 0.0],
   b_transform: [0.0, 1, 0.0, 0.0],
   parallel: [5.0, 0.50, 0.30, 1.0, 0.50, 1.0, 5.0, 0.50, 0.30, 1.0],
+  // #133 — Conformal & complex-analytic warps (V220+). Original (not in
+  // JWildfire); pyr3-chosen defaults match the catalog scaffold conventions.
+  newton: [3],                               // n=3 (classical tri-basin)
+  blaschke: [-0.75, -0.90],                  // a near boundary → 2-to-1 ferning pattern
+  cayley: [0.8],                             // s=0.8 — wider mapped strip near real axis
+  complex_gamma: [0.4],                      // scale=0.4 — Γ growth tamed but still visible
+  lambert_w: [2],                            // 2 Halley iterations (~10-digit precision)
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

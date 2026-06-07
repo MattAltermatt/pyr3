@@ -7,7 +7,7 @@
 
 import { V } from './variations';
 
-export type CatalogSource = 'flam3' | 'dc' | 'jwf';
+export type CatalogSource = 'flam3' | 'dc' | 'jwf' | 'novel';
 
 export interface ParamDoc {
   name: string;
@@ -47,11 +47,14 @@ export interface VariationDoc {
 }
 
 /** Source category from variation index. Index ranges defined by the V
- *  table in src/variations.ts: flam3 V0..V98, DC family V99..V102,
- *  JWildfire ports V103..V106. */
+ *  table in src/variations.ts: flam3 V0..V98, DC family V99..V102 +
+ *  V220 newton (#133), JWildfire ports V103..V219, novel pyr3 originals
+ *  V221..V224 (#133 — grep-verified absent from JWildfire source). */
 export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
+  if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
+  if (idx >= V.blaschke && idx <= V.lambert_w) return 'novel'; // #133 — original pyr3 variations
   return 'jwf';
 }
 
@@ -4123,6 +4126,128 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'scatter_area', default: 0.0, min: -1, max: 1, step: 0.05 },
       { name: 'zero',         default: 1,   min: 0, max: 1, step: 1    },
     ],
+  },
+  // ---------------------------------------------------------------------
+  // Conformal & complex-analytic warps — V220 (#133). Original (not in
+  // JWildfire) variations from classical complex analysis. Newton extends
+  // the dc_cylinder (V102) "position-warp + DC color" precedent — its
+  // basin coloring is the umbrella #128 headline shot.
+  // ---------------------------------------------------------------------
+  {
+    idx: V.newton,
+    name: 'newton',
+    source: 'dc',  // newton emits DC basin color when dc_flag is set
+    formula: 'V_{220}(z, n) = z - \\frac{z^n - 1}{n\\,z^{n-1}}',
+    blurb: 'One Newton step on zⁿ − 1. When the xform\'s DC flag is set, each splat is colored by which root the post-step coordinate is nearest to — producing the iconic Newton-fractal tri-basin (n=3), tetra-basin (n=4), or hepta-basin (n=7) painting that palette-index renderers cannot match. Without the DC flag, ships as a pure position warp with strong convergence toward the n roots on the unit circle.',
+    params: [
+      { name: 'n', default: 3, min: 2, max: 8, step: 1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      // n=3 catalog default. Math.pow on (r, phi) form mirrors the WGSL
+      // complex_pow_int + complex_div sequence.
+      const n = 3;
+      const r = Math.hypot(x, y);
+      const phi = Math.atan2(y, x);
+      const rN = Math.pow(r, n);
+      const rNm1 = Math.pow(r, n - 1);
+      const zn_re = rN * Math.cos(n * phi);
+      const zn_im = rN * Math.sin(n * phi);
+      const znm1_re = rNm1 * Math.cos((n - 1) * phi);
+      const znm1_im = rNm1 * Math.sin((n - 1) * phi);
+      const num_re = (n - 1) * zn_re + 1;
+      const num_im = (n - 1) * zn_im;
+      const den_re = n * znm1_re;
+      const den_im = n * znm1_im;
+      const denom2 = den_re * den_re + den_im * den_im;
+      // f64-side pole guard mirrors WGSL: at z=0 the denominator is (0,0);
+      // return identity passthrough.
+      if (denom2 < 1e-20) return [x, y];
+      return [
+        (num_re * den_re + num_im * den_im) / denom2,
+        (num_im * den_re - num_re * den_im) / denom2,
+      ];
+    },
+  },
+  {
+    idx: V.blaschke,
+    name: 'blaschke',
+    source: 'novel',
+    formula: 'V_{221}(z, a) = z \\cdot \\frac{z - a}{1 - \\bar{a}\\,z}',
+    blurb: 'Single-zero Blaschke product (2-to-1 form). Two zeros — origin and the configurable complex point a in the unit disk — produce a 2-to-1 disk symmetry. The unit circle maps to itself; interior maps to interior. Move a around to rotate the symmetry pattern.',
+    params: [
+      { name: 'a_re', default: -0.75, min: -0.95, max: 0.95, step: 0.05 },
+      { name: 'a_im', default: -0.90, min: -0.95, max: 0.95, step: 0.05 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const ax = -0.75, ay = -0.90;
+      // num = z · (z − a)
+      const za_re = x - ax, za_im = y - ay;
+      const num_re = x * za_re - y * za_im;
+      const num_im = x * za_im + y * za_re;
+      // den = 1 − ā · z; ā = (ax, −ay)
+      const ax_c = ax, ay_c = -ay;
+      const az_re = ax_c * x - ay_c * y;
+      const az_im = ax_c * y + ay_c * x;
+      const den_re = 1 - az_re;
+      const den_im = -az_im;
+      const denom2 = den_re * den_re + den_im * den_im;
+      if (denom2 < 1e-20) return [x, y];
+      return [
+        (num_re * den_re + num_im * den_im) / denom2,
+        (num_im * den_re - num_re * den_im) / denom2,
+      ];
+    },
+  },
+  {
+    idx: V.cayley,
+    name: 'cayley',
+    source: 'novel',
+    formula: 'V_{222}(z, s) = \\frac{z - s\\,i}{z + s\\,i}',
+    blurb: 'Cayley transform — the classical conformal map from the upper half-plane to the open unit disk. The s parameter scales the i offset; s=1 is the textbook form. Produces tightly-curled flow near the negative imaginary axis (the map\'s pole).',
+    params: [
+      { name: 's', default: 0.8, min: 0.1, max: 4.0, step: 0.1 },
+    ],
+    defaultWeight: 0.2,
+    warpFn: (x, y) => {
+      const s = 0.8;
+      const num_re = x, num_im = y - s;
+      const den_re = x, den_im = y + s;
+      const denom2 = den_re * den_re + den_im * den_im;
+      if (denom2 < 1e-20) return [x, y];
+      return [
+        (num_re * den_re + num_im * den_im) / denom2,
+        (num_im * den_re - num_re * den_im) / denom2,
+      ];
+    },
+  },
+  {
+    idx: V.complex_gamma,
+    name: 'complex_gamma',
+    source: 'novel',
+    formula: '\\Gamma(z) \\approx \\sqrt{2\\pi}\\,t^{z-0.5}\\,e^{-t}\\,A_g(z)',
+    blurb: 'Complex Γ via the Lanczos g=7 approximation, with reflection-branch handling for Re(z) < 0.5. Γ(n+1) = n! interpolates smoothly between factorials, producing dramatic ringed structure around the positive real axis. The scale parameter multiplies the output to keep Γ\'s factorial growth from blowing the chaos walker.',
+    params: [
+      { name: 'scale', default: 0.4, min: 0.05, max: 1.0, step: 0.05 },
+    ],
+    defaultWeight: 0.32,
+    // No warpFn: complex Γ is too expensive for the catalog SVG warp pane,
+    // and Lanczos f32 precision artifacts would dominate the small-scale
+    // visualization anyway. Catalog renders a "warp not applicable" note.
+  },
+  {
+    idx: V.lambert_w,
+    name: 'lambert_w',
+    source: 'novel',
+    formula: 'W_0(z) \\text{ satisfies } W\\,e^W = z',
+    blurb: 'Principal-branch Lambert W function via Halley iteration. The inverse of f(w) = w·e^w shows up in delayed differential equations, asymptotic analysis, and combinatorics (number of rooted trees). As a chaos-game warp, W produces gentle logarithmic spirals near the origin transitioning into knee-shaped flow far from origin.',
+    params: [
+      { name: 'iters', default: 2, min: 1, max: 4, step: 1 },
+    ],
+    defaultWeight: 0.5,
+    // No warpFn: iterative + the f64 oracle would have its own Halley loop;
+    // catalog renders a "warp not applicable" note.
   },
 ];
 

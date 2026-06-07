@@ -1,11 +1,12 @@
 // #119 — Variation Catalog sidebar.
 //
-// Sticky left-pane index: search + three collapsible sticky-headed
-// sections (flam3 / DC family / JWildfire ports). All 220 variations
-// always render in numeric order. Search filters in-place; collapse
-// hides a section's members but keeps its header pinned. Scroll-spy is
-// wired by the host (which knows about scroll containers); this module
-// only exposes `setActive(idx)` for the host to call.
+// Sticky left-pane index: search + four collapsible sticky-headed
+// sections (flam3 / DC family / JWildfire ports / Novel pyr3 originals).
+// All 225 variations always render in numeric order. Search filters
+// in-place; collapse hides a section's members but keeps its header
+// pinned. Scroll-spy is wired by the host (which knows about scroll
+// containers); this module only exposes `setActive(idx)` for the host
+// to call.
 //
 // All DOM construction goes through createElement + textContent — pyr3's
 // no-innerHTML invariant (PYR3-065) is enforced by a test.
@@ -19,16 +20,18 @@ interface VariationRow {
   source: CatalogSource;
 }
 
-const SOURCES: readonly CatalogSource[] = ['flam3', 'dc', 'jwf'];
+const SOURCES: readonly CatalogSource[] = ['flam3', 'dc', 'jwf', 'novel'];
 const SOURCE_LABEL: Record<CatalogSource, string> = {
   flam3: 'flam3',
   dc:    'DC family',
   jwf:   'JWildfire ports',
+  novel: 'Novel pyr3 originals',
 };
 const SOURCE_BADGE: Record<CatalogSource, string> = {
   flam3: '',
   dc:    'DC',
   jwf:   'JWF',
+  novel: 'New',
 };
 
 export interface SidebarOptions {

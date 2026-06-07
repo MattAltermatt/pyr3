@@ -16,12 +16,15 @@ describe('listVariations', () => {
     expect(idxs).toEqual([...idxs].sort((a, b) => a - b));
   });
 
-  it('classifies the DC family + at least the original JWF batch', () => {
+  it('classifies the DC family + at least the original JWF batch + the novel pyr3 originals', () => {
     const rows = listVariations();
-    // DC family is fixed at 4 (dc_linear..dc_cylinder); the JWF count grows
-    // as batches ship — assert lower-bound + correct membership rather
-    // than a brittle exact count.
-    expect(rows.filter(r => r.source === 'dc')).toHaveLength(4);
+    // DC family: 4 originals (dc_linear..dc_cylinder) plus newton (V220, #133),
+    // pyr3's first position-warp + DC variation outside the V99..V102 range.
+    // Novel pyr3 originals: V221..V224 (#133) — blaschke, cayley, complex_gamma,
+    // lambert_w, grep-verified absent from JWildfire source.
+    // JWF count grows as batches ship — lower-bound assertion stays loose.
+    expect(rows.filter(r => r.source === 'dc')).toHaveLength(5);
+    expect(rows.filter(r => r.source === 'novel')).toHaveLength(4);
     expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });
 });
@@ -38,10 +41,11 @@ describe('mountSidebar', () => {
     handle = mountSidebar(host, { onJump: idx => jumpedTo.push(idx) });
   });
 
-  it('renders every variation across three groups', () => {
+  it('renders every variation across four groups', () => {
     const total = Object.keys(V).length;
     expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(total);
-    expect(host.querySelectorAll('.pyr3-cat-group-head').length).toBe(3);
+    // flam3 / DC family / JWildfire ports / Novel pyr3 originals (#133).
+    expect(host.querySelectorAll('.pyr3-cat-group-head').length).toBe(4);
   });
 
   it('header count shows the grand total', () => {

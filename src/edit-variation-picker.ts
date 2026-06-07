@@ -40,6 +40,7 @@ export const VARIATION_TOOLTIPS: Record<string, string> = {
   dc_perlin: 'Color from a Perlin noise field — the marbled / painterly look',
   dc_gridout: 'Color by canvas quadrant — discrete-region direct color',
   dc_cylinder: 'Direct-color version of cylinder (shape + color combined)',
+  newton: 'Newton-step on zⁿ−1; DC flag → iconic basin coloring per root',
 };
 
 /** Canonical reference for the DC (direct-color) variation family.
@@ -78,7 +79,7 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     // #114 — DC (direct-color) family. JWildfire-origin; color comes from
     // spatial position instead of the palette index for any xform that
     // includes one of these. See VARIATION_TOOLTIPS and DC_DOCS_URL above.
-    'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder],
+    'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder, V.newton],
   };
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();
