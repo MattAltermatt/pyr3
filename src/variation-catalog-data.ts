@@ -3717,6 +3717,78 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [x, y];
     },
   },
+  // ============================================================
+  // #121 batch L9 — JWildfire 2D continuing (V195..V198).
+  // ============================================================
+  {
+    idx: V.pulse,
+    name: 'pulse',
+    source: sourceForIdx(V.pulse),
+    formula: "V_{195}(x, y) = w\\,(x + s_x\\sin(x f_x),\\; y + s_y\\sin(y f_y))",
+    blurb: "Sin-modulated linear identity. Adds a wavy displacement to each axis independently controlled by (freq, scale). At scalex=scaley=0 reduces to linear. Useful as a soft wavy perturbation overlay.",
+    params: [
+      { name: 'freqx',  default: 2.0, min: 0.1, max: 10, step: 0.1  },
+      { name: 'freqy',  default: 2.0, min: 0.1, max: 10, step: 0.1  },
+      { name: 'scalex', default: 1.0, min: 0,   max: 3,  step: 0.05 },
+      { name: 'scaley', default: 1.0, min: 0,   max: 3,  step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const freqx = 2, freqy = 2, scalex = 1, scaley = 1;
+      return [x + scalex * Math.sin(x * freqx), y + scaley * Math.sin(y * freqy)];
+    },
+  },
+  {
+    idx: V.rays1,
+    name: 'rays1',
+    source: sourceForIdx(V.rays1),
+    formula: "V_{196}: u = 1/\\tan(\\sqrt{t}) + w(2/\\pi)^2;\\; \\text{emit }w\\,u\\,t/(x, y)",
+    blurb: "Raykoid666's rays1 — radial ray burst. Combines cotangent of √(x²+y²) with an inverse-axis projection to produce dense radial-ray patterns radiating from origin.",
+    warpFn: (x, y) => {
+      const t = x * x + y * y;
+      const tanT = Math.tan(Math.sqrt(Math.max(t, 1e-30)));
+      const invTan = 1 / (Math.abs(tanT) < 1e-30 ? 1e-30 : tanT);
+      const u = invTan + (2 / Math.PI) ** 2;
+      const xs = u * t / (x === 0 ? 1e-30 : x);
+      const ys = u * t / (y === 0 ? 1e-30 : y);
+      return [xs, ys];
+    },
+  },
+  {
+    idx: V.rays2,
+    name: 'rays2',
+    source: sourceForIdx(V.rays2),
+    formula: "V_{197}: u = 1/\\cos((t+\\epsilon)\\tan(1/t+\\epsilon));\\; \\text{emit }w/10 \\cdot u\\,t/(x, y)",
+    blurb: "Raykoid666's rays2 — increased trig complexity radial ray burst. Cosine of (t·tan(1/t)) drives an even more dense radial pattern.",
+    warpFn: (x, y) => {
+      const t = x * x + y * y;
+      const tSafe = Math.max(t, 1e-30);
+      const inner = (tSafe + 1e-6) * Math.tan(1 / tSafe + 1e-6);
+      const cosI = Math.cos(inner);
+      const u = 1 / (Math.abs(cosI) < 1e-30 ? 1e-30 : cosI);
+      const coef = 1 / 10;
+      const xs = coef * u * t / (x === 0 ? 1e-30 : x);
+      const ys = coef * u * t / (y === 0 ? 1e-30 : y);
+      return [xs, ys];
+    },
+  },
+  {
+    idx: V.rays3,
+    name: 'rays3',
+    source: sourceForIdx(V.rays3),
+    formula: "V_{198}: u = 1/\\sqrt{\\cos(\\sin(t^2+\\epsilon)\\sin(1/t^2+\\epsilon))};\\; \\text{emit }w/10 \\cdot u (\\cos t, \\tan t)\\,t/(x, y)",
+    blurb: "Raykoid666's rays3 — highest trig complexity in the rays trio. Triple-nested sin/cos drives the radial-ray pattern, with cos(t) on x-axis and tan(t) on y-axis producing asymmetric burst patterns.",
+    warpFn: (x, y) => {
+      const t = x * x + y * y;
+      const tSafe = Math.max(t, 1e-30);
+      const inner = Math.sin(t * t + 1e-6) * Math.sin(1 / (tSafe * tSafe) + 1e-6);
+      const denom = Math.sqrt(Math.max(Math.cos(inner), 1e-30));
+      const u = 1 / Math.max(denom, 1e-30);
+      const coef = 1 / 10;
+      const xs = coef * u * Math.cos(t) * t / (x === 0 ? 1e-30 : x);
+      const ys = coef * u * Math.tan(t) * t / (y === 0 ? 1e-30 : y);
+      return [xs, ys];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

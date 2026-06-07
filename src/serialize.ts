@@ -298,6 +298,8 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   hole2: ['a', 'b', 'c', 'd', 'inside', 'shape'],
   julia_outside: ['re_div', 'im_div', 'mode'],
   fourth: ['spin', 'space', 'twist', 'x', 'y'],
+  // #121 L-tier batch L9 — rays1/rays2/rays3 are 0-param (no entry).
+  pulse: ['freqx', 'freqy', 'scalex', 'scaley'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -501,6 +503,8 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   hole2: [1.0, 2.0, 1.0, 1.0, 0, 0],                     // a, b, c, d, inside, shape=0 — Faber/Stefanov/Sidwell
   julia_outside: [1.0, 0.0, 0],                          // re_div=1, im_div=0, mode=0 — Whittaker Courtney default
   fourth: [Math.PI, 0.10, 0.20, 0.30, 0.12],             // spin, space, twist, x, y — guagapunyaimel defaults
+  // #121 L-tier batch L9 — JWildfire init values verbatim.
+  pulse: [2.0, 2.0, 1.0, 1.0],                           // freqx, freqy, scalex, scaley
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

@@ -420,6 +420,14 @@ export const V = {
   lace_js: 192,
   julia_outside: 193,
   fourth: 194,
+  // #121 L-tier batch L9. pulse (sin-modulated linear), rays1/rays2/rays3
+  // (Raykoid666 trio of radial-ray-burst kernels with increasing trig
+  // complexity). Triaged: octagon/onion/octapol (3D), linear_t/noise/pie
+  // (already shipped), pixel_flow (DC).
+  pulse: 195,
+  rays1: 196,
+  rays2: 197,
+  rays3: 198,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

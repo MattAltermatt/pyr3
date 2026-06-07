@@ -4341,6 +4341,56 @@ fn var_fourth(
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L9 — JWildfire 2D continuing (4 vars). Sources: PulseFunc,
+// Rays1Func + Rays2Func + Rays3Func (Raykoid666 trio). All LGPL-2.1+.
+// ---------------------------------------------------------------------
+
+// pulse — sin-modulated linear. x' = w(x + scalex·sin(x·freqx)), same y.
+fn var_pulse(p: vec2f, w: f32, freqx: f32, freqy: f32, scalex: f32, scaley: f32) -> vec2f {
+  return vec2f(
+    w * (p.x + scalex * sin(p.x * freqx)),
+    w * (p.y + scaley * sin(p.y * freqy)),
+  );
+}
+
+// rays1 — Raykoid666. 0 params. Radial ray burst.
+fn var_rays1(p: vec2f, w: f32) -> vec2f {
+  let t = p.x * p.x + p.y * p.y;
+  let tan_safe = tan(sqrt(max(t, 1e-30)));
+  let inv_tan = 1.0 / select(tan_safe, 1e-30, abs(tan_safe) < 1e-30);
+  let u = inv_tan + w * (2.0 / PI) * (2.0 / PI);
+  let xs = w * u * t / select(p.x, 1e-30, p.x == 0.0);
+  let ys = w * u * t / select(p.y, 1e-30, p.y == 0.0);
+  return vec2f(xs, ys);
+}
+
+// rays2 — Raykoid666. 0 params. Increased trig complexity.
+fn var_rays2(p: vec2f, w: f32) -> vec2f {
+  let t = p.x * p.x + p.y * p.y;
+  let t_safe = max(t, 1e-30);
+  let inner = (t_safe + 1e-6) * tan(1.0 / t_safe + 1e-6);
+  let cos_inner = cos(inner);
+  let u = 1.0 / select(cos_inner, 1e-30, abs(cos_inner) < 1e-30);
+  let coef = w / 10.0;
+  let xs = coef * u * t / select(p.x, 1e-30, p.x == 0.0);
+  let ys = coef * u * t / select(p.y, 1e-30, p.y == 0.0);
+  return vec2f(xs, ys);
+}
+
+// rays3 — Raykoid666. 0 params. Highest trig complexity.
+fn var_rays3(p: vec2f, w: f32) -> vec2f {
+  let t = p.x * p.x + p.y * p.y;
+  let t_safe = max(t, 1e-30);
+  let inner = sin(t * t + 1e-6) * sin(1.0 / (t_safe * t_safe) + 1e-6);
+  let denom = sqrt(max(cos(inner), 1e-30));
+  let u = 1.0 / max(denom, 1e-30);
+  let coef = w / 10.0;
+  let xs = coef * u * cos(t) * t / select(p.x, 1e-30, p.x == 0.0);
+  let ys = coef * u * tan(t) * t / select(p.y, 1e-30, p.y == 0.0);
+  return vec2f(xs, ys);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4578,6 +4628,10 @@ fn apply_variation(
     case 192u: { return var_lace_js(p, w, wi); }
     case 193u: { return var_julia_outside(p, w, p0, p1, p2, wi); }
     case 194u: { return var_fourth(p, w, p0, p1, p2, p3, p4); }
+    case 195u: { return var_pulse(p, w, p0, p1, p2, p3); }
+    case 196u: { return var_rays1(p, w); }
+    case 197u: { return var_rays2(p, w); }
+    case 198u: { return var_rays3(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
