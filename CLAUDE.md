@@ -12,9 +12,12 @@ npm run test:parity-fe-be       # FULL 26-fixture FE↔BE sweep, ~13min — PRE-
 npm run test:all                # union of test + parity (excludes the slow FE↔BE full sweep)
 npm run typecheck               # tsc --noEmit (full project)
 npm run typecheck:engine        # no-DOM kernel typecheck — enforces the FE/BE seam (#15)
-npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims
+npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims (tsx ESM)
 npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
 npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (reference SHOWCASE_4K)
+npm run bundle:cli render                           # produce build/.tmp/pyr3-render.cjs (esbuild bundle)
+npm run smoke:cli                                   # end-to-end smoke for the bundled CJS
+npm run build:cli render                            # produce ./build/pyr3-render — standalone SEA binary (~155 MB)
 ```
 
 Before commit: `npm run typecheck && npm test`. The BE↔flam3-C parity rig
@@ -49,9 +52,12 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
   milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.4
-  have all shipped** (latest: `v1.4.0` on 2026-06-02 — render improvements). The active
-  themed milestones are **Apophysis and JWildfire** (plugin pack #114, gradient editor #115,
-  channel curves #116) and **Mobile rework** (#33). No Project board — milestone-only planning.
+  have all shipped** (latest: `v1.4.0` on 2026-06-02 — render improvements). Active themed
+  milestones: **Apophysis and JWildfire** (#6 — plugin pack #114 shipped 2026-06-06; gradient
+  editor #115, channel curves #116, importer parity sweep #17 still open), **Binary
+  distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
+  verify #126 still open), and **Mobile rework** (#13 — #66 mobile overhaul). No Project
+  board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
 - **In-repo docs that survive:** `VISION` · `CLAUDE` · `README` (+ `HISTORY.md`, `NOTICE.md`).
@@ -121,8 +127,11 @@ v0.1):
 - Browser side: `src/main.ts` calls `createRenderer(device, format, opts)` after acquiring
   the GPU adapter from `navigator.gpu`.
 - CLI side: `bin/pyr3-render.ts` stamps `webgpu`'s `globals` onto `globalThis`, sets up a
-  `happy-dom` `DOMParser` shim (for `.flame` XML parsing), then calls the same
-  `createRenderer()`.
+  `linkedom` `DOMParser` shim (for `.flame` XML parsing — was `happy-dom`; swapped in #125
+  to drop ~14 MB from the bundled CJS), then calls the same `createRenderer()`. The same
+  module dual-modes between the tsx-driven `npm run render` path and the SEA-bundled
+  `./build/pyr3-render` binary (#31) — Dawn-node is bundled as a SEA asset and extracted
+  to `~/.cache/pyr3/dawn-<sha>.node` on first launch.
 - BE 4K (v0.20+): `bin/pyr3-render.ts --preset 4k` uses `src/presets.ts`
   to bundle dim/quality/oversample (reference SHOWCASE_4K-matched). The
   pre-v0.20 `scripts/pyr3-023-be-render-4k.mjs` wrapper was graduated
