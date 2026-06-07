@@ -4654,6 +4654,137 @@ fn var_hex_modulus(p: vec2f, w: f32, size: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L14 (final). 4 vars: boarders2 (Xyrus02 grid-cell border
+// fold), b_mod (Faber bSeries modulus radial fold), b_transform (Faber
+// bSeries Möbius transform with RNG), parallel (Stefanov 10-param tile
+// parallel mode pair — x2height/x2move hardcoded inside kernel to fit
+// the 10-param seam).
+// ---------------------------------------------------------------------
+
+// boarders2 — Xyrus02. 3 params (c, left, right). Per-iter RNG decides
+// between center-pull (prob right/(left+right)) and edge-shift (prob
+// left/(left+right)). Bake _c = c·left, _cl = (1-c)·left, _cr =
+// right/(left+right) at callsite.
+fn var_boarders2(p: vec2f, w: f32, c: f32, left: f32, right: f32, wi: u32) -> vec2f {
+  let _c = c * left;
+  let _cl = (1.0 - c) * left;
+  let denom = left + right;
+  let _cr = right / select(denom, 1e-30, denom == 0.0);
+  let roundX = round(p.x);
+  let roundY = round(p.y);
+  let offsetX = p.x - roundX;
+  let offsetY = p.y - roundY;
+  if (rand01(wi) >= _cr) {
+    return vec2f(w * (offsetX * _c + roundX), w * (offsetY * _c + roundY));
+  }
+  if (abs(offsetX) >= abs(offsetY)) {
+    if (offsetX >= 0.0) {
+      return vec2f(
+        w * (offsetX * _c + roundX + _cl),
+        w * (offsetY * _c + roundY + _cl * offsetY / select(offsetX, 1e-30, offsetX == 0.0)),
+      );
+    }
+    return vec2f(
+      w * (offsetX * _c + roundX - _cl),
+      w * (offsetY * _c + roundY - _cl * offsetY / select(offsetX, 1e-30, offsetX == 0.0)),
+    );
+  }
+  if (offsetY >= 0.0) {
+    return vec2f(
+      w * (offsetX * _c + roundX + offsetX / select(offsetY, 1e-30, offsetY == 0.0) * _cl),
+      w * (offsetY * _c + roundY + _cl),
+    );
+  }
+  return vec2f(
+    w * (offsetX * _c + roundX - offsetX / select(offsetY, 1e-30, offsetY == 0.0) * _cl),
+    w * (offsetY * _c + roundY - _cl),
+  );
+}
+
+// b_mod — Faber bSeries. 2 params (radius, distance). Bipolar coords
+// with mu-axis modulus fold. Sibling of V163 bcollide / V184 shredrad.
+fn var_b_mod(p: vec2f, w: f32, radius: f32, distance: f32) -> vec2f {
+  let xp1 = p.x + 1.0;
+  let xm1 = p.x - 1.0;
+  let y2 = p.y * p.y;
+  var tau = 0.5 * (log(max(xp1 * xp1 + y2, 1e-30)) - log(max(xm1 * xm1 + y2, 1e-30)));
+  let sigma = PI - atan2(p.y, xp1) - atan2(p.y, 1.0 - p.x);
+  if (tau < radius && -tau < radius) {
+    let r_safe = max(radius, 1e-30);
+    let two_r = 2.0 * r_safe;
+    let arg = tau + r_safe + distance * r_safe;
+    tau = arg - floor(arg / two_r) * two_r - r_safe;
+  }
+  let temp = cosh(tau) - cos(sigma);
+  let temp_safe = select(temp, 1e-30, abs(temp) < 1e-30);
+  return vec2f(w * sinh(tau) / temp_safe, w * sin(sigma) / temp_safe);
+}
+
+// b_transform — Faber bSeries. 4 params (rotate, power int, move,
+// split). Bipolar coords with power-split + RNG randint angular slice.
+fn var_b_transform(p: vec2f, w: f32, rotate: f32, power_p: f32, move_v: f32, split: f32, wi: u32) -> vec2f {
+  let power = max(1.0, power_p);
+  let xp1 = p.x + 1.0;
+  let xm1 = p.x - 1.0;
+  let y2 = p.y * p.y;
+  var tau = 0.5 * (log(max(xp1 * xp1 + y2, 1e-30)) - log(max(xm1 * xm1 + y2, 1e-30))) / power + move_v;
+  var sigma = PI - atan2(p.y, xp1) - atan2(p.y, 1.0 - p.x) + rotate;
+  let randint = floor(rand01(wi) * power);
+  sigma = sigma / power + (2.0 * PI / power) * randint;
+  tau = tau + select(-split, split, p.x >= 0.0);
+  let temp = cosh(tau) - cos(sigma);
+  let temp_safe = select(temp, 1e-30, abs(temp) < 1e-30);
+  return vec2f(w * sinh(tau) / temp_safe, w * sin(sigma) / temp_safe);
+}
+
+// parallel — Stefanov. 10 params + 2 hardcoded (x2height=0.5, x2move=1.0
+// to fit 10-param seam — matches JWildfire defaults). Sibling of V205
+// intersection but with an additive move offset.
+fn var_parallel(
+  p: vec2f, w: f32,
+  x1width: f32, x1tilesize: f32, x1mod1: f32, x1mod2: f32, x1height: f32, x1move: f32,
+  x2width: f32, x2tilesize: f32, x2mod1: f32, x2mod2: f32,
+  wi: u32,
+) -> vec2f {
+  let x2height: f32 = 0.5;   // hardcoded — JWildfire default
+  let x2move: f32 = 1.0;     // hardcoded — JWildfire default
+  let xr1 = x1mod2 * x1mod1;
+  let xr2 = x2mod2 * x2mod1;
+  if (rand01(wi) < 0.5) {
+    let x1 = select(-x1width, x1width, rand01(wi) < 0.5);
+    let ox = w * x1tilesize * (p.x + round(x1 * log(max(rand01(wi), 1e-30))));
+    var oy: f32;
+    if (p.y > x1mod1) {
+      let arg = p.y + x1mod1;
+      let r_safe = max(xr1, 1e-30);
+      oy = w * x1height * (-x1mod1 + (arg - floor(arg / r_safe) * r_safe)) + w * x1move;
+    } else if (p.y < -x1mod1) {
+      let arg = x1mod1 - p.y;
+      let r_safe = max(xr1, 1e-30);
+      oy = w * x1height * (x1mod1 - (arg - floor(arg / r_safe) * r_safe)) + w * x1move;
+    } else {
+      oy = w * x1height * p.y + w * x1move;
+    }
+    return vec2f(ox, oy);
+  }
+  let x2 = select(-x2width, x2width, rand01(wi) < 0.5);
+  let ox = w * x2tilesize * (p.x + round(x2 * log(max(rand01(wi), 1e-30))));
+  var oy: f32;
+  if (p.y > x2mod1) {
+    let arg = p.y + x2mod1;
+    let r_safe = max(xr2, 1e-30);
+    oy = w * x2height * (-x2mod1 + (arg - floor(arg / r_safe) * r_safe)) - w * x2move;
+  } else if (p.y < -x2mod1) {
+    let arg = x2mod1 - p.y;
+    let r_safe = max(xr2, 1e-30);
+    oy = w * x2height * (x2mod1 - (arg - floor(arg / r_safe) * r_safe)) - w * x2move;
+  } else {
+    oy = w * x2height * p.y - w * x2move;
+  }
+  return vec2f(ox, oy);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4906,6 +5037,10 @@ fn apply_variation(
     case 207u: { return var_lozi(p, w, p0, p1, p2); }
     case 208u: { return var_hypershift(p, w, p0, p1); }
     case 209u: { return var_hex_modulus(p, w, p0); }
+    case 210u: { return var_boarders2(p, w, p0, p1, p2, wi); }
+    case 211u: { return var_b_mod(p, w, p0, p1); }
+    case 212u: { return var_b_transform(p, w, p0, p1, p2, p3, wi); }
+    case 213u: { return var_parallel(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

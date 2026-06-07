@@ -312,6 +312,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   lozi: ['a', 'b', 'c'],
   hypershift: ['shift', 'stretch'],
   hex_modulus: ['size'],
+  // #121 L-tier batch L14 (final). JWildfire param names verbatim.
+  boarders2: ['c', 'left', 'right'],
+  b_mod: ['radius', 'distance'],
+  b_transform: ['rotate', 'power', 'move', 'split'],
+  parallel: ['x1width', 'x1tilesize', 'x1mod1', 'x1mod2', 'x1height', 'x1move', 'x2width', 'x2tilesize', 'x2mod1', 'x2mod2'],  // 10 params (drops x2height, x2move to fit seam)
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -529,6 +534,13 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   lozi: [0.5, 1.0, 1.0],
   hypershift: [2.0, 1.0],
   hex_modulus: [1.0],
+  // #121 L-tier batch L14 (final) — JWildfire init values verbatim
+  // (parallel drops x2height/x2move to fit 10-param seam — hardcoded
+  // to JWildfire defaults 0.50/1.0 inside the WGSL kernel).
+  boarders2: [0.4, 0.65, 0.35],
+  b_mod: [1.0, 0.0],
+  b_transform: [0.0, 1, 0.0, 0.0],
+  parallel: [5.0, 0.50, 0.30, 1.0, 0.50, 1.0, 5.0, 0.50, 0.30, 1.0],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

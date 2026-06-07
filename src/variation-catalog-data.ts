@@ -3972,6 +3972,68 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [(X - FX_h) * weight, (Y - FY_h) * weight];
     },
   },
+  // ============================================================
+  // #121 batch L14 (final) — JWildfire 2D long tail (V210..V213).
+  // ============================================================
+  {
+    idx: V.boarders2,
+    name: 'boarders2',
+    source: sourceForIdx(V.boarders2),
+    formula: "V_{210}: \\text{grid-cell center-pull (prob }r/(l+r)\\text{) or edge-shift (prob }l/(l+r)\\text{)}",
+    blurb: "Xyrus02's boarders2 — Apophysis boarders plugin with 3 tunable parameters. RNG splits each iter between center-pull and edge-shift behavior. Produces sharp grid-tile patterns with controllable border thickness.",
+    params: [
+      { name: 'c',     default: 0.4,  min: 0, max: 1, step: 0.05 },
+      { name: 'left',  default: 0.65, min: 0, max: 2, step: 0.05 },
+      { name: 'right', default: 0.35, min: 0, max: 2, step: 0.05 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.b_mod,
+    name: 'b_mod',
+    source: sourceForIdx(V.b_mod),
+    formula: "V_{211}: \\text{bipolar coords, mu-axis modulus fold}; \\text{ emit Möbius bipolar inverse}",
+    blurb: "Michael Faber's bMod (bSeries) — sibling of V163 bcollide. Bipolar Möbius coordinates with a `radius`-bounded modulus fold on the tau axis. Produces banded mirror-symmetric patterns pinching toward focal points (±1, 0).",
+    params: [
+      { name: 'radius',   default: 1.0, min: 0.05, max: 5, step: 0.05 },
+      { name: 'distance', default: 0.0, min: 0,    max: 2, step: 0.05 },
+    ],
+    // — no warpFn (multi-fold).
+  },
+  {
+    idx: V.b_transform,
+    name: 'b_transform',
+    source: sourceForIdx(V.b_transform),
+    formula: "V_{212}: \\text{bipolar coords; power-divided angular slice with RNG randint; split offsets tau by sign}",
+    blurb: "Michael Faber's bTransform (bSeries). Bipolar Möbius coords with `power`-divided angular slices (RNG picks one) and a `split` offset applied to tau based on input-x sign. Produces multi-wedge symmetric Möbius patterns.",
+    params: [
+      { name: 'rotate', default: 0.0, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'power',  default: 1,   min: 1, max: 12, step: 1    },
+      { name: 'move',   default: 0.0, min: -3, max: 3, step: 0.05 },
+      { name: 'split',  default: 0.0, min: -3, max: 3, step: 0.05 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.parallel,
+    name: 'parallel',
+    source: sourceForIdx(V.parallel),
+    formula: "V_{213}: \\text{50/50 RNG between x1-mode and x2-mode (both like intersection); additive }\\pm move\\text{ offset}",
+    blurb: "Brad Stefanov's parallel — sibling of V205 intersection. 50/50 RNG split between two tile modes (x1 + x2) with mirrored signs on a `move` offset (x1 adds, x2 subtracts). Drops x2height/x2move to fit pyr3's 10-param seam (hardcoded to JWildfire defaults 0.5 / 1.0).",
+    params: [
+      { name: 'x1width',    default: 5.0,  min: 0.1, max: 10, step: 0.1  },
+      { name: 'x1tilesize', default: 0.50, min: 0,   max: 2,  step: 0.05 },
+      { name: 'x1mod1',     default: 0.30, min: 0,   max: 2,  step: 0.05 },
+      { name: 'x1mod2',     default: 1.0,  min: 0.1, max: 5,  step: 0.05 },
+      { name: 'x1height',   default: 0.50, min: 0,   max: 2,  step: 0.05 },
+      { name: 'x1move',     default: 1.0,  min: -3,  max: 3,  step: 0.05 },
+      { name: 'x2width',    default: 5.0,  min: 0.1, max: 10, step: 0.1  },
+      { name: 'x2tilesize', default: 0.50, min: 0,   max: 2,  step: 0.05 },
+      { name: 'x2mod1',     default: 0.30, min: 0,   max: 2,  step: 0.05 },
+      { name: 'x2mod2',     default: 1.0,  min: 0.1, max: 5,  step: 0.05 },
+    ],
+    // RNG-using — no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

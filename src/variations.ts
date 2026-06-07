@@ -455,6 +455,15 @@ export const V = {
   lozi: 207,
   hypershift: 208,
   hex_modulus: 209,
+  // #121 L-tier batch L14 (final). boarders2 (Xyrus02 grid-cell border
+  // fold), b_mod (Faber bSeries modulus radial fold, sibling of V163
+  // bcollide), b_transform (Faber bSeries Möbius transform with
+  // power-split + RNG), parallel (Stefanov 12-param tile parallel
+  // mode pair, sibling of V205 intersection).
+  boarders2: 210,
+  b_mod: 211,
+  b_transform: 212,
+  parallel: 213,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
