@@ -3165,12 +3165,15 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     name: 'bulge',
     source: sourceForIdx(V.bulge),
     formula: "V_{165}(x, y) = w\\,p \\cdot r^{N-1},\\quad r = \\sqrt{x^2 + y^2}",
-    blurb: "Radial r^N bulge effect. N>1 stretches the periphery outward (bulge / fisheye); N<1 compresses toward the origin (pinch); N=1 is identity. At N=2 (default) acts as a smooth zoom-out from the center.",
+    blurb: "Radial r^N bulge effect. N>1 stretches the periphery outward (bulge / fisheye); N<1 compresses toward the origin (pinch); N=1 is identity. At N=0.45 (sub-1 pinch power) on the sierpinski scaffold surfaces a striking fractal-lattice spheroid with hexagonal cells radiating from the centerline.",
     params: [
-      { name: 'N', default: 2.0, min: 0.1, max: 5, step: 0.05 },
+      // Catalog default RETUNED — N=2.0 (JWildfire default) is a smooth
+      // zoom-out; N=0.45 surfaces the fractal-lattice spheroid that's much
+      // more visually distinctive at the sierpinski scaffold's extent.
+      { name: 'N', default: 0.45, min: 0.1, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const N = 2.0;
+      const N = 0.45;
       const r = Math.sqrt(x * x + y * y);
       const rSafe = Math.max(r, 1e-30);
       const rn = Math.pow(rSafe, N);
