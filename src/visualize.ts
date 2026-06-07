@@ -7,6 +7,8 @@
 import shaderU32 from './shaders/visualize_u32.wgsl?raw';
 import shaderF32 from './shaders/visualize_f32.wgsl?raw';
 import { type Tonemap } from './tonemap';
+import { type ChannelCurves } from './genome';
+import { activeMask, bakeCurves } from './channel-curves';
 
 export interface VisualizePass {
   /**
@@ -22,16 +24,24 @@ export interface VisualizePass {
     useDE: boolean,
     outputView: GPUTextureView,
     background: [number, number, number],
+    channelCurves?: ChannelCurves,
   ): void;
   /** Phase 9-size: release owned GPU buffers. */
   destroy(): void;
 }
 
-// 16 × u32/f32 — see visualize_*.wgsl `struct VizUniforms`. Phase 9-supersample-real
-// repurposes _pad0 / _pad1 as `oversample` / `fwidth` so the shader can do
-// Gaussian-weighted super-res → output collapse. Phase 9-bg-palmode adds
-// `background: vec4f` at byte offset 48 (vec4 for 16-byte alignment; .w unused).
-const UNIFORMS_BYTES = 64;
+// 20 × u32/f32 — see visualize_*.wgsl `struct VizUniforms`. Phase 9-supersample-real
+// repurposes _pad0 / _pad1 as `oversample` / `fwidth` for Gaussian-weighted
+// super-res → output collapse. Phase 9-bg-palmode adds `background: vec4f` at
+// byte offset 48. Issue #116 (Color Curves) adds `curvesActive: u32` + 3 pad
+// u32 at byte offset 64 (16 bytes; total now 80; 16-byte aligned).
+const UNIFORMS_BYTES = 80;
+
+// Issue #116 — color-curves LUT. 5 channels × 256 f32 = 5 KB. Initialized
+// to identity (i/255 ramp, 5x); only re-uploaded when `bakeCurves` produces
+// a non-null LUT. When `curvesActive == 0` the shader skips reading it,
+// so identity-LUT payload is just a safe default for the WebGPU buffer.
+const CURVES_BYTES = 5 * 256 * 4;
 
 /**
  * Build the visualize pass. Reads from EITHER `histogramU32` (when
@@ -65,39 +75,78 @@ export function createVisualizePass(
   });
   device.queue.writeBuffer(kernelBuf, 0, kernel1d.buffer, kernel1d.byteOffset, kernel1d.byteLength);
 
+  // Issue #116 — color-curves LUT buffer. Seeded with identity so it's valid
+  // even before any non-identity grade is applied. Shader only reads it when
+  // `curvesActive != 0`, so the payload doesn't matter at curvesActive == 0.
+  const curvesBuf = device.createBuffer({
+    label: 'pyr3.viz.curves',
+    size: CURVES_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  {
+    const identityLut = new Float32Array(5 * 256);
+    for (let ch = 0; ch < 5; ch++) {
+      for (let i = 0; i < 256; i++) identityLut[ch * 256 + i] = i / 255;
+    }
+    device.queue.writeBuffer(
+      curvesBuf,
+      0,
+      identityLut.buffer,
+      identityLut.byteOffset,
+      identityLut.byteLength,
+    );
+  }
+
+  const bindGroupLayout = device.createBindGroupLayout({
+    label: 'pyr3.viz.bindgroup.layout',
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+    ],
+  });
+
+  const pipelineLayout = device.createPipelineLayout({
+    label: 'pyr3.viz.pipeline.layout',
+    bindGroupLayouts: [bindGroupLayout],
+  });
+
   const moduleU32 = device.createShaderModule({ label: 'pyr3.viz.u32', code: shaderU32 });
   const pipelineU32 = device.createRenderPipeline({
     label: 'pyr3.viz.pipeline.u32',
-    layout: 'auto',
+    layout: pipelineLayout,
     vertex: { module: moduleU32, entryPoint: 'vs' },
     fragment: { module: moduleU32, entryPoint: 'fs', targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
   });
   const bindGroupU32 = device.createBindGroup({
     label: 'pyr3.viz.bindgroup.u32',
-    layout: pipelineU32.getBindGroupLayout(0),
+    layout: bindGroupLayout,
     entries: [
       { binding: 0, resource: { buffer: uniforms } },
       { binding: 1, resource: { buffer: histogramU32 } },
       { binding: 2, resource: { buffer: kernelBuf } },
+      { binding: 3, resource: { buffer: curvesBuf } },
     ],
   });
 
   const moduleF32 = device.createShaderModule({ label: 'pyr3.viz.f32', code: shaderF32 });
   const pipelineF32 = device.createRenderPipeline({
     label: 'pyr3.viz.pipeline.f32',
-    layout: 'auto',
+    layout: pipelineLayout,
     vertex: { module: moduleF32, entryPoint: 'vs' },
     fragment: { module: moduleF32, entryPoint: 'fs', targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
   });
   const bindGroupF32 = device.createBindGroup({
     label: 'pyr3.viz.bindgroup.f32',
-    layout: pipelineF32.getBindGroupLayout(0),
+    layout: bindGroupLayout,
     entries: [
       { binding: 0, resource: { buffer: uniforms } },
       { binding: 1, resource: { buffer: filteredF32 } },
       { binding: 2, resource: { buffer: kernelBuf } },
+      { binding: 3, resource: { buffer: curvesBuf } },
     ],
   });
 
@@ -109,7 +158,24 @@ export function createVisualizePass(
       useDE: boolean,
       outputView: GPUTextureView,
       background: [number, number, number],
+      channelCurves?: ChannelCurves,
     ): void {
+      // Issue #116 — bake + upload LUT every present when curves are
+      // active. The editor mutates state.genome.channelCurves[ch] arrays
+      // IN PLACE (parent object identity stays the same), so reference
+      // equality can't detect drag-driven point changes. The bake is
+      // ~5KB f32 + 5×256 Catmull-Rom evaluations — comfortably under
+      // one-frame budget at any drag rate. When channelCurves is
+      // undefined / all-identity (mask=0), we skip the upload entirely
+      // and the shader branches off (parity invariant preserved).
+      const mask = activeMask(channelCurves);
+      if (channelCurves && mask !== 0) {
+        const lut = bakeCurves(channelCurves);
+        if (lut) {
+          device.queue.writeBuffer(curvesBuf, 0, lut.buffer, lut.byteOffset, lut.byteLength);
+        }
+      }
+
       const u = new ArrayBuffer(UNIFORMS_BYTES);
       const u32 = new Uint32Array(u);
       const f32 = new Float32Array(u);
@@ -133,6 +199,9 @@ export function createVisualizePass(
       f32[12] = background[0];
       f32[13] = background[1];
       f32[14] = background[2];
+      // Issue #116 — curvesActive bit-field at slot 16. _pad4/_pad5/_pad6
+      // (slots 17/18/19) stay zero from ArrayBuffer init.
+      u32[16] = mask;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.viz.encoder' });
@@ -156,6 +225,7 @@ export function createVisualizePass(
     destroy(): void {
       uniforms.destroy();
       kernelBuf.destroy();
+      curvesBuf.destroy();
     },
   };
 }

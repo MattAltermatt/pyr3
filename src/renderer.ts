@@ -207,7 +207,7 @@ export function createRenderer(
       // Phase 9-bg-palmode: default applied at this consumer boundary so
       // the genome stays a faithful echo of source XML. flam3 default = [0,0,0].
       const background = genome.background ?? [0, 0, 0];
-      pipelines.viz.draw(tonemap, k1, k2, useDE, req.outputView, background);
+      pipelines.viz.draw(tonemap, k1, k2, useDE, req.outputView, background, genome.channelCurves);
     },
 
     render(req: RenderRequest): void {

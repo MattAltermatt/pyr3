@@ -127,7 +127,24 @@ export interface Genome {
   // distinct from `palette.mode` (which controls gradient-stop interpolation
   // at LUT-bake time, not scatter-time sampling).
   paletteMode?: PaletteMode;
+  // Optional post-tonemap color-curves grade (issue #116). Five independent
+  // curves (Composite, R, G, B, Luma) applied per-pixel in the visualize
+  // pass AFTER the existing tonemap math. When undefined, the visualize
+  // shader branches off the curves block entirely, producing byte-identical
+  // output to the no-curves path (parity rig invariant). See
+  // src/channel-curves.ts and src/shaders/visualize_*.wgsl.
+  channelCurves?: ChannelCurves;
 }
+
+export type CurvePoint = { x: number; y: number };
+
+export type ChannelCurves = {
+  composite: CurvePoint[];
+  r: CurvePoint[];
+  g: CurvePoint[];
+  b: CurvePoint[];
+  luma: CurvePoint[];
+};
 
 export type Symmetry = { kind: 'rotational' | 'dihedral'; n: number };
 

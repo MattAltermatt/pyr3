@@ -38,6 +38,11 @@ export function pathLane(path: string): Lane {
   if (path.startsWith('xforms') || path.startsWith('finalxform')) return 'slow';
   if (path === 'scale' || path === 'cx' || path === 'cy' || path === 'rotate') return 'slow';
   if (path.startsWith('symmetry')) return 'slow';
+  // Issue #116 — channelCurves are visualize-only (no chaos re-iterate
+  // needed). Explicit rule documents the contract; would fall through to
+  // 'fast' as default anyway, but the explicit form survives a future
+  // change of the default.
+  if (path === 'channelCurves' || path.startsWith('channelCurves.')) return 'fast';
   return 'fast';
 }
 
@@ -48,6 +53,7 @@ export interface StateChange {
 
 export type SectionKey =
   | 'palette'
+  | 'curves'
   | 'viewport'
   | 'xforms'
   | 'final'
@@ -91,6 +97,7 @@ export function createEditState(genome: Genome, seed: number): EditState {
     preview: { width: 512, height: 512 },
     sectionCollapse: {
       palette: true,
+      curves: true,
       viewport: true,
       xforms: true,
       final: true,
@@ -302,6 +309,7 @@ export const SECTION_COLLAPSE_KEY = 'pyr3.editor.sectionCollapse';
 
 const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
   palette: true,
+  curves: true,
   viewport: true,
   xforms: true,
   final: true,

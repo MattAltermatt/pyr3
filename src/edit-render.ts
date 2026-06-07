@@ -55,6 +55,12 @@ export interface EditRenderer {
 
 export interface EditRendererOpts {
   resize?: (width: number, height: number) => void;
+  /** Optional editor-level override: when this returns true the renderer
+   *  strips `channelCurves` from the genome before presenting, giving the
+   *  user a "before" view for the hold-to-preview-off (👁) button. The
+   *  histogram is unchanged — only the visualize epilogue is bypassed.
+   *  See `src/edit-section-curves.ts`. */
+  getPreviewOff?: () => boolean;
 }
 
 export function createEditRenderer(
@@ -88,7 +94,14 @@ export function createEditRenderer(
     outputView: GPUTextureView,
     totalSamples: number,
   ): void {
-    renderer.present({ genome, outputView, totalSamples });
+    // Editor-level "before" hook: strip channelCurves when previewOff is set
+    // so the user sees the un-graded image without re-iterating. Clone is
+    // shallow — we only need to override the channelCurves field for this
+    // present(), and we never mutate the original genome.
+    const effective = opts.getPreviewOff?.()
+      ? { ...genome, channelCurves: undefined }
+      : genome;
+    renderer.present({ genome: effective, outputView, totalSamples });
   }
 
   // Slow-lane samples cache so a fast-lane present() right after a slow-lane

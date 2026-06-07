@@ -6,7 +6,7 @@
 // Forward-compat: Phase 5b will add optional `finalxform`; Phase 5c will add
 // optional `symmetry`. Neither requires a version bump (additive optional fields).
 
-import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, isSpatialFilterShape } from './genome';
+import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, type ChannelCurves, isSpatialFilterShape } from './genome';
 import { type Tonemap, DEFAULT_TONEMAP } from './tonemap';
 import { type Density, MAX_RAD_CAP, MIN_CURVE, MAX_CURVE } from './density';
 import {
@@ -55,6 +55,10 @@ export interface Pyr3JsonV1 {
   /** Phase 9-bg-palmode: flam3 `<flame palette_mode="step|linear">`.
    *  Omitted when undefined. */
   paletteMode?: PaletteMode;
+  /** Issue #116 — post-tonemap Color Curves. Omitted when all 5 channels
+   *  are identity (parity invariant: serialized field absence ≡ identity
+   *  ≡ shader branches off ≡ byte-identical to no-curves render). */
+  channelCurves?: ChannelCurves;
 }
 
 export type Pyr3JsonFinalxform = Omit<Pyr3JsonXform, 'weight'>;
@@ -627,7 +631,33 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
   if (g.paletteMode !== undefined) {
     out.paletteMode = g.paletteMode;
   }
+  // Issue #116 — omit channelCurves when all 5 channels are identity. The
+  // shader branches off when activeMask returns 0; omitting from JSON keeps
+  // saved files compact and preserves the "untouched" semantics.
+  if (g.channelCurves && channelCurvesActive(g.channelCurves)) {
+    out.channelCurves = cloneChannelCurves(g.channelCurves);
+  }
   return out;
+}
+
+function channelCurvesActive(c: ChannelCurves): boolean {
+  for (const ch of ['composite', 'r', 'g', 'b', 'luma'] as const) {
+    const pts = c[ch];
+    if (pts.length !== 2) return true;
+    if (pts[0]!.x !== 0 || pts[0]!.y !== 0) return true;
+    if (pts[1]!.x !== 1 || pts[1]!.y !== 1) return true;
+  }
+  return false;
+}
+
+function cloneChannelCurves(c: ChannelCurves): ChannelCurves {
+  return {
+    composite: c.composite.map((p) => ({ x: p.x, y: p.y })),
+    r:         c.r.map((p) => ({ x: p.x, y: p.y })),
+    g:         c.g.map((p) => ({ x: p.x, y: p.y })),
+    b:         c.b.map((p) => ({ x: p.x, y: p.y })),
+    luma:      c.luma.map((p) => ({ x: p.x, y: p.y })),
+  };
 }
 
 function xformToJson(x: Xform): Pyr3JsonXform {
@@ -854,7 +884,38 @@ export function genomeFromJson(j: unknown): Genome {
     }
     base.paletteMode = pm;
   }
+  if (root['channelCurves'] !== undefined) {
+    base.channelCurves = parseChannelCurves(root['channelCurves'], 'channelCurves');
+  }
   return base;
+}
+
+function parseChannelCurves(j: unknown, path: string): ChannelCurves {
+  const o = expectObject(j, path);
+  const channels = ['composite', 'r', 'g', 'b', 'luma'] as const;
+  const result = {} as ChannelCurves;
+  for (const ch of channels) {
+    const arr = expectArray(o[ch], `${path}.${ch}`);
+    if (arr.length < 2 || arr.length > 8) {
+      throw new Error(`pyr3: ${path}.${ch} must have 2..8 points, got ${arr.length}`);
+    }
+    const pts = arr.map((p, i) => {
+      const pt = expectObject(p, `${path}.${ch}[${i}]`);
+      const x = expectNumber(pt['x'], `${path}.${ch}[${i}].x`);
+      const y = expectNumber(pt['y'], `${path}.${ch}[${i}].y`);
+      if (x < 0 || x > 1 || y < 0 || y > 1) {
+        throw new Error(`pyr3: ${path}.${ch}[${i}] out of [0,1]: x=${x} y=${y}`);
+      }
+      return { x, y };
+    });
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i]!.x <= pts[i - 1]!.x) {
+        throw new Error(`pyr3: ${path}.${ch}[${i}].x not strictly monotonic`);
+      }
+    }
+    result[ch] = pts;
+  }
+  return result;
 }
 
 // #86 — single canonical parse path for both xform and finalxform.

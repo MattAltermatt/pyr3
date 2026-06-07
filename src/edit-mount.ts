@@ -242,7 +242,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // texture view AFTER the canvas dimensions change (the view is bound to
   // the texture at the time getCurrentTexture() is called; grabbing it
   // before a resize writes into the OLD texture).
-  const editRenderer: EditRenderer = createEditRenderer(renderer);
+  const editRenderer: EditRenderer = createEditRenderer(renderer, {
+    // #116 — hold-to-preview-off button (👁) in the Color Curves section
+    // sets `state.colorCurvesPreviewOff`; the renderer strips channelCurves
+    // for that frame so the user sees the un-graded "before" image.
+    getPreviewOff: () => !!state.colorCurvesPreviewOff,
+  });
 
   // Apophysis-style live/settled split. While the user is actively editing
   // (slider drag, keystrokes, rapid clicks) we render at a downsized "live"

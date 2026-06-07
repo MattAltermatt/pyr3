@@ -825,3 +825,78 @@ describe('#120 B1 — bipolar2 9-param round-trip', () => {
     expect(v.param8).toBeCloseTo(0.85, 6);
   });
 });
+
+// Issue #116 — Color Curves JSON round-trip.
+describe('#116 — channelCurves round-trip', () => {
+  it('preserves a non-identity composite curve through Genome → JSON → Genome', async () => {
+    const { genomeToJson, genomeFromJson } = await import('./serialize');
+    const { SPIRAL_GALAXY } = await import('./genome');
+    const { IDENTITY_POINTS } = await import('./channel-curves');
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      channelCurves: {
+        composite: [{ x: 0, y: 0 }, { x: 0.5, y: 0.7 }, { x: 1, y: 1 }],
+        r:    IDENTITY_POINTS, g: IDENTITY_POINTS,
+        b:    IDENTITY_POINTS, luma: IDENTITY_POINTS,
+      },
+    };
+    const j = genomeToJson(g);
+    const back = genomeFromJson(j);
+    expect(back.channelCurves?.composite).toEqual([
+      { x: 0, y: 0 }, { x: 0.5, y: 0.7 }, { x: 1, y: 1 },
+    ]);
+    expect(back.channelCurves?.r).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }]);
+  });
+
+  it('omits channelCurves from JSON when all 5 channels are identity', async () => {
+    const { genomeToJson } = await import('./serialize');
+    const { SPIRAL_GALAXY } = await import('./genome');
+    const { IDENTITY_POINTS } = await import('./channel-curves');
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      channelCurves: {
+        composite: IDENTITY_POINTS, r: IDENTITY_POINTS, g: IDENTITY_POINTS,
+        b: IDENTITY_POINTS, luma: IDENTITY_POINTS,
+      },
+    };
+    const j = genomeToJson(g) as unknown as Record<string, unknown>;
+    expect(j['channelCurves']).toBeUndefined();
+  });
+
+  it('treats absent channelCurves as undefined', async () => {
+    const { genomeToJson, genomeFromJson } = await import('./serialize');
+    const { SPIRAL_GALAXY } = await import('./genome');
+    const j = genomeToJson(SPIRAL_GALAXY) as unknown as Record<string, unknown>;
+    delete j['channelCurves'];
+    const back = genomeFromJson(j);
+    expect(back.channelCurves).toBeUndefined();
+  });
+
+  it('rejects malformed channelCurves (point out of [0,1])', async () => {
+    const { genomeFromJson, genomeToJson } = await import('./serialize');
+    const { SPIRAL_GALAXY } = await import('./genome');
+    const { IDENTITY_POINTS } = await import('./channel-curves');
+    const j = genomeToJson({
+      ...SPIRAL_GALAXY,
+      channelCurves: {
+        composite: [{ x: 0, y: 0 }, { x: 0.5, y: 1.5 }, { x: 1, y: 1 }],
+        r: IDENTITY_POINTS, g: IDENTITY_POINTS, b: IDENTITY_POINTS, luma: IDENTITY_POINTS,
+      },
+    });
+    expect(() => genomeFromJson(j)).toThrow(/out of \[0,1\]/);
+  });
+
+  it('rejects non-monotonic x', async () => {
+    const { genomeFromJson } = await import('./serialize');
+    const { SPIRAL_GALAXY } = await import('./genome');
+    const { IDENTITY_POINTS } = await import('./channel-curves');
+    const j = {
+      ...(await import('./serialize')).genomeToJson(SPIRAL_GALAXY),
+      channelCurves: {
+        composite: [{ x: 0, y: 0 }, { x: 0.6, y: 0.5 }, { x: 0.5, y: 0.7 }, { x: 1, y: 1 }],
+        r: IDENTITY_POINTS, g: IDENTITY_POINTS, b: IDENTITY_POINTS, luma: IDENTITY_POINTS,
+      },
+    };
+    expect(() => genomeFromJson(j)).toThrow(/monotonic/);
+  });
+});

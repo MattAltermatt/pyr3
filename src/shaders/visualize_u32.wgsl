@@ -20,13 +20,33 @@ struct VizUniforms {
   // Phase 9-bg-palmode: flam3 background (rect.c:1138/1210). .xyz = [r,g,b]
   // in [0,1]; .w unused (vec4 for std140-style 16-byte alignment).
   background: vec4f,
+  // Issue #116 — Color Curves. Bit-field per channel:
+  // bit0=composite, bit1=R, bit2=G, bit3=B, bit4=luma.
+  // When 0, the curves block in fs() is skipped entirely — output is
+  // byte-identical to the pre-#116 visualize math. This branch is
+  // LOAD-BEARING for the 26-fixture parity rig; do not "always run the
+  // LUT with identity" without re-verifying parity.
+  curvesActive: u32,
+  _pad4: u32,
+  _pad5: u32,
+  _pad6: u32,
 };
 
 @group(0) @binding(0) var<uniform>          u:        VizUniforms;
 @group(0) @binding(1) var<storage, read>    hist:     array<u32>;
 @group(0) @binding(2) var<storage, read>    kernel1d: array<f32>;
+@group(0) @binding(3) var<storage, read>    curves:   array<f32>;  // 5 × 256
 
 const PREFILTER_WHITE: f32 = 255.0;
+
+// Issue #116 — color-curves LUT lookup. 256-entry per-channel f32 LUT;
+// linear-interp between adjacent entries.
+fn lut(ch: u32, x: f32) -> f32 {
+  let idx = clamp(x, 0.0, 1.0) * 255.0;
+  let i0 = u32(floor(idx));
+  let i1 = min(i0 + 1u, 255u);
+  return mix(curves[ch * 256u + i0], curves[ch * 256u + i1], idx - f32(i0));
+}
 
 fn rgb2hsv(c: vec3f) -> vec3f {
   let mx = max(max(c.r, c.g), c.b);
@@ -178,6 +198,25 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   // partial-coverage edges fall toward the bg color.
   let composed = newrgb + perch + (1.0 - alpha) * 256.0 * u.background.xyz;
 
-  let final_rgb = clamp(composed / 256.0, vec3f(0.0), vec3f(1.0));
-  return vec4f(final_rgb, 1.0);
+  var rgb = clamp(composed / 256.0, vec3f(0.0), vec3f(1.0));
+  // Issue #116 — Color Curves block. curvesActive == 0 ⇒ branch skipped
+  // ⇒ byte-identical to pre-#116 output. Branch is PERMANENT and
+  // load-bearing for the parity rig.
+  if (u.curvesActive != 0u) {
+    // Composite first (Photoshop convention).
+    if ((u.curvesActive & 1u) != 0u) {
+      rgb = vec3f(lut(0u, rgb.r), lut(0u, rgb.g), lut(0u, rgb.b));
+    }
+    if ((u.curvesActive & 2u)  != 0u) { rgb.r = lut(1u, rgb.r); }
+    if ((u.curvesActive & 4u)  != 0u) { rgb.g = lut(2u, rgb.g); }
+    if ((u.curvesActive & 8u)  != 0u) { rgb.b = lut(3u, rgb.b); }
+    // Luma — BT.709 scale-preserving (keeps hue + saturation when shaping L).
+    if ((u.curvesActive & 16u) != 0u) {
+      let y_in = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+      let y_out = lut(4u, y_in);
+      let scale = select(1.0, y_out / y_in, y_in > 1e-6);
+      rgb = clamp(rgb * scale, vec3f(0.0), vec3f(1.0));
+    }
+  }
+  return vec4f(rgb, 1.0);
 }

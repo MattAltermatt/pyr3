@@ -76,6 +76,14 @@ describe('pathLane', () => {
     expect(pathLane('nick')).toBe('fast');
   });
 
+  it('maps channelCurves (#116) to fast — visualize-only, no chaos re-iterate', () => {
+    expect(pathLane('channelCurves')).toBe('fast');
+    expect(pathLane('channelCurves.composite')).toBe('fast');
+    expect(pathLane('channelCurves.r')).toBe('fast');
+    expect(pathLane('channelCurves.luma')).toBe('fast');
+    expect(pathLane('channelCurves.composite.0')).toBe('fast');
+  });
+
   it('unknown path defaults to fast (cheapest safe option)', () => {
     expect(pathLane('somethingUnknown')).toBe('fast');
     expect(pathLane('nested.unknown.field')).toBe('fast');
@@ -341,7 +349,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('persistSectionCollapse writes JSON under pyr3.editor.sectionCollapse', () => {
     expect(SECTION_COLLAPSE_KEY).toBe('pyr3.editor.sectionCollapse');
     const map = {
-      palette: false, viewport: true, xforms: false, final: true,
+      palette: false, curves: true, viewport: true, xforms: false, final: true,
       global: false, density: true, render: true,
     };
     persistSectionCollapse(map);
@@ -352,7 +360,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
 
   it('restoreSectionCollapse returns the persisted map', () => {
     const map = {
-      palette: false, viewport: true, xforms: false, final: true,
+      palette: false, curves: true, viewport: true, xforms: false, final: true,
       global: false, density: true, render: true,
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
@@ -362,7 +370,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('restoreSectionCollapse returns default all-collapsed when absent', () => {
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: true, viewport: true, xforms: true, final: true,
+      palette: true, curves: true, viewport: true, xforms: true, final: true,
       global: true, density: true, render: true,
     });
   });
@@ -371,14 +379,14 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
     localStorage.setItem(SECTION_COLLAPSE_KEY, '{not valid');
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: true, viewport: true, xforms: true, final: true,
+      palette: true, curves: true, viewport: true, xforms: true, final: true,
       global: true, density: true, render: true,
     });
   });
 
-  it('round-trip integrity preserves all 7 keys', () => {
+  it('round-trip integrity preserves all 8 keys', () => {
     const map = {
-      palette: false, viewport: false, xforms: false, final: false,
+      palette: false, curves: false, viewport: false, xforms: false, final: false,
       global: false, density: false, render: false,
     };
     persistSectionCollapse(map);
