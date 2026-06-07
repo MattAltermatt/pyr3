@@ -11,16 +11,17 @@ import { parseFlame } from '../src/flame-import';
 import { genomeFromJson } from '../src/serialize';
 import { type Genome } from '../src/genome';
 
-// createRequire base path:
-//   - ESM (npm run render via tsx): `import.meta.url` is the host.ts file URL —
-//     localRequire('webgpu') walks up to node_modules and finds it.
-//   - CJS bundle (SEA binary): esbuild replaces `import.meta` with `{}`, so
-//     `.url` is undefined. Fall back to the executable path; the SEA branch
-//     only uses module-name and absolute-path requires (base is irrelevant
-//     for both).
-const localRequire = createRequire(
-  import.meta.url ?? `file://${process.execPath}`,
-);
+// Two require flavors, picked by call site:
+//   - `builtinRequire` resolves built-in modules (`node:sea`, `node:fs`, …).
+//     Inside a SEA binary the native `require` is the embedder require, which
+//     ONLY knows builtins — filesystem paths throw ERR_UNKNOWN_BUILTIN_MODULE.
+//   - `cjsRequire` is the standard CommonJS require (from createRequire). It
+//     CAN load absolute paths and walks node_modules. Used to dlopen the
+//     extracted Dawn .node and to fall back to `require('webgpu')` outside SEA.
+declare const require: NodeJS.Require | undefined;
+const builtinRequire: NodeJS.Require =
+  typeof require !== 'undefined' ? require : createRequire(import.meta.url);
+const cjsRequire = createRequire(import.meta.url ?? `file://${process.execPath}`);
 
 /**
  * Resolve the Dawn-node WebGPU binding in BOTH execution modes:
@@ -35,35 +36,43 @@ const localRequire = createRequire(
  * Returns the same shape as `node_modules/webgpu/index.js`: `{ create, globals }`.
  */
 function loadWebgpu(): { create: (flags: string[]) => { requestAdapter: () => Promise<GPUAdapter | null> }; globals: object } {
-  // Try SEA mode first. node:sea is only available inside a SEA binary;
-  // require throws ERR_UNKNOWN_BUILTIN_MODULE in normal Node, which we catch.
+  // Probe for `node:sea`. Available inside a SEA binary; throws
+  // ERR_UNKNOWN_BUILTIN_MODULE in normal Node, which we catch and fall
+  // through to the npm-installed path. We DON'T wrap the SEA work itself
+  // in try/catch — if SEA mode is active but extraction fails, that's a
+  // real bug we want to see.
+  let sea:
+    | { isSea?: () => boolean; getAsset?: (key: string) => ArrayBuffer }
+    | undefined;
   try {
-    const sea = localRequire('node:sea') as {
-      isSea?: () => boolean;
-      getAsset?: (key: string) => ArrayBuffer;
-    };
-    if (sea.isSea?.()) {
-      const buf = sea.getAsset!('dawn.node');
-      const { createHash } = localRequire('node:crypto') as typeof import('node:crypto');
-      const { homedir } = localRequire('node:os') as typeof import('node:os');
-      const fs = localRequire('node:fs') as typeof import('node:fs');
-      const { join } = localRequire('node:path') as typeof import('node:path');
-
-      const bytes = Buffer.from(buf);
-      const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
-      const cacheDir = join(homedir(), '.cache', 'pyr3');
-      fs.mkdirSync(cacheDir, { recursive: true });
-      const cachedPath = join(cacheDir, `dawn-${hash}.node`);
-      if (!fs.existsSync(cachedPath)) {
-        fs.writeFileSync(cachedPath, bytes);
-      }
-      return localRequire(cachedPath);
-    }
+    sea = builtinRequire('node:sea');
   } catch {
-    // node:sea not available — fall through to npm-installed path.
+    // Not a SEA binary — fall through.
   }
 
-  return localRequire('webgpu');
+  if (sea?.isSea?.()) {
+    const buf = sea.getAsset!('dawn.node');
+    const { createHash } = builtinRequire('node:crypto') as typeof import('node:crypto');
+    const { homedir } = builtinRequire('node:os') as typeof import('node:os');
+    const fs = builtinRequire('node:fs') as typeof import('node:fs');
+    const { join } = builtinRequire('node:path') as typeof import('node:path');
+
+    const bytes = Buffer.from(buf);
+    const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+    const cacheDir = join(homedir(), '.cache', 'pyr3');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const cachedPath = join(cacheDir, `dawn-${hash}.node`);
+    if (!fs.existsSync(cachedPath)) {
+      fs.writeFileSync(cachedPath, bytes);
+    }
+    // cjsRequire (not the embedder) is needed here — absolute filesystem paths.
+    return cjsRequire(cachedPath);
+  }
+
+  // Non-SEA: builtinRequire walks up from the bundle / source dir and finds
+  // node_modules/webgpu. cjsRequire's fallback base path is the Node binary
+  // itself, which would walk away from the repo.
+  return builtinRequire('webgpu');
 }
 
 const { create, globals } = loadWebgpu();
