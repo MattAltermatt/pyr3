@@ -389,7 +389,7 @@ interface XformParseResult {
   ignored: IgnoredField[];
 }
 
-function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): XformParseResult {
+function parseXformElement(el: Element, xformIndex: number, isFinal: boolean, colorFallback: number): XformParseResult {
   const dropped: DroppedVariation[] = [];
   const ignored: IgnoredField[] = [];
 
@@ -416,12 +416,19 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
     ? 0
     : numOrDefault(weightAttr, 'weight', 1);
   // #17 fix (b) — flam3 parser.c defaults the per-xform color attr to
-  // `xformIndex & 1` (alternating 0/1) when missing, NOT to 0. The 0
-  // default surfaced for hand-authored / legacy Apophysis flames whose
-  // xforms omit `color="..."`. The ESF corpus is unaffected (every
-  // shipped flame carries explicit color attrs). finalxform also gets
-  // the parity default — flam3 treats it consistently.
-  const color = numOrDefault(el.getAttribute('color'), 'color', xformIndex & 1);
+  // alternating 0/1 by position when missing, NOT to 0. The 0 default
+  // surfaced for hand-authored / legacy Apophysis flames whose xforms
+  // omit `color="..."`. The ESF corpus is unaffected (every shipped
+  // flame carries explicit color attrs). finalxform also gets the parity
+  // default — flam3 treats it consistently.
+  //
+  // #165 fix — the original `xformIndex & 1` produced color=1 for
+  // finalxform (xformIndex=-1 → -1 & 1 = 1 in two's-complement), which
+  // is the constant top of the palette regardless of how many regular
+  // xforms precede it. Caller now passes an explicit `colorFallback`
+  // (= regularIndex for regular xforms; = xforms.length for finalxform,
+  // i.e. the conceptual next position).
+  const color = numOrDefault(el.getAttribute('color'), 'color', colorFallback & 1);
   // flam3 parser.c:856-861 — `symmetry` is the deprecated alias for color_speed
   // with the formula color_speed = (1 - N) / 2. Explicit color_speed wins over
   // the deprecated form (modern attribute takes precedence).
@@ -603,7 +610,13 @@ export function parseFlame(xml: string): FlameImportResult {
   for (const el of xformEls) {
     const isFinal = el.tagName === 'finalxform';
     const idx = isFinal ? -1 : regularIndex;
-    const { xform, dropped, ignored } = parseXformElement(el, idx, isFinal);
+    // colorFallback: position parity for the color-attr default. For
+    // finalxform, use the count of regular xforms so far (its conceptual
+    // position-after-the-block) — the prior `xformIndex & 1` would have
+    // hit -1 & 1 = 1 (always palette-top). See #165 fix in
+    // parseXformElement.
+    const colorFallback = isFinal ? regularIndex : regularIndex;
+    const { xform, dropped, ignored } = parseXformElement(el, idx, isFinal, colorFallback);
     droppedVariations.push(...dropped);
     ignoredFields.push(...ignored);
     if (isFinal) finalxform = xform;
@@ -752,8 +765,17 @@ export function parseFlame(xml: string): FlameImportResult {
   // importer partial-fill path — pyr3's DEFAULT_TONEMAP stays unchanged
   // (it's the project-wide continuity default at draw time when no
   // tonemap is present at all).
+  //
+  // #165 fix — flam3-C `clear_cp` actually defaults FOUR tonemap fields,
+  // not two. gamma=4.0 and brightness=4.0 were inheriting from
+  // DEFAULT_TONEMAP (2.4 and 1.0). For attr-sparse .flame files the
+  // resulting render under-fills brightness ~4× vs flam3 — the canonical
+  // example is the Spiral Galaxy preset (see src/genome.ts where
+  // brightness=19.5 was hardcoded to compensate).
   const FLAM3_PARTIAL_FILL: Tonemap = {
     ...DEFAULT_TONEMAP,
+    gamma: 4.0,
+    brightness: 4.0,
     vibrancy: 1.0,
     highlightPower: -1.0,
   };

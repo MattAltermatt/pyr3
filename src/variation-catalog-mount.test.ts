@@ -42,7 +42,7 @@ describe('mountVariationCatalog', () => {
   });
 
   it('renders a real section for every variation (no stubs remain)', () => {
-    // Catalog content for V0..V106 fully authored — no stub fallbacks
+    // Catalog content for V0..V219 fully authored — no stub fallbacks
     // should appear. Pre-#119 this test asserted V5 was a stub (only
     // seed entries existed); now the assertion flips to "no stubs."
     const stubs = host.querySelectorAll('.pyr3-cat-catalog > .pyr3-cat-stub');

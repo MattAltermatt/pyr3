@@ -392,6 +392,49 @@ describe('parseFlame #17 importer-default parity (fixes a/b/c/f)', () => {
     expect(genome.tonemap?.gamma).toBe(2.5);
     expect(genome.tonemap?.vibrancy).toBe(1.0);          // flam3 default (was pyr3's 0.0)
     expect(genome.tonemap?.highlightPower).toBe(-1.0);   // flam3 default (was pyr3's 1.0)
+    // #165 fix — clear_cp also defaults brightness=4.0; was inheriting
+    // pyr3's DEFAULT_TONEMAP.brightness=1.0 (4× under-fill).
+    expect(genome.tonemap?.brightness).toBe(4.0);
+  });
+
+  it('partial-tonemap fill uses flam3 default gamma=4 when gamma is absent (#165)', () => {
+    // brightness explicit; gamma, vibrancy, highpow, gamma_threshold absent.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100" brightness="2.0">${minPalette}${minXform}</flame>`;
+    const { genome } = parseFlame(xml);
+    // brightness explicit wins; gamma falls back to flam3 clear_cp default.
+    expect(genome.tonemap?.gamma).toBe(4.0);             // was inheriting pyr3's 2.4
+    expect(genome.tonemap?.brightness).toBe(2.0);
+    expect(genome.tonemap?.vibrancy).toBe(1.0);
+    expect(genome.tonemap?.highlightPower).toBe(-1.0);
+  });
+
+  it('finalxform color default uses position parity, not the -1 sentinel (#165)', () => {
+    // Pre-#165: finalxform with no `color` attr inherited (-1) & 1 = 1,
+    // i.e. always palette-top. Now: parity of the regular-xform count
+    // (= xforms.length at the moment finalxform is parsed).
+    // Two regular xforms → finalxform position parity = 2 & 1 = 0.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}` +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<finalxform coefs="1 0 0 1 0 0" linear="1"/>' +
+      '</flame>';
+    const { genome } = parseFlame(xml);
+    expect(genome.xforms[0]!.color).toBe(0);   // 0 & 1 = 0
+    expect(genome.xforms[1]!.color).toBe(1);   // 1 & 1 = 1
+    expect(genome.finalxform).toBeDefined();
+    expect(genome.finalxform!.color).toBe(0);  // 2 & 1 = 0 (was 1 pre-#165)
+  });
+
+  it('finalxform color default is 1 when odd number of regular xforms (#165)', () => {
+    // 3 regular xforms → finalxform parity = 3 & 1 = 1.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}` +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<finalxform coefs="1 0 0 1 0 0" linear="1"/>' +
+      '</flame>';
+    const { genome } = parseFlame(xml);
+    expect(genome.finalxform!.color).toBe(1);  // 3 & 1 = 1
   });
 
   it('no tonemap attrs at all → genome.tonemap stays undefined (DEFAULT_TONEMAP applied at draw time)', () => {
@@ -753,7 +796,9 @@ describe('parseFlame tonemap (Phase 9a)', () => {
     // authored flames that omitted vibrancy/highpow. ESF corpus is
     // unaffected (every shipped flame carries the full tonemap block).
     expect(genome.tonemap?.vibrancy).toBe(1.0);
-    expect(genome.tonemap?.brightness).toBe(1.0);
+    // #165 fix — clear_cp also defaults brightness=4.0 (was inheriting
+    // pyr3's DEFAULT_TONEMAP.brightness=1.0).
+    expect(genome.tonemap?.brightness).toBe(4.0);
     expect(genome.tonemap?.highlightPower).toBe(-1.0);
     expect(genome.tonemap?.gammaThreshold).toBe(0.01);
   });

@@ -91,6 +91,12 @@ fn smoke_dispatch(idx: u32, p: vec2f, w: f32,
     case 211u: { return var_b_mod(p, w, p0, p1); }
     case 212u: { return var_b_transform(p, w, p0, p1, p2, p3, wi); }
     case 213u: { return var_parallel(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, wi); }
+    case 214u: { return var_waves3(p, w, p0, p1, p2, p3, p4, p5); }
+    case 215u: { return var_waves4(p, w, p0, p1, p2, p3, p4, p5); }
+    case 216u: { return var_scry2(p, w, p0, p1, p2); }
+    case 217u: { return var_ennepers2(p, w, p0, p1, p2); }
+    case 218u: { return var_apollony(p, w, wi); }
+    case 219u: { return var_circlecrop(p, w, p0, p1, p2, p3, p4, wi); }
     default:   { return vec2f(0.0, 0.0); }
   }
 }
@@ -122,10 +128,16 @@ const VAR_PARAMS_TSV = [
   '211 b_mod 1.0 0.0',
   '212 b_transform 1.0 0.0 0.0 0.0',
   '213 parallel 0.5 0.5 1.0 1.0 0.0 0.0 0.0 0.0 0.0 0.0',
+  '214 waves3 0.05 0.05 7.0 13.0 0.0 2.0',
+  '215 waves4 0.05 0.05 7.0 13.0 0.0 0.1',
+  '216 scry2 4 0.15 0.25',
+  '217 ennepers2 1.0 0.3333 0.075',
+  '218 apollony',
+  '219 circlecrop 1.0 0.0 0.0 0.0 1',
 ];
 
-describe.skipIf(!device)('#163 L1-L14 V199-V213 — compile + finite smoke (tail)', () => {
-  it('every variation V199-V213 emits finite output at catalog defaults', async () => {
+describe.skipIf(!device)('#163/#170 L1-L14 V199-V219 — compile + finite smoke (tail)', () => {
+  it('every variation V199-V219 emits finite output at catalog defaults', async () => {
     const dev = device!;
     const mod = dev.createShaderModule({ code: SMOKE_SHADER });
     const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: 'main' } });

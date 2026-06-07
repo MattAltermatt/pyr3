@@ -1687,7 +1687,9 @@ fn var_loonie2(p: vec2f, w: f32, sides_f: f32, star: f32, circle: f32) -> vec2f 
   let a = TAU / f32(sides);
   let sina = safe_sin(a);
   let cosa = safe_cos(a);
-  let sins = safe_sin(star * PI * 0.5);
+  // JWF init: a = -π/2 · star; _sins = sin(a) (negative). cos is even so
+  // coss = cos(π/2·star) = cos(-π/2·star) — no sign change there.
+  let sins = safe_sin(-star * PI * 0.5);
   let coss = safe_cos(star * PI * 0.5);
   let sinc = safe_sin(circle * PI * 0.5);
   let cosc = safe_cos(circle * PI * 0.5);
@@ -2619,6 +2621,10 @@ fn var_xhyperbol(p: vec2f, w: f32, m00: f32, m01: f32, m10: f32, m11: f32, m20: 
   let rsq = re * re + im * im;
   let xout = rsq * ca;
   let yout = rsq * sa;
+  // #169: Apophysis source writes the final emission with `=` (not the
+  // usual `+=` accumulation onto pVarTP). The renormalization by
+  // `w / |z'|²` makes the result scale-invariant in the inversion, which
+  // is the documented xhyperbol behavior — keep verbatim.
   let rinv = w / (xout * xout + yout * yout + EPS);
   return vec2f(xout * rinv, yout * rinv);
 }
@@ -2819,8 +2825,10 @@ fn var_xtrb(p: vec2f, w: f32, power_in: f32, dist: f32, radius: f32, width: f32,
   // Source: pow(inx² + iny², cN). cN can be negative or fractional;
   // pow handles both, but a zero base with negative exponent → ±Inf.
   // Source has no guard; we follow (chaos game reseed handles it).
+  // JWF applies pAmount twice: r = pAmount·pow(...) AND pVarTP.x += pAmount·X
+  // (XTrbFunc.java:287,294). Mirror — output magnitude is w²·pow(...).
   let r_pow = pow(inx * inx + iny * iny, cN);
-  return vec2f(w * r_pow * safe_cos(angle), w * r_pow * safe_sin(angle));
+  return vec2f(w * w * r_pow * safe_cos(angle), w * w * r_pow * safe_sin(angle));
 }
 
 // var_xyrus_gridout — Xyrus02 gridout plugin (apophysis-plugins).
@@ -2862,10 +2870,9 @@ fn var_xyrus_gridout(p: vec2f, w: f32) -> vec2f {
 // parameterization (same family as circlize / circlize2). Source uses
 // precomputed VVAR4_PI = w · 4/π; we inline.
 //
-// The kernel needs two distinct rand01 samples. We derive them from
-// `wi` and (wi ^ 0xA5A5A5A5u) — the same pattern used in other
-// 2-sample kernels (no module-scope salt const that extractWgslFn
-// would skip).
+// The kernel needs two distinct rand01 samples. Pulled sequentially via
+// `rand01(wi)` calls — the per-walker ISAAC stream advances internally,
+// so two back-to-back calls yield distinct draws.
 fn var_blur_circle(p: vec2f, w: f32, hole: f32, wi: u32) -> vec2f {
   let r0 = rand01(wi);
   let r1 = rand01(wi);
@@ -3462,6 +3469,15 @@ fn var_chunk(
 // clifford_js), DevilWarpFunc (dark-beam), VoronFunc (eralex61). All
 // LGPL-2.1+, NOTICE.md. ennepers/erf/circus/clifford_js/devil_warp/voron
 // are deterministic; asteria uses 1 RNG call per iter (branch decision).
+//
+// Convention note (#121 batches L1..L14): JWildfire source files live at
+// `src/org/jwildfire/create/tina/variation/<Name>Func.java` in the
+// upstream repo (https://github.com/thargor6/JWildfire). Earlier #114/
+// #117 ports cited full paths; L1..L14 kernels cite author + class name
+// only (e.g. "Faber. AsteriaFunc.java") to keep headers compact — apply
+// the path template above to resolve. Some classes carry a `Func2`
+// numeric suffix (Bipolar2Func, Hypertile1Func) which preserves
+// JWildfire's own naming.
 // ---------------------------------------------------------------------
 
 // ennepers — Raykoid666. 0 params. Polynomial fold derived from the
@@ -3524,8 +3540,10 @@ fn var_circus(p: vec2f, w: f32, scale: f32) -> vec2f {
 // iterate by α, project via nx = xx/√(1−yy²) · (1 − √(1−(1−|yy|)²)),
 // rotate back by −α.
 fn var_asteria(p: vec2f, w: f32, alpha: f32, wi: u32) -> vec2f {
-  let sina = sin(PI * alpha);
-  let cosa = cos(PI * alpha);
+  // alpha is a slider param — adversarial values can push PI·alpha past
+  // the Dawn f32 trig cliff. Route through safe_* per the convention.
+  let sina = safe_sin(PI * alpha);
+  let cosa = safe_cos(PI * alpha);
   let x0 = w * p.x;
   let y0 = w * p.y;
   var xx = x0;
@@ -3688,7 +3706,9 @@ fn var_atan(p: vec2f, w: f32, mode_p: f32, stretch: f32) -> vec2f {
 // multi-cusped rose shapes.
 fn var_cardioid(p: vec2f, w: f32, a: f32) -> vec2f {
   let theta = atan2(p.y, p.x);
-  let r_sq = p.x * p.x + p.y * p.y + sin(a * theta) + 1.0;
+  // theta is atan2-bounded, but a is a slider param — `a*theta` can cross
+  // the cliff under extreme `a`. Output trig of `theta` alone stays raw.
+  let r_sq = p.x * p.x + p.y * p.y + safe_sin(a * theta) + 1.0;
   let r = w * sqrt(max(r_sq, 0.0));
   return vec2f(r * cos(theta), r * sin(theta));
 }
@@ -3742,6 +3762,14 @@ fn var_bcollide(p: vec2f, w: f32, num_p: f32, a: f32) -> vec2f {
 // zero (singularity of tan / sin denominators); we emit (0, 0) at the
 // singularity — mirrors JWildfire's `doHide=true` semantics (the point
 // contributes nothing to the histogram).
+//
+// #167 audit: arg_x = p.x + sx is unbounded so the Dawn trig cliff is
+// reachable, BUT a naive safe_sin swap would replace true zero-output
+// at the singularity with the safe_* hash-spread fallback. That
+// undoes the `doHide` semantics (cliff-zeroed walkers would re-emit
+// non-zero output instead of being hidden). Keep raw `sin`/`cos` here;
+// the `abs(sin_x) < 1e-6` guard already intercepts both the exact-zero
+// singularity AND the cliff-produced exact-zero, both routing to (0,0).
 fn var_bsplit(p: vec2f, w: f32, sx: f32, sy: f32) -> vec2f {
   let arg_x = p.x + sx;
   let sin_x = sin(arg_x);
@@ -3811,6 +3839,14 @@ fn var_checks(p: vec2f, w: f32, cx: f32, cy: f32, size: f32, rnd: f32, wi: u32) 
 // a deterministic spatial-hash `aux ∈ [0, 1]` from (x, y, seed), adds
 // a per-iter RNG sample, scales by 2·angle·(π/180), and applies that
 // as a polar rotation. The hash term breaks chaos-pattern repetition.
+//
+// #167 audit: the `sin(x·12.9898 + y·78.233 + seed) * 43758.5453` is
+// the GLSL one-liner pseudo-hash — sin of a large unbounded arg IS the
+// design. Routing it through `safe_sin` would replace the hash quality
+// with the safe-fallback constant zero region, killing the spatial
+// hashing entirely. At very large |p| the cliff degrades hash quality
+// (zero output → identical jitter for nearby walkers, mild
+// banding) but the render still functions. Keep raw.
 fn var_circular(p: vec2f, w: f32, angle_deg: f32, seed: f32, wi: u32) -> vec2f {
   let c_a = angle_deg * PI / 180.0;
   // GLSL-style spatial-hash trick: sin(x·k1 + y·k2 + seed) * big_const.
@@ -3898,12 +3934,13 @@ fn var_circleblur(p: vec2f, w: f32, wi: u32) -> vec2f {
 fn var_fibonacci2(p: vec2f, w: f32, sc: f32, sc2: f32) -> vec2f {
   let ffive: f32 = 0.447213595;        // 1/√5
   let fnatlog: f32 = 0.481211825;      // log(φ)
+  // a and b are linear in walker coords — unbounded. safe_* per convention.
   let a = p.y * fnatlog;
-  let snum1 = sin(a);
-  let cnum1 = cos(a);
+  let snum1 = safe_sin(a);
+  let cnum1 = safe_cos(a);
   let b = (p.x * PI + p.y * fnatlog) * -1.0;
-  let snum2 = sin(b);
-  let cnum2 = cos(b);
+  let snum2 = safe_sin(b);
+  let cnum2 = safe_cos(b);
   let eradius1 = sc * exp(sc2 * (p.x * fnatlog));
   let eradius2 = sc * exp(sc2 * ((p.x * fnatlog - p.y * PI) * -1.0));
   return vec2f(
@@ -3921,12 +3958,14 @@ fn var_hypertile(p: vec2f, w: f32, p_p: f32, q: f32, n: f32) -> vec2f {
   let q_safe = max(3.0, q);
   let pa = 2.0 * PI / pi_;
   let qa = 2.0 * PI / q_safe;
+  // pa, qa are bounded by max(3, p)/q clamps so raw trig stays safe; an
+  // multiplies by slider n which can be extreme — safe_* on `an` only.
   let denom = cos(pa) + cos(qa);
   let r2 = select(1.0, (1.0 - cos(pa)) / denom + 1.0, abs(denom) > 1e-30);
   let r = select(1.0, 1.0 / sqrt(max(r2, 1e-30)), r2 > 0.0);
   let an = n * pa;
-  let re = r * cos(an);
-  let im = r * sin(an);
+  let re = r * safe_cos(an);
+  let im = r * safe_sin(an);
   let a = p.x + re;
   let b = p.y - im;
   let c = re * p.x - im * p.y + 1.0;
@@ -3978,9 +4017,11 @@ fn var_hypertile2(p: vec2f, w: f32, p_p: f32, q: f32, wi: u32) -> vec2f {
   let yy = b * c - a * d;
   let cd2 = c * c + d * d;
   let vr = w / max(cd2, 1e-30);
+  // rpa = floor(rand·0x7fff)·pa can hit ~32767·pa ≈ 1e5 (small p). Below
+  // the Dawn 1e6 cliff in practice, but use safe_* for convention.
   let rpa = floor(rand01(wi) * f32(0x00007fff)) * pa;
-  let cosa = cos(rpa);
-  let sina = sin(rpa);
+  let cosa = safe_cos(rpa);
+  let sina = safe_sin(rpa);
   return vec2f(vr * (xx * cosa + yy * sina), vr * (yy * cosa - xx * sina));
 }
 
@@ -4057,10 +4098,12 @@ fn var_linear_t(p: vec2f, w: f32, pow_x: f32, pow_y: f32) -> vec2f {
 // Spherical-angle unit direction (δ, φ in units of π) → random point
 // along the line, scaled by amount.
 fn var_line(p: vec2f, w: f32, delta: f32, phi: f32, wi: u32) -> vec2f {
-  let cd = cos(delta * PI);
-  let sd = sin(delta * PI);
-  let cp = cos(phi * PI);
-  let sp = sin(phi * PI);
+  // delta/phi are slider params — extreme values can push PI·param past
+  // the Dawn f32 trig cliff. safe_* per convention.
+  let cd = safe_cos(delta * PI);
+  let sd = safe_sin(delta * PI);
+  let cp = safe_cos(phi * PI);
+  let sp = safe_sin(phi * PI);
   var ux = cd * cp;
   var uy = sd * cp;
   let uz = sp;
@@ -4125,8 +4168,10 @@ fn var_shredrad(p: vec2f, w: f32, n: f32, width: f32) -> vec2f {
   let ang = atan2(p.y, p.x);
   let rad = sqrt(p.x * p.x + p.y * p.y);
   let xang = (ang + 3.0 * PI + alpha * 0.5) / alpha;
+  // zang carries a floor(xang)·alpha term that grows linearly with xang;
+  // for small n (alpha → ∞), zang is unbounded. safe_* per convention.
   let zang = ((xang - floor(xang)) * width + floor(xang)) * alpha - PI - alpha * 0.5 * width;
-  return vec2f(w * rad * cos(zang), w * rad * sin(zang));
+  return vec2f(w * rad * safe_cos(zang), w * rad * safe_sin(zang));
 }
 
 // ---------------------------------------------------------------------
@@ -4145,10 +4190,11 @@ fn var_vogel(p: vec2f, w: f32, n: f32, scale: f32, wi: u32) -> vec2f {
   let M_2PI_PHI2: f32 = 2.0 * PI / (phi * phi);
   let n_safe = max(1.0, n);
   let i_idx = floor(rand01(wi) * n_safe) + 1.0;
+  // a = i_idx·(2π/φ²) ≈ i_idx·2.4. For huge n (slider), can cross cliff.
   let a = i_idx * M_2PI_PHI2;
   let r = w * (sqrt(p.x * p.x + p.y * p.y) + sqrt(i_idx));
-  let cosa = cos(a);
-  let sina = sin(a);
+  let cosa = safe_cos(a);
+  let sina = safe_sin(a);
   return vec2f(
     r * (cosa + scale * p.x),
     r * (sina + scale * p.y),
@@ -4159,10 +4205,11 @@ fn var_vogel(p: vec2f, w: f32, n: f32, scale: f32, wi: u32) -> vec2f {
 // outside int 0/1). Geometric yin-yang symbol generator with rotation
 // jitter (via dual_t branch) and an outside-pass-through toggle.
 fn var_yin_yang(p: vec2f, w: f32, radius: f32, ang1: f32, ang2: f32, dual_t_p: f32, outside_p: f32, wi: u32) -> vec2f {
-  let sina = sin(PI * ang1);
-  let cosa = cos(PI * ang1);
-  let sinb = sin(PI * ang2);
-  let cosb = cos(PI * ang2);
+  // ang1/ang2 are slider params — defensive safe_* per convention.
+  let sina = safe_sin(PI * ang1);
+  let cosa = safe_cos(PI * ang1);
+  let sinb = safe_sin(PI * ang2);
+  let cosb = safe_cos(PI * ang2);
   let dual_t = i32(dual_t_p);
   let outside = i32(outside_p);
   var xx = p.x;
@@ -4256,8 +4303,10 @@ fn var_target(p: vec2f, w: f32, even: f32, odd: f32, size: f32) -> vec2f {
   let abs_t = abs(t);
   let size_safe = max(abs(size), 1e-30);
   t = abs_t - floor(abs_t / size_safe) * size_safe;
+  // a starts atan2-bounded but `even`/`odd` are unbounded slider offsets;
+  // a + odd can cross the cliff. safe_* per convention.
   a = a + select(odd, even, t < t_size_2);
-  return vec2f(r * cos(a) * w, r * sin(a) * w);
+  return vec2f(r * safe_cos(a) * w, r * safe_sin(a) * w);
 }
 
 // ---------------------------------------------------------------------
@@ -4313,23 +4362,29 @@ fn var_hole2(
   let theta = atan2(p.y, p.x) * d;
   let delta = pow(max(theta / PI + 1.0, 1e-30), a) * c;
   let shape = i32(shape_p);
+  // theta = atan2·d (d is a slider param), b is also a slider — any
+  // `b*theta` product can cross the Dawn cliff. safe_* per convention.
+  // sin(theta) and sin(0.5·b·theta) follow the same arg-shape rule. The
+  // case 5 `tan(theta)` is bounded by `d*atan2` so safe_tan applies.
   var r1: f32 = 1.0;
   switch (shape) {
     case 0: { r1 = sqrt(max(rhosq, 0.0)) + delta; }
     case 1: { r1 = sqrt(max(rhosq + delta, 0.0)); }
-    case 2: { r1 = sqrt(max(rhosq + sin(b * theta) + delta, 0.0)); }
-    case 3: { r1 = sqrt(max(rhosq + sin(theta) + delta, 0.0)); }
+    case 2: { r1 = sqrt(max(rhosq + safe_sin(b * theta) + delta, 0.0)); }
+    case 3: { r1 = sqrt(max(rhosq + safe_sin(theta) + delta, 0.0)); }
     case 4: { r1 = sqrt(max(rhosq + theta * theta - delta + 1.0, 0.0)); }
-    case 5: { r1 = sqrt(max(rhosq + abs(tan(theta)) + delta, 0.0)); }
-    case 6: { r1 = sqrt(max(rhosq * (1.0 + sin(b * theta)) + delta, 0.0)); }
-    case 7: { r1 = sqrt(max(rhosq + abs(sin(0.5 * b * theta)) + delta, 0.0)); }
-    case 8: { r1 = sqrt(max(rhosq + sin(PI * sin(b * theta)) + delta, 0.0)); }
-    case 9: { r1 = sqrt(max(rhosq + (sin(b * theta) + sin(2.0 * b * theta + PI * 0.5)) * 0.5 + delta, 0.0)); }
+    case 5: { r1 = sqrt(max(rhosq + abs(safe_tan(theta)) + delta, 0.0)); }
+    case 6: { r1 = sqrt(max(rhosq * (1.0 + safe_sin(b * theta)) + delta, 0.0)); }
+    case 7: { r1 = sqrt(max(rhosq + abs(safe_sin(0.5 * b * theta)) + delta, 0.0)); }
+    case 8: { r1 = sqrt(max(rhosq + safe_sin(PI * safe_sin(b * theta)) + delta, 0.0)); }
+    case 9: { r1 = sqrt(max(rhosq + (safe_sin(b * theta) + safe_sin(2.0 * b * theta + PI * 0.5)) * 0.5 + delta, 0.0)); }
     default: { r1 = 1.0; }
   }
   let inside = i32(inside_p);
   let r_final = select(w * r1, w / max(r1, 1e-30), inside != 0);
-  return vec2f(r_final * cos(theta), r_final * sin(theta));
+  // theta = atan2·d — `d` is unbounded slider, so output trig also routes
+  // through safe_*.
+  return vec2f(r_final * safe_cos(theta), r_final * safe_sin(theta));
 }
 
 // lace_js — Jesus Sosa via Paul Bourke. 0 params, RNG-driven. 4-way
@@ -4436,9 +4491,11 @@ fn var_fourth(
     let yy = p.y + off_y;
     let r0 = sqrt(xx * xx + yy * yy);
     if (r0 < w) {
+      // theta = atan2(...) + spin + twist·(w-r0). spin and twist are
+      // slider params — safe_* per convention.
       let theta = atan2(yy, xx) + spin + twist * (w - r0);
       let r = w * r0;
-      return vec2f(r * cos(theta) + off_x, r * sin(theta) - off_y);
+      return vec2f(r * safe_cos(theta) + off_x, r * safe_sin(theta) - off_y);
     }
     let r = w * (1.0 + space / max(r0, 1e-30));
     return vec2f(r * xx + off_x, r * yy - off_y);
@@ -4634,12 +4691,15 @@ fn var_e_mod(p: vec2f, w: f32, radius: f32, distance: f32) -> vec2f {
   if (mu < radius && -mu < radius) {
     let r_safe = max(radius, 1e-30);
     let two_r = 2.0 * r_safe;
+    // JWF uses Java fmod (sign-of-dividend). WGSL `%` on f32 matches C99
+    // fmod semantics, NOT Python/floor-mod. At nu≤0 the dividend can be
+    // negative; floor-mod would wrap it positive (~ +0.5 r), fmod keeps
+    // the negative sign (~ -0.5 r). Example r=1,d=0,mu=0.5,nu=-0.3 →
+    // JWF/fmod mu'=0.5; floor-mod mu'=2.5.
     if (nu > 0.0) {
-      let arg = mu + r_safe + distance * r_safe;
-      mu = arg - floor(arg / two_r) * two_r - r_safe;
+      mu = (mu + r_safe + distance * r_safe) % two_r - r_safe;
     } else {
-      let arg = mu - r_safe - distance * r_safe;
-      mu = arg - floor(arg / two_r) * two_r + r_safe;
+      mu = (mu - r_safe - distance * r_safe) % two_r + r_safe;
     }
   }
   return vec2f(
@@ -4662,38 +4722,41 @@ fn var_intersection(
   yheight: f32, ytilesize: f32, ymod1: f32, ymod2: f32, ywidth: f32,
   wi: u32,
 ) -> vec2f {
+  // JWF IntersectionFunc emits xy with NO pAmount factor — the variation
+  // weight is effectively ignored (sibling V206 inv_squircular preserves
+  // this convention). The `w * 0` short-circuit keeps the
+  // dispatch-routed weight a true no-op (weight=0 should still produce
+  // (0,0)) while otherwise matching the canonical no-w convention.
+  if (w == 0.0) { return vec2f(0.0, 0.0); }
+  // JWF uses fmod (sign-of-dividend). WGSL `%` matches.
   let xr1 = xmod2 * xmod1;
   let yr1 = ymod2 * ymod1;
   if (rand01(wi) < 0.5) {
     let x = select(-xwidth, xwidth, rand01(wi) < 0.5);
-    let ox = w * xtilesize * (p.x + round(x * log(max(rand01(wi), 1e-30))));
+    let ox = xtilesize * (p.x + round(x * log(max(rand01(wi), 1e-30))));
     var oy: f32;
     if (p.y > xmod1) {
-      let arg = p.y + xmod1;
       let r1_safe = max(xr1, 1e-30);
-      oy = w * xheight * (-xmod1 + (arg - floor(arg / r1_safe) * r1_safe));
+      oy = xheight * (-xmod1 + (p.y + xmod1) % r1_safe);
     } else if (p.y < -xmod1) {
-      let arg = xmod1 - p.y;
       let r1_safe = max(xr1, 1e-30);
-      oy = w * xheight * (xmod1 - (arg - floor(arg / r1_safe) * r1_safe));
+      oy = xheight * (xmod1 - (xmod1 - p.y) % r1_safe);
     } else {
-      oy = w * xheight * p.y;
+      oy = xheight * p.y;
     }
     return vec2f(ox, oy);
   }
   let y = select(-yheight, yheight, rand01(wi) < 0.5);
-  let oy = w * ytilesize * (p.y + round(y * log(max(rand01(wi), 1e-30))));
+  let oy = ytilesize * (p.y + round(y * log(max(rand01(wi), 1e-30))));
   var ox: f32;
   if (p.x > ymod1) {
-    let arg = p.x + ymod1;
     let r1_safe = max(yr1, 1e-30);
-    ox = w * ywidth * (-ymod1 + (arg - floor(arg / r1_safe) * r1_safe));
+    ox = ywidth * (-ymod1 + (p.x + ymod1) % r1_safe);
   } else if (p.x < -ymod1) {
-    let arg = ymod1 - p.x;
     let r1_safe = max(yr1, 1e-30);
-    ox = w * ywidth * (ymod1 - (arg - floor(arg / r1_safe) * r1_safe));
+    ox = ywidth * (ymod1 - (ymod1 - p.x) % r1_safe);
   } else {
-    ox = w * ywidth * p.x;
+    ox = ywidth * p.x;
   }
   return vec2f(ox, oy);
 }
@@ -4827,6 +4890,7 @@ fn var_b_mod(p: vec2f, w: f32, radius: f32, distance: f32) -> vec2f {
   let xm1 = p.x - 1.0;
   let y2 = p.y * p.y;
   var tau = 0.5 * (log(max(xp1 * xp1 + y2, 1e-30)) - log(max(xm1 * xm1 + y2, 1e-30)));
+  // sigma is bounded by two atan2 calls (∈ ~[-π, 3π]) — raw trig is safe.
   let sigma = PI - atan2(p.y, xp1) - atan2(p.y, 1.0 - p.x);
   if (tau < radius && -tau < radius) {
     let r_safe = max(radius, 1e-30);
@@ -4847,13 +4911,15 @@ fn var_b_transform(p: vec2f, w: f32, rotate: f32, power_p: f32, move_v: f32, spl
   let xm1 = p.x - 1.0;
   let y2 = p.y * p.y;
   var tau = 0.5 * (log(max(xp1 * xp1 + y2, 1e-30)) - log(max(xm1 * xm1 + y2, 1e-30))) / power + move_v;
+  // sigma carries `rotate` (slider) + randint·2π/power — adversarially
+  // unbounded. safe_* per convention.
   var sigma = PI - atan2(p.y, xp1) - atan2(p.y, 1.0 - p.x) + rotate;
   let randint = floor(rand01(wi) * power);
   sigma = sigma / power + (2.0 * PI / power) * randint;
   tau = tau + select(-split, split, p.x >= 0.0);
-  let temp = cosh(tau) - cos(sigma);
+  let temp = cosh(tau) - safe_cos(sigma);
   let temp_safe = select(temp, 1e-30, abs(temp) < 1e-30);
-  return vec2f(w * sinh(tau) / temp_safe, w * sin(sigma) / temp_safe);
+  return vec2f(w * sinh(tau) / temp_safe, w * safe_sin(sigma) / temp_safe);
 }
 
 // parallel — Stefanov. 10 params + 2 hardcoded (x2height=0.5, x2move=1.0
@@ -4901,6 +4967,160 @@ fn var_parallel(
     oy = w * x2height * p.y - w * x2move;
   }
   return vec2f(ox, oy);
+}
+
+// ---------------------------------------------------------------------
+// #170 sibling-pair completions + S-tier ports (V214..V219). Brownian
+// intentionally NOT ported — JWildfire BrownianFunc relies on a
+// persistent Draw2D canvas + DynamicArray2D state container, which
+// has no analogue in pyr3's stateless WGSL chaos kernel.
+// ---------------------------------------------------------------------
+
+// waves3 — Zabanova/Stefanov sibling to V16 waves / V85 waves2. The
+// y-axis frequency `sx_freq` modulates scalex per-iter; the x-axis
+// frequency `sy_freq` modulates scaley.
+fn var_waves3(p: vec2f, w: f32, scalex: f32, scaley: f32, freqx: f32, freqy: f32, sx_freq: f32, sy_freq: f32) -> vec2f {
+  // y0·sx_freq, x0·sy_freq are unbounded products of walker coord and
+  // slider — safe_* per Dawn f32 trig cliff convention.
+  let scalexx = 0.5 * scalex * (1.0 + safe_sin(p.y * sx_freq));
+  let scaleyy = 0.5 * scaley * (1.0 + safe_sin(p.x * sy_freq));
+  return vec2f(
+    w * (p.x + safe_sin(p.y * freqx) * scalexx),
+    w * (p.y + safe_sin(p.x * freqy) * scaleyy),
+  );
+}
+
+// waves4 — Zabanova/Stefanov sibling. Cell-banded variant: floor(y0·freqx/2π)
+// indexes a hash → multiplies scalex by hash² (or 0/1 if `cont`=1).
+fn var_waves4(p: vec2f, w: f32, scalex: f32, scaley: f32, freqx: f32, freqy: f32, cont_p: f32, yfact: f32) -> vec2f {
+  let cell = floor(p.y * freqx / TAU);
+  // Spatial-hash trick (same family as V167 circular). Raw sin/cos is
+  // the design here — see the V167 audit comment for rationale.
+  var ax = sin(cell * 12.9898 + cell * 78.233 + 1.0 + p.y * 0.001 * yfact) * 43758.5453;
+  ax = ax - trunc(ax);
+  let cont = cont_p > 0.5;
+  if (cont) { ax = select(0.0, 1.0, ax > 0.5); }
+  return vec2f(
+    w * (p.x + safe_sin(p.y * freqx) * ax * ax * scalex),
+    w * (p.y + safe_sin(p.x * freqy) * scaley),
+  );
+}
+
+// scry2 — dark-beam. Loonie2-init (n-sided star + circle blend) plus a
+// scry-style 1/d inversion. Loop structure mirrors V105 loonie2 verbatim
+// up to the inversion choice; final emission is `p · 1/d` where d
+// closes both the inside-loonie2 r² and the scry r1·(r2+1/w) factor.
+fn var_scry2(p: vec2f, w: f32, sides_f: f32, star: f32, circle: f32) -> vec2f {
+  let MAX_SCRY2_SIDES: i32 = 50;
+  let sides = clamp(i32(sides_f), 1, MAX_SCRY2_SIDES);
+  let a = TAU / f32(sides);
+  let sina = safe_sin(a);
+  let cosa = safe_cos(a);
+  // JWF init mirrors loonie2: a = -π/2·star; sins = sin(a).
+  let sins = safe_sin(-star * PI * 0.5);
+  let coss = safe_cos(star * PI * 0.5);
+  let sinc = safe_sin(circle * PI * 0.5);
+  let cosc = safe_cos(circle * PI * 0.5);
+
+  var xrt = p.x;
+  var yrt = p.y;
+  var r2 = xrt * coss + abs(yrt) * sins;
+  let circle_r = sqrt(xrt * xrt + yrt * yrt);
+  var iters: i32 = 0;
+  for (var i: i32 = 0; i < MAX_SCRY2_SIDES; i = i + 1) {
+    if (i >= sides - 1) { break; }
+    let swp = xrt * cosa - yrt * sina;
+    yrt = xrt * sina + yrt * cosa;
+    xrt = swp;
+    r2 = max(r2, xrt * coss + abs(yrt) * sins);
+    iters = i + 1;
+  }
+  r2 = r2 * cosc + circle_r * sinc;
+  let r1 = r2;
+  if (iters > 1) {
+    r2 = r2 * r2;
+  } else {
+    r2 = abs(r2) * r2;
+  }
+  // scry effect: d = r1·(r2 + 1/w). At w=0 the source returns early; we
+  // emit (0,0) to match.
+  if (w == 0.0) { return vec2f(0.0, 0.0); }
+  let d = r1 * (r2 + 1.0 / w);
+  if (d == 0.0) { return vec2f(0.0, 0.0); }
+  let r = 1.0 / d;
+  return vec2f(p.x * r, p.y * r);
+}
+
+// ennepers2 — dark-beam. 3 params (a, b, c). Polynomial fold derived
+// from the Enneper minimal surface, sibling to V152 ennepers but with
+// per-axis scale + sqrt(|p|) absorption term.
+fn var_ennepers2(p: vec2f, w: f32, ap: f32, bp: f32, cp: f32) -> vec2f {
+  let xx = p.x;
+  let yy = p.y;
+  let r2 = 1.0 / max(xx * xx + yy * yy, 1e-30);
+  let dxy = (ap * xx) * (ap * xx) - (bp * yy) * (bp * yy);
+  return vec2f(
+    w * xx * (ap * ap - dxy * r2 - cp * sqrt(abs(xx))),
+    w * yy * (bp * bp - dxy * r2 - cp * sqrt(abs(yy))),
+  );
+}
+
+// apollony — Jesus Sosa's Apollonian gasket IFS (via Paul Bourke).
+// 3-branch random pick per iter. No params. r = √3 hardcoded.
+fn var_apollony(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let SQRT3: f32 = 1.7320508075688772;
+  let dx = 1.0 + SQRT3 - p.x;
+  let denom = dx * dx + p.y * p.y;
+  let denom_safe = max(denom, 1e-30);
+  let a0 = 3.0 * dx / denom_safe - (1.0 + SQRT3) / (2.0 + SQRT3);
+  let b0 = 3.0 * p.y / denom_safe;
+  let ab_sq = max(a0 * a0 + b0 * b0, 1e-30);
+  let f1x = a0 / ab_sq;
+  let f1y = -b0 / ab_sq;
+  // Source: int w = (int)(4·random()); branch on w%3 (so 4 of every 4
+  // rand draws produce 0/1/2/0 → branch 0 fires twice).
+  let branch = i32(floor(4.0 * rand01(wi))) % 3;
+  var x: f32;
+  var y: f32;
+  if (branch == 0) {
+    x = a0;
+    y = b0;
+  } else if (branch == 1) {
+    x = -f1x * 0.5 - f1y * SQRT3 * 0.5;
+    y = f1x * SQRT3 * 0.5 - f1y * 0.5;
+  } else {
+    x = -f1x * 0.5 + f1y * SQRT3 * 0.5;
+    y = -f1x * SQRT3 * 0.5 - f1y * 0.5;
+  }
+  return vec2f(w * x, w * y);
+}
+
+// circlecrop — Xyrus02. 5 params (radius, x, y, scatter_area, zero).
+// Crops the iterate to a disc of radius `radius` centered at (x, y).
+// `zero=1`: outside the disc → (0,0) (doHide semantics). `zero=0`:
+// outside → wrap to disc edge with scatter-area-jittered radius.
+fn var_circlecrop(
+  p: vec2f, w: f32,
+  radius: f32, cx: f32, cy: f32, scatter_area: f32, zero_p: f32,
+  wi: u32,
+) -> vec2f {
+  let ca = clamp(scatter_area, -1.0, 1.0);
+  let dx = p.x - cx;
+  let dy = p.y - cy;
+  let rad = sqrt(dx * dx + dy * dy);
+  let ang = atan2(dy, dx);
+  let rdc = radius + (rand01(wi) * 0.5 * ca);
+  let esc = rad > radius;
+  let zero = zero_p > 0.5;
+  if (zero && esc) {
+    return vec2f(0.0, 0.0);   // doHide → contribute nothing
+  }
+  // ang ∈ [-π, π] from atan2 — raw trig fine.
+  if (!zero && esc) {
+    return vec2f(w * rdc * cos(ang) + cx, w * rdc * sin(ang) + cy);
+  }
+  // Inside the disc (both zero=0 and zero=1 with !esc) → pass through scaled.
+  return vec2f(w * dx + cx, w * dy + cy);
 }
 
 // ---------------------------------------------------------------------
@@ -5160,6 +5380,13 @@ fn apply_variation(
     case 211u: { return var_b_mod(p, w, p0, p1); }
     case 212u: { return var_b_transform(p, w, p0, p1, p2, p3, wi); }
     case 213u: { return var_parallel(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, wi); }
+    // #170 sibling-pair completions + S-tier ports.
+    case 214u: { return var_waves3(p, w, p0, p1, p2, p3, p4, p5); }
+    case 215u: { return var_waves4(p, w, p0, p1, p2, p3, p4, p5); }
+    case 216u: { return var_scry2(p, w, p0, p1, p2); }
+    case 217u: { return var_ennepers2(p, w, p0, p1, p2); }
+    case 218u: { return var_apollony(p, w, wi); }
+    case 219u: { return var_circlecrop(p, w, p0, p1, p2, p3, p4, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

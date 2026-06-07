@@ -1,7 +1,7 @@
 // #119 — Variation Catalog sidebar.
 //
 // Sticky left-pane index: search + three collapsible sticky-headed
-// sections (flam3 / DC family / JWildfire ports). All 107 variations
+// sections (flam3 / DC family / JWildfire ports). All 220 variations
 // always render in numeric order. Search filters in-place; collapse
 // hides a section's members but keeps its header pinned. Scroll-spy is
 // wired by the host (which knows about scroll containers); this module

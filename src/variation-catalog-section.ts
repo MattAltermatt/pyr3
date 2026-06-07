@@ -138,7 +138,12 @@ export function mountSection(
     const svg = parseSvgFragment(buildWarpSvg(doc.warpFn));
     if (svg) warpPane.append(svg);
   } else {
-    warpPane.append(el('div', 'pyr3-cat-warp-na', 'warp diagram not applicable (RNG-driven)'));
+    // #171: the live flame on the right still illustrates this variation;
+    // the static warp grid only renders for deterministic warpFns
+    // (`(x, y) -> [x, y]`). RNG-driven entries (gaussian_blur, line,
+    // funnel etc.) sample a fresh per-iter value, so a single static
+    // deformation grid can't represent them.
+    warpPane.append(el('div', 'pyr3-cat-warp-na', 'warp diagram not applicable — this variation samples a random value per iteration. See the live flame at right.'));
   }
   warpPane.append(el('span', 'pyr3-cat-pane-label', 'grid warp · static'));
   leftCol.append(warpPane);

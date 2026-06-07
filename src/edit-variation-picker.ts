@@ -20,6 +20,12 @@
 // Filter chips are intentionally OMITTED per user direction — type
 // categorization stays in the data (CATEGORY_MAP) for future use, but no
 // chip UI.
+//
+// #171: CATEGORY_MAP is currently unused by the picker UI by design
+// (user direction: no chip filtering). Keep the data: it is a clean
+// expression of the variation family taxonomy that is referenced by
+// downstream callers (and the catalog page may surface it as an
+// alternate sidebar grouping in a future pass).
 
 import { COLORS } from './ui-tokens';
 import { buildDropdown, buildToggle, buildButton } from './edit-primitives';
@@ -292,10 +298,10 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
 
   // Catalog link — opens the live catalog (/v1/variations) in a new tab so
   // the user can preview every variation rendered + with controls before
-  // picking one here.
+  // picking one here. #171: anchor the deep-link to the current selection
+  // via the `v<idx>-<name>` hash convention from variation-catalog-mount.
   const catalogLink = document.createElement('a');
   catalogLink.className = 'pyr3-picker-catalog-link';
-  catalogLink.href = '/v1/variations';
   catalogLink.target = '_blank';
   catalogLink.rel = 'noopener noreferrer';
   catalogLink.textContent = 'explore catalog ↗';
@@ -304,6 +310,11 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   catalogLink.style.color = COLORS.flame.mid;
   catalogLink.style.textDecoration = 'none';
   catalogLink.style.marginLeft = 'auto';
+  function updateCatalogLink(idx: number): void {
+    const name = VARIATION_NAMES[idx];
+    catalogLink.href = name ? `/v1/variations#v${idx}-${name}` : '/v1/variations';
+  }
+  updateCatalogLink(currentIndex);
 
   controlsRow.append(sort, autoApplyWrap, catalogLink);
   head.appendChild(controlsRow);
@@ -374,6 +385,7 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
       opts.onPreview(entry.idx);
       paintActive(entry.idx);
       refreshSelectedInfo();
+      updateCatalogLink(entry.idx);
       if (autoApplyOn) {
         commit();
       }

@@ -13,6 +13,25 @@ import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import * as TS from '../src/variations.ts';
 import { VARIATION_PARAMS, VARIATION_DEFAULTS } from '../src/serialize.ts';
+import { CATALOG_DATA } from '../src/variation-catalog-data.ts';
+const CATALOG_ENTRIES = CATALOG_DATA;
+
+// #166: build a catalog-warpFn fallback so post-V130 ports (which broke
+// the ts_var_* reference-impl convention — see [[variations.ts]]) still
+// produce thumbnails. The catalog warpFn shape is `(x, y) -> [x, y]`;
+// adapt to the bake harness's `({tx, ty, ...}) -> {x, y}` shape.
+const CATALOG_BY_NAME = Object.create(null);
+for (const entry of CATALOG_ENTRIES) {
+  if (typeof entry.warpFn === 'function') {
+    CATALOG_BY_NAME[entry.name] = entry.warpFn;
+  }
+}
+function adaptCatalogFn(warpFn) {
+  return ({ tx, ty }) => {
+    const [x, y] = warpFn(tx, ty);
+    return { x, y };
+  };
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'public', 'variation-thumbs');
@@ -301,22 +320,48 @@ function bake(name, fn) {
 
 let count = 0;
 let skipped = 0;
+let fromCatalog = 0;
+let fromGlyph = 0;
+
+const tsByName = Object.create(null);
 for (const exportName of Object.keys(TS)) {
-  if (!exportName.startsWith('ts_var_')) continue;
-  const name = exportName.slice('ts_var_'.length);
-  const fn = TS[exportName];
+  if (exportName.startsWith('ts_var_')) {
+    tsByName[exportName.slice('ts_var_'.length)] = TS[exportName];
+  }
+}
+
+// Bake every variation in the catalog. Each name is sourced in this
+// priority: (1) the ts_var_* reference impl, (2) the catalog warpFn,
+// (3) the SCHEMATIC drop-back, (4) a first-letter glyph (handled by
+// bake() itself).
+for (const entry of CATALOG_ENTRIES) {
+  const name = entry.name;
+  let fn = tsByName[name];
+  let source = 'ts_var_';
   if (typeof fn !== 'function') {
-    skipped++;
-    continue;
+    const catalogFn = CATALOG_BY_NAME[name];
+    if (catalogFn) {
+      fn = adaptCatalogFn(catalogFn);
+      source = 'catalog';
+      fromCatalog++;
+    } else {
+      // No ts_var_* AND no catalog warpFn — let bake() draw a glyph
+      // by passing a no-op fn.
+      fn = () => null;
+      source = 'glyph';
+      fromGlyph++;
+    }
   }
   const hits = bake(name, fn);
-  if (hits === 0) {
+  if (hits === 0 && source === 'ts_var_') {
     // The variation may need specific params (e.g. radial_blur with angle=0)
     // — empty thumbnails still get written so the picker has SOMETHING to
     // load, but log so we know to revisit.
-    console.warn(`  warn: ${name} produced 0 plotted points`);
+    console.warn(`  warn: ${name} produced 0 plotted points (ts_var_)`);
   }
   count++;
 }
+
 console.log(`baked ${count} variation thumbnails → ${OUT_DIR}`);
+console.log(`  ${count - fromCatalog - fromGlyph} from ts_var_, ${fromCatalog} from catalog warpFn, ${fromGlyph} from glyph fallback`);
 if (skipped > 0) console.log(`  skipped ${skipped} non-function exports`);

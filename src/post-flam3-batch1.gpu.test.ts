@@ -156,7 +156,9 @@ function loonie2Oracle(x: number, y: number, w: number, sidesF: number, star: nu
   const a = (2 * Math.PI) / sides;
   const sina = Math.sin(a);
   const cosa = Math.cos(a);
-  const sins = Math.sin(star * Math.PI * 0.5);
+  // #164 fix — JWF init: a = -π/2·star; _sins = sin(a) (negative).
+  // cos is even so coss = cos(π/2·star) = cos(-π/2·star) — unchanged.
+  const sins = Math.sin(-star * Math.PI * 0.5);
   const coss = Math.cos(star * Math.PI * 0.5);
   const sinc = Math.sin(circle * Math.PI * 0.5);
   const cosc = Math.cos(circle * Math.PI * 0.5);

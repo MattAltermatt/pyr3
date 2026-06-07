@@ -1,13 +1,21 @@
 // Variation registry for pyr3.
 //
 // Each variation has a stable numeric INDEX matching the WGSL switch
-// dispatcher in `src/shaders/chaos.wgsl`. Phase 3 ships the 20 core
-// variations from the ROADMAP. Long-tail variations (~80 more from
-// flam3) ship one-by-one in Phase 9b.
+// dispatcher in `src/shaders/chaos.wgsl`. As of 2026-06-07 the catalog
+// holds V0..V219 (220 entries) — flam3 originals + DC family + Apophysis
+// plugin pack + JWildfire 2D long tail (V152..V213 from #121, V214..V219
+// from #170 sibling-pair completions).
 //
 // Adding a variation = (1) add an entry to V, (2) add a `var_X` kernel
 // in chaos.wgsl, (3) add a switch case in `apply_variation`. The genome
 // data shape (the seam) is stable; only the dispatcher table grows.
+//
+// Pre-V130 entries had paired TypeScript reference implementations for
+// f64-oracle parity testing; that convention was retired from V131
+// onward in favor of in-file GPU smoke tests (extractWgslFn against a
+// thin TS oracle defined inside the .gpu.test.ts file). Reading
+// post-V130 sources, expect kernel WGSL + a sibling .gpu.test.ts file,
+// not a reference impl module.
 
 export const V = {
   linear: 0,
@@ -464,6 +472,19 @@ export const V = {
   b_mod: 211,
   b_transform: 212,
   parallel: 213,
+  // #170 sibling-pair completions + S-tier ports. waves3/waves4
+  // (Zabanova/Stefanov sequels to V16/V85), scry2 (dark-beam loonie2+scry
+  // hybrid), ennepers2 (dark-beam Enneper variant), apollony (Sosa
+  // Apollonian gasket IFS), circlecrop (Xyrus02 disc clipper). Brownian
+  // intentionally NOT ported — it requires persistent Draw2D canvas
+  // state (DynamicArray2D), incompatible with pyr3's stateless WGSL
+  // kernel.
+  waves3: 214,
+  waves4: 215,
+  scry2: 216,
+  ennepers2: 217,
+  apollony: 218,
+  circlecrop: 219,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
