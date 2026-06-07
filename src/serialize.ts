@@ -360,22 +360,44 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // space_* = 2). At these defaults pyr3's N/S asymmetric subset gives
   // a symmetric output (north/south scales are equal); varying any of
   // the four space_* sliders independently introduces the asymmetry.
-  cell2: [0.6, 1.0, 2.0, 2.0, 2.0, 2.0],                  // size, a, space_north_x, space_north_y, space_south_x, space_south_y
+  // cell2 default RETUNED for catalog visibility — JWildfire's (size=0.6,
+  // all space_*=2) pushed the output past the catalog camera. (size=0.3,
+  // all space_*=1) reduces to a clean y-mirrored cellular tile that
+  // stays in view; the user can pull either N/S space pair up to expose
+  // the per-hemisphere asymmetry.
+  cell2: [0.3, 1.0, 1.0, 1.0, 1.0, 1.0],                  // size, a, space_north_x, space_north_y, space_south_x, space_south_y
   // #120 batch B4 — JWildfire-faithful defaults.
   curl_sp: [1.0, -0.01, 0.03, 0.0, 0.0],                  // pow, c1, c2, sx, sy
   murl2: [0.1, 3.0],                                       // c, power
   lissajous: [-Math.PI, Math.PI, 3.0, 2.0, 0.0, 0.0, 0.0], // tmin, tmax, a, b, c, d, e
-  spirograph: [3.0, 2.0, 0.0, -1.0, 1.0, -1.0, 1.0, 0.0, 0.0], // a, b, d, tmin, tmax, ymin, ymax, c1, c2
+  // spirograph default RETUNED — at a=3, b=2, c1=c2=0 the curve traces
+  // a circle of radius (a+b)=5, which is far off the catalog camera.
+  // Picking smaller a/b + non-zero c1/c2 makes the actual hypotrochoid
+  // shape visible at the default camera scale.
+  spirograph: [0.5, 0.3, 0.0, -Math.PI, Math.PI, 0.0, 0.0, 0.5, 0.5], // a, b, d, tmin, tmax, ymin, ymax, c1, c2
   waffle: [6.0, 0.5, 0.5, 0.0],                            // slices, xthickness, ythickness, rotation
   // #120 batch B5 — Glynn-set defaults from JWildfire.
-  glynnSim1: [1.0, 0.1, 110.0, 0.1, 1.5, 0.5],            // radius, radius1, phi1°, thickness, pow, contrast
-  glynnSim2: [1.0, 0.1, 0.5, 1.5, 110.0, 150.0],          // radius, thickness, contrast, pow, phi1°, phi2°
-  glynnSim3: [1.0, 0.1, 0.5, 1.5],                         // radius, thickness, contrast, pow
+  // Glynn-set defaults — user-tuned for the catalog's sierpinski
+  // scaffold (replaces JWildfire's defaults which were tuned for a
+  // wider input distribution). The exact values come from manual
+  // exploration of the live catalog at the post-`a32a655` ship.
+  glynnSim1: [0.45, 0.43, 110.0, 0.25, 1.5, 0.5],         // radius, radius1, phi1°, thickness, pow, contrast
+  glynnSim2: [0.25, 0.1, 0.5, 1.5, 110.0, 150.0],         // radius (was 1.0), thickness, contrast, pow, phi1°, phi2°
+  // glynnSim3 default RETUNED — at JWildfire's radius=1, thickness=0.1
+  // (radius1=1.1), all sierpinski walkers fall INSIDE radius1, so the
+  // outside branch never fires and contrast/pow have no visible
+  // effect (user observation, this session). radius=0.5, thickness=0.2
+  // gives radius1=0.7 — sierpinski corners at distance 1.0 fall
+  // outside, exposing the contrast/pow gate.
+  glynnSim3: [0.5, 0.2, 0.5, 1.3],                         // radius, thickness, contrast, pow
   // #120 batch B6 — JWildfire defaults.
   flipy: [],                                              // 0 params
-  eclipse: [0.0],                                         // shift
+  eclipse: [0.25],                                        // shift (user-tuned default — pure 0 is degenerate, 0.25 exposes the fold)
   barycentroid: [1.0, 0.0, 0.0, 1.0],                    // a, b, c, d — identity basis (output → ±|p|)
-  chunk: [1.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0],             // a, b, c, d, e, f, mode — r = x²+y²-1 (unit circle gate, mode 0 = inside)
+  // chunk default RETUNED — user-picked (e=0.35, f=-0.65) shifts the
+  // gate's center off-origin, producing a visually striking sierpinski-
+  // clustered pattern rather than the boring full unit disc.
+  chunk: [1.0, 0.0, 1.0, 0.0, 0.35, -0.65, 0],           // a, b, c, d, e, f, mode
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

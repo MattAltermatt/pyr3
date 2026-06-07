@@ -2549,19 +2549,19 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{139}(x, y) = w\\big(d_x + s_x\\cdot\\text{size},\\; -(d_y + s_y\\cdot\\text{size})\\big),\\; d = p - \\lfloor p\\cdot\\tfrac{a}{\\text{size}}\\rfloor\\cdot\\text{size}',
     blurb: 'Numbered variant of cell (V75) by Brad Stefanov. Snaps the iterate to a square grid (size · a-tuned cell pitch), then scales the cell coordinate per-hemisphere — `space_north_*` for y ≥ 0, `space_south_*` for y < 0 — producing a top/bottom-different cellular tile that\'s the visual signature of cell2 vs cell. pyr3 ships a **6-param subset** of JWildfire\'s 16-param source: the per-quadrant E/W asymmetry, per-quadrant position offsets, and RNG mirror flags are dropped; see issue #127 if the full surface ever matters. At the defaults (size=0.6, a=1, all space_*=2), the output is N/S symmetric; varying any of the four space_* sliders introduces the asymmetric look.',
     params: [
-      { name: 'size',          default: 0.6, min: 0.05, max: 2.0, step: 0.05 },
+      { name: 'size',          default: 0.3, min: 0.05, max: 2.0, step: 0.05 },
       { name: 'a',             default: 1.0, min: 0.1,  max: 3.0, step: 0.05 },
-      { name: 'space_north_x', default: 2.0, min: -3,   max: 3,   step: 0.05 },
-      { name: 'space_north_y', default: 2.0, min: -3,   max: 3,   step: 0.05 },
-      { name: 'space_south_x', default: 2.0, min: -3,   max: 3,   step: 0.05 },
-      { name: 'space_south_y', default: 2.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_north_x', default: 1.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_north_y', default: 1.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_south_x', default: 1.0, min: -3,   max: 3,   step: 0.05 },
+      { name: 'space_south_y', default: 1.0, min: -3,   max: 3,   step: 0.05 },
     ],
     // Deterministic in the 6-param subset (the dropped mirror flags
     // were the only RNG source in JWildfire's full version).
     warpFn: (x, y) => {
-      const size = 0.6, a = 1.0;
-      const space_north_x = 2.0, space_north_y = 2.0;
-      const space_south_x = 2.0, space_south_y = 2.0;
+      const size = 0.3, a = 1.0;
+      const space_north_x = 1.0, space_north_y = 1.0;
+      const space_south_x = 1.0, space_south_y = 1.0;
       const safe_size = Math.abs(size) < 1e-30 ? 1e-30 : size;
       const inv = a / safe_size;
       const cx = Math.floor(x * inv);
@@ -2672,15 +2672,18 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{143}(x, y) = w\\big((a+b)\\cos t - c_1\\cos((a+b)t/b) + d\\cos t + u,\\; \\text{sin analog}\\big)',
     blurb: 'Classic spirograph (hypotrochoid) curve sampler by Jed Kelsey (Lu-Kout). Combines a large circle of radius (a+b) with a smaller rotating component scaled by c₁/c₂, plus an optional d-scaled circular drift and a y-jitter. Input coord is ignored — output texture comes entirely from the parametric curve + RNG. Nine params fill our seam exactly.',
     params: [
-      { name: 'a',    default: 3.0,  min: 0,    max: 10,   step: 0.1  },
-      { name: 'b',    default: 2.0,  min: 0.05, max: 10,   step: 0.1  },
-      { name: 'd',    default: 0.0,  min: -2,   max: 2,    step: 0.05 },
-      { name: 'tmin', default: -1.0, min: -10,  max: 10,   step: 0.1  },
-      { name: 'tmax', default: 1.0,  min: -10,  max: 10,   step: 0.1  },
-      { name: 'ymin', default: -1.0, min: -2,   max: 2,    step: 0.05 },
-      { name: 'ymax', default: 1.0,  min: -2,   max: 2,    step: 0.05 },
-      { name: 'c1',   default: 0.0,  min: -2,   max: 2,    step: 0.05 },
-      { name: 'c2',   default: 0.0,  min: -2,   max: 2,    step: 0.05 },
+      // Catalog defaults RETUNED for visibility: at a=3, b=2, c1=c2=0
+      // the curve is a circle of radius 5 — off the catalog camera.
+      // Smaller a/b + non-zero c1/c2 surfaces the actual hypotrochoid.
+      { name: 'a',    default: 0.5,        min: 0,    max: 10,   step: 0.05 },
+      { name: 'b',    default: 0.3,        min: 0.05, max: 10,   step: 0.05 },
+      { name: 'd',    default: 0.0,        min: -2,   max: 2,    step: 0.05 },
+      { name: 'tmin', default: -Math.PI,   min: -10,  max: 10,   step: 0.1  },
+      { name: 'tmax', default: Math.PI,    min: -10,  max: 10,   step: 0.1  },
+      { name: 'ymin', default: 0.0,        min: -2,   max: 2,    step: 0.05 },
+      { name: 'ymax', default: 0.0,        min: -2,   max: 2,    step: 0.05 },
+      { name: 'c1',   default: 0.5,        min: -2,   max: 2,    step: 0.05 },
+      { name: 'c2',   default: 0.5,        min: -2,   max: 2,    step: 0.05 },
     ],
     // RNG-driven (2 rand01 draws) → no warpFn.
   },
@@ -2711,10 +2714,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{145}: \\text{inside radius} \\to \\text{circle at}\\;(\\text{radius}\\cos\\phi_1, \\text{radius}\\sin\\phi_1);\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
     blurb: 'Most elaborate of eralex61\'s Glynn-set trio. Inside the radius, emits a random point on a thickness-shaped circle offset by (radius·cos φ₁, radius·sin φ₁). Outside, randomly either passes the iterate through, applies the α² circle inversion (α = radius/r), or — if either result lands back inside the inner-circle bubble — re-emits an inner circle point. The contrast and pow params control the passthrough probability.',
     params: [
-      { name: 'radius',    default: 1.0,   min: 0.1, max: 2.0, step: 0.05 },
-      { name: 'radius1',   default: 0.1,   min: 0.01, max: 1.0, step: 0.01 },
+      // Catalog defaults user-tuned for visibility at the sierpinski
+      // scaffold (replaces JWildfire's radius=1, radius1=0.1, thick=0.1).
+      { name: 'radius',    default: 0.45,  min: 0.1, max: 2.0, step: 0.05 },
+      { name: 'radius1',   default: 0.43,  min: 0.01, max: 1.0, step: 0.01 },
       { name: 'phi1',      default: 110.0, min: -180, max: 180, step: 1 },
-      { name: 'thickness', default: 0.1,   min: 0,   max: 1,   step: 0.05 },
+      { name: 'thickness', default: 0.25,  min: 0,   max: 1,   step: 0.05 },
       { name: 'pow',       default: 1.5,   min: 0.1, max: 3.0, step: 0.05 },
       { name: 'contrast',  default: 0.5,   min: 0,   max: 1,   step: 0.05 },
     ],
@@ -2727,7 +2732,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{146}: \\text{inside radius} \\to \\text{arc at}\\;\\phi\\in[\\phi_1, \\phi_2];\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
     blurb: 'eralex61\'s arc-emitting GlynnSim variant. Inside the radius, emits a point on an angular arc bounded by [φ₁, φ₂] (in degrees), with radius scattered across [radius, radius+thickness] via a γ-tightened envelope. Outside the radius, same passthrough-vs-α²-inversion decision as glynnSim1 but without the re-emit check — simpler and faster.',
     params: [
-      { name: 'radius',    default: 1.0,   min: 0.1, max: 2.0, step: 0.05 },
+      // Catalog default for radius RETUNED (was 1.0) — smaller radius
+      // tucks the inner arc emit into the sierpinski's visible window.
+      { name: 'radius',    default: 0.25,  min: 0.1, max: 2.0, step: 0.05 },
       { name: 'thickness', default: 0.1,   min: 0,   max: 1,   step: 0.05 },
       { name: 'contrast',  default: 0.5,   min: 0,   max: 1,   step: 0.05 },
       { name: 'pow',       default: 1.5,   min: 0.1, max: 3.0, step: 0.05 },
@@ -2741,12 +2748,17 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     name: 'glynnSim3',
     source: sourceForIdx(V.glynnSim3),
     formula: 'V_{147}: \\text{inside }r_1 \\to \\text{circle at }r_1\\text{ or }r_2;\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
-    blurb: 'Simplest GlynnSim. Uses two computed radii r₁ = radius+thickness and r₂ = radius²/r₁, picking one or the other on each inner-circle emit via a γ-weighted coin flip. Visually creates concentric ring pairs rather than the offset-bubble effect of glynnSim1/2.',
+    blurb: 'Simplest GlynnSim. Uses two computed radii r₁ = radius+thickness and r₂ = radius²/r₁, picking one or the other on each inner-circle emit via a γ-weighted coin flip. Visually creates concentric ring pairs rather than the offset-bubble effect of glynnSim1/2. **Note:** `contrast` and `pow` only gate the OUTSIDE-radius branch (passthrough vs α² inversion); at large `radius` most walkers fall inside r₁ = radius + thickness and never reach that branch — pull `radius` down to expose contrast/pow.',
     params: [
-      { name: 'radius',    default: 1.0, min: 0.1, max: 2.0, step: 0.05 },
-      { name: 'thickness', default: 0.1, min: 0,   max: 1,   step: 0.05 },
+      // Catalog defaults RETUNED (was radius=1, thickness=0.1). With the
+      // sierpinski scaffold's extent ~1, radius=1 swallowed all walkers
+      // inside r₁=1.1 and the contrast/pow gate never fired. radius=0.5,
+      // thickness=0.2 puts r₁=0.7 inside the sierpinski extent so corners
+      // fall outside, exposing the gate.
+      { name: 'radius',    default: 0.5, min: 0.1, max: 2.0, step: 0.05 },
+      { name: 'thickness', default: 0.2, min: 0,   max: 1,   step: 0.05 },
       { name: 'contrast',  default: 0.5, min: 0,   max: 1,   step: 0.05 },
-      { name: 'pow',       default: 1.5, min: 0.1, max: 3.0, step: 0.05 },
+      { name: 'pow',       default: 1.3, min: 0.1, max: 3.0, step: 0.05 },
     ],
     // RNG-driven → no warpFn.
   },
@@ -2775,10 +2787,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{149}(x, y) = \\text{shift-shifted ellipse fold inside }|y|\\leq w,\\; \\text{else passthrough}',
     blurb: 'Branchy ellipse fold by Michael Faber. Inside the strip |y| ≤ w the variation computes the half-width c₂ = √(w² − y²) and either passes x through, shifts it by `shift·w`, or negates it depending on which sub-region the iterate lands in. Outside the strip, plain passthrough. Distinctive eclipse-crescent silhouettes around the strip boundary.',
     params: [
-      { name: 'shift', default: 0.0, min: -2, max: 2, step: 0.05 },
+      // Catalog default shift RETUNED from 0.0 — at shift=0 the fold is
+      // degenerate; shift=0.25 surfaces the characteristic cascade.
+      { name: 'shift', default: 0.25, min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const w = 1.0, shift = 0.0;
+      const w = 1.0, shift = 0.25;
       if (Math.abs(y) <= w) {
         const c2 = Math.sqrt(Math.max(w * w - y * y, 0));
         let ox: number;
@@ -2829,16 +2843,19 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{151}: r = w(ax^2 + bxy + cy^2 + dx + ey + f),\\; \\text{emit }p\\text{ if mode-gate fires, else }(0,0)',
     blurb: 'Quadratic-form spatial gate by zephyrtronium (via Brad Stefanov). Computes a weight-scaled quadratic at the iterate; emits the unscaled input coord when the gate condition holds (mode 0: r ≤ 0 — inside the conic section; mode 1: r > 0 — outside), else contributes (0, 0). At the defaults (a=c=1, b=d=e=0, f=-1, mode=0) the gate selects everything inside the unit circle, producing a clean disc cutout.',
     params: [
-      { name: 'a',    default: 1.0,  min: -2, max: 2, step: 0.05 },
-      { name: 'b',    default: 0.0,  min: -2, max: 2, step: 0.05 },
-      { name: 'c',    default: 1.0,  min: -2, max: 2, step: 0.05 },
-      { name: 'd',    default: 0.0,  min: -2, max: 2, step: 0.05 },
-      { name: 'e',    default: 0.0,  min: -2, max: 2, step: 0.05 },
-      { name: 'f',    default: -1.0, min: -2, max: 2, step: 0.05 },
-      { name: 'mode', default: 0,    min: 0,  max: 1, step: 1    },
+      // Catalog defaults RETUNED — (e=0, f=-1) was a boring unit-disc
+      // gate. (e=0.35, f=-0.65) shifts the gate off-origin producing
+      // a striking sierpinski-clustered pattern.
+      { name: 'a',    default: 1.0,   min: -2, max: 2, step: 0.05 },
+      { name: 'b',    default: 0.0,   min: -2, max: 2, step: 0.05 },
+      { name: 'c',    default: 1.0,   min: -2, max: 2, step: 0.05 },
+      { name: 'd',    default: 0.0,   min: -2, max: 2, step: 0.05 },
+      { name: 'e',    default: 0.35,  min: -2, max: 2, step: 0.05 },
+      { name: 'f',    default: -0.65, min: -2, max: 2, step: 0.05 },
+      { name: 'mode', default: 0,     min: 0,  max: 1, step: 1    },
     ],
     warpFn: (x, y) => {
-      const a = 1.0, b = 0.0, c = 1.0, d = 0.0, e = 0.0, f = -1.0;
+      const a = 1.0, b = 0.0, c = 1.0, d = 0.0, e = 0.35, f = -0.65;
       const mode = 0;
       const r = a * x * x + b * x * y + c * y * y + d * x + e * y + f;
       if (mode === 0 && r <= 0) return [x, y];

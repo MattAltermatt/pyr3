@@ -367,10 +367,15 @@
       }
       .pyr3-cat-control-row {
         display: grid;
-        grid-template-columns: 4.2rem 1fr 2.6rem 1.1rem;
+        grid-template-columns: 6.8rem 1fr 2.6rem 1.1rem;
         align-items: center;
         gap: 0.55rem;
         padding: 0.22rem 0;
+      }
+      .pyr3-cat-control-row .pyr3-cat-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .pyr3-cat-control-row .pyr3-cat-label { color: var(--text-muted); }
       .pyr3-cat-control-row .pyr3-cat-label.weight { color: var(--text); }
