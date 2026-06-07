@@ -70,6 +70,26 @@ function hasSeaFuse(nodePath) {
   }
 }
 
+/**
+ * Path to the platform-matching Dawn-node binding from node_modules/webgpu.
+ * Mirrors the lookup in `node_modules/webgpu/index.js`:
+ *   - darwin → "darwin-universal.dawn.node" (Apple ships universal binaries)
+ *   - linux/win → "<platform>-<arch>.dawn.node"
+ */
+function resolveDawnNodeForHost() {
+  const plat = platform();
+  const arch = plat === 'darwin' ? 'universal' : process.arch;
+  const fileName = `${plat}-${arch}.dawn.node`;
+  const fullPath = join(REPO_ROOT, 'node_modules', 'webgpu', 'dist', fileName);
+  if (!existsSync(fullPath)) {
+    throw new Error(
+      `build-cli: Dawn-node binding not found at ${fullPath}. ` +
+        `Did you run \`npm ci\`? Platform: ${plat}/${process.arch}.`,
+    );
+  }
+  return fullPath;
+}
+
 function nodejsOrgArtifact() {
   const plat = platform();
   const arch = process.arch;
@@ -153,13 +173,19 @@ async function buildCli(name) {
   const seaBlobPath = join(tmpDir, `sea-prep-${name}.blob`);
 
   // ── 2. sea-config.json ───────────────────────────────────────────────
-  // T7 will add an `assets` field here for the Dawn .node binding.
+  // The Dawn-node native binding for the host platform is bundled as a
+  // SEA asset under the key "dawn.node". bin/host.ts:loadWebgpu() extracts
+  // it to ~/.cache/pyr3/dawn-<sha>.node on first launch.
+  const dawnNodePath = resolveDawnNodeForHost();
   const seaConfig = {
     main: cjsPath,
     output: seaBlobPath,
     disableExperimentalSEAWarning: true,
     useSnapshot: false,
     useCodeCache: false,
+    assets: {
+      'dawn.node': dawnNodePath,
+    },
   };
   writeFileSync(seaConfigPath, JSON.stringify(seaConfig, null, 2));
 
@@ -211,10 +237,10 @@ async function buildCli(name) {
   const binSize = statSync(binPath).size;
   const binMB = (binSize / 1024 / 1024).toFixed(1);
   console.log(`\n✅ ${binPath}`);
-  console.log(`   ${binMB} MB (Node runtime + bundled JS)`);
+  console.log(`   ${binMB} MB (Node runtime + bundled JS + Dawn-node asset)`);
   console.log('');
-  console.log('   ⏳ T7 (Dawn .node SEA asset) still pending — binary will fail');
-  console.log('      at runtime with "Cannot find module \'webgpu\'" until then.');
+  console.log(`   Try it:`);
+  console.log(`     ${binPath} public/fixtures/electricsheep.247.19679.flam3 hero.png`);
 }
 
 const invokedDirectly =

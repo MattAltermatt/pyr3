@@ -4,12 +4,69 @@
 // stamp WebGPU globals onto globalThis here so the engine runs unmodified.
 
 import { DOMParser } from 'linkedom';
-import { create, globals } from 'webgpu';
+import { createRequire } from 'node:module';
 
 import { sniffKind, type LoadKind } from '../src/loader';
 import { parseFlame } from '../src/flame-import';
 import { genomeFromJson } from '../src/serialize';
 import { type Genome } from '../src/genome';
+
+// createRequire base path:
+//   - ESM (npm run render via tsx): `import.meta.url` is the host.ts file URL —
+//     localRequire('webgpu') walks up to node_modules and finds it.
+//   - CJS bundle (SEA binary): esbuild replaces `import.meta` with `{}`, so
+//     `.url` is undefined. Fall back to the executable path; the SEA branch
+//     only uses module-name and absolute-path requires (base is irrelevant
+//     for both).
+const localRequire = createRequire(
+  import.meta.url ?? `file://${process.execPath}`,
+);
+
+/**
+ * Resolve the Dawn-node WebGPU binding in BOTH execution modes:
+ *
+ *   - **npm-installed** (`npm run render`, plain `node build/.tmp/*.cjs`):
+ *     the `webgpu` package sits in `node_modules` and resolves normally.
+ *   - **SEA binary** (`build/pyr3-render`): no node_modules exists; the
+ *     platform's `.dawn.node` is bundled as a SEA asset by build-cli.mjs.
+ *     Extract it to `~/.cache/pyr3/dawn-<sha>.node` (hash-cached so the
+ *     write only happens once per binary build) and `require()` the path.
+ *
+ * Returns the same shape as `node_modules/webgpu/index.js`: `{ create, globals }`.
+ */
+function loadWebgpu(): { create: (flags: string[]) => { requestAdapter: () => Promise<GPUAdapter | null> }; globals: object } {
+  // Try SEA mode first. node:sea is only available inside a SEA binary;
+  // require throws ERR_UNKNOWN_BUILTIN_MODULE in normal Node, which we catch.
+  try {
+    const sea = localRequire('node:sea') as {
+      isSea?: () => boolean;
+      getAsset?: (key: string) => ArrayBuffer;
+    };
+    if (sea.isSea?.()) {
+      const buf = sea.getAsset!('dawn.node');
+      const { createHash } = localRequire('node:crypto') as typeof import('node:crypto');
+      const { homedir } = localRequire('node:os') as typeof import('node:os');
+      const fs = localRequire('node:fs') as typeof import('node:fs');
+      const { join } = localRequire('node:path') as typeof import('node:path');
+
+      const bytes = Buffer.from(buf);
+      const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+      const cacheDir = join(homedir(), '.cache', 'pyr3');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      const cachedPath = join(cacheDir, `dawn-${hash}.node`);
+      if (!fs.existsSync(cachedPath)) {
+        fs.writeFileSync(cachedPath, bytes);
+      }
+      return localRequire(cachedPath);
+    }
+  } catch {
+    // node:sea not available — fall through to npm-installed path.
+  }
+
+  return localRequire('webgpu');
+}
+
+const { create, globals } = loadWebgpu();
 
 /** Stamp DOMParser + webgpu globals onto globalThis. */
 export function installWebGPUHost(): void {
