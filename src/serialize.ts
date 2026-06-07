@@ -208,6 +208,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   xcurl2: ['c1', 'c2', 'c3'],
   xtrb: ['xtrb_power', 'xtrb_dist', 'xtrb_radius', 'xtrb_width', 'xtrb_a', 'xtrb_b'],
   blur_circle: ['hole'],
+  // #120 batch B1 — M-tier port flagship. bipolar2 = Brad Stefanov's
+  // 9-param rework of base bipolar. JWildfire param names verbatim.
+  bipolar2: ['shift', 'a', 'b', 'c', 'd', 'e', 'f1', 'g1', 'h'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -304,6 +307,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   xcurl2: [0.0, 0.0, 0.0],                           // c1, c2, c3
   xtrb: [2, 1.0, 1.0, 0.5, 1.0, 1.0],                // power=2, dist=1, radius=1, width=0.5, a=1, b=1
   blur_circle: [0.0],                                // hole
+  // #120 batch B1 — bipolar2 defaults from JWildfire Bipolar2Func.java.
+  // Mirrors the base bipolar (V35) when shift=0; the rest of the params
+  // are the source's named defaults.
+  bipolar2: [0.0, 1.0, 2.0, 0.5, 1.0, 2.0, 0.25, 1.0, 1.0], // shift,a,b,c,d,e,f1,g1,h
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

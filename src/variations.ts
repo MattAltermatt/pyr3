@@ -266,6 +266,11 @@ export const V = {
   xtrb: 128,
   gridout: 129,
   blur_circle: 130,
+  // #120 batch B1 — M-tier port flagship. bipolar2 is Brad Stefanov's
+  // 9-param rework of bipolar (V35); the first variation to consume the
+  // post-#120 expanded seam (8 → 10). Source: JWildfire Bipolar2Func.java
+  // (LGPL-2.1+, see NOTICE.md). 9 params: shift, a, b, c, d, e, f1, g1, h.
+  bipolar2: 131,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

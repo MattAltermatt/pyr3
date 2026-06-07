@@ -776,3 +776,52 @@ describe('variation param-table coupling (PYR3-069 invariant)', () => {
     }
   });
 });
+
+// #120 batch B1 — first user of the post-#120 expanded 10-param seam.
+// Verify all 9 bipolar2 params survive a Genome → JSON → Genome round-trip
+// and that param8 (the new slot) lands correctly.
+describe('#120 B1 — bipolar2 9-param round-trip', () => {
+  it('preserves all 9 params (shift, a, b, c, d, e, f1, g1, h) through Genome → JSON → Genome', async () => {
+    const { V } = await import('./variations');
+    const { genomeToJson, genomeFromJson } = await import('./serialize');
+    const { SPIRAL_GALAXY } = await import('./genome');
+    const g = {
+      ...SPIRAL_GALAXY,
+      xforms: [
+        {
+          ...SPIRAL_GALAXY.xforms[0]!,
+          variations: [
+            {
+              index: V.bipolar2,
+              weight: 0.8,
+              param0: 0.25,   // shift
+              param1: 1.5,    // a
+              param2: 1.75,   // b
+              param3: 0.4,    // c
+              param4: 1.2,    // d
+              param5: 2.5,    // e
+              param6: 0.3,    // f1
+              param7: 0.9,    // g1
+              param8: 0.85,   // h  ← the new slot
+            },
+          ],
+        },
+        ...SPIRAL_GALAXY.xforms.slice(1),
+      ],
+    };
+    const json = genomeToJson(g);
+    const reparsed = genomeFromJson(json);
+    const v = reparsed.xforms[0]!.variations[0]!;
+    expect(v.index).toBe(V.bipolar2);
+    expect(v.weight).toBeCloseTo(0.8, 6);
+    expect(v.param0).toBeCloseTo(0.25, 6);
+    expect(v.param1).toBeCloseTo(1.5, 6);
+    expect(v.param2).toBeCloseTo(1.75, 6);
+    expect(v.param3).toBeCloseTo(0.4, 6);
+    expect(v.param4).toBeCloseTo(1.2, 6);
+    expect(v.param5).toBeCloseTo(2.5, 6);
+    expect(v.param6).toBeCloseTo(0.3, 6);
+    expect(v.param7).toBeCloseTo(0.9, 6);
+    expect(v.param8).toBeCloseTo(0.85, 6);
+  });
+});

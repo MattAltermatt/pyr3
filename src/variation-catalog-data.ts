@@ -2349,6 +2349,28 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     // RNG-driven (input p is ignored, output is pure RNG) — no warpFn.
   },
+  // #120 batch B1 — M-tier port flagship. bipolar2 = Brad Stefanov's
+  // 9-param rework of base bipolar (V35) — first user of the post-#120
+  // expanded 10-param seam. Source: JWildfire Bipolar2Func.java
+  // (LGPL-2.1+, see NOTICE.md).
+  {
+    idx: V.bipolar2,
+    name: 'bipolar2',
+    source: sourceForIdx(V.bipolar2),
+    formula: 'V_{131}(x, y) = \\left(\\tfrac{2 f_1}{\\pi}\\log\\tfrac{t+bx}{t-bx},\\; \\tfrac{2h}{\\pi}\\,y\'\\right),\\; t = g_1(x^2+y^2)+a,\\; y\' = c\\,\\mathrm{atan2}(e\\,y,\\; g_1(x^2+y^2)-d) - \\tfrac{\\pi}{2}\\,\\text{shift}',
+    blurb: 'Bipolar with variables added by Brad Stefanov. Generalizes the V35 bipolar formula by exposing the radius scale (g1), the inner offsets (a, d), the affine pre-multiplies on x and y (b, e), the meridian split (c), and the two output scales (f1 for the log channel, h for the angular channel). At defaults (shift=0, a=1, b=2, c=0.5, d=1, e=2, f1=0.25, g1=1, h=1) it traces a sibling of base bipolar with a slightly different aspect ratio. Tuning a < 0 or d > x²+y² can flip the quotient sign — the variation short-circuits to (0,0) when that happens, matching JWildfire\'s early-return.',
+    params: [
+      { name: 'shift', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'a', default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'b', default: 2.0, min: -3, max: 3, step: 0.05 },
+      { name: 'c', default: 0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'd', default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'e', default: 2.0, min: -3, max: 3, step: 0.05 },
+      { name: 'f1', default: 0.25, min: -1, max: 1, step: 0.05 },
+      { name: 'g1', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'h', default: 1.0, min: -2, max: 2, step: 0.05 },
+    ],
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

@@ -2758,6 +2758,51 @@ fn var_blur_circle(p: vec2f, w: f32, hole: f32, wi: u32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #120 — M-tier port. First batch starts with `bipolar2` (Brad Stefanov's
+// 9-param rework of bipolar) since it's the variation that drove the
+// seam expand 8→10. Subsequent batches land in this region too.
+// ---------------------------------------------------------------------
+
+// var_bipolar2 — JWildfire Bipolar2Func.java. 9 params (shift, a, b, c, d,
+// e, f1, g1, h). "Bipolar in the Apophysis Plugin Pack with variables added
+// by Brad Stefanov" — first variation to consume the post-#120 expanded
+// seam (param8). Defaults: shift=0, a=1, b=2, c=0.5, d=1, e=2, f1=0.25,
+// g1=1, h=1 — at the defaults this matches the spirit of base var_bipolar
+// (V35) but with the extra tunables Stefanov added to break symmetry.
+//
+// Explicit (g == 0 || f/g <= 0) skip returns (0, 0) — matches JWildfire's
+// early-return semantics where the variation simply contributes nothing
+// for that walker step. The fmod ops stay in safe bounds (operands always
+// positive on their entry path); WGSL `%` matches C `fmod` there.
+fn var_bipolar2(
+  p: vec2f, w: f32,
+  shift: f32, a: f32, b: f32, c: f32,
+  d: f32, e: f32, f1: f32, g1: f32, h: f32,
+) -> vec2f {
+  let HALF_PI: f32 = PI * 0.5;
+  let TWO_OVER_PI: f32 = 2.0 / PI;
+  let x2y2 = (p.x * p.x + p.y * p.y) * g1;
+  let t = x2y2 + a;
+  let x2 = b * p.x;
+  let ps = -HALF_PI * shift;
+  var y = c * atan2(e * p.y, x2y2 - d) + ps;
+  if (y > HALF_PI) {
+    y = -HALF_PI + ((y + HALF_PI) % PI);
+  } else if (y < -HALF_PI) {
+    y = HALF_PI - ((HALF_PI - y) % PI);
+  }
+  let fnum = t + x2;
+  let gnum = t - x2;
+  if (gnum == 0.0 || (fnum / gnum) <= 0.0) {
+    return vec2f(0.0, 0.0);
+  }
+  return vec2f(
+    w * f1 * TWO_OVER_PI * log(fnum / gnum),
+    w * TWO_OVER_PI * y * h,
+  );
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -2767,7 +2812,8 @@ fn var_blur_circle(p: vec2f, w: f32, hole: f32, wi: u32) -> vec2f {
 // computed in the chain loop via the var_dc_*_color helpers above when
 // xf.color_params.w (dc_flag) is set.
 // p0/p1 come from xf.vars[k].zw; p2..p5 come from xf.vars_extra[k];
-// p6/p7 come from xf.vars_extra2[k].xy (Phase 9b Batch K seam extension).
+// p6/p7 come from xf.vars_extra2[k].xy (Phase 9b Batch K seam extension);
+// p8/p9 come from xf.vars_extra2[k].zw (#120 seam extension — bipolar2).
 // ---------------------------------------------------------------------
 
 fn apply_variation(
@@ -2782,6 +2828,8 @@ fn apply_variation(
   p5: f32,
   p6: f32,
   p7: f32,
+  p8: f32,
+  p9: f32,
   a0: vec4f,
   a1: vec4f,
   wi: u32,
@@ -2928,6 +2976,7 @@ fn apply_variation(
     case 128u: { return var_xtrb(p, w, p0, p1, p2, p3, p4, p5, wi); }
     case 129u: { return var_xyrus_gridout(p, w); }
     case 130u: { return var_blur_circle(p, w, p0, wi); }
+    case 131u: { return var_bipolar2(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
@@ -3075,7 +3124,7 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       let ve2 = xforms[fn_idx].vars_extra2[k];
       let var_idx = u32(v.x);
       if (var_idx != 97u) {
-        pv = pv + apply_variation(var_idx, pa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, a0, a1, walker_id);
+        pv = pv + apply_variation(var_idx, pa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, ve2.z, ve2.w, a0, a1, walker_id);
       }
       // #114 — DC color computation. Only when this xform is flagged DC
       // (cheap branch: 0.0 for all flam3-99-only xforms, ie almost all)
@@ -3264,7 +3313,7 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
           let ve2 = xforms[u.final_xform_idx].vars_extra2[k];
           let var_idx = u32(v.x);
           if (var_idx != 97u) {
-            fpv = fpv + apply_variation(var_idx, fpa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, fa0, fa1, walker_id);
+            fpv = fpv + apply_variation(var_idx, fpa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, ve2.z, ve2.w, fa0, fa1, walker_id);
           }
           if (fxf.color_params.w > 0.5 && v.y > 0.0) {
             if (var_idx == 99u) {
