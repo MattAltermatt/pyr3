@@ -1546,9 +1546,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     blurb: 'Direct-color from a 2D Perlin fBm noise field. Position passes through unchanged; hue from noise, saturation 1, lightness 0.55. seed rotates the hue cycle.',
     hideWeight: true,
     params: [
-      { name: 'scale',      default: 0, min: 0.1, max: 8, step: 0.1 },
-      { name: 'octaves',    default: 0, min: 1,   max: 8, step: 1 },
-      { name: 'color_seed', default: 0, min: 0,   max: 1, step: 0.02 },
+      { name: 'scale',      default: 1.0, min: 0.1, max: 8, step: 0.1 },
+      { name: 'octaves',    default: 4,   min: 1,   max: 8, step: 1 },
+      { name: 'color_seed', default: 0,   min: 0,   max: 1, step: 0.02 },
     ],
     warpFn: (x, y) => [x, y],
   },
@@ -1560,7 +1560,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     blurb: 'Direct-color from a hashed grid of cells. Each integer cell gets a random RGB triple; produces a pixelated, tile-mosaic coloring.',
     hideWeight: true,
     params: [
-      { name: 'cells', default: 0, min: 1, max: 32, step: 1 },
+      { name: 'cells', default: 8, min: 1, max: 32, step: 1 },
     ],
     warpFn: (x, y) => [x, y],
   },
@@ -1663,77 +1663,50 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{107}: \\text{inside a hash-spaced bubble of radius } r,\\; p \\to c + R(\\theta(|p-c|))\\cdot \\tfrac{g^2}{|p-c|^2+1}(p-c);\\; \\text{else identity}',
     blurb: 'Bubble-wrap lattice (Apophysis 7X / JWildfire). Cellular grid where each cell carries a circular "bubble" — inside, the point gets hyperbolically pulled toward the bubble center with an inner/outer twist; outside, it passes through. Produces the soap-bubble / lens-array texture.',
     params: [
-      { name: 'cellsize',     default: 1, min: 0.1, max: 4, step: 0.05 },
-      { name: 'space',        default: 0, min: 0,   max: 2, step: 0.05 },
-      { name: 'gain',         default: 1, min: 0,   max: 4, step: 0.05 },
-      { name: 'inner_twist',  default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
-      { name: 'outer_twist',  default: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'cellsize',     default: 1,     min: 0.1, max: 4, step: 0.05 },
+      { name: 'space',        default: 0,     min: 0,   max: 2, step: 0.05 },
+      { name: 'gain',         default: 1,     min: 0,   max: 4, step: 0.05 },
+      { name: 'inner_twist',  default: -1.04, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'outer_twist',  default:  0.71, min: -Math.PI, max: Math.PI, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const cellsize = 1, space = 0, gain = 1, inner_twist = 0, outer_twist = 0;
+      const cellsize = 1, space = 0, gain = 1, inner_twist = -1.04, outer_twist = 0.71;
       const radius = 0.5 * (cellsize / (1 + space * space));
-      const g2 = (gain * gain) / Math.max(radius * radius, 1e-30) + 1e-30;
-      const r2 = radius * radius;
-      const xx = x / cellsize;
-      const yy = y / cellsize;
-      const cx = (Math.floor(xx) + 0.5) * cellsize;
-      const cy = (Math.floor(yy) + 0.5) * cellsize;
-      const lx = x - cx;
-      const ly = y - cy;
-      if (lx * lx + ly * ly > r2) return [x, y];
-      const denom = lx * lx + ly * ly + 1;
-      const s = g2 / denom;
-      const sx = lx * s, sy = ly * s;
-      const r_frac = (sx * sx + sy * sy) / Math.max(r2, 1e-30);
+      const _g2 = (gain * gain) / cellsize + 1e-6;
+      let max_bubble = _g2 * radius;
+      if (max_bubble > 2.0) max_bubble = 1.0;
+      else max_bubble *= 1.0 / ((max_bubble * max_bubble) / 4.0 + 1.0);
+      const _r2 = radius * radius;
+      const _rfactor = radius / Math.max(max_bubble, 1e-30);
+      const cx = (Math.floor(x / cellsize) + 0.5) * cellsize;
+      const cy = (Math.floor(y / cellsize) + 0.5) * cellsize;
+      let lx = x - cx;
+      let ly = y - cy;
+      if (lx * lx + ly * ly > _r2) return [x, y];
+      lx *= _g2;
+      ly *= _g2;
+      const r_dist = _rfactor / ((lx * lx + ly * ly) / 4.0 + 1.0);
+      lx *= r_dist;
+      ly *= r_dist;
+      const r_frac = (lx * lx + ly * ly) / Math.max(_r2, 1e-30);
       const theta = inner_twist * (1 - r_frac) + outer_twist * r_frac;
       const st = Math.sin(theta), ct = Math.cos(theta);
-      return [cx + (sx * ct + sy * st), cy + (-sx * st + sy * ct)];
+      return [cx + ct * lx + st * ly, cy - st * lx + ct * ly];
     },
   },
   {
     idx: V.crackle,
     name: 'crackle',
     source: sourceForIdx(V.crackle),
-    formula: 'V_{108}: p \\to s\\cdot(\\mathbf{f} + (p - \\mathbf{f})\\cdot d\\cdot F_1^{\\,\\text{power}});\\; \\mathbf{f} = \\text{nearest Worley feature of } p/c',
-    blurb: 'Voronoi-cell scatter (Neil Slater / "slobo777"). Snaps each iterate to the nearest Worley feature point with a distance-power-weighted blend back toward the input — produces the crystalline / cracked-tile texture that JWildfire flames are known for.',
+    formula: 'V_{108}: U = \\text{blurr}\\cdot(\\sin\\theta, \\cos\\theta);\\; L = \\text{voronoi cell-boundary distance};\\; p \\to \\text{centre} + (U - \\text{centre})\\cdot \\frac{L^{\\text{power}}\\cdot s}{L}',
+    blurb: "Voronoi-cell scatter (Neil Slater / \"slobo777\", ported from JWildfire CrackleFunc). Each iter samples a new point U on a unit-radius blurred circle, finds U's voronoi cell among 9 perturbed centres around floor(U/(c/2)), then scales U's offset from the centre by L^power · scale (L = boundary-relative distance). distort > 0 perturbs cell centres via 2D perlin noise (pyr3 substitutes JWildfire's 3D simplex — see NOTICE.md). 4 RNG calls/iter.",
     params: [
       { name: 'cellsize', default: 1,   min: 0.1, max: 4, step: 0.05 },
       { name: 'power',    default: 0.2, min: -2,  max: 2, step: 0.05 },
-      { name: 'distort',  default: 1,   min: 0,   max: 4, step: 0.05 },
+      { name: 'distort',  default: 0,   min: 0,   max: 4, step: 0.05 },
       { name: 'scale',    default: 1,   min: 0,   max: 4, step: 0.05 },
     ],
-    warpFn: (x, y) => {
-      const cellsize = 1, power = 0.2, distort = 1, scale = 1;
-      const cs = Math.max(Math.abs(cellsize), 1e-6);
-      // Mirror the WGSL XOR hash so the JS warp diagram matches.
-      const hash = (cx: number, cy: number): [number, number] => {
-        let s = ((cx >>> 0) * 2654435769) >>> 0;
-        s = (s ^ (((cy >>> 0) * 2246822519) >>> 0)) >>> 0;
-        s = (s ^ (s >>> 16)) >>> 0;
-        s = ((s * 0x85ebca6b) >>> 0);
-        s = (s ^ (s >>> 13)) >>> 0;
-        s = ((s * 0xc2b2ae35) >>> 0);
-        s = (s ^ (s >>> 16)) >>> 0;
-        return [(s & 0xffff) / 65535, ((s >>> 16) & 0xffff) / 65535];
-      };
-      const sx = x / cs, sy = y / cs;
-      const ix = Math.floor(sx), iy = Math.floor(sy);
-      let bestD2 = 1e9, bestFx = 0, bestFy = 0;
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          const cx = ix + dx, cy = iy + dy;
-          const [hx, hy] = hash(cx, cy);
-          const fx = cx + hx, fy = cy + hy;
-          const ddx = fx - sx, ddy = fy - sy;
-          const d2 = ddx * ddx + ddy * ddy;
-          if (d2 < bestD2) { bestD2 = d2; bestFx = fx; bestFy = fy; }
-        }
-      }
-      const F1 = Math.sqrt(bestD2);
-      const feat_x = bestFx * cs, feat_y = bestFy * cs;
-      const dScale = Math.pow(F1 + 1e-6, power) * distort;
-      return [scale * (feat_x + (x - feat_x) * dScale), scale * (feat_y + (y - feat_y) * dScale)];
-    },
+    // RNG-using (input-blur replaces p with U each iter) — no warpFn.
   },
   // #114 batch 2b-a — JWildfire S-tier first half.
   {
@@ -3234,19 +3207,19 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{169}: e_x = (x^2)^{x_{pow} + xy_{pow}}\\cdot m_x,\\; \\text{sign-flip on input }x;\\; +c_x \\text{ offset};\\; \\text{symmetric for }y",
     blurb: "Whittaker Courtney's corners variation. Power-law warp on (x², y²) with sign flipping driven by input sign — produces sharp corner-anchored shapes that radiate to the four quadrants. Optional `log_mode` wraps the power with a configurable log base for softer falloff. Highly tunable.",
     params: [
-      { name: 'x',            default: 1.0,     min: -3, max: 3,   step: 0.05 },
-      { name: 'y',            default: 1.0,     min: -3, max: 3,   step: 0.05 },
-      { name: 'mult_x',       default: 1.0,     min: -3, max: 3,   step: 0.05 },
-      { name: 'mult_y',       default: 1.0,     min: -3, max: 3,   step: 0.05 },
-      { name: 'x_power',      default: 0.75,    min: 0,  max: 3,   step: 0.05 },
-      { name: 'y_power',      default: 0.75,    min: 0,  max: 3,   step: 0.05 },
-      { name: 'xy_power_add', default: 0,       min: -2, max: 2,   step: 0.05 },
+      { name: 'x',            default:  0.75,   min: -3, max: 3,   step: 0.05 },
+      { name: 'y',            default: -0.10,   min: -3, max: 3,   step: 0.05 },
+      { name: 'mult_x',       default: -0.70,   min: -3, max: 3,   step: 0.05 },
+      { name: 'mult_y',       default: -1.95,   min: -3, max: 3,   step: 0.05 },
+      { name: 'x_power',      default:  0.85,   min: 0,  max: 3,   step: 0.05 },
+      { name: 'y_power',      default:  0.95,   min: 0,  max: 3,   step: 0.05 },
+      { name: 'xy_power_add', default: -0.05,   min: -2, max: 2,   step: 0.05 },
       { name: 'log_mode',     default: 0,       min: 0,  max: 1,   step: 1    },
-      { name: 'log_base',     default: 2.71828, min: 1.5, max: 10, step: 0.1  },
+      { name: 'log_base',     default: 2.70,    min: 1.5, max: 10, step: 0.1  },
     ],
     warpFn: (x, y) => {
-      const cx = 1.0, cy = 1.0, mult_x = 1.0, mult_y = 1.0;
-      const x_power = 0.75, y_power = 0.75, xy_power_add = 0;
+      const cx = 0.75, cy = -0.10, mult_x = -0.70, mult_y = -1.95;
+      const x_power = 0.85, y_power = 0.95, xy_power_add = -0.05;
       const log_mode = 0;
       const xs = x * x, ys = y * y;
       let ex: number, ey: number;
@@ -3422,10 +3395,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{178}(x, y) = w \\cdot x \\cdot r \\cdot (\\cos t, \\sin t),\\; t = x^2 + y^2",
     blurb: "Will Evans's layered spiral. Polar spiral where the angular phase is r² (so points further from origin spin faster) and the radial scale is x·radius. Produces concentric spiral arms with x-axis-modulated brightness.",
     params: [
-      { name: 'radius', default: 1.0, min: 0.05, max: 5, step: 0.05 },
+      { name: 'radius', default: 2.10, min: 0.05, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const radius = 1.0;
+      const radius = 2.10;
       const a = x * radius;
       const t = x * x + y * y + 1e-30;
       return [a * Math.cos(t), a * Math.sin(t)];
@@ -3505,6 +3478,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.unpolar),
     formula: "V_{183}(x, y) = (w/(2\\pi))\\,e^y\\,(\\sin x, \\cos x)",
     blurb: "Apophysis plugin pack unpolar — inverse-polar mapping. Treats x as the angular coord (in radians) and y as the radial log-scale. Output uses sin for x and cos for y (atypical convention). Produces dense logarithmic-spiral patterns.",
+    defaultWeight: 0.30,
     warpFn: (x, y) => {
       const vvar_2 = (1 / Math.PI) * 0.5;
       const r = Math.exp(y);
@@ -3541,8 +3515,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{185}: i \\sim U\\{1..n\\};\\; a = i \\cdot 2\\pi/\\varphi^2;\\; r = w(|p| + \\sqrt{i});\\; \\text{emit }r\\,(\\cos a + s\\,x, \\sin a + s\\,y)",
     blurb: "Victor Ganora's Vogel spiral — golden-angle phyllotaxis. Each iter picks a random integer i in [1, n] and projects to the i-th seed point of a sunflower-style spiral arrangement (anchored on the golden angle 2π/φ²). Produces dense organic spiral seed-head patterns.",
     params: [
-      { name: 'n',     default: 20,  min: 1, max: 200, step: 1    },
-      { name: 'scale', default: 1.0, min: -3, max: 3,  step: 0.05 },
+      { name: 'n',     default: 3,    min: 1, max: 200, step: 1    },
+      { name: 'scale', default: -0.5, min: -3, max: 3,  step: 0.05 },
     ],
     // RNG-using — no warpFn.
   },
@@ -3605,9 +3579,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.funnel),
     formula: "V_{189}(x, y) = w\\,\\tanh(p)\\,(\\sec(p) + e\\pi)\\text{ per-axis}",
     blurb: "Raykoid666's funnel — tanh + sec composition produces a funnel-shape projection. The `effect` integer scales the secant baseline. Sharp singularities at x or y = π/2 + nπ (guarded with epsilon).",
-    params: [{ name: 'effect', default: 8, min: 0, max: 20, step: 1 }],
+    defaultWeight: 0.01,
+    params: [{ name: 'effect', default: 10, min: 0, max: 20, step: 1 }],
     warpFn: (x, y) => {
-      const effect = 8;
+      const effect = 10;
       const secX = 1 / Math.cos(x);
       const secY = 1 / Math.cos(y);
       return [Math.tanh(x) * (secX + effect * Math.PI), Math.tanh(y) * (secY + effect * Math.PI)];
@@ -3669,9 +3644,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{193}: \\text{complex Möbius-style mapping with 3 modes and optional RNG sign flip}",
     blurb: "Whittaker Courtney's julia_outside. 3-mode complex Möbius-style mapping using complex sqrt/sqr/div/inc/dec helpers. Modes select different sqrt/sqr application patterns; modes 0 and 1 add a 50/50 sign-flip via RNG. Produces Julia-set-like exterior patterns.",
     params: [
-      { name: 're_div', default: 1.0, min: -5, max: 5, step: 0.05 },
-      { name: 'im_div', default: 0.0, min: -5, max: 5, step: 0.05 },
-      { name: 'mode',   default: 0,   min: 0,  max: 2, step: 1    },
+      { name: 're_div', default: -4.05, min: -5, max: 5, step: 0.05 },
+      { name: 'im_div', default: -2.60, min: -5, max: 5, step: 0.05 },
+      { name: 'mode',   default: 0,     min: 0,  max: 2, step: 1    },
     ],
     // RNG-using (modes 0+1) and complex math — no warpFn.
   },
@@ -3847,8 +3822,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{203}: \\text{elliptic-coord collision fold on }\\nu\\text{ with }num\\text{ wedges + phase }\\pi a/num",
     blurb: "Michael Faber's eCollide (eSeries). Converts the iterate to elliptic coordinates (xmax, nu), folds nu into `num` equal angular wedges with alternating phase offset by `a`, then projects back via (xmax·cos nu, √(xmax²-1)·sin nu). Elliptic sibling of V163 bcollide.",
     params: [
-      { name: 'num', default: 1, min: 1, max: 16, step: 1    },
-      { name: 'a',   default: 0,  min: 0, max: 1,  step: 0.05 },
+      { name: 'num', default: 8,    min: 1, max: 16, step: 1    },
+      { name: 'a',   default: 0.10, min: 0, max: 1,  step: 0.05 },
     ],
     // — no warpFn (transform-style; not worth replicating in JS for catalog).
   },
@@ -3930,11 +3905,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{208}: \\text{Möbius radial shift onto hyperbolic-like disc with shift offset}",
     blurb: "Zy0rg's hypershift — Möbius-style radial transformation. Maps plane into a shifted disc-like region. `shift` controls the offset; `stretch` scales the y-axis after projection.",
     params: [
-      { name: 'shift',   default: 2.0, min: -3, max: 3, step: 0.05 },
-      { name: 'stretch', default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'shift',   default: -0.15, min: -3, max: 3, step: 0.05 },
+      { name: 'stretch', default: -1.25, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const shift = 2.0, stretch = 1.0;
+      const shift = -0.15, stretch = -1.25;
       const scale = 1 - shift * shift;
       const rad1 = 1 / Math.max(x * x + y * y, 1e-30);
       const xp = rad1 * x + shift;
@@ -3950,10 +3925,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{209}: \\text{convert to hex axial coords; round to nearest hex cell; emit displacement from cell center}",
     blurb: "Tatyana Zabanova's hex_modulus (via Brad Stefanov). Converts iterate to hexagonal axial coordinates, rounds to nearest hex cell, returns the displacement from the cell center. Produces honeycomb-tiling patterns.",
     params: [
-      { name: 'size', default: 1.0, min: 0.1, max: 5, step: 0.05 },
+      { name: 'size', default: 0.40, min: 0.1, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const size = 1.0;
+      const size = 0.40;
       const M_SQRT3_2 = 0.8660254037844386;
       const M_SQRT3 = 1.7320508075688772;
       const hsize = M_SQRT3_2 / size;
@@ -3979,8 +3954,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.boarders2,
     name: 'boarders2',
     source: sourceForIdx(V.boarders2),
-    formula: "V_{210}: \\text{grid-cell center-pull (prob }r/(l+r)\\text{) or edge-shift (prob }l/(l+r)\\text{)}",
-    blurb: "Xyrus02's boarders2 — Apophysis boarders plugin with 3 tunable parameters. RNG splits each iter between center-pull and edge-shift behavior. Produces sharp grid-tile patterns with controllable border thickness.",
+    formula: "V_{210}: \\text{center-pull (prob } 1-|c|(1+|r|)\\text{) or edge-shift (prob }|c|(1+|r|)\\text{)};\\; \\text{cell offset scaled by }|c|, |c|\\cdot|l|",
+    blurb: "Xyrus02's boarders2 — Apophysis boarders plugin with 3 tunable parameters. RNG splits each iter between center-pull and edge-shift behavior. Inner-cell offset scales by |c|; edge-shift distance scales by |c|·|left|. Produces sharp grid-tile patterns with controllable border thickness.",
     params: [
       { name: 'c',     default: 0.4,  min: 0, max: 1, step: 0.05 },
       { name: 'left',  default: 0.65, min: 0, max: 2, step: 0.05 },
@@ -3995,8 +3970,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{211}: \\text{bipolar coords, mu-axis modulus fold}; \\text{ emit Möbius bipolar inverse}",
     blurb: "Michael Faber's bMod (bSeries) — sibling of V163 bcollide. Bipolar Möbius coordinates with a `radius`-bounded modulus fold on the tau axis. Produces banded mirror-symmetric patterns pinching toward focal points (±1, 0).",
     params: [
-      { name: 'radius',   default: 1.0, min: 0.05, max: 5, step: 0.05 },
-      { name: 'distance', default: 0.0, min: 0,    max: 2, step: 0.05 },
+      { name: 'radius',   default: 1.25, min: 0.05, max: 5, step: 0.05 },
+      { name: 'distance', default: 0.25, min: 0,    max: 2, step: 0.05 },
     ],
     // — no warpFn (multi-fold).
   },
@@ -4007,10 +3982,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{212}: \\text{bipolar coords; power-divided angular slice with RNG randint; split offsets tau by sign}",
     blurb: "Michael Faber's bTransform (bSeries). Bipolar Möbius coords with `power`-divided angular slices (RNG picks one) and a `split` offset applied to tau based on input-x sign. Produces multi-wedge symmetric Möbius patterns.",
     params: [
-      { name: 'rotate', default: 0.0, min: -Math.PI, max: Math.PI, step: 0.05 },
-      { name: 'power',  default: 1,   min: 1, max: 12, step: 1    },
-      { name: 'move',   default: 0.0, min: -3, max: 3, step: 0.05 },
-      { name: 'split',  default: 0.0, min: -3, max: 3, step: 0.05 },
+      { name: 'rotate', default: 0.51, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'power',  default: 2,    min: 1, max: 12, step: 1    },
+      { name: 'move',   default: 0.0,  min: -3, max: 3, step: 0.05 },
+      { name: 'split',  default: 0.0,  min: -3, max: 3, step: 0.05 },
     ],
     // RNG-using — no warpFn.
   },

@@ -1797,11 +1797,20 @@ fn worley2d_F1(p: vec2f) -> vec4f {
   return vec4f(sqrt(bestD2), 0.0, bestFx, bestFy);
 }
 
-// var_bwraps — bubble-wrap lattice (Apophysis 7X / community plugin pack;
-// porting tradition: JWildfire BWraps2Func.java). 5 params:
-// cellsize / space / gain / inner_twist / outer_twist. Inside each
-// hash-spaced bubble the point gets pulled toward the bubble center with
-// a hyperbolic gain + a radius-dependent twist; outside, passes through.
+// var_bwraps — bubble-wrap lattice (Xyrus02 BWraps2 plugin; Slobo777
+// Bubble-Wrap WIP). Verbatim port of JWildfire PreBWraps2Func init +
+// transform. 5 params: cellsize / space / gain / inner_twist /
+// outer_twist. Inside each hash-spaced bubble the point gets pulled
+// toward the bubble center with a hyperbolic gain + a radius-dependent
+// twist; outside, passes through.
+//
+// init constants:
+//   radius      = ½ · (cellsize / (1 + space²))
+//   _g2         = gain² / cellsize + ε
+//   max_bubble  = _g2 · radius, clamped to 1 if >2 ("recurve") else
+//                 scaled by 1/((max_bubble²/4) + 1) to fill the cell
+//   _r2         = radius²
+//   _rfactor    = radius / max_bubble
 fn var_bwraps(
   p: vec2f, w: f32,
   cellsize: f32, space: f32, gain: f32,
@@ -1809,52 +1818,143 @@ fn var_bwraps(
 ) -> vec2f {
   if (abs(cellsize) < 1.0e-30) { return vec2f(w * p.x, w * p.y); }
   let radius = 0.5 * (cellsize / (1.0 + space * space));
-  let g2 = gain * gain / max(radius * radius, 1.0e-30) + 1.0e-30;
-  let r2 = radius * radius;
+  let _g2 = gain * gain / cellsize + 1.0e-6;
+  var max_bubble = _g2 * radius;
+  if (max_bubble > 2.0) {
+    max_bubble = 1.0;
+  } else {
+    max_bubble = max_bubble * (1.0 / ((max_bubble * max_bubble) / 4.0 + 1.0));
+  }
+  let _r2 = radius * radius;
+  let _rfactor = radius / max(max_bubble, 1.0e-30);
   // Cell coordinates (each cell of size `cellsize`).
-  let xx = p.x / cellsize;
-  let yy = p.y / cellsize;
-  let cx = (floor(xx) + 0.5) * cellsize;
-  let cy = (floor(yy) + 0.5) * cellsize;
-  let lx = p.x - cx;
-  let ly = p.y - cy;
+  let cx = (floor(p.x / cellsize) + 0.5) * cellsize;
+  let cy = (floor(p.y / cellsize) + 0.5) * cellsize;
+  var lx = p.x - cx;
+  var ly = p.y - cy;
   // Outside the inner bubble → unchanged.
-  if ((lx * lx + ly * ly) > r2) { return vec2f(w * p.x, w * p.y); }
-  // Inside → hyperbolic pull toward (cx,cy) + radius-dependent twist.
-  let denom = lx * lx + ly * ly + 1.0;
-  let s = g2 / denom;
-  let sx = lx * s;
-  let sy = ly * s;
-  let r_frac = (sx * sx + sy * sy) / max(r2, 1.0e-30);
+  if ((lx * lx + ly * ly) > _r2) { return vec2f(w * p.x, w * p.y); }
+  // Bubble distortion: two-step Lx *= _g2 then r-scale.
+  lx = lx * _g2;
+  ly = ly * _g2;
+  let r_dist = _rfactor / ((lx * lx + ly * ly) / 4.0 + 1.0);
+  lx = lx * r_dist;
+  ly = ly * r_dist;
+  // Radius-fraction (0..1) controls the twist mix.
+  let r_frac = (lx * lx + ly * ly) / max(_r2, 1.0e-30);
   let theta = inner_twist * (1.0 - r_frac) + outer_twist * r_frac;
   let st = safe_sin(theta);
   let ct = safe_cos(theta);
   return vec2f(
-    w * (cx + (sx * ct + sy * st)),
-    w * (cy + (-sx * st + sy * ct)),
+    w * (cx + ct * lx + st * ly),
+    w * (cy - st * lx + ct * ly),
   );
 }
 
-// var_crackle — Voronoi-cell scatter (Neil Slater / "slobo777").
-// 4 params (cellsize / power / distort / scale): jumps each iterate to
-// the nearest Worley feature point, with a distance-power-weighted
-// distort blend back toward the original input. Produces the
-// crystalline / cracked-tile look that JWildfire flames are known for.
+// _crackle_cell_centre — pyr3 port of JWildfire CrackleFunc.position():
+// integer cell (cx, cy) → centre (cx + d·N(E), cy + d·N(F)) · s, where
+// E = (cx·2.5, cy·2.5) and F = (cy·2.5 + 30.2, cx·2.5 - 12.1) drive
+// independent noise samples. JWildfire uses 3D simplex (with a z-slice
+// param); pyr3 substitutes 2D perlin2d (z-slice fixed at 0). Documented
+// in NOTICE.md as "JWildfire 3D simplex → pyr3 2D perlin substitution".
+fn _crackle_cell_centre(cx: i32, cy: i32, s: f32, d: f32) -> vec2f {
+  let fx = f32(cx);
+  let fy = f32(cy);
+  let ex = perlin2d(vec2f(fx * 2.5, fy * 2.5));
+  let ey = perlin2d(vec2f(fy * 2.5 + 30.2, fx * 2.5 - 12.1));
+  return vec2f((fx + d * ex) * s, (fy + d * ey) * s);
+}
+
+// _crackle_vratio — pyr3 port of JWildfire VoronoiTools.vratio(P, Q, U).
+// Returns 2·((U-Q)·(P-Q)) / |P-Q|². On the perpendicular bisector of P
+// and Q this equals 1; values < 1 mean U is on Q's side, > 1 on P's
+// side. Returns 1 when P == Q (degenerate cell).
+fn _crackle_vratio(p: vec2f, q: vec2f, u: vec2f) -> f32 {
+  let pq = p - q;
+  let denom = pq.x * pq.x + pq.y * pq.y;
+  if (denom < 1.0e-30) { return 1.0; }
+  let num = (u.x - q.x) * pq.x + (u.y - q.y) * pq.y;
+  return 2.0 * num / denom;
+}
+
+// var_crackle — full JWildfire CrackleFunc port (Neil Slater /
+// "slobo777", JWildfire LGPL-2.1+; see NOTICE.md). 4 params
+// (cellsize / power / distort / scale). Per-iter algorithm:
+//
+//   1. Replace input p with U = blurr·(sin θ, cos θ), blurr =
+//      (rand+rand)/2 + (rand-0.5)/4, θ = 2π·rand. 4 RNG calls/iter.
+//   2. Find the voronoi cell containing U among 9 perturbed centres
+//      around floor(U / (cellsize/2)).
+//   3. Recentre the 9-grid on the closest cell, then compute
+//      L = max vratio(P[i], P[centre], U) over the 8 neighbors. L is
+//      the "boundary-relative distance" of U inside the centre cell
+//      (0 = at centre, 1 = on cell boundary).
+//   4. trgL = L^power · scale; R = trgL / L; scale (U − centre) by R
+//      and re-add centre. Outputs w · (DXo, DYo).
+//
+// The pre-#157 implementation used `worley2d_F1` directly with raw `p`
+// and swapped param semantics — fundamentally different transform
+// despite the shared name. Surfaced by 2026-06-07 full-variation
+// review (#157).
 fn var_crackle(
   p: vec2f, w: f32,
   cellsize: f32, power: f32, distort: f32, scale: f32,
+  wi: u32,
 ) -> vec2f {
-  let cs = max(abs(cellsize), 1.0e-6);
-  let scaled = vec2f(p.x / cs, p.y / cs);
-  let wo = worley2d_F1(scaled);
-  let feat_x = wo.z * cs;
-  let feat_y = wo.w * cs;
-  // Distort factor: pow(F1, power) gives near-zero at cell boundaries
-  // (the "crack") and grows toward 1 near the feature center.
-  let d_scale = pow(wo.x + 1.0e-6, power) * distort;
-  let out_x = feat_x + (p.x - feat_x) * d_scale;
-  let out_y = feat_y + (p.y - feat_y) * d_scale;
-  return vec2f(w * scale * out_x, w * scale * out_y);
+  if (abs(cellsize) < 1.0e-30) { return vec2f(w * p.x, w * p.y); }
+  let s = cellsize * 0.5;
+  // Step 1: input-blur (4 RNG calls). pyr3 contract requires using
+  // rand01(wi) which sequences walker-local RNG.
+  let r1 = rand01(wi);
+  let r2 = rand01(wi);
+  let r3 = rand01(wi);
+  let r4 = rand01(wi);
+  let blurr = (r1 + r2) * 0.5 + (r3 - 0.5) * 0.25;
+  let theta = 2.0 * PI * r4;
+  let u = vec2f(blurr * sin(theta), blurr * cos(theta));
+  // Step 2: 9 cells around floor(U/s).
+  let xcv0 = i32(floor(u.x / s));
+  let ycv0 = i32(floor(u.y / s));
+  var P: array<vec2f, 9>;
+  for (var i = 0; i < 9; i = i + 1) {
+    let di = i / 3 - 1;
+    let dj = i % 3 - 1;
+    P[i] = _crackle_cell_centre(xcv0 + di, ycv0 + dj, s, distort);
+  }
+  // Find closest of the 9 to U.
+  var q = 0;
+  var d2min = 1.0e30;
+  for (var i = 0; i < 9; i = i + 1) {
+    let dx = P[i].x - u.x;
+    let dy = P[i].y - u.y;
+    let d2 = dx * dx + dy * dy;
+    if (d2 < d2min) { d2min = d2; q = i; }
+  }
+  // Step 3: recentre 9-grid on closest cell, recompute.
+  let qdi = q / 3 - 1;
+  let qdj = q % 3 - 1;
+  let xcv = xcv0 + qdi;
+  let ycv = ycv0 + qdj;
+  for (var i = 0; i < 9; i = i + 1) {
+    let di = i / 3 - 1;
+    let dj = i % 3 - 1;
+    P[i] = _crackle_cell_centre(xcv + di, ycv + dj, s, distort);
+  }
+  // Voronoi boundary distance L = max vratio over the 8 neighbours of
+  // index-4 (the centre cell).
+  var L = -1.0e30;
+  for (var i = 0; i < 9; i = i + 1) {
+    if (i == 4) { continue; }
+    let ratio = _crackle_vratio(P[i], P[4], u);
+    if (ratio > L) { L = ratio; }
+  }
+  // Step 4: distance-power-weighted scale.
+  let DXo = u.x - P[4].x;
+  let DYo = u.y - P[4].y;
+  let l_safe = L + 1.0e-30;
+  let trgL = pow(abs(l_safe), power) * scale;
+  let R = trgL / l_safe;
+  return vec2f(w * (P[4].x + DXo * R), w * (P[4].y + DYo * R));
 }
 
 // ---------------------------------------------------------------------
@@ -3716,7 +3816,9 @@ fn var_circular(p: vec2f, w: f32, angle_deg: f32, seed: f32, wi: u32) -> vec2f {
   // GLSL-style spatial-hash trick: sin(x·k1 + y·k2 + seed) * big_const.
   // Reduce range via subtract-floor to get a [0, 1] fractional.
   let aux_raw = sin(p.x * 12.9898 + p.y * 78.233 + seed) * 43758.5453;
-  let aux = aux_raw - floor(aux_raw);
+  // JWildfire CircularFunc uses Java truncate-toward-zero `(int) aux_raw`
+  // → range (-1, 1). WGSL `trunc` matches; `floor` would give [0, 1).
+  let aux = aux_raw - trunc(aux_raw);
   let rnd = (2.0 * (rand01(wi) + aux) - 2.0) * c_a;
   let rad = sqrt(p.x * p.x + p.y * p.y);
   let ang = atan2(p.y, p.x);
@@ -3732,7 +3834,7 @@ fn var_circular(p: vec2f, w: f32, angle_deg: f32, seed: f32, wi: u32) -> vec2f {
 fn var_circular2(p: vec2f, w: f32, angle_deg: f32, seed: f32, xx: f32, yy: f32, wi: u32) -> vec2f {
   let c_a = angle_deg * PI / 180.0;
   let aux_raw = sin(p.x * xx + p.y * yy + seed) * 43758.5453;
-  let aux = aux_raw - floor(aux_raw);
+  let aux = aux_raw - trunc(aux_raw);
   let rnd = (2.0 * (rand01(wi) + aux) - 2.0) * c_a;
   let rad = sqrt(p.x * p.x + p.y * p.y);
   let ang = atan2(p.y, p.x);
@@ -3931,11 +4033,12 @@ fn var_kaleidoscope(p: vec2f, w_amp: f32, pull: f32, rotate: f32, line_up: f32, 
 }
 
 // layered_spiral — Will Evans. 1 param (radius). Polar spiral where
-// the angular phase is r² and the radial scale is x·radius.
+// the angular phase is r² and the radial scale is x·radius. r² is
+// unbounded → trig routed through safe_* per Dawn f32 cliff convention.
 fn var_layered_spiral(p: vec2f, w: f32, radius: f32) -> vec2f {
   let a = p.x * radius;
   let t = p.x * p.x + p.y * p.y + 1e-30;
-  return vec2f(w * a * cos(t), w * a * sin(t));
+  return vec2f(w * a * safe_cos(t), w * a * safe_sin(t));
 }
 
 // linear_t — FractalDesire. 2 params (powX, powY). Per-axis power
@@ -3988,9 +4091,11 @@ fn var_ovoid(p: vec2f, w: f32, px: f32, py: f32) -> vec2f {
 // distortion preprocessing then a julian-style randint branch.
 fn var_phoenix_julia(p: vec2f, w: f32, power: f32, dist: f32, x_distort: f32, y_distort: f32, wi: u32) -> vec2f {
   let pow_safe = select(power, 1.0, power == 0.0);
-  let inv_n = 1.0 / pow_safe;
+  // JWildfire PhoenixJuliaFunc.init: _invN = dist/power, _cN = dist/power/2.
+  // No -0.5 offset (that's JulianFunc, not this one).
+  let inv_n = dist / pow_safe;
   let inv_2pi_n = 2.0 * PI / pow_safe;
-  let cn = (dist / pow_safe - 1.0) * 0.5;
+  let cn = dist / (2.0 * pow_safe);
   let preX = p.x * (x_distort + 1.0);
   let preY = p.y * (y_distort + 1.0);
   let randint = floor(rand01(wi) * abs(pow_safe));
@@ -4002,11 +4107,13 @@ fn var_phoenix_julia(p: vec2f, w: f32, power: f32, dist: f32, x_distort: f32, y_
 
 // unpolar — Apophysis plugin pack. 0 params. Inverse-polar mapping:
 // r = exp(y); output = w/(2π)·r·(sin x, cos x). Note: atypical convention
-// where x output uses sin and y output uses cos.
+// where x output uses sin and y output uses cos. p.x is an unbounded
+// walker coord → trig routed through safe_* per Dawn f32 cliff convention
+// (sibling V21 cylinder uses safe_sin).
 fn var_unpolar(p: vec2f, w: f32) -> vec2f {
   let vvar_2 = (w / PI) * 0.5;
   let r = exp(p.y);
-  return vec2f(vvar_2 * r * sin(p.x), vvar_2 * r * cos(p.x));
+  return vec2f(vvar_2 * r * safe_sin(p.x), vvar_2 * r * safe_cos(p.x));
 }
 
 // shredrad — Zy0rg. 2 params (n, width). Radial shredder: divides the
@@ -4346,30 +4453,37 @@ fn var_fourth(
 // ---------------------------------------------------------------------
 
 // pulse — sin-modulated linear. x' = w(x + scalex·sin(x·freqx)), same y.
+// p.x · freqx and p.y · freqy are unbounded coord×coef products → trig
+// routed through safe_* per Dawn f32 cliff convention (sibling V85
+// waves2 uses safe_sin).
 fn var_pulse(p: vec2f, w: f32, freqx: f32, freqy: f32, scalex: f32, scaley: f32) -> vec2f {
   return vec2f(
-    w * (p.x + scalex * sin(p.x * freqx)),
-    w * (p.y + scaley * sin(p.y * freqy)),
+    w * (p.x + scalex * safe_sin(p.x * freqx)),
+    w * (p.y + scaley * safe_sin(p.y * freqy)),
   );
 }
 
-// rays1 — Raykoid666. 0 params. Radial ray burst.
+// rays1 — Raykoid666. 0 params. Radial ray burst. sqrt(r²) and tan() of
+// unbounded radius → routed through safe_tan (sibling V50 var_rays
+// pattern).
 fn var_rays1(p: vec2f, w: f32) -> vec2f {
   let t = p.x * p.x + p.y * p.y;
-  let tan_safe = tan(sqrt(max(t, 1e-30)));
-  let inv_tan = 1.0 / select(tan_safe, 1e-30, abs(tan_safe) < 1e-30);
+  let tan_val = safe_tan(sqrt(max(t, 1e-30)));
+  let inv_tan = 1.0 / select(tan_val, 1e-30, abs(tan_val) < 1e-30);
   let u = inv_tan + w * (2.0 / PI) * (2.0 / PI);
   let xs = w * u * t / select(p.x, 1e-30, p.x == 0.0);
   let ys = w * u * t / select(p.y, 1e-30, p.y == 0.0);
   return vec2f(xs, ys);
 }
 
-// rays2 — Raykoid666. 0 params. Increased trig complexity.
+// rays2 — Raykoid666. 0 params. Increased trig complexity. tan(1/t²) is
+// huge for small t and cos(inner) on unbounded arg → both routed through
+// safe_* per Dawn f32 cliff convention.
 fn var_rays2(p: vec2f, w: f32) -> vec2f {
   let t = p.x * p.x + p.y * p.y;
   let t_safe = max(t, 1e-30);
-  let inner = (t_safe + 1e-6) * tan(1.0 / t_safe + 1e-6);
-  let cos_inner = cos(inner);
+  let inner = (t_safe + 1e-6) * safe_tan(1.0 / t_safe + 1e-6);
+  let cos_inner = safe_cos(inner);
   let u = 1.0 / select(cos_inner, 1e-30, abs(cos_inner) < 1e-30);
   let coef = w / 10.0;
   let xs = coef * u * t / select(p.x, 1e-30, p.x == 0.0);
@@ -4377,16 +4491,18 @@ fn var_rays2(p: vec2f, w: f32) -> vec2f {
   return vec2f(xs, ys);
 }
 
-// rays3 — Raykoid666. 0 params. Highest trig complexity.
+// rays3 — Raykoid666. 0 params. Highest trig complexity. All four trig
+// calls operate on unbounded t / t² / 1/t² args → safe_* per Dawn f32
+// cliff convention.
 fn var_rays3(p: vec2f, w: f32) -> vec2f {
   let t = p.x * p.x + p.y * p.y;
   let t_safe = max(t, 1e-30);
-  let inner = sin(t * t + 1e-6) * sin(1.0 / (t_safe * t_safe) + 1e-6);
-  let denom = sqrt(max(cos(inner), 1e-30));
+  let inner = safe_sin(t * t + 1e-6) * safe_sin(1.0 / (t_safe * t_safe) + 1e-6);
+  let denom = sqrt(max(safe_cos(inner), 1e-30));
   let u = 1.0 / max(denom, 1e-30);
   let coef = w / 10.0;
-  let xs = coef * u * cos(t) * t / select(p.x, 1e-30, p.x == 0.0);
-  let ys = coef * u * tan(t) * t / select(p.y, 1e-30, p.y == 0.0);
+  let xs = coef * u * safe_cos(t) * t / select(p.x, 1e-30, p.x == 0.0);
+  let ys = coef * u * safe_tan(t) * t / select(p.y, 1e-30, p.y == 0.0);
   return vec2f(xs, ys);
 }
 
@@ -4662,14 +4778,17 @@ fn var_hex_modulus(p: vec2f, w: f32, size: f32) -> vec2f {
 // ---------------------------------------------------------------------
 
 // boarders2 — Xyrus02. 3 params (c, left, right). Per-iter RNG decides
-// between center-pull (prob right/(left+right)) and edge-shift (prob
-// left/(left+right)). Bake _c = c·left, _cl = (1-c)·left, _cr =
-// right/(left+right) at callsite.
+// between center-pull (prob 1 - _cr) and edge-shift (prob _cr). Bake
+// matches JWildfire Boarders2Func.init: _c = |c| (EPS if 0), _cl =
+// |c|·|left|, _cr = |c| + |c|·|right| = |c|·(1+|right|), all with
+// EPS=1e-6 guards on the pre-product abs values.
 fn var_boarders2(p: vec2f, w: f32, c: f32, left: f32, right: f32, wi: u32) -> vec2f {
-  let _c = c * left;
-  let _cl = (1.0 - c) * left;
-  let denom = left + right;
-  let _cr = right / select(denom, 1e-30, denom == 0.0);
+  let ac = max(abs(c), 1e-6);
+  let al = max(abs(left), 1e-6);
+  let ar = max(abs(right), 1e-6);
+  let _c = ac;
+  let _cl = ac * al;
+  let _cr = ac + ac * ar;
   let roundX = round(p.x);
   let roundY = round(p.y);
   let offsetX = p.x - roundX;
@@ -4931,7 +5050,7 @@ fn apply_variation(
     case 106u: { return var_epispiral(p, w, p0, p1, p2, wi); }
     // #114 batch 2a — Worley/Voronoi cellular family.
     case 107u: { return var_bwraps(p, w, p0, p1, p2, p3, p4); }
-    case 108u: { return var_crackle(p, w, p0, p1, p2, p3); }
+    case 108u: { return var_crackle(p, w, p0, p1, p2, p3, wi); }
     // #114 batch 2b-a — JWildfire S-tier first half.
     case 109u: { return var_juliaq(p, w, p0, p1, wi); }
     case 110u: { return var_glynnia(p, w, wi); }
