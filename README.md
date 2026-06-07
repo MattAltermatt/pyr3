@@ -108,6 +108,16 @@ render`. When pyr3 ships animation, `pyr3-animate` will be a separate
 binary built the same way (`npm run build:cli animate`), matching the
 `flam3-render` / `flam3-animate` split.
 
+**Platform status (as of v1.5):**
+
+```text
+darwin-arm64    verified end-to-end
+darwin-x64      code-paths shared with arm64; untested live
+linux-x64       code-reviewed clean; untested live (see issue #126)
+linux-arm64     code-reviewed clean; untested live (see issue #126)
+win32-x64       not implemented (Mach-O / ELF only)
+```
+
 See [CLAUDE.md](CLAUDE.md#quick-commands) for the full command list (parity rigs, typecheck,
 benchmarks).
 
