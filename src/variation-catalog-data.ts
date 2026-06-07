@@ -2409,6 +2409,132 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [x * r, y * r];
     },
   },
+  // ============================================================
+  // #120 batch B3 — inverse hyperbolic family (V133–V138).
+  // Sources: JWildfire AcoshFunc / ArcsinhFunc / ArctanhFunc /
+  // AcothFunc / AcosechFunc / Arcsech2Func (LGPL-2.1+, NOTICE.md).
+  // Authors: Whittaker Courtney (acosh / acoth / acosech, based on
+  // hyperbolic variations by Tatyana Zabanova + DarkBeam), Tatyana
+  // Zabanova 2017 / DarkBeam 2018 (arcsinh / arctanh / arcsech2).
+  // ============================================================
+  {
+    idx: V.acosh,
+    name: 'acosh',
+    source: sourceForIdx(V.acosh),
+    formula: 'V_{133}(z) = \\pm\\tfrac{2w}{\\pi}\\,\\log\\!\\left(z + \\sqrt{z^2 - 1}\\right),\\; z = x + iy',
+    blurb: 'Complex inverse hyperbolic cosine, scaled by w·2/π. Output sign is flipped 50/50 per iteration — the chaos game accumulates both branches across walkers, producing the mirrored fold characteristic of Whittaker Courtney\'s hyperbolic ports of Tatyana Zabanova\'s designs.',
+    // RNG-driven (50/50 sign flip) → no warpFn.
+  },
+  {
+    idx: V.arcsinh,
+    name: 'arcsinh',
+    source: sourceForIdx(V.arcsinh),
+    formula: 'V_{134}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(z + \\sqrt{z^2 + 1}\\right),\\; z = x + iy',
+    blurb: 'Complex inverse hyperbolic sine, scaled by w·2/π. Deterministic; the parent curve of the inverse hyperbolic family. Tatyana Zabanova 2017 / DarkBeam 2018.',
+    warpFn: (x, y) => {
+      // z² + 1
+      const z2 = [x * x - y * y + 1.0, 2.0 * x * y] as [number, number];
+      // sqrt(z² + 1) — JWildfire exact formula
+      const rad = Math.hypot(z2[0], z2[1]);
+      const sb = z2[1] < 0 ? -1 : 1;
+      const sqRe = Math.sqrt(Math.max(0.5 * (rad + z2[0]), 0));
+      const sqIm = sb * Math.sqrt(Math.max(0.5 * (rad - z2[0]), 0));
+      const sx = x + sqRe;
+      const sy = y + sqIm;
+      const mag2 = sx * sx + sy * sy + 1e-20;
+      const TWO_OVER_PI = 2.0 / Math.PI;
+      return [0.5 * Math.log(mag2) * TWO_OVER_PI, Math.atan2(sy, sx) * TWO_OVER_PI];
+    },
+  },
+  {
+    idx: V.arctanh,
+    name: 'arctanh',
+    source: sourceForIdx(V.arctanh),
+    formula: 'V_{135}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(\\tfrac{z + 1}{1 - z}\\right),\\; z = x + iy',
+    blurb: 'Inverse hyperbolic tangent variant. The 1/2 factor that would make this exactly arctanh is absorbed by JWildfire — the result is effectively 2·atanh(z), scaled by w·2/π. Maps the open unit disk onto a horizontal strip; characteristic asymmetric pull toward x = ±1.',
+    warpFn: (x, y) => {
+      // (z + 1) / (1 - z)
+      const num_re = x + 1.0, num_im = y;
+      const den_re = 1.0 - x, den_im = -y;
+      const m2 = Math.max(den_re * den_re + den_im * den_im, 1e-100);
+      const q_re = (num_re * den_re + num_im * den_im) / m2;
+      const q_im = (num_im * den_re - num_re * den_im) / m2;
+      const mag2 = q_re * q_re + q_im * q_im + 1e-20;
+      const TWO_OVER_PI = 2.0 / Math.PI;
+      return [0.5 * Math.log(mag2) * TWO_OVER_PI, Math.atan2(q_im, q_re) * TWO_OVER_PI];
+    },
+  },
+  {
+    idx: V.acoth,
+    name: 'acoth',
+    source: sourceForIdx(V.acoth),
+    formula: 'V_{136}(z) = \\tfrac{2w}{\\pi}\\,\\mathrm{Flip}\\!\\left(\\tfrac{1}{2}\\log\\!\\tfrac{1/z + 1}{1 - 1/z}\\right),\\; z = x + iy',
+    blurb: 'Complex inverse hyperbolic cotangent. Computes atanh(1/z), then swaps real and imaginary (JWildfire\'s Flip() — re↔im exchange), and scales by w·2/π. Deterministic; the Flip rotates the strip atanh produces by 90° onto a vertical band.',
+    warpFn: (x, y) => {
+      // 1/z = z* / |z|²
+      const m2z = Math.max(x * x + y * y, 1e-100);
+      const rz_re = x / m2z, rz_im = -y / m2z;
+      // (rz + 1) / (1 - rz)
+      const num_re = rz_re + 1.0, num_im = rz_im;
+      const den_re = 1.0 - rz_re, den_im = -rz_im;
+      const m2 = Math.max(den_re * den_re + den_im * den_im, 1e-100);
+      const q_re = (num_re * den_re + num_im * den_im) / m2;
+      const q_im = (num_im * den_re - num_re * den_im) / m2;
+      // 0.5 * log(q)
+      const mag2 = q_re * q_re + q_im * q_im + 1e-20;
+      const lg_re = 0.5 * 0.5 * Math.log(mag2);
+      const lg_im = 0.5 * Math.atan2(q_im, q_re);
+      // Flip + scale 2/π
+      const TWO_OVER_PI = 2.0 / Math.PI;
+      return [lg_im * TWO_OVER_PI, lg_re * TWO_OVER_PI];
+    },
+  },
+  {
+    idx: V.acosech,
+    name: 'acosech',
+    source: sourceForIdx(V.acosech),
+    formula: 'V_{137}(z) = \\pm\\tfrac{2w}{\\pi}\\,\\mathrm{Flip}\\!\\left(\\log\\!\\left(1/z + \\sqrt{1/z^2 - 1}\\right)\\right),\\; z = x + iy',
+    blurb: 'Complex inverse hyperbolic cosecant. Computes acosh(1/z), flips re↔im, then scales by w·2/π and applies a 50/50 sign flip. The Recip step turns the chaos game inside-out around the unit circle before the acosh fold.',
+    // RNG-driven (50/50 sign flip) → no warpFn.
+  },
+  {
+    idx: V.arcsech2,
+    name: 'arcsech2',
+    source: sourceForIdx(V.arcsech2),
+    formula: 'V_{138}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(\\tfrac{1}{z} + \\sqrt{\\tfrac{1}{z^2} - 1}\\right) + \\text{asymmetric tail}',
+    blurb: 'Inverse hyperbolic secant by Tatyana Zabanova 2017 / DarkBeam 2018. Deterministic. After the standard arcsech computation, an asymmetric ±1 tail is added to py and the sign of px is flipped, based on whether the scaled log\'s imaginary part is negative — produces a stark mirrored pair of arcs.',
+    warpFn: (x, y) => {
+      // 1/z
+      const m2z = Math.max(x * x + y * y, 1e-100);
+      const rz_re = x / m2z, rz_im = -y / m2z;
+      // sqrt(rz - 1) via JWildfire formula
+      const a_re = rz_re - 1.0, a_im = rz_im;
+      const a_rad = Math.hypot(a_re, a_im);
+      const a_sb = a_im < 0 ? -1 : 1;
+      const aSqRe = Math.sqrt(Math.max(0.5 * (a_rad + a_re), 0));
+      const aSqIm = a_sb * Math.sqrt(Math.max(0.5 * (a_rad - a_re), 0));
+      // sqrt(rz + 1)
+      const b_re = rz_re + 1.0, b_im = rz_im;
+      const b_rad = Math.hypot(b_re, b_im);
+      const b_sb = b_im < 0 ? -1 : 1;
+      const bSqRe = Math.sqrt(Math.max(0.5 * (b_rad + b_re), 0));
+      const bSqIm = b_sb * Math.sqrt(Math.max(0.5 * (b_rad - b_re), 0));
+      // sqrt(rz+1) * sqrt(rz-1)
+      const m_re = bSqRe * aSqRe - bSqIm * aSqIm;
+      const m_im = bSqRe * aSqIm + bSqIm * aSqRe;
+      // rz + sqrt(rz²-1)
+      const s_re = rz_re + m_re;
+      const s_im = rz_im + m_im;
+      // log
+      const mag2 = s_re * s_re + s_im * s_im + 1e-20;
+      const TWO_OVER_PI = 2.0 / Math.PI;
+      const lg_re = 0.5 * Math.log(mag2) * TWO_OVER_PI;
+      const lg_im = Math.atan2(s_im, s_re) * TWO_OVER_PI;
+      // Asymmetric tail
+      if (lg_im < 0) return [lg_re, lg_im + 1.0];
+      return [-lg_re, lg_im - 1.0];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

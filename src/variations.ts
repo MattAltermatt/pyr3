@@ -277,6 +277,18 @@ export const V = {
   // channel dropped per pyr3's 2D-only convention — same precedent as
   // the #114 falloff family).
   bubble2: 132,
+  // #120 batch B3 — inverse hyperbolic family. Sources: JWildfire (LGPL-2.1+,
+  // NOTICE.md). Authors: Whittaker Courtney (acosh / acoth / acosech) +
+  // Tatyana Zabanova 2017 / DarkBeam 2018 (arcsinh / arctanh / arcsech2).
+  // All 0-param. acosh + acosech end with a 50/50 RNG sign flip on output;
+  // the other four are fully deterministic. Compose the complex_*
+  // primitives in chaos.wgsl.
+  acosh: 133,
+  arcsinh: 134,
+  arctanh: 135,
+  acoth: 136,
+  acosech: 137,
+  arcsech2: 138,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

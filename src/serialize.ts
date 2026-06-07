@@ -217,6 +217,13 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // family). Param names left unprefixed since JWildfire uses bare 'x'
   // / 'y' / 'z' — the import alias maps will still pick them up cleanly.
   bubble2: ['x', 'y'],
+  // #120 batch B3 — inverse hyperbolic family (all 0-param).
+  acosh: [],
+  arcsinh: [],
+  arctanh: [],
+  acoth: [],
+  acosech: [],
+  arcsech2: [],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -321,6 +328,13 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // values bubble2 matches var_bubble (V20) exactly. Visual interest
   // starts when x ≠ y (anisotropic bubble).
   bubble2: [1.0, 1.0],                                     // x, y
+  // #120 batch B3 — inverse hyperbolic family (all 0-param).
+  acosh: [],
+  arcsinh: [],
+  arctanh: [],
+  acoth: [],
+  acosech: [],
+  arcsech2: [],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

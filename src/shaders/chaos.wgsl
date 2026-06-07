@@ -317,6 +317,47 @@ fn safe_tan(a: f32) -> f32 {
   return safe_sin(a) / safe_cos(a);
 }
 
+// #120 batch B3 — complex-math primitives (z = vec2f(re, im)). Direct
+// ports of JWildfire's `Complex.java` semantics (LGPL-2.1+, NOTICE.md);
+// the inverse-hyperbolic variation family composes these. Reused beyond
+// B3 by any future complex-valued variation port.
+fn complex_mul(a: vec2f, b: vec2f) -> vec2f {
+  return vec2f(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+fn complex_sqr(z: vec2f) -> vec2f {
+  return vec2f(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y);
+}
+fn complex_div(a: vec2f, b: vec2f) -> vec2f {
+  // |b|² floor at 1e-100 matches JWildfire MagInv() — degenerate denom
+  // returns the unscaled numerator instead of NaN.
+  let m2 = max(dot(b, b), 1e-100);
+  return vec2f(
+    (a.x * b.x + a.y * b.y) / m2,
+    (a.y * b.x - a.x * b.y) / m2,
+  );
+}
+fn complex_recip(z: vec2f) -> vec2f {
+  let m2 = max(dot(z, z), 1e-100);
+  return vec2f(z.x / m2, -z.y / m2);
+}
+// Exact complex sqrt — JWildfire formula. Avoids the trig path entirely
+// (which would otherwise need safe_* wrappers). Returns the principal
+// branch (re >= 0).
+fn complex_sqrt(z: vec2f) -> vec2f {
+  let rad = length(z);
+  let sb = select(1.0, -1.0, z.y < 0.0);
+  let re_out = sqrt(max(0.5 * (rad + z.x), 0.0));
+  let im_out = sb * sqrt(max(0.5 * (rad - z.x), 0.0));
+  return vec2f(re_out, im_out);
+}
+// Complex log = (log|z|, arg(z)). JWildfire's Mag2eps adds 1e-20 to
+// tame z=0 → log(0). atan2(0,0) is implementation-defined but pyr3
+// callers don't hit it.
+fn complex_log(z: vec2f) -> vec2f {
+  let mag2 = dot(z, z) + 1e-20;
+  return vec2f(0.5 * log(mag2), atan2(z.y, z.x));
+}
+
 fn var_linear(p: vec2f, w: f32) -> vec2f {
   return p * w;
 }
@@ -2815,6 +2856,83 @@ fn var_bubble2(p: vec2f, w: f32, x_scale: f32, y_scale: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #120 batch B3 — inverse hyperbolic family (6 vars). Sources: JWildfire
+// AcoshFunc / ArcsinhFunc / ArctanhFunc / AcothFunc / AcosechFunc /
+// Arcsech2Func (LGPL-2.1+, see NOTICE.md). Authors: Whittaker Courtney
+// (acosh / acoth / acosech, based on the hyperbolic variations by
+// Tatyana Zabanova + DarkBeam) and Tatyana Zabanova 2017 / DarkBeam 2018
+// (arcsinh / arctanh / arcsech2). 0 params each; all scale by w · 2/π
+// (arcsech2 by w · 2/π too — its asymmetric ±1 tail is constant). Two
+// of the six (acosh, acosech) end with a 50/50 RNG sign flip; the other
+// four are fully deterministic. Compose the complex_* primitives above.
+// ---------------------------------------------------------------------
+
+// acosh: log(z + sqrt(z² - 1)), then scale, then 50/50 sign flip.
+fn var_acosh(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let d = complex_sqrt(complex_sqr(p) - vec2f(1.0, 0.0));
+  let z = complex_log(p + d) * (w * 2.0 / PI);
+  let sign = select(1.0, -1.0, rand01(wi) >= 0.5);
+  return sign * z;
+}
+
+// arcsinh: log(z + sqrt(z² + 1)), then scale. Deterministic.
+fn var_arcsinh(p: vec2f, w: f32) -> vec2f {
+  let d = complex_sqrt(complex_sqr(p) + vec2f(1.0, 0.0));
+  return complex_log(p + d) * (w * 2.0 / PI);
+}
+
+// arctanh: log((z+1)/(1-z)), then scale. NOTE: JWildfire skips the
+// 0.5 factor that real atanh would include, so this is effectively
+// (2 · atanh(z)) · w · 2/π — verbatim port of ArctanhFunc.java.
+// Deterministic.
+fn var_arctanh(p: vec2f, w: f32) -> vec2f {
+  let num = p + vec2f(1.0, 0.0);
+  let den = vec2f(1.0, 0.0) - p;
+  return complex_log(complex_div(num, den)) * (w * 2.0 / PI);
+}
+
+// acoth: AcotH(z) = AtanH(1/z) = 0.5 · log((1/z + 1)/(1 - 1/z)). Then
+// Flip (re ↔ im swap) and scale. Deterministic.
+fn var_acoth(p: vec2f, w: f32) -> vec2f {
+  let rz = complex_recip(p);
+  let num = rz + vec2f(1.0, 0.0);
+  let den = vec2f(1.0, 0.0) - rz;
+  let atanh_val = 0.5 * complex_log(complex_div(num, den));
+  // Flip: swap re ↔ im
+  let flipped = vec2f(atanh_val.y, atanh_val.x);
+  return flipped * (w * 2.0 / PI);
+}
+
+// acosech: AcosecH(z) = AcosH(1/z) = log(1/z + sqrt(1/z² - 1)). Then
+// Flip + scale + 50/50 sign flip.
+fn var_acosech(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let rz = complex_recip(p);
+  let d = complex_sqrt(complex_sqr(rz) - vec2f(1.0, 0.0));
+  let acosh_rz = complex_log(rz + d);
+  let flipped = vec2f(acosh_rz.y, acosh_rz.x) * (w * 2.0 / PI);
+  let sign = select(1.0, -1.0, rand01(wi) >= 0.5);
+  return sign * flipped;
+}
+
+// arcsech2: log(1/z + sqrt(1/z² - 1)) via the decomposed-sqrt form
+// sqrt(z-1)·sqrt(z+1), then asymmetric output with a UNWEIGHTED ±1
+// constant on py based on the sign of the scaled-log's imaginary part.
+// The ±1 tail is verbatim from JWildfire — independent of w (yes, this
+// is surprising, but Arcsech2Func.java does it). Deterministic.
+fn var_arcsech2(p: vec2f, w: f32) -> vec2f {
+  let z = complex_recip(p);
+  let z_sub = complex_sqrt(z - vec2f(1.0, 0.0));   // sqrt(z-1)
+  let z_add = complex_sqrt(z + vec2f(1.0, 0.0));   // sqrt(z+1)
+  let lg = complex_log(z + complex_mul(z_add, z_sub)) * (w * 2.0 / PI);
+  // im<0 branch: px += re, py += 1
+  // else:        px -= re, py -= 1
+  let neg = lg.y < 0.0;
+  let px = select(-lg.x, lg.x, neg);
+  let py = select(lg.y - 1.0, lg.y + 1.0, neg);
+  return vec2f(px, py);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -2990,6 +3108,12 @@ fn apply_variation(
     case 130u: { return var_blur_circle(p, w, p0, wi); }
     case 131u: { return var_bipolar2(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8); }
     case 132u: { return var_bubble2(p, w, p0, p1); }
+    case 133u: { return var_acosh(p, w, wi); }
+    case 134u: { return var_arcsinh(p, w); }
+    case 135u: { return var_arctanh(p, w); }
+    case 136u: { return var_acoth(p, w); }
+    case 137u: { return var_acosech(p, w, wi); }
+    case 138u: { return var_arcsech2(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
