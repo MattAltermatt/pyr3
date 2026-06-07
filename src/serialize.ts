@@ -269,6 +269,12 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   circular: ['angle', 'seed'],
   circular2: ['angle', 'seed', 'xx', 'yy'],
   corners: ['x', 'y', 'mult_x', 'mult_y', 'x_power', 'y_power', 'xy_power_add', 'log_mode', 'log_base'],
+  // #121 L-tier batch L4 — idisc is 0-param (no entry needed). p/q/n
+  // are int params clamped at unpack (matches JWildfire's limitIntVal).
+  fibonacci2: ['sc', 'sc2'],
+  hypertile: ['p', 'q', 'n'],
+  hypertile1: ['p', 'q'],
+  hypertile2: ['p', 'q'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -445,6 +451,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   circular: [90.0, 0.0],                                 // angle (deg), seed
   circular2: [90.0, 0.0, 12.9898, 78.233],               // angle, seed, xx, yy
   corners: [1.0, 1.0, 1.0, 1.0, 0.75, 0.75, 0, 0, 2.71828],  // x, y, mult_x/y, x/y_power, xy_power_add, log_mode, log_base
+  // #121 L-tier batch L4 — JWildfire init values verbatim.
+  fibonacci2: [1.0, 1.0],                                // sc, sc2 — Larry Berlin defaults
+  hypertile: [3, 7, 1],                                  // p, q, n — Zueuk defaults (canonical hyperbolic tiling)
+  hypertile1: [3, 7],                                    // p, q
+  hypertile2: [3, 7],                                    // p, q
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

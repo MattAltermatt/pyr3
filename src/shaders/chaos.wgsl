@@ -3783,6 +3783,115 @@ fn var_circleblur(p: vec2f, w: f32, wi: u32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L4 — JWildfire 2D continuing (5 vars). Sources:
+// Fibonacci2Func (Larry Berlin), HypertileFunc + Hypertile1Func +
+// Hypertile2Func (Zueuk hyperbolic Möbius tiling family), IDiscFunc
+// (Michael Faber). All LGPL-2.1+, NOTICE.md.
+// ---------------------------------------------------------------------
+
+// fibonacci2 — Larry Berlin. 2 params (sc, sc2). Golden-ratio-driven
+// curve: z' = (φ^z - (-φ)^(-z)) / √5. Inlined constants ffive = 1/√5,
+// fnatlog = log(φ). Two exponential radii combined with sin/cos of
+// phase angles produce the characteristic Fibonacci-spiral fan.
+fn var_fibonacci2(p: vec2f, w: f32, sc: f32, sc2: f32) -> vec2f {
+  let ffive: f32 = 0.447213595;        // 1/√5
+  let fnatlog: f32 = 0.481211825;      // log(φ)
+  let a = p.y * fnatlog;
+  let snum1 = sin(a);
+  let cnum1 = cos(a);
+  let b = (p.x * PI + p.y * fnatlog) * -1.0;
+  let snum2 = sin(b);
+  let cnum2 = cos(b);
+  let eradius1 = sc * exp(sc2 * (p.x * fnatlog));
+  let eradius2 = sc * exp(sc2 * ((p.x * fnatlog - p.y * PI) * -1.0));
+  return vec2f(
+    w * (eradius1 * cnum1 - eradius2 * cnum2) * ffive,
+    w * (eradius1 * snum1 - eradius2 * snum2) * ffive,
+  );
+}
+
+// hypertile — Zueuk. 3 params (p, q, n all int). Möbius transformation
+// generator for {p, q} hyperbolic tilings. At callsite bake r and (re,
+// im) from p/q/n then apply Möbius: (a + b·i) / (c + d·i) where (a, b)
+// = (x+re, y-im), (c, d) = (re·x - im·y + 1, re·y + im·x).
+fn var_hypertile(p: vec2f, w: f32, p_p: f32, q: f32, n: f32) -> vec2f {
+  let pi_ = max(3.0, p_p);
+  let q_safe = max(3.0, q);
+  let pa = 2.0 * PI / pi_;
+  let qa = 2.0 * PI / q_safe;
+  let denom = cos(pa) + cos(qa);
+  let r2 = select(1.0, (1.0 - cos(pa)) / denom + 1.0, abs(denom) > 1e-30);
+  let r = select(1.0, 1.0 / sqrt(max(r2, 1e-30)), r2 > 0.0);
+  let an = n * pa;
+  let re = r * cos(an);
+  let im = r * sin(an);
+  let a = p.x + re;
+  let b = p.y - im;
+  let c = re * p.x - im * p.y + 1.0;
+  let d = re * p.y + im * p.x;
+  let cd2 = c * c + d * d;
+  let vr = w / max(cd2, 1e-30);
+  return vec2f(vr * (a * c + b * d), vr * (b * c - a * d));
+}
+
+// hypertile1 — Zueuk. 2 params (p, q ints). Same Möbius tiling but `n`
+// is randomized per iter via rand_int * pa (denser tile pattern).
+fn var_hypertile1(p: vec2f, w: f32, p_p: f32, q: f32, wi: u32) -> vec2f {
+  let pi_ = max(3.0, p_p);
+  let q_safe = max(3.0, q);
+  let pa = 2.0 * PI / pi_;
+  let cos_pa = cos(pa);
+  let denom = cos_pa + cos(2.0 * PI / q_safe);
+  let r2 = select(1.0, 1.0 - (cos_pa - 1.0) / denom, abs(denom) > 1e-30);
+  let r = select(1.0, 1.0 / sqrt(max(r2, 1e-30)), r2 > 0.0);
+  let rpa = floor(rand01(wi) * 10.0) * pa;
+  let cosa = cos(rpa);
+  let sina = sin(rpa);
+  let re = r * cosa;
+  let im = r * sina;
+  let a = p.x + re;
+  let b = p.y - im;
+  let c = re * p.x - im * p.y + 1.0;
+  let d = re * p.y + im * p.x;
+  let cd2 = c * c + d * d;
+  let vr = w / max(cd2, 1e-30);
+  return vec2f(vr * (a * c + b * d), vr * (b * c - a * d));
+}
+
+// hypertile2 — Zueuk. 2 params (p, q ints). Möbius tiling with the
+// per-iter rotation jitter applied POST-projection (rotates output).
+fn var_hypertile2(p: vec2f, w: f32, p_p: f32, q: f32, wi: u32) -> vec2f {
+  let pi_ = max(3.0, p_p);
+  let q_safe = max(3.0, q);
+  let pa = 2.0 * PI / pi_;
+  let cos_pa = cos(pa);
+  let denom = cos_pa + cos(2.0 * PI / q_safe);
+  let r2 = select(1.0, 1.0 - (cos_pa - 1.0) / denom, abs(denom) > 1e-30);
+  let r = select(1.0, 1.0 / sqrt(max(r2, 1e-30)), r2 > 0.0);
+  let a = p.x + r;
+  let b = p.y;
+  let c = r * p.x + 1.0;
+  let d = r * p.y;
+  let xx = a * c + b * d;
+  let yy = b * c - a * d;
+  let cd2 = c * c + d * d;
+  let vr = w / max(cd2, 1e-30);
+  let rpa = floor(rand01(wi) * f32(0x00007fff)) * pa;
+  let cosa = cos(rpa);
+  let sina = sin(rpa);
+  return vec2f(vr * (xx * cosa + yy * sina), vr * (yy * cosa - xx * sina));
+}
+
+// idisc — Michael Faber. 0 params. Inverse-radius disc projection:
+// a = π / (r + 1), output on (cos a, sin a) ray scaled by atan2(y, x)/π.
+fn var_idisc(p: vec2f, w: f32) -> vec2f {
+  let r = sqrt(p.x * p.x + p.y * p.y);
+  let a = PI / (r + 1.0);
+  let v = atan2(p.y, p.x) * w / PI;
+  return vec2f(v * cos(a), v * sin(a));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -3996,6 +4105,11 @@ fn apply_variation(
     case 168u: { return var_circular2(p, w, p0, p1, p2, p3, wi); }
     case 169u: { return var_corners(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8); }
     case 170u: { return var_circleblur(p, w, wi); }
+    case 171u: { return var_fibonacci2(p, w, p0, p1); }
+    case 172u: { return var_hypertile(p, w, p0, p1, p2); }
+    case 173u: { return var_hypertile1(p, w, p0, p1, wi); }
+    case 174u: { return var_hypertile2(p, w, p0, p1, wi); }
+    case 175u: { return var_idisc(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -367,6 +367,16 @@ export const V = {
   circular2: 168,
   corners: 169,
   circleblur: 170,
+  // #121 L-tier batch L4 — JWildfire 2D continuing. fibonacci2 (Larry
+  // Berlin, golden-ratio-based exp/sin/cos curve). hypertile + hypertile1
+  // + hypertile2 (Zueuk hyperbolic Möbius tiling family, deterministic +
+  // 2 RNG variants). idisc (Faber π/(r+1) radial projection).
+  // Triaged out: combimirror/conicalspiral/cone (3D + DC + 13 params).
+  fibonacci2: 171,
+  hypertile: 172,
+  hypertile1: 173,
+  hypertile2: 174,
+  idisc: 175,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

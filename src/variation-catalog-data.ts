@@ -3271,6 +3271,99 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     blurb: "Zyorg's uniform-disc sampler. Pure RNG base shape — samples a point uniformly inside the unit disc (the sqrt(uniform) trick gives correct area-uniform sampling, NOT angle-uniform). Input (x, y) is ignored. Produces a clean filled circle; useful as a soft halo behind other variations.",
     // RNG-only base shape — no warpFn.
   },
+  // ============================================================
+  // #121 batch L4 — JWildfire 2D continuing (V171..V175).
+  // fibonacci2 (Larry Berlin), hypertile + hypertile1 + hypertile2
+  // (Zueuk hyperbolic Möbius tiling family), idisc (Faber).
+  // ============================================================
+  {
+    idx: V.fibonacci2,
+    name: 'fibonacci2',
+    source: sourceForIdx(V.fibonacci2),
+    formula: "V_{171}: z' = (\\varphi^z - (-\\varphi)^{-z})/\\sqrt{5},\\; \\varphi = \\text{golden ratio}",
+    blurb: "Larry Berlin's golden-ratio Fibonacci curve. Computes (φ^z - (-φ)^(-z))/√5 — the closed-form Binet formula that generates the Fibonacci sequence for real-integer z. Produces an elegant logarithmic-spiral fan with the φ-rate growth characteristic of natural Fibonacci-like patterns.",
+    params: [
+      { name: 'sc',  default: 1.0, min: 0.1, max: 3, step: 0.05 },
+      { name: 'sc2', default: 1.0, min: 0.1, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const sc = 1.0, sc2 = 1.0;
+      const ffive = 0.447213595, fnatlog = 0.481211825;
+      const a = y * fnatlog;
+      const snum1 = Math.sin(a), cnum1 = Math.cos(a);
+      const b = (x * Math.PI + y * fnatlog) * -1.0;
+      const snum2 = Math.sin(b), cnum2 = Math.cos(b);
+      const eradius1 = sc * Math.exp(sc2 * (x * fnatlog));
+      const eradius2 = sc * Math.exp(sc2 * ((x * fnatlog - y * Math.PI) * -1));
+      return [
+        (eradius1 * cnum1 - eradius2 * cnum2) * ffive,
+        (eradius1 * snum1 - eradius2 * snum2) * ffive,
+      ];
+    },
+  },
+  {
+    idx: V.hypertile,
+    name: 'hypertile',
+    source: sourceForIdx(V.hypertile),
+    formula: "V_{172}: \\text{Möbius for }\\{p, q\\}\\text{ tiling};\\; r, (re, im)\\text{ from }p, q, n;\\; \\text{emit }(a + bi)/(c + di)",
+    blurb: "Zueuk's hyperbolic {p, q} tiling Möbius generator. (p, q) are the Schläfli symbols of the tiling (e.g. {3, 7} is a triangle tiling with 7 triangles meeting at each vertex — only possible in hyperbolic geometry). The `n` parameter picks which vertex of the fundamental polygon to anchor the transform to.",
+    params: [
+      { name: 'p', default: 3, min: 3, max: 12, step: 1 },
+      { name: 'q', default: 7, min: 3, max: 12, step: 1 },
+      { name: 'n', default: 1, min: 0, max: 11, step: 1 },
+    ],
+    warpFn: (x, y) => {
+      const p_p = 3, q = 7, n = 1;
+      const pa = 2 * Math.PI / p_p, qa = 2 * Math.PI / q;
+      const denom = Math.cos(pa) + Math.cos(qa);
+      const r2 = Math.abs(denom) > 1e-30 ? (1 - Math.cos(pa)) / denom + 1 : 1;
+      const r = r2 > 0 ? 1 / Math.sqrt(Math.max(r2, 1e-30)) : 1;
+      const an = n * pa;
+      const re = r * Math.cos(an), im = r * Math.sin(an);
+      const a = x + re, b = y - im;
+      const c = re * x - im * y + 1, d = re * y + im * x;
+      const cd2 = Math.max(c * c + d * d, 1e-30);
+      const vr = 1 / cd2;
+      return [vr * (a * c + b * d), vr * (b * c - a * d)];
+    },
+  },
+  {
+    idx: V.hypertile1,
+    name: 'hypertile1',
+    source: sourceForIdx(V.hypertile1),
+    formula: "V_{173}: \\text{hypertile with }n\\text{ randomized per iter}",
+    blurb: "Zueuk's hypertile1 — same {p, q} hyperbolic tiling as V172 hypertile but the vertex-anchor index `n` is randomized per iter. Produces a denser, more uniformly filled hyperbolic tile pattern.",
+    params: [
+      { name: 'p', default: 3, min: 3, max: 12, step: 1 },
+      { name: 'q', default: 7, min: 3, max: 12, step: 1 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.hypertile2,
+    name: 'hypertile2',
+    source: sourceForIdx(V.hypertile2),
+    formula: "V_{174}: \\text{hypertile with rotation jitter applied POST-projection}",
+    blurb: "Zueuk's hypertile2 — same Möbius tiling but the per-iter rotation jitter is applied AFTER the (re, im) projection, producing a subtly different tile structure than V173 hypertile1.",
+    params: [
+      { name: 'p', default: 3, min: 3, max: 12, step: 1 },
+      { name: 'q', default: 7, min: 3, max: 12, step: 1 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.idisc,
+    name: 'idisc',
+    source: sourceForIdx(V.idisc),
+    formula: "V_{175}(x, y) = (w/\\pi)\\,\\text{atan2}(y, x)\\,(\\cos a, \\sin a),\\; a = \\pi/(r + 1)",
+    blurb: "Michael Faber's inverse-radius disc projection (from The Lost Variations). Smoothly pulls the entire plane onto a bounded disc — distant points map near the disc boundary, origin maps to the boundary too. Produces clean radial-pull silhouettes that frame nicely inside other variations.",
+    warpFn: (x, y) => {
+      const r = Math.sqrt(x * x + y * y);
+      const a = Math.PI / (r + 1);
+      const v = Math.atan2(y, x) / Math.PI;
+      return [v * Math.cos(a), v * Math.sin(a)];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));
