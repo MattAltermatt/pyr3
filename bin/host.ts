@@ -3,7 +3,7 @@
 // The seam: engine code (src/*) sees no environment branching. CLI hosts
 // stamp WebGPU globals onto globalThis here so the engine runs unmodified.
 
-import { Window } from 'happy-dom';
+import { DOMParser } from 'linkedom';
 import { create, globals } from 'webgpu';
 
 import { sniffKind, type LoadKind } from '../src/loader';
@@ -11,10 +11,9 @@ import { parseFlame } from '../src/flame-import';
 import { genomeFromJson } from '../src/serialize';
 import { type Genome } from '../src/genome';
 
-/** Stamp happy-dom DOMParser + webgpu globals onto globalThis. */
+/** Stamp DOMParser + webgpu globals onto globalThis. */
 export function installWebGPUHost(): void {
-  const win = new Window();
-  (globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
+  (globalThis as { DOMParser: unknown }).DOMParser = DOMParser;
   Object.assign(globalThis, globals);
 }
 
