@@ -72,6 +72,42 @@ npm run render -- --preset quick fixtures/electricsheep.247.19679.flam3 preview.
 npm run render -- --preset 4k fixtures/electricsheep.247.19679.flam3 hero-4k.png
 ```
 
+### Build a standalone binary (optional)
+
+To skip the `npm run render --` dance and the tsx startup cost, build a
+self-contained executable. This matches the **flam3 convention** (ship
+source, user builds locally):
+
+```sh
+npm run build:cli render    # → ./build/pyr3-render (~155 MB, one-time)
+```
+
+The first build downloads an official Node 26 runtime to `~/.cache/pyr3/`
+if the host Node doesn't ship the SEA fuse sentinel (notably Homebrew's
+Node, which strips it). Subsequent builds reuse the cached runtime.
+
+Same commands, shorter form:
+
+```sh
+./build/pyr3-render fixtures/electricsheep.247.19679.flam3 out.png
+./build/pyr3-render --preset quick fixtures/electricsheep.247.19679.flam3 preview.png
+./build/pyr3-render --preset 4k    fixtures/electricsheep.247.19679.flam3 hero-4k.png
+```
+
+Or put it on `$PATH`:
+
+```sh
+ln -s "$PWD/build/pyr3-render" ~/.local/bin/pyr3-render
+pyr3-render fixtures/electricsheep.247.19679.flam3 out.png   # works from anywhere
+```
+
+The binary bundles the Dawn-node WebGPU binding as a SEA asset and extracts
+it to `~/.cache/pyr3/dawn-<sha>.node` on first launch (~150ms one-time;
+subsequent runs hit the cache). Upgrade with `git pull && npm run build:cli
+render`. When pyr3 ships animation, `pyr3-animate` will be a separate
+binary built the same way (`npm run build:cli animate`), matching the
+`flam3-render` / `flam3-animate` split.
+
 See [CLAUDE.md](CLAUDE.md#quick-commands) for the full command list (parity rigs, typecheck,
 benchmarks).
 
