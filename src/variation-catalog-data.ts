@@ -2370,6 +2370,25 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'g1', default: 1.0, min: -2, max: 2, step: 0.05 },
       { name: 'h', default: 1.0, min: -2, max: 2, step: 0.05 },
     ],
+    // Deterministic — pure function of (p, params). Plot the warp at the
+    // default param set; the guard branch (returns (0,0) when f/g <= 0) is
+    // honored exactly the same way the WGSL kernel does, so the grid will
+    // visibly snap to the origin on the affected cells.
+    warpFn: (x, y) => {
+      const HALF_PI = Math.PI * 0.5;
+      const TWO_OVER_PI = 2.0 / Math.PI;
+      // defaults: shift=0, a=1, b=2, c=0.5, d=1, e=2, f1=0.25, g1=1, h=1
+      const x2y2 = x * x + y * y;
+      const t = x2y2 + 1.0;
+      const x2 = 2.0 * x;
+      let yv = 0.5 * Math.atan2(2.0 * y, x2y2 - 1.0);
+      if (yv > HALF_PI) yv = -HALF_PI + ((yv + HALF_PI) % Math.PI);
+      else if (yv < -HALF_PI) yv = HALF_PI - ((HALF_PI - yv) % Math.PI);
+      const fnum = t + x2;
+      const gnum = t - x2;
+      if (gnum === 0 || fnum / gnum <= 0) return [0, 0];
+      return [0.25 * TWO_OVER_PI * Math.log(fnum / gnum), TWO_OVER_PI * yv];
+    },
   },
   // #120 batch B2 — bubble2 (2D projection of JWildfire 3D Bubble2Func).
   // Source: "bubble2 from FracFx" (LGPL-2.1+, NOTICE.md).
@@ -2383,6 +2402,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'x', default: 1.0, min: -2, max: 2, step: 0.05 },
       { name: 'y', default: 1.0, min: -2, max: 2, step: 0.05 },
     ],
+    // Deterministic — pure function of (p, x_scale, y_scale). At the
+    // defaults x=y=1 this is identical to var_bubble (V20)'s warp.
+    warpFn: (x, y) => {
+      const r = 1.0 / (0.25 * (x * x + y * y) + 1.0);
+      return [x * r, y * r];
+    },
   },
 ];
 
