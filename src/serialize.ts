@@ -282,6 +282,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   layered_spiral: ['radius'],
   linear_t: ['powX', 'powY'],
   line: ['delta', 'phi'],
+  // #121 L-tier batch L6 — unpolar is 0-param (no entry needed).
+  // JWildfire param names verbatim.
+  ovoid: ['x', 'y'],
+  phoenix_julia: ['power', 'dist', 'x_distort', 'y_distort'],
+  shredrad: ['n', 'width'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -470,6 +475,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   layered_spiral: [1.0],                                 // radius=1 — Will Evans default
   linear_t: [1.2, 0.9],                                  // powX, powY — FractalDesire defaults
   line: [0.0, 0.0],                                      // delta, phi — Nic Anderson defaults
+  // #121 L-tier batch L6 — JWildfire init values verbatim.
+  ovoid: [0.94, 0.94],                                   // x, y — Faber defaults
+  phoenix_julia: [2.0, 1.0, -0.5, 0.0],                  // power, dist, x_distort, y_distort — TyrantWave defaults (power picked sensibly, JWildfire randomizes)
+  shredrad: [4.0, 0.5],                                  // n=4, width=0.5 — Zy0rg defaults
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

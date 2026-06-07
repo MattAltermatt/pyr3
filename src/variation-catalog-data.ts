@@ -3463,6 +3463,74 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     // RNG-using base shape — no warpFn.
   },
+  // ============================================================
+  // #121 batch L6 — JWildfire 2D continuing (V181..V184).
+  // ovoid (Faber), phoenix_julia (TyrantWave), unpolar (Apophysis),
+  // shredrad (Zy0rg).
+  // ============================================================
+  {
+    idx: V.ovoid,
+    name: 'ovoid',
+    source: sourceForIdx(V.ovoid),
+    formula: "V_{181}(x, y) = w\\,(x \\cdot p_x, y \\cdot p_y) / (x^2 + y^2 + \\epsilon)",
+    blurb: "Michael Faber's ovoid — radial inverse with per-axis scale factors. At (px, py) = (1, 1) reduces to spherical; (0.94, 0.94) JWildfire default produces a subtle oval shape. Tune (px, py) independently for asymmetric ovals.",
+    params: [
+      { name: 'x', default: 0.94, min: 0, max: 3, step: 0.05 },
+      { name: 'y', default: 0.94, min: 0, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const px = 0.94, py = 0.94;
+      const t = x * x + y * y + 1e-6;
+      const r = 1 / t;
+      return [x * r * px, y * r * py];
+    },
+  },
+  {
+    idx: V.phoenix_julia,
+    name: 'phoenix_julia',
+    source: sourceForIdx(V.phoenix_julia),
+    formula: "V_{182}: \\text{Julian variant with axis distortion preprocessing}",
+    blurb: "TyrantWave's phoenix_julia — a Julian variant with `x_distort` and `y_distort` scale factors applied to the iterate BEFORE the atan2 angle computation. Distorts the symmetry of the underlying Julian by squashing/stretching the input axes.",
+    params: [
+      { name: 'power',     default: 2.0,  min: -8, max: 8, step: 1    },
+      { name: 'dist',      default: 1.0,  min: -2, max: 2, step: 0.05 },
+      { name: 'x_distort', default: -0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'y_distort', default: 0.0,  min: -2, max: 2, step: 0.05 },
+    ],
+    // RNG-using (randint branch) — no warpFn.
+  },
+  {
+    idx: V.unpolar,
+    name: 'unpolar',
+    source: sourceForIdx(V.unpolar),
+    formula: "V_{183}(x, y) = (w/(2\\pi))\\,e^y\\,(\\sin x, \\cos x)",
+    blurb: "Apophysis plugin pack unpolar — inverse-polar mapping. Treats x as the angular coord (in radians) and y as the radial log-scale. Output uses sin for x and cos for y (atypical convention). Produces dense logarithmic-spiral patterns.",
+    warpFn: (x, y) => {
+      const vvar_2 = (1 / Math.PI) * 0.5;
+      const r = Math.exp(y);
+      return [vvar_2 * r * Math.sin(x), vvar_2 * r * Math.cos(x)];
+    },
+  },
+  {
+    idx: V.shredrad,
+    name: 'shredrad',
+    source: sourceForIdx(V.shredrad),
+    formula: "V_{184}: \\text{divide angle into }n\\text{ wedges; width-controlled fold within each wedge; preserve radius}",
+    blurb: "Zy0rg's shredrad — radial shredder. Divides the angular coordinate into `n` equal wedges, then folds within each wedge by `width` factor. Preserves the input radius. Produces sharp pie-slice patterns with shred-like radial dividers.",
+    params: [
+      { name: 'n',     default: 4.0, min: 1,    max: 24, step: 1    },
+      { name: 'width', default: 0.5, min: 0.05, max: 2,  step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const n = 4.0, width = 0.5;
+      const alpha = 2 * Math.PI / n;
+      const ang = Math.atan2(y, x);
+      const rad = Math.sqrt(x * x + y * y);
+      const xang = (ang + 3 * Math.PI + alpha * 0.5) / alpha;
+      const zang = ((xang - Math.floor(xang)) * width + Math.floor(xang)) * alpha - Math.PI - alpha * 0.5 * width;
+      return [rad * Math.cos(zang), rad * Math.sin(zang)];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

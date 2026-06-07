@@ -389,6 +389,16 @@ export const V = {
   layered_spiral: 178,
   linear_t: 179,
   line: 180,
+  // #121 L-tier batch L6 — JWildfire 2D continuing. ovoid (Faber, 2
+  // params, radial-scaled inverse-r²). phoenix_julia (TyrantWave, 4
+  // params, Julian variant with x/y distortion). scry (Apophysis pack,
+  // 0 params, scrying-mirror-like inversion). shredrad (Zy0rg, 2 params,
+  // radial-shredding mod-fold). Triaged out: mobiq (3D + 16 params),
+  // pixel_flow (DC), separation/split/splits/sinusoidal (already shipped).
+  ovoid: 181,
+  phoenix_julia: 182,
+  unpolar: 183,
+  shredrad: 184,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

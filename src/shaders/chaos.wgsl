@@ -3969,6 +3969,60 @@ fn var_line(p: vec2f, w: f32, delta: f32, phi: f32, wi: u32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L6 — JWildfire 2D continuing (4 vars). Sources: OvoidFunc
+// (Faber), PhoenixJuliaFunc (TyrantWave), UnpolarFunc (Apophysis pack),
+// ShredradFunc (Zy0rg). All LGPL-2.1+, NOTICE.md. phoenix_julia uses
+// 1 RNG call (randint branch like julian); rest deterministic.
+// ---------------------------------------------------------------------
+
+// ovoid — Michael Faber. 2 params (x, y scale factors). Radial inverse
+// r = w / (x² + y² + ε), then output = (x·r·px, y·r·py). (px, py)=(1,1)
+// reduces to spherical; (0.94, 0.94) produces slight oval.
+fn var_ovoid(p: vec2f, w: f32, px: f32, py: f32) -> vec2f {
+  let t = p.x * p.x + p.y * p.y + 1e-6;
+  let r = w / t;
+  return vec2f(p.x * r * px, p.y * r * py);
+}
+
+// phoenix_julia — TyrantWave. 4 params. Julian variant with axis
+// distortion preprocessing then a julian-style randint branch.
+fn var_phoenix_julia(p: vec2f, w: f32, power: f32, dist: f32, x_distort: f32, y_distort: f32, wi: u32) -> vec2f {
+  let pow_safe = select(power, 1.0, power == 0.0);
+  let inv_n = 1.0 / pow_safe;
+  let inv_2pi_n = 2.0 * PI / pow_safe;
+  let cn = (dist / pow_safe - 1.0) * 0.5;
+  let preX = p.x * (x_distort + 1.0);
+  let preY = p.y * (y_distort + 1.0);
+  let randint = floor(rand01(wi) * abs(pow_safe));
+  let a = atan2(preY, preX) * inv_n + randint * inv_2pi_n;
+  let sumsq = p.x * p.x + p.y * p.y;
+  let r = w * pow(max(sumsq, 1e-30), cn);
+  return vec2f(r * cos(a), r * sin(a));
+}
+
+// unpolar — Apophysis plugin pack. 0 params. Inverse-polar mapping:
+// r = exp(y); output = w/(2π)·r·(sin x, cos x). Note: atypical convention
+// where x output uses sin and y output uses cos.
+fn var_unpolar(p: vec2f, w: f32) -> vec2f {
+  let vvar_2 = (w / PI) * 0.5;
+  let r = exp(p.y);
+  return vec2f(vvar_2 * r * sin(p.x), vvar_2 * r * cos(p.x));
+}
+
+// shredrad — Zy0rg. 2 params (n, width). Radial shredder: divides the
+// angular coord into n wedges, applies a width-controlled fold within
+// each wedge. Bake α = 2π/n inline.
+fn var_shredrad(p: vec2f, w: f32, n: f32, width: f32) -> vec2f {
+  let n_safe = max(0.001, n);
+  let alpha = 2.0 * PI / n_safe;
+  let ang = atan2(p.y, p.x);
+  let rad = sqrt(p.x * p.x + p.y * p.y);
+  let xang = (ang + 3.0 * PI + alpha * 0.5) / alpha;
+  let zang = ((xang - floor(xang)) * width + floor(xang)) * alpha - PI - alpha * 0.5 * width;
+  return vec2f(w * rad * cos(zang), w * rad * sin(zang));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4192,6 +4246,10 @@ fn apply_variation(
     case 178u: { return var_layered_spiral(p, w, p0); }
     case 179u: { return var_linear_t(p, w, p0, p1); }
     case 180u: { return var_line(p, w, p0, p1, wi); }
+    case 181u: { return var_ovoid(p, w, p0, p1); }
+    case 182u: { return var_phoenix_julia(p, w, p0, p1, p2, p3, wi); }
+    case 183u: { return var_unpolar(p, w); }
+    case 184u: { return var_shredrad(p, w, p0, p1); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -50,8 +50,9 @@ describe('mountSidebar', () => {
 
   it('search filters by name', () => {
     handle.setSearch('jul');
-    // julia, julian, juliascope, wedge_julia, juliaq (#114 batch 2b-a)
-    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(5);
+    // julia, julian, juliascope, wedge_julia, juliaq (#114 batch 2b-a),
+    // phoenix_julia (#121 L6)
+    expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(6);
   });
 
   it('search filters by V-number prefix', () => {
