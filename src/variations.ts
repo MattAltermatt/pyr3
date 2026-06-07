@@ -408,6 +408,18 @@ export const V = {
   yin_yang: 186,
   squish: 187,
   target: 188,
+  // #121 L-tier batch L8. polar2 (Apo log-polar), funnel (Raykoid666
+  // tanh+sec), holesq (DarkBeam diamond fold), hole2 (Faber/Stefanov/
+  // Sidwell 10-shape multi-mode), lace_js (Sosa via Bourke RNG-branch),
+  // julia_outside (Whittaker Courtney 3-mode complex w/ RNG), fourth
+  // (guagapunyaimel per-quadrant 4-way pick). Triaged: hopalong (uses
+  // persistent x0/y0 state across iters — pyr3 kernel is stateless).
+  funnel: 189,
+  holesq: 190,
+  hole2: 191,
+  lace_js: 192,
+  julia_outside: 193,
+  fourth: 194,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

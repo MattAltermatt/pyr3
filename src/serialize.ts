@@ -292,6 +292,12 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   yin_yang: ['radius', 'ang1', 'ang2', 'dual_t', 'outside'],
   squish: ['power'],
   target: ['even', 'odd', 'size'],
+  // #121 L-tier batch L8 — holesq is 0-param (no entry needed). lace_js
+  // is also 0-param (RNG-only). hole2 inside + shape are int toggles.
+  funnel: ['effect'],
+  hole2: ['a', 'b', 'c', 'd', 'inside', 'shape'],
+  julia_outside: ['re_div', 'im_div', 'mode'],
+  fourth: ['spin', 'space', 'twist', 'x', 'y'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -490,6 +496,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   yin_yang: [0.5, 0.0, 0.0, 1, 0],                       // radius, ang1, ang2, dual_t=1, outside=0 — dark-beam defaults
   squish: [2],                                           // power=2 — Faber default
   target: [0.5, 1.5, 0.5],                               // even, odd, size — sensible (JWildfire randomizes these)
+  // #121 L-tier batch L8 — JWildfire init values verbatim.
+  funnel: [8],                                           // effect=8 — Raykoid666 default
+  hole2: [1.0, 2.0, 1.0, 1.0, 0, 0],                     // a, b, c, d, inside, shape=0 — Faber/Stefanov/Sidwell
+  julia_outside: [1.0, 0.0, 0],                          // re_div=1, im_div=0, mode=0 — Whittaker Courtney default
+  fourth: [Math.PI, 0.10, 0.20, 0.30, 0.12],             // spin, space, twist, x, y — guagapunyaimel defaults
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

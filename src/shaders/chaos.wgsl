@@ -4154,6 +4154,193 @@ fn var_target(p: vec2f, w: f32, even: f32, odd: f32, size: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L8 — JWildfire 2D continuing (6 vars). Sources: FunnelFunc
+// (Raykoid666), HolesqFunc (DarkBeam), Hole2Func (Faber/Stefanov/
+// Sidwell — 10 shape modes), LaceFunc (Sosa via Bourke), JuliaOutsideFunc
+// (Whittaker Courtney — 3-mode complex), FourthFunc (guagapunyaimel —
+// per-quadrant 4-way mix). All LGPL-2.1+, NOTICE.md.
+// ---------------------------------------------------------------------
+
+// funnel — Raykoid666. 1 param (effect int). tanh + sec composition
+// produces a funnel-shape projection. Beware: sec(x) = 1/cos(x) has
+// singularities at x = π/2 + nπ — guard.
+fn var_funnel(p: vec2f, w: f32, effect_p: f32) -> vec2f {
+  let cx = cos(p.x);
+  let cy = cos(p.y);
+  let secx = 1.0 / select(cx, 1e-30, abs(cx) < 1e-30);
+  let secy = 1.0 / select(cy, 1e-30, abs(cy) < 1e-30);
+  let off = effect_p * PI;
+  return vec2f(
+    w * tanh(p.x) * (secx + off),
+    w * tanh(p.y) * (secy + off),
+  );
+}
+
+// holesq — DarkBeam. 0 params. Diamond-fold pattern: when |x|+|y| > 1
+// pass through, else fold the dominant-axis coord toward the unit
+// diamond's nearest edge.
+fn var_holesq(p: vec2f, w: f32) -> vec2f {
+  let x = w * p.x;
+  let y = w * p.y;
+  let fax = abs(x);
+  let fay = abs(y);
+  if (fax + fay > 1.0) {
+    return vec2f(x, y);
+  }
+  if (fax > fay) {
+    let t = select((x + fay - 1.0) * 0.5, (x - fay + 1.0) * 0.5, x >= 0.0);
+    return vec2f(t, y);
+  }
+  let t = select((y + fax - 1.0) * 0.5, (y - fax + 1.0) * 0.5, y >= 0.0);
+  return vec2f(x, t);
+}
+
+// hole2 — Faber/Stefanov/Sidwell. 6 params (a, b, c, d, inside int,
+// shape int 0-9). 10-shape multi-mode polar radial with switch.
+fn var_hole2(
+  p: vec2f, w: f32,
+  a: f32, b: f32, c: f32, d: f32,
+  inside_p: f32, shape_p: f32,
+) -> vec2f {
+  let rhosq = p.x * p.x + p.y * p.y;
+  let theta = atan2(p.y, p.x) * d;
+  let delta = pow(max(theta / PI + 1.0, 1e-30), a) * c;
+  let shape = i32(shape_p);
+  var r1: f32 = 1.0;
+  switch (shape) {
+    case 0: { r1 = sqrt(max(rhosq, 0.0)) + delta; }
+    case 1: { r1 = sqrt(max(rhosq + delta, 0.0)); }
+    case 2: { r1 = sqrt(max(rhosq + sin(b * theta) + delta, 0.0)); }
+    case 3: { r1 = sqrt(max(rhosq + sin(theta) + delta, 0.0)); }
+    case 4: { r1 = sqrt(max(rhosq + theta * theta - delta + 1.0, 0.0)); }
+    case 5: { r1 = sqrt(max(rhosq + abs(tan(theta)) + delta, 0.0)); }
+    case 6: { r1 = sqrt(max(rhosq * (1.0 + sin(b * theta)) + delta, 0.0)); }
+    case 7: { r1 = sqrt(max(rhosq + abs(sin(0.5 * b * theta)) + delta, 0.0)); }
+    case 8: { r1 = sqrt(max(rhosq + sin(PI * sin(b * theta)) + delta, 0.0)); }
+    case 9: { r1 = sqrt(max(rhosq + (sin(b * theta) + sin(2.0 * b * theta + PI * 0.5)) * 0.5 + delta, 0.0)); }
+    default: { r1 = 1.0; }
+  }
+  let inside = i32(inside_p);
+  let r_final = select(w * r1, w / max(r1, 1e-30), inside != 0);
+  return vec2f(r_final * cos(theta), r_final * sin(theta));
+}
+
+// lace_js — Jesus Sosa via Paul Bourke. 0 params, RNG-driven. 4-way
+// random branch picks one of 4 anchor-rotated radial projections.
+fn var_lace_js(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let r = 2.0;
+  let r0 = sqrt(p.x * p.x + p.y * p.y);
+  let weight = rand01(wi);
+  let sqrt3_2 = 0.8660254037844386;   // √3/2
+  var x: f32 = 0.5;
+  var y: f32 = 0.75;
+  if (weight > 0.75) {
+    let theta = atan2(p.y, p.x - 1.0);
+    y = -r0 * cos(theta) / r + 1.0;
+    x = -r0 * sin(theta) / r;
+  } else if (weight > 0.5) {
+    let theta = atan2(p.y - sqrt3_2, p.x + 0.5);
+    y = -r0 * cos(theta) / r - 0.5;
+    x = -r0 * sin(theta) / r + sqrt3_2;
+  } else if (weight > 0.25) {
+    let theta = atan2(p.y + sqrt3_2, p.x + 0.5);
+    y = -r0 * cos(theta) / r - 0.5;
+    x = -r0 * sin(theta) / r - sqrt3_2;
+  } else {
+    let theta = atan2(p.y, p.x);
+    y = -r0 * cos(theta) / r;
+    x = -r0 * sin(theta) / r;
+  }
+  return vec2f(w * x, w * y);
+}
+
+// julia_outside — Whittaker Courtney. 3 params (re_div, im_div, mode
+// int 0-2). Uses the complex_* helpers from #120 batch B3.
+fn var_julia_outside(
+  p: vec2f, w: f32,
+  re_div: f32, im_div: f32, mode_p: f32, wi: u32,
+) -> vec2f {
+  let mode = i32(mode_p);
+  var z = vec2f(p.x, p.y);
+  var z2 = vec2f(p.x, p.y);
+  let z3 = vec2f(re_div, im_div);
+  // mode 0 or 2: z.Sqrt() first
+  if (mode == 0 || mode == 2) {
+    z = complex_sqrt(z);
+  }
+  // z.Inc() = z.re += 1
+  z = vec2f(z.x + 1.0, z.y);
+  // mode 0 or 2: z.Sqr()
+  if (mode == 0 || mode == 2) {
+    z = complex_sqr(z);
+  }
+  // mode 0 or 2: z2.Sqrt()
+  if (mode == 0 || mode == 2) {
+    z2 = complex_sqrt(z2);
+  }
+  // z2.Dec() = z2.re -= 1
+  z2 = vec2f(z2.x - 1.0, z2.y);
+  // mode 0 or 2: z2.Sqr()
+  if (mode == 0 || mode == 2) {
+    z2 = complex_sqr(z2);
+  }
+  // z.Div(z2)
+  z = complex_div(z, z2);
+  // mode 0 or 1: z.Sqrt()
+  if (mode == 0 || mode == 1) {
+    z = complex_sqrt(z);
+  }
+  // z.Div(z3)
+  z = complex_div(z, z3);
+  // mode 0 or 1: rng branch flips sign
+  if (mode == 0 || mode == 1) {
+    let sgn = select(-1.0, 1.0, rand01(wi) < 0.5);
+    return vec2f(w * sgn * z.x, w * sgn * z.y);
+  }
+  return vec2f(w * z.x, w * z.y);
+}
+
+// fourth — guagapunyaimel. 5 params (spin, space, twist, x, y).
+// Per-quadrant 4-way mix: Q-IV→spherical, Q-I→loonie, Q-III→susan,
+// Q-II→linear. Bake sqrvvar = w·w at unpack.
+fn var_fourth(
+  p: vec2f, w: f32,
+  spin: f32, space: f32, twist: f32, off_x: f32, off_y: f32,
+) -> vec2f {
+  let sqrvvar = w * w;
+  // Q-IV: x>0 && y>0 → spherical-style 1/r
+  if (p.x > 0.0 && p.y > 0.0) {
+    let theta = atan2(p.y, p.x);
+    let r = 1.0 / max(sqrt(p.x * p.x + p.y * p.y), 1e-30);
+    return vec2f(w * r * cos(theta), w * r * sin(theta));
+  }
+  // Q-I: x>0 && y<0 → loonie
+  if (p.x > 0.0 && p.y < 0.0) {
+    let r2 = p.x * p.x + p.y * p.y;
+    if (r2 < sqrvvar) {
+      let r = w * sqrt(max(sqrvvar / max(r2, 1e-30) - 1.0, 0.0));
+      return vec2f(r * p.x, r * p.y);
+    }
+    return vec2f(w * p.x, w * p.y);
+  }
+  // Q-III: x<0 && y>0 → susan
+  if (p.x < 0.0 && p.y > 0.0) {
+    let xx = p.x - off_x;
+    let yy = p.y + off_y;
+    let r0 = sqrt(xx * xx + yy * yy);
+    if (r0 < w) {
+      let theta = atan2(yy, xx) + spin + twist * (w - r0);
+      let r = w * r0;
+      return vec2f(r * cos(theta) + off_x, r * sin(theta) - off_y);
+    }
+    let r = w * (1.0 + space / max(r0, 1e-30));
+    return vec2f(r * xx + off_x, r * yy - off_y);
+  }
+  // Q-II: linear passthrough
+  return vec2f(w * p.x, w * p.y);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4385,6 +4572,12 @@ fn apply_variation(
     case 186u: { return var_yin_yang(p, w, p0, p1, p2, p3, p4, wi); }
     case 187u: { return var_squish(p, w, p0, wi); }
     case 188u: { return var_target(p, w, p0, p1, p2); }
+    case 189u: { return var_funnel(p, w, p0); }
+    case 190u: { return var_holesq(p, w); }
+    case 191u: { return var_hole2(p, w, p0, p1, p2, p3, p4, p5); }
+    case 192u: { return var_lace_js(p, w, wi); }
+    case 193u: { return var_julia_outside(p, w, p0, p1, p2, wi); }
+    case 194u: { return var_fourth(p, w, p0, p1, p2, p3, p4); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

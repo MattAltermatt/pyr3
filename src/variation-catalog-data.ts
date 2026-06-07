@@ -3596,6 +3596,127 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [r * Math.cos(a), r * Math.sin(a)];
     },
   },
+  // ============================================================
+  // #121 batch L8 — JWildfire 2D continuing (V189..V194).
+  // ============================================================
+  {
+    idx: V.funnel,
+    name: 'funnel',
+    source: sourceForIdx(V.funnel),
+    formula: "V_{189}(x, y) = w\\,\\tanh(p)\\,(\\sec(p) + e\\pi)\\text{ per-axis}",
+    blurb: "Raykoid666's funnel — tanh + sec composition produces a funnel-shape projection. The `effect` integer scales the secant baseline. Sharp singularities at x or y = π/2 + nπ (guarded with epsilon).",
+    params: [{ name: 'effect', default: 8, min: 0, max: 20, step: 1 }],
+    warpFn: (x, y) => {
+      const effect = 8;
+      const secX = 1 / Math.cos(x);
+      const secY = 1 / Math.cos(y);
+      return [Math.tanh(x) * (secX + effect * Math.PI), Math.tanh(y) * (secY + effect * Math.PI)];
+    },
+  },
+  {
+    idx: V.holesq,
+    name: 'holesq',
+    source: sourceForIdx(V.holesq),
+    formula: "V_{190}: |x|+|y| > 1 \\Rightarrow \\text{pass};\\; \\text{else fold dominant-axis coord toward unit diamond edge}",
+    blurb: "DarkBeam's holesq — diamond fold. Inside the |x|+|y| ≤ 1 diamond, pulls the dominant-axis coord toward the diamond edge. Outside, passes through. Produces a square-shaped hole in the otherwise-linear input.",
+    warpFn: (x, y) => {
+      const fax = Math.abs(x), fay = Math.abs(y);
+      if (fax + fay > 1) return [x, y];
+      if (fax > fay) {
+        const t = x >= 0 ? (x - fay + 1) * 0.5 : (x + fay - 1) * 0.5;
+        return [t, y];
+      }
+      const t = y >= 0 ? (y - fax + 1) * 0.5 : (y + fax - 1) * 0.5;
+      return [x, t];
+    },
+  },
+  {
+    idx: V.hole2,
+    name: 'hole2',
+    source: sourceForIdx(V.hole2),
+    formula: "V_{191}: 10\\text{-mode polar radial}; r_1 \\text{ via shape switch};\\; \\text{inside }\\Rightarrow w/r_1, \\text{else } w r_1",
+    blurb: "Faber/Stefanov/Sidwell's hole2 — 10-mode polar radial generator. The `shape` switch picks among 10 different r₁ formulas (hole, hole1, double hole, heart, heart2, tan-fold, sin-modulated, sin-pi-sin, dual-sin). `inside` toggles inversion. Highly tunable target generator.",
+    params: [
+      { name: 'a',      default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'b',      default: 2.0, min: -3, max: 3, step: 0.05 },
+      { name: 'c',      default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'd',      default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'inside', default: 0,   min: 0,  max: 1, step: 1    },
+      { name: 'shape',  default: 0,   min: 0,  max: 9, step: 1    },
+    ],
+    // Multi-shape switch — provide warp for default shape=0.
+    warpFn: (x, y) => {
+      const a = 1, c = 1, d = 1;
+      const rhosq = x * x + y * y;
+      const theta = Math.atan2(y, x) * d;
+      const delta = Math.pow(Math.max(theta / Math.PI + 1, 1e-30), a) * c;
+      const r1 = Math.sqrt(Math.max(rhosq, 0)) + delta;
+      return [r1 * Math.cos(theta), r1 * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.lace_js,
+    name: 'lace_js',
+    source: sourceForIdx(V.lace_js),
+    formula: "V_{192}: \\text{4-way RNG branch picks one of 4 anchor-rotated radial projections}",
+    blurb: "Jesus Sosa's port of Paul Bourke's lace fractal. 4-way RNG branch picks one of 4 anchor-rotated radial projections at vertices (1, 0), (-½, √3/2), (-½, -√3/2), (0, 0). Produces hexagonal lace-like patterns.",
+    // RNG-only — no warpFn.
+  },
+  {
+    idx: V.julia_outside,
+    name: 'julia_outside',
+    source: sourceForIdx(V.julia_outside),
+    formula: "V_{193}: \\text{complex Möbius-style mapping with 3 modes and optional RNG sign flip}",
+    blurb: "Whittaker Courtney's julia_outside. 3-mode complex Möbius-style mapping using complex sqrt/sqr/div/inc/dec helpers. Modes select different sqrt/sqr application patterns; modes 0 and 1 add a 50/50 sign-flip via RNG. Produces Julia-set-like exterior patterns.",
+    params: [
+      { name: 're_div', default: 1.0, min: -5, max: 5, step: 0.05 },
+      { name: 'im_div', default: 0.0, min: -5, max: 5, step: 0.05 },
+      { name: 'mode',   default: 0,   min: 0,  max: 2, step: 1    },
+    ],
+    // RNG-using (modes 0+1) and complex math — no warpFn.
+  },
+  {
+    idx: V.fourth,
+    name: 'fourth',
+    source: sourceForIdx(V.fourth),
+    formula: "V_{194}: \\text{per-quadrant 4-way mix — Q-IV spherical, Q-I loonie, Q-III susan, Q-II linear}",
+    blurb: "guagapunyaimel's fourth — a per-quadrant 4-way variation mix. Q-IV (x>0, y>0) gets spherical inverse-r; Q-I (x>0, y<0) gets loonie r²-fold; Q-III (x<0, y>0) gets lazysusan-style spiral+spin; Q-II (x<0, y<0) gets linear passthrough. Produces a striking quadrant-divided composite.",
+    params: [
+      { name: 'spin',  default: Math.PI, min: -Math.PI * 2, max: Math.PI * 2, step: 0.05 },
+      { name: 'space', default: 0.10,    min: -1,   max: 1,   step: 0.05 },
+      { name: 'twist', default: 0.20,    min: -1,   max: 1,   step: 0.05 },
+      { name: 'x',     default: 0.30,    min: -2,   max: 2,   step: 0.05 },
+      { name: 'y',     default: 0.12,    min: -2,   max: 2,   step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const spin = Math.PI, space = 0.10, twist = 0.20, off_x = 0.30, off_y = 0.12;
+      const w = 1;
+      if (x > 0 && y > 0) {
+        const theta = Math.atan2(y, x);
+        const r = 1 / Math.max(Math.sqrt(x * x + y * y), 1e-30);
+        return [r * Math.cos(theta), r * Math.sin(theta)];
+      }
+      if (x > 0 && y < 0) {
+        const r2 = x * x + y * y;
+        if (r2 < w * w) {
+          const r = Math.sqrt(Math.max(w * w / Math.max(r2, 1e-30) - 1, 0));
+          return [r * x, r * y];
+        }
+        return [x, y];
+      }
+      if (x < 0 && y > 0) {
+        const xx = x - off_x, yy = y + off_y;
+        const r0 = Math.sqrt(xx * xx + yy * yy);
+        if (r0 < w) {
+          const theta = Math.atan2(yy, xx) + spin + twist * (w - r0);
+          return [r0 * Math.cos(theta) + off_x, r0 * Math.sin(theta) - off_y];
+        }
+        const r = 1 + space / Math.max(r0, 1e-30);
+        return [r * xx + off_x, r * yy - off_y];
+      }
+      return [x, y];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));
