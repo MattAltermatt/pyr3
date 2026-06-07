@@ -18,7 +18,7 @@
 // a tiny esbuild plugin that strips the `?raw` query and loads as text.
 
 import { build } from 'esbuild';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 
@@ -28,7 +28,7 @@ const REPO_ROOT = resolvePath(__dirname, '..');
 // Parametric allowlist. Future pyr3-animate / pyr3-genome land as additional
 // entries here; everything else (build script, esbuild config, WGSL plugin)
 // stays unchanged.
-const KNOWN_BINARIES = {
+export const KNOWN_BINARIES = {
   render: 'bin/pyr3-render.ts',
 };
 
@@ -48,14 +48,20 @@ const wgslRawPlugin = {
   },
 };
 
-async function main() {
-  const name = process.argv[2] ?? 'render';
+/**
+ * Bundle a pyr3 CLI entry into build/.tmp/pyr3-<name>.cjs. Returns the
+ * absolute output path so callers (scripts/build-cli.mjs) can hand it
+ * straight to a SEA pipeline without re-resolving.
+ *
+ * @param {string} name — one of KNOWN_BINARIES (default: "render")
+ * @returns {Promise<{outFile: string, sizeBytes: number, wallMs: number}>}
+ */
+export async function bundleCli(name = 'render') {
   const entry = KNOWN_BINARIES[name];
   if (!entry) {
-    console.error(
+    throw new Error(
       `bundle-cli: unknown binary "${name}". Known: ${Object.keys(KNOWN_BINARIES).join(', ')}`,
     );
-    process.exit(1);
   }
 
   const outDir = join(REPO_ROOT, 'build', '.tmp');
@@ -79,12 +85,23 @@ async function main() {
 
   const wallMs = performance.now() - t0;
   const sizeBytes = statSync(outFile).size;
-  const sizeMB = (sizeBytes / 1024 / 1024).toFixed(2);
-  console.log(`\n✅ ${outFile}`);
-  console.log(`   ${sizeMB} MB · bundled in ${wallMs.toFixed(0)} ms`);
+  return { outFile, sizeBytes, wallMs };
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Run as a script when invoked directly (npm run bundle:cli). When imported
+// as a module (build-cli.mjs), the body below is skipped.
+const invokedDirectly =
+  import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+if (invokedDirectly) {
+  const name = process.argv[2] ?? 'render';
+  bundleCli(name)
+    .then(({ outFile, sizeBytes, wallMs }) => {
+      const sizeMB = (sizeBytes / 1024 / 1024).toFixed(2);
+      console.log(`\n✅ ${outFile}`);
+      console.log(`   ${sizeMB} MB · bundled in ${wallMs.toFixed(0)} ms`);
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

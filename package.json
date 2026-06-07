@@ -24,6 +24,7 @@
     "typecheck:engine": "tsc --noEmit -p tsconfig.engine.json",
     "build:showcase": "node scripts/build-showcase.mjs",
     "bundle:cli": "node scripts/bundle-cli.mjs",
+    "build:cli": "node scripts/build-cli.mjs",
     "smoke:cli": "node scripts/smoke-bundled-cli.mjs",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
