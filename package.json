@@ -23,6 +23,7 @@
     "typecheck:bin": "tsc --noEmit -p tsconfig.bin.json",
     "typecheck:engine": "tsc --noEmit -p tsconfig.engine.json",
     "build:showcase": "node scripts/build-showcase.mjs",
+    "bundle:cli": "node scripts/bundle-cli.mjs",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
     "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts",
