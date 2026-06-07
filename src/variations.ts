@@ -323,6 +323,22 @@ export const V = {
   eclipse: 149,
   barycentroid: 150,
   chunk: 151,
+  // #121 L-tier batch L1 — JWildfire 2D long tail. All 2D-only,
+  // verified existing in thargor6/JWildfire/src/.../variation/.
+  // ennepers + erf are 0-param shapes (erf needs A&S 7.1.26 approx —
+  // JWildfire has no GPU code path for it). circus + asteria are
+  // small 1-param transforms (asteria uses 1 RNG call). clifford_js
+  // is the 4-param Clifford attractor (deterministic; JWildfire keeps
+  // the `_js` suffix). devil_warp is 6-param pow-warp with rmin/rmax
+  // clamp. voron is the largest WGSL — 5 params + DiscretNoise hash
+  // + 3×3 neighbor cell loop.
+  ennepers: 152,
+  erf: 153,
+  circus: 154,
+  asteria: 155,
+  clifford_js: 156,
+  devil_warp: 157,
+  voron: 158,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

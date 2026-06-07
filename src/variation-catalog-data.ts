@@ -2863,6 +2863,172 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [0, 0];
     },
   },
+  // ============================================================
+  // #121 batch L1 — JWildfire 2D long tail (V152..V158).
+  // ennepers (Raykoid666), erf (zephyrtronium / dark-beam), circus
+  // (Michael Faber), asteria (dark-beam), clifford_js (Paul Bourke /
+  // JWF), devil_warp (dark-beam), voron (eralex61). All 2D, all
+  // deterministic except asteria (1 RNG call per iter).
+  // ============================================================
+  {
+    idx: V.ennepers,
+    name: 'ennepers',
+    source: sourceForIdx(V.ennepers),
+    formula: 'V_{152}(x, y) = w\\,(x - x^3/3,\\; y - y^3/3) + (xy^2,\\; yx^2)',
+    blurb: 'Polynomial fold by Raykoid666 derived from the Enneper minimal surface 2D projection. The trailing (xy², yx²) coupling sits outside the amount multiplication — that\'s the JWildfire quirk; the result is a lattice-like distortion that pulls inward near origin and balloons at the extremes.',
+    warpFn: (x, y) => {
+      const w = 1.0;
+      const ox = w * (x - (x * x * x) / 3.0) + x * y * y;
+      const oy = w * (y - (y * y * y) / 3.0) + y * x * x;
+      return [ox, oy];
+    },
+  },
+  {
+    idx: V.erf,
+    name: 'erf',
+    source: sourceForIdx(V.erf),
+    formula: 'V_{153}(x, y) = w\\,(\\mathrm{erf}(x),\\; \\mathrm{erf}(y))',
+    blurb: 'Per-component error function by zephyrtronium (implemented by dark-beam). Smoothly saturates the coords toward ±1 as |x| or |y| grows past ~2; for |x|<1 acts roughly linearly. Pure squashing — no rotation, no shear.',
+    warpFn: (x, y) => {
+      // A&S 7.1.26 — same poly used in WGSL.
+      const erf = (z: number): number => {
+        const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+        const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+        const s = z >= 0 ? 1 : -1;
+        const az = Math.abs(z);
+        const t = 1.0 / (1.0 + p * az);
+        const poly = (((((a5 * t) + a4) * t + a3) * t + a2) * t + a1) * t;
+        return s * (1.0 - poly * Math.exp(-az * az));
+      };
+      return [erf(x), erf(y)];
+    },
+  },
+  {
+    idx: V.circus,
+    name: 'circus',
+    source: sourceForIdx(V.circus),
+    formula: "V_{154}(x, y) = w\\,r'\\,(\\cos a,\\; \\sin a),\\quad r' = \\begin{cases} r\\cdot s & r \\leq 1 \\\\ r / s & r > 1 \\end{cases}",
+    blurb: 'Polar dual-scale by Michael Faber. Inside the unit circle the radius is multiplied by `scale`; outside, by `1/scale`. The phase angle is preserved, so circles map to circles — but the inside-vs-outside discontinuity at r=1 produces a striking concentric-ring boundary.',
+    params: [
+      { name: 'scale', default: 0.92, min: 0.05, max: 2.0, step: 0.01 },
+    ],
+    warpFn: (x, y) => {
+      const scale = 0.92;
+      const scale_1 = 1.0 / scale;
+      const r = Math.sqrt(x * x + y * y);
+      const a = Math.atan2(y, x);
+      const r2 = r <= 1.0 ? r * scale : r * scale_1;
+      return [r2 * Math.cos(a), r2 * Math.sin(a)];
+    },
+  },
+  {
+    idx: V.asteria,
+    name: 'asteria',
+    source: sourceForIdx(V.asteria),
+    formula: 'V_{155}: \\text{rotate by }\\pi\\alpha,\\; \\text{project }x \\to x/\\sqrt{1-y^2}\\cdot(1 - \\sqrt{1-(1-|y|)^2}),\\; \\text{rotate back; or identity}',
+    blurb: 'Branchy fold by dark-beam. Tests whether the iterate is both inside the unit circle AND inside the diamond defined by (|x|-1)² + (|y|-1)² ≤ 1; when both fire, an RNG coin decides between identity passthrough and the asteria projection. Produces sharp four-pointed star silhouettes (the namesake) at α ≈ 0.1.',
+    params: [
+      // alpha=0 is a degenerate identity branch; default 0.1 surfaces
+      // the characteristic asteroid silhouette inside the sierpinski
+      // scaffold's extent per [[reference-pyr3-catalog-sierpinski-bias]].
+      { name: 'alpha', default: 0.1, min: -1, max: 1, step: 0.02 },
+    ],
+    // RNG-driven — no warpFn (catalog renders "warp not applicable" note).
+  },
+  {
+    idx: V.clifford_js,
+    name: 'clifford_js',
+    source: sourceForIdx(V.clifford_js),
+    formula: "V_{156}(x, y) = w\\,(\\sin(ay) + c\\cos(ax),\\; \\sin(bx) + d\\cos(by))",
+    blurb: "Paul Bourke's classic Clifford attractor, ported into JWildfire by Brad Stefanov. The 4 params (a, b, c, d) tune the sin/cos coupling between axes; at the canonical defaults (a=-1.4, b=1.6, c=1, d=0.7) the attractor traces dense, wing-shaped orbits.",
+    params: [
+      { name: 'a', default: -1.4, min: -3, max: 3, step: 0.05 },
+      { name: 'b', default:  1.6, min: -3, max: 3, step: 0.05 },
+      { name: 'c', default:  1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'd', default:  0.7, min: -3, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const a = -1.4, b = 1.6, c = 1.0, d = 0.7;
+      const nx = Math.sin(a * y) + c * Math.cos(a * x);
+      const ny = Math.sin(b * x) + d * Math.cos(b * y);
+      return [nx, ny];
+    },
+  },
+  {
+    idx: V.devil_warp,
+    name: 'devil_warp',
+    source: sourceForIdx(V.devil_warp),
+    formula: "V_{157}: r = (x^2 + r_2 b y^2)^{warp} - (y^2 + r_2 a x^2)^{warp},\\; r_2 = 1/(x^2+y^2),\\; \\text{emit }p\\cdot(1 + e\\,\\mathrm{clamp}(r))",
+    blurb: 'Radial pow-warp by dark-beam. Computes a pair of pow-weighted radial terms and uses their difference to scale the iterate outward (positive r) or inward (negative r). The rmin/rmax clamp keeps the warp bounded; `effect` is a global gain. Produces wing-shaped or curl-tendril textures depending on a/b/warp.',
+    params: [
+      { name: 'a',      default:  2.0,   min: -3,  max: 3,   step: 0.05 },
+      { name: 'b',      default:  1.0,   min: -3,  max: 3,   step: 0.05 },
+      { name: 'effect', default:  1.0,   min: -3,  max: 3,   step: 0.05 },
+      { name: 'warp',   default:  0.5,   min: -2,  max: 2,   step: 0.05 },
+      { name: 'rmin',   default: -0.24,  min: -5,  max: 5,   step: 0.05 },
+      { name: 'rmax',   default:  100.0, min: 1,   max: 200, step: 1    },
+    ],
+    warpFn: (x, y) => {
+      const a = 2.0, b = 1.0, effect = 1.0, warp = 0.5, rmin = -0.24, rmax = 100.0;
+      const rsum = Math.max(x * x + y * y, 1e-30);
+      const r2 = 1.0 / rsum;
+      const baseA = x * x + r2 * b * y * y;
+      const baseB = y * y + r2 * a * x * x;
+      const powA = baseA > 0 ? Math.pow(baseA, warp) : 0;
+      const powB = baseB > 0 ? Math.pow(baseB, warp) : 0;
+      let r = powA - powB;
+      r = Math.min(rmax, Math.max(rmin, r));
+      r = effect * r;
+      return [x * (1.0 + r), y * (1.0 + r)];
+    },
+  },
+  {
+    idx: V.voron,
+    name: 'voron',
+    source: sourceForIdx(V.voron),
+    formula: 'V_{158}: \\text{find nearest jittered cell center }(X_0, Y_0)\\text{ in }3\\times 3\\text{ neighborhood},\\; \\text{emit }(k(x-X_0)+X_0,\\; k(y-Y_0)+Y_0)\\cdot w',
+    blurb: 'Voronoi cell distance field by eralex61. Hashes each grid cell deterministically into 1..num jittered "site" points; the iterate is pulled toward the nearest site by `(1-k)` and emitted on the other side scaled by `k`. Produces irregular Voronoi-tile textures with cell sizes set by `step`.',
+    params: [
+      { name: 'k',     default: 0.99, min: -1, max: 2,  step: 0.01 },
+      // step=0.5 (was JWildfire 0.25) — wider cells ensure the
+      // sierpinski scaffold's extent ≈ 1 spans at least one cell
+      // boundary per [[reference-pyr3-catalog-sierpinski-bias]].
+      { name: 'step',  default: 0.5,  min: 0.05, max: 2, step: 0.05 },
+      { name: 'num',   default: 1,    min: 1,  max: 25, step: 1    },
+      { name: 'xseed', default: 3,    min: 1,  max: 999, step: 1   },
+      { name: 'yseed', default: 7,    min: 1,  max: 999, step: 1   },
+    ],
+    warpFn: (x, y) => {
+      const k = 0.99, step = 0.5, num = 1, xseed = 3, yseed = 7;
+      // Pure i32 hash mirroring discret_noise_voron in chaos.wgsl.
+      const discret = (n: number): number => {
+        let s = (n << 13) ^ n;
+        // JS 32-bit i32 ops via |0 + Math.imul wrap correctly.
+        const inner = Math.imul(s, s);
+        const inner2 = Math.imul(inner, 15731) + 789221;
+        const r = (Math.imul(s, inner2) + 1376312589) & 0x7fffffff;
+        return r * (1.0 / 2147483647.0);
+      };
+      const M = Math.floor(x / step);
+      const N = Math.floor(y / step);
+      let rmin = 20.0, X0 = 0.0, Y0 = 0.0;
+      for (let i = -1; i < 2; i++) {
+        const M1 = M + i;
+        for (let j = -1; j < 2; j++) {
+          const N1 = N + j;
+          const K = 1 + Math.floor(num * discret(19 * M1 + 257 * N1 + xseed));
+          for (let l = 0; l < K; l++) {
+            const X = (discret(l + 64 * M1 + 15 * N1 + xseed) + M1) * step;
+            const Y = (discret(l + 21 * M1 + 33 * N1 + yseed) + N1) * step;
+            const ox = x - X, oy = y - Y;
+            const r = Math.sqrt(ox * ox + oy * oy);
+            if (r < rmin) { rmin = r; X0 = X; Y0 = Y; }
+          }
+        }
+      }
+      return [k * (x - X0) + X0, k * (y - Y0) + Y0];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

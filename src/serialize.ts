@@ -245,6 +245,14 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   eclipse: ['shift'],
   barycentroid: ['a', 'b', 'c', 'd'],
   chunk: ['a', 'b', 'c', 'd', 'e', 'f', 'mode'],
+  // #121 L-tier batch L1 — JWildfire 2D long tail. ennepers + erf
+  // are 0-param (no entries needed; absence means "no params").
+  // JWildfire param names verbatim where applicable.
+  circus: ['scale'],
+  asteria: ['alpha'],
+  clifford_js: ['a', 'b', 'c', 'd'],
+  devil_warp: ['a', 'b', 'effect', 'warp', 'rmin', 'rmax'],
+  voron: ['k', 'step', 'num', 'xseed', 'yseed'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -398,6 +406,17 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // gate's center off-origin, producing a visually striking sierpinski-
   // clustered pattern rather than the boring full unit disc.
   chunk: [1.0, 0.0, 1.0, 0.0, 0.35, -0.65, 0],           // a, b, c, d, e, f, mode
+  // #121 L-tier batch L1 — JWildfire 2D long tail. Defaults match
+  // JWildfire's per-variation init values (asteria/clifford_js/
+  // devil_warp/voron carry meaningful non-zero defaults). circus
+  // default 0.92 = JWildfire default. ennepers + erf are 0-param
+  // (no entries needed). voron `num`/`xseed`/`yseed` are int — clamped
+  // at unpack inside the WGSL kernel.
+  circus: [0.92],                                        // scale=0.92
+  asteria: [0.0],                                        // alpha=0 (JWildfire default; catalog default RETUNES to 0.1)
+  clifford_js: [-1.4, 1.6, 1.0, 0.7],                    // a, b, c, d — JWildfire defaults (classic Clifford attractor)
+  devil_warp: [2.0, 1.0, 1.0, 0.5, -0.24, 100.0],        // a, b, effect, warp, rmin, rmax — JWildfire defaults
+  voron: [0.99, 0.25, 1, 3, 7],                          // k, step=0.25, num=1, xseed=3, yseed=7 — JWildfire defaults (catalog default RETUNES step→0.5)
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

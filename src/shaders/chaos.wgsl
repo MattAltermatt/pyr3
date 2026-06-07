@@ -3356,6 +3356,197 @@ fn var_chunk(
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L1 — JWildfire 2D long tail (7 vars). Sources: EnnepersFunc
+// (Raykoid666), ErfFunc (zephyrtronium / dark-beam), CircusFunc (Michael
+// Faber), AsteriaFunc (dark-beam), CliffordFunc (Paul Bourke / JWF as
+// clifford_js), DevilWarpFunc (dark-beam), VoronFunc (eralex61). All
+// LGPL-2.1+, NOTICE.md. ennepers/erf/circus/clifford_js/devil_warp/voron
+// are deterministic; asteria uses 1 RNG call per iter (branch decision).
+// ---------------------------------------------------------------------
+
+// ennepers — Raykoid666. 0 params. Polynomial fold derived from the
+// Enneper minimal surface 2D projection. JWildfire's source uses `=`
+// (overwrite) but pyr3's accumulating model ports the RHS as the
+// contribution. The trailing `+ x·y²` term sits OUTSIDE the amount
+// multiplication — that's the JWildfire quirk; reproduce verbatim.
+fn var_ennepers(p: vec2f, w: f32) -> vec2f {
+  let xx = p.x;
+  let yy = p.y;
+  let ox = w * (xx - (xx * xx * xx) / 3.0) + xx * yy * yy;
+  let oy = w * (yy - (yy * yy * yy) / 3.0) + yy * xx * xx;
+  return vec2f(ox, oy);
+}
+
+// erf — zephyrtronium / dark-beam. 0 params. Per-component error
+// function. JWildfire ships no GPU code path for this; we port the
+// CPU semantics. WGSL has no `erf` built-in — use Abramowitz & Stegun
+// 7.1.26 approximation (5-term polynomial × sign(x), max abs error
+// ≈ 1.5e-7, more than enough for visual work).
+fn erf_approx(x: f32) -> f32 {
+  let a1: f32 =  0.254829592;
+  let a2: f32 = -0.284496736;
+  let a3: f32 =  1.421413741;
+  let a4: f32 = -1.453152027;
+  let a5: f32 =  1.061405429;
+  let pp: f32 =  0.3275911;
+  let s = select(-1.0, 1.0, x >= 0.0);
+  let ax = abs(x);
+  let t = 1.0 / (1.0 + pp * ax);
+  let poly = (((((a5 * t) + a4) * t + a3) * t + a2) * t + a1) * t;
+  let y = 1.0 - poly * exp(-ax * ax);
+  return s * y;
+}
+fn var_erf(p: vec2f, w: f32) -> vec2f {
+  return vec2f(w * erf_approx(p.x), w * erf_approx(p.y));
+}
+
+// circus — Michael Faber. 1 param (scale). Polar transform with an
+// inside/outside r=1 branch — radius gets multiplied by `scale` if
+// the iterate is inside the unit circle, else by `1/scale`. Phase
+// angle is preserved. Deterministic.
+fn var_circus(p: vec2f, w: f32, scale: f32) -> vec2f {
+  // Bake reciprocal at the callsite; if scale==0 the inside branch
+  // collapses to origin (matches JWildfire's bare divide).
+  let scale_1 = select(1.0 / scale, 1e30, scale == 0.0);
+  let r = sqrt(p.x * p.x + p.y * p.y);
+  let a = atan2(p.y, p.x);
+  let s = sin(a);
+  let c = cos(a);
+  let r_scaled = select(r * scale_1, r * scale, r <= 1.0);
+  return vec2f(w * r_scaled * c, w * r_scaled * s);
+}
+
+// asteria — dark-beam. 1 param (alpha, units of π radians for the
+// rotation). Branchy geometry: tests both `r < 1` (inside unit circle)
+// and `r2 < 1` (where r2 = √((|x|−1)² + (|y|−1)²)) — when both fire,
+// flips a single RNG; otherwise inverts in1. Two output branches:
+// identity (linear · amount) or the asteria geometry: rotate the
+// iterate by α, project via nx = xx/√(1−yy²) · (1 − √(1−(1−|yy|)²)),
+// rotate back by −α.
+fn var_asteria(p: vec2f, w: f32, alpha: f32, wi: u32) -> vec2f {
+  let sina = sin(PI * alpha);
+  let cosa = cos(PI * alpha);
+  let x0 = w * p.x;
+  let y0 = w * p.y;
+  var xx = x0;
+  var yy = y0;
+  let r = xx * xx + yy * yy;
+  xx = (abs(xx) - 1.0) * (abs(xx) - 1.0);
+  yy = (abs(yy) - 1.0) * (abs(yy) - 1.0);
+  let r2 = sqrt(yy + xx);
+  let in1_initial = r < 1.0;
+  let out2 = r2 < 1.0;
+  var in1: bool;
+  if (in1_initial && out2) {
+    in1 = rand01(wi) > 0.35;
+  } else {
+    in1 = !in1_initial;
+  }
+  if (in1) {
+    return vec2f(x0, y0);
+  }
+  // Asteria branch — yy lives in [-1, 1] after rotation, but sqrt
+  // domain guards prevent NaN at the edges. JWildfire has no guards;
+  // we add `max(..., 0)` to stay finite under f32 rounding.
+  let rxx = x0 * cosa - y0 * sina;
+  let ryy = x0 * sina + y0 * cosa;
+  let denom = sqrt(max(1.0 - ryy * ryy, 1e-30));
+  let inner = max(1.0 - (-abs(ryy) + 1.0) * (-abs(ryy) + 1.0), 0.0);
+  let nx = rxx / denom * (1.0 - sqrt(inner));
+  let oxx = nx * cosa + ryy * sina;
+  let oyy = -nx * sina + ryy * cosa;
+  return vec2f(oxx, oyy);
+}
+
+// clifford_js — Paul Bourke's Clifford attractor, ported into
+// JWildfire by Brad Stefanov. 4 params (a, b, c, d). Pure 2D map:
+//   x' = sin(a·y) + c·cos(a·x)
+//   y' = sin(b·x) + d·cos(b·y)
+// All trig args are bounded under the typical |p|·|coef| ≤ 5 product —
+// well under SIN_SAFE_MAX=1e6, so raw sin/cos are fine here.
+fn var_clifford_js(p: vec2f, w: f32, a: f32, b: f32, c: f32, d: f32) -> vec2f {
+  let nx = sin(a * p.y) + c * cos(a * p.x);
+  let ny = sin(b * p.x) + d * cos(b * p.y);
+  return vec2f(w * nx, w * ny);
+}
+
+// devil_warp — dark-beam. 6 params (a, b, effect, warp, rmin, rmax).
+// Radial pow-warp anchored at origin: computes
+//   r2 = 1 / (x² + y²)
+//   r = pow(x² + r2·b·y², warp) − pow(y² + r2·a·x², warp)
+// then clamps r ∈ [rmin, rmax] and scales by `effect`. Output:
+//   (x·(1+r), y·(1+r)) — no amount-multiply on the output (matches
+// JWildfire). The pow base can be negative when `warp` is fractional
+// → returns 0 in WGSL (pow(neg, frac) is undefined; we accept the
+// JWildfire-equivalent behavior under f32 here). Guard 1/(x²+y²)
+// with a floor per [[reference-dawn-f32-ftz-cliff]].
+fn var_devil_warp(
+  p: vec2f, w: f32,
+  a: f32, b: f32, effect: f32, warp: f32, rmin: f32, rmax: f32,
+) -> vec2f {
+  let xx = p.x;
+  let yy = p.y;
+  let rsum = max(xx * xx + yy * yy, 1e-30);
+  let r2 = 1.0 / rsum;
+  let base_a = xx * xx + r2 * b * yy * yy;
+  let base_b = yy * yy + r2 * a * xx * xx;
+  let pow_a = select(0.0, pow(base_a, warp), base_a > 0.0);
+  let pow_b = select(0.0, pow(base_b, warp), base_b > 0.0);
+  var r = pow_a - pow_b;
+  r = clamp(r, rmin, rmax);
+  r = effect * r;
+  return vec2f(xx * (1.0 + r), yy * (1.0 + r));
+}
+
+// voron — eralex61. 5 params (k, step, num, xseed, yseed). Voronoi
+// cell distance field with deterministic-jitter cell centers. Worst
+// case is 9 cells × 25 jitter pts = 225 sqrt ops per iter; default
+// num=1 collapses to 9 sqrt. DiscretNoise is a pure i32 hash
+// (Marsaglia-style xor-shift + LCG) → returns [0, 1].
+fn discret_noise_voron(x: i32) -> f32 {
+  let s: i32 = (x << 13) ^ x;
+  // Match JWildfire's (n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff
+  // i32 arithmetic — wrapping mul is fine since we mask afterward.
+  let r: i32 = ((s * (s * s * 15731 + 789221) + 1376312589) & 0x7fffffff);
+  return f32(r) * (1.0 / 2147483647.0);
+}
+fn var_voron(
+  p: vec2f, w: f32,
+  k: f32, step: f32, num_f: f32, xseed_f: f32, yseed_f: f32,
+) -> vec2f {
+  let xseed = i32(xseed_f);
+  let yseed = i32(yseed_f);
+  let num = clamp(i32(num_f), 1, 25);
+  let step_safe = select(step, 1e-30, step == 0.0);
+  let M = i32(floor(p.x / step_safe));
+  let N = i32(floor(p.y / step_safe));
+  var rmin: f32 = 20.0;
+  var X0: f32 = 0.0;
+  var Y0: f32 = 0.0;
+  for (var i: i32 = -1; i < 2; i = i + 1) {
+    let M1 = M + i;
+    for (var j: i32 = -1; j < 2; j = j + 1) {
+      let N1 = N + j;
+      let kx = 1 + i32(floor(num_f * discret_noise_voron(19 * M1 + 257 * N1 + xseed)));
+      let K = clamp(kx, 1, 26);  // worst-case 1 + 25 = 26
+      for (var l: i32 = 0; l < K; l = l + 1) {
+        let X = (discret_noise_voron(l + 64 * M1 + 15 * N1 + xseed) + f32(M1)) * step;
+        let Y = (discret_noise_voron(l + 21 * M1 + 33 * N1 + yseed) + f32(N1)) * step;
+        let ox = p.x - X;
+        let oy = p.y - Y;
+        let r = sqrt(ox * ox + oy * oy);
+        if (r < rmin) {
+          rmin = r;
+          X0 = X;
+          Y0 = Y;
+        }
+      }
+    }
+  }
+  return vec2f(w * (k * (p.x - X0) + X0), w * (k * (p.y - Y0) + Y0));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -3550,6 +3741,13 @@ fn apply_variation(
     case 149u: { return var_eclipse(p, w, p0); }
     case 150u: { return var_barycentroid(p, w, p0, p1, p2, p3); }
     case 151u: { return var_chunk(p, w, p0, p1, p2, p3, p4, p5, p6); }
+    case 152u: { return var_ennepers(p, w); }
+    case 153u: { return var_erf(p, w); }
+    case 154u: { return var_circus(p, w, p0); }
+    case 155u: { return var_asteria(p, w, p0, wi); }
+    case 156u: { return var_clifford_js(p, w, p0, p1, p2, p3); }
+    case 157u: { return var_devil_warp(p, w, p0, p1, p2, p3, p4, p5); }
+    case 158u: { return var_voron(p, w, p0, p1, p2, p3, p4); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
