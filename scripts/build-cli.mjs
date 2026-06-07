@@ -20,9 +20,117 @@
 // pyr3-animate / pyr3-genome binaries are free once their KNOWN_BINARIES
 // entry lands in bundle-cli.mjs.
 
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, join, resolve as resolvePath } from 'node:path';
+import {
+  writeFileSync,
+  copyFileSync,
+  chmodSync,
+  statSync,
+  mkdirSync,
+  existsSync,
+  rmSync,
+} from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { platform, homedir } from 'node:os';
 
 import { bundleCli, KNOWN_BINARIES } from './bundle-cli.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolvePath(__dirname, '..');
+
+// postject sentinel — required by Node SEA to find the blob slot. Don't
+// change unless the Node SEA spec changes.
+const SEA_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
+
+// Pinned Node version used when the host Node lacks the SEA fuse sentinel
+// (notably Homebrew's Node, which strips it). Auto-downloaded to
+// ~/.cache/pyr3/node and reused across builds. Bump this with intent.
+const PINNED_NODE_VERSION = 'v26.0.0';
+
+function isMacOS() {
+  return platform() === 'darwin';
+}
+
+function run(cmd, args, opts = {}) {
+  execFileSync(cmd, args, { stdio: 'inherit', ...opts });
+}
+
+/** True if the given binary contains the SEA fuse sentinel (postject can inject into it). */
+function hasSeaFuse(nodePath) {
+  try {
+    const count = execFileSync('grep', ['-aoc', SEA_FUSE, nodePath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .toString()
+      .trim();
+    return parseInt(count, 10) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function nodejsOrgArtifact() {
+  const plat = platform();
+  const arch = process.arch;
+  if (plat === 'darwin' && arch === 'arm64') {
+    return { name: `node-${PINNED_NODE_VERSION}-darwin-arm64`, ext: 'tar.gz' };
+  }
+  if (plat === 'darwin' && arch === 'x64') {
+    return { name: `node-${PINNED_NODE_VERSION}-darwin-x64`, ext: 'tar.gz' };
+  }
+  if (plat === 'linux' && arch === 'x64') {
+    return { name: `node-${PINNED_NODE_VERSION}-linux-x64`, ext: 'tar.xz' };
+  }
+  if (plat === 'linux' && arch === 'arm64') {
+    return { name: `node-${PINNED_NODE_VERSION}-linux-arm64`, ext: 'tar.xz' };
+  }
+  throw new Error(
+    `build-cli: unsupported platform/arch: ${plat}/${arch}. ` +
+      `Supported: darwin-arm64, darwin-x64, linux-x64, linux-arm64.`,
+  );
+}
+
+/**
+ * Return the path to a Node binary with SEA fuse support, downloading + caching
+ * the official nodejs.org build on first use if the host Node lacks the fuse
+ * (e.g. Homebrew Node, which strips it). Idempotent across builds.
+ */
+async function ensureFusedNode() {
+  if (hasSeaFuse(process.execPath)) {
+    return process.execPath;
+  }
+
+  const { name, ext } = nodejsOrgArtifact();
+  const cacheRoot = join(homedir(), '.cache', 'pyr3', 'node');
+  const artifactDir = join(cacheRoot, name);
+  const cachedNode = join(artifactDir, 'bin', 'node');
+
+  if (existsSync(cachedNode) && hasSeaFuse(cachedNode)) {
+    return cachedNode;
+  }
+
+  console.log(
+    `📥 System Node (${process.execPath}) lacks SEA fuse — downloading ${name} …`,
+  );
+  mkdirSync(cacheRoot, { recursive: true });
+  const tarballPath = join(cacheRoot, `${name}.${ext}`);
+  const tarballUrl = `https://nodejs.org/dist/${PINNED_NODE_VERSION}/${name}.${ext}`;
+
+  run('curl', ['-fsSL', '-o', tarballPath, tarballUrl]);
+  run('tar', ['-xf', tarballPath, '-C', cacheRoot]);
+  rmSync(tarballPath);
+
+  if (!hasSeaFuse(cachedNode)) {
+    throw new Error(
+      `build-cli: extracted Node still lacks SEA fuse: ${cachedNode}. ` +
+        `Likely platform mismatch — please file an issue.`,
+    );
+  }
+
+  console.log(`   ✓ cached at ${cachedNode}`);
+  return cachedNode;
+}
 
 async function buildCli(name) {
   if (!KNOWN_BINARIES[name]) {
@@ -31,20 +139,82 @@ async function buildCli(name) {
     );
   }
 
+  // ── 1. Bundle (T1, #125) ─────────────────────────────────────────────
   console.log(`📦 Bundling bin/pyr3-${name}.ts → CJS …`);
   const { outFile: cjsPath, sizeBytes: cjsBytes, wallMs: bundleMs } = await bundleCli(name);
   const cjsMB = (cjsBytes / 1024 / 1024).toFixed(2);
   console.log(`   ✓ ${cjsMB} MB (${bundleMs.toFixed(0)} ms)`);
 
-  // ── T6 — Node SEA pipeline (sea-prep.blob + postject + codesign) ─────
-  // ── T7 — Dawn .node embedded as SEA asset + runtime extraction ────────
-  // Both pending — for now, the bundled CJS is the artifact and can be run
-  // as `node build/.tmp/pyr3-<name>.cjs ...`. The standalone binary at
-  // build/pyr3-<name> arrives in T6+T7.
+  const buildDir = join(REPO_ROOT, 'build');
+  const tmpDir = join(buildDir, '.tmp');
+  mkdirSync(tmpDir, { recursive: true });
+  const binPath = join(buildDir, `pyr3-${name}`);
+  const seaConfigPath = join(tmpDir, `sea-config-${name}.json`);
+  const seaBlobPath = join(tmpDir, `sea-prep-${name}.blob`);
 
-  console.log(`\n⏳ T6 (SEA wrap) + T7 (Dawn asset) — not yet implemented.`);
-  console.log(`   For now run the bundled CJS directly:`);
-  console.log(`     node ${cjsPath} <input.flam3 | input.pyr3.json> [output.png]`);
+  // ── 2. sea-config.json ───────────────────────────────────────────────
+  // T7 will add an `assets` field here for the Dawn .node binding.
+  const seaConfig = {
+    main: cjsPath,
+    output: seaBlobPath,
+    disableExperimentalSEAWarning: true,
+    useSnapshot: false,
+    useCodeCache: false,
+  };
+  writeFileSync(seaConfigPath, JSON.stringify(seaConfig, null, 2));
+
+  // ── 3. Generate sea-prep.blob ───────────────────────────────────────
+  console.log('🔧 Generating SEA blob …');
+  run(process.execPath, ['--experimental-sea-config', seaConfigPath]);
+
+  // ── 4. Resolve a Node binary with SEA fuse support, then copy ───────
+  // Homebrew Node 26 strips the SEA fuse sentinel; official nodejs.org
+  // Node ships it. ensureFusedNode() handles auto-download + cache.
+  const fusedNode = await ensureFusedNode();
+  console.log(`📋 Copying ${fusedNode} → ${binPath} …`);
+  copyFileSync(fusedNode, binPath);
+  chmodSync(binPath, 0o755);
+
+  // ── 5. macOS: strip existing signature (postject needs an unsigned binary) ─
+  if (isMacOS()) {
+    console.log('🔓 Stripping existing macOS signature …');
+    try {
+      execFileSync('codesign', ['--remove-signature', binPath], { stdio: 'pipe' });
+    } catch {
+      // Already unsigned — no-op.
+    }
+  }
+
+  // ── 6. postject the blob ─────────────────────────────────────────────
+  console.log('💉 Injecting SEA blob …');
+  const postjectArgs = [
+    'postject',
+    binPath,
+    'NODE_SEA_BLOB',
+    seaBlobPath,
+    '--sentinel-fuse',
+    SEA_FUSE,
+  ];
+  if (isMacOS()) {
+    // macOS Mach-O requires the segment name for the injected resource.
+    postjectArgs.push('--macho-segment-name', 'NODE_SEA');
+  }
+  run('npx', postjectArgs);
+
+  // ── 7. macOS: ad-hoc re-sign ─────────────────────────────────────────
+  if (isMacOS()) {
+    console.log('🔏 Ad-hoc codesigning …');
+    execFileSync('codesign', ['--sign', '-', binPath], { stdio: 'pipe' });
+  }
+
+  // ── 8. Result ───────────────────────────────────────────────────────
+  const binSize = statSync(binPath).size;
+  const binMB = (binSize / 1024 / 1024).toFixed(1);
+  console.log(`\n✅ ${binPath}`);
+  console.log(`   ${binMB} MB (Node runtime + bundled JS)`);
+  console.log('');
+  console.log('   ⏳ T7 (Dawn .node SEA asset) still pending — binary will fail');
+  console.log('      at runtime with "Cannot find module \'webgpu\'" until then.');
 }
 
 const invokedDirectly =
