@@ -263,6 +263,12 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   bcollide: ['num', 'a'],
   bsplit: ['x', 'y'],
   bulge: ['N'],
+  // #121 L-tier batch L3 — circleblur is 0-param (no entry needed).
+  // JWildfire param names verbatim except where pyr3 convention differs.
+  checks: ['x', 'y', 'size', 'rnd'],
+  circular: ['angle', 'seed'],
+  circular2: ['angle', 'seed', 'xx', 'yy'],
+  corners: ['x', 'y', 'mult_x', 'mult_y', 'x_power', 'y_power', 'xy_power_add', 'log_mode', 'log_base'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -434,6 +440,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   bcollide: [1, 0.0],                                    // num=1, a=0 — Faber defaults (catalog RETUNES num for visibility)
   bsplit: [0.0, 0.0],                                    // x=0, y=0 — Raykoid666 defaults (catalog RETUNES for visibility)
   bulge: [2.0],                                          // N=2 — quadratic radial bulge
+  // #121 L-tier batch L3 — JWildfire init values verbatim.
+  checks: [3.0, 3.0, 1.0, 0.5],                          // x, y, size, rnd
+  circular: [90.0, 0.0],                                 // angle (deg), seed
+  circular2: [90.0, 0.0, 12.9898, 78.233],               // angle, seed, xx, yy
+  corners: [1.0, 1.0, 1.0, 1.0, 0.75, 0.75, 0, 0, 2.71828],  // x, y, mult_x/y, x/y_power, xy_power_add, log_mode, log_base
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

@@ -3672,6 +3672,117 @@ fn var_bulge(p: vec2f, w: f32, n: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L3 — JWildfire 2D continuing (5 vars). Sources: ChecksFunc
+// (Keeps + Xyrus02), CircularFunc + Circular2Func (Tatyana Zabanova
+// via Brad Stefanov), CornersFunc (Whittaker Courtney), CircleBlurFunc
+// (Zyorg). All LGPL-2.1+, NOTICE.md. checks/circular/circular2 use
+// RNG (1-2 calls per iter); corners is deterministic; circleblur is
+// a 2-RNG-call base shape (uniform disc sample).
+// ---------------------------------------------------------------------
+
+// checks — Keeps + Xyrus02 checkered pattern. 4 params (x, y, size, rnd).
+// rounds the iterate to a cell index, alternates between two offset
+// schemes based on (round(x/size) + round(y/size)) parity. Adds a
+// per-axis random jitter `rnd` to soften the cell edges. EPSILON guard
+// on size matches JWildfire's 1/(size+EPSILON) precalc.
+fn var_checks(p: vec2f, w: f32, cx: f32, cy: f32, size: f32, rnd: f32, wi: u32) -> vec2f {
+  let cs = 1.0 / (size + 1e-6);
+  let ncx = -cx;
+  let ncy = -cy;
+  // WGSL has no `rint` built-in; round() is round-half-away-from-zero,
+  // close enough for the alternation check.
+  let is_xy = i32(round(p.x * cs)) + i32(round(p.y * cs));
+  let rnx = rnd * rand01(wi);
+  let rny = rnd * rand01(wi);
+  var dx: f32;
+  var dy: f32;
+  if ((is_xy & 1) == 0) {
+    dx = ncx + rnx;
+    dy = ncy;
+  } else {
+    dx = cx;
+    dy = cy + rny;
+  }
+  return vec2f(w * (p.x + dx), w * (p.y + dy));
+}
+
+// circular — Tatyana Zabanova's hash-jitter circular rotation
+// (transcribed by Brad Stefanov). 2 params (angle deg, seed). Computes
+// a deterministic spatial-hash `aux ∈ [0, 1]` from (x, y, seed), adds
+// a per-iter RNG sample, scales by 2·angle·(π/180), and applies that
+// as a polar rotation. The hash term breaks chaos-pattern repetition.
+fn var_circular(p: vec2f, w: f32, angle_deg: f32, seed: f32, wi: u32) -> vec2f {
+  let c_a = angle_deg * PI / 180.0;
+  // GLSL-style spatial-hash trick: sin(x·k1 + y·k2 + seed) * big_const.
+  // Reduce range via subtract-floor to get a [0, 1] fractional.
+  let aux_raw = sin(p.x * 12.9898 + p.y * 78.233 + seed) * 43758.5453;
+  let aux = aux_raw - floor(aux_raw);
+  let rnd = (2.0 * (rand01(wi) + aux) - 2.0) * c_a;
+  let rad = sqrt(p.x * p.x + p.y * p.y);
+  let ang = atan2(p.y, p.x);
+  let by = sin(ang + rnd);
+  let bx = cos(ang + rnd);
+  return vec2f(w * bx * rad, w * by * rad);
+}
+
+// circular2 — Tatyana Zabanova's circular with exposed hash constants.
+// 4 params (angle deg, seed, xx, yy). Same algorithm as circular but
+// the (12.9898, 78.233) hash multipliers are user-controllable —
+// changes the spatial frequency of the jitter pattern.
+fn var_circular2(p: vec2f, w: f32, angle_deg: f32, seed: f32, xx: f32, yy: f32, wi: u32) -> vec2f {
+  let c_a = angle_deg * PI / 180.0;
+  let aux_raw = sin(p.x * xx + p.y * yy + seed) * 43758.5453;
+  let aux = aux_raw - floor(aux_raw);
+  let rnd = (2.0 * (rand01(wi) + aux) - 2.0) * c_a;
+  let rad = sqrt(p.x * p.x + p.y * p.y);
+  let ang = atan2(p.y, p.x);
+  return vec2f(w * cos(ang + rnd) * rad, w * sin(ang + rnd) * rad);
+}
+
+// corners — Whittaker Courtney. 9 params (x, y, mult_x, mult_y,
+// x_power, y_power, xy_power_add, log_mode, log_base). Computes a
+// power-law warp on (xs, ys) = (x², y²) and adds it with sign flipped
+// by input-x/y sign, plus a constant x/y offset. log_mode=0 uses raw
+// pow; log_mode=1 wraps with log_base. Deterministic.
+fn var_corners(
+  p: vec2f, w: f32,
+  cx: f32, cy: f32, mult_x: f32, mult_y: f32,
+  x_power: f32, y_power: f32, xy_power_add: f32,
+  log_mode: f32, log_base: f32,
+) -> vec2f {
+  let xs = p.x * p.x;
+  let ys = p.y * p.y;
+  var ex: f32;
+  var ey: f32;
+  if (log_mode == 0.0) {
+    ex = pow(max(xs, 0.0), x_power + xy_power_add) * mult_x;
+    ey = pow(max(ys, 0.0), y_power + xy_power_add) * mult_y;
+  } else {
+    // log_base must be > 0 and != 1 — guard the base.
+    let lb = log(max(abs(log_base), 1.000001));
+    ex = pow(log((xs * mult_x) + 3.0) / lb, x_power + 2.25 + xy_power_add) - 1.33;
+    ey = pow(log((ys * mult_y) + 3.0) / lb, y_power + 2.25 + xy_power_add) - 1.33;
+  }
+  // sign-flip branch on input (x, y) — keeps the corners' anti-symmetric
+  // shape. ex/ey already include the amount-multiply; the +cx/+cy const
+  // offset is added raw (matches JWildfire exactly).
+  let ox = select(-w * ex - cx, w * ex + cx, p.x > 0.0);
+  let oy = select(-w * ey - cy, w * ey + cy, p.y > 0.0);
+  return vec2f(ox, oy);
+}
+
+// circleblur — Zyorg's uniform disc sampler. 0 params. Pure RNG base
+// shape: rad ∈ [0, 1] sampled via sqrt(uniform) (correct disc-uniform
+// sampling), angle uniform in [0, 2π]. Output the (cos θ, sin θ) · rad
+// scaled by amount. Input (x, y) is ignored — it's a "base shape"
+// variation (like noise, blur, circleblur is the disc version).
+fn var_circleblur(p: vec2f, w: f32, wi: u32) -> vec2f {
+  let rad = sqrt(rand01(wi));
+  let a = rand01(wi) * 2.0 * PI;
+  return vec2f(w * cos(a) * rad, w * sin(a) * rad);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -3880,6 +3991,11 @@ fn apply_variation(
     case 163u: { return var_bcollide(p, w, p0, p1); }
     case 164u: { return var_bsplit(p, w, p0, p1); }
     case 165u: { return var_bulge(p, w, p0); }
+    case 166u: { return var_checks(p, w, p0, p1, p2, p3, wi); }
+    case 167u: { return var_circular(p, w, p0, p1, wi); }
+    case 168u: { return var_circular2(p, w, p0, p1, p2, p3, wi); }
+    case 169u: { return var_corners(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8); }
+    case 170u: { return var_circleblur(p, w, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -354,6 +354,19 @@ export const V = {
   bcollide: 163,
   bsplit: 164,
   bulge: 165,
+  // #121 L-tier batch L3 — JWildfire 2D continuing. checks (Keeps +
+  // Xyrus02 checkered pattern, 4 params + RNG). circular + circular2
+  // (Tatyana Zabanova via Brad Stefanov, 2+4 params + RNG; hash-jitter
+  // angular rotation). elliptic (3-mode Apophysis/JWildfire/precision;
+  // needs sqrt_safe + sqrt1pm1 helpers). circleblur (Zyorg uniform
+  // disc sample). Triaged out from L3 candidate set: arc_truchet (per-
+  // genome init tiltArray), atan2_spirals (14 params > seam), cosq/
+  // boxfold (3D), dragon (recursive pre-init).
+  checks: 166,
+  circular: 167,
+  circular2: 168,
+  corners: 169,
+  circleblur: 170,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

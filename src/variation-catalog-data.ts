@@ -3181,6 +3181,96 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [x * scale, y * scale];
     },
   },
+  // ============================================================
+  // #121 batch L3 — JWildfire 2D continuing (V166..V170).
+  // checks (Keeps/Xyrus02), circular + circular2 (Tatyana Zabanova
+  // via Brad Stefanov), corners (Whittaker Courtney), circleblur
+  // (Zyorg uniform disc sampler). 4 RNG-using + 1 deterministic.
+  // ============================================================
+  {
+    idx: V.checks,
+    name: 'checks',
+    source: sourceForIdx(V.checks),
+    formula: "V_{166}: \\text{is\\_xy} = \\text{round}(x/s) + \\text{round}(y/s);\\; \\text{branch on parity for cell offset}",
+    blurb: "Keeps + Xyrus02's checkered pattern. Rounds the iterate to cell indices, alternates between two offset schemes based on cell-coordinate parity (the checkerboard), adds per-axis RNG jitter `rnd` to soften the cell edges. Produces square-grid patterns with offsets controlled by (x, y).",
+    params: [
+      { name: 'x',    default: 3.0, min: -10, max: 10, step: 0.1 },
+      { name: 'y',    default: 3.0, min: -10, max: 10, step: 0.1 },
+      { name: 'size', default: 1.0, min: 0.05, max: 5, step: 0.05 },
+      { name: 'rnd',  default: 0.5, min: 0, max: 2, step: 0.05 },
+    ],
+    // RNG-using — no warpFn (catalog renders "warp not applicable" note).
+  },
+  {
+    idx: V.circular,
+    name: 'circular',
+    source: sourceForIdx(V.circular),
+    formula: "V_{167}: r = \\sqrt{x^2+y^2},\\; \\text{rotate by }(2(rng + \\text{hash}(p, \\text{seed})) - 2) \\cdot \\text{angle}\\cdot\\pi/180",
+    blurb: "Tatyana Zabanova's hash-jitter circular rotation (transcribed by Brad Stefanov). Uses a sin-based spatial hash plus an RNG sample to produce a per-iter angular rotation around the origin — preserves radius, perturbs angle. Produces orbital halo patterns.",
+    params: [
+      { name: 'angle', default: 90.0, min: -180, max: 180, step: 1 },
+      { name: 'seed',  default: 0.0,  min: 0,    max: Math.PI, step: 0.01 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.circular2,
+    name: 'circular2',
+    source: sourceForIdx(V.circular2),
+    formula: "V_{168}: \\text{same as circular but user-controlled hash multipliers }(xx, yy)",
+    blurb: "Tatyana Zabanova's circular with exposed spatial-hash constants (xx, yy default 12.9898, 78.233 — the classic Pixar-GLSL hash). Same rotation algorithm as V167 circular but with knobs that change the spatial frequency of the jitter pattern.",
+    params: [
+      { name: 'angle', default: 90.0,    min: -180, max: 180, step: 1 },
+      { name: 'seed',  default: 0.0,     min: 0,    max: Math.PI, step: 0.01 },
+      { name: 'xx',    default: 12.9898, min: -100, max: 100, step: 0.1 },
+      { name: 'yy',    default: 78.233,  min: -100, max: 100, step: 0.1 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.corners,
+    name: 'corners',
+    source: sourceForIdx(V.corners),
+    formula: "V_{169}: e_x = (x^2)^{x_{pow} + xy_{pow}}\\cdot m_x,\\; \\text{sign-flip on input }x;\\; +c_x \\text{ offset};\\; \\text{symmetric for }y",
+    blurb: "Whittaker Courtney's corners variation. Power-law warp on (x², y²) with sign flipping driven by input sign — produces sharp corner-anchored shapes that radiate to the four quadrants. Optional `log_mode` wraps the power with a configurable log base for softer falloff. Highly tunable.",
+    params: [
+      { name: 'x',            default: 1.0,     min: -3, max: 3,   step: 0.05 },
+      { name: 'y',            default: 1.0,     min: -3, max: 3,   step: 0.05 },
+      { name: 'mult_x',       default: 1.0,     min: -3, max: 3,   step: 0.05 },
+      { name: 'mult_y',       default: 1.0,     min: -3, max: 3,   step: 0.05 },
+      { name: 'x_power',      default: 0.75,    min: 0,  max: 3,   step: 0.05 },
+      { name: 'y_power',      default: 0.75,    min: 0,  max: 3,   step: 0.05 },
+      { name: 'xy_power_add', default: 0,       min: -2, max: 2,   step: 0.05 },
+      { name: 'log_mode',     default: 0,       min: 0,  max: 1,   step: 1    },
+      { name: 'log_base',     default: 2.71828, min: 1.5, max: 10, step: 0.1  },
+    ],
+    warpFn: (x, y) => {
+      const cx = 1.0, cy = 1.0, mult_x = 1.0, mult_y = 1.0;
+      const x_power = 0.75, y_power = 0.75, xy_power_add = 0;
+      const log_mode = 0;
+      const xs = x * x, ys = y * y;
+      let ex: number, ey: number;
+      if (log_mode === 0) {
+        ex = Math.pow(Math.max(xs, 0), x_power + xy_power_add) * mult_x;
+        ey = Math.pow(Math.max(ys, 0), y_power + xy_power_add) * mult_y;
+      } else {
+        // log_mode=1 branch narrowed away — not reachable at default 0.
+        ex = 0;
+        ey = 0;
+      }
+      const ox = x > 0 ? ex + cx : -ex - cx;
+      const oy = y > 0 ? ey + cy : -ey - cy;
+      return [ox, oy];
+    },
+  },
+  {
+    idx: V.circleblur,
+    name: 'circleblur',
+    source: sourceForIdx(V.circleblur),
+    formula: "V_{170}: r = \\sqrt{\\text{rng}},\\; \\theta = \\text{rng}\\cdot 2\\pi;\\; \\text{emit }w \\cdot r \\cdot (\\cos\\theta, \\sin\\theta)",
+    blurb: "Zyorg's uniform-disc sampler. Pure RNG base shape — samples a point uniformly inside the unit disc (the sqrt(uniform) trick gives correct area-uniform sampling, NOT angle-uniform). Input (x, y) is ignored. Produces a clean filled circle; useful as a soft halo behind other variations.",
+    // RNG-only base shape — no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));
