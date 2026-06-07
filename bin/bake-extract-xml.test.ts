@@ -61,23 +61,29 @@ describe('extractXmlFeatures', () => {
     expect(setBits).toBe(3);
   });
 
-  it('zero-weight variations are stripped by the importer (decision is moot post-parse)', () => {
-    // flame-import.ts treats `weight === 0` as "absent" (line ~447 — explicit
-    // zero never reaches the Genome). The bake helper therefore never sees a
-    // zero-weight variation. We assert the observable outcome: a single xform
-    // declared with `linear="1" julia="0"` lands with ONLY linear set; the
-    // importer also injects a linear fallback when ALL variations strip, so
-    // this test pins the actual contract — not a synthetic "what if".
+  it('zero-weight variations are kept by the importer (#17 fix f — flam3-canonical)', () => {
+    // #17 fix (f): flame-import.ts now treats `weight === 0` as a real
+    // variation that contributes nothing per-iter (flam3 semantics),
+    // NOT as "absent". Previously, an xform declared with only weight=0
+    // variations would get a `linear(1)` fallback substituted — turning
+    // the intended degenerate point into an identity passthrough.
+    // Both variations land in the genome; the chaos kernel naturally
+    // multiplies a zero-weight contribution by 0.
     const xml = wrapFlame(
       '<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1" julia="0"/>',
     );
     const { genome } = parseFlame(xml);
-    expect(genome.xforms[0]!.variations).toHaveLength(1);
+    expect(genome.xforms[0]!.variations).toHaveLength(2);
     expect(genome.xforms[0]!.variations[0]!.index).toBe(V.linear);
+    expect(genome.xforms[0]!.variations[0]!.weight).toBe(1);
+    expect(genome.xforms[0]!.variations[1]!.index).toBe(V.julia);
+    expect(genome.xforms[0]!.variations[1]!.weight).toBe(0);
 
+    // The bitset reflects REGISTERED variations — both `linear` and
+    // `julia` appear since the xform formally lists both.
     const { variationBitset } = extractXmlFeatures(genome);
     expect(bitsetGet(variationBitset, V.linear)).toBe(true);
-    expect(bitsetGet(variationBitset, V.julia)).toBe(false);
+    expect(bitsetGet(variationBitset, V.julia)).toBe(true);
   });
 
   it('high-index variation (mobius, index 98) sets byte 12 bit 2', () => {

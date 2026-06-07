@@ -349,6 +349,92 @@ describe('parseFlame genome-level attrs', () => {
   });
 });
 
+// #17 fix coverage — flam3 importer-default parity for hand-authored
+// flames that omit attributes. ESF corpus is unaffected (every shipped
+// flame carries explicit attrs), so these paths only bite hand-authored
+// / legacy Apophysis flames.
+describe('parseFlame #17 importer-default parity (fixes a/b/c/f)', () => {
+  it('missing <flame scale> defaults to flam3-canonical 50 (fix a, was 100)', () => {
+    // No `scale=` attr at all (distinct from scale="nan" which exercises
+    // the malformed-value recovery path).
+    const xml = `<flame name="t" size="1024 1024" center="0 0">${minPalette}${minXform}</flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.scale).toBe(50);
+  });
+
+  it('missing xform color defaults to (xformIndex & 1) parity (fix b, was 0)', () => {
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}` +
+      // 3 xforms, none with `color="..."` — colors should be 0, 1, 0.
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<xform weight="1" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '</flame>';
+    const { genome } = parseFlame(xml);
+    expect(genome.xforms[0]!.color).toBe(0);
+    expect(genome.xforms[1]!.color).toBe(1);
+    expect(genome.xforms[2]!.color).toBe(0);
+  });
+
+  it('xform color attr still wins when present', () => {
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}` +
+      '<xform weight="1" color="0.75" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '<xform weight="1" color="0.25" coefs="1 0 0 1 0 0" linear="1"/>' +
+      '</flame>';
+    const { genome } = parseFlame(xml);
+    expect(genome.xforms[0]!.color).toBe(0.75);
+    expect(genome.xforms[1]!.color).toBe(0.25);
+  });
+
+  it('partial-tonemap fill uses flam3 defaults vibrancy=1, highpow=-1 (fix c)', () => {
+    // gamma is explicit; vibrancy, highpow, brightness, gamma_threshold absent.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100" gamma="2.5">${minPalette}${minXform}</flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.tonemap?.gamma).toBe(2.5);
+    expect(genome.tonemap?.vibrancy).toBe(1.0);          // flam3 default (was pyr3's 0.0)
+    expect(genome.tonemap?.highlightPower).toBe(-1.0);   // flam3 default (was pyr3's 1.0)
+  });
+
+  it('no tonemap attrs at all → genome.tonemap stays undefined (DEFAULT_TONEMAP applied at draw time)', () => {
+    // This path is distinct from the partial-fill path — when zero
+    // tonemap attrs are present, the importer leaves tonemap undefined
+    // and the consumer applies DEFAULT_TONEMAP (pyr3's continuity
+    // default) at draw time. Only the PARTIAL-fill path uses flam3
+    // defaults. Documents the explicit boundary.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}${minXform}</flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.tonemap).toBeUndefined();
+  });
+
+  it('explicit variation weight=0 is kept (fix f), no linear(1) substitution', () => {
+    // An xform with ONLY weight=0 variations used to get linear(1)
+    // force-substituted — turning the degenerate point into identity.
+    // Now both vars are recorded with their explicit weights; the
+    // kernel multiplies the contributions by 0 naturally.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}` +
+      '<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="0" julia="0"/>' +
+      '</flame>';
+    const { genome } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toHaveLength(2);
+    expect(genome.xforms[0]!.variations[0]!.weight).toBe(0);
+    expect(genome.xforms[0]!.variations[1]!.weight).toBe(0);
+  });
+
+  it('still injects linear(1) fallback when the xform names NO variations at all', () => {
+    // The fallback path (line ~498) only fires when the variations list
+    // is genuinely empty — i.e., no variation attrs were named. Naming
+    // weight=0 variations now keeps them, so the fallback no longer
+    // fires for that case. But the truly-empty path still needs the
+    // fallback to keep the xform selectable in the chaos pool.
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${minPalette}` +
+      '<xform weight="1" color="0" coefs="1 0 0 1 0 0"/>' +
+      '</flame>';
+    const { genome } = parseFlame(xml);
+    expect(genome.xforms[0]!.variations).toHaveLength(1);
+    expect(genome.xforms[0]!.variations[0]!.index).toBe(V.linear);
+    expect(genome.xforms[0]!.variations[0]!.weight).toBe(1);
+  });
+});
+
 describe('parseFlame ignored-field reporting', () => {
   it('honors gamma/vibrancy/highlight_power/brightness on tonemap (Phase 9a) and background on genome (Phase 9-bg-palmode)', () => {
     const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100" gamma="2.5" vibrancy="0.4" highlight_power="1.5" brightness="3.0" background="0.1 0.0 0.2">${minPalette}${minXform}</flame>`;
@@ -542,10 +628,11 @@ describe('parseFlame error paths', () => {
     expect(report.paletteFallback).toBeUndefined();
   });
 
-  it('non-finite scale defaults to 100 + reports it (#9 — formerly threw)', () => {
+  it('non-finite scale defaults to flam3-canonical 50 + reports it (#9 — formerly threw)', () => {
     const xml = `<flame name="t" size="1024 1024" center="0 0" scale="NaN">${minPalette}${minXform}</flame>`;
     const { genome, report } = parseFlame(xml);
-    expect(genome.scale).toBe(100);
+    // #17 fix (a) — flam3 parser.c default for `scale` is 50, not 100.
+    expect(genome.scale).toBe(50);
     expect(report.defaultedFields.map((d) => d.field)).toContain('scale');
   });
 
@@ -653,17 +740,21 @@ describe('parseFlame tonemap (Phase 9a)', () => {
     expect(ignoredNames).not.toContain('gamma_threshold');
   });
 
-  it('partial tonemap fills missing fields from defaults (flam3-canonical DEFAULT_TONEMAP)', () => {
+  it('partial tonemap fills missing fields from flam3-canonical defaults (vibrancy=1, highpow=-1)', () => {
     const xml = wrapFlame(
       '<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"/>',
       'gamma="2.2"',
     );
     const { genome } = parseFlame(xml);
     expect(genome.tonemap?.gamma).toBe(2.2);
-    // remaining fields fall back to DEFAULT_TONEMAP (flam3-canonical values, Phase 9-cal)
-    expect(genome.tonemap?.vibrancy).toBe(0.0);
+    // #17 fix (c) — partial-fill defaults now match flam3 parser.c, not
+    // pyr3's continuity DEFAULT_TONEMAP. vibrancy 0→1, highpow 1→-1.
+    // The pre-fix behavior collapsed the vibrancy composite for hand-
+    // authored flames that omitted vibrancy/highpow. ESF corpus is
+    // unaffected (every shipped flame carries the full tonemap block).
+    expect(genome.tonemap?.vibrancy).toBe(1.0);
     expect(genome.tonemap?.brightness).toBe(1.0);
-    expect(genome.tonemap?.highlightPower).toBe(1.0);
+    expect(genome.tonemap?.highlightPower).toBe(-1.0);
     expect(genome.tonemap?.gammaThreshold).toBe(0.01);
   });
 
@@ -1091,11 +1182,12 @@ describe('#9 — malformed scalar fields default + report (loud, never abort)', 
     expect(report.defaultedFields.map((d) => d.field)).toContain('size');
   });
 
-  it('non-finite scale → real default (100), reported (no throw)', () => {
+  it('non-finite scale → real default (flam3-canonical 50), reported (no throw)', () => {
     const xml =
       `<flame name="t" size="800 600" center="0 0" scale="nan">${minPalette}${oneXform}</flame>`;
     const { genome, report } = parseFlame(xml);
-    expect(genome.scale).toBe(100);
+    // #17 fix (a) — flam3 parser.c default for `scale` is 50, not 100.
+    expect(genome.scale).toBe(50);
     expect(report.defaultedFields.map((d) => d.field)).toContain('scale');
   });
 

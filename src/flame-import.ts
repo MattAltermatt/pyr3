@@ -415,7 +415,13 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
   const weight = isFinal
     ? 0
     : numOrDefault(weightAttr, 'weight', 1);
-  const color = numOrDefault(el.getAttribute('color'), 'color', 0);
+  // #17 fix (b) — flam3 parser.c defaults the per-xform color attr to
+  // `xformIndex & 1` (alternating 0/1) when missing, NOT to 0. The 0
+  // default surfaced for hand-authored / legacy Apophysis flames whose
+  // xforms omit `color="..."`. The ESF corpus is unaffected (every
+  // shipped flame carries explicit color attrs). finalxform also gets
+  // the parity default — flam3 treats it consistently.
+  const color = numOrDefault(el.getAttribute('color'), 'color', xformIndex & 1);
   // flam3 parser.c:856-861 — `symmetry` is the deprecated alias for color_speed
   // with the formula color_speed = (1 - N) / 2. Explicit color_speed wins over
   // the deprecated form (modern attribute takes precedence).
@@ -462,7 +468,14 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean): X
     // through to the param branch.
     if (name in V) {
       const w = expectFiniteNumber(value, name);
-      if (w === 0) continue; // explicit-zero acts like absent
+      // #17 fix (f) — flam3 treats explicit `weight=0` as a real variation
+      // that contributes nothing per-iter (degenerate point), NOT as
+      // "absent". The previous `continue` here meant an xform with ONLY
+      // weight=0 variations would fall through to the empty-variation
+      // fallback below and get `linear(1)` force-substituted — which
+      // turns the degenerate point into an identity passthrough. ESF
+      // corpus is unaffected (no shipped flame has weight=0 vars).
+      // Record the zero-weight variation so the chain stays non-empty.
       const idx = V[name as keyof typeof V] as VariationIndex;
       const variation: Variation = { index: idx, weight: w };
       const params = readVariationParams(normAttrs, name);
@@ -729,9 +742,24 @@ export function parseFlame(xml: string): FlameImportResult {
   if (brightnessAttr !== null) tonemapPartial.brightness = expectFiniteNumber(brightnessAttr, 'brightness');
   const linrangeAttr = flame.getAttribute('gamma_threshold');
   if (linrangeAttr !== null) tonemapPartial.gammaThreshold = expectFiniteNumber(linrangeAttr, 'gamma_threshold');
+  // #17 fix (c) — partial-tonemap fill uses FLAM3's defaults, not pyr3's
+  // DEFAULT_TONEMAP. flam3 parser.c defaults `vibrancy=1`, `highpow=-1`;
+  // pyr3's continuity defaults are `vibrancy=0`, `highpow=1`. The mismatch
+  // surfaced when a .flame carried e.g. only `gamma=2.4` but no vibrancy:
+  // pyr3 filled vibrancy=0 (vibrancy-composite collapses), but flam3
+  // would have filled vibrancy=1. ESF corpus is unaffected (every shipped
+  // flame carries the full tonemap block). Note: this is ONLY for the
+  // importer partial-fill path — pyr3's DEFAULT_TONEMAP stays unchanged
+  // (it's the project-wide continuity default at draw time when no
+  // tonemap is present at all).
+  const FLAM3_PARTIAL_FILL: Tonemap = {
+    ...DEFAULT_TONEMAP,
+    vibrancy: 1.0,
+    highlightPower: -1.0,
+  };
   const tonemap: Tonemap | undefined =
     Object.keys(tonemapPartial).length > 0
-      ? { ...DEFAULT_TONEMAP, ...tonemapPartial }
+      ? { ...FLAM3_PARTIAL_FILL, ...tonemapPartial }
       : undefined;
 
   // Phase 9-bg-palmode: parse `<flame background="R G B">`. Each component
@@ -766,7 +794,13 @@ export function parseFlame(xml: string): FlameImportResult {
   const genome: Genome = {
     name: flameName,
     xforms,
-    scale: parseScalarOrDefault(flame.getAttribute('scale'), 'scale', 100, defaultedFields),
+    // #17 fix (a) — flam3 parser.c defaults `scale` to 50, not 100. The
+    // pyr3 default was carried over from an earlier port and produced a
+    // 2× zoom for hand-authored flames omitting `<flame scale="...">`.
+    // ESF corpus is unaffected (every shipped flame carries explicit
+    // scale). The malformed-value recovery in parseScalarOrDefault is
+    // unchanged — only the "attr completely absent" default value moves.
+    scale: parseScalarOrDefault(flame.getAttribute('scale'), 'scale', 50, defaultedFields),
     cx,
     cy,
     palette: { name: flameName, stops },
