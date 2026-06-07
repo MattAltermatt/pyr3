@@ -4601,6 +4601,59 @@ fn var_inv_squircular(p: vec2f, w: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L13 — 3 vars: lozi (TyrantWave 2D map), hypershift
+// (Zy0rg Möbius radial), hex_modulus (Zabanova hexagonal fold).
+// ---------------------------------------------------------------------
+
+// lozi — TyrantWave. 3 params (a, b, c). Lozi map: x' = c - a·|x| + y,
+// y' = b·x. Sibling of V159 henon (which uses x² instead of |x|).
+fn var_lozi(p: vec2f, w: f32, a: f32, b: f32, c: f32) -> vec2f {
+  return vec2f(w * (c - a * abs(p.x) + p.y), w * b * p.x);
+}
+
+// hypershift — Zy0rg. 2 params (shift, stretch). Möbius-style radial
+// shift that maps the plane to a hyperbolic-like disc with shift offset.
+fn var_hypershift(p: vec2f, w: f32, shift: f32, stretch: f32) -> vec2f {
+  let scale = 1.0 - shift * shift;
+  let rad1 = 1.0 / max(p.x * p.x + p.y * p.y, 1e-30);
+  let x = rad1 * p.x + shift;
+  let y = rad1 * p.y;
+  let rad = w * scale / max(x * x + y * y, 1e-30);
+  return vec2f(rad * x + shift, rad * y * stretch);
+}
+
+// hex_modulus — Zabanova via Stefanov. 1 param (size). Hexagonal-grid
+// modulus fold: converts iterate to hexagonal axial coords, rounds to
+// nearest hex cell, computes displacement from cell center.
+fn var_hex_modulus(p: vec2f, w: f32, size: f32) -> vec2f {
+  let M_SQRT3_2: f32 = 0.8660254037844386;
+  let M_SQRT3: f32 = 1.7320508075688772;
+  let hsize = M_SQRT3_2 / max(size, 1e-30);
+  let weight = w / M_SQRT3_2;
+  let X = p.x * hsize;
+  let Y = p.y * hsize;
+  let x = 0.5773502691896258 * X - Y / 3.0;
+  let z = 2.0 * Y / 3.0;
+  let y = -x - z;
+  var rx = round(x);
+  var ry = round(y);
+  var rz = round(z);
+  let x_diff = abs(rx - x);
+  let y_diff = abs(ry - y);
+  let z_diff = abs(rz - z);
+  if (x_diff > y_diff && x_diff > z_diff) {
+    rx = -ry - rz;
+  } else if (y_diff > z_diff) {
+    ry = -rx - rz;
+  } else {
+    rz = -rx - ry;
+  }
+  let FX_h = M_SQRT3 * rx + M_SQRT3_2 * rz;
+  let FY_h = 1.5 * rz;
+  return vec2f((X - FX_h) * weight, (Y - FY_h) * weight);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4850,6 +4903,9 @@ fn apply_variation(
     case 204u: { return var_e_mod(p, w, p0, p1); }
     case 205u: { return var_intersection(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, wi); }
     case 206u: { return var_inv_squircular(p, w); }
+    case 207u: { return var_lozi(p, w, p0, p1, p2); }
+    case 208u: { return var_hypershift(p, w, p0, p1); }
+    case 209u: { return var_hex_modulus(p, w, p0); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

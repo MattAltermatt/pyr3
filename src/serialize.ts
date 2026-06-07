@@ -308,6 +308,10 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   e_mod: ['radius', 'distance'],
   // #121 L-tier batch L12. inv_squircular is 0-param.
   intersection: ['xwidth', 'xtilesize', 'xmod1', 'xmod2', 'xheight', 'yheight', 'ytilesize', 'ymod1', 'ymod2', 'ywidth'],
+  // #121 L-tier batch L13. JWildfire param names verbatim.
+  lozi: ['a', 'b', 'c'],
+  hypershift: ['shift', 'stretch'],
+  hex_modulus: ['size'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -521,6 +525,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   e_mod: [1.0, 0.0],                                     // radius=1, distance=0 — Faber defaults
   // #121 L-tier batch L12 — JWildfire init values verbatim.
   intersection: [5.0, 0.50, 0.30, 1.0, 0.50, 5.0, 0.50, 0.30, 1.0, 0.50],
+  // #121 L-tier batch L13 — JWildfire init values verbatim.
+  lozi: [0.5, 1.0, 1.0],
+  hypershift: [2.0, 1.0],
+  hex_modulus: [1.0],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

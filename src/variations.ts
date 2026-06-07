@@ -447,6 +447,14 @@ export const V = {
   // (already shipped), mobius_strip/ortho (3D).
   intersection: 205,
   inv_squircular: 206,
+  // #121 L-tier batch L13. lozi (TyrantWave's Lozi map, sibling of
+  // V159 henon), hypershift (Zy0rg Möbius-style radial shift),
+  // hex_modulus (Zabanova hexagonal-grid modulus fold). Triaged:
+  // macmillan (persistent state); joukowski (vec2/G GLSL helpers);
+  // koch/klein_group/maurer_lines (large or 16+ params).
+  lozi: 207,
+  hypershift: 208,
+  hex_modulus: 209,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

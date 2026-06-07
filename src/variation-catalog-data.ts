@@ -3904,6 +3904,74 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [rOut / uSafe, rOut / vSafe];
     },
   },
+  // ============================================================
+  // #121 batch L13 — JWildfire 2D continuing (V207..V209).
+  // ============================================================
+  {
+    idx: V.lozi,
+    name: 'lozi',
+    source: sourceForIdx(V.lozi),
+    formula: "V_{207}(x, y) = w\\,(c - a\\,|x| + y,\\; b\\,x)",
+    blurb: "TyrantWave's Lozi map — sibling of V159 henon. Same shape but uses |x| (absolute value) instead of x². Produces sharper-edged chaotic attractor with corners instead of smooth curves.",
+    params: [
+      { name: 'a', default: 0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'b', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c', default: 1.0, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const a = 0.5, b = 1.0, c = 1.0;
+      return [c - a * Math.abs(x) + y, b * x];
+    },
+  },
+  {
+    idx: V.hypershift,
+    name: 'hypershift',
+    source: sourceForIdx(V.hypershift),
+    formula: "V_{208}: \\text{Möbius radial shift onto hyperbolic-like disc with shift offset}",
+    blurb: "Zy0rg's hypershift — Möbius-style radial transformation. Maps plane into a shifted disc-like region. `shift` controls the offset; `stretch` scales the y-axis after projection.",
+    params: [
+      { name: 'shift',   default: 2.0, min: -3, max: 3, step: 0.05 },
+      { name: 'stretch', default: 1.0, min: -3, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const shift = 2.0, stretch = 1.0;
+      const scale = 1 - shift * shift;
+      const rad1 = 1 / Math.max(x * x + y * y, 1e-30);
+      const xp = rad1 * x + shift;
+      const yp = rad1 * y;
+      const rad = scale / Math.max(xp * xp + yp * yp, 1e-30);
+      return [rad * xp + shift, rad * yp * stretch];
+    },
+  },
+  {
+    idx: V.hex_modulus,
+    name: 'hex_modulus',
+    source: sourceForIdx(V.hex_modulus),
+    formula: "V_{209}: \\text{convert to hex axial coords; round to nearest hex cell; emit displacement from cell center}",
+    blurb: "Tatyana Zabanova's hex_modulus (via Brad Stefanov). Converts iterate to hexagonal axial coordinates, rounds to nearest hex cell, returns the displacement from the cell center. Produces honeycomb-tiling patterns.",
+    params: [
+      { name: 'size', default: 1.0, min: 0.1, max: 5, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const size = 1.0;
+      const M_SQRT3_2 = 0.8660254037844386;
+      const M_SQRT3 = 1.7320508075688772;
+      const hsize = M_SQRT3_2 / size;
+      const weight = 1 / M_SQRT3_2;
+      const X = x * hsize, Y = y * hsize;
+      const xh = 0.5773502691896258 * X - Y / 3;
+      const z = 2 * Y / 3;
+      const yh = -xh - z;
+      let rx = Math.round(xh), ry = Math.round(yh), rz = Math.round(z);
+      const xd = Math.abs(rx - xh), yd = Math.abs(ry - yh), zd = Math.abs(rz - z);
+      if (xd > yd && xd > zd) rx = -ry - rz;
+      else if (yd > zd) ry = -rx - rz;
+      else rz = -rx - ry;
+      const FX_h = M_SQRT3 * rx + M_SQRT3_2 * rz;
+      const FY_h = 1.5 * rz;
+      return [(X - FX_h) * weight, (Y - FY_h) * weight];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));
