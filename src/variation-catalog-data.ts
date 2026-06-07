@@ -2910,10 +2910,15 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{154}(x, y) = w\\,r'\\,(\\cos a,\\; \\sin a),\\quad r' = \\begin{cases} r\\cdot s & r \\leq 1 \\\\ r / s & r > 1 \\end{cases}",
     blurb: 'Polar dual-scale by Michael Faber. Inside the unit circle the radius is multiplied by `scale`; outside, by `1/scale`. The phase angle is preserved, so circles map to circles — but the inside-vs-outside discontinuity at r=1 produces a striking concentric-ring boundary.',
     params: [
-      { name: 'scale', default: 0.92, min: 0.05, max: 2.0, step: 0.01 },
+      // Catalog default RETUNED — JWildfire's 0.92 makes a clean but
+      // sparse sierpinski; 1.25 fills out the gasket and surfaces the
+      // characteristic ring-banding inside the r=1 boundary. The .flame
+      // importer default stays at JWildfire 0.92 (see VARIATION_DEFAULTS
+      // in serialize.ts) — this only changes the catalog scaffold seed.
+      { name: 'scale', default: 1.25, min: 0.05, max: 2.0, step: 0.01 },
     ],
     warpFn: (x, y) => {
-      const scale = 0.92;
+      const scale = 1.25;
       const scale_1 = 1.0 / scale;
       const r = Math.sqrt(x * x + y * y);
       const a = Math.atan2(y, x);
