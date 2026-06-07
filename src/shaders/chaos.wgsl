@@ -3146,6 +3146,216 @@ fn var_waffle(
 }
 
 // ---------------------------------------------------------------------
+// #120 batch B5 — Glynn-set family (3 vars). Source: JWildfire
+// GlynnSim1/2/3 Func.java (LGPL-2.1+, NOTICE.md), all by eralex61
+// (deviantart.com/eralex61). All three are circle-emit-vs-passthrough
+// patterns: inside a radius the kernel emits a random point on a
+// circle (different per-variation shape); outside it either passes
+// through or applies the alpha² circle inversion based on an RNG-
+// contrast roll. The 2D-only siblings of GlynnSim2B (3D-rotated, 26
+// params) — which is deferred to its own architectural ship.
+//
+// Phi parameters are in DEGREES in JWildfire; converted inline to
+// radians via PI/180.
+// ---------------------------------------------------------------------
+
+// glynnSim1 — 6 params. Most complex of the trio: emits inner circle
+// at (radius·cos(phi1), radius·sin(phi1)) offset, and the outside
+// branch additionally re-emits inner-circle if the alpha²-inverted
+// coord lands back inside the inner circle's radius1 bubble.
+fn var_glynnSim1(
+  p: vec2f, w: f32,
+  radius: f32, radius1: f32, phi1: f32, thickness: f32, pow_p: f32, contrast: f32,
+  wi: u32,
+) -> vec2f {
+  let DEG_TO_RAD = PI / 180.0;
+  let a = phi1 * DEG_TO_RAD;
+  let x1 = radius * safe_cos(a);
+  let y1 = radius * safe_sin(a);
+  let abs_pow = abs(pow_p);
+  let r = sqrt(dot(p, p));
+  if (r < radius) {
+    let r_inner = radius1 * (thickness + (1.0 - thickness) * rand01(wi));
+    let phi = TAU * rand01(wi);
+    return w * vec2f(r_inner * safe_cos(phi) + x1, r_inner * safe_sin(phi) + y1);
+  }
+  let safe_r = max(r, 1e-30);
+  let alpha = radius / safe_r;
+  var x: f32;
+  var y: f32;
+  if (rand01(wi) > contrast * pow(abs(alpha), abs_pow)) {
+    x = p.x;
+    y = p.y;
+  } else {
+    let a2 = alpha * alpha;
+    x = a2 * p.x;
+    y = a2 * p.y;
+  }
+  let dxz = x - x1;
+  let dyz = y - y1;
+  let z = dxz * dxz + dyz * dyz;
+  if (z < radius1 * radius1) {
+    let r_inner = radius1 * (thickness + (1.0 - thickness) * rand01(wi));
+    let phi = TAU * rand01(wi);
+    return w * vec2f(r_inner * safe_cos(phi) + x1, r_inner * safe_sin(phi) + y1);
+  }
+  return w * vec2f(x, y);
+}
+
+// glynnSim2 — 6 params. Inner circle uses a (phi1, phi2) angular arc:
+// phi varies in [_phi10, _phi10 + _delta], r varies in
+// [radius, radius+thickness] (gamma-tightened). Outside branch is
+// passthrough or alpha² without the re-emit check.
+fn var_glynnSim2(
+  p: vec2f, w: f32,
+  radius: f32, thickness: f32, contrast: f32, pow_p: f32, phi1: f32, phi2: f32,
+  wi: u32,
+) -> vec2f {
+  let DEG_TO_RAD = PI / 180.0;
+  let phi10 = phi1 * DEG_TO_RAD;
+  let phi20 = phi2 * DEG_TO_RAD;
+  let r_plus_t = radius + thickness;
+  let denom = max(r_plus_t, 1e-30);
+  let gamma = thickness * (2.0 * radius + thickness) / denom;
+  let delta = phi20 - phi10;
+  let abs_pow = abs(pow_p);
+  let r = sqrt(dot(p, p));
+  if (r < radius) {
+    let r_inner = r_plus_t - gamma * rand01(wi);
+    let phi_inner = phi10 + delta * rand01(wi);
+    return w * vec2f(r_inner * safe_cos(phi_inner), r_inner * safe_sin(phi_inner));
+  }
+  let safe_r = max(r, 1e-30);
+  let alpha = radius / safe_r;
+  if (rand01(wi) > contrast * pow(abs(alpha), abs_pow)) {
+    return w * p;
+  }
+  let a2 = alpha * alpha;
+  return w * vec2f(a2 * p.x, a2 * p.y);
+}
+
+// glynnSim3 — 4 params. Simplest: precomputes inner/outer radii
+// (radius1 = radius+thickness, radius2 = radius²/radius1); inner
+// circle is one of two radii chosen by a gamma RNG roll.
+fn var_glynnSim3(
+  p: vec2f, w: f32,
+  radius: f32, thickness: f32, contrast: f32, pow_p: f32,
+  wi: u32,
+) -> vec2f {
+  let radius1 = radius + thickness;
+  let safe_r1 = max(radius1, 1e-30);
+  let radius2 = (radius * radius) / safe_r1;
+  let gamma = radius1 / max(radius1 + radius2, 1e-30);
+  let abs_pow = abs(pow_p);
+  let r = sqrt(dot(p, p));
+  if (r < radius1) {
+    let phi = TAU * rand01(wi);
+    let r_inner = select(radius2, radius1, rand01(wi) < gamma);
+    return w * vec2f(r_inner * safe_cos(phi), r_inner * safe_sin(phi));
+  }
+  let safe_r = max(r, 1e-30);
+  let alpha = radius / safe_r;
+  if (rand01(wi) > contrast * pow(abs(alpha), abs_pow)) {
+    return w * p;
+  }
+  let a2 = alpha * alpha;
+  return w * vec2f(a2 * p.x, a2 * p.y);
+}
+
+// ---------------------------------------------------------------------
+// #120 batch B6 — Faber/Xyrus02/zephyrtronium novelties (4 vars).
+// Sources: JWildfire FlipYFunc (Michael Faber), EclipseFunc (Faber),
+// BarycentroidFunc (Xyrus02), ChunkFunc (zephyrtronium via Brad
+// Stefanov). All LGPL-2.1+, NOTICE.md. All deterministic.
+// ---------------------------------------------------------------------
+
+// flipy — Michael Faber. 0 params. Asymmetric sign flip on y based on
+// the sign of x. Simplest variation in the family. x always passes
+// through.
+fn var_flipy(p: vec2f, w: f32) -> vec2f {
+  let y_sign = select(1.0, -1.0, p.x > 0.0);
+  return vec2f(w * p.x, w * p.y * y_sign);
+}
+
+// eclipse — Michael Faber. 1 param (shift, clamped [-2, 2] at the
+// import boundary). Branchy geometry: when |y| ≤ w, computes c₂ =
+// sqrt(w² - y²), then conditionally either passes through, applies a
+// shift, or negates x. Outside |y| ≤ w, plain passthrough.
+fn var_eclipse(p: vec2f, w: f32, shift: f32) -> vec2f {
+  if (abs(p.y) <= w) {
+    let c2_sq = w * w - p.y * p.y;
+    let c2 = sqrt(max(c2_sq, 0.0));
+    var ox: f32;
+    if (abs(p.x) <= c2) {
+      let x_shifted = p.x + shift * w;
+      if (abs(x_shifted) >= c2) {
+        ox = -w * p.x;
+      } else {
+        ox = w * x_shifted;
+      }
+    } else {
+      ox = w * p.x;
+    }
+    return vec2f(ox, w * p.y);
+  }
+  return w * p;
+}
+
+// barycentroid — Xyrus02. 4 params (a, b, c, d). Treats (a, b) and
+// (c, d) as two basis vectors v₀, v₁; the iterate p is v₂. Computes
+// the barycentric coordinates (u, v) of p with respect to the
+// triangle [0, v₀, v₁], then emits sqrt(u² + x²)·sign(u) on the
+// x-axis and sqrt(v² + y²)·sign(v) on the y-axis. Deterministic.
+fn var_barycentroid(p: vec2f, w: f32, a: f32, b: f32, c: f32, d: f32) -> vec2f {
+  // Dot products of (v₀, v₁, v₂).
+  let dot00 = a * a + b * b;
+  let dot01 = a * c + b * d;
+  let dot02 = a * p.x + b * p.y;
+  let dot11 = c * c + d * d;
+  let dot12 = c * p.x + d * p.y;
+  // Degenerate triangle (collinear v₀ + v₁) → denom = 0 → identity.
+  let denom = dot00 * dot11 - dot01 * dot01;
+  if (abs(denom) < 1e-30) {
+    return w * p;
+  }
+  let inv_denom = 1.0 / denom;
+  let u = (dot11 * dot02 - dot01 * dot12) * inv_denom;
+  let v = (dot00 * dot12 - dot01 * dot02) * inv_denom;
+  // sign(0) returns 0 in WGSL — matches JWildfire's sgn helper.
+  let um = sqrt(u * u + p.x * p.x) * sign(u);
+  let vm = sqrt(v * v + p.y * p.y) * sign(v);
+  return vec2f(w * um, w * vm);
+}
+
+// chunk — zephyrtronium via Brad Stefanov. 7 params (a, b, c, d, e,
+// f, mode). Computes a quadratic form r = w·(a·x² + b·xy + c·y² +
+// d·x + e·y + f) at the iterate, then conditionally emits the input
+// passthrough (mode 0: when r ≤ 0; mode 1: when r > 0) or contributes
+// nothing (zero output). NOTE: JWildfire's source applies `pAmount`
+// (weight) to the quadratic-form coefficients, NOT to the output
+// passthrough. The output is the raw input coord — pyr3 mirrors.
+fn var_chunk(
+  p: vec2f, w: f32,
+  a: f32, b: f32, c: f32, d: f32, e: f32, f: f32, mode_p: f32,
+) -> vec2f {
+  let aa = w * a;
+  let bb = w * b;
+  let cc = w * c;
+  let dd = w * d;
+  let ee = w * e;
+  let ff = w * f;
+  let r = aa * p.x * p.x + bb * p.x * p.y + cc * p.y * p.y + dd * p.x + ee * p.y + ff;
+  let mode = i32(mode_p);
+  if (mode == 0 && r <= 0.0) {
+    return p;
+  }
+  if (mode == 1 && r > 0.0) {
+    return p;
+  }
+  return vec2f(0.0, 0.0);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -3333,6 +3543,13 @@ fn apply_variation(
     case 142u: { return var_lissajous(p, w, p0, p1, p2, p3, p4, p5, p6, wi); }
     case 143u: { return var_spirograph(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, wi); }
     case 144u: { return var_waffle(p, w, p0, p1, p2, p3, wi); }
+    case 145u: { return var_glynnSim1(p, w, p0, p1, p2, p3, p4, p5, wi); }
+    case 146u: { return var_glynnSim2(p, w, p0, p1, p2, p3, p4, p5, wi); }
+    case 147u: { return var_glynnSim3(p, w, p0, p1, p2, p3, wi); }
+    case 148u: { return var_flipy(p, w); }
+    case 149u: { return var_eclipse(p, w, p0); }
+    case 150u: { return var_barycentroid(p, w, p0, p1, p2, p3); }
+    case 151u: { return var_chunk(p, w, p0, p1, p2, p3, p4, p5, p6); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

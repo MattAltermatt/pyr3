@@ -236,6 +236,15 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   lissajous: ['tmin', 'tmax', 'a', 'b', 'c', 'd', 'e'],
   spirograph: ['a', 'b', 'd', 'tmin', 'tmax', 'ymin', 'ymax', 'c1', 'c2'],
   waffle: ['slices', 'xthickness', 'ythickness', 'rotation'],
+  // #120 batch B5 — Glynn-set family. phi1/phi2 are in DEGREES (JWildfire convention).
+  glynnSim1: ['radius', 'radius1', 'phi1', 'thickness', 'pow', 'contrast'],
+  glynnSim2: ['radius', 'thickness', 'contrast', 'pow', 'phi1', 'phi2'],
+  glynnSim3: ['radius', 'thickness', 'contrast', 'pow'],
+  // #120 batch B6 — Faber/Xyrus02/zephyrtronium novelties.
+  flipy: [],                                             // 0 params
+  eclipse: ['shift'],
+  barycentroid: ['a', 'b', 'c', 'd'],
+  chunk: ['a', 'b', 'c', 'd', 'e', 'f', 'mode'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -358,6 +367,15 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   lissajous: [-Math.PI, Math.PI, 3.0, 2.0, 0.0, 0.0, 0.0], // tmin, tmax, a, b, c, d, e
   spirograph: [3.0, 2.0, 0.0, -1.0, 1.0, -1.0, 1.0, 0.0, 0.0], // a, b, d, tmin, tmax, ymin, ymax, c1, c2
   waffle: [6.0, 0.5, 0.5, 0.0],                            // slices, xthickness, ythickness, rotation
+  // #120 batch B5 — Glynn-set defaults from JWildfire.
+  glynnSim1: [1.0, 0.1, 110.0, 0.1, 1.5, 0.5],            // radius, radius1, phi1°, thickness, pow, contrast
+  glynnSim2: [1.0, 0.1, 0.5, 1.5, 110.0, 150.0],          // radius, thickness, contrast, pow, phi1°, phi2°
+  glynnSim3: [1.0, 0.1, 0.5, 1.5],                         // radius, thickness, contrast, pow
+  // #120 batch B6 — JWildfire defaults.
+  flipy: [],                                              // 0 params
+  eclipse: [0.0],                                         // shift
+  barycentroid: [1.0, 0.0, 0.0, 1.0],                    // a, b, c, d — identity basis (output → ±|p|)
+  chunk: [1.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0],             // a, b, c, d, e, f, mode — r = x²+y²-1 (unit circle gate, mode 0 = inside)
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

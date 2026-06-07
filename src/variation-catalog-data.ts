@@ -2698,6 +2698,154 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     // RNG-driven (5 modes + nested rand draws) → no warpFn.
   },
+  // ============================================================
+  // #120 batch B5 — Glynn-set family (V145–V147). Source: JWildfire
+  // GlynnSim1/2/3 Func (LGPL-2.1+, NOTICE.md), all by eralex61
+  // (deviantart.com/eralex61). 2D siblings; GlynnSim2B (26 params,
+  // full 3D shears + color modes) is deferred.
+  // ============================================================
+  {
+    idx: V.glynnSim1,
+    name: 'glynnSim1',
+    source: sourceForIdx(V.glynnSim1),
+    formula: 'V_{145}: \\text{inside radius} \\to \\text{circle at}\\;(\\text{radius}\\cos\\phi_1, \\text{radius}\\sin\\phi_1);\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
+    blurb: 'Most elaborate of eralex61\'s Glynn-set trio. Inside the radius, emits a random point on a thickness-shaped circle offset by (radius·cos φ₁, radius·sin φ₁). Outside, randomly either passes the iterate through, applies the α² circle inversion (α = radius/r), or — if either result lands back inside the inner-circle bubble — re-emits an inner circle point. The contrast and pow params control the passthrough probability.',
+    params: [
+      { name: 'radius',    default: 1.0,   min: 0.1, max: 2.0, step: 0.05 },
+      { name: 'radius1',   default: 0.1,   min: 0.01, max: 1.0, step: 0.01 },
+      { name: 'phi1',      default: 110.0, min: -180, max: 180, step: 1 },
+      { name: 'thickness', default: 0.1,   min: 0,   max: 1,   step: 0.05 },
+      { name: 'pow',       default: 1.5,   min: 0.1, max: 3.0, step: 0.05 },
+      { name: 'contrast',  default: 0.5,   min: 0,   max: 1,   step: 0.05 },
+    ],
+    // RNG-driven → no warpFn.
+  },
+  {
+    idx: V.glynnSim2,
+    name: 'glynnSim2',
+    source: sourceForIdx(V.glynnSim2),
+    formula: 'V_{146}: \\text{inside radius} \\to \\text{arc at}\\;\\phi\\in[\\phi_1, \\phi_2];\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
+    blurb: 'eralex61\'s arc-emitting GlynnSim variant. Inside the radius, emits a point on an angular arc bounded by [φ₁, φ₂] (in degrees), with radius scattered across [radius, radius+thickness] via a γ-tightened envelope. Outside the radius, same passthrough-vs-α²-inversion decision as glynnSim1 but without the re-emit check — simpler and faster.',
+    params: [
+      { name: 'radius',    default: 1.0,   min: 0.1, max: 2.0, step: 0.05 },
+      { name: 'thickness', default: 0.1,   min: 0,   max: 1,   step: 0.05 },
+      { name: 'contrast',  default: 0.5,   min: 0,   max: 1,   step: 0.05 },
+      { name: 'pow',       default: 1.5,   min: 0.1, max: 3.0, step: 0.05 },
+      { name: 'phi1',      default: 110.0, min: -180, max: 180, step: 1 },
+      { name: 'phi2',      default: 150.0, min: -180, max: 180, step: 1 },
+    ],
+    // RNG-driven → no warpFn.
+  },
+  {
+    idx: V.glynnSim3,
+    name: 'glynnSim3',
+    source: sourceForIdx(V.glynnSim3),
+    formula: 'V_{147}: \\text{inside }r_1 \\to \\text{circle at }r_1\\text{ or }r_2;\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
+    blurb: 'Simplest GlynnSim. Uses two computed radii r₁ = radius+thickness and r₂ = radius²/r₁, picking one or the other on each inner-circle emit via a γ-weighted coin flip. Visually creates concentric ring pairs rather than the offset-bubble effect of glynnSim1/2.',
+    params: [
+      { name: 'radius',    default: 1.0, min: 0.1, max: 2.0, step: 0.05 },
+      { name: 'thickness', default: 0.1, min: 0,   max: 1,   step: 0.05 },
+      { name: 'contrast',  default: 0.5, min: 0,   max: 1,   step: 0.05 },
+      { name: 'pow',       default: 1.5, min: 0.1, max: 3.0, step: 0.05 },
+    ],
+    // RNG-driven → no warpFn.
+  },
+  // ============================================================
+  // #120 batch B6 — Faber/Xyrus02/zephyrtronium novelties
+  // (V148–V151). Sources: JWildfire FlipYFunc (Michael Faber),
+  // EclipseFunc (Faber), BarycentroidFunc (Xyrus02), ChunkFunc
+  // (zephyrtronium via Brad Stefanov). All LGPL-2.1+, NOTICE.md.
+  // All deterministic → all have warpFn.
+  // ============================================================
+  {
+    idx: V.flipy,
+    name: 'flipy',
+    source: sourceForIdx(V.flipy),
+    formula: 'V_{148}(x, y) = w\\,(x,\\; \\mathrm{sgn}(x \\leq 0)\\cdot y) = \\begin{cases} w(x, -y) & x > 0 \\\\ w(x, y) & x \\leq 0 \\end{cases}',
+    blurb: 'Asymmetric y-axis flip by Michael Faber. The simplest variation in pyr3 — zero params. When x > 0 the y-coord is negated; when x ≤ 0 it passes through. Mirrors the right half of any shape vertically while leaving the left half alone.',
+    warpFn: (x, y) => {
+      const ys = x > 0 ? -1 : 1;
+      return [x, y * ys];
+    },
+  },
+  {
+    idx: V.eclipse,
+    name: 'eclipse',
+    source: sourceForIdx(V.eclipse),
+    formula: 'V_{149}(x, y) = \\text{shift-shifted ellipse fold inside }|y|\\leq w,\\; \\text{else passthrough}',
+    blurb: 'Branchy ellipse fold by Michael Faber. Inside the strip |y| ≤ w the variation computes the half-width c₂ = √(w² − y²) and either passes x through, shifts it by `shift·w`, or negates it depending on which sub-region the iterate lands in. Outside the strip, plain passthrough. Distinctive eclipse-crescent silhouettes around the strip boundary.',
+    params: [
+      { name: 'shift', default: 0.0, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const w = 1.0, shift = 0.0;
+      if (Math.abs(y) <= w) {
+        const c2 = Math.sqrt(Math.max(w * w - y * y, 0));
+        let ox: number;
+        if (Math.abs(x) <= c2) {
+          const xs = x + shift * w;
+          ox = Math.abs(xs) >= c2 ? -w * x : w * xs;
+        } else {
+          ox = w * x;
+        }
+        return [ox, w * y];
+      }
+      return [w * x, w * y];
+    },
+  },
+  {
+    idx: V.barycentroid,
+    name: 'barycentroid',
+    source: sourceForIdx(V.barycentroid),
+    formula: 'V_{150}(x, y) = w\\,(\\sqrt{u^2 + x^2}\\cdot\\mathrm{sgn}(u),\\; \\sqrt{v^2 + y^2}\\cdot\\mathrm{sgn}(v)),\\; (u, v) = \\text{barycentric}(p; v_0=(a,b), v_1=(c,d))',
+    blurb: 'Barycentric-coordinate fold by Xyrus02. Treats (a, b) and (c, d) as two basis vectors of a triangle anchored at the origin; computes the barycentric coordinates (u, v) of the iterate; emits a sign-preserving magnitude blend with the input coords. At the identity basis (a=d=1, b=c=0) reduces to (±|p|·sign(p), ±|p|·sign(p)).',
+    params: [
+      { name: 'a', default: 1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'b', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'c', default: 0.0, min: -2, max: 2, step: 0.05 },
+      { name: 'd', default: 1.0, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const a = 1.0, b = 0.0, c = 0.0, d = 1.0;
+      const dot00 = a * a + b * b;
+      const dot01 = a * c + b * d;
+      const dot02 = a * x + b * y;
+      const dot11 = c * c + d * d;
+      const dot12 = c * x + d * y;
+      const denom = dot00 * dot11 - dot01 * dot01;
+      if (Math.abs(denom) < 1e-30) return [x, y];
+      const invDenom = 1.0 / denom;
+      const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+      const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+      const um = Math.sqrt(u * u + x * x) * Math.sign(u);
+      const vm = Math.sqrt(v * v + y * y) * Math.sign(v);
+      return [um, vm];
+    },
+  },
+  {
+    idx: V.chunk,
+    name: 'chunk',
+    source: sourceForIdx(V.chunk),
+    formula: 'V_{151}: r = w(ax^2 + bxy + cy^2 + dx + ey + f),\\; \\text{emit }p\\text{ if mode-gate fires, else }(0,0)',
+    blurb: 'Quadratic-form spatial gate by zephyrtronium (via Brad Stefanov). Computes a weight-scaled quadratic at the iterate; emits the unscaled input coord when the gate condition holds (mode 0: r ≤ 0 — inside the conic section; mode 1: r > 0 — outside), else contributes (0, 0). At the defaults (a=c=1, b=d=e=0, f=-1, mode=0) the gate selects everything inside the unit circle, producing a clean disc cutout.',
+    params: [
+      { name: 'a',    default: 1.0,  min: -2, max: 2, step: 0.05 },
+      { name: 'b',    default: 0.0,  min: -2, max: 2, step: 0.05 },
+      { name: 'c',    default: 1.0,  min: -2, max: 2, step: 0.05 },
+      { name: 'd',    default: 0.0,  min: -2, max: 2, step: 0.05 },
+      { name: 'e',    default: 0.0,  min: -2, max: 2, step: 0.05 },
+      { name: 'f',    default: -1.0, min: -2, max: 2, step: 0.05 },
+      { name: 'mode', default: 0,    min: 0,  max: 1, step: 1    },
+    ],
+    warpFn: (x, y) => {
+      const a = 1.0, b = 0.0, c = 1.0, d = 0.0, e = 0.0, f = -1.0;
+      const mode = 0;
+      const r = a * x * x + b * x * y + c * y * y + d * x + e * y + f;
+      if (mode === 0 && r <= 0) return [x, y];
+      // mode-1 branch removed via narrowing — mode is literal 0 here
+      return [0, 0];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

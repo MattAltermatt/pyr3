@@ -308,6 +308,21 @@ export const V = {
   lissajous: 142,
   spirograph: 143,
   waffle: 144,
+  // #120 batch B5 — Glynn-set family (eralex61). 2D siblings of GlynnSim2B
+  // which ships 26 params and is deferred to its own architectural design.
+  // All three are RNG-driven (inside-radius circle emit + outside-radius
+  // passthrough/alpha² inversion based on contrast roll).
+  glynnSim1: 145,
+  glynnSim2: 146,
+  glynnSim3: 147,
+  // #120 batch B6 — Faber/Xyrus02/zephyrtronium novelties. All
+  // deterministic. flipy = 0 params, eclipse = 1, barycentroid = 4,
+  // chunk = 7. Helix deferred (3D-only). Colordomain deferred (HSV
+  // color output). Voron candidate for a later batch.
+  flipy: 148,
+  eclipse: 149,
+  barycentroid: 150,
+  chunk: 151,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
