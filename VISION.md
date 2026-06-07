@@ -55,8 +55,12 @@ and the v1.0 → v1.4 line has shipped — the viewer is live at
 [pyr3.app](https://pyr3.app/), tagged releases are published through
 **v1.4.0** (2026-06-02), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
-tracks themed follow-on work (Apophysis/JWildfire plugin pack, gradient
-editor, mobile rework).
+tracks themed follow-on work. The **Apophysis and JWildfire** plugin
+pack (#114, 22 new variations V109–V130) and the **Binary distribution**
+arc (`npm run build:cli render` → standalone `pyr3-render`) shipped
+2026-06-06; remaining themed slots cover the gradient editor (#115),
+channel curves (#116), the importer-default parity sweep (#17), and the
+**Mobile rework** arc (#66).
 
 ## 🔥 Keep (the soul)
 
