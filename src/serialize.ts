@@ -287,6 +287,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   ovoid: ['x', 'y'],
   phoenix_julia: ['power', 'dist', 'x_distort', 'y_distort'],
   shredrad: ['n', 'width'],
+  // #121 L-tier batch L7 — JWildfire param names verbatim.
+  vogel: ['n', 'scale'],
+  yin_yang: ['radius', 'ang1', 'ang2', 'dual_t', 'outside'],
+  squish: ['power'],
+  target: ['even', 'odd', 'size'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -479,6 +484,12 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   ovoid: [0.94, 0.94],                                   // x, y — Faber defaults
   phoenix_julia: [2.0, 1.0, -0.5, 0.0],                  // power, dist, x_distort, y_distort — TyrantWave defaults (power picked sensibly, JWildfire randomizes)
   shredrad: [4.0, 0.5],                                  // n=4, width=0.5 — Zy0rg defaults
+  // #121 L-tier batch L7 — JWildfire init values; target uses sensible
+  // picks since JWildfire randomizes (M_PI offsets + size).
+  vogel: [20, 1.0],                                      // n=20, scale=1 — Ganora defaults
+  yin_yang: [0.5, 0.0, 0.0, 1, 0],                       // radius, ang1, ang2, dual_t=1, outside=0 — dark-beam defaults
+  squish: [2],                                           // power=2 — Faber default
+  target: [0.5, 1.5, 0.5],                               // even, odd, size — sensible (JWildfire randomizes these)
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

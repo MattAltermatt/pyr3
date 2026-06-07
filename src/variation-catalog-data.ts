@@ -3531,6 +3531,71 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [rad * Math.cos(zang), rad * Math.sin(zang)];
     },
   },
+  // ============================================================
+  // #121 batch L7 — JWildfire 2D continuing (V185..V188).
+  // ============================================================
+  {
+    idx: V.vogel,
+    name: 'vogel',
+    source: sourceForIdx(V.vogel),
+    formula: "V_{185}: i \\sim U\\{1..n\\};\\; a = i \\cdot 2\\pi/\\varphi^2;\\; r = w(|p| + \\sqrt{i});\\; \\text{emit }r\\,(\\cos a + s\\,x, \\sin a + s\\,y)",
+    blurb: "Victor Ganora's Vogel spiral — golden-angle phyllotaxis. Each iter picks a random integer i in [1, n] and projects to the i-th seed point of a sunflower-style spiral arrangement (anchored on the golden angle 2π/φ²). Produces dense organic spiral seed-head patterns.",
+    params: [
+      { name: 'n',     default: 20,  min: 1, max: 200, step: 1    },
+      { name: 'scale', default: 1.0, min: -3, max: 3,  step: 0.05 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.yin_yang,
+    name: 'yin_yang',
+    source: sourceForIdx(V.yin_yang),
+    formula: "V_{186}: \\text{inside unit disc, yin-yang Möbius-like fold; outside, optional passthrough}",
+    blurb: "dark-beam's yin_yang. Inside the unit disc, applies a yin-yang-symbol-shaped geometric fold (with rotation jitter via dual_t and ang1/ang2). Outside the disc, passes through unchanged or emits zero based on outside toggle.",
+    params: [
+      { name: 'radius',  default: 0.5, min: 0,  max: 1, step: 0.05 },
+      { name: 'ang1',    default: 0.0, min: -1, max: 1, step: 0.05 },
+      { name: 'ang2',    default: 0.0, min: -1, max: 1, step: 0.05 },
+      { name: 'dual_t',  default: 1,   min: 0,  max: 1, step: 1    },
+      { name: 'outside', default: 0,   min: 0,  max: 1, step: 1    },
+    ],
+    // RNG-using (dual_t branch) — no warpFn.
+  },
+  {
+    idx: V.squish,
+    name: 'squish',
+    source: sourceForIdx(V.squish),
+    formula: "V_{187}: \\text{fold into square's 8-region perimeter param + random rotation index}",
+    blurb: "Michael Faber's squish (Angle Pack). Folds the iterate into a square's 8-region perimeter parameterization, picks a random rotation index, then emits onto one of 4 quadrant-aligned line segments. Produces square / cross silhouettes.",
+    params: [
+      { name: 'power', default: 2, min: 2, max: 12, step: 1 },
+    ],
+    // RNG-using — no warpFn.
+  },
+  {
+    idx: V.target,
+    name: 'target',
+    source: sourceForIdx(V.target),
+    formula: "V_{188}: \\text{ring index from }\\lfloor\\log r/\\text{size}\\rfloor;\\; \\text{angle += even or odd; preserve r}",
+    blurb: "Michael Faber's target — log-radial ring rotator. Divides log(r) into rings of `size` width, then applies `even` or `odd` angle offset depending on which ring the iterate sits in. Produces rotating bullseye / target patterns with alternating-ring angular distortion.",
+    params: [
+      { name: 'even', default: 0.5, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'odd',  default: 1.5, min: -Math.PI, max: Math.PI, step: 0.05 },
+      { name: 'size', default: 0.5, min: 0.1,      max: 3,       step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const even = 0.5, odd = 1.5, size = 0.5;
+      const t_size_2 = 0.5 * size;
+      let a = Math.atan2(y, x);
+      const r = Math.sqrt(x * x + y * y);
+      let t = Math.log(Math.max(r, 1e-30));
+      if (t < 0) t -= t_size_2;
+      const abs_t = Math.abs(t);
+      t = abs_t - Math.floor(abs_t / size) * size;
+      a += t < t_size_2 ? even : odd;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

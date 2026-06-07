@@ -4023,6 +4023,137 @@ fn var_shredrad(p: vec2f, w: f32, n: f32, width: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L7 — JWildfire 2D continuing (4 vars). Sources: VogelFunc
+// (Victor Ganora), YinYangFunc (dark-beam), SquishFunc (Faber Angle
+// Pack), TargetFunc (Faber). All LGPL-2.1+, NOTICE.md. vogel/yin_yang/
+// squish use RNG; target deterministic.
+// ---------------------------------------------------------------------
+
+// vogel — Victor Ganora. 2 params (n int, scale). Golden-angle
+// phyllotaxis (Vogel spiral). Picks random integer i in [1, n], computes
+// the golden-angle phase a = i·2π/φ², then emits a radial point at
+// r = w·(|p| + √i) on that ray, plus a scale-modulated input offset.
+fn var_vogel(p: vec2f, w: f32, n: f32, scale: f32, wi: u32) -> vec2f {
+  let phi: f32 = 1.61803398874989;
+  let M_2PI_PHI2: f32 = 2.0 * PI / (phi * phi);
+  let n_safe = max(1.0, n);
+  let i_idx = floor(rand01(wi) * n_safe) + 1.0;
+  let a = i_idx * M_2PI_PHI2;
+  let r = w * (sqrt(p.x * p.x + p.y * p.y) + sqrt(i_idx));
+  let cosa = cos(a);
+  let sina = sin(a);
+  return vec2f(
+    r * (cosa + scale * p.x),
+    r * (sina + scale * p.y),
+  );
+}
+
+// yin_yang — dark-beam. 5 params (radius, ang1, ang2, dual_t int 0/1,
+// outside int 0/1). Geometric yin-yang symbol generator with rotation
+// jitter (via dual_t branch) and an outside-pass-through toggle.
+fn var_yin_yang(p: vec2f, w: f32, radius: f32, ang1: f32, ang2: f32, dual_t_p: f32, outside_p: f32, wi: u32) -> vec2f {
+  let sina = sin(PI * ang1);
+  let cosa = cos(PI * ang1);
+  let sinb = sin(PI * ang2);
+  let cosb = cos(PI * ang2);
+  let dual_t = i32(dual_t_p);
+  let outside = i32(outside_p);
+  var xx = p.x;
+  var yy = p.y;
+  var inv: f32 = 1.0;
+  var RR = radius;
+  let R2 = xx * xx + yy * yy;
+  if (R2 < 1.0) {
+    var nx = xx * cosa - yy * sina;
+    var ny = xx * sina + yy * cosa;
+    if (dual_t == 1 && rand01(wi) > 0.5) {
+      inv = -1.0;
+      RR = 1.0 - radius;
+      nx = xx * cosb - yy * sinb;
+      ny = xx * sinb + yy * cosb;
+    }
+    xx = nx;
+    yy = ny;
+    if (yy > 0.0) {
+      let t = sqrt(max(1.0 - yy * yy, 0.0));
+      let k = xx / max(abs(t), 1e-30) * sign(t);
+      let t1 = (t - 0.5) * 2.0;
+      let alfa = (1.0 - k) * 0.5;
+      let beta = 1.0 - alfa;
+      let dx = alfa * (RR - 1.0);
+      let k1 = alfa * RR + beta * 1.0;
+      return vec2f(
+        w * (t1 * k1 + dx) * inv,
+        w * sqrt(max(1.0 - t1 * t1, 0.0)) * k1 * inv,
+      );
+    }
+    return vec2f(
+      w * (xx * (1.0 - RR) + RR) * inv,
+      w * (yy * (1.0 - RR)) * inv,
+    );
+  }
+  if (outside == 1) {
+    return vec2f(w * p.x, w * p.y);
+  }
+  return vec2f(0.0, 0.0);
+}
+
+// squish — Faber Angle Pack. 1 param (power int ≥ 2). Folds the iterate
+// into a square's 8-region perimeter parameterization, picks a random
+// rotation index, then emits onto one of 4 quadrant-aligned line
+// segments. Distinctive square / cross silhouettes.
+fn var_squish(p: vec2f, w: f32, power_p: f32, wi: u32) -> vec2f {
+  let power = max(2.0, power_p);
+  let inv_power = 1.0 / power;
+  let ax = abs(p.x);
+  let ay = abs(p.y);
+  var s: f32;
+  var p_param: f32;
+  if (ax > ay) {
+    s = ax;
+    p_param = select(4.0 * s - p.y, p.y, p.x > 0.0);
+  } else {
+    s = ay;
+    p_param = select(6.0 * s + p.x, 2.0 * s - p.x, p.y > 0.0);
+  }
+  let rand_rot = floor(power * rand01(wi));
+  p_param = inv_power * (p_param + 8.0 * s * rand_rot);
+  if (p_param <= 1.0 * s) {
+    return vec2f(w * s, w * p_param);
+  }
+  if (p_param <= 3.0 * s) {
+    return vec2f(w * (2.0 * s - p_param), w * s);
+  }
+  if (p_param <= 5.0 * s) {
+    return vec2f(-w * s, w * (4.0 * s - p_param));
+  }
+  if (p_param <= 7.0 * s) {
+    return vec2f(-w * (6.0 * s - p_param), -w * s);
+  }
+  return vec2f(w * s, -w * (8.0 * s - p_param));
+}
+
+// target — Faber. 3 params (even, odd, size). Log-radial ring rotator:
+// divides log(r) into rings of `size` width, applies `even` or `odd`
+// angle offset depending on which ring the iterate sits in. Produces
+// rotating bullseye / target patterns.
+fn var_target(p: vec2f, w: f32, even: f32, odd: f32, size: f32) -> vec2f {
+  let t_size_2 = 0.5 * size;
+  var a = atan2(p.y, p.x);
+  let r = sqrt(p.x * p.x + p.y * p.y);
+  var t = log(max(r, 1e-30));
+  if (t < 0.0) {
+    t = t - t_size_2;
+  }
+  // f32 mod via (a - floor(a/b)·b).
+  let abs_t = abs(t);
+  let size_safe = max(abs(size), 1e-30);
+  t = abs_t - floor(abs_t / size_safe) * size_safe;
+  a = a + select(odd, even, t < t_size_2);
+  return vec2f(r * cos(a) * w, r * sin(a) * w);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4250,6 +4381,10 @@ fn apply_variation(
     case 182u: { return var_phoenix_julia(p, w, p0, p1, p2, p3, wi); }
     case 183u: { return var_unpolar(p, w); }
     case 184u: { return var_shredrad(p, w, p0, p1); }
+    case 185u: { return var_vogel(p, w, p0, p1, wi); }
+    case 186u: { return var_yin_yang(p, w, p0, p1, p2, p3, p4, wi); }
+    case 187u: { return var_squish(p, w, p0, wi); }
+    case 188u: { return var_target(p, w, p0, p1, p2); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

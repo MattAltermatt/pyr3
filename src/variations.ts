@@ -399,6 +399,15 @@ export const V = {
   phoenix_julia: 182,
   unpolar: 183,
   shredrad: 184,
+  // #121 L-tier batch L7 — JWildfire 2D continuing. vogel (Ganora
+  // golden-angle phyllotaxis). yin_yang (dark-beam 5-param symbol).
+  // squish (Faber Angle Pack square-fold). target (Faber log-radial
+  // ring rotator). Triaged out: truchet_flow (vec2 + smoothstep base
+  // shape, too complex); taurus (3D).
+  vogel: 185,
+  yin_yang: 186,
+  squish: 187,
+  target: 188,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
