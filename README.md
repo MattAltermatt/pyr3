@@ -160,8 +160,10 @@ Open work and ship history live on GitHub (since the 2026-05-30 pivot):
 
 - [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry, labelled by
   type (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
-- [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — `v1.0` is the ship gate
-  (close every issue in it → tag v1.0); `post-v1` is the deferred backlog
+- [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — themed arcs; the
+  `v1.0` → `v1.4` line shipped, and active themed work groups around **Apophysis and
+  JWildfire** (gradient editor #115, channel curves #116), **Binary distribution**
+  (cross-platform verify #126), and **Mobile rework** (#66)
 - [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward
 - [HISTORY.md](HISTORY.md) — frozen pre-1.0 ship log (v0.0 → v0.36)
 
