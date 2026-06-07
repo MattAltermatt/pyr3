@@ -3364,6 +3364,105 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       return [v * Math.cos(a), v * Math.sin(a)];
     },
   },
+  // ============================================================
+  // #121 batch L5 — JWildfire 2D continuing (V176..V180).
+  // hole (Faber), kaleidoscope + layered_spiral (Will Evans),
+  // linear_t (FractalDesire), line (Nic Anderson 2D-projection of
+  // 3D base shape).
+  // ============================================================
+  {
+    idx: V.hole,
+    name: 'hole',
+    source: sourceForIdx(V.hole),
+    formula: "V_{176}: \\delta = (\\alpha/\\pi + 1)^a;\\; r = \\sqrt{x^2+y^2+\\delta}\\text{ or }\\delta/(x^2+y^2+\\delta);\\; \\alpha = \\text{atan2}(y, x)",
+    blurb: "Michael Faber's hole variation. Polar radial branch — `inside=0` emits sqrt(x²+y²+δ) (outward push), `inside=1` emits the inverse δ/(x²+y²+δ) (inward pull to origin). The δ term is a power of (angle/π + 1) — creates the characteristic angular hole pattern.",
+    params: [
+      { name: 'a',      default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'inside', default: 0,   min: 0,  max: 1, step: 1    },
+    ],
+    warpFn: (x, y) => {
+      const a = 1.0, inside = 0;
+      const alpha = Math.atan2(y, x);
+      const delta = Math.pow(Math.max(alpha / Math.PI + 1, 1e-30), a);
+      const sumsq = x * x + y * y;
+      // inside-branch narrowed away at default=0.
+      const r = inside === 0
+        ? Math.sqrt(Math.max(sumsq + delta, 0))
+        : delta / Math.max(sumsq + delta, 1e-30);
+      return [r * Math.cos(alpha), r * Math.sin(alpha)];
+    },
+  },
+  {
+    idx: V.kaleidoscope,
+    name: 'kaleidoscope',
+    source: sourceForIdx(V.kaleidoscope),
+    formula: "V_{177}: \\text{split at }y=0;\\; \\text{apply 45-rad rotation+offset to each half}",
+    blurb: "Will Evans's kaleidoscope. Splits the plane at y=0 and applies a 45-radian (NOT degree — JWildfire quirk) rotation+offset to each half. `pull` separates the two halves; `rotate` scales both; `line_up` provides a phase offset; (x, y) translate one half. Produces sharp split-symmetry patterns.",
+    params: [
+      { name: 'pull',    default: 0.0, min: -3, max: 3, step: 0.05 },
+      { name: 'rotate',  default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'line_up', default: 1.0, min: -3, max: 3, step: 0.05 },
+      { name: 'x',       default: 0.0, min: -3, max: 3, step: 0.05 },
+      { name: 'y',       default: 0.0, min: -3, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const pull = 0, rotate = 1, line_up = 1, off_x = 0, off_y = 0;
+      const c45 = Math.cos(45), s45 = Math.sin(45);
+      const ox = ((rotate * x) * c45 - y * s45 + line_up) + off_x;
+      const oy = y > 0
+        ? ((rotate * y) * c45 + x * s45 + pull + line_up) + off_y
+        : (rotate * y) * c45 + x * s45 - pull - line_up;
+      return [ox, oy];
+    },
+  },
+  {
+    idx: V.layered_spiral,
+    name: 'layered_spiral',
+    source: sourceForIdx(V.layered_spiral),
+    formula: "V_{178}(x, y) = w \\cdot x \\cdot r \\cdot (\\cos t, \\sin t),\\; t = x^2 + y^2",
+    blurb: "Will Evans's layered spiral. Polar spiral where the angular phase is r² (so points further from origin spin faster) and the radial scale is x·radius. Produces concentric spiral arms with x-axis-modulated brightness.",
+    params: [
+      { name: 'radius', default: 1.0, min: 0.05, max: 5, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const radius = 1.0;
+      const a = x * radius;
+      const t = x * x + y * y + 1e-30;
+      return [a * Math.cos(t), a * Math.sin(t)];
+    },
+  },
+  {
+    idx: V.linear_t,
+    name: 'linear_t',
+    source: sourceForIdx(V.linear_t),
+    formula: "V_{179}(x, y) = w\\,(\\text{sgn}(x)|x|^{powX},\\; \\text{sgn}(y)|y|^{powY})",
+    blurb: "FractalDesire's linearT — per-axis power law with sign preservation. Stretches or compresses coords independently along x and y. At (powX, powY) = (1, 1) it's identity; sub-1 powers pull toward origin, super-1 powers push outward.",
+    params: [
+      { name: 'powX', default: 1.2, min: 0.1, max: 3, step: 0.05 },
+      { name: 'powY', default: 0.9, min: 0.1, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const powX = 1.2, powY = 0.9;
+      const sx = x >= 0 ? 1 : -1;
+      const sy = y >= 0 ? 1 : -1;
+      return [
+        sx * Math.pow(Math.max(Math.abs(x), 1e-30), powX),
+        sy * Math.pow(Math.max(Math.abs(y), 1e-30), powY),
+      ];
+    },
+  },
+  {
+    idx: V.line,
+    name: 'line',
+    source: sourceForIdx(V.line),
+    formula: "V_{180}: \\text{2D projection of }(\\cos\\delta\\pi\\cos\\phi\\pi,\\; \\sin\\delta\\pi\\cos\\phi\\pi)\\text{ unit direction; rng-sample along the line}",
+    blurb: "Nic Anderson (chronologicaldot) line base shape — 2D projection of JWildfire's 3D version (drops z). Computes a unit direction from spherical angles (δ, φ) both scaled by π, then samples a uniformly-random point along that line. At default (0, 0) the line is horizontal.",
+    params: [
+      { name: 'delta', default: 0.0, min: -1, max: 1, step: 0.01 },
+      { name: 'phi',   default: 0.0, min: -1, max: 1, step: 0.01 },
+    ],
+    // RNG-using base shape — no warpFn.
+  },
 ];
 
 const byIdx = new Map(CATALOG_DATA.map(d => [d.idx, d]));

@@ -377,6 +377,18 @@ export const V = {
   hypertile1: 173,
   hypertile2: 174,
   idisc: 175,
+  // #121 L-tier batch L5 — JWildfire 2D continuing. foci (Apophysis
+  // pack, sinh/cos projection). hole (Faber 2-param radial). kaleidoscope
+  // (Will Evans 5-param mirror split). layered_spiral (Will Evans 1-param
+  // radial-modulated spiral). linearT (FractalDesire 2-param power-law).
+  // line (Nic Anderson 2-param base shape — 2D projection drops z).
+  // Triaged out: jac_cn/jac_dn/jac_sn (need shared Jacobi_elliptic
+  // helper, deferred to L6+); maurer_rose (16 params).
+  hole: 176,
+  kaleidoscope: 177,
+  layered_spiral: 178,
+  linear_t: 179,
+  line: 180,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

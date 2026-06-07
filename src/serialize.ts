@@ -275,6 +275,13 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   hypertile: ['p', 'q', 'n'],
   hypertile1: ['p', 'q'],
   hypertile2: ['p', 'q'],
+  // #121 L-tier batch L5 — hole `inside` is int (0/1 toggle). line is
+  // 2D projection of JWildfire's 3D base shape (drops z component).
+  hole: ['a', 'inside'],
+  kaleidoscope: ['pull', 'rotate', 'line_up', 'x', 'y'],
+  layered_spiral: ['radius'],
+  linear_t: ['powX', 'powY'],
+  line: ['delta', 'phi'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -456,6 +463,13 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   hypertile: [3, 7, 1],                                  // p, q, n — Zueuk defaults (canonical hyperbolic tiling)
   hypertile1: [3, 7],                                    // p, q
   hypertile2: [3, 7],                                    // p, q
+  // #121 L-tier batch L5 — JWildfire init values verbatim. linear_t and
+  // line use 2D-projection only (drop the JWildfire z component).
+  hole: [1.0, 0],                                        // a=1, inside=0 — Faber default (outside formula)
+  kaleidoscope: [0.0, 1.0, 1.0, 0.0, 0.0],               // pull, rotate, line_up, x, y — Will Evans defaults
+  layered_spiral: [1.0],                                 // radius=1 — Will Evans default
+  linear_t: [1.2, 0.9],                                  // powX, powY — FractalDesire defaults
+  line: [0.0, 0.0],                                      // delta, phi — Nic Anderson defaults
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

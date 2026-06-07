@@ -3892,6 +3892,83 @@ fn var_idisc(p: vec2f, w: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #121 batch L5 — JWildfire 2D continuing (5 vars). Sources: HoleFunc
+// (Michael Faber), KaleidoscopeFunc + LayeredSpiralFunc (Will Evans),
+// LinearTFunc (FractalDesire), LineFunc (Nic Anderson). All LGPL-2.1+,
+// NOTICE.md. All deterministic except line (1 RNG/iter base shape).
+// ---------------------------------------------------------------------
+
+// hole — Michael Faber. 2 params (a, inside int 0/1). Polar radial
+// branch: inside=0 emits sqrt(x²+y² + δ); inside=1 emits the inverse
+// δ/(x²+y²+δ). δ = (α/π + 1)^a where α = atan2(y, x).
+fn var_hole(p: vec2f, w: f32, a: f32, inside_p: f32) -> vec2f {
+  let alpha = atan2(p.y, p.x);
+  let delta = pow(max(alpha / PI + 1.0, 1e-30), a);
+  let sumsq = p.x * p.x + p.y * p.y;
+  let inside = i32(inside_p);
+  let r = select(
+    w * sqrt(max(sumsq + delta, 0.0)),
+    w * delta / max(sumsq + delta, 1e-30),
+    inside != 0,
+  );
+  return vec2f(r * cos(alpha), r * sin(alpha));
+}
+
+// kaleidoscope — Will Evans. 5 params (pull, rotate, line_up, x, y).
+// Splits the plane at y=0 and applies a 45° rotation+offset to each
+// half. Note: JWildfire's cos/sin(45.0) treat 45.0 as RADIANS (not
+// degrees!) — port verbatim.
+fn var_kaleidoscope(p: vec2f, w_amp: f32, pull: f32, rotate: f32, line_up: f32, off_x: f32, off_y: f32) -> vec2f {
+  let c45 = cos(45.0);
+  let s45 = sin(45.0);
+  let ox = w_amp * (((rotate * p.x) * c45 - p.y * s45 + line_up) + off_x);
+  let oy = select(
+    w_amp * ((rotate * p.y) * c45 + p.x * s45 - pull - line_up),
+    w_amp * (((rotate * p.y) * c45 + p.x * s45 + pull + line_up) + off_y),
+    p.y > 0.0,
+  );
+  return vec2f(ox, oy);
+}
+
+// layered_spiral — Will Evans. 1 param (radius). Polar spiral where
+// the angular phase is r² and the radial scale is x·radius.
+fn var_layered_spiral(p: vec2f, w: f32, radius: f32) -> vec2f {
+  let a = p.x * radius;
+  let t = p.x * p.x + p.y * p.y + 1e-30;
+  return vec2f(w * a * cos(t), w * a * sin(t));
+}
+
+// linear_t — FractalDesire. 2 params (powX, powY). Per-axis power
+// law with sign preservation: sign(x) · |x|^powX, same for y.
+fn var_linear_t(p: vec2f, w: f32, pow_x: f32, pow_y: f32) -> vec2f {
+  let sx = select(-1.0, 1.0, p.x >= 0.0);
+  let sy = select(-1.0, 1.0, p.y >= 0.0);
+  return vec2f(
+    w * sx * pow(max(abs(p.x), 1e-30), pow_x),
+    w * sy * pow(max(abs(p.y), 1e-30), pow_y),
+  );
+}
+
+// line — Nic Anderson, chronologicaldot. 2 params (delta, phi). 2D
+// projection of JWildfire's 3D base shape — drops the z component.
+// Spherical-angle unit direction (δ, φ in units of π) → random point
+// along the line, scaled by amount.
+fn var_line(p: vec2f, w: f32, delta: f32, phi: f32, wi: u32) -> vec2f {
+  let cd = cos(delta * PI);
+  let sd = sin(delta * PI);
+  let cp = cos(phi * PI);
+  let sp = sin(phi * PI);
+  var ux = cd * cp;
+  var uy = sd * cp;
+  let uz = sp;
+  let r = sqrt(max(ux * ux + uy * uy + uz * uz, 1e-30));
+  ux = ux / r;
+  uy = uy / r;
+  let rand = rand01(wi) * w;
+  return vec2f(ux * rand, uy * rand);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -4110,6 +4187,11 @@ fn apply_variation(
     case 173u: { return var_hypertile1(p, w, p0, p1, wi); }
     case 174u: { return var_hypertile2(p, w, p0, p1, wi); }
     case 175u: { return var_idisc(p, w); }
+    case 176u: { return var_hole(p, w, p0, p1); }
+    case 177u: { return var_kaleidoscope(p, w, p0, p1, p2, p3, p4); }
+    case 178u: { return var_layered_spiral(p, w, p0); }
+    case 179u: { return var_linear_t(p, w, p0, p1); }
+    case 180u: { return var_line(p, w, p0, p1, wi); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
