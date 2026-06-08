@@ -4326,7 +4326,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: 'x = t - \\tanh(t), y = 1/\\cosh(t)',
     blurb: 'The pursuit curve. Its involute is the catenary.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       const t = x;
@@ -4341,7 +4340,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: '\\begin{bmatrix}x\'\\\\y\'\\end{bmatrix} = \\begin{bmatrix}2 & 1 \\\\ 1 & 1\\end{bmatrix}\\begin{bmatrix}x \\\\ y\\end{bmatrix} \\pmod 1',
     blurb: 'Arnold\'s cat map. A classic example of a chaotic area-preserving map that perfectly stretches and folds a torus over itself.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       const xmod = x - Math.floor(x + 0.5);
@@ -4357,7 +4355,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: '\\text{if } x < 0.5: \\ x\' = 2x, y\' = \\frac{y}{2} \\text{ else } x\' = 2x - 1, y\' = \\frac{y}{2} + 0.5',
     blurb: 'The folded baker\'s map. Slices the domain in half, stretches each horizontally, and stacks them vertically, perfectly preserving area.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       let xf = x - Math.floor(x + 0.5) + 0.5;
@@ -4379,7 +4376,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: 'x\' = 1 - |1 - 2x|, \\quad y\' = 1 - |1 - 2y|',
     blurb: 'A piecewise linear chaotic map applied independently to the x and y axes. Produces self-similar triangular banding.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       let xf = x - Math.floor(x + 0.5) + 0.5;
@@ -4564,7 +4560,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: 'x\' = x, \\quad y\' = \\ln\\left(\\tan\\left(\\frac{\\pi}{4} + \\frac{y}{2}\\right)\\right)',
     blurb: 'Standard conformal cylindrical projection. Treats (x,y) as (longitude, latitude) and applies the classic Mercator map projection. Vertical coordinates are clamped to avoid infinity at the poles.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       const lat = Math.max(-1.5, Math.min(1.5, y));
@@ -4578,7 +4573,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: 'k = \\sqrt{\\frac{2}{1 + \\cos y \\cos x}}, \\quad x\' = k \\cos y \\sin x, \\quad y\' = k \\sin y',
     blurb: 'Lambert azimuthal equal-area projection. Maps the sphere to a disk while perfectly preserving area, causing increasing angular distortion towards the edges.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       const k = Math.sqrt(2.0 / (1.0 + Math.cos(y) * Math.cos(x) + 1e-6));
@@ -4591,7 +4585,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: '2\\theta + \\sin(2\\theta) = \\pi \\sin y, \\quad x\' = \\frac{2\\sqrt{2}}{\\pi} x \\cos\\theta, \\quad y\' = \\sqrt{2} \\sin\\theta',
     blurb: 'Mollweide elliptical equal-area projection. An iconic map projection that trades off shape and angle accuracy for perfect global area proportion. The auxiliary angle is computed via Newton-Raphson iteration.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       let t = y;
@@ -4613,7 +4606,6 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: 'z = \\sqrt{1 + \\cos y \\cos\\frac{x}{2}}, \\quad x\' = \\frac{2\\sqrt{2} \\cos y \\sin\\frac{x}{2}}{z}, \\quad y\' = \\frac{\\sqrt{2} \\sin y}{z}',
     blurb: 'Hammer equal-area projection. Similar to Mollweide but reduces distortion at the outer meridians by projecting a hemisphere and then stretching it globally.',
-    params: [],
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       const z = Math.sqrt(1.0 + Math.cos(y) * Math.cos(x * 0.5) + 1e-6);
@@ -4628,7 +4620,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: 'novel',
     formula: 'k = \\frac{2}{1 + \\cos y \\cos x}, \\quad x\' = k \\cos y \\sin x, \\quad y\' = k \\sin y',
     blurb: 'Stereographic azimuthal projection. Conformal (preserves local angles and circles) but neither equal-area nor equidistant. Creates a beautiful global swirl radiating outward from the pole.',
-    params: [],
+
     defaultWeight: 0.5,
     warpFn: (x, y) => {
       const k = 2.0 / (1.0 + Math.cos(y) * Math.cos(x) + 1e-6);

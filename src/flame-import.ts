@@ -249,6 +249,7 @@ function parsePalette(flame: Element): { stops: ColorStop[]; fallback?: PaletteF
   const colorEls = flame.querySelectorAll(':scope > color');
   if (colorEls.length > 0) {
     any = true;
+    const provided = new Set<number>();
     for (const el of Array.from(colorEls)) {
       const indexAttr = el.getAttribute('index');
       if (indexAttr === null) throw new Error('pyr3: <color> missing index');
@@ -262,7 +263,49 @@ function parsePalette(flame: Element): { stops: ColorStop[]; fallback?: PaletteF
       if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) {
         throw new Error(`pyr3: <color index="${idx}"> bad rgb: ${JSON.stringify(triple)}`);
       }
-      rgb[idx] = { r: parts[0]! / 255, g: parts[1]! / 255, b: parts[2]! / 255 };
+      
+      let r = parts[0]! / 255;
+      let g = parts[1]! / 255;
+      let b = parts[2]! / 255;
+
+      // #17 fix (e) — alpha premultiply
+      let alpha = 1.0;
+      const aAttr = el.getAttribute('a');
+      if (aAttr !== null) {
+        alpha = expectFiniteNumber(aAttr, 'a');
+        if (alpha > 1.0) alpha /= 255;
+      } else if (parts.length >= 4) {
+        alpha = parts[3]!;
+        if (alpha > 1.0) alpha /= 255;
+      }
+
+      rgb[idx] = { r: r * alpha, g: g * alpha, b: b * alpha };
+      provided.add(idx);
+    }
+
+    // #17 fix (d) — interpolate missing colors for sparse palettes
+    if (provided.size > 0 && provided.size < 256) {
+      let first = 0;
+      while (!provided.has(first)) first++;
+      
+      let lastProvided = first;
+      for (let i = first + 1; i <= first + 256; i++) {
+        const curr = i % 256;
+        if (provided.has(curr)) {
+          let dist = curr - lastProvided;
+          if (dist < 0) dist += 256;
+          for (let j = 1; j < dist; j++) {
+            const idx = (lastProvided + j) % 256;
+            const t = j / dist;
+            rgb[idx] = {
+              r: rgb[lastProvided]!.r * (1 - t) + rgb[curr]!.r * t,
+              g: rgb[lastProvided]!.g * (1 - t) + rgb[curr]!.g * t,
+              b: rgb[lastProvided]!.b * (1 - t) + rgb[curr]!.b * t,
+            };
+          }
+          lastProvided = curr;
+        }
+      }
     }
   }
 

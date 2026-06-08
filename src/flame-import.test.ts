@@ -252,14 +252,27 @@ describe('parseFlame palette parsing', () => {
     expect(genome.palette.stops[128]!.r).toBeCloseTo(128 / 255, 5);
   });
 
-  it('defaults unspecified <color> indices to black', () => {
+  it('interpolates unspecified <color> indices (fix d, was black)', () => {
     const palette = '<color index="0" rgb="255 0 0"/><color index="255" rgb="0 0 255"/>';
     const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${palette}${xformOnly}</flame>`;
     const { genome } = parseFlame(xml);
     expect(genome.palette.stops).toHaveLength(256);
     expect(genome.palette.stops[0]).toEqual({ t: 0, r: 1, g: 0, b: 0 });
-    expect(genome.palette.stops[100]).toEqual({ t: 100 / 255, r: 0, g: 0, b: 0 });
+    // Interpolated between 0 (red) and 255 (blue)
+    expect(genome.palette.stops[100]!.r).toBeCloseTo((255 - 100) / 255, 5);
+    expect(genome.palette.stops[100]!.b).toBeCloseTo(100 / 255, 5);
     expect(genome.palette.stops[255]).toEqual({ t: 1, r: 0, g: 0, b: 1 });
+  });
+
+  it('premultiplies <color> rgb by alpha (fix e)', () => {
+    // Tests both rgba="r g b a" and rgb="r g b" a="a"
+    const palette = '<color index="0" rgba="255 128 64 128"/><color index="1" rgb="255 128 64" a="128"/>';
+    const xml = `<flame name="t" size="1024 1024" center="0 0" scale="100">${palette}${xformOnly}</flame>`;
+    const { genome } = parseFlame(xml);
+    expect(genome.palette.stops[0]!.r).toBeCloseTo(1.0 * (128 / 255), 5);
+    expect(genome.palette.stops[0]!.g).toBeCloseTo((128 / 255) * (128 / 255), 5);
+    expect(genome.palette.stops[1]!.r).toBeCloseTo(1.0 * (128 / 255), 5);
+    expect(genome.palette.stops[1]!.g).toBeCloseTo((128 / 255) * (128 / 255), 5);
   });
 
   it('parses <colors data="hex..."> packed-hex with flam3 layout 00RRGGBB per entry', () => {
