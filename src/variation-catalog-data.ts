@@ -4712,10 +4712,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'z \\to z \\cdot s^{i \\theta / 2\\pi}',
     blurb: 'Droste effect conformal mapping. Zooms exponentially while rotating to tile the plane.',
     params: [
-      { name: 's', default: 1.0, min: 0.1, max: 10.0, step: 0.1 },
+      { name: 's', default: 5.50, min: 0.1, max: 10.0, step: 0.1 },
     ],
-    defaultWeight: 1.0,
-    warpFn: (x, y, s = 1.0) => {
+    defaultWeight: 0.47,
+    warpFn: (x, y, s = 5.50) => {
       const r = Math.max(Math.hypot(x, y), 1e-6);
       const theta = Math.atan2(y, x);
       const lns_2pi = Math.log(Math.max(s, 1e-4)) / 6.283185307179586;
@@ -4732,11 +4732,11 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'r = a e^{k \\theta}',
     blurb: 'Logarithmic spiral parameterized by angle. Equiangular growth pattern.',
     params: [
-      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-      { name: 'k', default: 1.0, min: -5.0, max: 5.0, step: 0.1 },
+      { name: 'a', default: 1.00, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'k', default: 0.20, min: -5.0, max: 5.0, step: 0.1 },
     ],
-    defaultWeight: 1.0,
-    warpFn: (x, y, a = 1.0, k = 1.0) => {
+    defaultWeight: 0.45,
+    warpFn: (x, y, a = 1.00, k = 0.20) => {
       const theta = Math.atan2(y, x);
       const r = a * Math.exp(k * theta);
       return [r * Math.cos(theta), r * Math.sin(theta)];
@@ -4749,10 +4749,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'r = a \\sqrt{\\theta}',
     blurb: 'Fermat spiral. Spacing between successive turns grows smaller.',
     params: [
-      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'a', default: 0.90, min: 0.1, max: 5.0, step: 0.1 },
     ],
-    defaultWeight: 1.0,
-    warpFn: (x, y, a = 1.0) => {
+    defaultWeight: 0.26,
+    warpFn: (x, y, a = 0.90) => {
       const t = Math.atan2(y, x);
       const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a * Math.sqrt(theta);
@@ -4766,10 +4766,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'r = a / \\sqrt{\\theta}',
     blurb: 'Lituus spiral. Area of circular sectors is constant.',
     params: [
-      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'a', default: 1.50, min: 0.1, max: 5.0, step: 0.1 },
     ],
-    defaultWeight: 1.0,
-    warpFn: (x, y, a = 1.0) => {
+    defaultWeight: 0.54,
+    warpFn: (x, y, a = 1.50) => {
       const t = Math.atan2(y, x);
       const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a / Math.sqrt(theta);
@@ -4783,10 +4783,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'r = a / \\theta',
     blurb: 'Hyperbolic spiral (reciprocal spiral). Starts at infinity and winds to the origin.',
     params: [
-      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'a', default: 1.80, min: 0.1, max: 5.0, step: 0.1 },
     ],
-    defaultWeight: 1.0,
-    warpFn: (x, y, a = 1.0) => {
+    defaultWeight: 0.12,
+    warpFn: (x, y, a = 1.80) => {
       const t = Math.atan2(y, x);
       const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a / theta;
