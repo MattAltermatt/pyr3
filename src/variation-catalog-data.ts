@@ -4753,7 +4753,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     defaultWeight: 1.0,
     warpFn: (x, y, a = 1.0) => {
-      const theta = Math.max(Math.atan2(y, x), 1e-6);
+      const t = Math.atan2(y, x);
+      const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a * Math.sqrt(theta);
       return [r * Math.cos(theta), r * Math.sin(theta)];
     },
@@ -4769,7 +4770,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     defaultWeight: 1.0,
     warpFn: (x, y, a = 1.0) => {
-      const theta = Math.max(Math.atan2(y, x), 1e-6);
+      const t = Math.atan2(y, x);
+      const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a / Math.sqrt(theta);
       return [r * Math.cos(theta), r * Math.sin(theta)];
     },
@@ -4785,7 +4787,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     defaultWeight: 1.0,
     warpFn: (x, y, a = 1.0) => {
-      const theta = Math.max(Math.atan2(y, x), 1e-6);
+      const t = Math.atan2(y, x);
+      const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a / theta;
       return [r * Math.cos(theta), r * Math.sin(theta)];
     },

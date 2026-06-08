@@ -135,24 +135,44 @@ describe.skipIf(!device)('#149 — Spirals & Conformal Zoom', () => {
   it('fermat_spiral', async () => {
     // p = [0.0, 1.0], a=2.0 -> theta = pi/2
     // r = 2.0 * sqrt(pi/2) ≈ 2.506628
-    const out = await dispatch('var_fermat_spiral', [[0.0, 1.0]]);
+    // p = [0.0, -1.0], a=2.0 -> theta = 3pi/2
+    // r = 2.0 * sqrt(3pi/2) ≈ 4.3416075
+    // p = [1.0, -1.0], a=2.0 -> theta = 7pi/4
+    // r = 2.0 * sqrt(7pi/4) ≈ 4.689472
+    const out = await dispatch('var_fermat_spiral', [[0.0, 1.0], [0.0, -1.0], [1.0, -1.0]]);
     expect(out[0]).toBeCloseTo(0.0, 5);
     expect(out[1]).toBeCloseTo(2.5066282, 5);
+    expect(out[2]).toBeCloseTo(0.0, 5);
+    expect(out[3]).toBeCloseTo(-4.3416075, 5);
+    expect(out[4]).toBeCloseTo(3.3159577, 5);
+    expect(out[5]).toBeCloseTo(-3.3159577, 5);
   });
 
   it('lituus', async () => {
     // p = [0.0, 1.0], a=2.0 -> theta = pi/2
     // r = 2.0 / sqrt(pi/2) ≈ 1.595769
-    const out = await dispatch('var_lituus', [[0.0, 1.0]]);
+    // p = [0.0, -1.0] -> theta = 3pi/2 -> r = 2.0 / sqrt(3pi/2) ≈ 0.9213177
+    // p = [1.0, -1.0] -> theta = 7pi/4 -> r = 2.0 / sqrt(7pi/4) ≈ 0.8529744
+    const out = await dispatch('var_lituus', [[0.0, 1.0], [0.0, -1.0], [1.0, -1.0]]);
     expect(out[0]).toBeCloseTo(0.0, 5);
     expect(out[1]).toBeCloseTo(1.5957691, 5);
+    expect(out[2]).toBeCloseTo(0.0, 5);
+    expect(out[3]).toBeCloseTo(-0.9213177, 5);
+    expect(out[4]).toBeCloseTo(0.6031440, 5);
+    expect(out[5]).toBeCloseTo(-0.6031440, 5);
   });
 
   it('hyperbolic_spiral', async () => {
     // p = [0.0, 1.0], a=2.0 -> theta = pi/2
     // r = 2.0 / (pi/2) = 4/pi ≈ 1.273239
-    const out = await dispatch('var_hyperbolic_spiral', [[0.0, 1.0]]);
+    // p = [0.0, -1.0] -> theta = 3pi/2 -> r = 4/(3pi) ≈ 0.4244132
+    // p = [1.0, -1.0] -> theta = 7pi/4 -> r = 8/(7pi) ≈ 0.3637827
+    const out = await dispatch('var_hyperbolic_spiral', [[0.0, 1.0], [0.0, -1.0], [1.0, -1.0]]);
     expect(out[0]).toBeCloseTo(0.0, 5);
     expect(out[1]).toBeCloseTo(1.2732395, 5);
+    expect(out[2]).toBeCloseTo(0.0, 5);
+    expect(out[3]).toBeCloseTo(-0.4244132, 5);
+    expect(out[4]).toBeCloseTo(0.2572333, 5);
+    expect(out[5]).toBeCloseTo(-0.2572333, 5);
   });
 });

@@ -5634,21 +5634,24 @@ fn var_logspiral(p: vec2f, w: f32, a: f32, k: f32) -> vec2f {
 
 // V252 fermat_spiral
 fn var_fermat_spiral(p: vec2f, w: f32, a: f32) -> vec2f {
-  let theta = max(atan2(p.y, p.x), 1e-6);
+  let t = atan2(p.y, p.x);
+  let theta = max(select(t, t + 6.283185307179586, t < 0.0), 1e-6);
   let r = a * sqrt(theta);
   return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
 }
 
 // V253 lituus
 fn var_lituus(p: vec2f, w: f32, a: f32) -> vec2f {
-  let theta = max(atan2(p.y, p.x), 1e-6);
+  let t = atan2(p.y, p.x);
+  let theta = max(select(t, t + 6.283185307179586, t < 0.0), 1e-6);
   let r = a / sqrt(theta);
   return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
 }
 
 // V254 hyperbolic_spiral
 fn var_hyperbolic_spiral(p: vec2f, w: f32, a: f32) -> vec2f {
-  let theta = max(atan2(p.y, p.x), 1e-6);
+  let t = atan2(p.y, p.x);
+  let theta = max(select(t, t + 6.283185307179586, t < 0.0), 1e-6);
   let r = a / theta;
   return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
 }
