@@ -18,6 +18,7 @@ import {
   schedulePersist,
   type EditState,
   type LaneScheduler,
+  type Lane,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
@@ -508,8 +509,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       scheduleHistoryCommit();
     }
     const lane = pathLane(path);
-    if (lane === 'slow' || lane === 'rebuild') {
-      void requestLiveRender();
+    if (lane === 'slow' || lane === 'rebuild' || lane === 'fast') {
+      void requestLiveRender(lane);
       scheduleSettle();
     } else {
       scheduler.schedule({ lane, path });
@@ -545,7 +546,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // whatever fps the GPU can sustain for live dims.
   let liveInFlight = false;
   let liveDirty = false;
-  async function requestLiveRender(): Promise<void> {
+  let liveLane: Lane = 'fast';
+  async function requestLiveRender(lane: Lane = 'slow'): Promise<void> {
+    if (lane === 'rebuild' || liveLane === 'rebuild') liveLane = 'rebuild';
+    else if (lane === 'slow' || liveLane === 'slow') liveLane = 'slow';
+
     if (liveInFlight) {
       liveDirty = true; // mark for re-render after current frame finishes
       return;
@@ -553,13 +558,18 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     liveInFlight = true;
     do {
       liveDirty = false;
+      const currentLane = liveLane;
+      liveLane = 'fast'; // reset for next request
+      
       inflightTicket++;
-      ensureLiveDims();
+      if (currentLane === 'slow' || currentLane === 'rebuild') {
+        ensureLiveDims();
+      }
       const view = ctx.getCurrentTexture().createView();
       const w = canvas.width;
       const h = canvas.height;
-      const genome = liveAdjustedGenome();
-      editRenderer.applyLane('slow', genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
+      const genome = (currentLane === 'slow' || currentLane === 'rebuild') ? liveAdjustedGenome() : state.genome;
+      editRenderer.applyLane(currentLane === 'rebuild' ? 'slow' : currentLane, genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
       opts.onStateChange?.(state);
       await opts.device.queue.onSubmittedWorkDone();
       // Yield to the browser's paint pipeline BEFORE starting the next
