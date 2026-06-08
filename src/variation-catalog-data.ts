@@ -4120,12 +4120,13 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'V_{219}: \\text{if }|p-c| > r,\\; \\begin{cases} (0, 0)\\text{ (hide)} & \\text{zero}=1 \\\\ w\\,r_d(\\cos\\theta, \\sin\\theta) + c & \\text{zero}=0 \\end{cases};\\; \\text{else pass through}',
     blurb: "Xyrus02's circlecrop (Apophysis built-in). Disc clipper at (x, y) with radius `radius`. `zero=1`: outside the disc → hide (contributes nothing). `zero=0`: outside → wrap to disc edge with `scatter_area`-jittered radius. Inside the disc, points pass through.",
     params: [
-      { name: 'radius',       default: 1.0, min: 0.1, max: 5, step: 0.05 },
+      { name: 'radius',       default: 0.55, min: 0.1, max: 5, step: 0.05 },
       { name: 'x',            default: 0.0, min: -2, max: 2, step: 0.05 },
       { name: 'y',            default: 0.0, min: -2, max: 2, step: 0.05 },
       { name: 'scatter_area', default: 0.0, min: -1, max: 1, step: 0.05 },
-      { name: 'zero',         default: 1,   min: 0, max: 1, step: 1    },
+      { name: 'zero',         default: 0,   min: 0, max: 1, step: 1    },
     ],
+    defaultWeight: 1.0,
   },
   // ---------------------------------------------------------------------
   // Conformal & complex-analytic warps — V220 (#133). Original (not in
@@ -4293,9 +4294,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'x = (k+1)\\cos\\theta - \\cos((k+1)\\theta)',
     blurb: 'A roulette curve traced by a point on a circle rolling on the outside of another circle.',
     params: [
-      { name: 'k', default: 3.0, min: 1.0, max: 10.0, step: 1.0 },
+      { name: 'k', default: 1.0, min: 1.0, max: 10.0, step: 1.0 },
     ],
-    defaultWeight: 0.5,
+    defaultWeight: 0.45,
     warpFn: (x, y, k = 3.0) => {
       const theta = Math.atan2(y, x);
       const k1 = k + 1.0;
@@ -4311,9 +4312,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'y = a \\cosh(x/a)',
     blurb: 'The shape of a hanging chain. Warps the y-axis parabolically outward for large x.',
     params: [
-      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'a', default: 0.2, min: 0.1, max: 5.0, step: 0.1 },
     ],
-    defaultWeight: 0.5,
+    defaultWeight: 0.45,
     warpFn: (x, y, a = 1.0) => {
       const yp = a * Math.cosh(x / a);
       return [x, yp];
@@ -4413,9 +4414,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: '\\text{if } |x| > L: x\' = 2L \\cdot \\text{sgn}(x) - x',
     blurb: 'A stateless reflection fold over an axis-aligned bounding box. The core building block of the Mandelbox fractal.',
     params: [
-      { name: 'limit', default: 1.0, min: 0.1, max: 2.0, step: 0.1 },
+      { name: 'limit', default: 0.4, min: 0.1, max: 2.0, step: 0.1 },
     ],
-    defaultWeight: 0.5,
+    defaultWeight: 1.0,
     warpFn: (x, y, limit = 1.0) => {
       let xp = x;
       let yp = y;
@@ -4508,9 +4509,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: 'x\' = x + k \\sin y, \\quad y\' = y + x\'',
     blurb: 'Chirikov-Taylor standard map. A classic area-preserving map that models a kicked rotor. The k parameter controls the transition from regular motion (KAM tori) to widespread chaos.',
     params: [
-      { name: 'k', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'k', default: 0.5, min: 0.0, max: 5.0, step: 0.01 },
     ],
-    defaultWeight: 0.5,
+    defaultWeight: 0.45,
     warpFn: (x, y, k = 1.0) => {
       const xp = x + k * Math.sin(y);
       const yp = y + xp;
@@ -4529,7 +4530,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'c', default: -0.65, min: -3.0, max: 3.0, step: 0.01 },
       { name: 'd', default: -2.43, min: -3.0, max: 3.0, step: 0.01 },
     ],
-    defaultWeight: 0.5,
+    defaultWeight: 0.94,
     warpFn: (x, y, a = -2.24, b = 0.43, c = -0.65, d = -2.43) => {
       return [
         Math.sin(a * y) - Math.cos(b * x),

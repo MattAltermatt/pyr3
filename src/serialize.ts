@@ -420,6 +420,7 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // cellsize=1, power=1, rotate=0.166, scale=1.
   bcircle: [1.0, 0.0],                       // scale=1, borderwidth=0
   curl2: [1.0, 0.0, 0.0],                    // c1=1, c2, c3
+  circlecrop: [0.55, 0.0, 0.0, 0.0, 0.0],    // radius, x, y, scatter_area, zero
   murl: [0.1, 1],                            // c=0.1, power=1
   stwins: [1.0],                             // distort=1
   hexes: [1.0, 1.0, 0.166, 1.0],             // cellsize=1, power=1, rotate=0.166, scale=1
@@ -574,10 +575,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   cayley: [0.8],                             // s=0.8 — wider mapped strip near real axis
   complex_gamma: [0.4],                      // scale=0.4 — Γ growth tamed but still visible
   lambert_w: [2],                            // 2 Halley iterations (~10-digit precision)
-  standard_map: [1.0],                       // K (stochasticity)
+  standard_map: [0.5],                       // k (stochasticity)
   de_jong: [-2.24, 0.43, -0.65, -2.43],      // Peter de Jong classic
-  ikeda: [0.9],                              // u parameter
-  box_fold: [1.0],                           // reflection limit
+  ikeda: [1.4],                              // u parameter
+  box_fold: [0.4],                           // reflection limit
   sphere_fold: [0.5, 1.0],                   // rmin, rmax
   mandelbox_step: [2.0, 0.5, 1.0, 0.0, 0.0], // scale, rmin, rmax, cx, cy
   kifs_fold: [3.0, 0.0],                     // n mirrors, offset
