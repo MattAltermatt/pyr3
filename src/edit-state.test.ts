@@ -392,7 +392,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('round-trip integrity preserves all 8 keys', () => {
       const oldSections = { palette: false, curves: false, hsl: false, viewport: false, xforms: false, final: false, global: false, density: false, render: false };
       persistSectionCollapse(oldSections);
-      expect(localStorage.getItem('pyr3.edit.sectionCollapse')).toBe(JSON.stringify(oldSections));
+      expect(restoreSectionCollapse()).toEqual(oldSections);
   });
 });
 

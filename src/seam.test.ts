@@ -73,6 +73,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-section-density.ts',  // /v1/edit section — DOM-mounting
   'edit-section-render.ts',   // /v1/edit section — DOM-mounting
   'edit-section-curves.ts',   // /v1/edit Color Curves section — DOM-mounting (#116)
+  'edit-section-hsl.ts',      // /v1/edit HSL Adjust section — DOM-mounting (#172)
   'edit-canvas-nav.ts',   // /v1/edit pan + zoom — owns mouse/wheel listeners on window
   'edit-xform-viz.ts',    // /v1/edit affine viz — owns a 2D canvas
   'edit-variation-picker.ts',  // /v1/edit variation picker — owns a modal, document keydown listener
