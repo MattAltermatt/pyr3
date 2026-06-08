@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.logistic_map) return 'novel'; // #133/#134/#130/#129/#140 — original pyr3 variations
+  if (idx >= V.blaschke && idx <= V.tractrix) return 'novel'; // #133/#134/#130/#129/#140/#135
   return 'jwf';
 }
 
@@ -4248,6 +4248,91 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     defaultWeight: 0.5,
     // No warpFn: iterative + the f64 oracle would have its own Halley loop;
     // catalog renders a "warp not applicable" note.
+  },
+  {
+    idx: V.superellipse,
+    name: 'superellipse',
+    source: 'novel',
+    formula: '|\\frac{x}{a}|^n + |\\frac{y}{b}|^n = 1',
+    blurb: 'Lamé curve radial shaping. Sweeps between a star shape (n < 1), an ellipse (n = 2), and a box (n > 2).',
+    params: [
+      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'b', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'n', default: 2.0, min: 0.1, max: 10.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, a = 1.0, b = 1.0, n = 2.0) => {
+      const theta = Math.atan2(y, x);
+      const c = Math.abs(Math.cos(theta) / a);
+      const s = Math.abs(Math.sin(theta) / b);
+      const r = Math.pow(Math.pow(c, n) + Math.pow(s, n), -1.0 / n);
+      return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.limacon,
+    name: 'limacon',
+    source: 'novel',
+    formula: 'r = b + a \\cos\\theta',
+    blurb: 'Pascal\'s limaçon curve. Depending on a/b, produces an apple, cardioid, or inner-looped curve.',
+    params: [
+      { name: 'a', default: 1.0, min: -2.0, max: 2.0, step: 0.1 },
+      { name: 'b', default: 0.5, min: -2.0, max: 2.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, a = 1.0, b = 0.5) => {
+      const theta = Math.atan2(y, x);
+      const r = b + a * Math.cos(theta);
+      return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.epicycloid,
+    name: 'epicycloid',
+    source: 'novel',
+    formula: 'x = (k+1)\\cos\\theta - \\cos((k+1)\\theta)',
+    blurb: 'A roulette curve traced by a point on a circle rolling on the outside of another circle.',
+    params: [
+      { name: 'k', default: 3.0, min: 1.0, max: 10.0, step: 1.0 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, k = 3.0) => {
+      const theta = Math.atan2(y, x);
+      const k1 = k + 1.0;
+      const xp = k1 * Math.cos(theta) - Math.cos(k1 * theta);
+      const yp = k1 * Math.sin(theta) - Math.sin(k1 * theta);
+      return [xp, yp];
+    },
+  },
+  {
+    idx: V.catenary,
+    name: 'catenary',
+    source: 'novel',
+    formula: 'y = a \\cosh(x/a)',
+    blurb: 'The shape of a hanging chain. Warps the y-axis parabolically outward for large x.',
+    params: [
+      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, a = 1.0) => {
+      const yp = a * Math.cosh(x / a);
+      return [x, yp];
+    },
+  },
+  {
+    idx: V.tractrix,
+    name: 'tractrix',
+    source: 'novel',
+    formula: 'x = t - \\tanh(t), y = 1/\\cosh(t)',
+    blurb: 'The pursuit curve. Its involute is the catenary.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const t = x;
+      const xp = t - Math.tanh(t);
+      const yp = 1.0 / Math.cosh(t);
+      return [xp, yp];
+    },
   },
   {
     idx: V.arnold_cat,

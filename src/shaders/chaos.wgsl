@@ -5536,6 +5536,58 @@ fn var_logistic_map(p: vec2f, w: f32, r: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #135 — Plane & roulette-curve warps (V241–V245).
+// ---------------------------------------------------------------------
+
+// V241 superellipse:
+fn var_superellipse(p: vec2f, w: f32, a: f32, b: f32, n: f32) -> vec2f {
+  let theta = atan2(p.y, p.x);
+  let sa = max(abs(a), 1e-4);
+  let sb = max(abs(b), 1e-4);
+  let sn = max(n, 0.01);
+  let c = abs(safe_cos(theta) / sa);
+  let s = abs(safe_sin(theta) / sb);
+  let r = pow(max(pow(c, sn) + pow(s, sn), 1e-6), -1.0 / sn);
+  return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
+}
+
+// V242 limacon:
+fn var_limacon(p: vec2f, w: f32, a: f32, b: f32) -> vec2f {
+  let theta = atan2(p.y, p.x);
+  let r = b + a * safe_cos(theta);
+  return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
+}
+
+// V243 epicycloid:
+fn var_epicycloid(p: vec2f, w: f32, k: f32) -> vec2f {
+  let t = atan2(p.y, p.x);
+  let k1 = k + 1.0;
+  let xp = k1 * safe_cos(t) - safe_cos(k1 * t);
+  let yp = k1 * safe_sin(t) - safe_sin(k1 * t);
+  return w * vec2f(xp, yp);
+}
+
+// V244 catenary:
+fn var_catenary(p: vec2f, w: f32, a: f32) -> vec2f {
+  let sa = max(abs(a), 1e-4) * sign(a + 1e-8);
+  let x_a = p.x / sa;
+  let yp = sa * 0.5 * (exp(x_a) + exp(-x_a));
+  return w * vec2f(p.x, yp);
+}
+
+// V245 tractrix:
+fn var_tractrix(p: vec2f, w: f32) -> vec2f {
+  let t = p.x;
+  let et = exp(t);
+  let emt = exp(-t);
+  let tanh_t = (et - emt) / (et + emt);
+  let cosh_t = 0.5 * (et + emt);
+  let xp = t - tanh_t;
+  let yp = 1.0 / cosh_t;
+  return w * vec2f(xp, yp);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -5826,6 +5878,12 @@ fn apply_variation(
     case 238u: { return var_bakers_map(p, w); }
     case 239u: { return var_tent_map(p, w); }
     case 240u: { return var_logistic_map(p, w, p0); }
+    // #135 — Plane & roulette-curve warps
+    case 241u: { return var_superellipse(p, w, p0, p1, p2); }
+    case 242u: { return var_limacon(p, w, p0, p1); }
+    case 243u: { return var_epicycloid(p, w, p0); }
+    case 244u: { return var_catenary(p, w, p0); }
+    case 245u: { return var_tractrix(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

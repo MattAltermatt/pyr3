@@ -518,6 +518,12 @@ export const V = {
   bakers_map: 238,
   tent_map: 239,
   logistic_map: 240,
+  // #135 — Plane & roulette-curve warps
+  superellipse: 241,
+  limacon: 242,
+  epicycloid: 243,
+  catenary: 244,
+  tractrix: 245,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

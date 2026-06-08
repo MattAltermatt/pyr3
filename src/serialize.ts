@@ -338,6 +338,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   mandelbox_step: ['scale', 'rmin', 'rmax', 'cx', 'cy'],
   kifs_fold: ['n', 'offset'],
   logistic_map: ['r'],
+  superellipse: ['a', 'b', 'n'],
+  limacon: ['a', 'b'],
+  epicycloid: ['k'],
+  catenary: ['a'],
+  tractrix: [],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -577,6 +582,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   mandelbox_step: [2.0, 0.5, 1.0, 0.0, 0.0], // scale, rmin, rmax, cx, cy
   kifs_fold: [3.0, 0.0],                     // n mirrors, offset
   logistic_map: [3.9],                       // r parameter (chaotic band)
+  superellipse: [1.0, 1.0, 2.0],
+  limacon: [1.0, 0.5],
+  epicycloid: [3.0],
+  catenary: [1.0],
+  tractrix: [],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
