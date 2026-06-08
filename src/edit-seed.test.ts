@@ -32,13 +32,17 @@ describe('generateRandomGenome', () => {
     expect(g.palette.name).toMatch(/#\d+$/);
   });
 
-  it("first variation of every xform is non-linear", () => {
-    // Pure linear would collapse the xform to its (contractive) affine —
-    // no fractal structure. Sweep a range of seeds to guard the invariant.
+  it("first variation of non-duplicator xforms is non-linear", () => {
+    // Pure linear is allowed on duplicators, but non-duplicator xforms
+    // must have a non-linear variation from the theme pool.
     for (let s = 0; s < 50; s++) {
       const g = generateRandomGenome(seededRng(s + 1));
       for (const xf of g.xforms) {
-        expect(SEED_NONLINEAR).toContain(xf.variations[0]!.index);
+        if (xf.colorSpeed !== 0.0) {
+          expect(SEED_NONLINEAR).toContain(xf.variations[0]!.index);
+        } else {
+          expect(xf.variations[0]!.index).toBe(0); // V.linear
+        }
       }
     }
   });
@@ -53,9 +57,6 @@ describe('generateRandomGenome', () => {
   });
 
   it('auto-fits viewport — scale > 1 and finite cx / cy', () => {
-    // The contractive-affine seed recipe guarantees a real attractor, so
-    // computeFitViewport should always return finite values; scale ends up
-    // well above the 1-placeholder we set before fitting.
     for (let s = 0; s < 10; s++) {
       const g = generateRandomGenome(seededRng(s + 1));
       expect(g.scale).toBeGreaterThan(1);
@@ -76,16 +77,44 @@ describe('generateRandomGenome', () => {
     expect(g.xforms).toHaveLength(4);
   });
 
-  it('does not set optional fields the editor expects to default in', () => {
-    // edit-mount.ts applies its own defaults (size, quality) — the seed must
-    // leave those undefined so the editor's policy wins.
+  it('does not set optional fields the editor expects to default in, except injected ones', () => {
     const g = generateRandomGenome(seededRng(1));
     expect(g.size).toBeUndefined();
     expect(g.quality).toBeUndefined();
     expect(g.finalxform).toBeUndefined();
-    expect(g.symmetry).toBeUndefined();
     expect(g.density).toBeUndefined();
-    expect(g.tonemap).toBeUndefined();
     expect(g.rotate).toBeUndefined();
+
+    // Injected tonemap
+    expect(g.tonemap).toBeDefined();
+    expect(g.tonemap?.brightness).toBeGreaterThanOrEqual(2.5);
+    expect(g.tonemap?.brightness).toBeLessThanOrEqual(4.5);
+    expect(g.tonemap?.gamma).toBeGreaterThanOrEqual(3.5);
+    expect(g.tonemap?.gamma).toBeLessThanOrEqual(4.0);
+    expect(g.tonemap?.vibrancy).toBe(1.0);
+    expect(g.tonemap?.highlightPower).toBe(1.0);
+    expect(g.tonemap?.gammaThreshold).toBe(0.01);
+
+    // Injected symmetry (if present)
+    if (g.symmetry !== undefined) {
+      expect(['rotational', 'dihedral']).toContain(g.symmetry.kind);
+      expect([2, 3, 4, 5, 6, 8]).toContain(g.symmetry.n);
+    }
+  });
+
+  it('injects symmetry approximately 50% of the time', () => {
+    let symmetryCount = 0;
+    const runs = 100;
+    for (let s = 0; s < runs; s++) {
+      const g = generateRandomGenome(seededRng(s));
+      if (g.symmetry !== undefined) {
+        symmetryCount++;
+        expect(['rotational', 'dihedral']).toContain(g.symmetry.kind);
+        expect([2, 3, 4, 5, 6, 8]).toContain(g.symmetry.n);
+      }
+    }
+    // With 100 runs, we expect roughly 50 successes. We check for a reasonable range.
+    expect(symmetryCount).toBeGreaterThanOrEqual(35);
+    expect(symmetryCount).toBeLessThanOrEqual(65);
   });
 });

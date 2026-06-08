@@ -23,7 +23,9 @@ function setup(): {
   onChange: ReturnType<typeof vi.fn>;
 } {
   const host = document.createElement('div');
-  const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+  const genome = generateRandomGenome(seededRng(1));
+  delete genome.tonemap;
+  const state = createEditState(genome, 1);
   const onChange = vi.fn();
   globalSection.build(host, state, onChange);
   document.body.appendChild(host); // text-mode swap needs to be in the document

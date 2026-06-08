@@ -45,7 +45,13 @@ function paramsFor(v: Variation): Record<string, number> {
   const obj = v as unknown as Record<string, number | undefined>;
   for (let i = 0; i < keys.length; i++) {
     const val = obj[`param${i}`];
-    if (typeof val === 'number' && Number.isFinite(val)) out[keys[i]!] = val;
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      const bareKey = keys[i]!;
+      out[bareKey] = val;
+      if (!bareKey.startsWith(name + '_')) {
+        out[`${name}_${bareKey}`] = val;
+      }
+    }
   }
   return out;
 }

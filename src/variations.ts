@@ -812,17 +812,15 @@ export function ts_var_ex(i: VarInput): VarOutput {
 // Impl mirrors WGSL exactly (note WGSL uses atan2(p.y, p.x) — STANDARD arg
 // order — for julian, NOT swapped; this differs from polar/disc/etc.).
 export function ts_var_julian(i: VarInput): VarOutput {
-  const power = i.params?.['julian_power'];
-  const dist = i.params?.['julian_dist'];
+  const power = i.params?.['julian_power'] ?? i.params?.['power'];
+  const dist = i.params?.['julian_dist'] ?? i.params?.['dist'];
   if (power === undefined || dist === undefined) {
     throw new Error(`ts_var_julian: requires params.julian_power and params.julian_dist`);
   }
-  if (i.randBranch === undefined || i.randBranch < 0 || i.randBranch >= Math.abs(power)) {
-    throw new Error(`ts_var_julian: randBranch must be ∈ [0, |power|-1], got ${i.randBranch}`);
-  }
+  const absPower = Math.max(1, Math.floor(Math.abs(power)));
+  const n = i.randBranch !== undefined ? (Math.floor(i.randBranch) % absPower) : 0;
   const r = Math.hypot(i.tx, i.ty);
   const phi = Math.atan2(i.ty, i.tx);
-  const n = i.randBranch;
   const theta = (phi + 2.0 * PI * n) / power;
   const newR = i.weight * Math.pow(r, dist / power);
   return { x: newR * Math.cos(theta), y: newR * Math.sin(theta) };
@@ -1422,17 +1420,16 @@ export function ts_var_radial_blur(i: VarInput): VarOutput {
 //   - i.params.juliascope_power / juliascope_dist
 //   - i.randBranch: integer ∈ [0, |juliascope_power|-1]
 export function ts_var_juliascope(i: VarInput): VarOutput {
-  const power = i.params?.['juliascope_power'];
-  const dist = i.params?.['juliascope_dist'];
+  const power = i.params?.['juliascope_power'] ?? i.params?.['power'];
+  const dist = i.params?.['juliascope_dist'] ?? i.params?.['dist'];
   if (power === undefined || dist === undefined) {
     throw new Error(`ts_var_juliascope: requires params.juliascope_power and params.juliascope_dist`);
   }
-  if (i.randBranch === undefined || i.randBranch < 0 || i.randBranch >= Math.abs(power)) {
-    throw new Error(`ts_var_juliascope: randBranch must be ∈ [0, |power|-1], got ${i.randBranch}`);
-  }
+  const absPower = Math.max(1, Math.floor(Math.abs(power)));
+  const n = i.randBranch !== undefined ? (Math.floor(i.randBranch) % absPower) : 0;
   const phi = Math.atan2(i.ty, i.tx);
   const sumsq = i.tx * i.tx + i.ty * i.ty;
-  const t_rnd = i.randBranch;
+  const t_rnd = n;
   const tmpr = (t_rnd & 1) === 0
     ? (2 * PI * t_rnd + phi) / power
     : (2 * PI * t_rnd - phi) / power;

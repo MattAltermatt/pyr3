@@ -19,36 +19,49 @@
 //      attractor instead of a pixel-sized speck inside a huge world window.
 
 import { type Genome, type Xform } from './genome';
-import { type Variation, V } from './variations';
-import { paletteFromStops } from './palette';
+import { type Variation, V, VARIATION_NAMES, type VariationIndex } from './variations';
+import { paletteFromStops, type ColorStop } from './palette';
 import {
   getLibraryStops,
   getLibraryPaletteName,
   FLAM3_PALETTE_COUNT,
 } from './flam3-palettes';
 import { computeFitViewport } from './edit-fit-viewport';
+import { VARIATION_DEFAULTS } from './serialize';
 
-// First-variation pool: non-linear only. A pure-linear first variation
-// reduces the xform to its (contractive) affine, which has no fractal
-// structure. Skipping it gives the IFS its non-trivial geometry.
+// Themed families
+export const FAMILY_CLASSICAL_FLAM3: Variation['index'][] = [
+  V.sinusoidal, V.spherical, V.swirl, V.horseshoe, V.polar,
+  V.handkerchief, V.heart, V.disc, V.julia, V.julian,
+];
+
+export const FAMILY_PYRE_COMPLEX_ANALYTIC: Variation['index'][] = [
+  V.newton, V.blaschke, V.cayley, V.complex_gamma, V.lambert_w,
+];
+
+export const FAMILY_PYRE_CARTOGRAPHIC: Variation['index'][] = [
+  V.mercator, V.lambert, V.mollweide, V.hammer, V.stereographic,
+];
+
+export const FAMILY_PYRE_ATTRACTORS_TORAL_FOLDS: Variation['index'][] = [
+  V.standard_map, V.de_jong, V.ikeda, V.box_fold, V.sphere_fold,
+  V.mandelbox_step, V.kifs_fold, V.arnold_cat, V.bakers_map,
+  V.tent_map, V.logistic_map,
+];
+
+// Fallback for tests importing these variables
 export const SEED_NONLINEAR: Variation['index'][] = [
-  V.sinusoidal, V.spherical, V.swirl, V.horseshoe,
-  V.polar, V.handkerchief, V.heart, V.disc, V.spiral,
-  V.hyperbolic, V.diamond, V.ex, V.julia,
+  ...FAMILY_CLASSICAL_FLAM3,
+  ...FAMILY_PYRE_COMPLEX_ANALYTIC,
+  ...FAMILY_PYRE_CARTOGRAPHIC,
+  ...FAMILY_PYRE_ATTRACTORS_TORAL_FOLDS,
 ];
 
-// Full bias pool for SECONDARY variations. Includes linear (a low-weight
-// linear blend with a non-linear primary often produces interesting,
-// slightly-warped attractors).
 export const SEED_BIAS_VARIATIONS: Variation['index'][] = [
-  V.linear, ...SEED_NONLINEAR,
+  V.linear,
+  ...SEED_NONLINEAR,
 ];
 
-const SEED_XFORM_COUNT = 4;
-
-// Reference canvas for the auto-fit at seed time. Matches the editor's
-// default genome.size (1920×1080) so a freshly-rerolled flame looks framed
-// on the editor's typical preview/render dims without a manual fit step.
 const FIT_REF_W = 1920;
 const FIT_REF_H = 1080;
 
@@ -60,76 +73,177 @@ function pickFromSet<T>(rng: () => number, set: readonly T[]): T {
   return set[Math.floor(rng() * set.length)]!;
 }
 
-function buildSeedXform(rng: () => number): Xform {
-  // Variation chain — 1 / 2 / 3 with bias toward 2.
-  const r = rng();
-  const variationCount = r < 0.3 ? 1 : r < 0.8 ? 2 : 3;
-
-  const variations: Variation[] = [];
-  const used = new Set<number>();
-
-  // First variation: non-linear, strong weight.
-  const firstIdx = pickFromSet(rng, SEED_NONLINEAR);
-  used.add(firstIdx);
-  variations.push({ index: firstIdx, weight: uniform(rng, 0.7, 1.0) });
-
-  // Additional variations: full bias set, tapered weight. The attempt cap
-  // is load-bearing — a constant rng (used in unit tests like
-  // edit-state.test.ts's `() => 0.5`) would otherwise repeatedly return the
-  // same index forever. After N misses, accept the smaller chain.
-  let attempts = 0;
-  while (variations.length < variationCount && attempts < 32) {
-    attempts++;
-    const idx = pickFromSet(rng, SEED_BIAS_VARIATIONS);
-    if (used.has(idx)) continue;
-    used.add(idx);
-    variations.push({ index: idx, weight: uniform(rng, 0.3, 0.7) });
+function createVariation(index: VariationIndex, weight: number): Variation {
+  const v: Variation = { index, weight };
+  const name = VARIATION_NAMES[index];
+  if (name) {
+    const defaults = VARIATION_DEFAULTS[name];
+    if (defaults) {
+      const obj = v as unknown as Record<string, number>;
+      for (let i = 0; i < defaults.length; i++) {
+        obj[`param${i}`] = defaults[i]!;
+      }
+    }
   }
-
-  // Contractive affine: rotation × scale s ∈ [0.55, 0.88]. Mean |λ| < 1
-  // keeps the IFS bounded; the small translation breaks symmetry so the
-  // four xforms don't all converge on the same fixed point.
-  const theta = rng() * Math.PI * 2;
-  const s = uniform(rng, 0.55, 0.88);
-  const cosT = Math.cos(theta) * s;
-  const sinT = Math.sin(theta) * s;
-  return {
-    a: cosT,
-    b: -sinT,
-    c: uniform(rng, -0.25, 0.25),
-    d: sinT,
-    e: cosT,
-    f: uniform(rng, -0.25, 0.25),
-    weight: uniform(rng, 0.5, 1.0),
-    color: rng(),
-    colorSpeed: 0.5,
-    variations,
-  };
+  return v;
 }
 
-export function generateRandomGenome(rng: () => number = Math.random): Genome {
-  const xforms: Xform[] = [];
-  for (let i = 0; i < SEED_XFORM_COUNT; i++) {
-    xforms.push(buildSeedXform(rng));
+function isPaletteVibrant(stops: ColorStop[]): boolean {
+  const sampleIndices = Array.from({ length: 16 }, (_, i) => Math.round(i * 255 / 15));
+  let minR = Infinity, maxR = -Infinity;
+  let minG = Infinity, maxG = -Infinity;
+  let minB = Infinity, maxB = -Infinity;
+
+  for (const idx of sampleIndices) {
+    const stop = stops[idx];
+    if (!stop) continue;
+    if (stop.r < minR) minR = stop.r;
+    if (stop.r > maxR) maxR = stop.r;
+    if (stop.g < minG) minG = stop.g;
+    if (stop.g > maxG) maxG = stop.g;
+    if (stop.b < minB) minB = stop.b;
+    if (stop.b > maxB) maxB = stop.b;
   }
-  const paletteIdx = Math.floor(rng() * FLAM3_PALETTE_COUNT);
-  const stops = getLibraryStops(paletteIdx) ?? getLibraryStops(0)!;
+
+  const diffR = maxR - minR;
+  const diffG = maxG - minG;
+  const diffB = maxB - minB;
+
+  let vibrantChannels = 0;
+  if (diffR > 0.45) vibrantChannels++;
+  if (diffG > 0.45) vibrantChannels++;
+  if (diffB > 0.45) vibrantChannels++;
+
+  return vibrantChannels >= 2;
+}
+
+type XformRole = 'shape' | 'detail' | 'duplicator';
+
+export function generateRandomGenome(rng: () => number = Math.random): Genome {
+  // 1. Symmetry Injection (50% probability)
+  let symmetry: Genome['symmetry'] = undefined;
+  if (rng() < 0.5) {
+    const kind = rng() < 0.5 ? 'rotational' : 'dihedral';
+    const n = pickFromSet(rng, [2, 3, 4, 5, 6, 8]);
+    symmetry = { kind, n };
+  }
+
+  // 2. Variation Homogeneity & Theme Pools
+  const themeVal = rng();
+  let themePool: Variation['index'][];
+  if (themeVal < 0.4) {
+    themePool = FAMILY_CLASSICAL_FLAM3;
+  } else if (themeVal < 0.6) {
+    themePool = FAMILY_PYRE_COMPLEX_ANALYTIC;
+  } else if (themeVal < 0.8) {
+    themePool = FAMILY_PYRE_CARTOGRAPHIC;
+  } else {
+    themePool = FAMILY_PYRE_ATTRACTORS_TORAL_FOLDS;
+  }
+  const primaryVar = pickFromSet(rng, themePool);
+
+  // 3. Structured Xform Roles (Archetypes) & 4. Variable Color Speeds
+  let roles: XformRole[];
+  if (rng() < 0.3) {
+    if (rng() < 0.5) {
+      roles = ['shape', 'shape', 'detail', 'duplicator'];
+    } else {
+      roles = ['shape', 'detail', 'detail', 'duplicator'];
+    }
+  } else {
+    roles = ['shape', 'shape', 'detail', 'detail'];
+  }
+
+  const xforms: Xform[] = [];
+  for (let i = 0; i < 4; i++) {
+    const role = roles[i]!;
+    const color = (i + uniform(rng, 0.05, 0.95)) / 4;
+    const weight = uniform(rng, 0.5, 1.0);
+
+    let a = 0, b = 0, c = 0, d = 0, e = 0, f = 0;
+    let colorSpeed = 0.5;
+    let variations: Variation[] = [];
+
+    if (role === 'shape') {
+      const theta = rng() * Math.PI * 2;
+      const s = uniform(rng, 0.4, 0.75);
+      a = Math.cos(theta) * s;
+      b = -Math.sin(theta) * s;
+      c = 0;
+      d = Math.sin(theta) * s;
+      e = Math.cos(theta) * s;
+      f = 0;
+      colorSpeed = 0.9;
+      variations = [createVariation(primaryVar, 1.0)];
+    } else if (role === 'detail') {
+      const theta = rng() * Math.PI * 2;
+      const s = uniform(rng, 0.4, 0.75);
+      a = Math.cos(theta) * s;
+      b = -Math.sin(theta) * s;
+      c = uniform(rng, -0.4, 0.4);
+      d = Math.sin(theta) * s;
+      e = Math.cos(theta) * s;
+      f = uniform(rng, -0.4, 0.4);
+      colorSpeed = 0.4;
+      variations = [
+        createVariation(primaryVar, 0.8),
+        createVariation(V.linear, 0.2),
+      ];
+    } else { // duplicator
+      const theta = rng() * Math.PI * 2;
+      const s = rng() < 0.5 ? 0.5 : 1.0;
+      a = Math.cos(theta) * s;
+      b = -Math.sin(theta) * s;
+      c = 0;
+      d = Math.sin(theta) * s;
+      e = Math.cos(theta) * s;
+      f = 0;
+      colorSpeed = 0.0;
+      variations = [createVariation(V.linear, 1.0)];
+    }
+
+    xforms.push({
+      a, b, c, d, e, f,
+      weight,
+      color,
+      colorSpeed,
+      variations,
+    });
+  }
+
+  // 5. Palette Vibrancy Heuristic Filter
+  let paletteIdx = 0;
+  let stops: ColorStop[] = [];
+  for (let attempt = 0; attempt < 10; attempt++) {
+    paletteIdx = Math.floor(rng() * FLAM3_PALETTE_COUNT);
+    stops = getLibraryStops(paletteIdx) ?? getLibraryStops(0)!;
+    if (isPaletteVibrant(stops)) {
+      break;
+    }
+  }
   const humanName = getLibraryPaletteName(paletteIdx) ?? 'unnamed';
 
   const genome: Genome = {
     name: 'Untitled flame',
     xforms,
-    // Placeholder viewport — overwritten by fit below.
     scale: 1,
     cx: 0,
     cy: 0,
     palette: paletteFromStops(`${humanName}#${paletteIdx}`, stops),
+    // 6. Default Aesthetic Tone Map
+    tonemap: {
+      brightness: uniform(rng, 2.5, 4.5),
+      gamma: uniform(rng, 3.5, 4.0),
+      vibrancy: 1.0,
+      highlightPower: 1.0,
+      gammaThreshold: 0.01,
+    },
   };
 
-  // Auto-fit the attractor into the editor's default render dims so the
-  // freshly-rerolled flame paints framed, not as a speck. The fit sampler
-  // is deterministic (seeded from a u32 derived from the rng draws above)
-  // so the seed-genome relationship stays pure.
+  if (symmetry) {
+    genome.symmetry = symmetry;
+  }
+
   const fitSeed = Math.floor(rng() * 0x100000000) >>> 0;
   const fit = computeFitViewport(genome, FIT_REF_W, FIT_REF_H, { seed: fitSeed });
   if (fit) {
@@ -137,8 +251,6 @@ export function generateRandomGenome(rng: () => number = Math.random): Genome {
     genome.cx = fit.cx;
     genome.cy = fit.cy;
   } else {
-    // Degenerate seed (shouldn't happen with the contractive recipe, but
-    // safe fallback so a click of reroll never lands on a broken genome).
     genome.scale = 200;
   }
   return genome;
