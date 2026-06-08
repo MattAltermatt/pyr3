@@ -53,10 +53,10 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
   milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.4
   have all shipped** (latest: `v1.4.0` on 2026-06-02 — render improvements). Active themed
-  milestones: **Apophysis and JWildfire** (#6 — plugin pack #114 shipped 2026-06-06; gradient
-  editor #115, channel curves #116, importer parity sweep #17 still open), **Binary
+  milestones: **Apophysis and JWildfire** (#6 — plugin pack #114 and importer parity sweep #17 shipped; gradient
+  editor #115, channel curves #116 still open), **Binary
   distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
-  verify #126 still open), and **Mobile rework** (#13 — #66 mobile overhaul). No Project
+  verify #126 still open), **More variations** (#16 — novel families), and **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
@@ -114,6 +114,7 @@ Short form:
 6. Frontend = the slim browser-viewer layout for v1.0; editor is much-later post-v1
 7. Repo replacement on GitHub is gated on ship-gate proof (do not push to
    `github.com/MattAltermatt/pyr3` until v1.0 passes)
+8. **Variation param cap = 10.** The engine caps per-variation parameter slots at 10 to keep the WGSL `Variation` struct perfectly aligned to 3 `vec4`s (48 bytes), maximizing memory bandwidth in the `chaos.wgsl` inner loop. Complex JWildfire variations (like `cell2`, or future 17+ param L-tier entries) are supported by feature-subsetting the least impactful sliders rather than expanding the engine's seam.
 
 ## The "single engine, two consumers" seam
 

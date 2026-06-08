@@ -56,12 +56,13 @@ and the v1.0 → v1.4 line has shipped — the viewer is live at
 **v1.4.0** (2026-06-02), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
 tracks themed follow-on work. The **Apophysis and JWildfire** plugin
-pack (#114 / #117 / #120 / #121 / #170, 113 new variations V107–V219,
-total catalog 220 entries) and the **Binary distribution** arc
+pack (#114 / #117 / #120 / #121 / #170) plus the **More variations** arc
+(novel families: folds #129, attractors #130, cartographic #134, plane curves #135, toral #140)
+add 139 new variations (V107–V245, total catalog 246 entries). The **Binary distribution** arc
 (`npm run build:cli render` → standalone `pyr3-render`) shipped
 2026-06-06; remaining themed slots cover the gradient editor (#115),
-channel curves (#116), the importer-default parity sweep (#17), and the
-**Mobile rework** arc (#66).
+channel curves (#116), and the **Mobile rework** arc (#66). The
+importer-default parity sweep (#17) shipped 2026-06-08.
 
 ## 🔥 Keep (the soul)
 
@@ -72,7 +73,7 @@ channel curves (#116), the importer-default parity sweep (#17), and the
   interpolation modes.
 - **Affine + nonlinear variation chain** per xform, with optional per-xform post-affine +
   finalxform lens.
-- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail (220 entries total, V0..V219).
+- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail (246 entries total, V0..V245).
 - **Genome-level features Electric Sheep relies on** — palette-by-index lookup, `<flame hue>`
   rotation, multi-value `color="V S"` attributes, the HSV-highpow desaturation branch of the
   tone-map, per-xform post-affine.
