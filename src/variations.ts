@@ -513,6 +513,11 @@ export const V = {
   sphere_fold: 234,
   mandelbox_step: 235,
   kifs_fold: 236,
+  // #140 — Area-preserving / toral chaos maps
+  arnold_cat: 237,
+  bakers_map: 238,
+  tent_map: 239,
+  logistic_map: 240,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

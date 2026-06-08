@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.kifs_fold) return 'novel'; // #133/#134/#130/#129 — original pyr3 variations
+  if (idx >= V.blaschke && idx <= V.logistic_map) return 'novel'; // #133/#134/#130/#129/#140 — original pyr3 variations
   return 'jwf';
 }
 
@@ -4248,6 +4248,78 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     defaultWeight: 0.5,
     // No warpFn: iterative + the f64 oracle would have its own Halley loop;
     // catalog renders a "warp not applicable" note.
+  },
+  {
+    idx: V.arnold_cat,
+    name: 'arnold_cat',
+    source: 'novel',
+    formula: '\\begin{bmatrix}x\'\\\\y\'\\end{bmatrix} = \\begin{bmatrix}2 & 1 \\\\ 1 & 1\\end{bmatrix}\\begin{bmatrix}x \\\\ y\\end{bmatrix} \\pmod 1',
+    blurb: 'Arnold\'s cat map. A classic example of a chaotic area-preserving map that perfectly stretches and folds a torus over itself.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const xmod = x - Math.floor(x + 0.5);
+      const ymod = y - Math.floor(y + 0.5);
+      const xp = xmod * 2.0 + ymod;
+      const yp = xmod + ymod;
+      return [xp - Math.floor(xp + 0.5), yp - Math.floor(yp + 0.5)];
+    },
+  },
+  {
+    idx: V.bakers_map,
+    name: 'bakers_map',
+    source: 'novel',
+    formula: '\\text{if } x < 0.5: \\ x\' = 2x, y\' = \\frac{y}{2} \\text{ else } x\' = 2x - 1, y\' = \\frac{y}{2} + 0.5',
+    blurb: 'The folded baker\'s map. Slices the domain in half, stretches each horizontally, and stacks them vertically, perfectly preserving area.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      let xf = x - Math.floor(x + 0.5) + 0.5;
+      let yf = y - Math.floor(y + 0.5) + 0.5;
+      let xp, yp;
+      if (xf < 0.5) {
+        xp = 2.0 * xf;
+        yp = yf * 0.5;
+      } else {
+        xp = 2.0 * xf - 1.0;
+        yp = yf * 0.5 + 0.5;
+      }
+      return [xp - 0.5, yp - 0.5];
+    },
+  },
+  {
+    idx: V.tent_map,
+    name: 'tent_map',
+    source: 'novel',
+    formula: 'x\' = 1 - |1 - 2x|, \\quad y\' = 1 - |1 - 2y|',
+    blurb: 'A piecewise linear chaotic map applied independently to the x and y axes. Produces self-similar triangular banding.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      let xf = x - Math.floor(x + 0.5) + 0.5;
+      let yf = y - Math.floor(y + 0.5) + 0.5;
+      let xp = 1.0 - Math.abs(1.0 - 2.0 * xf);
+      let yp = 1.0 - Math.abs(1.0 - 2.0 * yf);
+      return [xp - 0.5, yp - 0.5];
+    },
+  },
+  {
+    idx: V.logistic_map,
+    name: 'logistic_map',
+    source: 'novel',
+    formula: 'x\' = rx(1-x), \\quad y\' = ry(1-y)',
+    blurb: 'The classic parabolic logistic map applied independently to the x and y axes. Tuning r into the 3.57–4.0 range yields chaos.',
+    params: [
+      { name: 'r', default: 3.9, min: 2.0, max: 4.0, step: 0.01 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, r = 3.9) => {
+      let xf = x - Math.floor(x + 0.5) + 0.5;
+      let yf = y - Math.floor(y + 0.5) + 0.5;
+      let xp = r * xf * (1.0 - xf);
+      let yp = r * yf * (1.0 - yf);
+      return [xp - 0.5, yp - 0.5];
+    },
   },
   {
     idx: V.box_fold,

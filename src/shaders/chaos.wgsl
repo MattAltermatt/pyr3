@@ -5491,6 +5491,51 @@ fn var_kifs_fold(p: vec2f, w: f32, n: f32, offset: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #140 — Area-preserving / toral chaos maps (V237–V240).
+// ---------------------------------------------------------------------
+
+// V237 arnold_cat: Arnold's cat map.
+fn var_arnold_cat(p: vec2f, w: f32) -> vec2f {
+  let xp = p.x * 2.0 + p.y;
+  let yp = p.x + p.y;
+  return w * (fract(vec2f(xp, yp) + 0.5) - 0.5);
+}
+
+// V238 bakers_map: Folded baker's map.
+fn var_bakers_map(p: vec2f, w: f32) -> vec2f {
+  let x = fract(p.x + 0.5);
+  let y = fract(p.y + 0.5);
+  var xp = 0.0;
+  var yp = 0.0;
+  if (x < 0.5) {
+    xp = 2.0 * x;
+    yp = y * 0.5;
+  } else {
+    xp = 2.0 * x - 1.0;
+    yp = y * 0.5 + 0.5;
+  }
+  return w * (vec2f(xp, yp) - 0.5);
+}
+
+// V239 tent_map: Piecewise linear chaotic map.
+fn var_tent_map(p: vec2f, w: f32) -> vec2f {
+  let x = fract(p.x + 0.5);
+  let y = fract(p.y + 0.5);
+  let xp = 1.0 - abs(1.0 - 2.0 * x);
+  let yp = 1.0 - abs(1.0 - 2.0 * y);
+  return w * (vec2f(xp, yp) - 0.5);
+}
+
+// V240 logistic_map: Parabolic chaotic map.
+fn var_logistic_map(p: vec2f, w: f32, r: f32) -> vec2f {
+  let x = fract(p.x + 0.5);
+  let y = fract(p.y + 0.5);
+  let xp = r * x * (1.0 - x);
+  let yp = r * y * (1.0 - y);
+  return w * (vec2f(xp, yp) - 0.5);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -5776,6 +5821,11 @@ fn apply_variation(
     case 234u: { return var_sphere_fold(p, w, p0, p1); }
     case 235u: { return var_mandelbox_step(p, w, p0, p1, p2, p3, p4); }
     case 236u: { return var_kifs_fold(p, w, p0, p1); }
+    // #140 — Area-preserving / toral chaos maps
+    case 237u: { return var_arnold_cat(p, w); }
+    case 238u: { return var_bakers_map(p, w); }
+    case 239u: { return var_tent_map(p, w); }
+    case 240u: { return var_logistic_map(p, w, p0); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
