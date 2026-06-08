@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.ikeda) return 'novel';     // #133/#134/#130 — original pyr3 variations
+  if (idx >= V.blaschke && idx <= V.kifs_fold) return 'novel'; // #133/#134/#130/#129 — original pyr3 variations
   return 'jwf';
 }
 
@@ -4248,6 +4248,101 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     defaultWeight: 0.5,
     // No warpFn: iterative + the f64 oracle would have its own Halley loop;
     // catalog renders a "warp not applicable" note.
+  },
+  {
+    idx: V.box_fold,
+    name: 'box_fold',
+    source: 'novel',
+    formula: '\\text{if } |x| > L: x\' = 2L \\cdot \\text{sgn}(x) - x',
+    blurb: 'A stateless reflection fold over an axis-aligned bounding box. The core building block of the Mandelbox fractal.',
+    params: [
+      { name: 'limit', default: 1.0, min: 0.1, max: 2.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, limit = 1.0) => {
+      let xp = x;
+      let yp = y;
+      if (xp > limit) xp = 2.0 * limit - xp;
+      else if (xp < -limit) xp = -2.0 * limit - xp;
+      if (yp > limit) yp = 2.0 * limit - yp;
+      else if (yp < -limit) yp = -2.0 * limit - yp;
+      return [xp, yp];
+    },
+  },
+  {
+    idx: V.sphere_fold,
+    name: 'sphere_fold',
+    source: 'novel',
+    formula: '\\text{if } r < r_{min}: p\' = p \\frac{r_{max}^2}{r_{min}^2} \\text{ else if } r < r_{max}: p\' = p \\frac{r_{max}^2}{r^2}',
+    blurb: 'Radial inversion shell. Points near the center are expanded outward, while points outside the shell remain unaffected.',
+    params: [
+      { name: 'rmin', default: 0.5, min: 0.1, max: 1.0, step: 0.1 },
+      { name: 'rmax', default: 1.0, min: 0.5, max: 2.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, rmin = 0.5, rmax = 1.0) => {
+      const r2 = x * x + y * y;
+      const rmin2 = rmin * rmin;
+      const rmax2 = rmax * rmax;
+      let scale = 1.0;
+      if (r2 < rmin2) scale = rmax2 / rmin2;
+      else if (r2 < rmax2) scale = rmax2 / Math.max(r2, 1e-6);
+      return [x * scale, y * scale];
+    },
+  },
+  {
+    idx: V.mandelbox_step,
+    name: 'mandelbox_step',
+    source: 'novel',
+    formula: 'p\' = s \\cdot \\text{sphereFold}(\\text{boxFold}(p)) + c',
+    blurb: 'A single step of the famous Mandelbox fractal. Combines a box fold, a sphere fold, and an affine transformation.',
+    params: [
+      { name: 'scale', default: 2.0, min: 0.5, max: 3.0, step: 0.1 },
+      { name: 'rmin', default: 0.5, min: 0.1, max: 1.0, step: 0.1 },
+      { name: 'rmax', default: 1.0, min: 0.5, max: 2.0, step: 0.1 },
+      { name: 'cx', default: 0.0, min: -2.0, max: 2.0, step: 0.1 },
+      { name: 'cy', default: 0.0, min: -2.0, max: 2.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, scale = 2.0, rmin = 0.5, rmax = 1.0, cx = 0.0, cy = 0.0) => {
+      let xp = x;
+      let yp = y;
+      if (xp > 1.0) xp = 2.0 - xp;
+      else if (xp < -1.0) xp = -2.0 - xp;
+      if (yp > 1.0) yp = 2.0 - yp;
+      else if (yp < -1.0) yp = -2.0 - yp;
+
+      const r2 = xp * xp + yp * yp;
+      const rmin2 = rmin * rmin;
+      const rmax2 = rmax * rmax;
+      let sfold = 1.0;
+      if (r2 < rmin2) sfold = rmax2 / rmin2;
+      else if (r2 < rmax2) sfold = rmax2 / Math.max(r2, 1e-6);
+      
+      return [xp * sfold * scale + cx, yp * sfold * scale + cy];
+    },
+  },
+  {
+    idx: V.kifs_fold,
+    name: 'kifs_fold',
+    source: 'novel',
+    formula: '\\theta = \\frac{2\\pi}{n}, \\quad a\' = a \\bmod \\theta',
+    blurb: 'Kaleidoscopic wedge fold. Folds all of 2D space into a single wedge sector by repeated mirror reflection.',
+    params: [
+      { name: 'n', default: 3.0, min: 1.0, max: 12.0, step: 1.0 },
+      { name: 'offset', default: 0.0, min: -3.14, max: 3.14, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, n = 3.0, offset = 0.0) => {
+      const r = Math.sqrt(x * x + y * y);
+      if (r < 1e-6) return [0, 0];
+      let a = Math.atan2(y, x) - offset;
+      const theta = 6.283185307179586 / Math.max(1.0, n);
+      a = a - theta * Math.floor(a / theta);
+      if (a > theta * 0.5) a = theta - a;
+      a = a + offset;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    },
   },
   {
     idx: V.standard_map,

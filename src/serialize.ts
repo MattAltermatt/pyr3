@@ -333,6 +333,10 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   standard_map: ['k'],
   de_jong: ['a', 'b', 'c', 'd'],
   ikeda: ['u'],
+  box_fold: ['limit'],
+  sphere_fold: ['rmin', 'rmax'],
+  mandelbox_step: ['scale', 'rmin', 'rmax', 'cx', 'cy'],
+  kifs_fold: ['n', 'offset'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -567,6 +571,10 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   standard_map: [1.0],                       // K (stochasticity)
   de_jong: [-2.24, 0.43, -0.65, -2.43],      // Peter de Jong classic
   ikeda: [0.9],                              // u parameter
+  box_fold: [1.0],                           // reflection limit
+  sphere_fold: [0.5, 1.0],                   // rmin, rmax
+  mandelbox_step: [2.0, 0.5, 1.0, 0.0, 0.0], // scale, rmin, rmax, cx, cy
+  kifs_fold: [3.0, 0.0],                     // n mirrors, offset
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

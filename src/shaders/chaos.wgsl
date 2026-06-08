@@ -5425,6 +5425,72 @@ fn var_ikeda(p: vec2f, w: f32, u: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #129 — Fold-family variations (V233–V236).
+// ---------------------------------------------------------------------
+
+// V233 box_fold: Per-component reflection.
+fn var_box_fold(p: vec2f, w: f32, limit: f32) -> vec2f {
+  var xp = p.x;
+  var yp = p.y;
+  if (xp > limit) { xp = 2.0 * limit - xp; }
+  else if (xp < -limit) { xp = -2.0 * limit - xp; }
+  if (yp > limit) { yp = 2.0 * limit - yp; }
+  else if (yp < -limit) { yp = -2.0 * limit - yp; }
+  return w * vec2f(xp, yp);
+}
+
+// V234 sphere_fold: Radial inversion shell.
+fn var_sphere_fold(p: vec2f, w: f32, rmin: f32, rmax: f32) -> vec2f {
+  let r2 = p.x * p.x + p.y * p.y;
+  let rmin2 = rmin * rmin;
+  let rmax2 = rmax * rmax;
+  var scale = 1.0;
+  if (r2 < rmin2) {
+    scale = rmax2 / rmin2;
+  } else if (r2 < rmax2) {
+    scale = rmax2 / max(r2, 1e-6);
+  }
+  return w * vec2f(p.x * scale, p.y * scale);
+}
+
+// V235 mandelbox_step: Box fold -> sphere fold -> affine.
+fn var_mandelbox_step(p: vec2f, w: f32, scale: f32, rmin: f32, rmax: f32, cx: f32, cy: f32) -> vec2f {
+  var xp = p.x;
+  var yp = p.y;
+  if (xp > 1.0) { xp = 2.0 - xp; }
+  else if (xp < -1.0) { xp = -2.0 - xp; }
+  if (yp > 1.0) { yp = 2.0 - yp; }
+  else if (yp < -1.0) { yp = -2.0 - yp; }
+
+  let r2 = xp * xp + yp * yp;
+  let rmin2 = rmin * rmin;
+  let rmax2 = rmax * rmax;
+  var sfold = 1.0;
+  if (r2 < rmin2) {
+    sfold = rmax2 / rmin2;
+  } else if (r2 < rmax2) {
+    sfold = rmax2 / max(r2, 1e-6);
+  }
+  xp = xp * sfold * scale + cx;
+  yp = yp * sfold * scale + cy;
+  return w * vec2f(xp, yp);
+}
+
+// V236 kifs_fold: Kaleidoscopic wedge fold.
+fn var_kifs_fold(p: vec2f, w: f32, n: f32, offset: f32) -> vec2f {
+  let r = length(p);
+  if (r < 1e-6) { return vec2f(0.0); }
+  var a = atan2(p.y, p.x) - offset;
+  let theta = 6.283185307179586 / max(1.0, n);
+  a = a - theta * floor(a / theta);
+  if (a > theta * 0.5) {
+    a = theta - a;
+  }
+  a = a + offset;
+  return w * vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -5705,6 +5771,11 @@ fn apply_variation(
     case 230u: { return var_standard_map(p, w, p0); }
     case 231u: { return var_de_jong(p, w, p0, p1, p2, p3); }
     case 232u: { return var_ikeda(p, w, p0); }
+    // #129 — Fold-family variations
+    case 233u: { return var_box_fold(p, w, p0); }
+    case 234u: { return var_sphere_fold(p, w, p0, p1); }
+    case 235u: { return var_mandelbox_step(p, w, p0, p1, p2, p3, p4); }
+    case 236u: { return var_kifs_fold(p, w, p0, p1); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

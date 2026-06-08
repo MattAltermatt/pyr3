@@ -81,6 +81,7 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     // includes one of these. See VARIATION_TOOLTIPS and DC_DOCS_URL above.
     'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder, V.newton],
     'Map projections': [V.mercator, V.lambert, V.mollweide, V.hammer, V.stereographic],
+    'Folds & IFS': [V.box_fold, V.sphere_fold, V.mandelbox_step, V.kifs_fold],
   };
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();

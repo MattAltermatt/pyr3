@@ -508,6 +508,11 @@ export const V = {
   standard_map: 230,
   de_jong: 231,
   ikeda: 232,
+  // #129 — Fold-family variations
+  box_fold: 233,
+  sphere_fold: 234,
+  mandelbox_step: 235,
+  kifs_fold: 236,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
