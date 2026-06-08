@@ -5396,6 +5396,35 @@ fn var_stereographic(p: vec2f, w: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #130 — Single-step strange-attractor variations (V230–V232).
+// Stateless single steps of famous chaotic maps.
+// ---------------------------------------------------------------------
+
+// V230 standard_map: Chirikov-Taylor standard map.
+fn var_standard_map(p: vec2f, w: f32, k: f32) -> vec2f {
+  let xp = p.x + k * safe_sin(p.y);
+  let yp = p.y + xp;
+  return w * vec2f(xp, yp);
+}
+
+// V231 de_jong: Peter de Jong strange attractor.
+fn var_de_jong(p: vec2f, w: f32, a: f32, b: f32, c: f32, d: f32) -> vec2f {
+  let xp = safe_sin(a * p.y) - safe_cos(b * p.x);
+  let yp = safe_sin(c * p.x) - safe_cos(d * p.y);
+  return w * vec2f(xp, yp);
+}
+
+// V232 ikeda: Ikeda laser dynamics map.
+fn var_ikeda(p: vec2f, w: f32, u: f32) -> vec2f {
+  let t = 0.4 - 6.0 / (1.0 + p.x * p.x + p.y * p.y);
+  let st = safe_sin(t);
+  let ct = safe_cos(t);
+  let xp = 1.0 + u * (p.x * ct - p.y * st);
+  let yp = u * (p.x * st + p.y * ct);
+  return w * vec2f(xp, yp);
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -5672,6 +5701,10 @@ fn apply_variation(
     case 227u: { return var_mollweide(p, w); }
     case 228u: { return var_hammer(p, w); }
     case 229u: { return var_stereographic(p, w); }
+    // #130 — Single-step strange-attractor maps
+    case 230u: { return var_standard_map(p, w, p0); }
+    case 231u: { return var_de_jong(p, w, p0, p1, p2, p3); }
+    case 232u: { return var_ikeda(p, w, p0); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -330,6 +330,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   cayley: ['s'],
   complex_gamma: ['scale'],
   lambert_w: ['iters'],
+  standard_map: ['k'],
+  de_jong: ['a', 'b', 'c', 'd'],
+  ikeda: ['u'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -561,6 +564,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   cayley: [0.8],                             // s=0.8 — wider mapped strip near real axis
   complex_gamma: [0.4],                      // scale=0.4 — Γ growth tamed but still visible
   lambert_w: [2],                            // 2 Halley iterations (~10-digit precision)
+  standard_map: [1.0],                       // K (stochasticity)
+  de_jong: [-2.24, 0.43, -0.65, -2.43],      // Peter de Jong classic
+  ikeda: [0.9],                              // u parameter
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

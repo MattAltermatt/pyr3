@@ -503,8 +503,11 @@ export const V = {
   mercator: 225,
   lambert: 226,
   mollweide: 227,
-  hammer: 228,
   stereographic: 229,
+  // #130 — Single-step strange-attractor maps
+  standard_map: 230,
+  de_jong: 231,
+  ikeda: 232,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

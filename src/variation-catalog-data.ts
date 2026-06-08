@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.stereographic) return 'novel'; // #133/#134 — original pyr3 variations
+  if (idx >= V.blaschke && idx <= V.ikeda) return 'novel';     // #133/#134/#130 — original pyr3 variations
   return 'jwf';
 }
 
@@ -4248,6 +4248,62 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     defaultWeight: 0.5,
     // No warpFn: iterative + the f64 oracle would have its own Halley loop;
     // catalog renders a "warp not applicable" note.
+  },
+  {
+    idx: V.standard_map,
+    name: 'standard_map',
+    source: 'novel',
+    formula: 'x\' = x + k \\sin y, \\quad y\' = y + x\'',
+    blurb: 'Chirikov-Taylor standard map. A classic area-preserving map that models a kicked rotor. The k parameter controls the transition from regular motion (KAM tori) to widespread chaos.',
+    params: [
+      { name: 'k', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, k = 1.0) => {
+      const xp = x + k * Math.sin(y);
+      const yp = y + xp;
+      return [xp, yp];
+    },
+  },
+  {
+    idx: V.de_jong,
+    name: 'de_jong',
+    source: 'novel',
+    formula: 'x\' = \\sin(ay) - \\cos(bx), \\quad y\' = \\sin(cx) - \\cos(dy)',
+    blurb: 'Peter de Jong strange attractor. A simple trigonometric mapping that folds space into intricate, wispy filaments.',
+    params: [
+      { name: 'a', default: -2.24, min: -3.0, max: 3.0, step: 0.01 },
+      { name: 'b', default: 0.43, min: -3.0, max: 3.0, step: 0.01 },
+      { name: 'c', default: -0.65, min: -3.0, max: 3.0, step: 0.01 },
+      { name: 'd', default: -2.43, min: -3.0, max: 3.0, step: 0.01 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, a = -2.24, b = 0.43, c = -0.65, d = -2.43) => {
+      return [
+        Math.sin(a * y) - Math.cos(b * x),
+        Math.sin(c * x) - Math.cos(d * y)
+      ];
+    },
+  },
+  {
+    idx: V.ikeda,
+    name: 'ikeda',
+    source: 'novel',
+    formula: 't = 0.4 - \\frac{6}{1+x^2+y^2}, \\quad x\' = 1 + u(x\\cos t - y\\sin t), \\quad y\' = u(x\\sin t + y\\cos t)',
+    blurb: 'Ikeda map. A discrete-time dynamical system introduced by Kensuke Ikeda as a model of light going around across a nonlinear optical resonator.',
+    params: [
+      { name: 'u', default: 0.9, min: 0.1, max: 1.5, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, u = 0.9) => {
+      const t = 0.4 - 6.0 / (1.0 + x * x + y * y);
+      const st = Math.sin(t);
+      const ct = Math.cos(t);
+      return [
+        1.0 + u * (x * ct - y * st),
+        u * (x * st + y * ct)
+      ];
+    },
   },
   {
     idx: V.mercator,
