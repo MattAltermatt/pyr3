@@ -51,7 +51,6 @@ import { writePendingTransfer } from './edit-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { createLoadSequencer } from './load-sequencer';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
-import { readGlobalQuality, writeGlobalQuality } from './prefs';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
@@ -941,16 +940,6 @@ async function main(): Promise<void> {
   // heavy render that was started without a flame load.
   let renderInFlight = false;
 
-  // Sticky quality: the tier/custom the user last chose persists across corpus
-  // nav + file loads (PYR3-050) — every load re-renders at this quality, not a
-  // reset to Preview. The render-progress bar is the "this is heavy" signal.
-  // Defaults to Preview so cold browsing stays fast until the user opts up.
-  // #53: persisted to localStorage so the choice survives page refreshes /
-  // bookmarks / cold links too. readGlobalQuality returns null on missing /
-  // malformed / shape-mismatched storage — caller falls back to DEFAULT_TIER.
-  let currentQuality: QualityRequest =
-    readGlobalQuality() ?? { kind: 'tier', tier: DEFAULT_TIER };
-
   // PYR3-018 FE parity sweep: pixel-readback hook (dev-only).
   // The canvas swap-chain texture is single-frame-presented and not
   // readable via drawImage / toDataURL post-render. This hook mirrors
@@ -1248,10 +1237,6 @@ async function main(): Promise<void> {
   // share the math), the capability guard aborts when the histogram won't fit,
   // and the info-bar readout updates on completion. 4K is just the top tier.
   const renderQuality = async (req: QualityRequest): Promise<void> => {
-    // Remember this choice so it persists across the next corpus nav / load,
-    // AND across page refreshes (#53 — localStorage-backed).
-    currentQuality = req;
-    writeGlobalQuality(req);
     // Disable the ladder synchronously BEFORE the first await, so a double-tap
     // during the cancel/drain can't spawn a second concurrent render. The
     // renderInFlight flag (also set synchronously) gates corpus nav for #8.
@@ -1424,14 +1409,16 @@ async function main(): Promise<void> {
     });
     // #5: surface the flame's distinct variation set after the tier label.
     bar.setVariations(distinctVariationNames(result.genome));
-    // Render at the sticky quality (PYR3-050) — persists the user's tier/custom
-    // choice across nav + loads. Preview-default uses the fast chunked rerender
-    // (the FE↔BE parity path); higher tiers / custom use the decoupled path.
-    if (currentQuality.kind === 'tier' && currentQuality.tier.name === DEFAULT_TIER.name) {
-      await rerender();
-    } else {
-      await renderQuality(currentQuality);
-    }
+    // #182 — render-mode-bar (viewerRenderCfg + viewerPreviewCfg) is the only
+    // authority for viewer canvas dims + quality post-#176. The legacy PYR3-050
+    // sticky-quality branch routed through renderQuality(currentQuality), which
+    // reads pyr3-prefs (the pre-#176 chrome-bar tier/custom store). Users
+    // carrying stale pyr3-prefs from a pre-#176 session saw the bar render at
+    // its workstation-pref defaults but the canvas honor the stale custom
+    // request — bar and canvas disagreed on first paint. Always route through
+    // rerender so the bar wins. Heavy-quality output now lives in 💾 Save
+    // Render, which reads viewerRenderCfg directly (line 762).
+    await rerender();
   };
 
   // Graceful corpus missing-sheep panel (PYR3-039). Built once; covers the
