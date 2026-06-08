@@ -5656,6 +5656,50 @@ fn var_hyperbolic_spiral(p: vec2f, w: f32, a: f32) -> vec2f {
   return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
 }
 
+// V255 weierstrass
+fn var_weierstrass(p: vec2f, w: f32, a: f32, b: f32, terms: f32, amp: f32) -> vec2f {
+  var Wx = 0.0;
+  var Wy = 0.0;
+  let N = u32(clamp(terms, 1.0, 16.0));
+  var ap = 1.0;
+  var bp = 1.0;
+  for (var i = 0u; i < N; i++) {
+    Wx += ap * safe_cos(bp * 3.1415926535 * p.x);
+    Wy += ap * safe_cos(bp * 3.1415926535 * p.y);
+    ap *= a;
+    bp *= b;
+  }
+  return w * vec2f(p.x + amp * Wx, p.y + amp * Wy);
+}
+
+// V256 takagi
+fn var_takagi(p: vec2f, w: f32, terms: f32, amp: f32) -> vec2f {
+  var Tx = 0.0;
+  var Ty = 0.0;
+  let N = u32(clamp(terms, 1.0, 16.0));
+  var pow2 = 1.0;
+  for (var i = 0u; i < N; i++) {
+    let x_scaled = pow2 * p.x;
+    let y_scaled = pow2 * p.y;
+    Tx += abs(x_scaled - floor(x_scaled + 0.5)) / pow2;
+    Ty += abs(y_scaled - floor(y_scaled + 0.5)) / pow2;
+    pow2 *= 2.0;
+  }
+  return w * vec2f(p.x + amp * Tx, p.y + amp * Ty);
+}
+
+// V257 cantor_stairs
+fn var_cantor_stairs(p: vec2f, w: f32, terms: f32, amp: f32) -> vec2f {
+  var Cx = p.x;
+  var Cy = p.y;
+  let N = u32(clamp(terms, 1.0, 8.0));
+  for (var i = 0u; i < N; i++) {
+    Cx = (Cx + safe_sin(Cx * 6.2831853)) * 0.5;
+    Cy = (Cy + safe_sin(Cy * 6.2831853)) * 0.5;
+  }
+  return w * vec2f(p.x + amp * Cx, p.y + amp * Cy);
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -5962,6 +6006,9 @@ fn apply_variation(
     case 252u: { return var_fermat_spiral(p, w, p0); }
     case 253u: { return var_lituus(p, w, p0); }
     case 254u: { return var_hyperbolic_spiral(p, w, p0); }
+    case 255u: { return var_weierstrass(p, w, p0, p1, p2, p3); }
+    case 256u: { return var_takagi(p, w, p0, p1); }
+    case 257u: { return var_cantor_stairs(p, w, p0, p1); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

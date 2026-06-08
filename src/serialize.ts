@@ -353,6 +353,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   fermat_spiral: ['a'],
   lituus: ['a'],
   hyperbolic_spiral: ['a'],
+  weierstrass: ['a', 'b', 'terms', 'amp'],
+  takagi: ['terms', 'amp'],
+  cantor_stairs: ['terms', 'amp'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -607,6 +610,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   fermat_spiral: [1],
   lituus: [1],
   hyperbolic_spiral: [1],
+  weierstrass: [0.5, 3.0, 4.0, 0.5],
+  takagi: [4.0, 0.5],
+  cantor_stairs: [4.0, 0.5],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

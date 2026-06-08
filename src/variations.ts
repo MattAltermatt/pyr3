@@ -534,6 +534,9 @@ export const V = {
   fermat_spiral: 252,
   lituus: 253,
   hyperbolic_spiral: 254,
+  weierstrass: 255,
+  takagi: 256,
+  cantor_stairs: 257,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

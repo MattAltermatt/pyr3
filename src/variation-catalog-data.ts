@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.hyperbolic_spiral) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149
+  if (idx >= V.blaschke && idx <= V.cantor_stairs) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136
   return 'jwf';
 }
 
@@ -4791,6 +4791,82 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       const theta = Math.max(t < 0 ? t + 2 * Math.PI : t, 1e-6);
       const r = a / theta;
       return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.weierstrass,
+    name: 'weierstrass',
+    source: 'novel',
+    formula: 'W(x, y) = \\sum a^n \\cos(b^n \\pi (x, y))',
+    blurb: 'Weierstrass function. A classic continuous but nowhere differentiable fractal curve.',
+    params: [
+      { name: 'a', default: 0.5, min: 0.1, max: 0.9, step: 0.1 },
+      { name: 'b', default: 3.0, min: 1.0, max: 7.0, step: 1.0 },
+      { name: 'terms', default: 4.0, min: 1.0, max: 16.0, step: 1.0 },
+      { name: 'amp', default: 0.5, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, a = 0.5, b = 3.0, terms = 4.0, amp = 0.5) => {
+      let Wx = 0;
+      let Wy = 0;
+      const N = Math.max(1, Math.min(16, Math.floor(terms)));
+      let ap = 1.0;
+      let bp = 1.0;
+      for (let i = 0; i < N; i++) {
+        Wx += ap * Math.cos(bp * Math.PI * x);
+        Wy += ap * Math.cos(bp * Math.PI * y);
+        ap *= a;
+        bp *= b;
+      }
+      return [x + amp * Wx, y + amp * Wy];
+    },
+  },
+  {
+    idx: V.takagi,
+    name: 'takagi',
+    source: 'novel',
+    formula: 'T(x, y) = \\sum \\frac{|2^n (x, y) - \\lfloor 2^n (x, y) + 0.5 \\rfloor|}{2^n}',
+    blurb: 'Takagi curve (blancmange curve). Another continuous but nowhere differentiable fractal, built from triangle waves.',
+    params: [
+      { name: 'terms', default: 4.0, min: 1.0, max: 16.0, step: 1.0 },
+      { name: 'amp', default: 0.5, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, terms = 4.0, amp = 0.5) => {
+      let Tx = 0;
+      let Ty = 0;
+      const N = Math.max(1, Math.min(16, Math.floor(terms)));
+      let pow2 = 1.0;
+      for (let i = 0; i < N; i++) {
+        const x_scaled = pow2 * x;
+        const y_scaled = pow2 * y;
+        Tx += Math.abs(x_scaled - Math.floor(x_scaled + 0.5)) / pow2;
+        Ty += Math.abs(y_scaled - Math.floor(y_scaled + 0.5)) / pow2;
+        pow2 *= 2.0;
+      }
+      return [x + amp * Tx, y + amp * Ty];
+    },
+  },
+  {
+    idx: V.cantor_stairs,
+    name: 'cantor_stairs',
+    source: 'novel',
+    formula: 'C(x, y) = \\text{iterated } \\frac{x + \\sin(2\\pi x)}{2}',
+    blurb: "Devil's staircase approximation. Iteratively squeezes the identity line into a stair-step fractal.",
+    params: [
+      { name: 'terms', default: 4.0, min: 1.0, max: 8.0, step: 1.0 },
+      { name: 'amp', default: 0.5, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, terms = 4.0, amp = 0.5) => {
+      let Cx = x;
+      let Cy = y;
+      const N = Math.max(1, Math.min(8, Math.floor(terms)));
+      for (let i = 0; i < N; i++) {
+        Cx = (Cx + Math.sin(Cx * 2 * Math.PI)) * 0.5;
+        Cy = (Cy + Math.sin(Cy * 2 * Math.PI)) * 0.5;
+      }
+      return [x + amp * Cx, y + amp * Cy];
     },
   },
 ];
