@@ -59,6 +59,7 @@ export interface Pyr3JsonV1 {
    *  are identity (parity invariant: serialized field absence ≡ identity
    *  ≡ shader branches off ≡ byte-identical to no-curves render). */
   channelCurves?: ChannelCurves;
+  hslAdjust?: { hue: number; sat: number; light: number };
 }
 
 export type Pyr3JsonFinalxform = Omit<Pyr3JsonXform, 'weight'>;

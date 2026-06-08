@@ -35,7 +35,9 @@ export interface VisualizePass {
 // super-res → output collapse. Phase 9-bg-palmode adds `background: vec4f` at
 // byte offset 48. Issue #116 (Color Curves) adds `curvesActive: u32` + 3 pad
 // u32 at byte offset 64 (16 bytes; total now 80; 16-byte aligned).
-const UNIFORMS_BYTES = 80;
+// Issue #172 (HSL Adjust) adds `hslActive: u32` + `hslHue: f32` + `hslSat: f32`
+// + `hslLight: f32` + 3 pad u32 at byte offset 68 (total now 96; 16-byte aligned).
+const UNIFORMS_BYTES = 96;
 
 // Issue #116 — color-curves LUT. 5 channels × 256 f32 = 5 KB. Initialized
 // to identity (i/255 ramp, 5x); only re-uploaded when `bakeCurves` produces
@@ -159,16 +161,9 @@ export function createVisualizePass(
       outputView: GPUTextureView,
       background: [number, number, number],
       channelCurves?: ChannelCurves,
+      hslAdjust?: { hue: number; sat: number; light: number },
     ): void {
-      // Issue #116 — bake + upload LUT every present when curves are
-      // active. The editor mutates state.genome.channelCurves[ch] arrays
-      // IN PLACE (parent object identity stays the same), so reference
-      // equality can't detect drag-driven point changes. The bake is
-      // ~5KB f32 + 5×256 Catmull-Rom evaluations — comfortably under
-      // one-frame budget at any drag rate. When channelCurves is
-      // undefined / all-identity (mask=0), we skip the upload entirely
-      // and the shader branches off (parity invariant preserved).
-      const mask = activeMask(channelCurves);
+      const mask = channelCurves ? activeMask(channelCurves) : 0;
       if (channelCurves && mask !== 0) {
         const lut = bakeCurves(channelCurves);
         if (lut) {
@@ -176,15 +171,10 @@ export function createVisualizePass(
         }
       }
 
-      const u = new ArrayBuffer(UNIFORMS_BYTES);
-      const u32 = new Uint32Array(u);
-      const f32 = new Float32Array(u);
+      const u32 = new Uint32Array(UNIFORMS_BYTES / 4);
+      const f32 = new Float32Array(u32.buffer);
       u32[0] = width;
       u32[1] = height;
-      // Phase 9-supersample-real: _pad0 slot now carries oversample so the
-      // fragment shader knows how many super-pixels to N²-collapse per output
-      // pixel. Slot is u32 in WGSL; we write via the u32 view. _pad1.._pad3
-      // remain reserved (kept zero by the ArrayBuffer init below).
       u32[8] = oversample;
       u32[9] = fwidth;
       f32[2] = k1;
@@ -193,16 +183,19 @@ export function createVisualizePass(
       f32[5] = tonemap.vibrancy;
       f32[6] = tonemap.highlightPower;
       f32[7] = tonemap.gammaThreshold;
-      // _pad2 / _pad3 left zero
-      // Phase 9-bg-palmode: pack background as vec4f at byte 48 (slots 12-14;
-      // slot 15 left zero — .w unused).
       f32[12] = background[0];
       f32[13] = background[1];
       f32[14] = background[2];
-      // Issue #116 — curvesActive bit-field at slot 16. _pad4/_pad5/_pad6
-      // (slots 17/18/19) stay zero from ArrayBuffer init.
       u32[16] = mask;
-      device.queue.writeBuffer(uniforms, 0, u);
+      if (hslAdjust) {
+        u32[17] = 1;
+        f32[18] = hslAdjust.hue;
+        f32[19] = hslAdjust.sat / 100.0;
+        f32[20] = hslAdjust.light / 100.0;
+      } else {
+        u32[17] = 0;
+      }
+      device.queue.writeBuffer(uniforms, 0, u32.buffer);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.viz.encoder' });
       const pass = encoder.beginRenderPass({

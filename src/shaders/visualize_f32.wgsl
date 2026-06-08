@@ -39,9 +39,13 @@ struct VizUniforms {
   // When 0, the curves block in fs() is skipped — byte-identical to
   // pre-#116 output. Branch is load-bearing for the parity rig.
   curvesActive: u32,
-  _pad4: u32,
-  _pad5: u32,
-  _pad6: u32,
+  hslActive: u32,
+  hslHue: f32,    // in degrees (-180 to 180)
+  hslSat: f32,    // multiplier (0.0 to 2.0)
+  hslLight: f32,  // addend (-1.0 to 1.0)
+  _pad7: u32,
+  _pad8: u32,
+  _pad9: u32,
 };
 
 @group(0) @binding(0) var<uniform>          u:        VizUniforms;
@@ -221,23 +225,36 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   // simplified for vib_gam_n=1 — see spec non-goals).
   let composed = newrgb + perch + (1.0 - alpha) * 256.0 * u.background.xyz;
 
-  var rgb = clamp(composed / 256.0, vec3f(0.0), vec3f(1.0));
+  var out = clamp(composed / 256.0, vec3f(0.0), vec3f(1.0));
   // Issue #116 — Color Curves block. curvesActive == 0 ⇒ branch skipped
   // ⇒ byte-identical to pre-#116 output. Branch is PERMANENT and
   // load-bearing for the parity rig.
   if (u.curvesActive != 0u) {
-    if ((u.curvesActive & 1u) != 0u) {
-      rgb = vec3f(lut(0u, rgb.r), lut(0u, rgb.g), lut(0u, rgb.b));
-    }
-    if ((u.curvesActive & 2u)  != 0u) { rgb.r = lut(1u, rgb.r); }
-    if ((u.curvesActive & 4u)  != 0u) { rgb.g = lut(2u, rgb.g); }
-    if ((u.curvesActive & 8u)  != 0u) { rgb.b = lut(3u, rgb.b); }
     if ((u.curvesActive & 16u) != 0u) {
-      let y_in = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
-      let y_out = lut(4u, y_in);
-      let scale = select(1.0, y_out / y_in, y_in > 1e-6);
-      rgb = clamp(rgb * scale, vec3f(0.0), vec3f(1.0));
+      let l = dot(out, vec3f(0.299, 0.587, 0.114));
+      let l_new = lut(4u, l);
+      if (l > 0.0) { out *= l_new / l; }
+    }
+    if ((u.curvesActive & 2u) != 0u) { out.r = lut(1u, out.r); }
+    if ((u.curvesActive & 4u) != 0u) { out.g = lut(2u, out.g); }
+    if ((u.curvesActive & 8u) != 0u) { out.b = lut(3u, out.b); }
+    if ((u.curvesActive & 1u) != 0u) {
+      out.r = lut(0u, out.r);
+      out.g = lut(0u, out.g);
+      out.b = lut(0u, out.b);
     }
   }
-  return vec4f(rgb, 1.0);
+
+  // Issue #172 — HSL Adjustments
+  if (u.hslActive != 0u) {
+    var hsv = rgb2hsv(out);
+    hsv.x = hsv.x + u.hslHue;
+    if (hsv.x < 0.0) { hsv.x += 360.0; }
+    if (hsv.x >= 360.0) { hsv.x -= 360.0; }
+    hsv.y = clamp(hsv.y * u.hslSat, 0.0, 1.0);
+    hsv.z = clamp(hsv.z + u.hslLight, 0.0, 1.0);
+    out = hsv2rgb(hsv);
+  }
+
+  return vec4f(clamp(out, vec3f(0.0), vec3f(1.0)), 1.0);
 }
