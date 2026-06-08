@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.rossler) return 'novel'; // #133/#134/#130/#129/#140/#135/#139
+  if (idx >= V.blaschke && idx <= V.hyperbolic_spiral) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149
   return 'jwf';
 }
 
@@ -4703,6 +4703,91 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
         x + p0 * (-y - z),
         y + p0 * (x + p1 * y)
       ];
+    },
+  },
+  {
+    idx: V.droste,
+    name: 'droste',
+    source: 'novel',
+    formula: 'z \\to z \\cdot s^{i \\theta / 2\\pi}',
+    blurb: 'Droste effect conformal mapping. Zooms exponentially while rotating to tile the plane.',
+    params: [
+      { name: 's', default: 1.0, min: 0.1, max: 10.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, s = 1.0) => {
+      const r = Math.max(Math.hypot(x, y), 1e-6);
+      const theta = Math.atan2(y, x);
+      const lns_2pi = Math.log(Math.max(s, 1e-4)) / 6.283185307179586;
+      const re = Math.log(r) - lns_2pi * theta;
+      const im = theta + lns_2pi * Math.log(r);
+      const er = Math.exp(re);
+      return [er * Math.cos(im), er * Math.sin(im)];
+    },
+  },
+  {
+    idx: V.logspiral,
+    name: 'logspiral',
+    source: 'novel',
+    formula: 'r = a e^{k \\theta}',
+    blurb: 'Logarithmic spiral parameterized by angle. Equiangular growth pattern.',
+    params: [
+      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'k', default: 1.0, min: -5.0, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, a = 1.0, k = 1.0) => {
+      const theta = Math.atan2(y, x);
+      const r = a * Math.exp(k * theta);
+      return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.fermat_spiral,
+    name: 'fermat_spiral',
+    source: 'novel',
+    formula: 'r = a \\sqrt{\\theta}',
+    blurb: 'Fermat spiral. Spacing between successive turns grows smaller.',
+    params: [
+      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, a = 1.0) => {
+      const theta = Math.max(Math.atan2(y, x), 1e-6);
+      const r = a * Math.sqrt(theta);
+      return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.lituus,
+    name: 'lituus',
+    source: 'novel',
+    formula: 'r = a / \\sqrt{\\theta}',
+    blurb: 'Lituus spiral. Area of circular sectors is constant.',
+    params: [
+      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, a = 1.0) => {
+      const theta = Math.max(Math.atan2(y, x), 1e-6);
+      const r = a / Math.sqrt(theta);
+      return [r * Math.cos(theta), r * Math.sin(theta)];
+    },
+  },
+  {
+    idx: V.hyperbolic_spiral,
+    name: 'hyperbolic_spiral',
+    source: 'novel',
+    formula: 'r = a / \\theta',
+    blurb: 'Hyperbolic spiral (reciprocal spiral). Starts at infinity and winds to the origin.',
+    params: [
+      { name: 'a', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y, a = 1.0) => {
+      const theta = Math.max(Math.atan2(y, x), 1e-6);
+      const r = a / theta;
+      return [r * Math.cos(theta), r * Math.sin(theta)];
     },
   },
 ];

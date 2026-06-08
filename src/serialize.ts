@@ -348,6 +348,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   duffing: ['h', 'delta', 'gamma', 'omega'],
   vanderpol: ['h', 'mu'],
   rossler: ['h', 'a'],
+  droste: ['s'],
+  logspiral: ['a', 'k'],
+  fermat_spiral: ['a'],
+  lituus: ['a'],
+  hyperbolic_spiral: ['a'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -597,6 +602,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   duffing: [0.1, 0.1, 0.1, 1.0],
   vanderpol: [0.1, 1.0],
   rossler: [0.1, 0.2],
+  droste: [1],
+  logspiral: [1, 1],
+  fermat_spiral: [1],
+  lituus: [1],
+  hyperbolic_spiral: [1],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

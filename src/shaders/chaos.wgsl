@@ -5612,6 +5612,47 @@ fn var_rossler(p: vec2f, w: f32, h: f32, a: f32) -> vec2f {
   return w * vec2f(xp, yp);
 }
 
+// V250 droste
+fn var_droste(p: vec2f, w: f32, s: f32) -> vec2f {
+  let r = max(length(p), 1e-6);
+  let theta = atan2(p.y, p.x);
+  // log(z) = ln(r) + i*theta
+  // multiply by (1 + i * ln(s)/(2pi))
+  let lns_2pi = log(max(s, 1e-4)) / 6.283185307179586;
+  let re = log(r) - lns_2pi * theta;
+  let im = theta + lns_2pi * log(r);
+  let er = exp(re);
+  return w * vec2f(er * safe_cos(im), er * safe_sin(im));
+}
+
+// V251 logspiral (r = a * exp(k*theta))
+fn var_logspiral(p: vec2f, w: f32, a: f32, k: f32) -> vec2f {
+  let theta = atan2(p.y, p.x);
+  let r = a * exp(k * theta);
+  return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
+}
+
+// V252 fermat_spiral
+fn var_fermat_spiral(p: vec2f, w: f32, a: f32) -> vec2f {
+  let theta = max(atan2(p.y, p.x), 1e-6);
+  let r = a * sqrt(theta);
+  return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
+}
+
+// V253 lituus
+fn var_lituus(p: vec2f, w: f32, a: f32) -> vec2f {
+  let theta = max(atan2(p.y, p.x), 1e-6);
+  let r = a / sqrt(theta);
+  return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
+}
+
+// V254 hyperbolic_spiral
+fn var_hyperbolic_spiral(p: vec2f, w: f32, a: f32) -> vec2f {
+  let theta = max(atan2(p.y, p.x), 1e-6);
+  let r = a / theta;
+  return w * vec2f(r * safe_cos(theta), r * safe_sin(theta));
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -5913,6 +5954,11 @@ fn apply_variation(
     case 247u: { return var_duffing(p, w, p0, p1, p2, p3); }
     case 248u: { return var_vanderpol(p, w, p0, p1); }
     case 249u: { return var_rossler(p, w, p0, p1); }
+    case 250u: { return var_droste(p, w, p0); }
+    case 251u: { return var_logspiral(p, w, p0, p1); }
+    case 252u: { return var_fermat_spiral(p, w, p0); }
+    case 253u: { return var_lituus(p, w, p0); }
+    case 254u: { return var_hyperbolic_spiral(p, w, p0); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -529,6 +529,11 @@ export const V = {
   duffing: 247,
   vanderpol: 248,
   rossler: 249,
+  droste: 250,
+  logspiral: 251,
+  fermat_spiral: 252,
+  lituus: 253,
+  hyperbolic_spiral: 254,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

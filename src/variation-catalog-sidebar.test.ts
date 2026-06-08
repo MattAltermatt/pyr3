@@ -24,7 +24,7 @@ describe('listVariations', () => {
     // lambert_w, grep-verified absent from JWildfire source.
     // JWF count grows as batches ship — lower-bound assertion stays loose.
     expect(rows.filter(r => r.source === 'dc')).toHaveLength(5);
-    expect(rows.filter(r => r.source === 'novel')).toHaveLength(29);
+    expect(rows.filter(r => r.source === 'novel')).toHaveLength(34);
     expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });
 });
