@@ -5605,7 +5605,7 @@ fn var_vanderpol(p: vec2f, w: f32, h: f32, mu: f32) -> vec2f {
 }
 
 // V249 rossler (projected to 2D, synthetic z=0)
-fn var_rossler(p: vec2f, w: f32, h: f32, a: f32, b: f32, c: f32) -> vec2f {
+fn var_rossler(p: vec2f, w: f32, h: f32, a: f32) -> vec2f {
   let z = length(p); // use radius as synthetic z
   let xp = p.x + h * (-p.y - z);
   let yp = p.y + h * (p.x + a * p.y);
@@ -5912,7 +5912,7 @@ fn apply_variation(
     case 246u: { return var_tinkerbell(p, w, p0, p1, p2, p3); }
     case 247u: { return var_duffing(p, w, p0, p1, p2, p3); }
     case 248u: { return var_vanderpol(p, w, p0, p1); }
-    case 249u: { return var_rossler(p, w, p0, p1, p2, p3); }
+    case 249u: { return var_rossler(p, w, p0, p1); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

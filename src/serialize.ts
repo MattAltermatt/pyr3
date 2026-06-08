@@ -347,7 +347,7 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   tinkerbell: ['a', 'b', 'c', 'd'],
   duffing: ['h', 'delta', 'gamma', 'omega'],
   vanderpol: ['h', 'mu'],
-  rossler: ['h', 'a', 'b', 'c'],
+  rossler: ['h', 'a'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -596,7 +596,7 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   tinkerbell: [0.9, -0.6, 2.0, 0.5],
   duffing: [0.1, 0.1, 0.1, 1.0],
   vanderpol: [0.1, 1.0],
-  rossler: [0.1, 0.2, 0.2, 5.7],
+  rossler: [0.1, 0.2],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

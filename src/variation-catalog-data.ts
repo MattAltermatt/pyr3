@@ -4695,11 +4695,9 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     params: [
       { name: 'h', default: 0.1, min: 0.01, max: 1.0, step: 0.01 },
       { name: 'a', default: 0.2, min: 0.0, max: 1.0, step: 0.01 },
-      { name: 'b', default: 0.2, min: 0.0, max: 1.0, step: 0.01 },
-      { name: 'c', default: 5.7, min: 1.0, max: 10.0, step: 0.1 },
     ],
     defaultWeight: 0.5,
-    warpFn: (x, y, p0 = 0.1, p1 = 0.2, p2 = 0.2, p3 = 5.7) => {
+    warpFn: (x, y, p0 = 0.1, p1 = 0.2) => {
       const z = Math.sqrt(x * x + y * y);
       return [
         x + p0 * (-y - z),

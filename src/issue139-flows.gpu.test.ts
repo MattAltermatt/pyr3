@@ -66,7 +66,7 @@ async function dispatch(fn: string, inputs: ReadonlyArray<readonly [number, numb
   if (fn === 'var_tinkerbell') paramCall = '0.9, -0.6, 2.0, 0.5';
   else if (fn === 'var_duffing') paramCall = '0.1, 0.1, 0.1, 1.0';
   else if (fn === 'var_vanderpol') paramCall = '0.1, 1.0';
-  else if (fn === 'var_rossler') paramCall = '0.1, 0.2, 0.2, 5.7';
+  else if (fn === 'var_rossler') paramCall = '0.1, 0.2';
 
   const code = `${PRELUDE}
 @group(0) @binding(0) var<storage, read> ins: array<vec4f>;
@@ -144,7 +144,7 @@ describe('Issue #139 Continuous Flows', () => {
   it('rossler warp (V249)', async () => {
     if (!device) return;
     const res = await dispatch('var_rossler', [[1.0, 0.0]]);
-    // h=0.1, a=0.2, b=0.2, c=5.7
+    // h=0.1, a=0.2
     // z = sqrt(1^2 + 0^2) = 1.0
     // x = 1.0 + 0.1 * (-0.0 - 1.0) = 0.9
     // y = 0.0 + 0.1 * (1.0 + 0.2 * 0.0) = 0.1
