@@ -30,7 +30,8 @@
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
     "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts",
     "bake-features": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bake-features.ts",
-    "gen:variation-thumbs": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs scripts/gen-variation-thumbs.mjs"
+    "gen:variation-thumbs": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs scripts/gen-variation-thumbs.mjs",
+    "audit:live": "node --import tsx/esm scripts/audit-live-pages.ts"
   },
   "devDependencies": {
     "@types/katex": "^0.16.8",

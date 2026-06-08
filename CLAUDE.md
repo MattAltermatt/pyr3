@@ -262,3 +262,14 @@ historical entry — superseded by this section.)
   [`HISTORY.md`](HISTORY.md) (frozen pre-1.0 log)
 - The "single engine, two consumers" seam: `src/main.ts` (browser) + `bin/pyr3-render.ts` (CLI)
 - WGSL shaders: `src/shaders/{chaos,density,visualize_u32,visualize_f32}.wgsl`
+
+## Live pages to audit
+
+- https://pyr3.app/
+- https://pyr3.app/help/about.html
+- https://pyr3.app/help/direct-color-variations.html
+- https://pyr3.app/help/ifs-and-render-cost.html
+- https://pyr3.app/help/name-templates.html
+- https://pyr3.app/help/webgpu.html
+- https://pyr3.app/showcase/
+
