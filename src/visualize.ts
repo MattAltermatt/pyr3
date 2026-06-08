@@ -25,6 +25,7 @@ export interface VisualizePass {
     outputView: GPUTextureView,
     background: [number, number, number],
     channelCurves?: ChannelCurves,
+    hslAdjust?: { hue: number; sat: number; light: number },
   ): void;
   /** Phase 9-size: release owned GPU buffers. */
   destroy(): void;
