@@ -344,10 +344,10 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   epicycloid: ['k'],
   catenary: ['a'],
   tractrix: [],
-  tinkerbell: ['p0', 'p1', 'p2', 'p3'],
-  duffing: ['p0', 'p1', 'p2', 'p3'],
-  vanderpol: ['p0', 'p1'],
-  rossler: ['p0', 'p1', 'p2', 'p3'],
+  tinkerbell: ['a', 'b', 'c', 'd'],
+  duffing: ['h', 'delta', 'gamma', 'omega'],
+  vanderpol: ['h', 'mu'],
+  rossler: ['h', 'a', 'b', 'c'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
