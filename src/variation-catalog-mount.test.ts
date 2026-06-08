@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mountVariationCatalog } from './variation-catalog-mount';
 import { V } from './variations';
 
@@ -19,11 +19,17 @@ const STUB_FORMAT = 'bgra8unorm' as GPUTextureFormat;
 describe('mountVariationCatalog', () => {
   let host: HTMLElement;
 
+  let handle: { destroy: () => void };
+
   beforeEach(() => {
     document.body.replaceChildren();
     host = document.createElement('div');
     document.body.append(host);
-    mountVariationCatalog(host, { device: STUB_DEVICE, format: STUB_FORMAT });
+    handle = mountVariationCatalog(host, { device: STUB_DEVICE, format: STUB_FORMAT });
+  });
+
+  afterEach(() => {
+    if (handle) handle.destroy();
   });
 
   it('renders sidebar + catalog containers', () => {

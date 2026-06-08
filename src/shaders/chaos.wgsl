@@ -5481,7 +5481,7 @@ fn var_kifs_fold(p: vec2f, w: f32, n: f32, offset: f32) -> vec2f {
   let r = length(p);
   if (r < 1e-6) { return vec2f(0.0); }
   var a = atan2(p.y, p.x) - offset;
-  let theta = 6.283185307179586 / max(1.0, n);
+  let theta = 6.283185307179586 / max(1.0, abs(n));
   a = a - theta * floor(a / theta);
   if (a > theta * 0.5) {
     a = theta - a;
@@ -5570,20 +5570,14 @@ fn var_epicycloid(p: vec2f, w: f32, k: f32) -> vec2f {
 // V244 catenary:
 fn var_catenary(p: vec2f, w: f32, a: f32) -> vec2f {
   let sa = max(abs(a), 1e-4) * sign(a + 1e-8);
-  let x_a = p.x / sa;
-  let yp = sa * 0.5 * (exp(x_a) + exp(-x_a));
+  let yp = sa * cosh(p.x / sa);
   return w * vec2f(p.x, yp);
 }
 
 // V245 tractrix:
 fn var_tractrix(p: vec2f, w: f32) -> vec2f {
-  let t = p.x;
-  let et = exp(t);
-  let emt = exp(-t);
-  let tanh_t = (et - emt) / (et + emt);
-  let cosh_t = 0.5 * (et + emt);
-  let xp = t - tanh_t;
-  let yp = 1.0 / cosh_t;
+  let xp = p.x - tanh(p.x);
+  let yp = 1.0 / cosh(p.x);
   return w * vec2f(xp, yp);
 }
 
