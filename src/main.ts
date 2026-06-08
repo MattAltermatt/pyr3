@@ -55,6 +55,16 @@ import { readGlobalQuality, writeGlobalQuality } from './prefs';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
+import { createEditRenderer } from './edit-render';
+import {
+  PREVIEW_TIER_LONGEST_EDGE,
+  loadPreviewConfig,
+  savePreviewConfig,
+  type PreviewRenderConfig,
+} from './render-mode-config';
+import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
+import { openRenderProgressModal } from './render-progress-modal';
+import { parsePreviewOverride } from './load-intent';
 import { DEFAULT_WALKER_JITTER, resolveWalkerJitter } from './walker-jitter';
 import {
   mountAboutBar,
@@ -669,6 +679,261 @@ async function main(): Promise<void> {
   let seed = (Math.random() * 0xffffffff) >>> 0;
   let activeGenome: Genome = SPIRAL_GALAXY;
 
+  // #176 — render-mode-bar mounts between the chrome bar and the canvas zone
+  // in the viewer. Preview side is wired to localStorage (workstation pref);
+  // render side mirrors activeGenome.size + activeGenome.quality. 💾 Save
+  // Render fires a full-quality render at genome.size × oversample × quality
+  // through editRenderer.fullRenderAt with the new progress modal +
+  // AbortSignal (parallel to the editor's Save Render flow).
+  let viewerPreviewCfg: PreviewRenderConfig = loadPreviewConfig();
+
+  // #176 — viewer's RENDER config is workstation-pref-shaped: independent
+  // of activeGenome (loaded flames do NOT reset / override it). Persists to
+  // localStorage so the user's HD/Q50 (or whatever they pick) survives page
+  // reloads + flame nav. Default = HD 1920×1080 + Q50.
+  interface ViewerRenderConfig {
+    width: number;
+    height: number;
+    quality: number;
+  }
+  const VIEWER_RENDER_CFG_KEY = 'pyr3-viewer-render-config';
+  const DEFAULT_VIEWER_RENDER_CFG: ViewerRenderConfig = { width: 1920, height: 1080, quality: 50 };
+  function loadViewerRenderConfig(): ViewerRenderConfig {
+    try {
+      const raw = globalThis.localStorage?.getItem(VIEWER_RENDER_CFG_KEY);
+      if (!raw) return DEFAULT_VIEWER_RENDER_CFG;
+      const p = JSON.parse(raw);
+      if (!p || typeof p !== 'object') return DEFAULT_VIEWER_RENDER_CFG;
+      if (p._v !== 1) return DEFAULT_VIEWER_RENDER_CFG;
+      const width = Math.max(1, Math.floor(Number(p.width) || 0));
+      const height = Math.max(1, Math.floor(Number(p.height) || 0));
+      const quality = Math.max(1, Math.min(200, Math.round(Number(p.quality) || 50)));
+      if (!width || !height) return DEFAULT_VIEWER_RENDER_CFG;
+      return { width, height, quality };
+    } catch {
+      return DEFAULT_VIEWER_RENDER_CFG;
+    }
+  }
+  function saveViewerRenderConfig(cfg: ViewerRenderConfig): void {
+    try {
+      globalThis.localStorage?.setItem(VIEWER_RENDER_CFG_KEY, JSON.stringify({ ...cfg, _v: 1 }));
+    } catch (err) {
+      console.warn('pyr3: saveViewerRenderConfig failed', err);
+    }
+  }
+  let viewerRenderCfg: ViewerRenderConfig = loadViewerRenderConfig();
+
+  // #176 — track the user-facing flame name so Save Render's filename
+  // matches the chrome bar's existing 'Save' filename composition
+  // (`electricsheep.{gen}.{id}.pyr3.png`). Updated in applyLoadResult
+  // alongside the bar's setMeta call.
+  let viewerCurrentFlameName: string | null = null;
+  // #176 — URL params (?preview / ?previewQ / ?quick=1) override the
+  // persisted config for THIS session only. NOT written back to localStorage.
+  {
+    const override = parsePreviewOverride(typeof window !== 'undefined' ? window.location.search : '');
+    if (override?.tier) viewerPreviewCfg = { ...viewerPreviewCfg, tier: override.tier };
+    if (override?.quality !== undefined) viewerPreviewCfg = { ...viewerPreviewCfg, quality: override.quality };
+  }
+  const viewerEditRenderer = createEditRenderer(renderer, {});
+  let viewerRenderInFlight = false;
+  let viewerRenderModeBarHandle: RenderModeBarHandle | null = null;
+
+  const renderModeBarHost = document.createElement('div');
+  renderModeBarHost.id = 'pyr3-render-mode-bar';
+  renderModeBarHost.className = 'pyr3-render-mode-bar-host';
+  const appRoot = document.getElementById('pyr3-app')!;
+  const canvasZone = document.getElementById('pyr3-canvas-zone')!;
+  appRoot.insertBefore(renderModeBarHost, canvasZone);
+  // #176 — body class hides the chrome bar's Size + Quality + Save Render
+  // (now duplicated by render-mode-bar). CSS selector in index.html.
+  document.body.classList.add('pyr3-has-render-mode-bar');
+
+  async function viewerSaveRender(): Promise<void> {
+    if (viewerRenderInFlight) return;
+    viewerRenderInFlight = true;
+    // #176 — render dims + quality come from viewerRenderCfg (workstation
+    // pref), NOT activeGenome (which carries the flame's declared values
+    // that might be q=2000, dims=800×592, etc). The flame contributes
+    // palette / xforms / colorCurves / etc — everything except the OUTPUT
+    // SPEC. Scale is rescaled proportionally so the flame fills the same
+    // visual fraction of the output canvas it did at its declared dims
+    // (applyPreset semantics — works for any output dim).
+    const targetW = viewerRenderCfg.width;
+    const targetH = viewerRenderCfg.height;
+    const targetQuality = viewerRenderCfg.quality;
+    const oversample = 1;
+    const filterRadius = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+    const qualityLabel = String(targetQuality);
+    // Rescale genome.scale: flame was authored for activeGenome.size; now
+    // rendering at viewerRenderCfg's dims. Match the long-edge fraction.
+    const declSize = activeGenome.size ?? { width: targetW, height: targetH };
+    const declMax = Math.max(declSize.width, declSize.height);
+    const targetMax = Math.max(targetW, targetH);
+    const scaleAdjust = targetMax / declMax;
+    const renderGenome: Genome = {
+      ...activeGenome,
+      size: { width: targetW, height: targetH },
+      oversample,
+      quality: targetQuality,
+      scale: activeGenome.scale * scaleAdjust,
+    };
+
+    // Cancel any in-flight viewer render before we resize / re-iterate.
+    if (runHandle) {
+      runHandle.cancel();
+      await runHandle.promise;
+      runHandle = null;
+      await device.queue.onSubmittedWorkDone();
+    }
+
+    const restoreW = renderer.width;
+    const restoreH = renderer.height;
+    const restoreOversample = renderer.oversample;
+    const restoreFilter = renderer.filterRadius;
+
+    const abortCtrl = new AbortController();
+    const modal = openRenderProgressModal({
+      host: document.body,
+      sizeLabel: `${targetW}×${targetH}`,
+      qualityLabel,
+      onCancel: () => abortCtrl.abort(),
+    });
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+    let cancelled = false;
+    try {
+      // Canvas (= output texture) sits at LOGICAL dims; the renderer's
+      // internal histogram + visualize texture get the supersample
+      // multiply applied inside renderer.resize.
+      canvas.width = targetW;
+      canvas.height = targetH;
+      renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
+      // #176 — use the SAME proven orchestrator the viewer's live preview
+      // uses (startChunkedRender) instead of editRenderer.fullRenderAt. The
+      // latter's chunked path was producing empty histograms at output dims
+      // — same code works fine for the editor (different lifecycle) but
+      // wasn't producing samples on the viewer's renderer here. Reusing
+      // startChunkedRender guarantees byte-for-byte the same dispatch
+      // pattern as the rerender that's known to work.
+      const targetSamples = targetQuality * targetW * targetH;
+      const renderHandle = startChunkedRender({
+        renderer,
+        genome: renderGenome,
+        outputViewProvider: () => context.getCurrentTexture().createView(),
+        targetSamples,
+        seedBase: seed,
+        onProgress: (info) => modal.setProgress(info.percent),
+        walkerJitter: currentWalkerJitter,
+        // #176 perf: 4M samples/chunk + yield every 4 chunks dramatically
+        // reduces the rAF-yield overhead for Save Render's larger
+        // targetSamples. Cancel button still responds within ~64ms.
+        samplesPerChunk: 4_000_000,
+        yieldEveryNChunks: 4,
+      });
+      // Bridge AbortSignal → orchestrator cancel.
+      abortCtrl.signal.addEventListener('abort', () => renderHandle.cancel(), { once: true });
+      const result = await renderHandle.promise;
+      if (result === 'cancelled') {
+        throw new DOMException('Render aborted', 'AbortError');
+      }
+      // Drain GPU work so toBlob captures the post-present pixels.
+      await device.queue.onSubmittedWorkDone();
+      // Filename: use the SAME source the chrome bar's existing 🧬 Save uses
+      // (viewerCurrentFlameName = result.genome.name || sourceBase) — keyed
+      // to the corpus path (electricsheep.{gen}.{id}) when the genome.name
+      // is missing. Falls back through genome.name → 'pyr3-render'.
+      const rawName = viewerCurrentFlameName || renderGenome.name || 'pyr3-render';
+      const baseName = rawName.trim().replace(/[^A-Za-z0-9._-]/g, '_') || 'pyr3-render';
+      const filename = `${baseName}.pyr3.png`;
+      await new Promise<void>((resolve, reject) => {
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            reject(new Error('toBlob returned null — canvas was not snapshottable'));
+            return;
+          }
+          let finalBlob: Blob = blob;
+          try {
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            const pyr3Json = JSON.stringify(genomeToJson(renderGenome));
+            const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
+            finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
+          } catch (err) {
+            console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
+          }
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(finalBlob);
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          resolve();
+        }, 'image/png');
+      });
+      bar.showToast(`💾 Saved ${filename} to Downloads`);
+    } catch (err) {
+      const errName = (err as Error)?.name;
+      if (errName === 'AbortError') {
+        cancelled = true;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`pyr3: viewer Save Render failed — ${msg}`);
+        bar.showToast(`Render failed: ${msg}`);
+      }
+    } finally {
+      // Restore the viewer canvas dims so the live preview keeps working.
+      canvas.width = restoreW;
+      canvas.height = restoreH;
+      renderer.resize({
+        width: restoreW,
+        height: restoreH,
+        oversample: restoreOversample,
+        filterRadius: restoreFilter,
+      });
+      modal.close();
+      viewerRenderInFlight = false;
+      viewerRenderModeBarHandle?.refresh();
+      void cancelled;
+      // Re-iterate the viewer canvas so the live preview is back to a
+      // good state at the restored dims.
+      void rerender();
+    }
+  }
+
+  viewerRenderModeBarHandle = mountRenderModeBar({
+    host: renderModeBarHost,
+    getPreviewConfig: () => viewerPreviewCfg,
+    setPreviewConfig: (cfg) => {
+      viewerPreviewCfg = cfg;
+      savePreviewConfig(cfg);
+      // #176 — tier change re-runs the quick-preview path at the new
+      // longest-edge cap (Fast=512 / Balanced=1024 / Sharp=1536). Note:
+      // preview QUALITY (the 10-50 ladder) does NOT yet drive viewer iter
+      // density — that's a follow-up (the viewer uses currentQuality's
+      // tier-driven spp, distinct from this preview-side quality value).
+      void rerender();
+    },
+    // #176 — bar reads/writes the workstation-pref ViewerRenderConfig.
+    // Decoupled from activeGenome — flame loads do NOT reset the bar.
+    // Default HD + Q50; user picks survive page reloads via localStorage.
+    getRenderSize: () => ({ width: viewerRenderCfg.width, height: viewerRenderCfg.height }),
+    setRenderSize: (size) => {
+      viewerRenderCfg = { ...viewerRenderCfg, width: size.width, height: size.height };
+      saveViewerRenderConfig(viewerRenderCfg);
+      // Aspect-lock — render dim change reshapes the preview canvas to match.
+      void rerender();
+    },
+    getRenderQuality: () => viewerRenderCfg.quality,
+    setRenderQuality: (q) => {
+      viewerRenderCfg = { ...viewerRenderCfg, quality: Math.max(1, Math.min(200, q)) };
+      saveViewerRenderConfig(viewerRenderCfg);
+    },
+    onSaveRender: () => viewerSaveRender(),
+    canSave: () => !viewerRenderInFlight,
+    showToast: (msg) => bar.showToast(msg),
+  });
+
   let runHandle: RunHandle | null = null;
   // #8: true for the duration of a quality-ladder / custom (e.g. 4K) render.
   // Corpus loads track their own in-flight state via the load sequencer; this covers
@@ -860,17 +1125,29 @@ async function main(): Promise<void> {
       await device.queue.onSubmittedWorkDone();
     }
 
-    // Quick-preview sizing: cap at QUICK_MAX_DIM long-edge (no upscale
-    // of small genomes — preview snappy). The 4K render path lives in
-    // the BE CLI (bin/pyr3-render.ts) per PYR3-023 — FE viewer is
-    // interactive at quick quality only.
-    const declW = activeGenome.size?.width ?? RENDER_SIZE;
-    const declH = activeGenome.size?.height ?? RENDER_SIZE;
-    const maxDecl = Math.max(declW, declH);
-    const sizeScale = maxDecl > QUICK_MAX_DIM ? QUICK_MAX_DIM / maxDecl : 1;
-    const targetW = Math.max(1, Math.round(declW * sizeScale));
-    const targetH = Math.max(1, Math.round(declH * sizeScale));
+    // #176 — preview canvas aspect comes from viewerRenderCfg (bar's RENDER
+    // dims), NOT activeGenome.size. The bar is now authoritative for output
+    // shape: picking 'square' shows preview at 1:1; picking '4K' shows
+    // preview at 16:9. Tier cap (Fast=512 / Balanced=1024 / Sharp=1536)
+    // determines the longest preview edge.
+    const tierCap = PREVIEW_TIER_LONGEST_EDGE[viewerPreviewCfg.tier];
+    const renderCfgMaxEdge = Math.max(viewerRenderCfg.width, viewerRenderCfg.height);
+    const previewFit = renderCfgMaxEdge > tierCap ? tierCap / renderCfgMaxEdge : 1;
+    const targetW = Math.max(1, Math.round(viewerRenderCfg.width * previewFit));
+    const targetH = Math.max(1, Math.round(viewerRenderCfg.height * previewFit));
     const targetFilter = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+    // genome.scale adjustment: flame was authored against activeGenome.size,
+    // but we're rendering at viewerRenderCfg dims scaled to preview tier.
+    // WYSIWYG demands: scale_preview * preview_dim_max = scale_save * save_dim_max,
+    // which (since scale_save = scale_authored * save_dim_max / authored_dim_max)
+    // simplifies to: scale_preview = scale_authored * preview_dim_max /
+    // authored_dim_max.
+    const authoredMaxEdge = Math.max(
+      activeGenome.size?.width ?? renderCfgMaxEdge,
+      activeGenome.size?.height ?? renderCfgMaxEdge,
+    );
+    const previewMaxEdge = Math.max(targetW, targetH);
+    const sizeScale = previewMaxEdge / authoredMaxEdge;
 
     if (
       targetW !== renderer.width
@@ -1110,6 +1387,10 @@ async function main(): Promise<void> {
     // context whenever it loads a flame. corpusId is omitted here; loadCorpus
     // refines this entry with its (gen, id) right after this call returns.
     setCurrentFlame({ genome: result.genome });
+    // #176 — flame replacement does NOT touch the bar (viewerRenderCfg is
+    // workstation pref, independent of activeGenome). User's HD/Q50 (or
+    // whatever they picked) survives across surprise-me / corpus nav /
+    // file open.
     if (result.kind === 'flame' && result.report) {
       const dropCount = result.report.droppedVariations.length;
       const ignoredCount = result.report.ignoredFields.length;
@@ -1135,8 +1416,9 @@ async function main(): Promise<void> {
     // the canonical `electricsheep.<gen>.<id>` label is right in the
     // sourceLabel that loadCorpus hands us.
     const sourceBase = sourceLabel.replace(/\.(flam3|flame)$/i, '');
+    viewerCurrentFlameName = result.genome.name || sourceBase || 'Untitled';
     bar.setMeta({
-      flameName: result.genome.name || sourceBase || 'Untitled',
+      flameName: viewerCurrentFlameName,
       authorNick: result.genome.nick,
       sourceFilename: sourceLabel,
     });

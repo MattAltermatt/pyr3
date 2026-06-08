@@ -149,11 +149,20 @@ function ensureEditStyles(): void {
 const EDIT_CSS = `
 .pyr3-edit-root {
   display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 8px;
+  grid-template-rows: auto 1fr;
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+.pyr3-edit-body {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+.pyr3-edit-render-mode-bar-host {
+  /* render-mode-bar host spans the full editor width above the body row */
 }
 .pyr3-edit-panel {
   overflow: auto;

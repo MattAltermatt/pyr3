@@ -1,10 +1,16 @@
 // @vitest-environment happy-dom
 //
-// Phase 7 task 7.7: section refactored to row primitives (buildRow /
-// buildNumberInput / buildDropdown / buildPair). Tests drive scrubby
-// numeric cells via the dblclick → type → Enter pattern; dropdowns via
-// .value + change event. The W × H pair sits in a `1fr auto 1fr` sub-grid
-// so neither input clips at narrow panel widths — asserted explicitly.
+// #176 (2026-06-07): Size + W × H + Quality MOVED to the shared render-mode-bar
+// (`src/render-mode-bar.ts`) above the canvas in both viewer + editor. This
+// section now hosts only oversample + spatial filter (radius + shape) + a
+// subtitle pointing at the bar for the moved widgets. Tests assert (a) the
+// moved widgets are GONE, (b) the subtitle is present, (c) the remaining
+// oversample / filter widgets still wire correctly.
+//
+// Phase 7 task 7.7 (historical): section refactored to row primitives
+// (buildRow / buildNumberInput / buildDropdown / buildPair). Tests drive
+// scrubby numeric cells via the dblclick → type → Enter pattern; dropdowns
+// via .value + change event.
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderSection } from './edit-section-render';
@@ -53,24 +59,34 @@ describe('renderSection', () => {
     expect(typeof renderSection.build).toBe('function');
   });
 
-  it('renders preset + W/H + quality + oversample + filter rows', () => {
+  it('renders subtitle + oversample + filter rows (size/quality/W×H moved to the bar in #176)', () => {
     const { host } = mount();
-    expect(host.querySelector('.pyr3-edit-render-size-preset')).not.toBeNull();
-    expect(host.querySelector('.pyr3-edit-render-width')).not.toBeNull();
-    expect(host.querySelector('.pyr3-edit-render-height')).not.toBeNull();
-    expect(host.querySelector('.pyr3-edit-render-quality')).not.toBeNull();
+    // Moved-to-bar widgets are GONE from this panel
+    expect(host.querySelector('.pyr3-edit-render-size-preset')).toBeNull();
+    expect(host.querySelector('.pyr3-edit-render-width')).toBeNull();
+    expect(host.querySelector('.pyr3-edit-render-height')).toBeNull();
+    expect(host.querySelector('.pyr3-edit-render-quality')).toBeNull();
+    // Remaining widgets stay
     expect(host.querySelector('.pyr3-edit-render-oversample')).not.toBeNull();
     expect(host.querySelector('.pyr3-edit-render-filter-radius')).not.toBeNull();
     expect(host.querySelector('.pyr3-edit-render-filter-shape')).not.toBeNull();
   });
 
-  it('W × H row uses buildPair sub-grid (1fr auto 1fr) so both inputs fit', () => {
-    // Verify the pair primitive's structural shape — the W/H inputs sit in
-    // a 3-column sub-grid with the `×` separator pinned center. This is the
-    // failing assertion the task spec calls out.
+  it('shows the bar-redirect subtitle', () => {
     const { host } = mount();
-    const whRow = host.querySelector('.pyr3-edit-render-wh-row') as HTMLElement;
-    expect(whRow).not.toBeNull();
+    const subtitle = host.querySelector('.pyr3-edit-section-render__subtitle');
+    expect(subtitle).not.toBeNull();
+    expect(subtitle?.textContent).toMatch(/see size & render quality on the bar above/i);
+  });
+
+  it('W × H row stripped (moved to render-mode-bar)', () => {
+    // The old buildPair sub-grid assertion no longer applies — the W × H pair
+    // lives on the render-mode-bar now. The panel should not have a wh-row.
+    const { host } = mount();
+    const whRow = host.querySelector('.pyr3-edit-render-wh-row');
+    expect(whRow).toBeNull();
+    // Keep the rest of the original test body intact below by short-circuiting.
+    if (whRow === null) return;
     const pair = whRow.querySelector('.pyr3-pair') as HTMLElement;
     expect(pair).not.toBeNull();
     expect(pair.style.gridTemplateColumns).toBe('1fr auto 1fr');
@@ -81,74 +97,8 @@ describe('renderSection', () => {
     expect(pair.querySelector('.pyr3-edit-render-height')).not.toBeNull();
   });
 
-  it('size preset "1080p" writes state.genome.size = {1920, 1080} and fires onChange', () => {
-    const { host, state, onChange } = mount();
-    const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
-    preset.value = '1080p';
-    preset.dispatchEvent(new Event('change'));
-    expect(state.genome.size).toEqual({ width: 1920, height: 1080 });
-    expect(onChange).toHaveBeenCalledWith('size.width');
-    expect(onChange).toHaveBeenCalledWith('size.height');
-  });
-
-  it('size preset "4K" writes 3840×2160', () => {
-    const { host, state } = mount();
-    const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
-    preset.value = '4K';
-    preset.dispatchEvent(new Event('change'));
-    expect(state.genome.size).toEqual({ width: 3840, height: 2160 });
-  });
-
-  it('Size dropdown surfaces SIZE_PRESETS (HD, 4K, square, iPhone 15 Pro, …)', () => {
-    const { host } = mount();
-    const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
-    const values = Array.from(preset.querySelectorAll('option')).map((o) => o.value);
-    // A few signal entries — full list lives in load-intent.ts:SIZE_PRESETS.
-    expect(values).toContain('HD');
-    expect(values).toContain('4K');
-    expect(values).toContain('square');
-    expect(values).toContain('iPhone 15 Pro');
-    // Legacy aliases preserved so existing fixtures + tests don't break.
-    expect(values).toContain('1080p');
-    expect(values).toContain('Square');
-    expect(values).toContain('Custom');
-  });
-
-  it('manual width edit flips preset dropdown to "Custom"', () => {
-    const { host, state } = mount();
-    const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
-    // Snap to a known preset first.
-    preset.value = '1080p';
-    preset.dispatchEvent(new Event('change'));
-    expect(preset.value).toBe('1080p');
-
-    const width = host.querySelector<HTMLElement>('.pyr3-edit-render-width')!;
-    typeInto(width, '1234');
-    expect(state.genome.size!.width).toBe(1234);
-    expect(state.genome.size!.height).toBe(1080);
-    expect(preset.value).toBe('Custom');
-  });
-
-  it('manual height edit flips preset dropdown to "Custom"', () => {
-    const { host, state } = mount();
-    const preset = host.querySelector<HTMLSelectElement>('.pyr3-edit-render-size-preset')!;
-    preset.value = 'Square';
-    preset.dispatchEvent(new Event('change'));
-    expect(preset.value).toBe('Square');
-
-    const height = host.querySelector<HTMLElement>('.pyr3-edit-render-height')!;
-    typeInto(height, '999');
-    expect(state.genome.size!.height).toBe(999);
-    expect(preset.value).toBe('Custom');
-  });
-
-  it('editing quality writes state.genome.quality and fires onChange("quality")', () => {
-    const { host, state, onChange } = mount();
-    const q = host.querySelector<HTMLElement>('.pyr3-edit-render-quality')!;
-    typeInto(q, '250');
-    expect(state.genome.quality).toBe(250);
-    expect(onChange).toHaveBeenCalledWith('quality');
-  });
+  // Size preset + W × H + Quality tests moved to render-mode-bar.test.ts in
+  // #176. The bar is the new single source for those widgets.
 
   it('editing oversample writes state.genome.oversample and fires onChange("oversample")', () => {
     const { host, state, onChange } = mount();

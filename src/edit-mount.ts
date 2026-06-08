@@ -23,6 +23,15 @@ import { generateRandomGenome } from './edit-seed';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
+import {
+  type PreviewRenderConfig,
+  computePreviewDims,
+  loadPreviewConfig,
+  savePreviewConfig,
+} from './render-mode-config';
+import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
+import { openRenderProgressModal } from './render-progress-modal';
+import { parsePreviewOverride } from './load-intent';
 import { genomeToJson, genomeFromJson } from './serialize';
 import { injectPngTextChunk } from './png-text-chunk';
 import { type Genome } from './genome';
@@ -133,6 +142,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // wired below via `opts.onProgressShow` / `onProgressHide` callbacks.
   opts.root.replaceChildren();
   opts.root.classList.add('pyr3-edit-root');
+  // #176 — render-mode-bar mounts at the TOP of opts.root spanning the
+  // full editor width. The panelHost + canvasHost row sits below it. This
+  // gives the bar a guaranteed position above all the editor's working area
+  // (the prior approach of mounting inside canvasHost competed with the
+  // canvas's pixel-driven CSS-size and produced a mid-canvas overlay).
+  const renderModeBarHost = document.createElement('div');
+  renderModeBarHost.className = 'pyr3-edit-render-mode-bar-host';
+  document.body.classList.add('pyr3-has-render-mode-bar');
+  const editBody = document.createElement('div');
+  editBody.className = 'pyr3-edit-body';
   const panelHost = document.createElement('div');
   const canvasHost = document.createElement('div');
   canvasHost.className = 'pyr3-edit-canvas-host';
@@ -142,7 +161,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   canvas.width = preview.width;
   canvas.height = preview.height;
   canvasHost.appendChild(canvas);
-  opts.root.append(panelHost, canvasHost);
+  editBody.append(panelHost, canvasHost);
+  opts.root.append(renderModeBarHost, editBody);
 
   // WebGPU context on the editor canvas. Assigned to a non-null local so
   // closures (lane scheduler, applyNewGenome) can read it without re-narrowing.
@@ -214,19 +234,37 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // path; this initial seam writes bare {genome} per the design spec).
   setCurrentFlame({ genome: initialGenome });
 
-  // Resolve render dims from genome — when the user picks a size preset in
-  // the Render section, the preview canvas re-sizes + re-iterates to match.
-  // Falls back to preview-default (512×512) when genome.size is unset.
+  // #176 — preview render config. Workstation pref (per-browser localStorage),
+  // not part of the flame artifact. Drives the editor's live preview canvas
+  // dims (via tier) + iteration density (via quality, in applyLane opts).
+  // genome.size + genome.quality stay as the RENDER output config — only fire
+  // at Save Render time.
+  let previewCfg: PreviewRenderConfig = loadPreviewConfig();
+  // #176 — URL params (?preview / ?previewQ / ?quick=1) override the
+  // persisted config for this session only. NOT written back to
+  // localStorage so a refresh without the param falls back to the user's
+  // persisted choice.
+  {
+    const override = parsePreviewOverride(typeof window !== 'undefined' ? window.location.search : '');
+    if (override?.tier) previewCfg = { ...previewCfg, tier: override.tier };
+    if (override?.quality !== undefined) previewCfg = { ...previewCfg, quality: override.quality };
+  }
+
+  // Resolve preview canvas dims from PreviewRenderConfig + render-side aspect.
+  // The render-side genome.size is authoritative for ASPECT RATIO; the preview
+  // tier (Fast/Balanced/Sharp) picks the longest-edge cap. WYSIWYG: preview
+  // is just a downscaled-fidelity version of what Save Render will produce.
   // Oversample is capped at 1 for the live preview (oversample > 1 at full
   // preset dims often blows past WebGPU storage-buffer limits; the
   // 🖼️ render-PNG path uses the genome's actual oversample at save time).
   function effectiveDims(): { width: number; height: number; oversample: number; filterRadius: number } {
     const size = state.genome.size;
-    const width = (size?.width ?? 0) > 0 ? size!.width : preview.width;
-    const height = (size?.height ?? 0) > 0 ? size!.height : preview.height;
+    const renderW = (size?.width ?? 0) > 0 ? size!.width : preview.width;
+    const renderH = (size?.height ?? 0) > 0 ? size!.height : preview.height;
+    const dims = computePreviewDims(previewCfg.tier, { width: renderW, height: renderH });
     return {
-      width,
-      height,
+      width: dims.width,
+      height: dims.height,
       oversample: 1,
       filterRadius: state.genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS,
     };
@@ -266,7 +304,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // the canvas briefly). With 200 ms, single clicks reliably show their
   // live frame; user can tune lower for a snappier settled, higher for a
   // longer-lived live preview.
-  let settleDelayMs = 200;
+  let settleDelayMs = 500;
   const BAR_DELAY_MS = 500;
 
   function liveDimsFor(full: { width: number; height: number }): { width: number; height: number } {
@@ -370,10 +408,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const myTicket = inflightTicket;
     ensureSettledDims();
     const d = effectiveDims();
-    const spp = state.genome.quality ?? 50;
+    // #176 — live preview iterates at previewCfg.quality (10..50), NOT
+    // genome.quality (which is now render-side output quality, 50..500).
+    const spp = previewCfg.quality;
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
+    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height, { targetSpp: spp });
     opts.onStateChange?.(state);
     // #118 — measure settle-render wall-clock so the slow-render nudge
     // can detect a pattern of slow renders during active editing.
@@ -397,7 +437,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // genome so the framing matches what the settled render will show.
     // Fast lane re-presents the existing histogram, no scale adjustment.
     const genome = (lane === 'slow' || lane === 'rebuild') ? liveAdjustedGenome() : state.genome;
-    editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, genome, state.seed, view, w, h);
+    editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
     opts.onStateChange?.(state);
     await awaitGpuThenMaybeHide(myTicket);
   });
@@ -519,7 +559,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       const w = canvas.width;
       const h = canvas.height;
       const genome = liveAdjustedGenome();
-      editRenderer.applyLane('slow', genome, state.seed, view, w, h);
+      editRenderer.applyLane('slow', genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
       opts.onStateChange?.(state);
       await opts.device.queue.onSubmittedWorkDone();
       // Yield to the browser's paint pipeline BEFORE starting the next
@@ -588,10 +628,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // BAR_DELAY_MS — these are "intentional, full" renders, not drags.
     ensureSettledDims();
     const d = effectiveDims();
-    const spp = state.genome.quality ?? 50;
+    // #176 — settled preview uses preview-side quality.
+    const spp = previewCfg.quality;
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height);
+    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height, { targetSpp: spp });
     opts.onStateChange?.(state);
     await awaitGpuThenMaybeHide(myTicket);
   }
@@ -666,7 +707,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     return slugify(resolved);
   }
 
+  // #176 — gates the Save Render button + lane-conflict assertions in tests.
+  let renderInFlight = false;
+
   async function handleRenderPng(): Promise<void> {
+    if (renderInFlight) return;
+    renderInFlight = true;
     const targetW = state.genome.size?.width ?? 1024;
     const targetH = state.genome.size?.height ?? 1024;
     const oversample = state.genome.oversample ?? 1;
@@ -680,17 +726,35 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // on each lane fire so it'll re-render at the right quality next edit.
     const restoreDims = effectiveDims();
 
-    const modal = showModal(opts.root, `Rendering at ${targetW}×${targetH}…`);
+    // #176 — progress modal mounts BEFORE the render dispatch. One rAF yield
+    // guarantees the modal's first paint lands before the GPU saturates with
+    // the render dispatch (otherwise the modal "doesn't appear" until the
+    // render finishes — exactly the bad UX this issue called out).
     panelHost.setAttribute('data-busy', 'true');
-    // Yield once so the modal paints before the heavy resize+iterate.
-    await new Promise<void>((r) => setTimeout(r, 16));
+    const sizeLabel = `${targetW}×${targetH}`;
+    const qualityLabel = String(state.genome.quality ?? 100);
+    const abortCtrl = new AbortController();
+    const modal = openRenderProgressModal({
+      host: opts.root,
+      sizeLabel,
+      qualityLabel,
+      onCancel: () => abortCtrl.abort(),
+    });
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
+    let cancelled = false;
     try {
       canvas.width = targetW;
       canvas.height = targetH;
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
       const view = ctx.getCurrentTexture().createView();
-      editRenderer.fullRenderAt(state.genome, state.seed, targetW, targetH, view);
+      await editRenderer.fullRenderAt(state.genome, state.seed, targetW, targetH, view, {
+        signal: abortCtrl.signal,
+        onProgress: (frac) => modal.setProgress(frac),
+        // #176 — fresh swap-chain view at present time (the chunked path's
+        // setTimeout(0) yields expire the view captured before iteration).
+        outputViewProvider: () => ctx.getCurrentTexture().createView(),
+      });
 
       const filename = resolveCurrentFilename();
       const template = state.genome.name;
@@ -739,15 +803,23 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
           resolve();
         }, 'image/png');
       });
+      // #176 — post-save toast confirms filename + Downloads landing.
+      showToast(panelHost, `💾 Saved ${filename}.pyr3.png to Downloads`);
     } catch (err) {
+      const errName = (err as Error)?.name;
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`pyr3-edit: render-PNG failed — ${msg}`);
-      showToast(panelHost, `Render failed: ${msg}`);
+      if (errName === 'AbortError') {
+        // User-cancelled — silent (modal close + restore is enough signal).
+        cancelled = true;
+      } else {
+        console.error(`pyr3-edit: render-PNG failed — ${msg}`);
+        showToast(panelHost, `Render failed: ${msg}`);
+      }
     } finally {
       // Restore the canvas to whatever it was before the render-PNG so the
-      // user keeps the same on-screen view they had. fullRender uses
-      // previewSpp (capped genome.quality), which fills the histogram
-      // densely at these dims — no CSS-upscaling from a tiny texture.
+      // user keeps the same on-screen view they had. applyLane('slow') re-
+      // iterates at preview-side density so the histogram fills these dims
+      // — no CSS-upscaling from a tiny texture.
       canvas.width = restoreDims.width;
       canvas.height = restoreDims.height;
       renderer.resize({
@@ -757,9 +829,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         filterRadius: restoreDims.filterRadius,
       });
       const view2 = ctx.getCurrentTexture().createView();
-      editRenderer.fullRender(state.genome, state.seed, view2, restoreDims.width, restoreDims.height);
+      editRenderer.applyLane('slow', state.genome, state.seed, view2, restoreDims.width, restoreDims.height, { targetSpp: previewCfg.quality });
       panelHost.removeAttribute('data-busy');
-      modal.remove();
+      modal.close();
+      renderInFlight = false;
+      // Suppress unused-variable diagnostic; cancelled is documented above.
+      void cancelled;
     }
   }
 
@@ -799,13 +874,53 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   rebuildPanel();
   inflightTicket++;
   {
-    const spp = state.genome.quality ?? 50;
-    scheduleBarShow(`rendering ${initialDims.width}×${initialDims.height} · q${spp}`);
+    // #176 — initial paint uses preview-side quality.
+    scheduleBarShow(`rendering ${initialDims.width}×${initialDims.height} · q${previewCfg.quality}`);
   }
   const view0 = ctx.getCurrentTexture().createView();
-  editRenderer.fullRender(state.genome, state.seed, view0, initialDims.width, initialDims.height);
+  editRenderer.applyLane('slow', state.genome, state.seed, view0, initialDims.width, initialDims.height, { targetSpp: previewCfg.quality });
   opts.onStateChange?.(state);
   void awaitGpuThenMaybeHide(inflightTicket);
+
+  // #176 — mount the render-mode-bar. Wires preview side to the editor's
+  // PreviewRenderConfig (persisted to localStorage); render side to
+  // genome.size / genome.quality (round-trips with .pyr3.json). Save Render
+  // fires handleRenderPng — same path the (now-deprecated) top-bar 🖼️ button
+  // uses, so both entry points reach the new progress modal.
+  let renderModeBarHandle: RenderModeBarHandle | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  renderModeBarHandle = mountRenderModeBar({
+    host: renderModeBarHost,
+    getPreviewConfig: () => previewCfg,
+    setPreviewConfig: (cfg) => {
+      previewCfg = cfg;
+      savePreviewConfig(cfg);
+      // Tier or quality change → re-iterate the preview at the new dims/
+      // density. Schedule a 'rebuild' lane so the canvas resizes too.
+      scheduler.schedule({ lane: 'rebuild', path: 'preview-config' });
+    },
+    getRenderSize: () => state.genome.size ?? { width: 1920, height: 1080 },
+    setRenderSize: (size) => {
+      state.genome.size = size;
+      schedulePersist(state.genome);
+      // Aspect may have changed — preview canvas reshapes via rebuild lane.
+      scheduler.schedule({ lane: 'rebuild', path: 'size' });
+    },
+    // #176 — clamp at 200 (bar's hard cap, matching the viewer). ESF imports
+    // frequently carry q=2000 which would otherwise display as 2000 in the
+    // text input + run forever on Save Render. Editor owns the genome, so
+    // first click on a Q button writes the clamped value back to state.
+    getRenderQuality: () => Math.max(1, Math.min(200, state.genome.quality ?? 50)),
+    setRenderQuality: (q) => {
+      state.genome.quality = Math.max(1, Math.min(200, q));
+      schedulePersist(state.genome);
+      // Render-side quality only matters at Save Render time; no re-iterate
+      // needed for the live preview (it uses previewCfg.quality, not this).
+    },
+    onSaveRender: () => handleRenderPng(),
+    canSave: () => !renderInFlight,
+    showToast: (msg) => showToast(panelHost, msg),
+  });
 
   return {
     state,

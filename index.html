@@ -62,6 +62,215 @@
       body.pyr3-edit-mode #pyr3-fallback,
       body.pyr3-edit-mode #pyr3-missing { display: none !important; }
 
+      /* #176 — shared PREVIEW/RENDER bar. Mounted between the chrome bar
+         and the canvas in the viewer; mounted above the canvas in the
+         editor's canvasHost. Single horizontal row; overflows to scroll
+         on narrow viewports (desktop priority for v1). */
+      .pyr3-render-mode-bar {
+        display: flex;
+        align-items: center;
+        height: 36px;
+        padding: 0 12px;
+        gap: 10px;
+        background: var(--bar-bg-2);
+        border-bottom: 1px solid var(--bar-border);
+        font-size: 12px;
+        color: var(--text);
+        user-select: none;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .pyr3-render-mode-bar-preview {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, rgba(70, 140, 200, 0.10), rgba(70, 140, 200, 0.02));
+        flex-shrink: 0;
+      }
+      .pyr3-render-mode-bar-render {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, rgba(255, 140, 26, 0.12), rgba(255, 140, 26, 0.02));
+        flex-shrink: 0;
+        margin-left: auto;  /* push RENDER cluster to the right edge */
+      }
+      .pyr3-render-mode-bar-divider {
+        width: 1px;
+        height: 32px;
+        background: var(--bar-border);
+        margin: 0 4px;
+      }
+      .pyr3-render-mode-bar-side-label {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        color: var(--text-dim);
+        font-weight: 600;
+      }
+      .pyr3-render-mode-bar-tier,
+      .pyr3-render-mode-bar-preview-q,
+      .pyr3-render-mode-bar-render-q {
+        background: transparent;
+        border: 1px solid var(--bar-border);
+        color: var(--text);
+        padding: 3px 7px;
+        cursor: pointer;
+        font: inherit;
+        min-width: 32px;
+      }
+      .pyr3-render-mode-bar-tier.on,
+      .pyr3-render-mode-bar-preview-q.on,
+      .pyr3-render-mode-bar-render-q.on {
+        background: var(--accent);
+        color: #000;
+        border-color: var(--accent);
+      }
+      .pyr3-render-mode-bar-tier:hover,
+      .pyr3-render-mode-bar-preview-q:hover,
+      .pyr3-render-mode-bar-render-q:hover {
+        background: var(--accent-soft);
+      }
+      .pyr3-render-mode-bar-preset {
+        background: var(--bar-bg-3);
+        color: var(--text);
+        border: 1px solid var(--bar-border);
+        padding: 4px 8px;
+        font: inherit;
+      }
+      .pyr3-render-mode-bar-w,
+      .pyr3-render-mode-bar-h {
+        width: 56px;
+        background: var(--bar-bg-3);
+        color: var(--text);
+        border: 1px solid var(--bar-border);
+        padding: 3px 6px;
+        font: inherit;
+        text-align: right;
+      }
+      /* Hide browser native spinner so the typed value isn't shoved left */
+      .pyr3-render-mode-bar-w::-webkit-inner-spin-button,
+      .pyr3-render-mode-bar-h::-webkit-inner-spin-button,
+      .pyr3-render-mode-bar-w::-webkit-outer-spin-button,
+      .pyr3-render-mode-bar-h::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .pyr3-render-mode-bar-q-input {
+        width: 48px;
+        background: var(--bar-bg-3);
+        color: var(--text);
+        border: 1px solid var(--bar-border);
+        padding: 3px 6px;
+        font: inherit;
+        text-align: right;
+      }
+      .pyr3-render-mode-bar-x {
+        color: var(--text-dim);
+        padding: 0 2px;
+      }
+      .pyr3-render-mode-bar-tier-group,
+      .pyr3-render-mode-bar-preview-q-group,
+      .pyr3-render-mode-bar-render-q-group {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .pyr3-render-mode-bar-preset-label {
+        display: none;
+      }
+      .pyr3-render-mode-bar-save {
+        background: var(--accent);
+        color: #000;
+        border: none;
+        padding: 6px 14px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 2px;
+      }
+      .pyr3-render-mode-bar-save:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .pyr3-render-mode-bar-save:hover:not(:disabled) {
+        filter: brightness(1.1);
+      }
+
+      /* #176 — render-progress-modal: fixed full-viewport overlay during
+         Save Render. */
+      .pyr3-render-progress-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: rgba(0, 0, 0, 0.75);
+        color: var(--text);
+        font-size: 14px;
+      }
+      .pyr3-render-progress-modal-bar {
+        width: 320px;
+        height: 12px;
+        background: var(--bar-bg-3);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .pyr3-render-progress-modal-fill {
+        height: 100%;
+        background: var(--accent);
+        transition: width 120ms linear;
+      }
+      .pyr3-render-progress-modal-cancel {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--bar-border);
+        padding: 6px 16px;
+        font: inherit;
+        cursor: pointer;
+        border-radius: 2px;
+      }
+      .pyr3-render-progress-modal-cancel:hover {
+        background: var(--accent-soft);
+      }
+
+      /* #176 — Render section's bar-redirect subtitle in the editor panel. */
+      .pyr3-edit-section-render__subtitle {
+        font-size: 11px;
+        color: var(--text-dim);
+        font-style: italic;
+        padding: 4px 8px 8px;
+      }
+
+      /* #176 — when the render-mode-bar is mounted, the chrome bar's
+         duplicate Size + QUALITY + Save Render widgets hide. The chrome
+         bar keeps Open / Save Flame / surprise me / nav arrows. */
+      body.pyr3-has-render-mode-bar .pyr3-bar-size,
+      body.pyr3-has-render-mode-bar .pyr3-bar-quality-label:not(.pyr3-bar-settle-label),
+      body.pyr3-has-render-mode-bar .pyr3-bar-quality-group:not(.pyr3-bar-settle-group),
+      body.pyr3-has-render-mode-bar .pyr3-bar-save-render {
+        display: none !important;
+      }
+      /* #176 — with the chrome bar's duplicates hidden in the viewer, the
+         surprise me + corpus-nav pills (dice + prev/next) drift right by
+         default. Auto-margins center them as a group between actionLeft
+         and the right edge. Editor (pyr3-edit-mode) keeps its left-anchored
+         layout (no dice/nav in editor — selector simply doesn't fire). */
+      body.pyr3-has-render-mode-bar:not(.pyr3-edit-mode) .pyr3-zone-actleft {
+        flex: 0 0 auto;
+      }
+      body.pyr3-has-render-mode-bar:not(.pyr3-edit-mode) .pyr3-bar-viewer-dice {
+        margin-left: auto;
+      }
+      body.pyr3-has-render-mode-bar:not(.pyr3-edit-mode) .pyr3-bar-nav {
+        margin-right: auto;
+      }
+
       /* #119 — /v1/variations surface. Same sibling-of-canvas pattern as
          #pyr3-edit / #pyr3-gallery. The catalog page mounts a sticky
          sidebar + scrollable catalog column inside this root. */

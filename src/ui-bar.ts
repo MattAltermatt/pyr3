@@ -402,7 +402,7 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   settleLabel.title = SETTLE_TOOLTIP;
   const settleGroup = el('div', 'pyr3-bar-quality-group pyr3-bar-settle-group');
   const settleBtns = new Map<number, HTMLButtonElement>();
-  let currentSettle: number = 200;
+  let currentSettle: number = 500;
   for (const ms of SETTLE_PRESETS) {
     const b = document.createElement('button');
     // Reuse the QUALITY ladder's visual styling but mark the SETTLE-side
@@ -1409,11 +1409,12 @@ const BAR_CSS = `
 }
 .pyr3-bar-info, .pyr3-bar-action {
   display: flex; align-items: center;
-  padding: 8px 14px; font-size: 12px;
+  height: 36px; padding: 0 14px; font-size: 12px;
   border-bottom: 1px solid var(--bar-border);
+  box-sizing: border-box;
 }
 .pyr3-bar-info { background: var(--bar-bg-2); }
-.pyr3-bar-action { background: var(--bar-bg-3); padding-top: 7px; padding-bottom: 7px; }
+.pyr3-bar-action { background: var(--bar-bg-3); }
 .pyr3-zone-left { flex: 1 1 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pyr3-zone-right { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; justify-content: flex-end; }
 .pyr3-zone-actleft { flex: 1 1 0; display: flex; align-items: center; gap: 8px; }

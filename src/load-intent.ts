@@ -78,6 +78,52 @@ export const SIZE_PRESETS = [
  *  pick. */
 export const QUALITY_PRESETS = [10, 25, 50, 75, 100] as const;
 
+/** #176 — preview-side overrides parsed from URL search params. Session-only
+ *  (NOT persisted to localStorage); callers apply on mount + ignore on later
+ *  navigations.
+ *
+ *  Recognised params:
+ *    ?preview=fast|balanced|sharp   — sets tier
+ *    ?previewQ=N                    — sets quality (clamped [10,50])
+ *    ?quick=1                       — back-compat: maps to { tier: 'fast', quality: 10 }
+ *
+ *  When ?quick=1 is combined with ?preview / ?previewQ, the explicit params
+ *  win (so a future share URL can quote ?quick=1 + ?preview=sharp without
+ *  the legacy mapping clobbering the explicit tier). */
+export interface PreviewOverride {
+  tier?: 'fast' | 'balanced' | 'sharp';
+  quality?: number;
+}
+
+const PREVIEW_VALID_TIERS: ReadonlyArray<'fast' | 'balanced' | 'sharp'> = ['fast', 'balanced', 'sharp'];
+
+/** Parse PreviewOverride from a URL search string (e.g. "?preview=fast&previewQ=30").
+ *  Returns undefined when no recognised param is present. */
+export function parsePreviewOverride(searchString: string): PreviewOverride | undefined {
+  const params = new URLSearchParams(searchString);
+  let override: PreviewOverride | undefined;
+
+  // ?quick=1 first — explicit params below override its values.
+  if (params.get('quick') === '1') {
+    override = { tier: 'fast', quality: 10 };
+  }
+
+  const previewParam = params.get('preview');
+  if (previewParam && PREVIEW_VALID_TIERS.includes(previewParam as PreviewOverride['tier'] & string)) {
+    override = { ...(override ?? {}), tier: previewParam as PreviewOverride['tier'] };
+  }
+
+  const previewQParam = params.get('previewQ');
+  if (previewQParam) {
+    const q = parseInt(previewQParam, 10);
+    if (Number.isFinite(q)) {
+      override = { ...(override ?? {}), quality: Math.max(10, Math.min(50, q)) };
+    }
+  }
+
+  return override;
+}
+
 /** Settle-delay ladder (ms) for the editor bar's SETTLE button group.
  *  Quiet time after the user's last edit before the full-quality render
  *  fires — higher = the live (small-canvas) preview stays visible longer;

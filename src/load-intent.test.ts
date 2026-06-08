@@ -9,6 +9,7 @@ import {
   HERO_ID,
   pageForCorpusIndex,
   parseLoadIntent,
+  parsePreviewOverride,
 } from './load-intent';
 import { DEFAULT_FILTER_SPEC } from './gallery-filter';
 import { V } from './variations';
@@ -358,5 +359,52 @@ describe('tab-navigation URL helpers', () => {
   it('galleryUrlForFlame returns /v1/gallery/p/N where N contains the corpusId', () => {
     // assuming page size 9; flame at corpus-list index 124 → page 14
     expect(galleryUrlForFlame({ gen: 198, id: 7372 }, 124)).toBe('/v1/gallery/p/14');
+  });
+});
+
+// ── #176 — parsePreviewOverride ────────────────────────────────────────────
+describe('parsePreviewOverride', () => {
+  it('returns undefined when no recognised param', () => {
+    expect(parsePreviewOverride('')).toBeUndefined();
+    expect(parsePreviewOverride('?foo=bar')).toBeUndefined();
+  });
+  it('?preview=fast → { tier: fast }', () => {
+    expect(parsePreviewOverride('?preview=fast')).toEqual({ tier: 'fast' });
+  });
+  it('?preview=balanced → { tier: balanced }', () => {
+    expect(parsePreviewOverride('?preview=balanced')).toEqual({ tier: 'balanced' });
+  });
+  it('?preview=sharp → { tier: sharp }', () => {
+    expect(parsePreviewOverride('?preview=sharp')).toEqual({ tier: 'sharp' });
+  });
+  it('?preview=garbage → ignored (undefined)', () => {
+    expect(parsePreviewOverride('?preview=turbo')).toBeUndefined();
+  });
+  it('?previewQ=30 → { quality: 30 }', () => {
+    expect(parsePreviewOverride('?previewQ=30')).toEqual({ quality: 30 });
+  });
+  it('?previewQ=999 clamps to 50', () => {
+    expect(parsePreviewOverride('?previewQ=999')).toEqual({ quality: 50 });
+  });
+  it('?previewQ=5 clamps to 10', () => {
+    expect(parsePreviewOverride('?previewQ=5')).toEqual({ quality: 10 });
+  });
+  it('?previewQ=NaN → ignored', () => {
+    expect(parsePreviewOverride('?previewQ=foo')).toBeUndefined();
+  });
+  it('?preview=sharp&previewQ=50 → both set', () => {
+    expect(parsePreviewOverride('?preview=sharp&previewQ=50')).toEqual({ tier: 'sharp', quality: 50 });
+  });
+  it('?quick=1 → { tier: fast, quality: 10 }', () => {
+    expect(parsePreviewOverride('?quick=1')).toEqual({ tier: 'fast', quality: 10 });
+  });
+  it('?quick=1 + ?preview=sharp → explicit preview wins', () => {
+    expect(parsePreviewOverride('?quick=1&preview=sharp')).toEqual({ tier: 'sharp', quality: 10 });
+  });
+  it('?quick=1 + ?previewQ=40 → explicit quality wins', () => {
+    expect(parsePreviewOverride('?quick=1&previewQ=40')).toEqual({ tier: 'fast', quality: 40 });
+  });
+  it('?quick=0 → ignored', () => {
+    expect(parsePreviewOverride('?quick=0')).toBeUndefined();
   });
 });
