@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.tractrix) return 'novel'; // #133/#134/#130/#129/#140/#135
+  if (idx >= V.blaschke && idx <= V.rossler) return 'novel'; // #133/#134/#130/#129/#140/#135/#139
   return 'jwf';
 }
 
@@ -4625,6 +4625,86 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     warpFn: (x, y) => {
       const k = 2.0 / (1.0 + Math.cos(y) * Math.cos(x) + 1e-6);
       return [k * Math.cos(y) * Math.sin(x), k * Math.sin(y)];
+    },
+  },
+  {
+    idx: V.tinkerbell,
+    name: 'tinkerbell',
+    source: 'novel',
+    formula: 'x\' = x^2 - y^2 + ax + by, \\quad y\' = 2xy + cx + dy',
+    blurb: 'Tinkerbell map. A discrete dynamical system that produces a fractal shape resembling a flying tinkerbell.',
+    params: [
+      { name: 'p0', default: 0.9, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'p1', default: -0.6, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'p2', default: 2.0, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'p3', default: 0.5, min: -2.0, max: 2.0, step: 0.05 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, p0 = 0.9, p1 = -0.6, p2 = 2.0, p3 = 0.5) => {
+      return [
+        x * x - y * y + p0 * x + p1 * y,
+        2.0 * x * y + p2 * x + p3 * y
+      ];
+    },
+  },
+  {
+    idx: V.duffing,
+    name: 'duffing',
+    source: 'novel',
+    formula: 'x\' = x + hy, \\quad y\' = y + h(x - x^3 - \\delta y + \\gamma \\cos(\\omega t))',
+    blurb: 'Duffing equation map. One Euler step of the non-linear Duffing oscillator, which exhibits complex chaotic behavior.',
+    params: [
+      { name: 'p0', default: 0.1, min: 0.01, max: 1.0, step: 0.01 },
+      { name: 'p1', default: 0.1, min: 0.0, max: 1.0, step: 0.01 },
+      { name: 'p2', default: 0.1, min: 0.0, max: 1.0, step: 0.01 },
+      { name: 'p3', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, p0 = 0.1, p1 = 0.1, p2 = 0.1, p3 = 1.0) => {
+      const t = x;
+      return [
+        x + p0 * y,
+        y + p0 * (x - x * x * x - p1 * y + p2 * Math.cos(p3 * t))
+      ];
+    },
+  },
+  {
+    idx: V.vanderpol,
+    name: 'vanderpol',
+    source: 'novel',
+    formula: 'x\' = x + hy, \\quad y\' = y + h(\\mu(1-x^2)y - x)',
+    blurb: 'Van der Pol oscillator map. One Euler step of the Van der Pol non-linear oscillator with non-conservative damping.',
+    params: [
+      { name: 'p0', default: 0.1, min: 0.01, max: 1.0, step: 0.01 },
+      { name: 'p1', default: 1.0, min: 0.0, max: 5.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, p0 = 0.1, p1 = 1.0) => {
+      return [
+        x + p0 * y,
+        y + p0 * (p1 * (1.0 - x * x) * y - x)
+      ];
+    },
+  },
+  {
+    idx: V.rossler,
+    name: 'rossler',
+    source: 'novel',
+    formula: 'x\' = x + h(-y-z), \\quad y\' = y + h(x+ay)',
+    blurb: 'Rössler attractor map. Projected into 2D using synthetic radius for z. Exhibits continuous-time chaotic flow.',
+    params: [
+      { name: 'p0', default: 0.1, min: 0.01, max: 1.0, step: 0.01 },
+      { name: 'p1', default: 0.2, min: 0.0, max: 1.0, step: 0.01 },
+      { name: 'p2', default: 0.2, min: 0.0, max: 1.0, step: 0.01 },
+      { name: 'p3', default: 5.7, min: 1.0, max: 10.0, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y, p0 = 0.1, p1 = 0.2, p2 = 0.2, p3 = 5.7) => {
+      const z = Math.sqrt(x * x + y * y);
+      return [
+        x + p0 * (-y - z),
+        y + p0 * (x + p1 * y)
+      ];
     },
   },
 ];

@@ -525,6 +525,10 @@ export const V = {
   epicycloid: 243,
   catenary: 244,
   tractrix: 245,
+  tinkerbell: 246,
+  duffing: 247,
+  vanderpol: 248,
+  rossler: 249,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

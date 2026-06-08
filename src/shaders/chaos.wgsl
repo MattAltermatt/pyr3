@@ -5581,6 +5581,37 @@ fn var_tractrix(p: vec2f, w: f32) -> vec2f {
   return w * vec2f(xp, yp);
 }
 
+// V246 tinkerbell
+fn var_tinkerbell(p: vec2f, w: f32, a: f32, b: f32, c: f32, d: f32) -> vec2f {
+  let xp = p.x * p.x - p.y * p.y + a * p.x + b * p.y;
+  let yp = 2.0 * p.x * p.y + c * p.x + d * p.y;
+  return w * vec2f(xp, yp);
+}
+
+// V247 duffing (one Euler step)
+fn var_duffing(p: vec2f, w: f32, h: f32, delta: f32, gamma: f32, omega: f32) -> vec2f {
+  // synthetic time t = p.x for driving force
+  let t = p.x;
+  let xp = p.x + h * p.y;
+  let yp = p.y + h * (p.x - p.x * p.x * p.x - delta * p.y + gamma * safe_cos(omega * t));
+  return w * vec2f(xp, yp);
+}
+
+// V248 vanderpol (one Euler step)
+fn var_vanderpol(p: vec2f, w: f32, h: f32, mu: f32) -> vec2f {
+  let xp = p.x + h * p.y;
+  let yp = p.y + h * (mu * (1.0 - p.x * p.x) * p.y - p.x);
+  return w * vec2f(xp, yp);
+}
+
+// V249 rossler (projected to 2D, synthetic z=0)
+fn var_rossler(p: vec2f, w: f32, h: f32, a: f32, b: f32, c: f32) -> vec2f {
+  let z = length(p); // use radius as synthetic z
+  let xp = p.x + h * (-p.y - z);
+  let yp = p.y + h * (p.x + a * p.y);
+  return w * vec2f(xp, yp);
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -5878,6 +5909,10 @@ fn apply_variation(
     case 243u: { return var_epicycloid(p, w, p0); }
     case 244u: { return var_catenary(p, w, p0); }
     case 245u: { return var_tractrix(p, w); }
+    case 246u: { return var_tinkerbell(p, w, p0, p1, p2, p3); }
+    case 247u: { return var_duffing(p, w, p0, p1, p2, p3); }
+    case 248u: { return var_vanderpol(p, w, p0, p1); }
+    case 249u: { return var_rossler(p, w, p0, p1, p2, p3); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

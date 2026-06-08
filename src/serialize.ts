@@ -344,6 +344,10 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   epicycloid: ['k'],
   catenary: ['a'],
   tractrix: [],
+  tinkerbell: ['p0', 'p1', 'p2', 'p3'],
+  duffing: ['p0', 'p1', 'p2', 'p3'],
+  vanderpol: ['p0', 'p1'],
+  rossler: ['p0', 'p1', 'p2', 'p3'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -587,8 +591,12 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   superellipse: [1.0, 1.0, 2.0],
   limacon: [1.0, 0.5],
   epicycloid: [3.0],
-  catenary: [1.0],
+  catenary: [0.5],
   tractrix: [],
+  tinkerbell: [0.9, -0.6, 2.0, 0.5],
+  duffing: [0.1, 0.1, 0.1, 1.0],
+  vanderpol: [0.1, 1.0],
+  rossler: [0.1, 0.2, 0.2, 5.7],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
