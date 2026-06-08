@@ -197,6 +197,7 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // src/variations.ts.
   bcircle: ['scale', 'borderwidth'],
   curl2: ['c1', 'c2', 'c3'],
+  circlecrop: ['radius', 'x', 'y', 'scatter_area', 'zero'],
   murl: ['c', 'power'],
   stwins: ['distort'],
   hexes: ['cellsize', 'power', 'rotate', 'scale'],

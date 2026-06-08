@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mountVariationCatalog } from './variation-catalog-mount';
 import { V } from './variations';
+
+vi.mock('katex', () => ({
+  default: {
+    renderToString: (math: string) => `<span class="katex-mock">${math}</span>`,
+  },
+}));
 
 // happy-dom doesn't ship a real GPUDevice. The page mounter only stores
 // the device on opts and forwards it to T5's render lane (not yet wired),
