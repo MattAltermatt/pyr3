@@ -1125,10 +1125,89 @@ function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLEl
 function buildRightCluster(webgpu: WebGPUStatus): HTMLElement {
   const wrap = el('div', 'pyr3-right-cluster');
   const webgpuChip = buildWebGPUChip(webgpu);
-  const forkCta = buildOctocatCta('fork it', 'pyr3 on github', 'https://github.com/MattAltermatt/pyr3');
+  const offlineCta = buildOfflineCta();
   const sheepCta = buildOctocatCta('more flames', 'electric sheep fold', 'https://github.com/MattAltermatt/electric-sheep-fold');
-  wrap.append(webgpuChip, forkCta, sheepCta);
+  wrap.append(webgpuChip, offlineCta, sheepCta);
   return wrap;
+}
+
+function buildOfflineMenu(): HTMLElement {
+  const menu = el('div', 'pyr3-offline-menu');
+  
+  const header = el('div', 'pyr3-offline-header');
+  header.textContent = 'Render at any quality on your own GPU with no browser limits.';
+  
+  const primaryBtn = el('a', 'pyr3-offline-primary') as HTMLAnchorElement;
+  primaryBtn.href = 'https://github.com/MattAltermatt/pyr3#render-from-the-command-line';
+  primaryBtn.target = '_blank';
+  primaryBtn.rel = 'noopener noreferrer';
+  primaryBtn.append(octocat(), document.createTextNode('Source & CLI Guide ↗'));
+  primaryBtn.title = 'Get the source code and CLI usage guide on GitHub';
+  
+  menu.append(header, primaryBtn);
+  
+  return menu;
+}
+
+function buildOfflineCta(): HTMLAnchorElement {
+  const a = el('a', 'pyr3-bar-cta pyr3-offline-cta') as HTMLAnchorElement;
+  a.href = '#';
+  a.title = 'Run pyr3 offline on your desktop';
+  
+  const top = el('span', 'pyr3-cta-top');
+  top.textContent = '💻 run offline ▾';
+  
+  const tag = el('span', 'pyr3-cta-tag');
+  tag.textContent = 'desktop CLI';
+  
+  a.append(top, tag);
+  
+  let offlineMenu: HTMLElement | null = null;
+  let offlineMenuOpen = false;
+  
+  const closeOfflineMenu = (): void => {
+    if (offlineMenu) {
+      offlineMenu.remove();
+      offlineMenu = null;
+    }
+    offlineMenuOpen = false;
+    a.classList.remove('open');
+  };
+  
+  const toggleOfflineMenu = (): void => {
+    if (offlineMenuOpen) {
+      closeOfflineMenu();
+      return;
+    }
+    
+    offlineMenu = buildOfflineMenu();
+    document.body.append(offlineMenu);
+    
+    const rect = a.getBoundingClientRect();
+    offlineMenu.style.position = 'fixed';
+    offlineMenu.style.top = `${rect.bottom + 4}px`;
+    offlineMenu.style.right = `${window.innerWidth - rect.right}px`;
+    offlineMenu.style.zIndex = '60';
+    offlineMenuOpen = true;
+    a.classList.add('open');
+    
+    setTimeout(() => {
+      const onDocClick = (ev: MouseEvent): void => {
+        if (!offlineMenu) return;
+        if (offlineMenu.contains(ev.target as Node) || a.contains(ev.target as Node)) return;
+        closeOfflineMenu();
+        document.removeEventListener('click', onDocClick);
+      };
+      document.addEventListener('click', onDocClick);
+    }, 0);
+  };
+  
+  a.onclick = (e) => {
+    e.preventDefault();
+    toggleOfflineMenu();
+  };
+  
+  return a;
 }
 
 function buildWebGPUChip(status: WebGPUStatus): HTMLAnchorElement {
@@ -1792,5 +1871,52 @@ const BAR_CSS = `
 .pyr3-right-cluster {
   display: flex; align-items: center; justify-content: flex-end; gap: 18px;
   min-width: 0;
+}
+.pyr3-bar-cta.pyr3-offline-cta.open .pyr3-cta-top {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.pyr3-offline-menu {
+  background: ${COLORS.bg.panel};
+  border: 1px solid var(--bar-border);
+  border-radius: 8px;
+  padding: 16px;
+  width: 280px;
+  box-sizing: border-box;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pyr3-offline-header {
+  color: var(--text);
+  line-height: 1.4;
+  font-weight: 500;
+}
+.pyr3-offline-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, ${COLORS.flame.top} 0%, ${COLORS.flame.bot} 100%);
+  color: #1a0d04;
+  text-decoration: none;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(232, 124, 26, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+.pyr3-offline-primary:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 16px rgba(232, 124, 26, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+.pyr3-offline-primary .pyr3-octocat {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
 }
 `;

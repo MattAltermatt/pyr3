@@ -343,6 +343,64 @@ describe('mountBarChrome', () => {
     const surfaces: TabSurface[] = ['viewer', 'gallery', 'editor', 'about'];
     expect(surfaces).toHaveLength(4);
   });
+
+  it('renders a run offline CTA button in the right cluster instead of fork it', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountBarChrome(root, {
+      surface: 'viewer',
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+
+    const allCta = Array.from(root.querySelectorAll('.pyr3-bar-cta')) as HTMLElement[];
+    const forkCta = allCta.find((c) => c.textContent?.includes('fork it'));
+    expect(forkCta).toBeUndefined();
+
+    const offlineCta = allCta.find((c) => c.textContent?.includes('run offline'));
+    expect(offlineCta).toBeTruthy();
+    expect(offlineCta!.textContent).toContain('run offline');
+    expect(offlineCta!.textContent).toContain('desktop CLI');
+
+    handle.destroy();
+  });
+
+  it('clicking the run offline CTA opens the dropdown menu and clicking outside closes it', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountBarChrome(root, {
+      surface: 'viewer',
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+
+    const allCta = Array.from(root.querySelectorAll('.pyr3-bar-cta')) as HTMLElement[];
+    const offlineCta = allCta.find((c) => c.textContent?.includes('run offline'))!;
+
+    expect(document.querySelector('.pyr3-offline-menu')).toBeNull();
+
+    offlineCta.click();
+
+    const menu = document.querySelector('.pyr3-offline-menu') as HTMLElement;
+    expect(menu).not.toBeNull();
+    expect(menu.textContent).toContain('Render at any quality on your own GPU');
+    expect(menu.textContent).toContain('Source & CLI Guide');
+
+    // Wait for the open event listener to attach via setTimeout
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Click inside the menu should not close it
+    menu.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('.pyr3-offline-menu')).not.toBeNull();
+
+    // Click outside should close it
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector('.pyr3-offline-menu')).toBeNull();
+
+    handle.destroy();
+  });
 });
 
 describe('mountAboutBar', () => {

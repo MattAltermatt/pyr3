@@ -65,6 +65,7 @@ export function mountAbout(root: HTMLElement, opts: AboutOpts): void {
   page.appendChild(buildTagline());
   page.appendChild(buildVersionChip(opts));
   page.appendChild(buildWhatItIs());
+  page.appendChild(buildOfflineCli());
   page.appendChild(buildLineage());
   page.appendChild(buildCredits());
   page.appendChild(buildExplore());
@@ -165,6 +166,39 @@ function buildWhatItIs(): HTMLElement {
       'parity. Cross-vendor GPU determinism is not guaranteed; every render still passes the ' +
       'visual-tolerance gate against the flam3-C golden.',
   );
+  return sec;
+}
+
+function buildOfflineCli(): HTMLElement {
+  const sec = buildSection('offlineCli', 'Offline CLI');
+  appendParagraph(
+    sec,
+    'For rendering at high resolution or samples-per-pixel (SPP) without browser memory or timeout caps, ' +
+      'you can run pyr3 offline on your machine using the offline CLI. It runs directly ' +
+      'on your native GPU via headless WebGPU (Node + native bindings).'
+  );
+  const p2 = document.createElement('p');
+  applyStyle(p2, paragraphStyle());
+  p2.appendChild(document.createTextNode('To run offline, clone the repository and build the render tool from source (the flam3 way). See the '));
+  p2.appendChild(makeExternalLink('https://github.com/MattAltermatt/pyr3#render-from-the-command-line', 'CLI README'));
+  p2.appendChild(document.createTextNode(' for usage details, or build locally using:'));
+  sec.appendChild(p2);
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.textContent = 'git clone https://github.com/MattAltermatt/pyr3.git\ncd pyr3\nnpm install\nnpm run build:cli render';
+  pre.appendChild(code);
+  applyStyle(pre, {
+    background: '#111',
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: '4px',
+    padding: '10px 14px',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: '13px',
+    color: COLORS.flame.top,
+    overflowX: 'auto',
+    margin: '12px 0',
+  });
+  sec.appendChild(pre);
   return sec;
 }
 

@@ -23,4 +23,16 @@ describe('mountAbout', () => {
     mountAbout(document.getElementById('root')!, { version: '1.4.0' });
     expect(document.body.textContent).toContain('1.4.0');
   });
+
+  it('renders offlineCli section detailing CLI download and build options', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountAbout(root, { version: '1.4.0' });
+
+    const offlineSec = root.querySelector('section[data-sec="offlineCli"]');
+    expect(offlineSec).toBeTruthy();
+    expect(offlineSec!.textContent).toContain('git clone https://github.com/MattAltermatt/pyr3.git');
+    expect(offlineSec!.textContent).toContain('CLI README');
+    expect(offlineSec!.textContent).toContain('npm run build:cli render');
+  });
 });
