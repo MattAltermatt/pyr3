@@ -134,6 +134,9 @@ export interface Genome {
   // output to the no-curves path (parity rig invariant). See
   // src/channel-curves.ts and src/shaders/visualize_*.wgsl.
   channelCurves?: ChannelCurves;
+  // Issue #172: Optional post-tonemap adjustments in HSV space.
+  // hue: -180 to 180 (degrees). sat: 0 to 200 (percent). light: -100 to 100 (percent).
+  hslAdjust?: { hue: number; sat: number; light: number };
 }
 
 export type CurvePoint = { x: number; y: number };

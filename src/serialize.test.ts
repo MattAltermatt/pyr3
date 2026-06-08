@@ -58,6 +58,16 @@ describe('genomeToJson', () => {
     expect(json.palette.hue).toBeUndefined();
     expect(json.palette.mode).toBeUndefined();
   });
+
+  it('serializes hslAdjust and omits when identity', () => {
+    const genome = { ...SPIRAL_GALAXY, hslAdjust: { hue: -45, sat: 150, light: 25 } };
+    const json = genomeToJson(genome);
+    expect(json.hslAdjust).toEqual({ hue: -45, sat: 150, light: 25 });
+
+    const identityGenome = { ...SPIRAL_GALAXY, hslAdjust: { hue: 0, sat: 100, light: 0 } };
+    const identityJson = genomeToJson(identityGenome);
+    expect(identityJson.hslAdjust).toBeUndefined();
+  });
 });
 
 describe('genomeFromJson', () => {
@@ -98,6 +108,15 @@ describe('genomeFromJson', () => {
     expect(json.palette.mode).toBe('step');
     const reparsed = genomeFromJson(json);
     expect(reparsed.palette.mode).toBe('step');
+  });
+
+  it('round-trips hslAdjust', () => {
+    const json = genomeToJson({
+      ...SPIRAL_GALAXY,
+      hslAdjust: { hue: -45, sat: 150, light: 25 },
+    });
+    const reparsed = genomeFromJson(json);
+    expect(reparsed.hslAdjust).toEqual({ hue: -45, sat: 150, light: 25 });
   });
 
   it('throws on missing required field (name)', () => {

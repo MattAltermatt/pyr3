@@ -652,6 +652,10 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
   if (g.channelCurves && channelCurvesActive(g.channelCurves)) {
     out.channelCurves = cloneChannelCurves(g.channelCurves);
   }
+  // Issue #172 — omit hslAdjust when identity (0, 100, 0).
+  if (g.hslAdjust && (g.hslAdjust.hue !== 0 || g.hslAdjust.sat !== 100 || g.hslAdjust.light !== 0)) {
+    out.hslAdjust = { hue: g.hslAdjust.hue, sat: g.hslAdjust.sat, light: g.hslAdjust.light };
+  }
   return out;
 }
 
@@ -901,6 +905,14 @@ export function genomeFromJson(j: unknown): Genome {
   }
   if (root['channelCurves'] !== undefined) {
     base.channelCurves = parseChannelCurves(root['channelCurves'], 'channelCurves');
+  }
+  if (root['hslAdjust'] !== undefined) {
+    const obj = expectObject(root['hslAdjust'], 'hslAdjust');
+    base.hslAdjust = {
+      hue: Number(obj['hue']) || 0,
+      sat: obj['sat'] !== undefined ? Number(obj['sat']) : 100,
+      light: Number(obj['light']) || 0,
+    };
   }
   return base;
 }
