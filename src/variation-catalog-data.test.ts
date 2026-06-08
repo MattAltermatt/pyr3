@@ -4,7 +4,7 @@ import {
   getCatalogDoc,
   sourceForIdx,
 } from './variation-catalog-data';
-import { V } from './variations';
+import { V, getDisplayLabel } from './variations';
 
 const SEED_INDICES = [V.linear, V.sinusoidal, V.spherical, V.swirl, V.julian];
 
@@ -52,6 +52,23 @@ describe('sourceForIdx classification', () => {
   it('classifies JWildfire ports', () => {
     expect(sourceForIdx(V.cpow2)).toBe('jwf');
     expect(sourceForIdx(V.epispiral)).toBe('jwf');
+  });
+});
+
+describe('getDisplayLabel mapping', () => {
+  it('maps flam3 original range 0..98 to V0..V98', () => {
+    expect(getDisplayLabel(0)).toBe('V0');
+    expect(getDisplayLabel(98)).toBe('V98');
+  });
+
+  it('maps JWildfire/DC port range 99..219 to JWF0..JWF120', () => {
+    expect(getDisplayLabel(99)).toBe('JWF0');
+    expect(getDisplayLabel(219)).toBe('JWF120');
+  });
+
+  it('maps Pyre novel/custom range 220..257 to P0..P37', () => {
+    expect(getDisplayLabel(220)).toBe('P0');
+    expect(getDisplayLabel(257)).toBe('P37');
   });
 });
 

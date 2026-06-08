@@ -6,7 +6,7 @@ import {
   listVariations,
   type SidebarHandle,
 } from './variation-catalog-sidebar';
-import { V } from './variations';
+import { V, getDisplayLabel } from './variations';
 
 describe('listVariations', () => {
   it('returns every entry in V in numeric order', () => {
@@ -59,10 +59,10 @@ describe('mountSidebar', () => {
     expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(8);
   });
 
-  it('search filters by V-number prefix', () => {
-    handle.setSearch('v10');
-    // V10 hyperbolic + every V10x — count all V10..V10? matches dynamically.
-    const expected = Object.values(V).filter(idx => ('v' + idx).includes('v10')).length;
+  it('search filters by display label prefix', () => {
+    handle.setSearch('jwf10');
+    // JWF10 + JWF100..JWF109.
+    const expected = Object.values(V).filter(idx => getDisplayLabel(idx).toLowerCase().includes('jwf10')).length;
     expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(expected);
   });
 

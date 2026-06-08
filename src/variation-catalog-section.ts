@@ -26,7 +26,7 @@ import 'katex/dist/katex.min.css';
 import type { VariationDoc } from './variation-catalog-data';
 import { buildWarpSvg } from './variation-catalog-warp';
 import { linkToEditor } from './variation-catalog-link';
-import { V } from './variations';
+import { V, getDisplayLabel } from './variations';
 
 const SOURCE_LABEL: Record<string, string> = {
   flam3: 'flam3 core',
@@ -83,7 +83,7 @@ export function mountSection(
   const head = el('div', 'pyr3-cat-section-head');
   const name = el('div', 'pyr3-cat-section-name');
   name.append(document.createTextNode(doc.name));
-  name.append(el('span', 'pyr3-cat-section-vnum', `· V${doc.idx}`));
+  name.append(el('span', 'pyr3-cat-section-vnum', `· ${getDisplayLabel(doc.idx)}`));
   // Anchor link — copies the deep-link URL to clipboard on click;
   // hidden on idle, visible on hover (GitHub-style).
   const anchor = document.createElement('a');

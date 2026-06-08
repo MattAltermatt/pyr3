@@ -1536,7 +1536,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.dc_linear,
     name: 'dc_linear',
     source: sourceForIdx(V.dc_linear),
-    formula: 'V_{99}(x, y) = (x, y);\\quad \\text{RGB} = \\mathrm{clamp}(\\tfrac{1}{2} + \\tfrac{1}{2}(x, y, -\\tfrac{1}{2}(x+y)))',
+    formula: 'JWF_{0}(x, y) = (x, y);\\quad \\text{RGB} = \\mathrm{clamp}(\\tfrac{1}{2} + \\tfrac{1}{2}(x, y, -\\tfrac{1}{2}(x+y)))',
     blurb: 'Direct-color identity — passes position through, overrides RGB linearly from (x, y). Red rises with x, green with y, blue from −(x+y)/2; clamped to [0, 1].',
     hideWeight: true,
     warpFn: (x, y) => [x, y],
@@ -1545,7 +1545,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.dc_perlin,
     name: 'dc_perlin',
     source: sourceForIdx(V.dc_perlin),
-    formula: 'V_{100}(x, y) = (x, y);\\quad \\text{hue} = \\tfrac{1}{2}(1 + \\text{fBm}(p, \\text{octaves}, \\text{scale})) + \\text{seed}',
+    formula: 'JWF_{1}(x, y) = (x, y);\\quad \\text{hue} = \\tfrac{1}{2}(1 + \\text{fBm}(p, \\text{octaves}, \\text{scale})) + \\text{seed}',
     blurb: 'Direct-color from a 2D Perlin fBm noise field. Position passes through unchanged; hue from noise, saturation 1, lightness 0.55. seed rotates the hue cycle.',
     hideWeight: true,
     params: [
@@ -1563,7 +1563,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.dc_gridout,
     name: 'dc_gridout',
     source: sourceForIdx(V.dc_gridout),
-    formula: 'V_{101}(x, y) = (x, y);\\quad \\text{RGB} = \\mathrm{hash}(\\lfloor x\\cdot n\\rfloor,\\; \\lfloor y\\cdot n\\rfloor)',
+    formula: 'JWF_{2}(x, y) = (x, y);\\quad \\text{RGB} = \\mathrm{hash}(\\lfloor x\\cdot n\\rfloor,\\; \\lfloor y\\cdot n\\rfloor)',
     blurb: 'Direct-color from a hashed grid of cells. Each integer cell gets a random RGB triple; produces a pixelated, tile-mosaic coloring.',
     hideWeight: true,
     params: [
@@ -1575,7 +1575,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.dc_cylinder,
     name: 'dc_cylinder',
     source: sourceForIdx(V.dc_cylinder),
-    formula: 'V_{102}(x, y) = w\\,(\\sin x,\\; y);\\quad \\text{hue spirals along } x,\\; \\text{lightness modulates with } y',
+    formula: 'JWF_{3}(x, y) = w\\,(\\sin x,\\; y);\\quad \\text{hue spirals along } x,\\; \\text{lightness modulates with } y',
     blurb: 'Direct-color cylinder — V21 position warp plus position-derived HSL. Hue cycles along x via sin; lightness modulates by tanh(y/2).',
     // dc_cylinder is in DC_FAMILY but DOES warp position non-trivially
     // (unlike V99 dc_linear / V100 dc_perlin / V101 dc_gridout which are
@@ -1592,7 +1592,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.cpow2,
     name: 'cpow2',
     source: sourceForIdx(V.cpow2),
-    formula: 'V_{103}(x, y) = e^{c/2 \\cdot \\ln r^2 - d \\cdot a}\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\text{range-driven RNG branching}',
+    formula: 'JWF_{4}(x, y) = e^{c/2 \\cdot \\ln r^2 - d \\cdot a}\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\text{range-driven RNG branching}',
     blurb: 'Numbered variant of V41 cpow by Peter Sdobnov (Zueuk). Adds a range parameter that controls how many randomized angular branches are sampled — produces denser spiral attractors.',
     params: [
       { name: 'r',       default: 1,    min: -3, max: 3, step: 0.05 },
@@ -1605,7 +1605,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.cpow3,
     name: 'cpow3',
     source: sourceForIdx(V.cpow3),
-    formula: 'V_{104}(x, y) = e^{c/2 \\cdot \\ln r^2 - d \\cdot a}\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\text{log-distributed branch picker}',
+    formula: 'JWF_{5}(x, y) = e^{c/2 \\cdot \\ln r^2 - d \\cdot a}\\,(\\cos\\theta,\\; \\sin\\theta),\\; \\text{log-distributed branch picker}',
     blurb: 'Log-distribution branch picker variant of cpow2, by Peter Sdobnov. spread controls the angular branch distribution; produces wide, fanned-out spirals.',
     params: [
       { name: 'r',       default: 1.15, min: -3, max: 3, step: 0.05 },
@@ -1618,7 +1618,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.loonie2,
     name: 'loonie2',
     source: sourceForIdx(V.loonie2),
-    formula: 'V_{105}(x, y) = \\sqrt{w^2/r_n^2 - 1}\\,(x, y),\\; r_n = n\\text{-sided loonie radius blended with circle}',
+    formula: 'JWF_{6}(x, y) = \\sqrt{w^2/r_n^2 - 1}\\,(x, y),\\; r_n = n\\text{-sided loonie radius blended with circle}',
     blurb: 'N-sided loonie variant by dark-beam. sides sets polygon count; star blends a star shape; circle blends in a circular component. Generalizes V71 loonie\'s circular cutout.',
     params: [
       { name: 'sides',  default: 4,    min: 2, max: 16, step: 1 },
@@ -1660,7 +1660,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.epispiral,
     name: 'epispiral',
     source: sourceForIdx(V.epispiral),
-    formula: 'V_{106}(x, y) = t\\,(\\cos\\theta,\\; \\sin\\theta),\\; t = -\\text{holes} + 1/\\cos(n\\theta)\\;[\\cdot r_0\\text{thickness}]',
+    formula: 'JWF_{7}(x, y) = t\\,(\\cos\\theta,\\; \\sin\\theta),\\; t = -\\text{holes} + 1/\\cos(n\\theta)\\;[\\cdot r_0\\text{thickness}]',
     blurb: 'Polar epicycloid via 1/cos(n·θ), by cyberxaos (Apophysis 7X.15C). n sets petal count; thickness adds RNG-modulated band; holes carves out the center.',
     params: [
       { name: 'n',         default: 6,    min: 1, max: 16, step: 1 },
@@ -1673,7 +1673,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.bwraps,
     name: 'bwraps',
     source: sourceForIdx(V.bwraps),
-    formula: 'V_{107}: \\text{inside a hash-spaced bubble of radius } r,\\; p \\to c + R(\\theta(|p-c|))\\cdot \\tfrac{g^2}{|p-c|^2+1}(p-c);\\; \\text{else identity}',
+    formula: 'JWF_{8}: \\text{inside a hash-spaced bubble of radius } r,\\; p \\to c + R(\\theta(|p-c|))\\cdot \\tfrac{g^2}{|p-c|^2+1}(p-c);\\; \\text{else identity}',
     blurb: 'Bubble-wrap lattice (Apophysis 7X / JWildfire). Cellular grid where each cell carries a circular "bubble" — inside, the point gets hyperbolically pulled toward the bubble center with an inner/outer twist; outside, it passes through. Produces the soap-bubble / lens-array texture.',
     params: [
       { name: 'cellsize',     default: 1,     min: 0.1, max: 4, step: 0.05 },
@@ -1711,7 +1711,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.crackle,
     name: 'crackle',
     source: sourceForIdx(V.crackle),
-    formula: 'V_{108}: U = \\text{blurr}\\cdot(\\sin\\theta, \\cos\\theta);\\; L = \\text{voronoi cell-boundary distance};\\; p \\to \\text{centre} + (U - \\text{centre})\\cdot \\frac{L^{\\text{power}}\\cdot s}{L}',
+    formula: 'JWF_{9}: U = \\text{blurr}\\cdot(\\sin\\theta, \\cos\\theta);\\; L = \\text{voronoi cell-boundary distance};\\; p \\to \\text{centre} + (U - \\text{centre})\\cdot \\frac{L^{\\text{power}}\\cdot s}{L}',
     blurb: "Voronoi-cell scatter (Neil Slater / \"slobo777\", ported from JWildfire CrackleFunc). Each iter samples a new point U on a unit-radius blurred circle, finds U's voronoi cell among 9 perturbed centres around floor(U/(c/2)), then scales U's offset from the centre by L^power · scale (L = boundary-relative distance). distort > 0 perturbs cell centres via 2D perlin noise (pyr3 substitutes JWildfire's 3D simplex — see NOTICE.md). 4 RNG calls/iter.",
     params: [
       { name: 'cellsize', default: 1,   min: 0.1, max: 4, step: 0.05 },
@@ -1726,7 +1726,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.juliaq,
     name: 'juliaq',
     source: sourceForIdx(V.juliaq),
-    formula: 'V_{109}(x, y) = r^{q/2p}\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{q}{p}\\,\\theta + n\\tfrac{2\\pi}{p},\\; n \\in [0, |p|)',
+    formula: 'JWF_{10}(x, y) = r^{q/2p}\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{q}{p}\\,\\theta + n\\tfrac{2\\pi}{p},\\; n \\in [0, |p|)',
     blurb: 'Generalized julia by Peter Sdobnov (Zueuk). divisor q decouples rotation step from branch count p — produces denser or sparser julia-style attractors at fractional ratios than V14 julian can reach. RNG selects the branch index each iterate; the catalog "warp" diagram is omitted since the visual signal is the per-branch superposition.',
     params: [
       { name: 'power',   default: 3, min: 2, max: 8,  step: 1 },
@@ -1737,7 +1737,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.glynnia,
     name: 'glynnia',
     source: sourceForIdx(V.glynnia),
-    formula: 'V_{110}(x, y) = \\begin{cases} \\tfrac{w\\sqrt{2}}{2}(\\sqrt{r+x},\\; -\\tfrac{y}{\\sqrt{r+x}}) & r\\geq 1,\\, \\text{coin}>0.5 \\\\ \\tfrac{w}{\\sqrt{r(y^2+(r+x)^2)}}(r+x,\\; y) & r\\geq 1,\\, \\text{coin}\\leq 0.5 \\\\ \\text{mirrored sign inside disk} \\end{cases}',
+    formula: 'JWF_{11}(x, y) = \\begin{cases} \\tfrac{w\\sqrt{2}}{2}(\\sqrt{r+x},\\; -\\tfrac{y}{\\sqrt{r+x}}) & r\\geq 1,\\, \\text{coin}>0.5 \\\\ \\tfrac{w}{\\sqrt{r(y^2+(r+x)^2)}}(r+x,\\; y) & r\\geq 1,\\, \\text{coin}\\leq 0.5 \\\\ \\text{mirrored sign inside disk} \\end{cases}',
     blurb: 'Glynn-inspired bipolar warp by eralex61. Coin-flips between a √(r+x) split and a 1/√(...) split, with mirrored signs inside the unit disk — produces the four-leaf clover and arc-pair textures characteristic of the Apophysis 7X glynn family. The diagram shows the dominant outside-disk, coin>0.5 branch — the other three branches superimpose at render time.',
     warpFn: (x, y) => {
       const vvar2 = Math.SQRT2 * 0.5;
@@ -1753,7 +1753,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.loonie3,
     name: 'loonie3',
     source: sourceForIdx(V.loonie3),
-    formula: 'V_{111}(x, y) = w\\sqrt{w^2/r_2 - 1}\\,(x, y),\\; r_2 = (x^2+y^2)^2/x^2 \\text{ if } x>\\varepsilon\\text{, else identity}',
+    formula: 'JWF_{12}(x, y) = w\\sqrt{w^2/r_2 - 1}\\,(x, y),\\; r_2 = (x^2+y^2)^2/x^2 \\text{ if } x>\\varepsilon\\text{, else identity}',
     blurb: 'Half-plane gated loonie variant by dark-beam. Like V71 loonie but uses (r²/x)² as the radius proxy when x is positive, identity branch outside — produces a sharp asymmetric cutout that the symmetric loonie/loonie2 family lacks.',
     warpFn: (x, y) => {
       const w = 1;
@@ -1776,7 +1776,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.falloff,
     name: 'falloff',
     source: sourceForIdx(V.falloff),
-    formula: 'V_{112}(x, y) = w\\,((x, y) + d\\,(\\mu_x r_0,\\; \\mu_y r_1)),\\; d = \\max(0,(|p - p_0| - m)\\,r_{max}),\\; r_{max} = 0.04\\,\\text{scatter},\\; r_{0,1} \\sim U[0,1)',
+    formula: 'JWF_{13}(x, y) = w\\,((x, y) + d\\,(\\mu_x r_0,\\; \\mu_y r_1)),\\; d = \\max(0,(|p - p_0| - m)\\,r_{max}),\\; r_{max} = 0.04\\,\\text{scatter},\\; r_{0,1} \\sim U[0,1)',
     blurb: 'Distance-weighted random scatter by Xyrus02 (JWildfire Falloff2 type=0 path). Outside the mindist radius around (x0,y0), each iterate gets a random displacement that grows with distance — produces a soft-edged "halo" around the center point. Z-axis params (mul_z, z0) and the color/invert flags dropped to fit pyr3\'s 2D 8-slot seam; the type=1 (radial) and type=2 (gaussian) branches live on the sibling V113 falloff2.',
     // Catalog defaults diverge from JWildfire baseline (scatter=1, muls=1)
     // to produce a visible halo against the sierpinski scaffold — kernel
@@ -1796,7 +1796,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.falloff2,
     name: 'falloff2',
     source: sourceForIdx(V.falloff2),
-    formula: 'V_{113} = w\\,\\begin{cases} (x,y) + d(\\mu_x r_0,\\mu_y r_1) & \\text{type}=0 \\\\ r_\\text{abs}(\\cos\\varphi,\\sin\\varphi),\\; \\varphi = \\mathrm{atan2}(y,x) + \\mu_y d r_1 & \\text{type}=1 \\\\ (x,y) + \\mu \\cdot d r_0 \\cos(d r_1 2\\pi)(\\cos d r_2\\pi,\\sin d r_2 \\pi) & \\text{type}=2 \\end{cases},\\; d = \\max(0, (|p-p_0|-m)\\,r_{max})',
+    formula: 'JWF_{14} = w\\,\\begin{cases} (x,y) + d(\\mu_x r_0,\\mu_y r_1) & \\text{type}=0 \\\\ r_\\text{abs}(\\cos\\varphi,\\sin\\varphi),\\; \\varphi = \\mathrm{atan2}(y,x) + \\mu_y d r_1 & \\text{type}=1 \\\\ (x,y) + \\mu \\cdot d r_0 \\cos(d r_1 2\\pi)(\\cos d r_2\\pi,\\sin d r_2 \\pi) & \\text{type}=2 \\end{cases},\\; d = \\max(0, (|p-p_0|-m)\\,r_{max})',
     blurb: 'Three-branch falloff by Xyrus02 (JWildfire Falloff2Func). type=0 reproduces V112 falloff; type=1 rotates each iterate around the ORIGIN (not (x0,y0)) by a d-weighted angle, with d still measured to (x0,y0); type=2 scatters inside a gaussian-shaped angular shell. Z-axis params + invert + mul_c dropped per pyr3\'s 2D 8-slot seam.',
     // Catalog defaults: type=2 (gaussian shell) is more visually
     // distinctive against the sierpinski scaffold than type=0 (= V112);
@@ -1816,7 +1816,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.falloff3,
     name: 'falloff3',
     source: sourceForIdx(V.falloff3),
-    formula: 'V_{114}(x, y) = w\\,((x, y) + \\mu\\,d r_0\\cos(d r_1\\,2\\pi)\\,(\\cos(d r_2 \\pi),\\; \\sin(d r_2 \\pi))),\\; d = \\max(0, (|p-p_0|-m)\\,r_{max}),\\; r_{0,1,2} \\sim U[-0.5, 0.5)',
+    formula: 'JWF_{15}(x, y) = w\\,((x, y) + \\mu\\,d r_0\\cos(d r_1\\,2\\pi)\\,(\\cos(d r_2 \\pi),\\; \\sin(d r_2 \\pi))),\\; d = \\max(0, (|p-p_0|-m)\\,r_{max}),\\; r_{0,1,2} \\sim U[-0.5, 0.5)',
     blurb: 'Gaussian-shell falloff by JWildfire AbstractFalloff3Func, blur_type=0 (gaussian) + blur_shape=0 (circle) default-mode port. Scatters each iterate inside a 2π·π angular shell scaled by the circle-distance — produces a soft-shell glow around (x0,y0). invert=1 flips inside/outside. The blur_type 1/2 (radial/log) and blur_shape 1 (square) selectors, along with Z-axis params + alpha + mul_c, dropped to fit pyr3\'s 2D 8-slot seam.',
     // Catalog defaults: same kernel `rmax = 0.04 * scatter` scaling as
     // V112/V113 — JWF baseline (scatter=1) is invisible against the
@@ -1836,7 +1836,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.collideoscope,
     name: 'collideoscope',
     source: sourceForIdx(V.collideoscope),
-    formula: 'V_{115}(x, y) = r\\,(\\cos a^{*},\\; \\sin a^{*}),\\; a^{*} = \\text{fold}_{2n}(\\theta, a)',
+    formula: 'JWF_{16}(x, y) = r\\,(\\cos a^{*},\\; \\sin a^{*}),\\; a^{*} = \\text{fold}_{2n}(\\theta, a)',
     blurb: 'Kaleidoscope-collide by Michael Faber (JWildfire). Folds the polar angle into 2·num pie slices with alternating-sign offsets — two adjacent slices "collide" in mirror-image, producing the eponymous splayed-petal pattern. JWF\'s class default a=0.20, num=1 (with randomize() spreading num∈[1,10]).',
     // Catalog defaults: num=5 produces the canonical kaleidoscope rosette
     // (JWF's class-default num=1 is mostly symmetric-pair; randomize()
@@ -1876,7 +1876,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.circlize,
     name: 'circlize',
     source: sourceForIdx(V.circlize),
-    formula: 'V_{116}(x, y) = (r\\cos a,\\; r\\sin a),\\; r = \\tfrac{4w}{\\pi}\\,\\text{side} + h,\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
+    formula: 'JWF_{17}(x, y) = (r\\cos a,\\; r\\sin a),\\; r = \\tfrac{4w}{\\pi}\\,\\text{side} + h,\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
     blurb: 'Square → circle perimeter map by Michael Faber (JWildfire). Each iterate picks the dominant axis (the L∞-norm "side"), computes its position along the unit square\'s perimeter, then maps that perimeter → polar angle and side → radius. Note the canonical JWF quirk: the `hole` offset is intentionally NOT scaled by the variation weight (the corrected sibling circlize2 fixes this).',
     params: [
       { name: 'hole', default: 0.40, min: -1, max: 1, step: 0.01 },
@@ -1908,7 +1908,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.circlize2,
     name: 'circlize2',
     source: sourceForIdx(V.circlize2),
-    formula: 'V_{117}(x, y) = w(\\text{side}+h)\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
+    formula: 'JWF_{18}(x, y) = w(\\text{side}+h)\\,(\\cos a,\\; \\sin a),\\; a = \\tfrac{\\pi}{4}\\,\\tfrac{\\text{perim}}{\\text{side}} - \\tfrac{\\pi}{4}',
     blurb: 'Companion variation to V116 circlize by Michael Faber (Angle Pack). Same square → circle perimeter parameterization, but the radius is w·(side+h) instead of (4w/π)·side+h — the `hole` offset IS scaled by the weight here, correcting the sibling\'s quirk. Produces a more uniform ring at non-zero hole.',
     // Catalog default hole=0.25 produces a clear annulus that
     // visually contrasts with V116 circlize (hole=0.40) — both ring,
@@ -1943,7 +1943,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.eswirl,
     name: 'eswirl',
     source: sourceForIdx(V.eswirl),
-    formula: 'V_{118}(x, y) = w\\,(\\cosh\\mu\\cos\\nu^{*},\\; \\sinh\\mu\\sin\\nu^{*}),\\; \\nu^{*} = \\nu + \\mu\\cdot o + i/\\mu',
+    formula: 'JWF_{19}(x, y) = w\\,(\\cosh\\mu\\cos\\nu^{*},\\; \\sinh\\mu\\sin\\nu^{*}),\\; \\nu^{*} = \\nu + \\mu\\cdot o + i/\\mu',
     blurb: 'Extended swirl by Michael Faber (JWildfire "eSeries"). Converts (x, y) to elliptic coords (μ, ν), twists ν by (μ·out + in/μ), then maps back — the in/μ term creates a strong inward spiral, the μ·out term a gentler outward one. Default in=1.2, out=0.2 strikes the canonical "smooth flow" balance.',
     params: [
       { name: 'in',  default: 1.2, min: 0, max: 4, step: 0.05 },
@@ -1976,7 +1976,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.petal,
     name: 'petal',
     source: sourceForIdx(V.petal),
-    formula: 'V_{119}(x, y) = w\\cos x\\,((\\cos x \\cos y)^3,\\; (\\sin x \\cos y)^3)',
+    formula: 'JWF_{20}(x, y) = w\\cos x\\,((\\cos x \\cos y)^3,\\; (\\sin x \\cos y)^3)',
     blurb: 'Lobed-petal attractor by Raykoid666 (JWildfire). Cubes the (cos x · cos y) and (sin x · cos y) products, then modulates by cos x — produces the eponymous radially-symmetric petal lobes when paired with linear-family co-variations. Parameter-free; weight controls the overall lobe size.',
     warpFn: (x, y) => {
       const a = Math.cos(x);
@@ -1992,7 +1992,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.bcircle,
     name: 'bcircle',
     source: sourceForIdx(V.bcircle),
-    formula: 'V_{120}(x, y) = \\begin{cases} w\\,(sx, sy) & r \\leq 1 \\\\ w\\omega\\,(\\cos\\theta, \\sin\\theta) & r > 1 \\end{cases}',
+    formula: 'JWF_{21}(x, y) = \\begin{cases} w\\,(sx, sy) & r \\leq 1 \\\\ w\\omega\\,(\\cos\\theta, \\sin\\theta) & r > 1 \\end{cases}',
     blurb: 'Bordered-circle projection by Xyrus02 (Apophysis plugin pack). Inside the scale-adjusted unit disk, the iterate passes through verbatim; outside, it gets snapped onto the unit circle (or — when `borderwidth ≠ 0` — onto a random-radius shell just outside it). At borderwidth=0 the deterministic disk path produces a clean filled circle; non-zero borderwidth adds a halo. RNG path activates only for borderwidth ≠ 0.',
     // Catalog defaults: scale=2 shrinks the inside-disk region so the
     // sierpinski corners spill onto the bcircle perimeter; borderwidth=0.4
@@ -2020,7 +2020,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.curl2,
     name: 'curl2',
     source: sourceForIdx(V.curl2),
-    formula: 'V_{121}(x, y) = \\tfrac{w}{|p(z)|^2}\\,(x\\,\\Re p + y\\,\\Im p,\\; y\\,\\Re p - x\\,\\Im p),\\; p(z) = c_3 z^3 + c_2 z^2 + c_1 z + 1',
+    formula: 'JWF_{22}(x, y) = \\tfrac{w}{|p(z)|^2}\\,(x\\,\\Re p + y\\,\\Im p,\\; y\\,\\Re p - x\\,\\Im p),\\; p(z) = c_3 z^3 + c_2 z^2 + c_1 z + 1',
     blurb: 'Cubic-polynomial complex inverse by Xyrus02 / Georg Kiehne. The c1-only path collapses to flam3\'s classic `curl`; non-zero c2 and c3 add quadratic and cubic shaping, producing the eponymous "tighter scroll" / "double bend" silhouettes. Defaults c1=1, c2=c3=0 reproduce the standard curl shape; users discover the richer family by dialing c2/c3 up.',
     // Catalog defaults: c1=1, c2=0.5, c3=0.3 lights up the full cubic
     // polynomial — non-zero c2/c3 reveal the eponymous "tighter scroll"
@@ -2053,7 +2053,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.murl,
     name: 'murl',
     source: sourceForIdx(V.murl),
-    formula: 'V_{122}(x, y) = \\tfrac{w(c+1)}{|1 + r e^{ip\\theta}|^2 + \\epsilon}\\,((x\\,\\Re,\\; y\\,\\Im) + (y\\,\\Im,\\; -x\\,\\Re)),\\; r = c\\,(x^2+y^2)^{p/2}',
+    formula: 'JWF_{23}(x, y) = \\tfrac{w(c+1)}{|1 + r e^{ip\\theta}|^2 + \\epsilon}\\,((x\\,\\Re,\\; y\\,\\Im) + (y\\,\\Im,\\; -x\\,\\Re)),\\; r = c\\,(x^2+y^2)^{p/2}',
     blurb: 'Polar-power murl by Peter Sdobnov (Zueuk), ported into JWildfire by chronologicaldot. The polar angle is multiplied by an integer power and a complex-inverse blend through (re, im) folds back to Cartesian — produces the "spiraling braid" look characteristic of murl-family flames. Defaults c=0.1, power=1 give a gentle deterministic spiral; higher power values multiply the angular folding.',
     // Catalog defaults: power=3, c=0.3 produces the characteristic
     // murl-family braid silhouette (power=1, c=0.1 from JWF baseline is
@@ -2082,7 +2082,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.stwins,
     name: 'stwins',
     source: sourceForIdx(V.stwins),
-    formula: 'V_{123}(x, y) = w(x, y) + \\frac{(s_x^2 - s_y^2)\\sin(2\\pi\\,d\\,(s_x+s_y))}{s_x^2 + s_y^2}\\,(1, 1),\\; s = 0.05\\,wp',
+    formula: 'JWF_{24}(x, y) = w(x, y) + \\frac{(s_x^2 - s_y^2)\\sin(2\\pi\\,d\\,(s_x+s_y))}{s_x^2 + s_y^2}\\,(1, 1),\\; s = 0.05\\,wp',
     blurb: 'Twin-sine ratio by Xyrus02 (Apophysis plugin pack). Mixes a (x²−y²)·sin(2π·distort·(x+y)) / (x²+y²) component back into both x and y in lockstep — produces the characteristic "diagonal pinch" pattern. The fixed 0.05 scale factor prevents overlap at distort=1 (source comment). Canonical name in the Xyrus02 source is `stwin`; pyr3 follows the plugin directory name `stwins` per survey doc + community alignment.',
     params: [
       { name: 'distort', default: 1.0, min: 0, max: 4, step: 0.05 },
@@ -2108,7 +2108,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.hexes,
     name: 'hexes',
     source: sourceForIdx(V.hexes),
-    formula: 'V_{124}(x, y) = w\\,(P_0 + R\\cdot(D_x\\cos\\phi + D_y\\sin\\phi,\\, -D_x\\sin\\phi + D_y\\cos\\phi)),\\; \\phi = 2\\pi r',
+    formula: 'JWF_{25}(x, y) = w\\,(P_0 + R\\cdot(D_x\\cos\\phi + D_y\\sin\\phi,\\, -D_x\\sin\\phi + D_y\\cos\\phi)),\\; \\phi = 2\\pi r',
     blurb: 'Hex-grid voronoi warp by Neil Slater / slobo777, via JWildfire. Breaks the plane into a hexagonal lattice, finds the closest hex center to each iterate, then applies a per-cell power scaling + rotation expressed via voronoi-edge distance. The "rosette removal" blend at the cell edge (L ∈ [0.5, 0.8]) smooths the transition between closest-vs-second-closest-hex regions. Defaults cellsize=1, power=1, rotate=0.166 (≈ π/19), scale=1 reproduce JWildfire\'s class-level shape.',
     params: [
       { name: 'cellsize', default: 1.0,   min: 0.1, max: 4, step: 0.05 },
@@ -2193,7 +2193,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.xheart,
     name: 'xheart',
     source: sourceForIdx(V.xheart),
-    formula: 'V_{125}(x, y) = w\\,R(\\alpha)\\,\\left(\\tfrac{4x}{r^2+4},\\; \\tfrac{6+2\\rho}{r^2+4}\\,y\\right)\\cdot \\sigma,\\; \\alpha = \\tfrac{\\pi}{4}(1 + \\tfrac{\\theta}{2}),\\; \\sigma = \\mathrm{sign}(x_{\\mathrm{rot}})',
+    formula: 'JWF_{26}(x, y) = w\\,R(\\alpha)\\,\\left(\\tfrac{4x}{r^2+4},\\; \\tfrac{6+2\\rho}{r^2+4}\\,y\\right)\\cdot \\sigma,\\; \\alpha = \\tfrac{\\pi}{4}(1 + \\tfrac{\\theta}{2}),\\; \\sigma = \\mathrm{sign}(x_{\\mathrm{rot}})',
     blurb: 'Extended heart by Xyrus02 (Apophysis plugin pack). Folds the iterate through a (4/r²+4, rat/r²+4) projection then rotates by a θ-driven angle, then re-mirrors y when the rotated x is non-positive — producing the characteristic heart-curve attractor. Defaults angle=ratio=0 give the Xyrus02 baseline (rotation = π/4, ratio multiplier = 6); higher angle pushes the heart toward a tilted lobe, higher ratio elongates the bottom point.',
     params: [
       { name: 'xheart_angle', default: 0.0, min: -2, max: 2, step: 0.05 },
@@ -2221,7 +2221,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.xhyperbol,
     name: 'xhyperbol',
     source: sourceForIdx(V.xhyperbol),
-    formula: 'V_{126}(x, y) = \\tfrac{w}{|z\'|^2 + \\epsilon}\\,(\\cos\\alpha, \\sin\\alpha),\\; z\' = M\\cdot\\tfrac{z}{|z|^2 + \\epsilon} + t,\\; \\alpha = \\arg z\'',
+    formula: 'JWF_{27}(x, y) = \\tfrac{w}{|z\'|^2 + \\epsilon}\\,(\\cos\\alpha, \\sin\\alpha),\\; z\' = M\\cdot\\tfrac{z}{|z|^2 + \\epsilon} + t,\\; \\alpha = \\arg z\'',
     blurb: 'Extended hyperbolic by Xyrus02 (Apophysis plugin pack). Composes a unit-disc inversion (z → z/|z|²) with a 2x3 affine M·(·) + t — then emits a |z\'|⁻² reflection of the affine\'d direction. Defaults M = identity (m00=m11=1) give the simplest hyperbolic shape; non-zero m20/m21 translate the inversion center.',
     params: [
       { name: 'm00', default: 1.0, min: -2, max: 2, step: 0.05 },
@@ -2258,7 +2258,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.xcurl2,
     name: 'xcurl2',
     source: sourceForIdx(V.xcurl2),
-    formula: 'V_{127}(x, y) = \\tfrac{w}{re^2 + im^2}\\,(x\\,re + y\\,im,\\; y\\,re + x\\,im),\\; re = 1 + c_1 x + c_2(x^2-y^2) + c_3(x^3 - 3x)',
+    formula: 'JWF_{28}(x, y) = \\tfrac{w}{re^2 + im^2}\\,(x\\,re + y\\,im,\\; y\\,re + x\\,im),\\; re = 1 + c_1 x + c_2(x^2-y^2) + c_3(x^3 - 3x)',
     blurb: 'Older / alternate curl² by Xyrus02 (the source\'s own header reads "old, probably wrong version of curl2") — but the visual character differs from V121 `curl2` (Georg Kiehne), so pyr3 ships both. Polynomial shape: re mixes linear + (x²−y²) + (x³−3x) terms with c1/c2/c3 weights, im mixes the conjugate trio. Note the `y·re + x·im` SUM in the output (not the standard Cartesian-inverse SIGN flip in V121). Catalog defaults to c1=1 (linear path active) so the first slider drag produces a visible response.',
     params: [
       { name: 'c1', default: 1.0, min: -2, max: 2, step: 0.05 },
@@ -2284,7 +2284,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.xtrb,
     name: 'xtrb',
     source: sourceForIdx(V.xtrb),
-    formula: 'V_{128}(x, y) = w\\,r\'\\,(\\cos\\phi, \\sin\\phi),\\; r\' = (in_x^2 + in_y^2)^{c_N},\\; \\phi = \\tfrac{\\arctan(in_y, in_x) + 2\\pi k}{p}',
+    formula: 'JWF_{29}(x, y) = w\\,r\'\\,(\\cos\\phi, \\sin\\phi),\\; r\' = (in_x^2 + in_y^2)^{c_N},\\; \\phi = \\tfrac{\\arctan(in_y, in_x) + 2\\pi k}{p}',
     blurb: 'TriBorders by Xyrus02 — builds a dual tessellation on a triangular grid (the way `boarders` does on a square grid) using trilinear coordinates. Six params shape the triangle (radius, a, b for angle), the border blend (width), the angle-modulo (power), and the radial reach (dist). RNG drives both the width-blend branch and the power-modulo index. Defaults reproduce the Xyrus02 source baseline (power=2, equilateral-ish triangle, width=0.5).',
     params: [
       { name: 'xtrb_power',  default: 2,   min: 1,   max: 8, step: 1 },
@@ -2301,7 +2301,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.gridout,
     name: 'gridout',
     source: sourceForIdx(V.gridout),
-    formula: 'V_{129}(x, y) = w\\,(x + \\delta_x, y + \\delta_y),\\; (\\delta_x, \\delta_y) \\in \\{(\\pm 1, 0), (0, \\pm 1)\\}\\; \\text{by quadrant}',
+    formula: 'JWF_{30}(x, y) = w\\,(x + \\delta_x, y + \\delta_y),\\; (\\delta_x, \\delta_y) \\in \\{(\\pm 1, 0), (0, \\pm 1)\\}\\; \\text{by quadrant}',
     blurb: 'Grid quantization by Xyrus02 (authors Michael + Joel Faber). Snaps the iterate by ±1 along x or y depending on which integer-grid quadrant (rint(x), rint(y)) it falls into — stair-step / cubist look. NOT the same as pyr3\'s V101 `dc_gridout` (that\'s a color variation; this is a pure position warp). 0 params: dial the variation weight instead.',
     warpFn: (x, y) => {
       const rx = x >= 0 ? Math.floor(x + 0.5) : Math.ceil(x - 0.5);
@@ -2328,7 +2328,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.blur_circle,
     name: 'blur_circle',
     source: sourceForIdx(V.blur_circle),
-    formula: 'V_{130}(x, y) = (r\\cos\\phi, r\\sin\\phi),\\; r = \\tfrac{4w}{\\pi}\\,s + \\text{hole},\\; \\phi = \\tfrac{\\pi}{4}\\,\\tfrac{p_s}{s} - \\pi',
+    formula: 'JWF_{31}(x, y) = (r\\cos\\phi, r\\sin\\phi),\\; r = \\tfrac{4w}{\\pi}\\,s + \\text{hole},\\; \\phi = \\tfrac{\\pi}{4}\\,\\tfrac{p_s}{s} - \\pi',
     blurb: 'Disc-uniform blur by Xyrus02 (Apophysis plugin pack). Uniformly samples a unit square, runs a square→circle perimeter parameterization (same family as circlize / circlize2), then emits onto a hole-offset circle. Input iterate is ignored — the variation\'s output is purely RNG-driven. The 4/π scale factor matches a unit-disc area density; non-zero hole adds a concentric annulus offset.',
     params: [
       { name: 'hole', default: 0.0, min: -1, max: 1, step: 0.05 },
@@ -2343,7 +2343,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.bipolar2,
     name: 'bipolar2',
     source: sourceForIdx(V.bipolar2),
-    formula: 'V_{131}(x, y) = \\left(\\tfrac{2 f_1}{\\pi}\\log\\tfrac{t+bx}{t-bx},\\; \\tfrac{2h}{\\pi}\\,y\'\\right),\\; t = g_1(x^2+y^2)+a,\\; y\' = c\\,\\mathrm{atan2}(e\\,y,\\; g_1(x^2+y^2)-d) - \\tfrac{\\pi}{2}\\,\\text{shift}',
+    formula: 'JWF_{32}(x, y) = \\left(\\tfrac{2 f_1}{\\pi}\\log\\tfrac{t+bx}{t-bx},\\; \\tfrac{2h}{\\pi}\\,y\'\\right),\\; t = g_1(x^2+y^2)+a,\\; y\' = c\\,\\mathrm{atan2}(e\\,y,\\; g_1(x^2+y^2)-d) - \\tfrac{\\pi}{2}\\,\\text{shift}',
     blurb: 'Bipolar with variables added by Brad Stefanov. Generalizes the V35 bipolar formula by exposing the radius scale (g1), the inner offsets (a, d), the affine pre-multiplies on x and y (b, e), the meridian split (c), and the two output scales (f1 for the log channel, h for the angular channel). At defaults (shift=0, a=1, b=2, c=0.5, d=1, e=2, f1=0.25, g1=1, h=1) it traces a sibling of base bipolar with a slightly different aspect ratio. Tuning a < 0 or d > x²+y² can flip the quotient sign — the variation short-circuits to (0,0) when that happens, matching JWildfire\'s early-return.',
     params: [
       { name: 'shift', default: 0.0, min: -2, max: 2, step: 0.05 },
@@ -2382,7 +2382,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.bubble2,
     name: 'bubble2',
     source: sourceForIdx(V.bubble2),
-    formula: 'V_{132}(x, y) = \\left(\\tfrac{w x_s\\,x}{(x^2+y^2)/4 + 1},\\; \\tfrac{w y_s\\,y}{(x^2+y^2)/4 + 1}\\right)',
+    formula: 'JWF_{33}(x, y) = \\left(\\tfrac{w x_s\\,x}{(x^2+y^2)/4 + 1},\\; \\tfrac{w y_s\\,y}{(x^2+y^2)/4 + 1}\\right)',
     blurb: 'Numbered variant of bubble (V20) by FracFx. Folds the plane into a unit sphere just like bubble, but with independent x/y axis scales. At x_scale = y_scale = 1 it matches bubble exactly; non-matching scales stretch the bubble along an axis, producing an anisotropic lens. Drops the z-channel and z param from the JWildfire source (pyr3 is 2D-only).',
     params: [
       { name: 'x', default: 1.0, min: -2, max: 2, step: 0.05 },
@@ -2407,7 +2407,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.acosh,
     name: 'acosh',
     source: sourceForIdx(V.acosh),
-    formula: 'V_{133}(z) = \\pm\\tfrac{2w}{\\pi}\\,\\log\\!\\left(z + \\sqrt{z^2 - 1}\\right),\\; z = x + iy',
+    formula: 'JWF_{34}(z) = \\pm\\tfrac{2w}{\\pi}\\,\\log\\!\\left(z + \\sqrt{z^2 - 1}\\right),\\; z = x + iy',
     blurb: 'Complex inverse hyperbolic cosine, scaled by w·2/π. Output sign is flipped 50/50 per iteration — the chaos game accumulates both branches across walkers, producing the mirrored fold characteristic of Whittaker Courtney\'s hyperbolic ports of Tatyana Zabanova\'s designs.',
     // RNG-driven (50/50 sign flip) → no warpFn.
   },
@@ -2415,7 +2415,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.arcsinh,
     name: 'arcsinh',
     source: sourceForIdx(V.arcsinh),
-    formula: 'V_{134}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(z + \\sqrt{z^2 + 1}\\right),\\; z = x + iy',
+    formula: 'JWF_{35}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(z + \\sqrt{z^2 + 1}\\right),\\; z = x + iy',
     blurb: 'Complex inverse hyperbolic sine, scaled by w·2/π. Deterministic; the parent curve of the inverse hyperbolic family. Tatyana Zabanova 2017 / DarkBeam 2018.',
     warpFn: (x, y) => {
       // z² + 1
@@ -2436,7 +2436,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.arctanh,
     name: 'arctanh',
     source: sourceForIdx(V.arctanh),
-    formula: 'V_{135}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(\\tfrac{z + 1}{1 - z}\\right),\\; z = x + iy',
+    formula: 'JWF_{36}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(\\tfrac{z + 1}{1 - z}\\right),\\; z = x + iy',
     blurb: 'Inverse hyperbolic tangent variant. The 1/2 factor that would make this exactly arctanh is absorbed by JWildfire — the result is effectively 2·atanh(z), scaled by w·2/π. Maps the open unit disk onto a horizontal strip; characteristic asymmetric pull toward x = ±1.',
     warpFn: (x, y) => {
       // (z + 1) / (1 - z)
@@ -2454,7 +2454,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.acoth,
     name: 'acoth',
     source: sourceForIdx(V.acoth),
-    formula: 'V_{136}(z) = \\tfrac{2w}{\\pi}\\,\\mathrm{Flip}\\!\\left(\\tfrac{1}{2}\\log\\!\\tfrac{1/z + 1}{1 - 1/z}\\right),\\; z = x + iy',
+    formula: 'JWF_{37}(z) = \\tfrac{2w}{\\pi}\\,\\mathrm{Flip}\\!\\left(\\tfrac{1}{2}\\log\\!\\tfrac{1/z + 1}{1 - 1/z}\\right),\\; z = x + iy',
     blurb: 'Complex inverse hyperbolic cotangent. Computes atanh(1/z), then swaps real and imaginary (JWildfire\'s Flip() — re↔im exchange), and scales by w·2/π. Deterministic; the Flip rotates the strip atanh produces by 90° onto a vertical band.',
     warpFn: (x, y) => {
       // 1/z = z* / |z|²
@@ -2479,7 +2479,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.acosech,
     name: 'acosech',
     source: sourceForIdx(V.acosech),
-    formula: 'V_{137}(z) = \\pm\\tfrac{2w}{\\pi}\\,\\mathrm{Flip}\\!\\left(\\log\\!\\left(1/z + \\sqrt{1/z^2 - 1}\\right)\\right),\\; z = x + iy',
+    formula: 'JWF_{38}(z) = \\pm\\tfrac{2w}{\\pi}\\,\\mathrm{Flip}\\!\\left(\\log\\!\\left(1/z + \\sqrt{1/z^2 - 1}\\right)\\right),\\; z = x + iy',
     blurb: 'Complex inverse hyperbolic cosecant. Computes acosh(1/z), flips re↔im, then scales by w·2/π and applies a 50/50 sign flip. The Recip step turns the chaos game inside-out around the unit circle before the acosh fold.',
     // RNG-driven (50/50 sign flip) → no warpFn.
   },
@@ -2487,7 +2487,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.arcsech2,
     name: 'arcsech2',
     source: sourceForIdx(V.arcsech2),
-    formula: 'V_{138}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(\\tfrac{1}{z} + \\sqrt{\\tfrac{1}{z^2} - 1}\\right) + \\text{asymmetric tail}',
+    formula: 'JWF_{39}(z) = \\tfrac{2w}{\\pi}\\,\\log\\!\\left(\\tfrac{1}{z} + \\sqrt{\\tfrac{1}{z^2} - 1}\\right) + \\text{asymmetric tail}',
     blurb: 'Inverse hyperbolic secant by Tatyana Zabanova 2017 / DarkBeam 2018. Deterministic. After the standard arcsech computation, an asymmetric ±1 tail is added to py and the sign of px is flipped, based on whether the scaled log\'s imaginary part is negative — produces a stark mirrored pair of arcs.',
     warpFn: (x, y) => {
       // 1/z
@@ -2532,7 +2532,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.cell2,
     name: 'cell2',
     source: sourceForIdx(V.cell2),
-    formula: 'V_{139}(x, y) = w\\big(d_x + s_x\\cdot\\text{size},\\; -(d_y + s_y\\cdot\\text{size})\\big),\\; d = p - \\lfloor p\\cdot\\tfrac{a}{\\text{size}}\\rfloor\\cdot\\text{size}',
+    formula: 'JWF_{40}(x, y) = w\\big(d_x + s_x\\cdot\\text{size},\\; -(d_y + s_y\\cdot\\text{size})\\big),\\; d = p - \\lfloor p\\cdot\\tfrac{a}{\\text{size}}\\rfloor\\cdot\\text{size}',
     blurb: 'Numbered variant of cell (V75) by Brad Stefanov. Snaps the iterate to a square grid (size · a-tuned cell pitch), then scales the cell coordinate per-hemisphere — `space_north_*` for y ≥ 0, `space_south_*` for y < 0 — producing a top/bottom-different cellular tile that\'s the visual signature of cell2 vs cell. pyr3 ships a **6-param subset** of JWildfire\'s 16-param source: the per-quadrant E/W asymmetry, per-quadrant position offsets, and RNG mirror flags are dropped; see issue #127 if the full surface ever matters. At the defaults (size=0.6, a=1, all space_*=2), the output is N/S symmetric; varying any of the four space_* sliders introduces the asymmetric look.',
     params: [
       { name: 'size',          default: 0.3, min: 0.05, max: 2.0, step: 0.05 },
@@ -2576,7 +2576,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.curl_sp,
     name: 'curl_sp',
     source: sourceForIdx(V.curl_sp),
-    formula: 'V_{140}(x, y) = \\tfrac{w}{c}\\big(x\'\\,\\mathrm{re} + y\'\\,\\mathrm{im},\\; y\'\\,\\mathrm{re} - x\'\\,\\mathrm{im}\\big),\\; x\' = |x|^{\\rho}\\mathrm{sgn}(x),\\; \\rho = \\text{pow}',
+    formula: 'JWF_{41}(x, y) = \\tfrac{w}{c}\\big(x\'\\,\\mathrm{re} + y\'\\,\\mathrm{im},\\; y\'\\,\\mathrm{re} - x\'\\,\\mathrm{im}\\big),\\; x\' = |x|^{\\rho}\\mathrm{sgn}(x),\\; \\rho = \\text{pow}',
     blurb: 'Spherical-curl variant by Xyrus02. Takes signed odd powers of both coords (so negative bases stay defined), then applies a complex-curl polynomial with magnitude reduction. pyr3 ships 5 of the 6 source params — `dc` was a color-output knob that pyr3\'s chain doesn\'t expose for non-DC variations.',
     params: [
       { name: 'pow', default: 1.0,   min: 0.1, max: 3.0, step: 0.05 },
@@ -2608,7 +2608,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.murl2,
     name: 'murl2',
     source: sourceForIdx(V.murl2),
-    formula: 'V_{141}(x, y) = \\tfrac{w\\,(c+1)^{2/n}}{r_1^2}\\big(x\\cdot\\Re + y\\cdot\\Im,\\; y\\cdot\\Re - x\\cdot\\Im\\big),\\; n = \\text{power}',
+    formula: 'JWF_{42}(x, y) = \\tfrac{w\\,(c+1)^{2/n}}{r_1^2}\\big(x\\cdot\\Re + y\\cdot\\Im,\\; y\\cdot\\Re - x\\cdot\\Im\\big),\\; n = \\text{power}',
     blurb: 'Numbered companion to murl (V122) by Peter Sdobnov ("Zueuk"), transcribed from C by Nic Anderson. Computes a polar-power lift (radius^n · cos/sin of n·θ + 1), then maps through complex (·)^(1/n) and divides by radius squared. Produces tightly-wound spiral attractors that read as "curled" cellular cuts of the plane.',
     params: [
       { name: 'c',     default: 0.1, min: -1, max: 2, step: 0.05 },
@@ -2638,7 +2638,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.lissajous,
     name: 'lissajous',
     source: sourceForIdx(V.lissajous),
-    formula: 'V_{142}(x, y) = w\\big(\\sin(a t + d) + c t + e u,\\; \\sin(b t) + c t + e u\\big),\\; t,u \\sim \\mathrm{rand}',
+    formula: 'JWF_{43}(x, y) = w\\big(\\sin(a t + d) + c t + e u,\\; \\sin(b t) + c t + e u\\big),\\; t,u \\sim \\mathrm{rand}',
     blurb: 'Lissajous-curve sampler by Jed Kelsey (Lu-Kout). Picks t uniformly from [tmin, tmax] and a small y-jitter; emits a point on the parametric curve (sin(at+d), sin(bt)) with a shared linear drift (c·t + e·u). Visually iconic — the chaos game samples along the full curve since the input coord is ignored.',
     params: [
       { name: 'tmin', default: -Math.PI, min: -10, max: 10, step: 0.1  },
@@ -2655,7 +2655,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.spirograph,
     name: 'spirograph',
     source: sourceForIdx(V.spirograph),
-    formula: 'V_{143}(x, y) = w\\big((a+b)\\cos t - c_1\\cos((a+b)t/b) + d\\cos t + u,\\; \\text{sin analog}\\big)',
+    formula: 'JWF_{44}(x, y) = w\\big((a+b)\\cos t - c_1\\cos((a+b)t/b) + d\\cos t + u,\\; \\text{sin analog}\\big)',
     blurb: 'Classic spirograph (hypotrochoid) curve sampler by Jed Kelsey (Lu-Kout). Combines a large circle of radius (a+b) with a smaller rotating component scaled by c₁/c₂, plus an optional d-scaled circular drift and a y-jitter. Input coord is ignored — output texture comes entirely from the parametric curve + RNG. Nine params fill our seam exactly.',
     params: [
       // Catalog defaults RETUNED for visibility: at a=3, b=2, c1=c2=0
@@ -2677,7 +2677,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.waffle,
     name: 'waffle',
     source: sourceForIdx(V.waffle),
-    formula: 'V_{144}(x, y) = w\\,\\big(\\cos\\theta \\cdot a + \\sin\\theta \\cdot \\rho,\\; -\\sin\\theta \\cdot a + \\cos\\theta \\cdot \\rho\\big),\\; \\theta = \\text{rotation},\\; (a, \\rho) \\sim \\text{mode-}n(\\text{slices},\\, x_t,\\, y_t)',
+    formula: 'JWF_{45}(x, y) = w\\,\\big(\\cos\\theta \\cdot a + \\sin\\theta \\cdot \\rho,\\; -\\sin\\theta \\cdot a + \\cos\\theta \\cdot \\rho\\big),\\; \\theta = \\text{rotation},\\; (a, \\rho) \\sim \\text{mode-}n(\\text{slices},\\, x_t,\\, y_t)',
     blurb: 'Rotated waffle / grid sampler by Jed Kelsey (Lu-Kout). Picks one of 5 cell-placement modes per call (RNG-heavy: ~3 rand01 draws per mode), then emits a point inside the chosen cell of a uniform grid (slice count = `slices`). Input coord is ignored. `rotation` rotates the entire grid; `xthickness` / `ythickness` control how "thick" the waffle bars are.',
     params: [
       { name: 'slices',     default: 6,   min: 1, max: 20, step: 1    },
@@ -2697,7 +2697,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.glynnSim1,
     name: 'glynnSim1',
     source: sourceForIdx(V.glynnSim1),
-    formula: 'V_{145}: \\text{inside radius} \\to \\text{circle at}\\;(\\text{radius}\\cos\\phi_1, \\text{radius}\\sin\\phi_1);\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
+    formula: 'JWF_{46}: \\text{inside radius} \\to \\text{circle at}\\;(\\text{radius}\\cos\\phi_1, \\text{radius}\\sin\\phi_1);\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
     blurb: 'Most elaborate of eralex61\'s Glynn-set trio. Inside the radius, emits a random point on a thickness-shaped circle offset by (radius·cos φ₁, radius·sin φ₁). Outside, randomly either passes the iterate through, applies the α² circle inversion (α = radius/r), or — if either result lands back inside the inner-circle bubble — re-emits an inner circle point. The contrast and pow params control the passthrough probability.',
     params: [
       // Catalog defaults user-tuned for visibility at the sierpinski
@@ -2715,7 +2715,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.glynnSim2,
     name: 'glynnSim2',
     source: sourceForIdx(V.glynnSim2),
-    formula: 'V_{146}: \\text{inside radius} \\to \\text{arc at}\\;\\phi\\in[\\phi_1, \\phi_2];\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
+    formula: 'JWF_{47}: \\text{inside radius} \\to \\text{arc at}\\;\\phi\\in[\\phi_1, \\phi_2];\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
     blurb: 'eralex61\'s arc-emitting GlynnSim variant. Inside the radius, emits a point on an angular arc bounded by [φ₁, φ₂] (in degrees), with radius scattered across [radius, radius+thickness] via a γ-tightened envelope. Outside the radius, same passthrough-vs-α²-inversion decision as glynnSim1 but without the re-emit check — simpler and faster.',
     params: [
       // Catalog default for radius RETUNED (was 1.0) — smaller radius
@@ -2733,7 +2733,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.glynnSim3,
     name: 'glynnSim3',
     source: sourceForIdx(V.glynnSim3),
-    formula: 'V_{147}: \\text{inside }r_1 \\to \\text{circle at }r_1\\text{ or }r_2;\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
+    formula: 'JWF_{48}: \\text{inside }r_1 \\to \\text{circle at }r_1\\text{ or }r_2;\\; \\text{outside} \\to \\text{passthrough or }\\alpha^2\\text{ inversion}',
     blurb: 'Simplest GlynnSim. Uses two computed radii r₁ = radius+thickness and r₂ = radius²/r₁, picking one or the other on each inner-circle emit via a γ-weighted coin flip. Visually creates concentric ring pairs rather than the offset-bubble effect of glynnSim1/2. **Note:** `contrast` and `pow` only gate the OUTSIDE-radius branch (passthrough vs α² inversion); at large `radius` most walkers fall inside r₁ = radius + thickness and never reach that branch — pull `radius` down to expose contrast/pow.',
     params: [
       // Catalog defaults RETUNED (was radius=1, thickness=0.1). With the
@@ -2759,7 +2759,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.flipy,
     name: 'flipy',
     source: sourceForIdx(V.flipy),
-    formula: 'V_{148}(x, y) = \\begin{cases} w\\,(x, -y) & x > 0 \\\\ w\\,(x, y) & x \\le 0 \\end{cases}',
+    formula: 'JWF_{49}(x, y) = \\begin{cases} w\\,(x, -y) & x > 0 \\\\ w\\,(x, y) & x \\le 0 \\end{cases}',
     blurb: 'Asymmetric y-axis flip by Michael Faber. The simplest variation in pyr3 — zero params. When x > 0 the y-coord is negated; when x ≤ 0 it passes through. Mirrors the right half of any shape vertically while leaving the left half alone.',
     warpFn: (x, y) => {
       const ys = x > 0 ? -1 : 1;
@@ -2770,7 +2770,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.eclipse,
     name: 'eclipse',
     source: sourceForIdx(V.eclipse),
-    formula: 'V_{149}(x, y) = \\begin{cases} w\\,(c_2\\,\\mathrm{shift} + x,\\; y) & |y| \\le w,\\; r < 1,\\; (x + c_2\\,\\mathrm{shift})^2 < 1 \\\\ w\\,(-c_2\\,\\mathrm{shift} - x,\\; y) & |y| \\le w,\\; r < 1,\\; \\text{else} \\\\ w\\,(x, y) & \\text{otherwise} \\end{cases},\\; c_2 = \\sqrt{w^2 - y^2},\\; r = c_2^2/(x^2 + y^2)',
+    formula: 'JWF_{50}(x, y) = \\begin{cases} w\\,(c_2\\,\\mathrm{shift} + x,\\; y) & |y| \\le w,\\; r < 1,\\; (x + c_2\\,\\mathrm{shift})^2 < 1 \\\\ w\\,(-c_2\\,\\mathrm{shift} - x,\\; y) & |y| \\le w,\\; r < 1,\\; \\text{else} \\\\ w\\,(x, y) & \\text{otherwise} \\end{cases},\\; c_2 = \\sqrt{w^2 - y^2},\\; r = c_2^2/(x^2 + y^2)',
     blurb: 'Branchy ellipse fold by Michael Faber. Inside the strip |y| ≤ w the variation computes the half-width c₂ = √(w² − y²) and either passes x through, shifts it by `shift·w`, or negates it depending on which sub-region the iterate lands in. Outside the strip, plain passthrough. Distinctive eclipse-crescent silhouettes around the strip boundary.',
     params: [
       // Catalog default shift RETUNED from 0.0 — at shift=0 the fold is
@@ -2797,7 +2797,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.barycentroid,
     name: 'barycentroid',
     source: sourceForIdx(V.barycentroid),
-    formula: 'V_{150}(x, y) = w\\,(\\sqrt{u^2 + x^2}\\cdot\\mathrm{sgn}(u),\\; \\sqrt{v^2 + y^2}\\cdot\\mathrm{sgn}(v)),\\; (u, v) = \\text{barycentric}(p; v_0=(a,b), v_1=(c,d))',
+    formula: 'JWF_{51}(x, y) = w\\,(\\sqrt{u^2 + x^2}\\cdot\\mathrm{sgn}(u),\\; \\sqrt{v^2 + y^2}\\cdot\\mathrm{sgn}(v)),\\; (u, v) = \\text{barycentric}(p; v_0=(a,b), v_1=(c,d))',
     blurb: 'Barycentric-coordinate fold by Xyrus02. Treats (a, b) and (c, d) as two basis vectors of a triangle anchored at the origin; computes the barycentric coordinates (u, v) of the iterate; emits a sign-preserving magnitude blend with the input coords. At the identity basis (a=d=1, b=c=0) reduces to (±|p|·sign(p), ±|p|·sign(p)).',
     params: [
       { name: 'a', default: 1.0, min: -2, max: 2, step: 0.05 },
@@ -2826,7 +2826,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.chunk,
     name: 'chunk',
     source: sourceForIdx(V.chunk),
-    formula: 'V_{151}: r = w(ax^2 + bxy + cy^2 + dx + ey + f),\\; \\text{emit }p\\text{ if mode-gate fires, else }(0,0)',
+    formula: 'JWF_{52}: r = w(ax^2 + bxy + cy^2 + dx + ey + f),\\; \\text{emit }p\\text{ if mode-gate fires, else }(0,0)',
     blurb: 'Quadratic-form spatial gate by zephyrtronium (via Brad Stefanov). Computes a weight-scaled quadratic at the iterate; emits the unscaled input coord when the gate condition holds (mode 0: r ≤ 0 — inside the conic section; mode 1: r > 0 — outside), else contributes (0, 0). At the defaults (a=c=1, b=d=e=0, f=-1, mode=0) the gate selects everything inside the unit circle, producing a clean disc cutout.',
     params: [
       // Catalog defaults RETUNED — (e=0, f=-1) was a boring unit-disc
@@ -2860,7 +2860,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.ennepers,
     name: 'ennepers',
     source: sourceForIdx(V.ennepers),
-    formula: 'V_{152}(x, y) = w\\,(x - x^3/3,\\; y - y^3/3) + (xy^2,\\; yx^2)',
+    formula: 'JWF_{53}(x, y) = w\\,(x - x^3/3,\\; y - y^3/3) + (xy^2,\\; yx^2)',
     blurb: 'Polynomial fold by Raykoid666 derived from the Enneper minimal surface 2D projection. The trailing (xy², yx²) coupling sits outside the amount multiplication — that\'s the JWildfire quirk; the result is a lattice-like distortion that pulls inward near origin and balloons at the extremes.',
     warpFn: (x, y) => {
       const w = 1.0;
@@ -2873,7 +2873,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.erf,
     name: 'erf',
     source: sourceForIdx(V.erf),
-    formula: 'V_{153}(x, y) = w\\,(\\mathrm{erf}(x),\\; \\mathrm{erf}(y))',
+    formula: 'JWF_{54}(x, y) = w\\,(\\mathrm{erf}(x),\\; \\mathrm{erf}(y))',
     blurb: 'Per-component error function by zephyrtronium (implemented by dark-beam). Smoothly saturates the coords toward ±1 as |x| or |y| grows past ~2; for |x|<1 acts roughly linearly. Pure squashing — no rotation, no shear.',
     warpFn: (x, y) => {
       // A&S 7.1.26 — same poly used in WGSL.
@@ -2916,7 +2916,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.asteria,
     name: 'asteria',
     source: sourceForIdx(V.asteria),
-    formula: 'V_{155}: \\text{rotate by }\\pi\\alpha,\\; \\text{project }x \\to x/\\sqrt{1-y^2}\\cdot(1 - \\sqrt{1-(1-|y|)^2}),\\; \\text{rotate back; or identity}',
+    formula: 'JWF_{56}: \\text{rotate by }\\pi\\alpha,\\; \\text{project }x \\to x/\\sqrt{1-y^2}\\cdot(1 - \\sqrt{1-(1-|y|)^2}),\\; \\text{rotate back; or identity}',
     blurb: 'Branchy fold by dark-beam. Tests whether the iterate is both inside the unit circle AND inside the diamond defined by (|x|-1)² + (|y|-1)² ≤ 1; when both fire, an RNG coin decides between identity passthrough and the asteria projection. Produces sharp four-pointed star silhouettes (the namesake) at α ≈ 0.1.',
     params: [
       // alpha=0 is a degenerate identity branch; default 0.1 surfaces
@@ -2977,7 +2977,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.voron,
     name: 'voron',
     source: sourceForIdx(V.voron),
-    formula: 'V_{158}: \\text{find nearest jittered cell center }(X_0, Y_0)\\text{ in }3\\times 3\\text{ neighborhood},\\; \\text{emit }(k(x-X_0)+X_0,\\; k(y-Y_0)+Y_0)\\cdot w',
+    formula: 'JWF_{59}: \\text{find nearest jittered cell center }(X_0, Y_0)\\text{ in }3\\times 3\\text{ neighborhood},\\; \\text{emit }(k(x-X_0)+X_0,\\; k(y-Y_0)+Y_0)\\cdot w',
     blurb: 'Voronoi cell distance field by eralex61. Hashes each grid cell deterministically into 1..num jittered "site" points; the iterate is pulled toward the nearest site by `(1-k)` and emitted on the other side scaled by `k`. Produces irregular Voronoi-tile textures with cell sizes set by `step`.',
     params: [
       { name: 'k',     default: 0.99, min: -1, max: 2,  step: 0.01 },
@@ -4033,7 +4033,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.waves3,
     name: 'waves3',
     source: sourceForIdx(V.waves3),
-    formula: 'V_{214}(x, y) = w\\,(x + \\sin(y\\,\\text{freqx})\\,s_x,\\; y + \\sin(x\\,\\text{freqy})\\,s_y),\\; s_x = \\tfrac{1}{2}\\text{scalex}(1+\\sin(y\\,sx\\_freq)),\\; s_y = \\tfrac{1}{2}\\text{scaley}(1+\\sin(x\\,sy\\_freq))',
+    formula: 'JWF_{115}(x, y) = w\\,(x + \\sin(y\\,\\text{freqx})\\,s_x,\\; y + \\sin(x\\,\\text{freqy})\\,s_y),\\; s_x = \\tfrac{1}{2}\\text{scalex}(1+\\sin(y\\,sx\\_freq)),\\; s_y = \\tfrac{1}{2}\\text{scaley}(1+\\sin(x\\,sy\\_freq))',
     blurb: "Tatyana Zabanova's waves3 (via Brad Stefanov). Sibling of V16 waves / V85 waves2 — adds per-axis frequency modulators (sx_freq, sy_freq) that ripple the scale factor along the orthogonal axis. Produces wave patterns with mid-frequency bunching.",
     params: [
       { name: 'scalex',  default: 0.05, min: -1, max: 1, step: 0.01 },
@@ -4054,7 +4054,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.waves4,
     name: 'waves4',
     source: sourceForIdx(V.waves4),
-    formula: 'V_{215}(x, y) = w\\,(x + \\sin(y\\,\\text{freqx})\\cdot a_x^2\\,\\text{scalex},\\; y + \\sin(x\\,\\text{freqy})\\,\\text{scaley}),\\; a_x = \\text{hash}(\\lfloor y\\,\\text{freqx}/2\\pi\\rfloor)',
+    formula: 'JWF_{116}(x, y) = w\\,(x + \\sin(y\\,\\text{freqx})\\cdot a_x^2\\,\\text{scalex},\\; y + \\sin(x\\,\\text{freqy})\\,\\text{scaley}),\\; a_x = \\text{hash}(\\lfloor y\\,\\text{freqx}/2\\pi\\rfloor)',
     blurb: "Tatyana Zabanova's waves4 (via Brad Stefanov). Banded variant: spatial hash on the y-cell index modulates scalex per-band, producing distinct horizontal stripes. cont=1 binarizes the hash → black-and-white bars.",
     params: [
       { name: 'scalex', default: 0.05, min: -1, max: 1, step: 0.01 },
@@ -4077,7 +4077,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.scry2,
     name: 'scry2',
     source: sourceForIdx(V.scry2),
-    formula: 'V_{216}(x, y) = (x, y)/d,\\; d = r_1\\,(r_2 + 1/w),\\; r_1, r_2 = \\text{loonie2 n-sided star+circle radii at }(x, y)',
+    formula: 'JWF_{117}(x, y) = (x, y)/d,\\; d = r_1\\,(r_2 + 1/w),\\; r_1, r_2 = \\text{loonie2 n-sided star+circle radii at }(x, y)',
     blurb: "dark-beam's scry2 — loonie2 (V105) star-polygon init combined with the V73 scry inversion. n-sided star + circle blend determines the local radius; final emission is `(x, y)/d` for `d = r₁·(r₂ + 1/w)`. Produces multi-armed concentric crystals.",
     params: [
       { name: 'sides',  default: 4,    min: 1, max: 50, step: 1 },
@@ -4089,7 +4089,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.ennepers2,
     name: 'ennepers2',
     source: sourceForIdx(V.ennepers2),
-    formula: 'V_{217}(x, y) = w\\,\\big(x(a^2 - d_{xy}/r^2 - c\\sqrt{|x|}),\\; y(b^2 - d_{xy}/r^2 - c\\sqrt{|y|})\\big),\\; d_{xy} = (ax)^2 - (by)^2,\\; r^2 = x^2 + y^2',
+    formula: 'JWF_{118}(x, y) = w\\,\\big(x(a^2 - d_{xy}/r^2 - c\\sqrt{|x|}),\\; y(b^2 - d_{xy}/r^2 - c\\sqrt{|y|})\\big),\\; d_{xy} = (ax)^2 - (by)^2,\\; r^2 = x^2 + y^2',
     blurb: "dark-beam's ennepers2 — 3-parameter variant of V152 ennepers (Enneper minimal surface fold). a/b/c control per-axis scale and a sqrt-of-coord absorption term; produces asymmetric Enneper deformations.",
     params: [
       { name: 'a', default: 1.0,    min: -3, max: 3, step: 0.05 },
@@ -4110,14 +4110,14 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.apollony,
     name: 'apollony',
     source: sourceForIdx(V.apollony),
-    formula: 'V_{218}: \\text{3-branch RNG selects one of }\\{(a_0, b_0),\\; \\text{Möbius-rotated }(f_{1x}, f_{1y})\\text{ by }\\pm 120°\\};\\; a_0/b_0 = \\text{Möbius image of }(x, y)\\text{ around }(1+\\sqrt{3}, 0)',
+    formula: 'JWF_{119}: \\text{3-branch RNG selects one of }\\{(a_0, b_0),\\; \\text{Möbius-rotated }(f_{1x}, f_{1y})\\text{ by }\\pm 120°\\};\\; a_0/b_0 = \\text{Möbius image of }(x, y)\\text{ around }(1+\\sqrt{3}, 0)',
     blurb: "Jesus Sosa's apollony (Paul Bourke source) — Apollonian gasket IFS. Each iter: compute a Möbius-style image of the input around the corner (1+√3, 0), then 3-way random branch picks one of the three leaf rotations (identity, +120°, −120°). Produces the canonical Apollonian gasket attractor (nested circles).",
   },
   {
     idx: V.circlecrop,
     name: 'circlecrop',
     source: sourceForIdx(V.circlecrop),
-    formula: 'V_{219}: \\text{if }|p-c| > r,\\; \\begin{cases} (0, 0)\\text{ (hide)} & \\text{zero}=1 \\\\ w\\,r_d(\\cos\\theta, \\sin\\theta) + c & \\text{zero}=0 \\end{cases};\\; \\text{else pass through}',
+    formula: 'JWF_{120}: \\text{if }|p-c| > r,\\; \\begin{cases} (0, 0)\\text{ (hide)} & \\text{zero}=1 \\\\ w\\,r_d(\\cos\\theta, \\sin\\theta) + c & \\text{zero}=0 \\end{cases};\\; \\text{else pass through}',
     blurb: "Xyrus02's circlecrop (Apophysis built-in). Disc clipper at (x, y) with radius `radius`. `zero=1`: outside the disc → hide (contributes nothing). `zero=0`: outside → wrap to disc edge with `scatter_area`-jittered radius. Inside the disc, points pass through.",
     params: [
       { name: 'radius',       default: 0.55, min: 0.1, max: 5, step: 0.05 },
@@ -4138,7 +4138,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.newton,
     name: 'newton',
     source: 'dc',  // newton emits DC basin color when dc_flag is set
-    formula: 'V_{220}(z, n) = z - \\frac{z^n - 1}{n\\,z^{n-1}}',
+    formula: 'P_{0}(z, n) = z - \\frac{z^n - 1}{n\\,z^{n-1}}',
     blurb: 'One Newton step on zⁿ − 1. When the xform\'s DC flag is set, each splat is colored by which root the post-step coordinate is nearest to — producing the iconic Newton-fractal tri-basin (n=3), tetra-basin (n=4), or hepta-basin (n=7) painting that palette-index renderers cannot match. Without the DC flag, ships as a pure position warp with strong convergence toward the n roots on the unit circle.',
     params: [
       { name: 'n', default: 3, min: 2, max: 8, step: 1 },
@@ -4174,7 +4174,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.blaschke,
     name: 'blaschke',
     source: 'novel',
-    formula: 'V_{221}(z, a) = z \\cdot \\frac{z - a}{1 - \\bar{a}\\,z}',
+    formula: 'P_{1}(z, a) = z \\cdot \\frac{z - a}{1 - \\bar{a}\\,z}',
     blurb: 'Single-zero Blaschke product (2-to-1 form). Two zeros — origin and the configurable complex point a in the unit disk — produce a 2-to-1 disk symmetry. The unit circle maps to itself; interior maps to interior. Move a around to rotate the symmetry pattern.',
     params: [
       { name: 'a_re', default: -0.75, min: -0.95, max: 0.95, step: 0.05 },
@@ -4205,7 +4205,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.cayley,
     name: 'cayley',
     source: 'novel',
-    formula: 'V_{222}(z, s) = \\frac{z - s\\,i}{z + s\\,i}',
+    formula: 'P_{2}(z, s) = \\frac{z - s\\,i}{z + s\\,i}',
     blurb: 'Cayley transform — the classical conformal map from the upper half-plane to the open unit disk. The s parameter scales the i offset; s=1 is the textbook form. Produces tightly-curled flow near the negative imaginary axis (the map\'s pole).',
     params: [
       { name: 's', default: 0.8, min: 0.1, max: 4.0, step: 0.1 },

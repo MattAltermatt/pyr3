@@ -29,7 +29,7 @@
 
 import { COLORS } from './ui-tokens';
 import { buildDropdown, buildToggle, buildButton } from './edit-primitives';
-import { V, VARIATION_NAMES, DC_VARIATION_SET } from './variations';
+import { V, VARIATION_NAMES, DC_VARIATION_SET, getDisplayLabel } from './variations';
 
 // #114 — per-variation descriptive tooltips for the picker. Adds the
 // human-readable explanation alongside the raw variation name, mostly
@@ -184,13 +184,19 @@ interface VariationEntry {
   idx: number;
   name: string;
   searchName: string;
+  displayLabel: string;
 }
 
 function buildEntries(): VariationEntry[] {
   const out: VariationEntry[] = [];
   for (const [name, idxRaw] of Object.entries(V)) {
     const idx = idxRaw as number;
-    out.push({ idx, name, searchName: name.toLowerCase() });
+    out.push({
+      idx,
+      name,
+      searchName: name.toLowerCase(),
+      displayLabel: getDisplayLabel(idx).toLowerCase(),
+    });
   }
   // Stable index order for the default cell layout.
   out.sort((a, b) => a.idx - b.idx);
@@ -509,7 +515,7 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     let visible = 0;
     for (const entry of entries) {
       const cell = cellByIdx.get(entry.idx)!;
-      const searchMatch = q === '' || entry.searchName.includes(q);
+      const searchMatch = q === '' || entry.searchName.includes(q) || entry.displayLabel.includes(q);
       const tabMatch = !favOnly || isFavorite(entry.idx);
       const match = searchMatch && tabMatch;
       cell.style.display = match ? '' : 'none';

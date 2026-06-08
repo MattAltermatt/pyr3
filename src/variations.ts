@@ -545,6 +545,19 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
 
+/** Convert an internal variation index (0..257) to its user-facing display label
+ *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
+ *  and P0..P37 (Pyre originals). */
+export function getDisplayLabel(idx: number): string {
+  if (idx <= 98) {
+    return `V${idx}`;
+  } else if (idx <= 219) {
+    return `JWF${idx - 99}`;
+  } else {
+    return `P${idx - 220}`;
+  }
+}
+
 /** #114 — variations whose RGB overrides the palette-indexed coloring per
  *  scatter. Used by genome.packXformInto to bake the per-xform dc_flag, and
  *  by edit-section-xforms to render the "(overridden by …)" annotation. */

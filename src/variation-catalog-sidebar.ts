@@ -11,7 +11,7 @@
 // All DOM construction goes through createElement + textContent — pyr3's
 // no-innerHTML invariant (PYR3-065) is enforced by a test.
 
-import { V } from './variations';
+import { V, getDisplayLabel } from './variations';
 import { sourceForIdx, type CatalogSource } from './variation-catalog-data';
 
 interface VariationRow {
@@ -96,7 +96,7 @@ export function mountSidebar(host: HTMLElement, opts: SidebarOptions): SidebarHa
   function searchMatches(r: VariationRow): boolean {
     if (!search) return true;
     const q = search.toLowerCase();
-    return r.name.toLowerCase().includes(q) || ('v' + r.idx).includes(q);
+    return r.name.toLowerCase().includes(q) || getDisplayLabel(r.idx).toLowerCase().includes(q);
   }
 
   function render(): void {
@@ -137,7 +137,7 @@ export function mountSidebar(host: HTMLElement, opts: SidebarOptions): SidebarHa
           );
           item.href = `#v${r.idx}-${r.name}`;
           item.dataset.idx = String(r.idx);
-          item.append(el('span', 'pyr3-cat-vnum', `V${r.idx}`));
+          item.append(el('span', 'pyr3-cat-vnum', getDisplayLabel(r.idx)));
           item.append(el('span', 'pyr3-cat-name', r.name));
           item.append(
             SOURCE_BADGE[r.source]
