@@ -80,6 +80,7 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     // spatial position instead of the palette index for any xform that
     // includes one of these. See VARIATION_TOOLTIPS and DC_DOCS_URL above.
     'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder, V.newton],
+    'Map projections': [V.mercator, V.lambert, V.mollweide, V.hammer, V.stereographic],
   };
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();

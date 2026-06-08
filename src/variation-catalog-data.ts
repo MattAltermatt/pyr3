@@ -54,7 +54,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.lambert_w) return 'novel'; // #133 — original pyr3 variations
+  if (idx >= V.blaschke && idx <= V.stereographic) return 'novel'; // #133/#134 — original pyr3 variations
   return 'jwf';
 }
 
@@ -4248,6 +4248,83 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     defaultWeight: 0.5,
     // No warpFn: iterative + the f64 oracle would have its own Halley loop;
     // catalog renders a "warp not applicable" note.
+  },
+  {
+    idx: V.mercator,
+    name: 'mercator',
+    source: 'novel',
+    formula: 'x\' = x, \\quad y\' = \\ln\\left(\\tan\\left(\\frac{\\pi}{4} + \\frac{y}{2}\\right)\\right)',
+    blurb: 'Standard conformal cylindrical projection. Treats (x,y) as (longitude, latitude) and applies the classic Mercator map projection. Vertical coordinates are clamped to avoid infinity at the poles.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const lat = Math.max(-1.5, Math.min(1.5, y));
+      const y_prime = Math.log(Math.abs(Math.tan(0.78539816 + lat * 0.5)) + 1e-6);
+      return [x, y_prime];
+    },
+  },
+  {
+    idx: V.lambert,
+    name: 'lambert',
+    source: 'novel',
+    formula: 'k = \\sqrt{\\frac{2}{1 + \\cos y \\cos x}}, \\quad x\' = k \\cos y \\sin x, \\quad y\' = k \\sin y',
+    blurb: 'Lambert azimuthal equal-area projection. Maps the sphere to a disk while perfectly preserving area, causing increasing angular distortion towards the edges.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const k = Math.sqrt(2.0 / (1.0 + Math.cos(y) * Math.cos(x) + 1e-6));
+      return [k * Math.cos(y) * Math.sin(x), k * Math.sin(y)];
+    },
+  },
+  {
+    idx: V.mollweide,
+    name: 'mollweide',
+    source: 'novel',
+    formula: '2\\theta + \\sin(2\\theta) = \\pi \\sin y, \\quad x\' = \\frac{2\\sqrt{2}}{\\pi} x \\cos\\theta, \\quad y\' = \\sqrt{2} \\sin\\theta',
+    blurb: 'Mollweide elliptical equal-area projection. An iconic map projection that trades off shape and angle accuracy for perfect global area proportion. The auxiliary angle is computed via Newton-Raphson iteration.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      let t = y;
+      const target = Math.PI * Math.sin(y);
+      for (let i = 0; i < 4; i++) {
+        const sin2 = Math.sin(2 * t);
+        const cos2 = Math.cos(2 * t);
+        const f = 2 * t + sin2 - target;
+        const df = 2 + 2 * cos2;
+        if (Math.abs(df) < 1e-6) break;
+        t -= f / df;
+      }
+      return [0.9003163 * x * Math.cos(t), 1.4142135 * Math.sin(t)];
+    },
+  },
+  {
+    idx: V.hammer,
+    name: 'hammer',
+    source: 'novel',
+    formula: 'z = \\sqrt{1 + \\cos y \\cos\\frac{x}{2}}, \\quad x\' = \\frac{2\\sqrt{2} \\cos y \\sin\\frac{x}{2}}{z}, \\quad y\' = \\frac{\\sqrt{2} \\sin y}{z}',
+    blurb: 'Hammer equal-area projection. Similar to Mollweide but reduces distortion at the outer meridians by projecting a hemisphere and then stretching it globally.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const z = Math.sqrt(1.0 + Math.cos(y) * Math.cos(x * 0.5) + 1e-6);
+      const x_prime = (2.828427 * Math.cos(y) * Math.sin(x * 0.5)) / z;
+      const y_prime = (1.4142135 * Math.sin(y)) / z;
+      return [x_prime, y_prime];
+    },
+  },
+  {
+    idx: V.stereographic,
+    name: 'stereographic',
+    source: 'novel',
+    formula: 'k = \\frac{2}{1 + \\cos y \\cos x}, \\quad x\' = k \\cos y \\sin x, \\quad y\' = k \\sin y',
+    blurb: 'Stereographic azimuthal projection. Conformal (preserves local angles and circles) but neither equal-area nor equidistant. Creates a beautiful global swirl radiating outward from the pole.',
+    params: [],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const k = 2.0 / (1.0 + Math.cos(y) * Math.cos(x) + 1e-6);
+      return [k * Math.cos(y) * Math.sin(x), k * Math.sin(y)];
+    },
   },
 ];
 

@@ -497,6 +497,14 @@ export const V = {
   cayley: 222,
   complex_gamma: 223,
   lambert_w: 224,
+  // #134 — Cartographic map-projection warps. Five confirmed-novel 0-param
+  // variations that treat (x,y) as (longitude, latitude) and apply classic
+  // global map projections.
+  mercator: 225,
+  lambert: 226,
+  mollweide: 227,
+  hammer: 228,
+  stereographic: 229,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

@@ -5346,6 +5346,56 @@ fn var_lambert_w(p: vec2f, w: f32, iters_in: f32) -> vec2f {
 }
 
 // ---------------------------------------------------------------------
+// #134 — Cartographic map-projection warps (V225–V229).
+// Five novel global map projections treating (x,y) as (longitude, latitude).
+// ---------------------------------------------------------------------
+
+// V225 mercator: standard conformal cylindrical projection.
+fn var_mercator(p: vec2f, w: f32) -> vec2f {
+  let lat = clamp(p.y, -1.5, 1.5);
+  let y_prime = log(abs(safe_tan(0.78539816 + lat * 0.5)) + 1e-6);
+  return w * vec2f(p.x, y_prime);
+}
+
+// V226 lambert: Lambert azimuthal equal-area projection.
+fn var_lambert(p: vec2f, w: f32) -> vec2f {
+  let k = sqrt(2.0 / (1.0 + safe_cos(p.y) * safe_cos(p.x) + 1e-6));
+  return w * vec2f(k * safe_cos(p.y) * safe_sin(p.x), k * safe_sin(p.y));
+}
+
+// V227 mollweide: Mollweide elliptical equal-area projection.
+// Auxiliary angle via Newton iterations.
+fn var_mollweide(p: vec2f, w: f32) -> vec2f {
+  var t = p.y;
+  let target_val = 3.14159265 * safe_sin(p.y);
+  for (var i: i32 = 0; i < 4; i = i + 1) {
+    let sin2 = safe_sin(2.0 * t);
+    let cos2 = safe_cos(2.0 * t);
+    let f = 2.0 * t + sin2 - target_val;
+    let df = 2.0 + 2.0 * cos2;
+    if (abs(df) < 1e-6) { break; }
+    t = t - f / df;
+  }
+  let x_prime = 0.9003163 * p.x * safe_cos(t); // 2 * sqrt(2) / pi
+  let y_prime = 1.4142135 * safe_sin(t);
+  return w * vec2f(x_prime, y_prime);
+}
+
+// V228 hammer: Hammer / Aitoff equal-area projection.
+fn var_hammer(p: vec2f, w: f32) -> vec2f {
+  let z = sqrt(1.0 + safe_cos(p.y) * safe_cos(p.x * 0.5) + 1e-6);
+  let x_prime = (2.828427 * safe_cos(p.y) * safe_sin(p.x * 0.5)) / z;
+  let y_prime = (1.4142135 * safe_sin(p.y)) / z;
+  return w * vec2f(x_prime, y_prime);
+}
+
+// V229 stereographic: Stereographic azimuthal projection.
+fn var_stereographic(p: vec2f, w: f32) -> vec2f {
+  let k = 2.0 / (1.0 + safe_cos(p.y) * safe_cos(p.x) + 1e-6);
+  return w * vec2f(k * safe_cos(p.y) * safe_sin(p.x), k * safe_sin(p.y));
+}
+
+// ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
 // loop and intentionally has NO `case 97u` entry — falls through to
@@ -5616,6 +5666,12 @@ fn apply_variation(
     case 222u: { return var_cayley(p, w, p0); }
     case 223u: { return var_complex_gamma(p, w, p0); }
     case 224u: { return var_lambert_w(p, w, p0); }
+    // #134 — Cartographic map-projection warps.
+    case 225u: { return var_mercator(p, w); }
+    case 226u: { return var_lambert(p, w); }
+    case 227u: { return var_mollweide(p, w); }
+    case 228u: { return var_hammer(p, w); }
+    case 229u: { return var_stereographic(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
