@@ -75,7 +75,7 @@ describe('Viewer bar interactions integration test (#180)', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await import('./main.ts');
+    await import('./main');
     await new Promise(resolve => setTimeout(resolve, 50));
     log.mockRestore();
     info.mockRestore();
