@@ -506,6 +506,7 @@ async function main(): Promise<void> {
 
     const { mountEditPage } = await import('./edit-mount');
     const { paletteSection } = await import('./edit-section-palette');
+    const { hslSection } = await import('./edit-section-hsl');
     const { curvesSection } = await import('./edit-section-curves');
     const { viewportSection } = await import('./edit-section-viewport');
     const { xformsSection } = await import('./edit-section-xforms');
@@ -533,6 +534,7 @@ async function main(): Promise<void> {
       sections: [
         renderSection,
         paletteSection,
+        hslSection,
         curvesSection,
         viewportSection,
         xformsSection,

@@ -43,6 +43,7 @@ export function pathLane(path: string): Lane {
   // 'fast' as default anyway, but the explicit form survives a future
   // change of the default.
   if (path === 'channelCurves' || path.startsWith('channelCurves.')) return 'fast';
+  if (path === 'hslAdjust' || path.startsWith('hslAdjust.')) return 'fast';
   return 'fast';
 }
 
@@ -54,6 +55,7 @@ export interface StateChange {
 export type SectionKey =
   | 'palette'
   | 'curves'
+  | 'hsl'
   | 'viewport'
   | 'xforms'
   | 'final'
@@ -98,6 +100,7 @@ export function createEditState(genome: Genome, seed: number): EditState {
     sectionCollapse: {
       palette: true,
       curves: true,
+      hsl: true,
       viewport: true,
       xforms: true,
       final: true,
@@ -310,6 +313,7 @@ export const SECTION_COLLAPSE_KEY = 'pyr3.editor.sectionCollapse';
 const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
   palette: true,
   curves: true,
+  hsl: true,
   viewport: true,
   xforms: true,
   final: true,
