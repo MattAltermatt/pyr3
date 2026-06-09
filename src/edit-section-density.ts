@@ -99,8 +99,8 @@ export const densitySection: SectionMount = {
     presetStrip.style.gap = '4px';
     presetStrip.style.marginBottom = '8px';
     presetStrip.title =
-      'Tonemap presets — apply five values at once '
-      + '(gamma · gammaThreshold · vibrancy · brightness · contrast).\n'
+      'Tonemap presets — apply four values at once '
+      + '(gamma · gammaThreshold · vibrancy · brightness).\n'
       + 'Section header chip shows the current preset; * = manually nudged.';
 
     interface PresetBtnHandle {
