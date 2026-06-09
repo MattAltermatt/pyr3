@@ -26,6 +26,7 @@
     "bundle:cli": "node scripts/bundle-cli.mjs",
     "build:cli": "node scripts/build-cli.mjs",
     "smoke:cli": "node scripts/smoke-bundled-cli.mjs",
+    "test:serve": "VITEST_INCLUDE_SERVE=1 vitest run bin/serve/serve-integration.test.ts",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
     "serve": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-serve.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",

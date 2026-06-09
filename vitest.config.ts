@@ -8,6 +8,9 @@ const includeParity = process.env.VITEST_INCLUDE_PARITY === '1';
 const includeParityFeBeFull = process.env.VITEST_INCLUDE_PARITY_FE_BE === '1';
 const includeParityFeBeSmoke = process.env.VITEST_INCLUDE_PARITY_FE_BE_SMOKE === '1';
 const includeParityFeBe = includeParityFeBeFull || includeParityFeBeSmoke;
+// #201 P0 Task 8 — `pyr3 serve` integration test spawns the binary and
+// requires a Dawn-node GPU. Gated; pre-release only.
+const includeServe = process.env.VITEST_INCLUDE_SERVE === '1';
 
 // Mirror vite.config's __PYR3_VERSION__ + __BUILD_DATE__ defines so any test
 // that touches code referencing those build constants resolves them (vitest
@@ -33,6 +36,7 @@ export default defineConfig({
       '**/.claude/**',
       ...(includeParity ? [] : ['src/parity.test.ts']),
       ...(includeParityFeBe ? [] : ['src/parity-fe-be.test.ts']),
+      ...(includeServe ? [] : ['bin/serve/serve-integration.test.ts']),
     ],
   },
 });
