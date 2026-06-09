@@ -34,8 +34,9 @@ import {
 import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
 import { openRenderProgressModal } from './render-progress-modal';
 import { parsePreviewOverride } from './load-intent';
-import { genomeToJson, genomeFromJson } from './serialize';
+import { genomeToJson } from './serialize';
 import { injectPngTextChunk } from './png-text-chunk';
+import { load } from './loader';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { createSlowRenderNudge, type SlowRenderNudgeHandle } from './edit-slow-render-nudge';
@@ -685,26 +686,32 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   function handleOpenFile(): void {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pyr3.json,.json,application/json';
+    // #196 — accept .png so a saved pyr3 PNG (carrying the genome as a tEXt
+    // chunk written in #123) can round-trip back into the editor. Delegates
+    // to the shared loader (src/loader.ts) which handles PNG / JSON / flame
+    // XML uniformly. Foreign PNGs (no `pyr3` chunk) throw a clear "no pyr3
+    // metadata" message that surfaces via the toast below.
+    input.accept = '.pyr3.json,.json,application/json,.png,image/png';
     input.style.display = 'none';
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
       if (!file) return;
       try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        const genome = genomeFromJson(parsed);
+        const result = await load(file);
+        const genome = result.genome;
         // Open-file PRESERVES the file's nick (or leaves blank when absent).
         // Only the Reroll path stamps defaultNick (matches the cold-start
         // policy above).
         const prevSize = state.genome.size;
         const prevQuality = state.genome.quality;
         applyEditorDefaults(genome);
-        // If the parsed file doesn't define size / quality, preserve the active ones.
-        if (parsed.size === undefined && prevSize) {
+        // If the loaded genome doesn't define size / quality, preserve the
+        // active ones. (PNG-embedded genomes always carry both; only legacy
+        // hand-written JSON fragments might omit them.)
+        if (genome.size === undefined && prevSize) {
           genome.size = { ...prevSize };
         }
-        if (parsed.quality === undefined && prevQuality !== undefined) {
+        if (genome.quality === undefined && prevQuality !== undefined) {
           genome.quality = prevQuality;
         }
         applyNewGenome(genome);
