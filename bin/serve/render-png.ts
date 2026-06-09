@@ -28,16 +28,18 @@ export interface RenderProgress {
   samples: number;
 }
 
-// Server-side chunking is purely for progress events + cooperative
-// cancellation — there's no rAF to yield to. The browser orchestrator
-// uses tiny 4M-sample chunks for UI responsiveness; on the server, that
-// strategy wastes ~50× wall-clock by draining the GPU between every
-// dispatch (#201 Task 10 found 4K q=100 ETA of ~23min vs ~30s on
-// `npm run render`). Target ~10 progress events total — chunks scale
-// with the job — and only drain the queue every DRAIN_EVERY chunks.
-const TARGET_PROGRESS_EVENTS = 12;
-const MIN_SAMPLES_PER_CHUNK = 8_000_000;
-const DRAIN_EVERY = 4;
+// Server-side chunking exists purely for progress events + cooperative
+// cancellation — there's no rAF to yield to. The browser uses tiny
+// chunks for UI responsiveness; on the server, that wastes GPU
+// throughput hard.
+//
+// CRITICAL: chunks must shrink `itersPerWalker`, NOT `walkers`. Each
+// iterate() dispatch runs walkers in parallel on the GPU; the chaos
+// kernel saturates at ~TARGET_WALKERS (1024). Shrinking walkers leaves
+// most of the GPU idle — the bug behind #201's first perf miss (4K
+// q=100 took 50s with 86-walker chunks vs 7s with full 1024-walker
+// dispatches; the browser equivalent is ~13s).
+const TARGET_PROGRESS_EVENTS = 4;
 
 export class AbortedError extends Error {
   constructor() {
@@ -123,22 +125,15 @@ export async function renderGenomeToPng(
 
   const { renderer, texture } = ensureRenderer(device, width, height, oversample, filterRadius);
 
-  const targetSamples = Math.round(spec.quality * width * height);
   const dispatch = computeDispatch(spec.quality, width, height);
-  // Sample budget per chunk: scale with the job so we always emit roughly
-  // TARGET_PROGRESS_EVENTS progress ticks, but never go under
-  // MIN_SAMPLES_PER_CHUNK (tiny jobs).
-  const samplesBudget = Math.max(
-    MIN_SAMPLES_PER_CHUNK,
-    Math.ceil(targetSamples / TARGET_PROGRESS_EVENTS),
-  );
-  const walkersPerChunk = Math.max(1, Math.min(
-    dispatch.dispatchWalkers,
-    Math.ceil(samplesBudget / dispatch.dispatchIters),
-  ));
-  const itersPerChunk = dispatch.dispatchIters;
-  const samplesPerChunk = walkersPerChunk * itersPerChunk;
-  const totalChunks = Math.max(1, Math.ceil(targetSamples / samplesPerChunk));
+  // Split work over a small number of chunks by reducing iters per
+  // walker (NOT walker count). Each chunk runs the full
+  // dispatch.dispatchWalkers (≈ TARGET_WALKERS) in parallel.
+  const totalChunks = Math.max(1, Math.min(TARGET_PROGRESS_EVENTS, dispatch.dispatchIters));
+  const itersPerChunk = Math.ceil(dispatch.dispatchIters / totalChunks);
+  const walkers = dispatch.dispatchWalkers;
+  const samplesPerChunk = walkers * itersPerChunk;
+  const targetSamples = walkers * itersPerChunk * totalChunks;
 
   renderer.reset(genome);
 
@@ -148,18 +143,16 @@ export async function renderGenomeToPng(
     renderer.iterate({
       genome,
       seed: seedBase + i,
-      walkers: walkersPerChunk,
+      walkers,
       itersPerWalker: itersPerChunk,
       walkerJitter,
     });
     samplesAccumulated += samplesPerChunk;
-    // Drain occasionally so cancel sees actual GPU progress and the
-    // progress event reflects real wall-clock state — but NOT every
-    // chunk: the per-dispatch barrier on Dawn-node is what made the
-    // browser-style 4M chunks ~50× slower than `npm run render`.
-    if ((i + 1) % DRAIN_EVERY === 0 || i + 1 === totalChunks) {
-      await device.queue.onSubmittedWorkDone();
-    }
+    // Drain once per chunk so cancel sees actual GPU progress and the
+    // progress event reflects real wall-clock state. With only ~4
+    // chunks the per-drain stall is negligible compared to the dispatch
+    // work it gates.
+    await device.queue.onSubmittedWorkDone();
     onProgress({
       chunk: i + 1,
       total: totalChunks,
