@@ -79,17 +79,28 @@ function hasSeaFuse(nodePath) {
  */
 /**
  * Walk a directory tree and return { 'viewer/<rel-path>': '<abs-path>' }
- * suitable for spreading into the SEA `assets` map. Skips `.map` files —
- * source maps inflate the binary and aren't load-bearing for the served
- * viewer.
+ * suitable for spreading into the SEA `assets` map. Skips:
+ *   - .map files (source maps don't ship)
+ *   - dist/showcase, dist/chunks, dist/variation-thumbs — heavy deploy
+ *     artifacts (200+ MB combined) that the served viewer fetches lazily
+ *     from gh-pages. Bundling them would push the SEA blob past
+ *     postject's working size; the viewer's existing 404 fallbacks for
+ *     these surfaces keep `pyr3 serve` functional without them.
  */
+const VIEWER_ASSET_SKIP_DIRS = new Set(['showcase', 'chunks', 'variation-thumbs']);
+
 function collectViewerAssets(distDir) {
   const out = {};
   function walk(dir, relBase) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
       const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+      // Skip dotfiles + dot-dirs entirely. The user's gh-pages deploy
+      // worktree leaves a `dist/.git` (~400 MB pack) — bundling it would
+      // balloon the SEA blob past postject's working size.
+      if (entry.name.startsWith('.')) continue;
       if (entry.isDirectory()) {
+        if (!relBase && VIEWER_ASSET_SKIP_DIRS.has(entry.name)) continue;
         walk(full, rel);
       } else if (entry.isFile()) {
         if (entry.name.endsWith('.map')) continue;
