@@ -113,9 +113,16 @@ export interface EditPageHandle {
   /** #108 — true when there's a future history entry to redo into. */
   canRedo(): boolean;
   /** Programmatic state mutators — let a host wire the top bar's editable
-   *  flame name / nick back into the editor state. */
+   *  flame name / nick into the editor's save-only metadata defaults.
+   *  #192 + #194 — these write to per-browser save defaults (sticky across
+   *  reroll / open / transfer) and NEVER mutate state.genome.{name,nick}
+   *  (which carries the LOADED flame's identity). */
   setName(name: string): void;
   setNick(nick: string): void;
+  /** #192 — current save-only metadata defaults. Read once at bar-mount time
+   *  to seed the bar's name/by input values; never changes from outside this
+   *  module after that. */
+  getSaveDefaults(): { flameName: string; flameNick: string };
   /** #103 Phase 6 Task 6.2 — top-bar action callbacks. The editor's chrome
    *  action row mirrors the viewer's pattern (📂 Open · 🎲 Reroll · 📐 Size ▾ ·
    *  QUALITY · 🧬 Save Flame · 💾 Save Render); these methods give the host
@@ -244,6 +251,46 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // at Save Render time.
   let previewCfg: PreviewRenderConfig = loadPreviewConfig();
   let renderModeBarHandle: RenderModeBarHandle | null = null;
+
+  // #192 + #194 — save-only metadata overrides. Sticky across reroll / file
+  // open / viewer transfer; ONLY mutated by user typing in the bar's name/by
+  // inputs. Decoupled from state.genome.{name,nick} (which now carry the
+  // LOADED flame's metadata exclusively, never touched by typing). On save,
+  // these override the saved genome's name/nick fields. Persisted per-browser
+  // via localStorage so a session-fresh open inherits the user's last typed
+  // save defaults.
+  const SAVE_DEFAULTS_KEY = 'pyr3.edit.save-defaults';
+  function loadSaveDefaults(): { flameName: string; flameNick: string } {
+    try {
+      const raw = globalThis.localStorage?.getItem(SAVE_DEFAULTS_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && typeof p === 'object' && p._v === 1) {
+          return {
+            flameName: typeof p.flameName === 'string' ? p.flameName : '',
+            flameNick: typeof p.flameNick === 'string' ? p.flameNick : '',
+          };
+        }
+      }
+    } catch { /* fall through to default */ }
+    // Migration: pre-#192 stored the nick under `pyr3.edit.nick`. Honor it
+    // when the new key is empty so users don't lose their stored author.
+    let migratedNick = '';
+    try { migratedNick = globalThis.localStorage?.getItem('pyr3.edit.nick') ?? ''; }
+    catch { migratedNick = ''; }
+    return { flameName: '', flameNick: migratedNick };
+  }
+  function persistSaveDefaults(): void {
+    try {
+      globalThis.localStorage?.setItem(
+        SAVE_DEFAULTS_KEY,
+        JSON.stringify({ ...saveDefaults, _v: 1 }),
+      );
+    } catch (err) {
+      console.warn('pyr3-edit: persistSaveDefaults failed', err);
+    }
+  }
+  const saveDefaults = loadSaveDefaults();
 
   function notifyStateChange(): void {
     opts.onStateChange?.(state);
@@ -732,8 +779,21 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // to slugify(state.genome.name) when the name is a plain literal. The
   // genome.name field itself stays untouched (we want re-opens to show the
   // editable template, not a frozen resolved string).
+  /** #192 — the effective save name: the user's typed save default (sticky)
+   *  takes precedence; the loaded flame's name is the fallback when the user
+   *  hasn't overridden. Same fallback shape for the nick. */
+  function effectiveSaveName(): string {
+    return saveDefaults.flameName.trim() !== ''
+      ? saveDefaults.flameName
+      : (state.genome.name ?? '');
+  }
+  function effectiveSaveNick(): string | undefined {
+    if (saveDefaults.flameNick.trim() !== '') return saveDefaults.flameNick;
+    return state.genome.nick;
+  }
+
   function resolveCurrentFilename(): string {
-    const template = state.genome.name;
+    const template = effectiveSaveName();
     if (!hasTemplate(template)) return slugify(template);
     const resolved = resolveTemplate(template, {
       genome: state.genome,
@@ -829,7 +889,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       await opts.device.queue.onSubmittedWorkDone();
 
       const filename = resolveCurrentFilename();
-      const template = state.genome.name;
+      const template = effectiveSaveName();
       await new Promise<void>((resolve, reject) => {
         canvas.toBlob(async (blob) => {
           if (!blob) {
@@ -838,11 +898,13 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
           }
           // #123 — embed the source genome as a `pyr3`-keyed tEXt chunk so
           // the saved PNG is self-describing and round-trips via a future
-          // PNG-import reader.
+          // PNG-import reader. #192 — apply save-only name/nick overrides
+          // before serialize so the embedded JSON carries the user's typed
+          // save defaults, not the loaded flame's identity.
           let finalBlob: Blob = blob;
           try {
             const bytes = new Uint8Array(await blob.arrayBuffer());
-            const pyr3Json = JSON.stringify(genomeToJson(state.genome));
+            const pyr3Json = JSON.stringify(genomeToJson(genomeForSerialize()));
             const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
             // Cast to BlobPart: TS strict-mode types Uint8Array<ArrayBufferLike>
             // (the runtime union includes SharedArrayBuffer) which Blob's
@@ -910,17 +972,32 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     }
   }
 
+  /** #192 — return a clone of the live genome with name/nick overridden by
+   *  the user's save-only typed defaults when they're set. Used at every
+   *  serialize-time boundary (Save Flame, Save Render PNG metadata) so the
+   *  saved artifact carries the save defaults, not the loaded flame's
+   *  identity. The live state.genome is NEVER mutated by this — typing only
+   *  affects saveDefaults. */
+  function genomeForSerialize(): Genome {
+    const overrideNick = effectiveSaveNick();
+    return {
+      ...state.genome,
+      name: effectiveSaveName(),
+      nick: overrideNick,
+    };
+  }
+
   function handleSaveFile(): void {
     try {
-      // #104 — note: genomeToJson writes state.genome.name unchanged (the
-      // literal template), so re-opens preserve editability. The filename
-      // uses the resolved form.
-      const json = JSON.stringify(genomeToJson(state.genome), null, 2);
+      // #104 — note: genomeToJson writes the effective save name unchanged
+      // (the literal template), so re-opens preserve editability. The
+      // filename uses the resolved form.
+      const json = JSON.stringify(genomeToJson(genomeForSerialize()), null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const template = state.genome.name;
+      const template = effectiveSaveName();
       a.download = `${resolveCurrentFilename()}.pyr3.json`;
       document.body.appendChild(a);
       a.click();
@@ -995,16 +1072,27 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   return {
     state,
     setName(name: string): void {
-      state.genome.name = name;
-      // #103 Phase 6 Task 6.3 — programmatic mutators bypass onPathChange (they
-      // talk to the scheduler directly), so also schedule the WIP persist here.
-      schedulePersist(state.genome);
-      scheduler.schedule({ lane: pathLane('name'), path: 'name' });
+      // #192 + #194 — name is save-only metadata. Write to the sticky
+      // saveDefaults (persisted per-browser), NOT to state.genome.name (which
+      // carries the LOADED flame's name and is shown in the read-only chip).
+      // We do NOT schedule a re-iterate: name has zero render effect — the
+      // scheduler.schedule path used to fire here and was the root of the
+      // typing-brightens-render bug (#194).
+      saveDefaults.flameName = name;
+      persistSaveDefaults();
+      // Echo the state change so the bar's filename-preview tail re-ticks to
+      // the new effective save name.
+      notifyStateChange();
     },
     setNick(nick: string): void {
-      state.genome.nick = nick || undefined;
-      schedulePersist(state.genome);
-      scheduler.schedule({ lane: pathLane('nick'), path: 'nick' });
+      // #192 + #194 — same save-only semantics as setName above. The author
+      // nick is now sticky and never triggers a re-iterate.
+      saveDefaults.flameNick = nick;
+      persistSaveDefaults();
+      notifyStateChange();
+    },
+    getSaveDefaults(): { flameName: string; flameNick: string } {
+      return { flameName: saveDefaults.flameName, flameNick: saveDefaults.flameNick };
     },
     // #103 Phase 6 Task 6.2 — top-bar action callbacks. These reuse the
     // editor's existing internal handlers / scheduling shapes; the bar is

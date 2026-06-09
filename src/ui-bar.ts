@@ -172,10 +172,21 @@ let stylesInjected = false;
  *  the version chip moved to /about; no longer shown in the top bar.) */
 export interface EditBarOpts {
   webgpu: WebGPUStatus;
-  /** Fires when the user edits the flame-name input. */
+  /** Fires when the user edits the flame-name input.
+   *  #192 — the name input is save-only metadata: typing here updates the
+   *  editor's sticky save defaults, NOT the loaded flame's `state.genome.name`
+   *  (which is shown read-only in the loaded-source chip). */
   onNameChange: (name: string) => void;
-  /** Fires when the user edits the nick input. Empty string → clear. */
+  /** Fires when the user edits the nick input. Empty string → clear.
+   *  #192 — same save-only semantics as onNameChange above. */
   onNickChange: (nick: string) => void;
+  /** #192 — initial values for the name/by inputs at mount time. The editor
+   *  reads its persisted save defaults from localStorage and passes them
+   *  here. Inputs are sticky across reroll / file open / viewer transfer; the
+   *  loaded flame's metadata flows through `setMeta` into the read-only chip
+   *  instead. */
+  initialName?: string;
+  initialNick?: string;
   /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
   onTabClick: (surface: TabSurface) => void;
   /** #103 Phase 6 Task 6.2 — action row callbacks. The editor's action row
@@ -252,12 +263,17 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
 
   // Flame name — editable text input styled to feel like the viewer's bold
   // metaName label. width:auto so it grows with the typed name.
+  // #192 — save-only metadata: seeded from the editor's persisted save
+  // defaults at mount time; sticky across reroll / file open / viewer
+  // transfer. setMeta no longer overwrites this — the loaded flame's name
+  // surfaces in the read-only loaded-source chip below.
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.className = 'pyr3-bar-name-input';
   // Spec default: empty value reads as 'untitled' via the placeholder. Hover
   // and focus expand the dashed underline to a solid amber line (CSS).
   nameInput.placeholder = 'untitled';
+  nameInput.value = opts.initialName ?? '';
 
   // #104 — template preview tail. Hidden by default; shown when the input
   // contains a {placeholder}. computePreview is owned by main.ts (it holds
@@ -281,14 +297,28 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   });
 
   // Nick — small, after the name with "by" prefix. Always rendered; empty
-  // value reads as 'you' via the placeholder.
+  // value reads as 'you' via the placeholder. Same #192 save-only semantics
+  // as nameInput above.
   const nickPrefix = el('span', 'pyr3-bar-meta-author');
   nickPrefix.textContent = 'by';
   const nickInput = document.createElement('input');
   nickInput.type = 'text';
   nickInput.className = 'pyr3-bar-nick-input';
   nickInput.placeholder = 'you';
+  nickInput.value = opts.initialNick ?? '';
   nickInput.addEventListener('input', () => opts.onNickChange(nickInput.value));
+
+  // #192 — read-only loaded-source chip. Shows the LOADED flame's
+  // metadata as visible context — separate from the save-only inputs
+  // above. Hidden when there's no loaded source identity (cold start +
+  // fresh reroll with no name/nick yet).
+  const loadedSourceChip = el('span', 'pyr3-bar-loaded-source');
+  loadedSourceChip.style.display = 'none';
+  loadedSourceChip.style.fontSize = '11px';
+  loadedSourceChip.style.opacity = '0.7';
+  loadedSourceChip.style.marginLeft = '6px';
+  loadedSourceChip.style.fontStyle = 'italic';
+  loadedSourceChip.title = 'The currently loaded flame — typing in the name/by fields above does NOT overwrite this; those edits become the save-time metadata.';
 
   // Dimensions — read-only label · `1920×1080` or `auto`.
   const dimsSep = sep();
@@ -315,6 +345,7 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     previewEl,
     templatesLink,
     nickPrefix, nickInput,
+    loadedSourceChip,
     dimsSep, dims,
   );
 
@@ -499,13 +530,21 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
 
   return {
     setMeta(meta) {
-      // Only overwrite the input if the user isn't currently focused there
-      // (otherwise typing gets clobbered by a state-change echo).
-      if (document.activeElement !== nameInput) {
-        nameInput.value = meta.flameName || '';
-      }
-      if (document.activeElement !== nickInput) {
-        nickInput.value = meta.authorNick ?? '';
+      // #192 — the loaded flame's name/by surface in the read-only chip
+      // below the inputs. The save-only inputs themselves (nameInput +
+      // nickInput) are NOT touched here — they're sticky across reroll /
+      // file open / viewer transfer per the new save-only contract.
+      const loadedName = meta.flameName?.trim() ?? '';
+      const loadedNick = meta.authorNick?.trim() ?? '';
+      if (loadedName === '' && loadedNick === '') {
+        loadedSourceChip.style.display = 'none';
+        loadedSourceChip.textContent = '';
+      } else {
+        loadedSourceChip.style.display = '';
+        const parts: string[] = [];
+        if (loadedName !== '') parts.push(loadedName);
+        if (loadedNick !== '') parts.push(`by ${loadedNick}`);
+        loadedSourceChip.textContent = `📂 ${parts.join(' · ')}`;
       }
       // #104 — genome state change (open / reroll / panel edit / etc.) can
       // alter what a template resolves to, so re-tick the preview.

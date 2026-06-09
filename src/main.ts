@@ -458,30 +458,42 @@ async function main(): Promise<void> {
       computeFilenamePreview(template: string): string | null;
     } | null = null;
 
-    // Persisted author nick — read on entry, written on every change so a
-    // session-fresh genome (random seed / reroll) inherits the user's saved
-    // nick automatically.
-    const NICK_STORAGE_KEY = 'pyr3.edit.nick';
-    const savedNick = (() => {
-      try { return localStorage.getItem(NICK_STORAGE_KEY) || ''; }
-      catch { return ''; }
-    })();
-    const persistNick = (nick: string): void => {
+    // #192 — read the editor's persisted save defaults so the bar's name/by
+    // inputs can be seeded with the user's last-typed values at mount. The
+    // editor owns the canonical storage at `pyr3.edit.save-defaults` and
+    // migrates the pre-#192 `pyr3.edit.nick` key on first read. Persistence
+    // on every input change happens entirely on the editor side; main.ts no
+    // longer mirrors to localStorage here.
+    const initialSaveDefaults = (() => {
       try {
-        if (nick) localStorage.setItem(NICK_STORAGE_KEY, nick);
-        else localStorage.removeItem(NICK_STORAGE_KEY);
-      } catch { /* localStorage disabled — silently no-op */ }
-    };
+        const raw = localStorage.getItem('pyr3.edit.save-defaults');
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (p && typeof p === 'object' && p._v === 1) {
+            return {
+              flameName: typeof p.flameName === 'string' ? p.flameName : '',
+              flameNick: typeof p.flameNick === 'string' ? p.flameNick : '',
+            };
+          }
+        }
+      } catch { /* fall through */ }
+      // Migration: pre-#192 nick lived under `pyr3.edit.nick`.
+      let migratedNick = '';
+      try { migratedNick = localStorage.getItem('pyr3.edit.nick') ?? ''; }
+      catch { migratedNick = ''; }
+      return { flameName: '', flameNick: migratedNick };
+    })();
+    // Defaults reused below for editor cold-start (legacy savedNick API).
+    const savedNick = initialSaveDefaults.flameNick;
 
     const { mountEditBar } = await import('./ui-bar');
     const barRoot = document.getElementById('pyr3-bar')!;
     const editBar = mountEditBar(barRoot, {
       webgpu,
       onNameChange: (name) => editorRef?.setName(name),
-      onNickChange: (nick) => {
-        editorRef?.setNick(nick);
-        persistNick(nick);
-      },
+      onNickChange: (nick) => editorRef?.setNick(nick),
+      initialName: initialSaveDefaults.flameName,
+      initialNick: initialSaveDefaults.flameNick,
       // #103 Phase 6 Task 6.2 — action row callbacks. Each one routes into an
       // existing editor handler (handleReroll / handleOpenFile /
       // handleSaveFile / handleRenderPng) or a new setter exposed on
@@ -557,11 +569,11 @@ async function main(): Promise<void> {
         if (state.genome.quality) {
           editBar.setQuality(state.genome.quality);
         }
-        // Mirror panel-internal nick edits to localStorage too (the bar's
-        // onNickChange path covers the bar input; this covers the panel's
-        // identity-card nick input).
-        const currentNick = state.genome.nick ?? '';
-        persistNick(currentNick);
+        // #192 — the loaded flame's nick (state.genome.nick) is now
+        // read-only at this layer: it surfaces in the bar's loaded-source
+        // chip via setMeta. The bar's nick input writes only to the
+        // editor's save-only defaults (persisted by the editor itself).
+        // No localStorage mirror here.
       },
       onProgressShow: (label) => editBar.showProgress(label),
       onProgressHide: () => editBar.hideProgress(),
