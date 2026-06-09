@@ -6039,6 +6039,109 @@ fn var_billiard_polygon(p: vec2f, w: f32, sides_val: f32, radius: f32, step: f32
 
 
 
+// =====================================================================
+// #138 — Relativistic & physical-field warps (V262, V264, V265)
+//
+// Three novel physics-motivated variations: a Lorentz boost in (x,y)
+// (hyperbolic rotation, the Minkowski analog of swirl), a classical
+// electric-dipole field warp, and an N-magnet pendulum whose nearest-
+// magnet basin index drives a DC color override (second DC-flag synergy
+// after #133 newton). All angle-bounded trig uses safe_*; inverse-cube
+// singularities are regularised with an additive eps in dot(r,r) so a
+// walker that lands near a charge / magnet core gets a bounded (large
+// but finite) deflection rather than a NaN — the chaos kernel's bad-
+// value retry catches extreme escapes downstream.
+// =====================================================================
+
+// V262 — lorentz_boost
+// Hyperbolic rotation by rapidity φ along an axis at `angle`:
+// rotate p into the boost frame, apply (cosh φ, sinh φ) in (x',ct'),
+// rotate back. Reduces to identity at rapidity=0, swirl-like shear as φ
+// grows. cosh/sinh are not on the Dawn f32 cliff (not periodic), but
+// will overflow f32 for |φ| ≳ 88; the catalog default clamps below that.
+fn var_lorentz_boost(p: vec2f, w: f32, rapidity: f32, angle: f32) -> vec2f {
+  let cos_t = safe_cos(angle);
+  let sin_t = safe_sin(angle);
+  // Rotate into boost frame.
+  let rx =  p.x * cos_t + p.y * sin_t;
+  let ry = -p.x * sin_t + p.y * cos_t;
+  let ch = cosh(rapidity);
+  let sh = sinh(rapidity);
+  // Minkowski hyperbolic rotation.
+  let xp = rx * ch + ry * sh;
+  let yp = rx * sh + ry * ch;
+  // Rotate back to world frame.
+  let x_out = xp * cos_t - yp * sin_t;
+  let y_out = xp * sin_t + yp * cos_t;
+  return w * vec2f(x_out, y_out);
+}
+
+// V264 — field_dipole
+// Classical electric dipole: two opposite ±charge poles offset by
+// ±separation/2 along (cos angle, sin angle). Walker is stepped along
+// the local E-field: E = q · (r_pos/|r_pos|³ − r_neg/|r_neg|³).
+// Eps=1e-4 regularises the 1/r³ singularity at the poles (force bounded
+// to ~1e6 per unit charge); larger walker displacements get caught by
+// the chaos kernel's bad-value retry.
+fn var_field_dipole(p: vec2f, w: f32, charge: f32, separation: f32, step: f32, angle: f32) -> vec2f {
+  let d = separation * 0.5;
+  let dir = vec2f(safe_cos(angle), safe_sin(angle));
+  let c_pos =  d * dir;
+  let c_neg = -d * dir;
+  let r_pos = p - c_pos;
+  let r_neg = p - c_neg;
+  let d_pos3 = pow(dot(r_pos, r_pos) + 1e-4, 1.5);
+  let d_neg3 = pow(dot(r_neg, r_neg) + 1e-4, 1.5);
+  let E = charge * (r_pos / d_pos3 - r_neg / d_neg3);
+  return w * (p + step * E);
+}
+
+// V265 — magnetic_pendulum (position warp)
+// N magnets arranged on a ring of `radius`. Walker is pulled by sum of
+// inverse-square attractions and decayed by `damping·p` (linear restoring
+// force toward origin — the pendulum-arm gravity component). Walkers
+// settle into one of N basins; var_magnetic_pendulum_color emits the
+// nearest-magnet index as a DC color override.
+fn var_magnetic_pendulum_pos(p: vec2f, w: f32, magnets: f32, radius: f32, strength: f32, damping: f32) -> vec2f {
+  let N = u32(clamp(magnets, 3.0, 6.0));
+  let inv_N = 1.0 / f32(N);
+  var F = vec2f(0.0);
+  for (var i = 0u; i < N; i = i + 1u) {
+    let theta = 6.283185307179586 * f32(i) * inv_N;
+    let M = radius * vec2f(safe_cos(theta), safe_sin(theta));
+    let r = M - p;
+    let dist2 = dot(r, r) + 1e-4;
+    F = F + (r / pow(dist2, 1.5));
+  }
+  return w * (p + strength * F - damping * p);
+}
+
+// V265 — magnetic_pendulum DC color mapping helper
+// Returns a saturated hue indexed by which of the N magnets is closest
+// to p — the per-walker basin assignment. Hue spans the full wheel so
+// each basin gets a visually distinct colour even at N=3. Lightness
+// 0.55 matches the dc_perlin / dc_cylinder / var_newton_color look.
+fn var_magnetic_pendulum_color(p: vec2f, magnets: f32, radius: f32) -> vec3f {
+  let N = u32(clamp(magnets, 3.0, 6.0));
+  let inv_N = 1.0 / f32(N);
+  var min_dist2 = 1e30;
+  var closest_idx = 0u;
+  for (var i = 0u; i < N; i = i + 1u) {
+    let theta = 6.283185307179586 * f32(i) * inv_N;
+    let M = radius * vec2f(safe_cos(theta), safe_sin(theta));
+    let r = M - p;
+    let dist2 = dot(r, r);
+    if (dist2 < min_dist2) {
+      min_dist2 = dist2;
+      closest_idx = i;
+    }
+  }
+  // Spread hue evenly across the wheel; full saturation + bright value
+  // so the basin map reads cleanly against the palette-darkened
+  // surroundings.
+  let hue = f32(closest_idx) * inv_N;
+  return hsl_to_rgb(vec3f(hue, 1.0, 0.55));
+}
 
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
@@ -6353,6 +6456,9 @@ fn apply_variation(
     case 259u: { return var_billiard_stadium(p, w, p0, p1, p2, p3); }
     case 260u: { return var_billiard_sinai(p, w, p0, p1, p2, p3); }
     case 261u: { return var_billiard_polygon(p, w, p0, p1, p2, p3); }
+    case 262u: { return var_lorentz_boost(p, w, p0, p1); }
+    case 264u: { return var_field_dipole(p, w, p0, p1, p2, p3); }
+    case 265u: { return var_magnetic_pendulum_pos(p, w, p0, p1, p2, p3); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }
@@ -6536,6 +6642,10 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
           // the nearest root for the basin hue.
           dc_rgb_override = var_newton_color(pa_mut, v.z);
           dc_override_active = true;
+        } else if (var_idx == 265u) {
+          // magnetic_pendulum params: magnets (v.z), radius (v.w).
+          dc_rgb_override = var_magnetic_pendulum_color(pa_mut, v.z, v.w);
+          dc_override_active = true;
         }
       }
     }
@@ -6714,6 +6824,10 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
               // #133 V220 newton: position-warp + DC basin color
               // (finalxform parallel).
               dc_rgb_override = var_newton_color(fpa_mut, v.z);
+              dc_override_active = true;
+            } else if (var_idx == 265u) {
+              // magnetic_pendulum params: magnets (v.z), radius (v.w).
+              dc_rgb_override = var_magnetic_pendulum_color(fpa_mut, v.z, v.w);
               dc_override_active = true;
             }
           }

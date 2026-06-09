@@ -543,6 +543,10 @@ export const V = {
   billiard_stadium: 259,
   billiard_sinai: 260,
   billiard_polygon: 261,
+  // #138 — Relativistic & physical-field warps (Lorentz boost, dipole, magnetic pendulum)
+  lorentz_boost: 262,
+  field_dipole: 264,
+  magnetic_pendulum: 265,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -573,6 +577,7 @@ export const DC_VARIATION_SET: ReadonlySet<number> = new Set<number>([
   V.dc_gridout,
   V.dc_cylinder,
   V.newton,  // #133 — newton emits DC basin color when dc_flag set
+  V.magnetic_pendulum,  // #138 — magnetic_pendulum emits nearest-magnet basin color
 ]);
 
 export interface Variation {
@@ -3545,6 +3550,74 @@ export function ts_var_billiard_polygon(i: VarInput): VarOutput {
   return { x: i.weight * fx, y: i.weight * fy };
 }
 
+// =====================================================================
+// #138 — Relativistic & physical-field warps (TS mirrors)
+// =====================================================================
 
+// var_lorentz_boost (chaos.wgsl)
+export function ts_var_lorentz_boost(i: VarInput): VarOutput {
+  const rapidity = i.params?.rapidity ?? 0.5;
+  const angle = i.params?.angle ?? 0.0;
+  const cos_t = Math.cos(angle);
+  const sin_t = Math.sin(angle);
+  const rx =  i.tx * cos_t + i.ty * sin_t;
+  const ry = -i.tx * sin_t + i.ty * cos_t;
+  const ch = Math.cosh(rapidity);
+  const sh = Math.sinh(rapidity);
+  const xp = rx * ch + ry * sh;
+  const yp = rx * sh + ry * ch;
+  const x_out = xp * cos_t - yp * sin_t;
+  const y_out = xp * sin_t + yp * cos_t;
+  return { x: i.weight * x_out, y: i.weight * y_out };
+}
 
+// var_field_dipole (chaos.wgsl)
+export function ts_var_field_dipole(i: VarInput): VarOutput {
+  const charge = i.params?.charge ?? 1.0;
+  const separation = i.params?.separation ?? 0.5;
+  const step = i.params?.step ?? 0.2;
+  const angle = i.params?.angle ?? 0.0;
+  const d = separation * 0.5;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const cpx =  d * dx;
+  const cpy =  d * dy;
+  const cnx = -d * dx;
+  const cny = -d * dy;
+  const rpx = i.tx - cpx;
+  const rpy = i.ty - cpy;
+  const rnx = i.tx - cnx;
+  const rny = i.ty - cny;
+  const dp3 = Math.pow(rpx * rpx + rpy * rpy + 1e-4, 1.5);
+  const dn3 = Math.pow(rnx * rnx + rny * rny + 1e-4, 1.5);
+  const Ex = charge * (rpx / dp3 - rnx / dn3);
+  const Ey = charge * (rpy / dp3 - rny / dn3);
+  return { x: i.weight * (i.tx + step * Ex), y: i.weight * (i.ty + step * Ey) };
+}
+
+// var_magnetic_pendulum_pos (chaos.wgsl)
+export function ts_var_magnetic_pendulum(i: VarInput): VarOutput {
+  const magnets = i.params?.magnets ?? 3.0;
+  const radius = i.params?.radius ?? 1.0;
+  const strength = i.params?.strength ?? 0.5;
+  const damping = i.params?.damping ?? 0.1;
+  const N = Math.max(3, Math.min(6, Math.trunc(magnets)));
+  const inv_N = 1.0 / N;
+  let Fx = 0.0;
+  let Fy = 0.0;
+  for (let k = 0; k < N; k++) {
+    const theta = 2.0 * Math.PI * k * inv_N;
+    const Mx = radius * Math.cos(theta);
+    const My = radius * Math.sin(theta);
+    const rx = Mx - i.tx;
+    const ry = My - i.ty;
+    const dist2 = rx * rx + ry * ry + 1e-4;
+    const denom = Math.pow(dist2, 1.5);
+    Fx += rx / denom;
+    Fy += ry / denom;
+  }
+  const x = i.tx + strength * Fx - damping * i.tx;
+  const y = i.ty + strength * Fy - damping * i.ty;
+  return { x: i.weight * x, y: i.weight * y };
+}
 

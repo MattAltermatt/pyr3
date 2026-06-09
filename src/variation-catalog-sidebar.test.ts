@@ -18,13 +18,13 @@ describe('listVariations', () => {
 
   it('classifies the DC family + at least the original JWF batch + the novel pyr3 originals', () => {
     const rows = listVariations();
-    // DC family: 4 originals (dc_linear..dc_cylinder) plus newton (V220, #133),
-    // pyr3's first position-warp + DC variation outside the V99..V102 range.
-    // Novel pyr3 originals: V221..V224 (#133) — blaschke, cayley, complex_gamma,
-    // lambert_w, grep-verified absent from JWildfire source.
+    // DC family: 4 originals (dc_linear..dc_cylinder) plus newton (V220, #133)
+    // plus magnetic_pendulum (V265, #138 — basin DC + position warp).
+    // Novel pyr3 originals: V221..V262 + V264 — blaschke, cayley, complex_gamma,
+    // lambert_w, billiards (#150), lorentz_boost + field_dipole (#138).
     // JWF count grows as batches ship — lower-bound assertion stays loose.
-    expect(rows.filter(r => r.source === 'dc')).toHaveLength(5);
-    expect(rows.filter(r => r.source === 'novel')).toHaveLength(41);
+    expect(rows.filter(r => r.source === 'dc')).toHaveLength(6);
+    expect(rows.filter(r => r.source === 'novel')).toHaveLength(43);
     expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });
 });

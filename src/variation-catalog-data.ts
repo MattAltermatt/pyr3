@@ -11,6 +11,9 @@ import {
   ts_var_billiard_stadium,
   ts_var_billiard_sinai,
   ts_var_billiard_polygon,
+  ts_var_lorentz_boost,
+  ts_var_field_dipole,
+  ts_var_magnetic_pendulum,
 } from './variations';
 
 export type CatalogSource = 'flam3' | 'dc' | 'jwf' | 'novel';
@@ -59,8 +62,9 @@ export interface VariationDoc {
 export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
-  if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.billiard_polygon) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150
+  if (idx === V.newton) return 'dc';                              // #133 — DC + position warp
+  if (idx === V.magnetic_pendulum) return 'dc';                   // #138 — basin DC + position warp
+  if (idx >= V.blaschke && idx <= V.magnetic_pendulum) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138
   return 'jwf';
 }
 
@@ -4964,6 +4968,73 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
         ty: y,
         weight: 1.0,
         params: { sides: 5, radius: 1.0, step: 0.5, angle: 0.7 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.lorentz_boost,
+    name: 'lorentz_boost',
+    source: 'novel',
+    formula: "V_{262}(p) = R(-\\theta) \\cdot \\begin{bmatrix} \\cosh\\varphi & \\sinh\\varphi \\\\ \\sinh\\varphi & \\cosh\\varphi \\end{bmatrix} \\cdot R(\\theta) \\cdot p",
+    blurb: 'Lorentz boost by rapidity φ along an axis at angle θ — the Minkowski analog of swirl. Reduces to identity at φ=0; expands shear along the boost axis as φ grows.',
+    params: [
+      { name: 'rapidity', default: 0.5, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'angle', default: 0.0, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_lorentz_boost({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { rapidity: 0.5, angle: 0.0 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.field_dipole,
+    name: 'field_dipole',
+    source: 'novel',
+    formula: "V_{264}(p) = p + s \\cdot q \\cdot \\left( \\frac{p - c_+}{|p - c_+|^3} - \\frac{p - c_-}{|p - c_-|^3} \\right)",
+    blurb: 'Classical electric-dipole field. Walker is stepped along the local E-field of two opposite ±charges offset by ±separation/2 along the dipole axis. 1/r³ singularities at the poles are eps-softened.',
+    params: [
+      { name: 'charge', default: 1.0, min: -3.0, max: 3.0, step: 0.05 },
+      { name: 'separation', default: 0.5, min: 0.1, max: 2.0, step: 0.05 },
+      { name: 'step', default: 0.2, min: 0.01, max: 1.0, step: 0.01 },
+      { name: 'angle', default: 0.0, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_field_dipole({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { charge: 1.0, separation: 0.5, step: 0.2, angle: 0.0 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.magnetic_pendulum,
+    name: 'magnetic_pendulum',
+    source: 'dc',
+    formula: "V_{265}(p) = p + s \\sum_{k=0}^{N-1} \\frac{M_k - p}{|M_k - p|^3} - d \\cdot p, \\quad M_k = R \\cdot (\\cos\\tfrac{2\\pi k}{N}, \\sin\\tfrac{2\\pi k}{N})",
+    blurb: 'N-magnet pendulum (3–6 magnets on a ring of radius R). Walker is pulled by inverse-square attractions and damped toward origin; chaotic basins emerge. When dc_flag is set, each walker is coloured by its nearest-magnet basin index.',
+    params: [
+      { name: 'magnets', default: 3.0, min: 3.0, max: 6.0, step: 1.0 },
+      { name: 'radius', default: 1.0, min: 0.3, max: 2.5, step: 0.05 },
+      { name: 'strength', default: 0.5, min: 0.0, max: 2.0, step: 0.05 },
+      { name: 'damping', default: 0.1, min: 0.0, max: 1.0, step: 0.01 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_magnetic_pendulum({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { magnets: 3, radius: 1.0, strength: 0.5, damping: 0.1 },
       });
       return [res.x, res.y];
     },

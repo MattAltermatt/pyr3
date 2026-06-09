@@ -66,9 +66,10 @@ describe('getDisplayLabel mapping', () => {
     expect(getDisplayLabel(219)).toBe('JWF120');
   });
 
-  it('maps Pyre novel/custom range 220..261 to P0..P41', () => {
+  it('maps Pyre novel/custom range 220..265 to P0..P45 (V263 skipped — #138 schwarzschild deferred)', () => {
     expect(getDisplayLabel(220)).toBe('P0');
     expect(getDisplayLabel(261)).toBe('P41');
+    expect(getDisplayLabel(265)).toBe('P45');
   });
 });
 

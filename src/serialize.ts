@@ -360,6 +360,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   billiard_stadium: ['width', 'height', 'step', 'angle'],
   billiard_sinai: ['length', 'radius', 'step', 'angle'],
   billiard_polygon: ['sides', 'radius', 'step', 'angle'],
+  lorentz_boost: ['rapidity', 'angle'],
+  field_dipole: ['charge', 'separation', 'step', 'angle'],
+  magnetic_pendulum: ['magnets', 'radius', 'strength', 'damping'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -621,6 +624,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   billiard_stadium: [1.5, 1.0, 0.5, 0.0],
   billiard_sinai: [2.0, 0.5, 0.5, 0.0],
   billiard_polygon: [5.0, 1.0, 0.5, 0.0],
+  lorentz_boost: [0.5, 0.0],
+  field_dipole: [1.0, 0.5, 0.2, 0.0],
+  magnetic_pendulum: [3.0, 1.0, 0.5, 0.1],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
