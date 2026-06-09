@@ -733,11 +733,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const input = document.createElement('input');
     input.type = 'file';
     // #196 — accept .png so a saved pyr3 PNG (carrying the genome as a tEXt
-    // chunk written in #123) can round-trip back into the editor. Delegates
-    // to the shared loader (src/loader.ts) which handles PNG / JSON / flame
-    // XML uniformly. Foreign PNGs (no `pyr3` chunk) throw a clear "no pyr3
-    // metadata" message that surfaces via the toast below.
-    input.accept = '.pyr3.json,.json,application/json,.png,image/png';
+    // chunk written in #123) can round-trip back into the editor. #201
+    // P0 — also accept .flam3 / .flame XML so users can edit any flame
+    // they have on disk; the shared loader (src/loader.ts) already sniffs
+    // and dispatches all three formats.
+    input.accept = '.pyr3.json,.json,application/json,.png,image/png,.flam3,.flame,text/xml,application/xml';
     input.style.display = 'none';
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
@@ -1009,13 +1009,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // Aspect may have changed — preview canvas reshapes via rebuild lane.
       scheduler.schedule({ lane: 'rebuild', path: 'size' });
     },
-    // #176 — clamp at 200 (bar's hard cap, matching the viewer). ESF imports
-    // frequently carry q=2000 which would otherwise display as 2000 in the
-    // text input + run forever on Save Render. Editor owns the genome, so
-    // first click on a Q button writes the clamped value back to state.
-    getRenderQuality: () => Math.max(1, Math.min(200, state.genome.quality ?? 50)),
+    // #201 P0 — the bar's clampRenderQuality is capability-aware
+    // (gh-pages hard-caps at 200; pyr3 serve unlimited). Don't double-
+    // clamp here, and don't lie to the user by showing 200 when the
+    // genome actually carries q=2000 — Save Render dispatches the raw
+    // genome.quality and would otherwise render at 2000 while the bar
+    // display said 200. Show the real value; let the bar enforce the cap.
+    getRenderQuality: () => Math.max(1, state.genome.quality ?? 50),
     setRenderQuality: (q) => {
-      state.genome.quality = Math.max(1, Math.min(200, q));
+      state.genome.quality = Math.max(1, q);
       schedulePersist(state.genome);
       // Render-side quality only matters at Save Render time; no re-iterate
       // needed for the live preview (it uses previewCfg.quality, not this).
