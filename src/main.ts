@@ -909,10 +909,9 @@ async function main(): Promise<void> {
       viewerPreviewCfg = cfg;
       savePreviewConfig(cfg);
       // #176 — tier change re-runs the quick-preview path at the new
-      // longest-edge cap (Fast=512 / Balanced=1024 / Sharp=1536). Note:
-      // preview QUALITY (the 10-50 ladder) does NOT yet drive viewer iter
-      // density — that's a follow-up (the viewer uses currentQuality's
-      // tier-driven spp, distinct from this preview-side quality value).
+      // longest-edge cap (Fast=512 / Balanced=1024 / Sharp=1536).
+      // #197 — quality change re-iterates at the new spp target
+      // (viewerPreviewCfg.quality, 10–50) via `rerender()` → genome.quality.
       void rerender();
     },
     // #176 — bar reads/writes the workstation-pref ViewerRenderConfig.
@@ -1161,7 +1160,12 @@ async function main(): Promise<void> {
       // (often 4 for ES flames), the projection over-zooms by that factor,
       // producing the "camera stuck at the middle point" over-zoom symptom.
       oversample: QUICK_OVERSAMPLE,
-      quality: Math.min(activeGenome.quality ?? QUICK_MAX_SPP, QUICK_MAX_SPP),
+      // #197 — preview iter density comes from viewerPreviewCfg.quality (the
+      // 10–50 Q slider in the render-mode bar), NOT activeGenome.quality (which
+      // is the flame's declared render-side quality, often 200+ on ES flames).
+      // The slider is the user's live speed-vs-grain knob. Already clamped to
+      // [10, 50] by loadPreviewConfig + parsePreviewOverride + the bar UI.
+      quality: viewerPreviewCfg.quality,
     };
     const targetSamples = (renderGenome.quality ?? QUICK_MAX_SPP) * renderer.width * renderer.height;
 
