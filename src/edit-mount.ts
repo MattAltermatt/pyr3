@@ -23,6 +23,7 @@ import {
 import { generateRandomGenome } from './edit-seed';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
+import { startChunkedRender } from './render-orchestrator';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import {
   type PreviewRenderConfig,
@@ -241,6 +242,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // genome.size + genome.quality stay as the RENDER output config — only fire
   // at Save Render time.
   let previewCfg: PreviewRenderConfig = loadPreviewConfig();
+  let renderModeBarHandle: RenderModeBarHandle | null = null;
+
+  function notifyStateChange(): void {
+    opts.onStateChange?.(state);
+    renderModeBarHandle?.refresh();
+  }
   // #176 — URL params (?preview / ?previewQ / ?quick=1) override the
   // persisted config for this session only. NOT written back to
   // localStorage so a refresh without the param falls back to the user's
@@ -427,7 +434,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
-    opts.onStateChange?.(state);
+    notifyStateChange();
     // #118 — measure settle-render wall-clock so the slow-render nudge
     // can detect a pattern of slow renders during active editing.
     const renderStart = performance.now();
@@ -451,7 +458,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // Fast lane re-presents the existing histogram, no scale adjustment.
     const genome = (lane === 'slow' || lane === 'rebuild') ? liveAdjustedGenome() : state.genome;
     editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
-    opts.onStateChange?.(state);
+    notifyStateChange();
     await awaitGpuThenMaybeHide(myTicket);
   });
 
@@ -582,7 +589,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       const h = canvas.height;
       const genome = (currentLane === 'slow' || currentLane === 'rebuild') ? liveAdjustedGenome() : state.genome;
       editRenderer.applyLane(currentLane === 'rebuild' ? 'slow' : currentLane, genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
-      opts.onStateChange?.(state);
+      notifyStateChange();
       await opts.device.queue.onSubmittedWorkDone();
       // Yield to the browser's paint pipeline BEFORE starting the next
       // render. Without this, a fast click stream chains GPU renders so
@@ -655,14 +662,22 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
     editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
-    opts.onStateChange?.(state);
+    notifyStateChange();
     await awaitGpuThenMaybeHide(myTicket);
   }
 
   function handleReroll(): void {
+    const prevSize = state.genome.size;
+    const prevQuality = state.genome.quality;
     const fresh = generateRandomGenome();
     applyDefaultNick(fresh);
     applyEditorDefaults(fresh);
+    if (prevSize) {
+      fresh.size = { ...prevSize };
+    }
+    if (prevQuality !== undefined) {
+      fresh.quality = prevQuality;
+    }
     const freshSeed = (Math.random() * 0xffffffff) >>> 0;
     applyNewGenome(fresh, freshSeed);
   }
@@ -682,7 +697,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         // Open-file PRESERVES the file's nick (or leaves blank when absent).
         // Only the Reroll path stamps defaultNick (matches the cold-start
         // policy above).
+        const prevSize = state.genome.size;
+        const prevQuality = state.genome.quality;
         applyEditorDefaults(genome);
+        // If the parsed file doesn't define size / quality, preserve the active ones.
+        if (parsed.size === undefined && prevSize) {
+          genome.size = { ...prevSize };
+        }
+        if (parsed.quality === undefined && prevQuality !== undefined) {
+          genome.quality = prevQuality;
+        }
         applyNewGenome(genome);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -769,14 +793,33 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       canvas.width = targetW;
       canvas.height = targetH;
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
-      const view = ctx.getCurrentTexture().createView();
-      await editRenderer.fullRenderAt(state.genome, state.seed, targetW, targetH, view, {
-        signal: abortCtrl.signal,
-        onProgress: (frac) => modal.setProgress(frac),
-        // #176 — fresh swap-chain view at present time (the chunked path's
-        // setTimeout(0) yields expire the view captured before iteration).
+      // #189 — route Save Render through startChunkedRender, the same
+      // orchestrator the viewer's Save Render uses. editRenderer.fullRenderAt's
+      // chunked path produces empty histograms at output dims for q≥100 at 4K
+      // (1582 walkers × 16384 iters per batch × 64 batches submitted in rapid
+      // succession leaves toBlob reading a swap-chain texture before the
+      // compositor commits the final present). startChunkedRender's pattern
+      // (small chunks of ~977 walkers × 4096 iters, present after each chunk,
+      // rAF yield) refreshes the canvas continuously and produces a correct
+      // final frame.
+      const targetSamples = (state.genome.quality ?? 50) * targetW * targetH;
+      const renderHandle = startChunkedRender({
+        renderer,
+        genome: state.genome,
         outputViewProvider: () => ctx.getCurrentTexture().createView(),
+        targetSamples,
+        seedBase: state.seed,
+        onProgress: (info) => modal.setProgress(info.percent),
+        samplesPerChunk: 4_000_000,
+        yieldEveryNChunks: 4,
       });
+      abortCtrl.signal.addEventListener('abort', () => renderHandle.cancel(), { once: true });
+      const outcome = await renderHandle.promise;
+      if (outcome === 'cancelled') {
+        throw new DOMException('Render aborted', 'AbortError');
+      }
+      // Drain GPU work so toBlob captures the post-present pixels.
+      await opts.device.queue.onSubmittedWorkDone();
 
       const filename = resolveCurrentFilename();
       const template = state.genome.name;
@@ -820,7 +863,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
           // bumped index.
           if (hasTemplate(template)) {
             bumpIndex(template);
-            opts.onStateChange?.(state);
+            notifyStateChange();
           }
           resolve();
         }, 'image/png');
@@ -883,7 +926,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // is recomputed inside setMeta).
       if (hasTemplate(template)) {
         bumpIndex(template);
-        opts.onStateChange?.(state);
+        notifyStateChange();
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -901,7 +944,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   }
   const view0 = ctx.getCurrentTexture().createView();
   editRenderer.applyLane('slow', adjustedGenomeFor(initialDims.width, initialDims.height), state.seed, view0, initialDims.width, initialDims.height, { targetSpp: previewCfg.quality });
-  opts.onStateChange?.(state);
+  notifyStateChange();
   void awaitGpuThenMaybeHide(inflightTicket);
 
   // #176 — mount the render-mode-bar. Wires preview side to the editor's
@@ -909,8 +952,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // genome.size / genome.quality (round-trips with .pyr3.json). Save Render
   // fires handleRenderPng — same path the (now-deprecated) top-bar 🖼️ button
   // uses, so both entry points reach the new progress modal.
-  let renderModeBarHandle: RenderModeBarHandle | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   renderModeBarHandle = mountRenderModeBar({
     host: renderModeBarHost,
     getPreviewConfig: () => previewCfg,
@@ -985,14 +1026,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       rebuildPanel();
       onPathChange('size.width');
       onPathChange('size.height');
-      opts.onStateChange?.(state);
+      notifyStateChange();
     },
     setQuality(quality: number): void {
       if (!Number.isFinite(quality) || quality <= 0) return;
       state.genome.quality = quality;
       rebuildPanel();
       onPathChange('quality');
-      opts.onStateChange?.(state);
+      notifyStateChange();
     },
     setSettleDelayMs(ms: number): void {
       // 2026-06-05: bar SETTLE ladder writes here. Mutate the live value
