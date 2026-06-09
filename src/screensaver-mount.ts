@@ -733,12 +733,14 @@ function startBuildUp(args: {
       // splatItersPerWalker scatter iters; only post-fuse iters count
       // toward samplesAccumulated.
       //
-      // Spec §4.2 adaptive cadence (ADAPTIVE_BACKOFF_MS=25 → drop to 20fps
-      // when frameElapsed > 25ms) deferred to follow-up. Cost model
-      // (§4.2.2) predicts ~4-5ms per frame at hero dims — 30fps has 5×
-      // headroom, so v1 ships fixed cadence. Heavy ramp briefly multiplies
-      // per-frame cost near the end; the loop already lets frames slip
-      // (sleepFor = max(1, FRAME_INTERVAL_MS - frameElapsed)).
+      // #200 — fixed cadence is the v1 ship contract. Cost model (§4.2.2)
+      // predicts ~4-5ms per frame at hero dims — 30fps has 5× headroom; in
+      // practice the screensaver settled at <30% GPU per the visual-overhaul
+      // post-mortem. The original §4.2 adaptive backoff
+      // (ADAPTIVE_BACKOFF_MS=25 → 20fps drop) was deferred and #200 closed
+      // it as won't-do — no stutter reports came in. Heavy ramp briefly
+      // multiplies per-frame cost near the end; the loop already lets frames
+      // slip (sleepFor = max(1, FRAME_INTERVAL_MS - frameElapsed)).
       const FRAME_INTERVAL_MS   = 1000 / BUILD_UP_TARGET_FPS;
 
       while (!isCancelled()) {
