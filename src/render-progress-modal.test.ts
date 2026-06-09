@@ -77,6 +77,52 @@ describe('render progress modal — setProgress', () => {
   });
 });
 
+describe('render progress modal — #195 ETA + iteration readouts', () => {
+  it('shows samples / target when both are present', () => {
+    const handle = openRenderProgressModal(makeOpts({ targetSamples: 8_290_000 }));
+    handle.setProgress({ percent: 0.5, samples: 4_100_000, etaSeconds: 12 });
+    const samples = document.body.querySelector('[data-progress-samples]') as HTMLElement;
+    expect(samples.textContent).toBe('4.1M / 8.3M samples');
+  });
+
+  it('formats ETA seconds as ~M:SS', () => {
+    const handle = openRenderProgressModal(makeOpts({ targetSamples: 1_000_000 }));
+    handle.setProgress({ percent: 0.3, samples: 300_000, etaSeconds: 75 });
+    const eta = document.body.querySelector('[data-progress-eta]') as HTMLElement;
+    expect(eta.textContent).toBe('~1:15 remaining');
+  });
+
+  it('formats ETA under a minute as ~Ns', () => {
+    const handle = openRenderProgressModal(makeOpts({ targetSamples: 1_000_000 }));
+    handle.setProgress({ percent: 0.9, samples: 900_000, etaSeconds: 8 });
+    const eta = document.body.querySelector('[data-progress-eta]') as HTMLElement;
+    expect(eta.textContent).toBe('~8s remaining');
+  });
+
+  it('hides ETA when etaSeconds is missing', () => {
+    const handle = openRenderProgressModal(makeOpts({ targetSamples: 1_000_000 }));
+    handle.setProgress({ percent: 0.5, samples: 500_000 });
+    const eta = document.body.querySelector('[data-progress-eta]') as HTMLElement;
+    expect(eta.textContent).toBe('');
+  });
+
+  it('drops the / target suffix when targetSamples is omitted', () => {
+    const handle = openRenderProgressModal(makeOpts());
+    handle.setProgress({ percent: 0.5, samples: 500_000, etaSeconds: 10 });
+    const samples = document.body.querySelector('[data-progress-samples]') as HTMLElement;
+    expect(samples.textContent).toBe('500k samples');
+  });
+
+  it('legacy bare-number setProgress still updates percent', () => {
+    const handle = openRenderProgressModal(makeOpts({ targetSamples: 1_000_000 }));
+    handle.setProgress(0.42);
+    const pct = document.body.querySelector('[data-progress-pct]') as HTMLElement;
+    const samples = document.body.querySelector('[data-progress-samples]') as HTMLElement;
+    expect(pct.textContent).toBe('42 %');
+    expect(samples.textContent).toBe('');
+  });
+});
+
 describe('render progress modal — cancel + close', () => {
   it('fires onCancel when the cancel button is clicked', () => {
     const onCancel = vi.fn();

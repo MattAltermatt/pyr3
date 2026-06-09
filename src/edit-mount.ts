@@ -846,11 +846,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     panelHost.setAttribute('data-busy', 'true');
     const sizeLabel = `${targetW}×${targetH}`;
     const qualityLabel = String(state.genome.quality ?? 100);
+    // #195 — compute targetSamples up-front so the modal can show the
+    // `<samples> / <target>` readout from the first paint.
+    const targetSamples = (state.genome.quality ?? 50) * targetW * targetH;
     const abortCtrl = new AbortController();
     const modal = openRenderProgressModal({
       host: opts.root,
       sizeLabel,
       qualityLabel,
+      targetSamples,
       onCancel: () => abortCtrl.abort(),
     });
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -869,14 +873,14 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // (small chunks of ~977 walkers × 4096 iters, present after each chunk,
       // rAF yield) refreshes the canvas continuously and produces a correct
       // final frame.
-      const targetSamples = (state.genome.quality ?? 50) * targetW * targetH;
       const renderHandle = startChunkedRender({
         renderer,
         genome: state.genome,
         outputViewProvider: () => ctx.getCurrentTexture().createView(),
         targetSamples,
         seedBase: state.seed,
-        onProgress: (info) => modal.setProgress(info.percent),
+        // #195 — pass the full per-chunk info to the modal (was just percent).
+        onProgress: (info) => modal.setProgress(info),
         samplesPerChunk: 4_000_000,
         yieldEveryNChunks: 4,
       });

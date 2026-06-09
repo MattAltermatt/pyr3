@@ -805,11 +805,16 @@ async function main(): Promise<void> {
     const restoreOversample = renderer.oversample;
     const restoreFilter = renderer.filterRadius;
 
+    // #195 — compute targetSamples up-front so the modal can show
+    // `<samples> / <target>` in its iteration readout. (Was computed
+    // inside the try block; moved out so the modal opts can carry it.)
+    const targetSamples = targetQuality * targetW * targetH;
     const abortCtrl = new AbortController();
     const modal = openRenderProgressModal({
       host: document.body,
       sizeLabel: `${targetW}×${targetH}`,
       qualityLabel,
+      targetSamples,
       onCancel: () => abortCtrl.abort(),
     });
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -829,14 +834,15 @@ async function main(): Promise<void> {
       // wasn't producing samples on the viewer's renderer here. Reusing
       // startChunkedRender guarantees byte-for-byte the same dispatch
       // pattern as the rerender that's known to work.
-      const targetSamples = targetQuality * targetW * targetH;
       const renderHandle = startChunkedRender({
         renderer,
         genome: renderGenome,
         outputViewProvider: () => context.getCurrentTexture().createView(),
         targetSamples,
         seedBase: seed,
-        onProgress: (info) => modal.setProgress(info.percent),
+        // #195 — pass the orchestrator's full per-chunk info so the modal
+        // can show ETA + iteration count alongside percent.
+        onProgress: (info) => modal.setProgress(info),
         walkerJitter: currentWalkerJitter,
         // #176 perf: 4M samples/chunk + yield every 4 chunks dramatically
         // reduces the rAF-yield overhead for Save Render's larger
