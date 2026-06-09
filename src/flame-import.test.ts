@@ -1265,3 +1265,203 @@ describe('#9 — malformed scalar fields default + report (loud, never abort)', 
     expect(() => parseFlame(xml)).toThrow(/coefs/);
   });
 });
+
+// P1 of Animation milestone (#17 / #206) — schema + parser extension.
+// Static-render behavior for SINGLE-keyframe inputs MUST stay unchanged
+// (regression-tested by every existing test above). These tests cover the
+// new surface: time attr, multi-keyframe → Animation, per-xform motion fields,
+// <motion> child elements.
+
+describe('P1 #206 — animation schema + parser', () => {
+  describe('Genome.time', () => {
+    it('reads <flame time="N"> into genome.time', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50" time="1.5">${minPalette}${oneXform}</flame>`;
+      const { genome } = parseFlame(xml);
+      expect(genome.time).toBe(1.5);
+    });
+
+    it('omits genome.time when attribute absent (flam3 default 0)', () => {
+      const { genome } = parseFlame(wrapFlame(oneXform));
+      expect(genome.time).toBeUndefined();
+    });
+
+    it('omits genome.time when explicit time="0" (matches flam3 default)', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50" time="0">${minPalette}${oneXform}</flame>`;
+      const { genome } = parseFlame(xml);
+      expect(genome.time).toBeUndefined();
+    });
+  });
+
+  describe('multi-keyframe import', () => {
+    const k = (time: string, name = 't') =>
+      `<flame name="${name}" size="100 100" center="0 0" scale="50" time="${time}">${minPalette}${oneXform}</flame>`;
+
+    it('single-keyframe input has no animation wrapper (backwards-compat)', () => {
+      const result = parseFlame(wrapFlame(oneXform));
+      expect(result.animation).toBeUndefined();
+      expect(result.genome).toBeDefined();
+    });
+
+    it('2-keyframe input produces Animation with 2 keyframes', () => {
+      const xml = `${k('0', 'a')}${k('1', 'b')}`;
+      const result = parseFlame(xml);
+      expect(result.animation).toBeDefined();
+      expect(result.animation!.keyframes).toHaveLength(2);
+      expect(result.animation!.keyframes[0]!.name).toBe('a');
+      expect(result.animation!.keyframes[1]!.name).toBe('b');
+    });
+
+    it('result.genome === animation.keyframes[0] (same reference)', () => {
+      const xml = `${k('0', 'a')}${k('1', 'b')}`;
+      const result = parseFlame(xml);
+      expect(result.genome).toBe(result.animation!.keyframes[0]);
+    });
+
+    it('sorts keyframes by time ascending', () => {
+      // Source order: time=2, time=0, time=1 — verify sort happens.
+      const xml = `${k('2', 'c')}${k('0', 'a')}${k('1', 'b')}`;
+      const result = parseFlame(xml);
+      const times = result.animation!.keyframes.map((g) => g.time ?? 0);
+      expect(times).toEqual([0, 1, 2]);
+    });
+
+    it('reads first flame\'s interp settings (flam3-C reads cpi[0].*)', () => {
+      const k0 = `<flame name="a" size="100 100" center="0 0" scale="50" time="0" interpolation="smooth" interpolation_type="linear" palette_interpolation="rgb" hsv_rgb_palette_blend="0.5" temporal_samples="500" temporal_filter_type="gaussian" temporal_filter_width="2.0" temporal_filter_exp="1.5">${minPalette}${oneXform}</flame>`;
+      const k1 = `<flame name="b" size="100 100" center="0 0" scale="50" time="1">${minPalette}${oneXform}</flame>`;
+      const { animation } = parseFlame(`${k0}${k1}`);
+      expect(animation).toBeDefined();
+      expect(animation!.interpolation).toBe('smooth');
+      expect(animation!.interpolation_type).toBe('linear');
+      expect(animation!.palette_interpolation).toBe('rgb');
+      expect(animation!.hsv_rgb_palette_blend).toBe(0.5);
+      expect(animation!.ntemporal_samples).toBe(500);
+      expect(animation!.temporal_filter_type).toBe('gaussian');
+      expect(animation!.temporal_filter_width).toBe(2.0);
+      expect(animation!.temporal_filter_exp).toBe(1.5);
+    });
+
+    it('uses flam3 defaults when interp settings absent', () => {
+      const { animation } = parseFlame(`${k('0')}${k('1')}`);
+      expect(animation!.interpolation).toBe('linear');
+      expect(animation!.interpolation_type).toBe('log');
+      expect(animation!.palette_interpolation).toBe('hsv_circular');
+      expect(animation!.hsv_rgb_palette_blend).toBe(0);
+      expect(animation!.ntemporal_samples).toBe(1000);
+      expect(animation!.temporal_filter_type).toBe('box');
+      expect(animation!.temporal_filter_width).toBe(1.0);
+      expect(animation!.temporal_filter_exp).toBe(0.0);
+    });
+
+    it('multi-keyframe: temporal_filter_* NOT in ignoredFields (consumed by Animation)', () => {
+      const k0 = `<flame name="a" size="100 100" center="0 0" scale="50" time="0" temporal_filter_type="gaussian" temporal_filter_width="2" temporal_filter_exp="1">${minPalette}${oneXform}</flame>`;
+      const { report } = parseFlame(`${k0}${k('1')}`);
+      const ignoredNames = report.ignoredFields.map((f) => f.field);
+      expect(ignoredNames).not.toContain('temporal_filter_type');
+      expect(ignoredNames).not.toContain('temporal_filter_width');
+      expect(ignoredNames).not.toContain('temporal_filter_exp');
+    });
+
+    it('single-keyframe: temporal_filter_* STAYS in ignoredFields (unconsumed)', () => {
+      const xml = `<flame name="a" size="100 100" center="0 0" scale="50" temporal_filter_type="gaussian">${minPalette}${oneXform}</flame>`;
+      const { report } = parseFlame(xml);
+      expect(report.ignoredFields.some((f) => f.field === 'temporal_filter_type')).toBe(true);
+    });
+  });
+
+  describe('per-xform motion fields', () => {
+    const wrapWithXform = (xformAttrs: string) =>
+      `<flame name="t" size="100 100" center="0 0" scale="50">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1" ${xformAttrs}/></flame>`;
+
+    it('reads motion_frequency into xform.motion_freq', () => {
+      const { genome } = parseFlame(wrapWithXform('motion_frequency="3"'));
+      expect(genome.xforms[0]!.motion_freq).toBe(3);
+    });
+
+    it('omits motion_freq when attribute is 0 (flam3 default)', () => {
+      const { genome } = parseFlame(wrapWithXform('motion_frequency="0"'));
+      expect(genome.xforms[0]!.motion_freq).toBeUndefined();
+    });
+
+    it('reads motion_function="sin" as 1', () => {
+      const { genome } = parseFlame(wrapWithXform('motion_function="sin"'));
+      expect(genome.xforms[0]!.motion_func).toBe(1);
+    });
+
+    it('reads motion_function="triangle" as 2', () => {
+      const { genome } = parseFlame(wrapWithXform('motion_function="triangle"'));
+      expect(genome.xforms[0]!.motion_func).toBe(2);
+    });
+
+    it('reads motion_function="hill" as 3', () => {
+      const { genome } = parseFlame(wrapWithXform('motion_function="hill"'));
+      expect(genome.xforms[0]!.motion_func).toBe(3);
+    });
+
+    it('unknown motion_function name lands in ignoredFields', () => {
+      const { genome, report } = parseFlame(wrapWithXform('motion_function="bogus"'));
+      expect(genome.xforms[0]!.motion_func).toBeUndefined();
+      expect(report.ignoredFields.some((f) => f.field.startsWith('motion_function'))).toBe(true);
+    });
+
+    it('reads animate="0" as stationary (omits 1 default)', () => {
+      const { genome } = parseFlame(wrapWithXform('animate="0"'));
+      expect(genome.xforms[0]!.animate).toBe(0);
+    });
+
+    it('omits xform.animate when attr is the flam3 default 1', () => {
+      const { genome } = parseFlame(wrapWithXform('animate="1"'));
+      expect(genome.xforms[0]!.animate).toBeUndefined();
+    });
+  });
+
+  describe('<motion> child elements', () => {
+    it('parses one <motion> child into xform.motion[0]', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"><motion motion_frequency="2" motion_function="sin" coefs="0.1 0 0 0.1 0 0"/></xform></flame>`;
+      const { genome } = parseFlame(xml);
+      expect(genome.xforms[0]!.motion).toBeDefined();
+      expect(genome.xforms[0]!.motion).toHaveLength(1);
+      expect(genome.xforms[0]!.motion![0]!.motion_freq).toBe(2);
+      expect(genome.xforms[0]!.motion![0]!.motion_func).toBe(1);
+    });
+
+    it('parses multiple <motion> children in order', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"><motion motion_frequency="1" motion_function="sin"/><motion motion_frequency="2" motion_function="triangle"/></xform></flame>`;
+      const { genome } = parseFlame(xml);
+      expect(genome.xforms[0]!.motion).toHaveLength(2);
+      expect(genome.xforms[0]!.motion![0]!.motion_func).toBe(1);
+      expect(genome.xforms[0]!.motion![1]!.motion_func).toBe(2);
+    });
+
+    it('<motion> without coefs uses zero affine (delta-only)', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"><motion motion_frequency="1" motion_function="sin"/></xform></flame>`;
+      const { genome } = parseFlame(xml);
+      const me = genome.xforms[0]!.motion![0]!;
+      expect(me.a).toBe(0);
+      expect(me.b).toBe(0);
+      expect(me.c).toBe(0);
+      expect(me.d).toBe(0);
+      expect(me.e).toBe(0);
+      expect(me.f).toBe(0);
+    });
+
+    it('<motion> with no variation attrs has empty variations[] (no linear(1) fallback)', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"><motion motion_frequency="1" motion_function="sin"/></xform></flame>`;
+      const { genome } = parseFlame(xml);
+      expect(genome.xforms[0]!.motion![0]!.variations).toEqual([]);
+    });
+
+    it('xform without <motion> children has no .motion field', () => {
+      const { genome } = parseFlame(wrapFlame(oneXform));
+      expect(genome.xforms[0]!.motion).toBeUndefined();
+    });
+
+    it('nested <motion> inside a <motion> is NOT recursed (flam3 semantics)', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1"><motion motion_frequency="1" motion_function="sin"><motion motion_frequency="9" motion_function="hill"/></motion></xform></flame>`;
+      const { genome } = parseFlame(xml);
+      expect(genome.xforms[0]!.motion).toHaveLength(1);
+      // The inner <motion> is not a recursive xform.motion[0].motion entry —
+      // it lives as inert markup at the DOM level but doesn't surface on the Xform.
+      expect(genome.xforms[0]!.motion![0]!.motion).toBeUndefined();
+    });
+  });
+});

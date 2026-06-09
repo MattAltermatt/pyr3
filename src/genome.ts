@@ -57,6 +57,24 @@ export interface Xform {
    *  time zeros this xform's weight so the chaos game skips it without
    *  losing the user's authored weight. Default: undefined = active. */
   active?: boolean;
+  // P1 of Animation milestone (#17) — per-xform animation fields. Stored on
+  // import; consumed CPU-side by P2 (interp) and P3 (apply_motion_parameters).
+  // None of these change the GPU seam: motion is baked into the xform buffer
+  // before the chaos dispatch each frame.
+  /** flam3 `motion_frequency` (variations.c:2479). Integer cycle multiplier
+   *  for motion function evaluation. Default 0 (absent). */
+  motion_freq?: number;
+  /** flam3 `motion_function` (variations.c:2480). 0=none, 1=sin, 2=triangle,
+   *  3=hill. Default 0 (absent). interpolation.c:31-54 defines the curves. */
+  motion_func?: 0 | 1 | 2 | 3;
+  /** flam3 per-xform motion keyframes (flam3.h:444-445). Each element is a
+   *  partial xform carrying its own motion_freq/motion_func plus the field
+   *  deltas to apply at the evaluated time. Flat array — no nested motion.
+   *  Default undefined (no motion overlay). */
+  motion?: Xform[];
+  /** flam3 `animate` (variations.c:2475). Default 1 (rotating); 0 = stationary.
+   *  Controls winding for P2 log-polar interp and stagger exemption for P4. */
+  animate?: number;
 }
 
 export interface Genome {
@@ -137,6 +155,10 @@ export interface Genome {
   // Issue #172: Optional post-tonemap adjustments in HSV space.
   // hue: -180 to 180 (degrees). sat: 0 to 200 (percent). light: -100 to 100 (percent).
   hslAdjust?: { hue: number; sat: number; light: number };
+  // P1 of Animation milestone (#17). Per-keyframe timestamp from `<flame time=…>`
+  // (flam3.h:452, flam3.c:1364 default 0.0). Only meaningful when this genome
+  // is a keyframe in an Animation; static-render code treats undefined as 0.
+  time?: number;
 }
 
 export type CurvePoint = { x: number; y: number };

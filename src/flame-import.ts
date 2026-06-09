@@ -7,6 +7,14 @@
 // HUD report panel surfaces what the import lost.
 
 import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, isSpatialFilterShape, MAX_XFORMS } from './genome';
+import {
+  type Animation,
+  type Interpolation,
+  type InterpolationType,
+  type PaletteInterpolation,
+  type TemporalFilterType,
+  FLAM3_ANIMATION_DEFAULTS,
+} from './animation';
 import { type Tonemap, DEFAULT_TONEMAP } from './tonemap';
 import { type Density, MAX_RAD_CAP, MIN_CURVE, MAX_CURVE } from './density';
 import {
@@ -110,7 +118,15 @@ export interface ImportReport {
 }
 
 export interface FlameImportResult {
+  /** First keyframe as a standalone Genome. Always set so legacy callers
+   *  that just want "a flame to render" keep working unchanged. When the
+   *  source is multi-keyframe, this is the SAME reference as
+   *  `animation!.keyframes[0]`. */
   genome: Genome;
+  /** Set only when the source `.flam3` carried 2+ `<flame>` elements (a
+   *  time-varying sequence). P1 ships read-only; P2 (`flam3_interpolate_n`
+   *  port) consumes it to derive a Genome at arbitrary time. */
+  animation?: Animation;
   report: ImportReport;
 }
 
@@ -432,7 +448,13 @@ interface XformParseResult {
   ignored: IgnoredField[];
 }
 
-function parseXformElement(el: Element, xformIndex: number, isFinal: boolean, colorFallback: number): XformParseResult {
+function parseXformElement(
+  el: Element,
+  xformIndex: number,
+  isFinal: boolean,
+  colorFallback: number,
+  inMotion = false,
+): XformParseResult {
   const dropped: DroppedVariation[] = [];
   const ignored: IgnoredField[] = [];
 
@@ -488,10 +510,18 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean, co
   }
 
   const coefsAttr = el.getAttribute('coefs');
+  let aff: PyrAffine;
   if (coefsAttr === null) {
-    throw new Error(`pyr3: xform[${xformIndex}] missing coefs`);
+    if (!inMotion) {
+      throw new Error(`pyr3: xform[${xformIndex}] missing coefs`);
+    }
+    // Motion elements are "delta xforms" that overlay onto the parent (P3).
+    // flam3 treats a motion element's missing coefs as "no affine contribution"
+    // (zero deltas), not identity. Storing zeros here lets P3 add cleanly.
+    aff = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
+  } else {
+    aff = parseCoefs(coefsAttr);
   }
-  const aff = parseCoefs(coefsAttr);
 
   // v0.13: normalize attribute names first (mobius `Re_A` shorthand,
   // `oscope_*` prefix alias). Walker + readVariationParams both read from
@@ -558,7 +588,8 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean, co
 
   // Empty-variation fallback: keep xform selectable in the chaos pool. Applies
   // both when all variations were dropped AND when none were specified at all.
-  if (variations.length === 0) {
+  // Motion elements (P1 #206) skip this — empty variation deltas are valid.
+  if (variations.length === 0 && !inMotion) {
     variations.push(linearVar(1));
   }
 
@@ -605,7 +636,73 @@ function parseXformElement(el: Element, xformIndex: number, isFinal: boolean, co
   if (opacity !== undefined) xform.opacity = opacity;
   if (xaos !== undefined) xform.xaos = xaos;
   if (post !== undefined) xform.post = post;
+
+  // P1 of Animation milestone (#17) — per-xform animation fields.
+  // - `motion_frequency` (flam3 variations.c:2479): integer cycle multiplier;
+  //   pyr3 stores Numbers (no integer narrowing) to round-trip cleanly.
+  // - `motion_function` (variations.c:2480, parser.c:868-872): named enum.
+  // - `animate` (variations.c:2475, parser.c default 1): rotation winding flag.
+  const motionFreqAttr = el.getAttribute('motion_frequency');
+  if (motionFreqAttr !== null) {
+    const v = numOrDefault(motionFreqAttr, 'motion_frequency', 0);
+    if (v !== 0) xform.motion_freq = v;
+  }
+  const motionFuncAttr = el.getAttribute('motion_function');
+  if (motionFuncAttr !== null) {
+    const code = parseMotionFuncName(motionFuncAttr);
+    if (code === undefined) {
+      ignored.push({ field: `motion_function@xform[${xformIndex}]`, value: motionFuncAttr });
+    } else if (code !== 0) {
+      xform.motion_func = code;
+    }
+  }
+  const animateAttr = el.getAttribute('animate');
+  if (animateAttr !== null) {
+    const v = numOrDefault(animateAttr, 'animate', 1);
+    // Omit when equal to flam3 default (1.0) — keeps serialized JSON clean.
+    if (v !== 1) xform.animate = v;
+  }
+
+  // P1 #206 — `<motion>` child elements are per-xform animation overlays.
+  // Each is parsed as a partial xform (coefs optional, empty-variation fallback
+  // off). Skip recursion when ALREADY in a motion element — flam3 has no
+  // nested motion semantics (apply_motion_parameters in flam3.c:641-754
+  // walks a single-level array).
+  if (!inMotion) {
+    const motionEls = Array.from(el.children).filter((c) => c.tagName === 'motion');
+    if (motionEls.length > 0) {
+      const motion: Xform[] = [];
+      for (let mi = 0; mi < motionEls.length; mi++) {
+        const me = motionEls[mi]!;
+        const { xform: mx, dropped: md, ignored: mig } = parseXformElement(
+          me,
+          xformIndex,
+          /* isFinal */ false,
+          /* colorFallback */ 0,
+          /* inMotion */ true,
+        );
+        motion.push(mx);
+        // Surface motion-scoped drops/ignored in the parent xform's report so
+        // the user sees what was lost in motion overlays too.
+        for (const d of md) dropped.push({ ...d, name: `motion[${mi}].${d.name}` });
+        for (const ig of mig) ignored.push({ field: `motion[${mi}].${ig.field}`, value: ig.value });
+      }
+      if (motion.length > 0) xform.motion = motion;
+    }
+  }
+
   return { xform, dropped, ignored };
+}
+
+/** flam3 motion_function enum (parser.c:868-872). Returns undefined for
+ *  unrecognized names so the parser can surface them in the report. */
+function parseMotionFuncName(s: string): 0 | 1 | 2 | 3 | undefined {
+  const t = s.trim().toLowerCase();
+  if (t === '' || t === 'none' || t === '0') return 0;
+  if (t === 'sin' || t === 'sine' || t === '1') return 1;
+  if (t === 'triangle' || t === '2') return 2;
+  if (t === 'hill' || t === '3') return 3;
+  return undefined;
 }
 
 function wrapInFlamesRoot(xml: string): string {
@@ -637,8 +734,55 @@ export function parseFlame(xml: string): FlameImportResult {
   if (flames.length === 0) {
     throw new Error('pyr3: no <flame> element found');
   }
-  const flame = flames[0]!;
+  // P1 #206 — parse every <flame> element. Multi-keyframe `.flam3` files
+  // (Electric Sheep sequences are 2-keyframe) produce an Animation wrapper
+  // alongside the first-keyframe Genome; single-keyframe files return
+  // { genome, report } unchanged.
+  const parsedKeyframes = Array.from(flames).map((f, i) =>
+    parseSingleFlame(f, i, flames.length),
+  );
+  const first = parsedKeyframes[0]!;
 
+  // Multi-keyframe: build an Animation. Cross-keyframe interp/temporal
+  // settings are read from the FIRST flame — matches flam3-C, where
+  // interpolation.c references `cpi[0].interpolation` / `interpolation_type`
+  // / etc rather than any per-keyframe value.
+  let animation: Animation | undefined;
+  if (parsedKeyframes.length > 1) {
+    const keyframes = parsedKeyframes.map((k) => k.genome);
+    // Sort defensively by time (ESF emits ascending; hand-authored may not).
+    keyframes.sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+    animation = readAnimationFromFlame(flames[0]!, keyframes);
+  }
+
+  // Report carries the first keyframe's import metadata. Per-keyframe reports
+  // for multi-keyframe imports can surface in a P6 follow-up if useful.
+  const report: ImportReport = {
+    flameCount: flames.length,
+    flameIndex: 0,
+    flameName: first.genome.name,
+    droppedVariations: first.droppedVariations,
+    ignoredFields: first.ignoredFields,
+    defaultedFields: first.defaultedFields,
+    ...(first.paletteFallback ? { paletteFallback: first.paletteFallback } : {}),
+    ...(first.clampedXforms ? { clampedXforms: first.clampedXforms } : {}),
+  };
+
+  return animation
+    ? { genome: first.genome, animation, report }
+    : { genome: first.genome, report };
+}
+
+interface ParsedKeyframe {
+  genome: Genome;
+  droppedVariations: DroppedVariation[];
+  ignoredFields: IgnoredField[];
+  defaultedFields: DefaultedField[];
+  paletteFallback?: PaletteFallback;
+  clampedXforms?: { had: number; cap: number };
+}
+
+function parseSingleFlame(flame: Element, _flameIndex: number, flameCount: number): ParsedKeyframe {
   const xformEls = Array.from(flame.children).filter(
     (c) => c.tagName === 'xform' || c.tagName === 'finalxform',
   );
@@ -702,11 +846,20 @@ export function parseFlame(xml: string): FlameImportResult {
   // when shape=gaussian (otherwise filter_shape recorded below as ignored).
   // `rot_center` stays here (rare flam3 field; defaults to `center`); surfaces any
   // fixture that sets it independently so the report flags the silent-divergence risk.
-  const GENOME_IGNORED = [
-    'zoom', 'oversample',
-    'temporal_filter_type', 'temporal_filter_width',
-    'temporal_filter_exp', 'hue', 'rot_center',
-  ];
+  //
+  // P1 #206 — `temporal_filter_*` and `temporal_samples` are now consumed by
+  // `readAnimationFromFlame` when the source is multi-keyframe. For single-
+  // keyframe imports they're still functionally unused (flam3-render forces
+  // ntemporal_samples=1 anyway), so they stay on the ignored list ONLY when
+  // we're parsing a static single-keyframe file. Multi-keyframe parses skip
+  // them — the Animation wrapper carries them for P5.
+  const GENOME_IGNORED = flameCount > 1
+    ? ['zoom', 'oversample', 'hue', 'rot_center']
+    : [
+        'zoom', 'oversample',
+        'temporal_filter_type', 'temporal_filter_width',
+        'temporal_filter_exp', 'hue', 'rot_center',
+      ];
   for (const fname of GENOME_IGNORED) {
     const v = flame.getAttribute(fname);
     if (v !== null) ignoredFields.push({ field: fname, value: v });
@@ -909,16 +1062,77 @@ export function parseFlame(xml: string): FlameImportResult {
   if (background !== undefined) genome.background = background;
   if (paletteMode !== undefined) genome.paletteMode = paletteMode;
 
-  const report: ImportReport = {
-    flameCount: flames.length,
-    flameIndex: 0,
-    flameName,
+  // P1 #206 — per-keyframe time attribute (flam3.h:452, flam3.c:1364 default 0).
+  // Omitted when equal to the default so single-keyframe Genome JSON stays clean.
+  const timeAttr = flame.getAttribute('time');
+  if (timeAttr !== null) {
+    const t = parseScalarOrDefault(timeAttr, 'time', 0, defaultedFields);
+    if (t !== 0) genome.time = t;
+  }
+
+  return {
+    genome,
     droppedVariations,
     ignoredFields,
     defaultedFields,
     ...(paletteFallback ? { paletteFallback } : {}),
     ...(clampedXforms ? { clampedXforms } : {}),
   };
+}
 
-  return { genome, report };
+/** Read the cross-keyframe interp + temporal settings from the first flame
+ *  of a multi-keyframe sequence. flam3-C's interpolation.c reads these from
+ *  `cpi[0]` (the first keyframe in the blend window), so we mirror that. */
+function readAnimationFromFlame(flame: Element, keyframes: Genome[]): Animation {
+  const a: Animation = { ...FLAM3_ANIMATION_DEFAULTS, keyframes };
+
+  const interp = flame.getAttribute('interpolation');
+  if (interp === 'linear' || interp === 'smooth') a.interpolation = interp as Interpolation;
+
+  const interpType = flame.getAttribute('interpolation_type');
+  if (
+    interpType === 'linear' || interpType === 'log' ||
+    interpType === 'compat' || interpType === 'older'
+  ) {
+    a.interpolation_type = interpType as InterpolationType;
+  }
+
+  const palInterp = flame.getAttribute('palette_interpolation');
+  if (
+    palInterp === 'hsv' || palInterp === 'sweep' ||
+    palInterp === 'rgb' || palInterp === 'hsv_circular'
+  ) {
+    a.palette_interpolation = palInterp as PaletteInterpolation;
+  }
+
+  const blend = flame.getAttribute('hsv_rgb_palette_blend');
+  if (blend !== null) {
+    const v = Number(blend);
+    if (Number.isFinite(v)) a.hsv_rgb_palette_blend = v;
+  }
+
+  const nts = flame.getAttribute('temporal_samples');
+  if (nts !== null) {
+    const v = Number(nts);
+    if (Number.isFinite(v) && v > 0) a.ntemporal_samples = v;
+  }
+
+  const tfType = flame.getAttribute('temporal_filter_type');
+  if (tfType === 'box' || tfType === 'gaussian' || tfType === 'exp') {
+    a.temporal_filter_type = tfType as TemporalFilterType;
+  }
+
+  const tfWidth = flame.getAttribute('temporal_filter_width');
+  if (tfWidth !== null) {
+    const v = Number(tfWidth);
+    if (Number.isFinite(v) && v > 0) a.temporal_filter_width = v;
+  }
+
+  const tfExp = flame.getAttribute('temporal_filter_exp');
+  if (tfExp !== null) {
+    const v = Number(tfExp);
+    if (Number.isFinite(v)) a.temporal_filter_exp = v;
+  }
+
+  return a;
 }
