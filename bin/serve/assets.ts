@@ -115,8 +115,12 @@ export function makeAssetHandler() {
       assetPath = `${assetPath}index.html`;
     }
     let bytes = source.read(assetPath);
+    let mimePath = assetPath;
     if (!bytes && !extname(assetPath)) {
+      // SPA fallback — clean URLs like /v1/gen/247/id/19679 resolve to
+      // index.html and must carry text/html, not octet-stream.
       bytes = source.read('index.html');
+      mimePath = 'index.html';
     }
     if (!bytes) {
       res.statusCode = 404;
@@ -125,7 +129,7 @@ export function makeAssetHandler() {
       return;
     }
     res.statusCode = 200;
-    res.setHeader('Content-Type', mimeFor(assetPath));
+    res.setHeader('Content-Type', mimeFor(mimePath));
     res.setHeader('Cache-Control', 'no-store');
     res.end(Buffer.from(bytes));
   };
