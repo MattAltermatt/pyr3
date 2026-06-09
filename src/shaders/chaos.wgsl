@@ -5700,6 +5700,346 @@ fn var_cantor_stairs(p: vec2f, w: f32, terms: f32, amp: f32) -> vec2f {
   return w * vec2f(p.x + amp * Cx, p.y + amp * Cy);
 }
 
+// V258 billiard_circle
+fn var_billiard_circle(p: vec2f, w: f32, radius: f32, step: f32, angle: f32) -> vec2f {
+  let r_clamp = max(radius, 1.0e-5);
+  var px = p.x;
+  var py = p.y;
+  var r0 = length(p);
+  if (r0 > r_clamp) {
+    px = (px / r0) * r_clamp;
+    py = (py / r0) * r_clamp;
+    r0 = r_clamp;
+  }
+  var bx = 1.0;
+  var by = 0.0;
+  if (r0 > 1.0e-6) {
+    bx = px / r0;
+    by = py / r0;
+  }
+  let cos_a = safe_cos(angle);
+  let sin_a = safe_sin(angle);
+  let vx = bx * cos_a - by * sin_a;
+  let vy = bx * sin_a + by * cos_a;
+
+  let dot_pv = px * vx + py * vy;
+  let len2 = px * px + py * py;
+  let disc = dot_pv * dot_pv + r_clamp * r_clamp - len2;
+  let t_hit = -dot_pv + sqrt(max(disc, 0.0));
+
+  var fx = px + step * vx;
+  var fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step) {
+    let hx = px + t_hit * vx;
+    let hy = py + t_hit * vy;
+    let nx = -hx / r_clamp;
+    let ny = -hy / r_clamp;
+    let dot_vn = vx * nx + vy * ny;
+    let rx = vx - 2.0 * dot_vn * nx;
+    let ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+  return w * vec2f(fx, fy);
+}
+
+// V259 billiard_stadium
+fn var_billiard_stadium(p: vec2f, w: f32, width: f32, height: f32, step: f32, angle: f32) -> vec2f {
+  let R = max(height / 2.0, 1.0e-5);
+  let w2 = max(width / 2.0, 1.0e-5);
+
+  var px = p.x;
+  var py = p.y;
+
+  // Stadium containment clamp
+  if (abs(px) > w2) {
+    let cx = select(-w2, w2, px > 0.0);
+    let dx = px - cx;
+    let dist = length(vec2f(dx, py));
+    if (dist > R) {
+      px = cx + (dx / dist) * R;
+      py = (py / dist) * R;
+    }
+  } else if (abs(py) > R) {
+    py = select(-R, R, py > 0.0);
+  }
+
+  let vx = safe_cos(angle);
+  let vy = safe_sin(angle);
+
+  var t_hit = 1.0e10;
+  var hit_wall = 0u; // 1=top, 2=bottom, 3=right_circle, 4=left_circle
+
+  // 1. Top wall
+  if (vy > 0.0) {
+    let t = (R - py) / vy;
+    let x = px + t * vx;
+    if (t >= 0.0 && x >= -w2 && x <= w2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 1u;
+    }
+  }
+  // 2. Bottom wall
+  if (vy < 0.0) {
+    let t = (-R - py) / vy;
+    let x = px + t * vx;
+    if (t >= 0.0 && x >= -w2 && x <= w2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 2u;
+    }
+  }
+  // 3. Right circle
+  // Epsilon on the cap gate so an interior near-horizontal walker doesn't
+  // skip the cap due to f32 rounding nudging x just below w2.
+  {
+    let dx = px - w2;
+    let dot_pv = dx * vx + py * vy;
+    let len2 = dx * dx + py * py;
+    let disc = dot_pv * dot_pv + R * R - len2;
+    if (disc >= 0.0) {
+      let t = -dot_pv + sqrt(disc);
+      let x = px + t * vx;
+      if (t >= 0.0 && x >= w2 - 1.0e-5 && t < t_hit) {
+        t_hit = t;
+        hit_wall = 3u;
+      }
+    }
+  }
+  // 4. Left circle
+  {
+    let dx = px + w2;
+    let dot_pv = dx * vx + py * vy;
+    let len2 = dx * dx + py * py;
+    let disc = dot_pv * dot_pv + R * R - len2;
+    if (disc >= 0.0) {
+      let t = -dot_pv + sqrt(disc);
+      let x = px + t * vx;
+      if (t >= 0.0 && x <= -w2 + 1.0e-5 && t < t_hit) {
+        t_hit = t;
+        hit_wall = 4u;
+      }
+    }
+  }
+
+  var fx = px + step * vx;
+  var fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step) {
+    let hx = px + t_hit * vx;
+    let hy = py + t_hit * vy;
+    var nx = 0.0;
+    var ny = 0.0;
+    if (hit_wall == 1u) {
+      ny = -1.0;
+    } else if (hit_wall == 2u) {
+      ny = 1.0;
+    } else if (hit_wall == 3u) {
+      let r_len = max(length(vec2f(hx - w2, hy)), 1.0e-5);
+      nx = -(hx - w2) / r_len;
+      ny = -hy / r_len;
+    } else if (hit_wall == 4u) {
+      let r_len = max(length(vec2f(hx + w2, hy)), 1.0e-5);
+      nx = -(hx + w2) / r_len;
+      ny = -hy / r_len;
+    }
+    let dot_vn = vx * nx + vy * ny;
+    let rx = vx - 2.0 * dot_vn * nx;
+    let ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+  return w * vec2f(fx, fy);
+}
+
+// V260 billiard_sinai
+fn var_billiard_sinai(p: vec2f, w: f32, length_val: f32, radius: f32, step: f32, angle: f32) -> vec2f {
+  let L2 = max(length_val / 2.0, 1.0e-5);
+  let R = max(radius, 1.0e-5);
+
+  var px = p.x;
+  var py = p.y;
+
+  // Containment clamps
+  if (abs(px) > L2) { px = select(-L2, L2, px > 0.0); }
+  if (abs(py) > L2) { py = select(-L2, L2, py > 0.0); }
+  let r0 = length(vec2f(px, py));
+  if (r0 < R) {
+    if (r0 > 1.0e-6) {
+      px = (px / r0) * R;
+      py = (py / r0) * R;
+    } else {
+      // At origin: pick a deterministic-but-spread direction from coord bits
+      // so walker families converging near origin don't all bounce identically.
+      let seed = bitcast<u32>(p.x) ^ bitcast<u32>(p.y);
+      let theta = hash01(seed) * 6.283185307179586;
+      px = R * cos(theta);
+      py = R * sin(theta);
+    }
+  }
+
+  let vx = safe_cos(angle);
+  let vy = safe_sin(angle);
+
+  var t_hit = 1.0e10;
+  var hit_wall = 0u;
+
+  // 1. Left square wall
+  if (vx < 0.0) {
+    let t = (-L2 - px) / vx;
+    let y = py + t * vy;
+    if (t >= 0.0 && y >= -L2 && y <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 1u;
+    }
+  }
+  // 2. Right square wall
+  if (vx > 0.0) {
+    let t = (L2 - px) / vx;
+    let y = py + t * vy;
+    if (t >= 0.0 && y >= -L2 && y <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 2u;
+    }
+  }
+  // 3. Bottom square wall
+  if (vy < 0.0) {
+    let t = (-L2 - py) / vy;
+    let x = px + t * vx;
+    if (t >= 0.0 && x >= -L2 && x <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 3u;
+    }
+  }
+  // 4. Top square wall
+  if (vy > 0.0) {
+    let t = (L2 - py) / vy;
+    let x = px + t * vx;
+    if (t >= 0.0 && x >= -L2 && x <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 4u;
+    }
+  }
+  // 5. Circle obstacle
+  {
+    let dot_pv = px * vx + py * vy;
+    let len2 = px * px + py * py;
+    let disc = dot_pv * dot_pv - (len2 - R * R);
+    if (disc >= 0.0) {
+      let t = -dot_pv - sqrt(disc);
+      if (t >= 0.0 && t < t_hit) {
+        t_hit = t;
+        hit_wall = 5u;
+      }
+    }
+  }
+
+  var fx = px + step * vx;
+  var fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step) {
+    let hx = px + t_hit * vx;
+    let hy = py + t_hit * vy;
+    var nx = 0.0;
+    var ny = 0.0;
+    if (hit_wall == 1u) { nx = 1.0; }
+    else if (hit_wall == 2u) { nx = -1.0; }
+    else if (hit_wall == 3u) { ny = 1.0; }
+    else if (hit_wall == 4u) { ny = -1.0; }
+    else if (hit_wall == 5u) {
+      nx = hx / R;
+      ny = hy / R;
+    }
+    let dot_vn = vx * nx + vy * ny;
+    let rx = vx - 2.0 * dot_vn * nx;
+    let ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+  return w * vec2f(fx, fy);
+}
+
+// V261 billiard_polygon
+fn var_billiard_polygon(p: vec2f, w: f32, sides_val: f32, radius: f32, step: f32, angle: f32) -> vec2f {
+  let sides = u32(clamp(sides_val + 0.5, 3.0, 12.0));
+  let R = max(radius, 1.0e-5);
+
+  // Containment clamp into the inscribed circle (always inside the polygon).
+  let inradius = R * cos(3.141592653589793 / f32(sides));
+  var px = p.x;
+  var py = p.y;
+  let r0_in = length(vec2f(px, py));
+  if (r0_in > inradius) {
+    let s = inradius / max(r0_in, 1.0e-6);
+    px = px * s;
+    py = py * s;
+  }
+
+  let vx = safe_cos(angle);
+  let vy = safe_sin(angle);
+
+  var t_hit = 1.0e10;
+  var hit_seg = -1i;
+
+  var ax = R * safe_cos(0.0);
+  var ay = R * safe_sin(0.0);
+
+  for (var k = 0u; k < sides; k = k + 1u) {
+    let next_phi = (2.0 * 3.141592653589793 * f32(k + 1u)) / f32(sides);
+    let bx = R * safe_cos(next_phi);
+    let by = R * safe_sin(next_phi);
+
+    let dx = bx - ax;
+    let dy = by - ay;
+    let det = -vx * dy + vy * dx;
+    if (abs(det) > 1.0e-6) {
+      let t = (-(ax - px) * dy + (ay - py) * dx) / det;
+      let u = (vx * (ay - py) - vy * (ax - px)) / det;
+      if (t >= 0.0 && u >= 0.0 && u <= 1.0 && t < t_hit) {
+        t_hit = t;
+        hit_seg = i32(k);
+      }
+    }
+    ax = bx;
+    ay = by;
+  }
+
+  var fx = px + step * vx;
+  var fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step && hit_seg != -1i) {
+    let hx = px + t_hit * vx;
+    let hy = py + t_hit * vy;
+
+    // Perpendicular-to-edge normal, sign-corrected toward the interior. Robust
+    // to non-origin-centered polygons (the midpoint-to-origin shortcut wasn't).
+    let phi_seg = (2.0 * 3.141592653589793 * f32(hit_seg)) / f32(sides);
+    let phi_seg_next = (2.0 * 3.141592653589793 * f32(hit_seg + 1)) / f32(sides);
+    let ax = R * safe_cos(phi_seg);
+    let ay = R * safe_sin(phi_seg);
+    let bx = R * safe_cos(phi_seg_next);
+    let by = R * safe_sin(phi_seg_next);
+    let ex = bx - ax;
+    let ey = by - ay;
+    let eLen = max(length(vec2f(ex, ey)), 1.0e-5);
+    var nx = -ey / eLen;
+    var ny =  ex / eLen;
+    let mx = 0.5 * (ax + bx);
+    let my = 0.5 * (ay + by);
+    if (nx * mx + ny * my > 0.0) {
+      nx = -nx;
+      ny = -ny;
+    }
+
+    let dot_vn = vx * nx + vy * ny;
+    let rx = vx - 2.0 * dot_vn * nx;
+    let ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+  return w * vec2f(fx, fy);
+}
+
+
+
+
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -6009,6 +6349,10 @@ fn apply_variation(
     case 255u: { return var_weierstrass(p, w, p0, p1, p2, p3); }
     case 256u: { return var_takagi(p, w, p0, p1); }
     case 257u: { return var_cantor_stairs(p, w, p0, p1); }
+    case 258u: { return var_billiard_circle(p, w, p0, p1, p2); }
+    case 259u: { return var_billiard_stadium(p, w, p0, p1, p2, p3); }
+    case 260u: { return var_billiard_sinai(p, w, p0, p1, p2, p3); }
+    case 261u: { return var_billiard_polygon(p, w, p0, p1, p2, p3); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

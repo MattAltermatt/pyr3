@@ -66,9 +66,9 @@ describe('getDisplayLabel mapping', () => {
     expect(getDisplayLabel(219)).toBe('JWF120');
   });
 
-  it('maps Pyre novel/custom range 220..257 to P0..P37', () => {
+  it('maps Pyre novel/custom range 220..261 to P0..P41', () => {
     expect(getDisplayLabel(220)).toBe('P0');
-    expect(getDisplayLabel(257)).toBe('P37');
+    expect(getDisplayLabel(261)).toBe('P41');
   });
 });
 

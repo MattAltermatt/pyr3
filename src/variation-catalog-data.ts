@@ -5,7 +5,13 @@
 // during development — the page falls back to a placeholder. By ship,
 // every variation must have a complete entry (asserted in tests).
 
-import { V } from './variations';
+import {
+  V,
+  ts_var_billiard_circle,
+  ts_var_billiard_stadium,
+  ts_var_billiard_sinai,
+  ts_var_billiard_polygon,
+} from './variations';
 
 export type CatalogSource = 'flam3' | 'dc' | 'jwf' | 'novel';
 
@@ -54,7 +60,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                           // #133 — DC + position warp
-  if (idx >= V.blaschke && idx <= V.cantor_stairs) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136
+  if (idx >= V.blaschke && idx <= V.billiard_polygon) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150
   return 'jwf';
 }
 
@@ -4867,6 +4873,99 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
         Cy = (Cy + Math.sin(Cy * 2 * Math.PI)) * 0.5;
       }
       return [x + amp * Cx, y + amp * Cy];
+    },
+  },
+  {
+    idx: V.billiard_circle,
+    name: 'billiard_circle',
+    source: 'novel',
+    formula: 'V_{258}(p) = p_{\\text{hit}} + (s - t_{\\text{hit}})(v - 2(v \\cdot n)n) \\quad (|p| \\le R)',
+    blurb: 'Circular billiard table. Walker travels along a step distance, bouncing off the circular boundary with specular reflection if it hits.',
+    params: [
+      { name: 'radius', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'step', default: 0.5, min: 0.05, max: 5.0, step: 0.05 },
+      // Default angle = 0.7 (~40°) — axis-aligned 0.0 collapses all walkers
+      // to a single direction → bucket-contention freeze on the catalog scaffold.
+      { name: 'angle', default: 0.7, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_billiard_circle({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { radius: 1.0, step: 0.5, angle: 0.7 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.billiard_stadium,
+    name: 'billiard_stadium',
+    source: 'novel',
+    formula: 'V_{259}(p) = p_{\\text{hit}} + (s - t_{\\text{hit}})(v - 2(v \\cdot n)n) \\quad (\\text{Bunimovich stadium})',
+    blurb: 'Bunimovich stadium billiard. Walker travels along a step distance, bouncing off the straight walls or semicircular caps with specular reflection.',
+    params: [
+      { name: 'width', default: 1.5, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'height', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'step', default: 0.5, min: 0.05, max: 5.0, step: 0.05 },
+      { name: 'angle', default: 0.7, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_billiard_stadium({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { width: 1.5, height: 1.0, step: 0.5, angle: 0.7 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.billiard_sinai,
+    name: 'billiard_sinai',
+    source: 'novel',
+    formula: 'V_{260}(p) = p_{\\text{hit}} + (s - t_{\\text{hit}})(v - 2(v \\cdot n)n) \\quad (\\text{Sinai square table})',
+    blurb: 'Sinai billiard. Walker travels inside a square region and bounces specularly off the outer walls or a central circular obstacle.',
+    params: [
+      { name: 'length', default: 2.0, min: 0.5, max: 10.0, step: 0.1 },
+      { name: 'radius', default: 0.5, min: 0.05, max: 2.5, step: 0.05 },
+      { name: 'step', default: 0.5, min: 0.05, max: 5.0, step: 0.05 },
+      { name: 'angle', default: 0.7, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_billiard_sinai({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { length: 2.0, radius: 0.5, step: 0.5, angle: 0.7 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.billiard_polygon,
+    name: 'billiard_polygon',
+    source: 'novel',
+    formula: 'V_{261}(p) = p_{\\text{hit}} + (s - t_{\\text{hit}})(v - 2(v \\cdot n)n) \\quad (\\text{regular } N\\text{-gon})',
+    blurb: 'Polygonal billiard table. Walker travels and bounces specularly off the edges of a regular polygon of N sides.',
+    params: [
+      { name: 'sides', default: 5.0, min: 3.0, max: 12.0, step: 1.0 },
+      { name: 'radius', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+      { name: 'step', default: 0.5, min: 0.05, max: 5.0, step: 0.05 },
+      { name: 'angle', default: 0.7, min: -Math.PI, max: Math.PI, step: 0.05 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_billiard_polygon({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { sides: 5, radius: 1.0, step: 0.5, angle: 0.7 },
+      });
+      return [res.x, res.y];
     },
   },
 ];

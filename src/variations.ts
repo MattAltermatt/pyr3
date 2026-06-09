@@ -1,10 +1,11 @@
 // Variation registry for pyr3.
 //
 // Each variation has a stable numeric INDEX matching the WGSL switch
-// dispatcher in `src/shaders/chaos.wgsl`. As of 2026-06-07 the catalog
-// holds V0..V219 (220 entries) — flam3 originals + DC family + Apophysis
+// dispatcher in `src/shaders/chaos.wgsl`. As of 2026-06-09 the catalog
+// holds V0..V261 (262 entries) — flam3 originals + DC family + Apophysis
 // plugin pack + JWildfire 2D long tail (V152..V213 from #121, V214..V219
-// from #170 sibling-pair completions).
+// from #170 sibling-pair completions) + Pyre originals (V220.., e.g.
+// chaotic-billiards V258..V261 from #150).
 //
 // Adding a variation = (1) add an entry to V, (2) add a `var_X` kernel
 // in chaos.wgsl, (3) add a switch case in `apply_variation`. The genome
@@ -537,6 +538,11 @@ export const V = {
   weierstrass: 255,
   takagi: 256,
   cantor_stairs: 257,
+  // #150 — Chaotic-billiard warps (stadium, Sinai, circle, polygon)
+  billiard_circle: 258,
+  billiard_stadium: 259,
+  billiard_sinai: 260,
+  billiard_polygon: 261,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -545,9 +551,9 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
 
-/** Convert an internal variation index (0..257) to its user-facing display label
+/** Convert an internal variation index (0..261) to its user-facing display label
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
- *  and P0..P37 (Pyre originals). */
+ *  and P0..P41 (Pyre originals). */
 export function getDisplayLabel(idx: number): string {
   if (idx <= 98) {
     return `V${idx}`;
@@ -3151,3 +3157,394 @@ export function ts_var_blur_circle(i: VarInput): VarOutput {
   const phi = PI_4 * ps / s - PI;
   return { x: r * Math.cos(phi), y: r * Math.sin(phi) };
 }
+
+// Hash helpers used by billiard variations to spread degenerate-origin walkers
+// without sacrificing TS↔WGSL parity. Mirrors chaos.wgsl's `hash01` exactly
+// (same u32 mixing constants) and reads input bits the same way WGSL does
+// via `bitcast<u32>(p.x) ^ bitcast<u32>(p.y)`.
+const _hashF32Buf = new ArrayBuffer(8);
+const _hashF32 = new Float32Array(_hashF32Buf);
+const _hashU32 = new Uint32Array(_hashF32Buf);
+function hash01InputSeed(x: number, y: number): number {
+  _hashF32[0] = x;
+  _hashF32[1] = y;
+  return (_hashU32[0]! ^ _hashU32[1]!) >>> 0;
+}
+function hash01TS(x: number): number {
+  let h = x >>> 0;
+  h = (h ^ (h >>> 17)) >>> 0;
+  h = Math.imul(h, 0xed5ad4bb) >>> 0;
+  h = (h ^ (h >>> 11)) >>> 0;
+  h = Math.imul(h, 0xac4c1b51) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  return h / 4294967296;
+}
+
+// var_billiard_circle (chaos.wgsl)
+export function ts_var_billiard_circle(i: VarInput): VarOutput {
+  const radius = i.params?.radius ?? 1.0;
+  const step = i.params?.step ?? 0.5;
+  const angle = i.params?.angle ?? 0.0;
+
+  const r_clamp = Math.max(radius, 1.0e-5);
+  let px = i.tx;
+  let py = i.ty;
+  let r0 = Math.hypot(px, py);
+  if (r0 > r_clamp) {
+    px = (px / r0) * r_clamp;
+    py = (py / r0) * r_clamp;
+    r0 = r_clamp;
+  }
+
+  let bx = 1.0;
+  let by = 0.0;
+  if (r0 > 1.0e-6) {
+    bx = px / r0;
+    by = py / r0;
+  }
+
+  const cos_a = Math.cos(angle);
+  const sin_a = Math.sin(angle);
+  const vx = bx * cos_a - by * sin_a;
+  const vy = bx * sin_a + by * cos_a;
+
+  const dot_pv = px * vx + py * vy;
+  const len2 = px * px + py * py;
+  const disc = dot_pv * dot_pv + r_clamp * r_clamp - len2;
+  const t_hit = -dot_pv + Math.sqrt(Math.max(disc, 0.0));
+
+  let fx = px + step * vx;
+  let fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step) {
+    const hx = px + t_hit * vx;
+    const hy = py + t_hit * vy;
+    const nx = -hx / r_clamp;
+    const ny = -hy / r_clamp;
+    const dot_vn = vx * nx + vy * ny;
+    const rx = vx - 2.0 * dot_vn * nx;
+    const ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+
+  return { x: i.weight * fx, y: i.weight * fy };
+}
+
+// var_billiard_stadium (chaos.wgsl)
+export function ts_var_billiard_stadium(i: VarInput): VarOutput {
+  const width = i.params?.width ?? 1.5;
+  const height = i.params?.height ?? 1.0;
+  const step = i.params?.step ?? 0.5;
+  const angle = i.params?.angle ?? 0.0;
+
+  const R = Math.max(height / 2.0, 1.0e-5);
+  const w2 = Math.max(width / 2.0, 1.0e-5);
+
+  let px = i.tx;
+  let py = i.ty;
+
+  // Stadium containment clamp
+  if (Math.abs(px) > w2) {
+    const cx = px > 0 ? w2 : -w2;
+    const dx = px - cx;
+    const dist = Math.hypot(dx, py);
+    if (dist > R) {
+      px = cx + (dx / dist) * R;
+      py = (py / dist) * R;
+    }
+  } else if (Math.abs(py) > R) {
+    py = py > 0 ? R : -R;
+  }
+
+  const vx = Math.cos(angle);
+  const vy = Math.sin(angle);
+
+  // Compute wall intersection times
+  let t_hit = Infinity;
+  let hit_wall = 0; // 1=top, 2=bottom, 3=right_circle, 4=left_circle
+
+  // 1. Top wall: y = R, x in [-w2, w2]
+  if (vy > 0.0) {
+    const t = (R - py) / vy;
+    const x = px + t * vx;
+    if (t >= 0.0 && x >= -w2 && x <= w2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 1;
+    }
+  }
+  // 2. Bottom wall: y = -R, x in [-w2, w2]
+  if (vy < 0.0) {
+    const t = (-R - py) / vy;
+    const x = px + t * vx;
+    if (t >= 0.0 && x >= -w2 && x <= w2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 2;
+    }
+  }
+  // 3. Right circle: (x - w2)^2 + y^2 = R^2
+  // Epsilon on the cap gate so an interior near-horizontal walker doesn't
+  // skip the cap due to f32 rounding nudging x just below w2.
+  {
+    const dx = px - w2;
+    const dot_pv = dx * vx + py * vy;
+    const len2 = dx * dx + py * py;
+    const disc = dot_pv * dot_pv + R * R - len2;
+    if (disc >= 0.0) {
+      const t = -dot_pv + Math.sqrt(disc);
+      const x = px + t * vx;
+      if (t >= 0.0 && x >= w2 - 1.0e-5 && t < t_hit) {
+        t_hit = t;
+        hit_wall = 3;
+      }
+    }
+  }
+  // 4. Left circle: (x + w2)^2 + y^2 = R^2
+  {
+    const dx = px + w2;
+    const dot_pv = dx * vx + py * vy;
+    const len2 = dx * dx + py * py;
+    const disc = dot_pv * dot_pv + R * R - len2;
+    if (disc >= 0.0) {
+      const t = -dot_pv + Math.sqrt(disc);
+      const x = px + t * vx;
+      if (t >= 0.0 && x <= -w2 + 1.0e-5 && t < t_hit) {
+        t_hit = t;
+        hit_wall = 4;
+      }
+    }
+  }
+
+  let fx = px + step * vx;
+  let fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step) {
+    const hx = px + t_hit * vx;
+    const hy = py + t_hit * vy;
+    let nx = 0.0;
+    let ny = 0.0;
+    if (hit_wall === 1) {
+      ny = -1.0;
+    } else if (hit_wall === 2) {
+      ny = 1.0;
+    } else if (hit_wall === 3) {
+      const r_len = Math.max(Math.hypot(hx - w2, hy), 1.0e-5);
+      nx = -(hx - w2) / r_len;
+      ny = -hy / r_len;
+    } else if (hit_wall === 4) {
+      const r_len = Math.max(Math.hypot(hx + w2, hy), 1.0e-5);
+      nx = -(hx + w2) / r_len;
+      ny = -hy / r_len;
+    }
+    const dot_vn = vx * nx + vy * ny;
+    const rx = vx - 2.0 * dot_vn * nx;
+    const ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+
+  return { x: i.weight * fx, y: i.weight * fy };
+}
+
+// var_billiard_sinai (chaos.wgsl)
+export function ts_var_billiard_sinai(i: VarInput): VarOutput {
+  const length = i.params?.length ?? 2.0;
+  const radius = i.params?.radius ?? 0.5;
+  const step = i.params?.step ?? 0.5;
+  const angle = i.params?.angle ?? 0.0;
+
+  const L2 = Math.max(length / 2.0, 1.0e-5);
+  const R = Math.max(radius, 1.0e-5);
+  let px = i.tx;
+  let py = i.ty;
+
+  // Clamping: inside square, outside circle
+  if (Math.abs(px) > L2) px = px > 0 ? L2 : -L2;
+  if (Math.abs(py) > L2) py = py > 0 ? L2 : -L2;
+  const r0 = Math.hypot(px, py);
+  if (r0 < R) {
+    if (r0 > 1.0e-6) {
+      px = (px / r0) * R;
+      py = (py / r0) * R;
+    } else {
+      // At origin: pick a deterministic-but-spread direction from coord bits
+      // so walker families converging near origin don't all bounce identically
+      // (mirrors WGSL hash01 of bitcast<u32>(p.x) ^ bitcast<u32>(p.y)).
+      const seed = (hash01InputSeed(i.tx, i.ty)) >>> 0;
+      const theta = hash01TS(seed) * (2 * Math.PI);
+      px = R * Math.cos(theta);
+      py = R * Math.sin(theta);
+    }
+  }
+
+  const vx = Math.cos(angle);
+  const vy = Math.sin(angle);
+
+  let t_hit = Infinity;
+  let hit_wall = 0; // 1=left, 2=right, 3=bottom, 4=top, 5=circle
+
+  // 1. Left square wall: x = -L2
+  if (vx < 0.0) {
+    const t = (-L2 - px) / vx;
+    const y = py + t * vy;
+    if (t >= 0.0 && y >= -L2 && y <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 1;
+    }
+  }
+  // 2. Right square wall: x = L2
+  if (vx > 0.0) {
+    const t = (L2 - px) / vx;
+    const y = py + t * vy;
+    if (t >= 0.0 && y >= -L2 && y <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 2;
+    }
+  }
+  // 3. Bottom square wall: y = -L2
+  if (vy < 0.0) {
+    const t = (-L2 - py) / vy;
+    const x = px + t * vx;
+    if (t >= 0.0 && x >= -L2 && x <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 3;
+    }
+  }
+  // 4. Top square wall: y = L2
+  if (vy > 0.0) {
+    const t = (L2 - py) / vy;
+    const x = px + t * vx;
+    if (t >= 0.0 && x >= -L2 && x <= L2 && t < t_hit) {
+      t_hit = t;
+      hit_wall = 4;
+    }
+  }
+  // 5. Circle obstacle: x^2 + y^2 = radius^2
+  {
+    const dot_pv = px * vx + py * vy;
+    const len2 = px * px + py * py;
+    const disc = dot_pv * dot_pv - (len2 - R * R);
+    if (disc >= 0.0) {
+      // Smallest positive root (hits from outside)
+      const t1 = -dot_pv - Math.sqrt(disc);
+      if (t1 >= 0.0 && t1 < t_hit) {
+        t_hit = t1;
+        hit_wall = 5;
+      }
+    }
+  }
+
+  let fx = px + step * vx;
+  let fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step) {
+    const hx = px + t_hit * vx;
+    const hy = py + t_hit * vy;
+    let nx = 0.0;
+    let ny = 0.0;
+    if (hit_wall === 1) nx = 1.0;
+    else if (hit_wall === 2) nx = -1.0;
+    else if (hit_wall === 3) ny = 1.0;
+    else if (hit_wall === 4) ny = -1.0;
+    else if (hit_wall === 5) {
+      nx = hx / R;
+      ny = hy / R;
+    }
+    const dot_vn = vx * nx + vy * ny;
+    const rx = vx - 2.0 * dot_vn * nx;
+    const ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+
+  return { x: i.weight * fx, y: i.weight * fy };
+}
+
+// var_billiard_polygon (chaos.wgsl)
+export function ts_var_billiard_polygon(i: VarInput): VarOutput {
+  const sides = Math.max(3, Math.min(12, Math.round(i.params?.sides ?? 5)));
+  const radius = i.params?.radius ?? 1.0;
+  const step = i.params?.step ?? 0.5;
+  const angle = i.params?.angle ?? 0.0;
+
+  const R = Math.max(radius, 1.0e-5);
+  // Containment clamp: project a walker outside the inscribed circle back inside,
+  // so subsequent ray-segment search starts from a point known-interior to the polygon.
+  const inradius = R * Math.cos(Math.PI / sides);
+  let px = i.tx;
+  let py = i.ty;
+  const r0_in = Math.hypot(px, py);
+  if (r0_in > inradius) {
+    const s = inradius / Math.max(r0_in, 1.0e-6);
+    px = px * s;
+    py = py * s;
+  }
+
+  const vx = Math.cos(angle);
+  const vy = Math.sin(angle);
+
+  // Vertices
+  const vx_arr: number[] = [];
+  const vy_arr: number[] = [];
+  for (let k = 0; k < sides; k++) {
+    const phi = (2.0 * Math.PI * k) / sides;
+    vx_arr.push(R * Math.cos(phi));
+    vy_arr.push(R * Math.sin(phi));
+  }
+
+  let t_hit = Infinity;
+  let hit_seg = -1;
+
+  for (let k = 0; k < sides; k++) {
+    const ax = vx_arr[k]!;
+    const ay = vy_arr[k]!;
+    const bx = vx_arr[(k + 1) % sides]!;
+    const by = vy_arr[(k + 1) % sides]!;
+
+    const dx = bx - ax;
+    const dy = by - ay;
+    const det = -vx * dy + vy * dx;
+    if (Math.abs(det) > 1.0e-6) {
+      const t = (-(ax - px) * dy + (ay - py) * dx) / det;
+      const u = (vx * (ay - py) - vy * (ax - px)) / det;
+      if (t >= 0.0 && u >= 0.0 && u <= 1.0 && t < t_hit) {
+        t_hit = t;
+        hit_seg = k;
+      }
+    }
+  }
+
+  let fx = px + step * vx;
+  let fy = py + step * vy;
+  if (t_hit > 0.0 && t_hit < step && hit_seg !== -1) {
+    const hx = px + t_hit * vx;
+    const hy = py + t_hit * vy;
+
+    const ax = vx_arr[hit_seg]!;
+    const ay = vy_arr[hit_seg]!;
+    const bx = vx_arr[(hit_seg + 1) % sides]!;
+    const by = vy_arr[(hit_seg + 1) % sides]!;
+    // Perpendicular-to-edge normal, sign-corrected toward the interior. Robust
+    // to non-origin-centered polygons (the midpoint-to-origin shortcut wasn't).
+    const ex = bx - ax;
+    const ey = by - ay;
+    const eLen = Math.max(Math.hypot(ex, ey), 1.0e-5);
+    let nx = -ey / eLen;
+    let ny =  ex / eLen;
+    const mx = (ax + bx) / 2.0;
+    const my = (ay + by) / 2.0;
+    if (nx * mx + ny * my > 0.0) {
+      nx = -nx;
+      ny = -ny;
+    }
+
+    const dot_vn = vx * nx + vy * ny;
+    const rx = vx - 2.0 * dot_vn * nx;
+    const ry = vy - 2.0 * dot_vn * ny;
+    fx = hx + (step - t_hit) * rx;
+    fy = hy + (step - t_hit) * ry;
+  }
+
+  return { x: i.weight * fx, y: i.weight * fy };
+}
+
+
+
+
