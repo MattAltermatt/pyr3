@@ -27,6 +27,7 @@
     "build:cli": "node scripts/build-cli.mjs",
     "smoke:cli": "node scripts/smoke-bundled-cli.mjs",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
+    "serve": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-serve.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
     "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts",
     "bake-features": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bake-features.ts",

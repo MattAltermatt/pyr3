@@ -30,6 +30,7 @@ import {
   mkdirSync,
   existsSync,
   rmSync,
+  readdirSync,
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { platform, homedir } from 'node:os';
@@ -76,6 +77,30 @@ function hasSeaFuse(nodePath) {
  *   - darwin → "darwin-universal.dawn.node" (Apple ships universal binaries)
  *   - linux/win → "<platform>-<arch>.dawn.node"
  */
+/**
+ * Walk a directory tree and return { 'viewer/<rel-path>': '<abs-path>' }
+ * suitable for spreading into the SEA `assets` map. Skips `.map` files —
+ * source maps inflate the binary and aren't load-bearing for the served
+ * viewer.
+ */
+function collectViewerAssets(distDir) {
+  const out = {};
+  function walk(dir, relBase) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(full, rel);
+      } else if (entry.isFile()) {
+        if (entry.name.endsWith('.map')) continue;
+        out[`viewer/${rel}`] = full;
+      }
+    }
+  }
+  walk(distDir, '');
+  return out;
+}
+
 function resolveDawnNodeForHost() {
   const plat = platform();
   const arch = plat === 'darwin' ? 'universal' : process.arch;
@@ -176,16 +201,36 @@ async function buildCli(name) {
   // The Dawn-node native binding for the host platform is bundled as a
   // SEA asset under the key "dawn.node". bin/host.ts:loadWebgpu() extracts
   // it to ~/.cache/pyr3/dawn-<sha>.node on first launch.
+  // For `serve` (#201), additionally bundle the built viewer (`dist/**`)
+  // as SEA assets under `viewer/<rel-path>` keys; bin/serve/assets.ts
+  // reads them at runtime to host the browser UI.
   const dawnNodePath = resolveDawnNodeForHost();
+  const assets = {
+    'dawn.node': dawnNodePath,
+    'package.json': join(REPO_ROOT, 'package.json'),
+  };
+  if (name === 'serve') {
+    const distDir = join(REPO_ROOT, 'dist');
+    if (!existsSync(distDir)) {
+      throw new Error(
+        `build-cli serve: ${distDir} not found. Run \`npm run build\` first to produce the viewer bundle.`,
+      );
+    }
+    const viewerAssets = collectViewerAssets(distDir);
+    const viewerCount = Object.keys(viewerAssets).length;
+    if (viewerCount === 0) {
+      throw new Error(`build-cli serve: ${distDir} is empty.`);
+    }
+    Object.assign(assets, viewerAssets);
+    console.log(`   ✓ bundling ${viewerCount} viewer assets from dist/`);
+  }
   const seaConfig = {
     main: cjsPath,
     output: seaBlobPath,
     disableExperimentalSEAWarning: true,
     useSnapshot: false,
     useCodeCache: false,
-    assets: {
-      'dawn.node': dawnNodePath,
-    },
+    assets,
   };
   writeFileSync(seaConfigPath, JSON.stringify(seaConfig, null, 2));
 

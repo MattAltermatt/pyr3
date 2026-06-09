@@ -30,6 +30,7 @@ const REPO_ROOT = resolvePath(__dirname, '..');
 // stays unchanged.
 export const KNOWN_BINARIES = {
   render: 'bin/pyr3-render.ts',
+  serve: 'bin/pyr3-serve.ts',
 };
 
 // esbuild plugin: `import s from './x.wgsl?raw'` → inline the file contents
