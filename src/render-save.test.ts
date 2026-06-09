@@ -51,11 +51,13 @@ const FAKE_CTX = {
   getCurrentTexture: () => ({ createView: () => ({} as GPUTextureView) }),
 } as unknown as GPUCanvasContext;
 
-beforeEach(() => {
+beforeEach(async () => {
   cancelCalls.length = 0;
   injectCalls.length = 0;
   stubOutcome = 'completed';
   lastStartArgs = null;
+  const cap = await import('./capability');
+  cap._resetCapabilityForTest();
 });
 
 afterEach(() => {
@@ -122,6 +124,101 @@ describe('saveRenderToPng', () => {
     });
     expect(result).toBe('cancelled');
     expect(injectCalls).toHaveLength(0);
+  });
+
+  it('forks to the backend when capability.backend === "dawn-node"', async () => {
+    const cap = await import('./capability');
+    cap._resetCapabilityForTest();
+    // Stub /api/capabilities → dawn-node
+    const capFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        backend: 'dawn-node',
+        max_quality: null,
+        can_write_files: false,
+        can_render_animation: false,
+      }),
+    });
+    globalThis.fetch = capFetch as never;
+    await cap.fetchCapability();
+
+    // PNG bytes the server pretends to render. Use the PNG magic so the
+    // base64 round-trip is meaningful.
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const b64 = Buffer.from(pngBytes).toString('base64');
+    // Build an SSE stream: progress events + a final done event.
+    const sse = [
+      'event: open\ndata: {"jobId":"test-job"}\n\n',
+      'event: progress\ndata: {"chunk":1,"total":2,"percent":0.5,"samples":1000}\n\n',
+      'event: progress\ndata: {"chunk":2,"total":2,"percent":1.0,"samples":2000}\n\n',
+      `event: done\ndata: ${JSON.stringify({ png_base64: b64 })}\n\n`,
+    ].join('');
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(sse));
+        controller.close();
+      },
+    });
+    // Render fetch responds with the SSE stream.
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'X-Job-ID': 'test-job' }),
+      body,
+    }) as never;
+
+    const progressCalls: Array<{ percent: number }> = [];
+    const ctrl = new AbortController();
+    const canvas = mockCanvas();
+    canvas.width = 100; canvas.height = 100;
+    // Inject a fake URL/createObjectURL into happy-dom — minimal stub.
+    let downloadAttribute: string | null = null;
+    const origCreate = document.createElement.bind(document);
+    document.createElement = ((tag: string) => {
+      const el = origCreate(tag);
+      if (tag === 'a') {
+        Object.defineProperty(el, 'download', {
+          set(v) { downloadAttribute = v; },
+          get() { return downloadAttribute; },
+        });
+      }
+      return el;
+    }) as never;
+    (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = () => 'blob://test';
+    (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = () => {};
+
+    const { saveRenderToPng: helper } = await import('./render-save');
+    const result = await helper({
+      renderer: FAKE_RENDERER,
+      genome: {
+        quality: 50,
+        oversample: 1,
+        palette: { name: 'test', stops: [{ t: 0, r: 0, g: 0, b: 0 }] },
+        xforms: [],
+      } as never,
+      canvas,
+      ctx: FAKE_CTX,
+      device: mockDevice(),
+      abortSignal: ctrl.signal,
+      onProgress: (p) => progressCalls.push({ percent: p.percent }),
+      filename: 'backend.pyr3.png',
+      metadataJson: '{"meta":1}',
+      targetSamples: 2_000,
+      seedBase: 7,
+    });
+
+    expect(result).toBe('completed');
+    expect(progressCalls.length).toBe(2);
+    expect(progressCalls[0]?.percent).toBe(0.5);
+    expect(progressCalls[1]?.percent).toBe(1.0);
+    expect(injectCalls).toHaveLength(1);
+    expect(injectCalls[0]?.keyword).toBe('pyr3');
+    expect(downloadAttribute).toBe('backend.pyr3.png');
+
+    cap._resetCapabilityForTest();
+    document.createElement = origCreate;
   });
 
   it('bridges the AbortSignal to renderHandle.cancel', async () => {
