@@ -1988,8 +1988,27 @@ async function main(): Promise<void> {
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
   // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
   // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
-  const intent = parseLoadIntent(window.location.pathname + window.location.search)
+  let intent = parseLoadIntent(window.location.pathname + window.location.search)
     ?? { kind: 'default' as const };
+  // #199 — the deferred v1 §12 routes (gen-list / gen-browse / custom-reserved)
+  // were superseded by the gallery (#39, 2026-05-30). They previously
+  // silently painted the welcome flame with only a console.info — soft UX
+  // cliff. Redirect to /v1/gallery (the modern equivalent) so the URL the
+  // user lands on is real + shareable + nav-wired, instead of staying on a
+  // dead route while a placeholder loads.
+  if (
+    intent.kind === 'gen-list'
+    || intent.kind === 'gen-browse'
+    || intent.kind === 'custom-reserved'
+  ) {
+    console.info(
+      `pyr3: ${intent.kind} route is deferred (v1 §12, superseded by #39 gallery)`
+      + ' — redirecting to /v1/gallery.',
+    );
+    history.replaceState(null, '', `${import.meta.env.BASE_URL}v1/gallery`);
+    intent = parseLoadIntent(window.location.pathname + window.location.search)
+      ?? { kind: 'default' as const };
+  }
   if (intent.kind === 'gallery') {
     // Bug B (2026-06-04): persist the gallery URL we land on so a later
     // viewer→Gallery click can restore exactly this page (instead of
@@ -2145,9 +2164,14 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
     case 'gen-list':
     case 'gen-browse':
     case 'custom-reserved':
-      // Browse + custom-flame sharing are a deferred phase (design spec §12).
-      // For now, paint the welcome flame; no gallery/overlay UI is built yet.
-      console.info(`pyr3: "${intent.kind}" view is not built yet (deferred) — painting welcome flame.`);
+      // #199 — these deferred routes are now redirected to /v1/gallery at
+      // the top of main() before this dispatch runs. Reaching here means
+      // the redirect block was bypassed (routing bug) — log loudly + paint
+      // welcome as a safe fallback so the page isn't blank.
+      console.error(
+        `pyr3: ${intent.kind} intent reached resolveLoadIntent — `
+        + '#199 gallery redirect was skipped.',
+      );
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'gallery':
       // Defensive guard. Gallery intents dispatch via mountGallerySurface()
