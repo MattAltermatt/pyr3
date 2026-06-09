@@ -28,7 +28,16 @@ export interface RenderProgress {
   samples: number;
 }
 
-const SAMPLES_PER_CHUNK = 4_000_000;
+// Server-side chunking is purely for progress events + cooperative
+// cancellation — there's no rAF to yield to. The browser orchestrator
+// uses tiny 4M-sample chunks for UI responsiveness; on the server, that
+// strategy wastes ~50× wall-clock by draining the GPU between every
+// dispatch (#201 Task 10 found 4K q=100 ETA of ~23min vs ~30s on
+// `npm run render`). Target ~10 progress events total — chunks scale
+// with the job — and only drain the queue every DRAIN_EVERY chunks.
+const TARGET_PROGRESS_EVENTS = 12;
+const MIN_SAMPLES_PER_CHUNK = 8_000_000;
+const DRAIN_EVERY = 4;
 
 export class AbortedError extends Error {
   constructor() {
@@ -116,9 +125,17 @@ export async function renderGenomeToPng(
 
   const targetSamples = Math.round(spec.quality * width * height);
   const dispatch = computeDispatch(spec.quality, width, height);
-  // Re-shape per-chunk dispatch so each chunk lands roughly SAMPLES_PER_CHUNK
-  // samples — yields cooperative cancellation between Dawn submits.
-  const walkersPerChunk = Math.max(1, Math.min(dispatch.dispatchWalkers, Math.ceil(SAMPLES_PER_CHUNK / dispatch.dispatchIters)));
+  // Sample budget per chunk: scale with the job so we always emit roughly
+  // TARGET_PROGRESS_EVENTS progress ticks, but never go under
+  // MIN_SAMPLES_PER_CHUNK (tiny jobs).
+  const samplesBudget = Math.max(
+    MIN_SAMPLES_PER_CHUNK,
+    Math.ceil(targetSamples / TARGET_PROGRESS_EVENTS),
+  );
+  const walkersPerChunk = Math.max(1, Math.min(
+    dispatch.dispatchWalkers,
+    Math.ceil(samplesBudget / dispatch.dispatchIters),
+  ));
   const itersPerChunk = dispatch.dispatchIters;
   const samplesPerChunk = walkersPerChunk * itersPerChunk;
   const totalChunks = Math.max(1, Math.ceil(targetSamples / samplesPerChunk));
@@ -136,10 +153,13 @@ export async function renderGenomeToPng(
       walkerJitter,
     });
     samplesAccumulated += samplesPerChunk;
-    // Drain the queue between chunks so cancel sees real GPU progress
-    // (not just an unbounded backlog of submits) and the progress event
-    // reflects actual wall-clock state.
-    await device.queue.onSubmittedWorkDone();
+    // Drain occasionally so cancel sees actual GPU progress and the
+    // progress event reflects real wall-clock state — but NOT every
+    // chunk: the per-dispatch barrier on Dawn-node is what made the
+    // browser-style 4M chunks ~50× slower than `npm run render`.
+    if ((i + 1) % DRAIN_EVERY === 0 || i + 1 === totalChunks) {
+      await device.queue.onSubmittedWorkDone();
+    }
     onProgress({
       chunk: i + 1,
       total: totalChunks,
