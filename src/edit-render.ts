@@ -157,7 +157,6 @@ export function createEditRenderer(
   /** #176 — chunked fullRender at arbitrary dims. Splits iteration into
    *  CHUNKED_BATCHES dispatches, yielding to the event loop between them so
    *  AbortSignal flips can interrupt and onProgress callbacks land mid-render. */
-  const CHUNKED_BATCHES = 8;
   async function fullRenderChunked(
     genome: Genome,
     seed: number,
@@ -176,14 +175,15 @@ export function createEditRenderer(
       height,
     );
     renderer.reset(genome);
-    const itersPerBatch = Math.max(1, Math.floor(dispatchIters / CHUNKED_BATCHES));
+    const batches = Math.max(8, Math.ceil(dispatchIters / 16384));
+    const itersPerBatch = Math.max(1, Math.floor(dispatchIters / batches));
     let dispatched = 0;
-    for (let i = 0; i < CHUNKED_BATCHES; i++) {
+    for (let i = 0; i < batches; i++) {
       if (fullOpts.signal?.aborted) {
         throw new DOMException('Render aborted', 'AbortError');
       }
       const remaining = dispatchIters - dispatched;
-      const thisIters = i === CHUNKED_BATCHES - 1 ? remaining : Math.min(itersPerBatch, remaining);
+      const thisIters = i === batches - 1 ? remaining : Math.min(itersPerBatch, remaining);
       if (thisIters <= 0) break;
       // Per-batch seed varies so each call generates fresh chaos-game samples
       // that accumulate into the histogram (iterate is not stateful across

@@ -203,5 +203,17 @@ describe('createEditRenderer', () => {
       expect(r.iterateCalls).toBe(0);
       expect(r.presentCalls).toBe(0);
     });
+
+    it('dynamic batch count — scales up batches for large renders to prevent TDR', async () => {
+      const r = stubRenderer();
+      const er = createEditRenderer(r);
+      const g = generateRandomGenome(() => 0.5);
+      g.quality = 200; // high SPP target
+      await er.fullRenderAt(g, 1, 3840, 2160, fakeView, {
+        onProgress: () => {},
+      });
+      // With 1583 walkers & 1,048,576 iters, it should split into 64 batches
+      expect(r.iterateCalls).toBe(64);
+    });
   });
 });

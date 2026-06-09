@@ -251,6 +251,27 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     if (override?.quality !== undefined) previewCfg = { ...previewCfg, quality: override.quality };
   }
 
+  function getFullDims(): { width: number; height: number } {
+    const size = state.genome.size;
+    const renderW = (size?.width ?? 0) > 0 ? size!.width : preview.width;
+    const renderH = (size?.height ?? 0) > 0 ? size!.height : preview.height;
+    return { width: renderW, height: renderH };
+  }
+
+  function adjustedGenomeFor(w: number, h: number): Genome {
+    const full = getFullDims();
+    if (w === full.width) return state.genome;
+    const ratio = w / full.width;
+    const adjusted: Genome = { ...state.genome, scale: state.genome.scale * ratio };
+    if (state.genome.spatialFilter) {
+      adjusted.spatialFilter = {
+        ...state.genome.spatialFilter,
+        radius: state.genome.spatialFilter.radius * ratio,
+      };
+    }
+    return adjusted;
+  }
+
   // Resolve preview canvas dims from PreviewRenderConfig + render-side aspect.
   // The render-side genome.size is authoritative for ASPECT RATIO; the preview
   // tier (Fast/Balanced/Sharp) picks the longest-edge cap. WYSIWYG: preview
@@ -345,16 +366,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   function liveAdjustedGenome(): Genome {
     const full = effectiveDims();
     const live = liveDimsFor(full);
-    if (live.width === full.width) return state.genome; // no shrink needed
-    const ratio = full.width / live.width;
-    const adjusted: Genome = { ...state.genome, scale: state.genome.scale / ratio };
-    if (state.genome.spatialFilter) {
-      adjusted.spatialFilter = {
-        ...state.genome.spatialFilter,
-        radius: state.genome.spatialFilter.radius / ratio,
-      };
-    }
-    return adjusted;
+    return adjustedGenomeFor(live.width, live.height);
   }
 
   function ensureSettledDims(): boolean {
@@ -414,7 +426,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const spp = previewCfg.quality;
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height, { targetSpp: spp });
+    editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
     opts.onStateChange?.(state);
     // #118 — measure settle-render wall-clock so the slow-render nudge
     // can detect a pattern of slow renders during active editing.
@@ -642,7 +654,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const spp = previewCfg.quality;
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
-    editRenderer.applyLane('slow', state.genome, state.seed, view, d.width, d.height, { targetSpp: spp });
+    editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
     opts.onStateChange?.(state);
     await awaitGpuThenMaybeHide(myTicket);
   }
@@ -839,7 +851,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         filterRadius: restoreDims.filterRadius,
       });
       const view2 = ctx.getCurrentTexture().createView();
-      editRenderer.applyLane('slow', state.genome, state.seed, view2, restoreDims.width, restoreDims.height, { targetSpp: previewCfg.quality });
+      editRenderer.applyLane('slow', adjustedGenomeFor(restoreDims.width, restoreDims.height), state.seed, view2, restoreDims.width, restoreDims.height, { targetSpp: previewCfg.quality });
       panelHost.removeAttribute('data-busy');
       modal.close();
       renderInFlight = false;
@@ -888,7 +900,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     scheduleBarShow(`rendering ${initialDims.width}×${initialDims.height} · q${previewCfg.quality}`);
   }
   const view0 = ctx.getCurrentTexture().createView();
-  editRenderer.applyLane('slow', state.genome, state.seed, view0, initialDims.width, initialDims.height, { targetSpp: previewCfg.quality });
+  editRenderer.applyLane('slow', adjustedGenomeFor(initialDims.width, initialDims.height), state.seed, view0, initialDims.width, initialDims.height, { targetSpp: previewCfg.quality });
   opts.onStateChange?.(state);
   void awaitGpuThenMaybeHide(inflightTicket);
 
