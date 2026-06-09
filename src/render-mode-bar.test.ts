@@ -288,6 +288,69 @@ describe('render-mode-bar — render quality', () => {
   });
 });
 
+describe('render-mode-bar — render quality cap under pyr3 serve (#201)', () => {
+  // The bar reads the active cap from the memoized capability descriptor.
+  // Stub it via vi.mock so each test picks its own ceiling.
+  it('with unlimited max_quality, accepts 500 and shows a soft-warn toast', async () => {
+    const cap = await import('./capability');
+    cap._resetCapabilityForTest();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        backend: 'dawn-node',
+        max_quality: null,
+        can_write_files: true,
+        can_render_animation: true,
+      }),
+    }) as never;
+    await cap.fetchCapability();
+
+    const h = makeHarness();
+    mountRenderModeBar(h.opts);
+    const inp = h.host.querySelector('[data-render-q-input]') as HTMLInputElement;
+    expect(inp.getAttribute('max')).toBeNull(); // no hard ceiling in unlimited mode
+    inp.value = '500';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(h.renderQuality).toBe(500); // not clamped
+    expect(inp.value).toBe('500');
+    // input + change events both fire; unclamped value stays 500 across both
+    // so the soft-warn toast fires twice. The signal we care about: it fired.
+    expect(h.toastCalls.length).toBeGreaterThanOrEqual(1);
+    expect(h.toastCalls.every((m) => /Backend render.*q=500/i.test(m))).toBe(true);
+
+    cap._resetCapabilityForTest();
+  });
+
+  it('with unlimited max_quality, q <= 200 does not toast', async () => {
+    const cap = await import('./capability');
+    cap._resetCapabilityForTest();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        backend: 'dawn-node',
+        max_quality: null,
+        can_write_files: true,
+        can_render_animation: true,
+      }),
+    }) as never;
+    await cap.fetchCapability();
+
+    const h = makeHarness();
+    mountRenderModeBar(h.opts);
+    const inp = h.host.querySelector('[data-render-q-input]') as HTMLInputElement;
+    inp.value = '150';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(h.renderQuality).toBe(150);
+    expect(h.toastCalls).toEqual([]);
+
+    cap._resetCapabilityForTest();
+  });
+});
+
 describe('render-mode-bar — Save Render button', () => {
   it('clicking Save Render calls onSaveRender', async () => {
     const h = makeHarness();

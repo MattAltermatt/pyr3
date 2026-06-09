@@ -28,13 +28,25 @@ import {
   type PreviewTier,
   savePreviewConfig,
 } from './render-mode-config';
+import { getCapability } from './capability';
 
 const PREVIEW_QUALITY_LADDER = [10, 20, 30, 40, 50] as const;
 const RENDER_QUALITY_LADDER = [50, 75, 100, 200] as const;
 const RENDER_QUALITY_MIN = 1;
-const RENDER_QUALITY_MAX = 200;
 const OVER_CAP_TOAST_MSG =
   'Higher quality renders run faster offline via the pyr3 CLI binary. Capped at 200 here.';
+/** Historical browser-only ceiling. When `pyr3 serve` lifts the hard
+ *  cap, anything past this still warrants a heads-up toast. */
+const SOFT_WARN_THRESHOLD = 200;
+const softWarnMsg = (q: number) => `Backend render — q=${q} may take minutes.`;
+
+/** Effective render-quality ceiling for the current host. `null` means
+ *  unlimited (a `pyr3 serve` backend can run any value); a number means
+ *  the slider clamps there. Read off the memoized capability so the
+ *  value is consistent across UI repaints. */
+function effectiveMax(): number | null {
+  return getCapability().max_quality;
+}
 
 const TIERS: ReadonlyArray<{ id: PreviewTier; label: string }> = [
   { id: 'fast', label: 'Fast' },
@@ -86,12 +98,20 @@ function matchPresetLabel(size: { width: number; height: number }): string | nul
   return null;
 }
 
-function clampRenderQuality(q: number): { value: number; capped: boolean } {
-  if (!Number.isFinite(q)) return { value: RENDER_QUALITY_MIN, capped: false };
+function clampRenderQuality(q: number): {
+  value: number;
+  capped: boolean;
+  softWarn: boolean;
+} {
+  if (!Number.isFinite(q)) return { value: RENDER_QUALITY_MIN, capped: false, softWarn: false };
   const r = Math.round(q);
-  if (r > RENDER_QUALITY_MAX) return { value: RENDER_QUALITY_MAX, capped: true };
-  if (r < RENDER_QUALITY_MIN) return { value: RENDER_QUALITY_MIN, capped: false };
-  return { value: r, capped: false };
+  if (r < RENDER_QUALITY_MIN) return { value: RENDER_QUALITY_MIN, capped: false, softWarn: false };
+  const max = effectiveMax();
+  if (max != null && r > max) return { value: max, capped: true, softWarn: false };
+  // Unlimited mode: don't clamp, but warn once the user crosses the
+  // historical browser ceiling — high q on dawn-node is fine but slow.
+  const softWarn = max == null && r > SOFT_WARN_THRESHOLD;
+  return { value: r, capped: false, softWarn };
 }
 
 export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle {
@@ -275,16 +295,23 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   const qInput = document.createElement('input');
   qInput.type = 'number';
   qInput.min = String(RENDER_QUALITY_MIN);
-  qInput.max = String(RENDER_QUALITY_MAX);
+  {
+    // Set max attr only when the host imposes one — otherwise the input
+    // would refuse values > 200 even under `pyr3 serve` (unlimited).
+    const mountMax = effectiveMax();
+    if (mountMax != null) qInput.max = String(mountMax);
+  }
   qInput.dataset['renderQInput'] = '';
   qInput.className = 'pyr3-render-mode-bar-q-input';
   const qHandler = () => {
     const raw = Number(qInput.value);
-    const { value, capped } = clampRenderQuality(raw);
+    const { value, capped, softWarn } = clampRenderQuality(raw);
     opts.setRenderQuality(value);
     if (capped) {
       qInput.value = String(value);
       opts.showToast?.(OVER_CAP_TOAST_MSG);
+    } else if (softWarn) {
+      opts.showToast?.(softWarnMsg(value));
     }
     paintRenderQ();
     opts.onChange?.();

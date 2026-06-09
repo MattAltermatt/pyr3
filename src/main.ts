@@ -730,7 +730,10 @@ async function main(): Promise<void> {
       if (p._v !== 1) return DEFAULT_VIEWER_RENDER_CFG;
       const width = Math.max(1, Math.floor(Number(p.width) || 0));
       const height = Math.max(1, Math.floor(Number(p.height) || 0));
-      const quality = Math.max(1, Math.min(200, Math.round(Number(p.quality) || 50)));
+      // #201 P0 Task 4 — render-mode-bar enforces the active cap (browser
+      // 200 / dawn-node unlimited). This echo-clamp only guards against
+      // garbage in localStorage; trust the bar for the upper bound.
+      const quality = Math.max(1, Math.round(Number(p.quality) || 50));
       if (!width || !height) return DEFAULT_VIEWER_RENDER_CFG;
       return { width, height, quality };
     } catch {
@@ -915,7 +918,8 @@ async function main(): Promise<void> {
     },
     getRenderQuality: () => viewerRenderCfg.quality,
     setRenderQuality: (q) => {
-      viewerRenderCfg = { ...viewerRenderCfg, quality: Math.max(1, Math.min(200, q)) };
+      // #201 P0 Task 4 — bar's clampRenderQuality is authoritative for the cap.
+      viewerRenderCfg = { ...viewerRenderCfg, quality: Math.max(1, q) };
       saveViewerRenderConfig(viewerRenderCfg);
     },
     onSaveRender: () => viewerSaveRender(),
