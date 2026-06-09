@@ -23,7 +23,7 @@ import {
 import { generateRandomGenome } from './edit-seed';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
-import { startChunkedRender } from './render-orchestrator';
+import { saveRenderToPng } from './render-save';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import {
   type PreviewRenderConfig,
@@ -35,7 +35,6 @@ import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar'
 import { openRenderProgressModal } from './render-progress-modal';
 import { parsePreviewOverride } from './load-intent';
 import { genomeToJson } from './serialize';
-import { injectPngTextChunk } from './png-text-chunk';
 import { load } from './loader';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
@@ -864,95 +863,48 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       canvas.width = targetW;
       canvas.height = targetH;
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
-      // #189 — route Save Render through startChunkedRender, the same
-      // orchestrator the viewer's Save Render uses. editRenderer.fullRenderAt's
-      // chunked path produces empty histograms at output dims for q≥100 at 4K
-      // (1582 walkers × 16384 iters per batch × 64 batches submitted in rapid
-      // succession leaves toBlob reading a swap-chain texture before the
-      // compositor commits the final present). startChunkedRender's pattern
-      // (small chunks of ~977 walkers × 4096 iters, present after each chunk,
-      // rAF yield) refreshes the canvas continuously and produces a correct
-      // final frame.
-      const renderHandle = startChunkedRender({
-        renderer,
-        genome: state.genome,
-        outputViewProvider: () => ctx.getCurrentTexture().createView(),
-        targetSamples,
-        seedBase: state.seed,
-        // #195 — pass the full per-chunk info to the modal (was just percent).
-        onProgress: (info) => modal.setProgress(info),
-        samplesPerChunk: 4_000_000,
-        yieldEveryNChunks: 4,
-      });
-      abortCtrl.signal.addEventListener('abort', () => renderHandle.cancel(), { once: true });
-      const outcome = await renderHandle.promise;
-      if (outcome === 'cancelled') {
-        throw new DOMException('Render aborted', 'AbortError');
-      }
-      // Drain GPU work so toBlob captures the post-present pixels.
-      await opts.device.queue.onSubmittedWorkDone();
-
       const filename = resolveCurrentFilename();
       const template = effectiveSaveName();
-      await new Promise<void>((resolve, reject) => {
-        canvas.toBlob(async (blob) => {
-          if (!blob) {
-            reject(new Error('toBlob returned null — canvas was not snapshottable'));
-            return;
-          }
-          // #123 — embed the source genome as a `pyr3`-keyed tEXt chunk so
-          // the saved PNG is self-describing and round-trips via a future
-          // PNG-import reader. #192 — apply save-only name/nick overrides
-          // before serialize so the embedded JSON carries the user's typed
-          // save defaults, not the loaded flame's identity.
-          let finalBlob: Blob = blob;
-          try {
-            const bytes = new Uint8Array(await blob.arrayBuffer());
-            const pyr3Json = JSON.stringify(genomeToJson(genomeForSerialize()));
-            const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
-            // Cast to BlobPart: TS strict-mode types Uint8Array<ArrayBufferLike>
-            // (the runtime union includes SharedArrayBuffer) which Blob's
-            // constructor signature rejects. At runtime the array is always
-            // ArrayBuffer-backed.
-            finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
-          } catch (err) {
-            // Metadata injection should never fail in practice (we just
-            // produced the PNG from a working canvas), but if it does,
-            // fall back to the unannotated blob — the image still saves.
-            console.warn('pyr3-edit: PNG metadata injection failed; saving without metadata', err);
-          }
-          const url = URL.createObjectURL(finalBlob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${filename}.png`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          // #104 — only bump the counter on a confirmed successful save (the
-          // anchor click fired without throwing). A toBlob failure would
-          // have rejected above so we'd never reach this point. Echo
-          // onStateChange so the bar's preview tail re-ticks to the
-          // bumped index.
-          if (hasTemplate(template)) {
-            bumpIndex(template);
-            notifyStateChange();
-          }
-          resolve();
-        }, 'image/png');
+      // #201 P0 Task 2 — single Save Render fork point shared with the
+      // viewer. Helper handles startChunkedRender + AbortSignal bridge +
+      // GPU drain + toBlob + injectPngTextChunk + anchor download. Task 7
+      // will add the backend fork inside the helper itself.
+      const outcome = await saveRenderToPng({
+        renderer,
+        genome: state.genome,
+        canvas,
+        ctx,
+        device: opts.device,
+        abortSignal: abortCtrl.signal,
+        // #195 — pass the full per-chunk info to the modal (was just percent).
+        onProgress: (info) => modal.setProgress(info),
+        filename: `${filename}.png`,
+        // #123 — embed the source genome as a `pyr3`-keyed tEXt chunk so
+        // the saved PNG is self-describing. #192 — apply save-only name/nick
+        // overrides before serialize so the embedded JSON carries the user's
+        // typed save defaults, not the loaded flame's identity.
+        metadataJson: JSON.stringify(genomeToJson(genomeForSerialize())),
+        targetSamples,
+        seedBase: state.seed,
       });
-      // #176 — post-save toast confirms filename + Downloads landing.
-      showToast(panelHost, `💾 Saved ${filename}.pyr3.png to Downloads`);
-    } catch (err) {
-      const errName = (err as Error)?.name;
-      const msg = err instanceof Error ? err.message : String(err);
-      if (errName === 'AbortError') {
+      if (outcome === 'cancelled') {
         // User-cancelled — silent (modal close + restore is enough signal).
         cancelled = true;
       } else {
-        console.error(`pyr3-edit: render-PNG failed — ${msg}`);
-        showToast(panelHost, `Render failed: ${msg}`);
+        // #104 — only bump the counter on a confirmed successful save.
+        // Echo onStateChange so the bar's preview tail re-ticks to the
+        // bumped index.
+        if (hasTemplate(template)) {
+          bumpIndex(template);
+          notifyStateChange();
+        }
+        // #176 — post-save toast confirms filename + Downloads landing.
+        showToast(panelHost, `💾 Saved ${filename}.pyr3.png to Downloads`);
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`pyr3-edit: render-PNG failed — ${msg}`);
+      showToast(panelHost, `Render failed: ${msg}`);
     } finally {
       // Restore the canvas to whatever it was before the render-PNG so the
       // user keeps the same on-screen view they had. applyLane('slow') re-

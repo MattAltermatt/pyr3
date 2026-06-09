@@ -53,6 +53,7 @@ import { createLoadSequencer } from './load-sequencer';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
+import { saveRenderToPng } from './render-save';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { createEditRenderer } from './edit-render';
 import {
@@ -827,37 +828,6 @@ async function main(): Promise<void> {
       canvas.width = targetW;
       canvas.height = targetH;
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
-      // #176 — use the SAME proven orchestrator the viewer's live preview
-      // uses (startChunkedRender) instead of editRenderer.fullRenderAt. The
-      // latter's chunked path was producing empty histograms at output dims
-      // — same code works fine for the editor (different lifecycle) but
-      // wasn't producing samples on the viewer's renderer here. Reusing
-      // startChunkedRender guarantees byte-for-byte the same dispatch
-      // pattern as the rerender that's known to work.
-      const renderHandle = startChunkedRender({
-        renderer,
-        genome: renderGenome,
-        outputViewProvider: () => context.getCurrentTexture().createView(),
-        targetSamples,
-        seedBase: seed,
-        // #195 — pass the orchestrator's full per-chunk info so the modal
-        // can show ETA + iteration count alongside percent.
-        onProgress: (info) => modal.setProgress(info),
-        walkerJitter: currentWalkerJitter,
-        // #176 perf: 4M samples/chunk + yield every 4 chunks dramatically
-        // reduces the rAF-yield overhead for Save Render's larger
-        // targetSamples. Cancel button still responds within ~64ms.
-        samplesPerChunk: 4_000_000,
-        yieldEveryNChunks: 4,
-      });
-      // Bridge AbortSignal → orchestrator cancel.
-      abortCtrl.signal.addEventListener('abort', () => renderHandle.cancel(), { once: true });
-      const result = await renderHandle.promise;
-      if (result === 'cancelled') {
-        throw new DOMException('Render aborted', 'AbortError');
-      }
-      // Drain GPU work so toBlob captures the post-present pixels.
-      await device.queue.onSubmittedWorkDone();
       // Filename: use the SAME source the chrome bar's existing 🧬 Save uses
       // (viewerCurrentFlameName = result.genome.name || sourceBase) — keyed
       // to the corpus path (electricsheep.{gen}.{id}) when the genome.name
@@ -865,41 +835,33 @@ async function main(): Promise<void> {
       const rawName = viewerCurrentFlameName || renderGenome.name || 'pyr3-render';
       const baseName = rawName.trim().replace(/[^A-Za-z0-9._-]/g, '_') || 'pyr3-render';
       const filename = `${baseName}.pyr3.png`;
-      await new Promise<void>((resolve, reject) => {
-        canvas.toBlob(async (blob) => {
-          if (!blob) {
-            reject(new Error('toBlob returned null — canvas was not snapshottable'));
-            return;
-          }
-          let finalBlob: Blob = blob;
-          try {
-            const bytes = new Uint8Array(await blob.arrayBuffer());
-            const pyr3Json = JSON.stringify(genomeToJson(renderGenome));
-            const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
-            finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
-          } catch (err) {
-            console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
-          }
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(finalBlob);
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-          resolve();
-        }, 'image/png');
+      // #201 P0 Task 2 — single Save Render fork point shared with the
+      // editor. Helper handles startChunkedRender + AbortSignal bridge +
+      // GPU drain + toBlob + injectPngTextChunk + anchor download. Task 7
+      // will add the backend fork inside the helper itself.
+      const outcome = await saveRenderToPng({
+        renderer,
+        genome: renderGenome,
+        canvas,
+        ctx: context,
+        device,
+        abortSignal: abortCtrl.signal,
+        onProgress: (info) => modal.setProgress(info),
+        filename,
+        metadataJson: JSON.stringify(genomeToJson(renderGenome)),
+        targetSamples,
+        seedBase: seed,
+        walkerJitter: currentWalkerJitter,
       });
-      bar.showToast(`💾 Saved ${filename} to Downloads`);
-    } catch (err) {
-      const errName = (err as Error)?.name;
-      if (errName === 'AbortError') {
+      if (outcome === 'cancelled') {
         cancelled = true;
       } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`pyr3: viewer Save Render failed — ${msg}`);
-        bar.showToast(`Render failed: ${msg}`);
+        bar.showToast(`💾 Saved ${filename} to Downloads`);
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`pyr3: viewer Save Render failed — ${msg}`);
+      bar.showToast(`Render failed: ${msg}`);
     } finally {
       // Restore the viewer canvas dims so the live preview keeps working.
       canvas.width = restoreW;
