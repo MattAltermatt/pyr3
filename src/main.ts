@@ -78,6 +78,7 @@ import {
 } from './ui-bar';
 import { mountAbout } from './about-mount';
 import { checkWebGPU } from './webgpu-check';
+import { fetchCapability } from './capability';
 
 // The "welcome flame" — the bundled fixture `/` paints for an instant,
 // chunk-free first paint. It's the hero sheep (gen HERO_GEN / id HERO_ID); the
@@ -121,7 +122,15 @@ function corpusTitleLabel(gen: number, id: number): string {
 }
 
 async function main(): Promise<void> {
+  // #201 P0 Task 3 — fire-and-forget capability probe. Null fetch (the
+  // gh-pages case) memoizes the safe browser-only default; a `pyr3 serve`
+  // host answers with `backend: 'dawn-node'` + `max_quality: null`. The
+  // boot wait is non-blocking — we kick off the fetch in parallel with
+  // checkWebGPU so first paint isn't delayed.
+  const capabilityProbe = fetchCapability();
+
   const webgpu = await checkWebGPU();
+  await capabilityProbe;
 
   // #65 Tier 1 — walker-jitter knob, gated to DEV.
   //
