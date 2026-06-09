@@ -1,6 +1,6 @@
 {
   "name": "pyr3",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "description": "Fractal flame renderer in TypeScript + WebGPU — browser viewer and headless CLI from one engine. flam3 lineage.",
