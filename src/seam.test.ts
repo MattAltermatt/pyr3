@@ -87,6 +87,7 @@ const SEAM_EXEMPT = new Set<string>([
   'variation-catalog-section.ts', // /v1/variations per-section component (#119)
   'render-progress-modal.ts',  // Save Render progress modal — owns DOM (#176)
   'render-mode-bar.ts',        // shared PREVIEW/RENDER bar — owns DOM (#176 Task 3)
+  'render-save.ts',            // shared Save Render helper — anchor download (#201 P0)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
