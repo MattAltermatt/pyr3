@@ -312,6 +312,30 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     return { width: renderW, height: renderH };
   }
 
+  // #205 — when the render dim changes, scale + spatialFilter.radius are
+  // anchored to the AUTHORED dim; without proportional adjustment the flame
+  // collapses on the new canvas (e.g. 1280→3840 leaves it at 1/3 size). Mirror
+  // the viewer's WYSIWYG: keep world-span constant by scaling proportionally
+  // to the new long-edge. No-ops when size matches or no prior size existed.
+  function applyRenderSizeWithScale(next: { width: number; height: number }): void {
+    const prev = state.genome.size;
+    if (prev && prev.width > 0 && prev.height > 0) {
+      const prevMaxEdge = Math.max(prev.width, prev.height);
+      const nextMaxEdge = Math.max(next.width, next.height);
+      if (prevMaxEdge !== nextMaxEdge) {
+        const ratio = nextMaxEdge / prevMaxEdge;
+        state.genome.scale *= ratio;
+        if (state.genome.spatialFilter) {
+          state.genome.spatialFilter = {
+            ...state.genome.spatialFilter,
+            radius: state.genome.spatialFilter.radius * ratio,
+          };
+        }
+      }
+    }
+    state.genome.size = next;
+  }
+
   function adjustedGenomeFor(w: number, h: number): Genome {
     const full = getFullDims();
     if (w === full.width) return state.genome;
@@ -1004,7 +1028,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     },
     getRenderSize: () => state.genome.size ?? { width: 1920, height: 1080 },
     setRenderSize: (size) => {
-      state.genome.size = size;
+      applyRenderSizeWithScale(size);
       schedulePersist(state.genome);
       // Aspect may have changed — preview canvas reshapes via rebuild lane.
       scheduler.schedule({ lane: 'rebuild', path: 'size' });
@@ -1071,7 +1095,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
       const w = Math.round(width);
       const h = Math.round(height);
-      state.genome.size = { width: w, height: h };
+      applyRenderSizeWithScale({ width: w, height: h });
       // Re-render the panel UI so the Render section's W×H inputs + preset
       // dropdown re-sync to the new dims. The rebuild lane covers the
       // re-iterate at the new dims; opts.onStateChange echo then updates the
