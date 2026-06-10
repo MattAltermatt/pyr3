@@ -28,7 +28,7 @@ vi.mock('./png-text-chunk', () => ({
   },
 }));
 
-import { saveRenderToPng } from './render-save';
+import { makeEtaProjector, saveRenderToPng } from './render-save';
 
 function mockCanvas(): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -252,5 +252,39 @@ describe('saveRenderToPng', () => {
     const result = await promise;
     expect(cancelCalls).toHaveLength(1);
     expect(result).toBe('cancelled');
+  });
+});
+
+describe('makeEtaProjector (#204 — ETA anchored past the cold first chunk)', () => {
+  it('returns NaN on the first event (cold-warmup chunk, no rate yet)', () => {
+    const eta = makeEtaProjector();
+    // First chunk landed at 1% complete after a slow 14s cold dispatch.
+    expect(Number.isNaN(eta(0.01, 14_000))).toBe(true);
+  });
+
+  it('projects from the post-anchor rate, ignoring the cold chunk time', () => {
+    const eta = makeEtaProjector();
+    eta(0.01, 14_000); // cold first chunk: 1% in 14s — anchor, no estimate
+    // Steady state: +1% per 0.3s after the anchor. At 2% (0.3s later), the
+    // remaining 98% projects from the 0.3s/1% rate ≈ 29.4s — NOT the ~23min a
+    // cumulative 14s/1% would have implied.
+    const remaining = eta(0.02, 14_300);
+    expect(remaining).toBeCloseTo(0.98 / (0.01 / 0.3), 1); // ≈ 29.4s
+    expect(remaining).toBeLessThan(60); // sanity: realistic, not minutes
+  });
+
+  it('returns NaN when no forward progress has accrued since the anchor', () => {
+    const eta = makeEtaProjector();
+    eta(0.01, 14_000); // anchor
+    expect(Number.isNaN(eta(0.01, 14_050))).toBe(true); // same percent → no rate
+  });
+
+  it('drives the ETA toward 0 as the render nears completion', () => {
+    const eta = makeEtaProjector();
+    eta(0.01, 0); // anchor
+    eta(0.5, 5_000); // mid-run
+    const near = eta(0.99, 9_900); // 99% done; rate ≈ 0.98/9.9 per s
+    expect(near).toBeGreaterThanOrEqual(0);
+    expect(near).toBeLessThan(1); // ~0.1s left
   });
 });

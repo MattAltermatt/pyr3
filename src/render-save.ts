@@ -113,6 +113,7 @@ interface BackendDone {
  *  throws on `error`. Abort signal is bridged to a `/api/cancel/:id` POST. */
 async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRenderResult> {
   const elapsedStart = performance.now();
+  const projectEta = makeEtaProjector();
   const body = {
     genome: genomeToJson(opts.genome),
     dim: { width: opts.canvas.width, height: opts.canvas.height },
@@ -175,7 +176,7 @@ async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRend
               percent: p.percent,
               samples: p.samples,
               elapsedSeconds: (performance.now() - elapsedStart) / 1000,
-              etaSeconds: estimateEta(p.percent, elapsedStart),
+              etaSeconds: projectEta(p.percent, performance.now()),
             });
           } catch {
             // ignore malformed event — server is the authority
@@ -231,9 +232,34 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-function estimateEta(percent: number, startMs: number): number {
-  if (percent <= 0) return 0;
-  const elapsed = (performance.now() - startMs) / 1000;
-  const total = elapsed / Math.max(0.001, percent);
-  return Math.max(0, total - elapsed);
+/**
+ * ETA projector for the backend render SSE stream (#204).
+ *
+ * The naïve cumulative estimate (`elapsed / percent − elapsed`) over-projects
+ * badly off the FIRST progress event: that event lands only after the cold
+ * Dawn-warmup chunk (~8M samples, first dispatch) at ~1% complete, so its
+ * wall-time is wildly unrepresentative of the amortized per-chunk rate. From a
+ * cold ~14 s first chunk at 1%, the cumulative formula projects ~23 min; by the
+ * 3rd–4th event it settles to a realistic ~30 s.
+ *
+ * Fix: anchor the projection at that first event and project from the rate
+ * accrued *after* it — the cold chunk's time never pollutes the rate. Until a
+ * second event with forward progress arrives there is no rate yet, so we return
+ * NaN (the progress modal renders a blank ETA rather than a bogus one).
+ *
+ * `percent` is a fraction in [0, 1] (the server emits `(i+1)/totalChunks`).
+ */
+export function makeEtaProjector(): (percent: number, nowMs: number) => number {
+  let anchor: { ms: number; percent: number } | null = null;
+  return (percent, nowMs) => {
+    if (anchor === null) {
+      anchor = { ms: nowMs, percent };
+      return NaN; // first (cold-warmup) event — no representative rate yet
+    }
+    const dPercent = percent - anchor.percent;
+    const dt = (nowMs - anchor.ms) / 1000;
+    if (dPercent <= 0 || dt <= 0) return NaN; // no forward progress yet
+    const rate = dPercent / dt; // fraction per second
+    return Math.max(0, (1 - percent) / rate);
+  };
 }
