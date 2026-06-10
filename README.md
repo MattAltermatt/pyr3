@@ -24,10 +24,13 @@ GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through th
   corpus and press **← / →** (or the `‹ prev` / `next ›` buttons) to roam 52,000+ flames.
 - 🖼 **[Browse the gallery](https://pyr3.app/showcase)** — a wall of rendered flames to scroll.
 - 🎛 **[Edit a flame](https://pyr3.app/v1/edit)** — visual editor: xforms (decomposed
-  scale / rotation / position), affine + post-affine, the full **99-variation flam3 library**,
-  **JWildfire / Apophysis expansions** (folds, attractors, cartographic warps),
-  plus pyr3's **direct-color (DC) family** (`dc_linear` · `dc_perlin` · `dc_gridout` ·
-  `dc_cylinder`), palette picker, undo/redo, name templates, save to `.pyr3.json`.
+  scale / rotation / position), affine + post-affine, the full **271-variation catalog** — the
+  99 flam3 core variations, **JWildfire / Apophysis expansions** (folds, attractors,
+  cartographic warps), and pyr3's own **direct-color (DC) family** (`dc_linear` · `dc_perlin` ·
+  `dc_gridout` · `dc_cylinder`) — plus palette picker, undo/redo, name templates, save to
+  `.pyr3.json`.
+- 🎬 **[Animate a flame](https://pyr3.app/v1/animate)** — keyframe interpolation, per-xform
+  motion, temporal-sampling motion blur, and a playback scrubber; export the sequence to frames.
 - 📺 **[Run as a screensaver](https://pyr3.app/v1/screensaver)** — build-up mode (watch one
   flame paint over a minute) or slideshow mode (prefetch + crossfade through the corpus).
   Press **R** to record any session to `.webm`.
@@ -105,11 +108,11 @@ pyr3-render fixtures/electricsheep.247.19679.flam3 out.png   # works from anywhe
 The binary bundles the Dawn-node WebGPU binding as a SEA asset and extracts
 it to `~/.cache/pyr3/dawn-<sha>.node` on first launch (~150ms one-time;
 subsequent runs hit the cache). Upgrade with `git pull && npm run build:cli
-render`. When pyr3 ships animation, `pyr3-animate` will be a separate
-binary built the same way (`npm run build:cli animate`), matching the
-`flam3-render` / `flam3-animate` split.
+render`. Animation shipped in v1.6.0: render frames headlessly with
+`npm run animate` (tsx) or the bundled `pyr3 serve` backend + `/api/animate`
+route — the headless companion to the browser's `/v1/animate` editor.
 
-**Platform status (as of v1.5):**
+**Platform status (as of v1.6):**
 
 ```text
 darwin-arm64    verified end-to-end
@@ -162,9 +165,11 @@ Open work and ship history live on GitHub (since the 2026-05-30 pivot):
 - [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry, labelled by
   type (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
 - [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — themed arcs; the
-  `v1.0` → `v1.4` line shipped, and active themed work groups around **Apophysis and
-  JWildfire** (gradient editor #115, channel curves #116), **Binary distribution**
-  (cross-platform verify #126), and **Mobile rework** (#66)
+  `v1.0` → `v1.6` line shipped (latest `v1.6.0`, the Animation cluster — keyframe interp,
+  per-xform motion, motion blur, playback scrubber). Active themed work groups around
+  **Apophysis and JWildfire** (gradient editor #115), **More variations** (novel families),
+  **Binary distribution** (cross-platform verify #126), **Animation** (follow-ons), and
+  **Mobile rework** (#66)
 - [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward
 - [HISTORY.md](HISTORY.md) — frozen pre-1.0 ship log (v0.0 → v0.36)
 
