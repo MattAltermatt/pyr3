@@ -18,7 +18,15 @@ npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤2
 npm run bundle:cli render                           # produce build/.tmp/pyr3-render.cjs (esbuild bundle)
 npm run smoke:cli                                   # end-to-end smoke for the bundled CJS
 npm run build:cli render                            # produce ./build/pyr3-render — standalone SEA binary (~155 MB)
+npm run serve                                       # `pyr3 serve` — local CLI host w/ Dawn-node backend rendering (lifts the 200-q browser cap; #201)
+npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /v1/animate viewer (#209)
+npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
+
+The viewer routes are `/v1` (viewer), `/v1/edit`, `/v1/animate`, and
+`/v1/screensaver`. The `pyr3` global command (via `npm link`) boots
+`pyr3 serve`, whose backend exposes `/api/render` + `/api/animate` (SSE-
+streamed) for renders past the browser's quality cap.
 
 Before commit: `npm run typecheck && npm test`. The BE↔flam3-C parity rig
 (`npm run test:parity`, 91s) is optional but recommended when the render
@@ -51,12 +59,14 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.4
-  have all shipped** (latest: `v1.4.0` on 2026-06-02 — render improvements). Active themed
-  milestones: **Apophysis and JWildfire** (#6 — plugin pack #114 and importer parity sweep #17 shipped; gradient
-  editor #115, channel curves #116 still open), **Binary
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.6
+  have all shipped** (latest: `v1.6.0` on 2026-06-09 — the Animation cluster). Active themed
+  milestones: **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
+  and Color Curves #116 all shipped; gradient editor #115 still open), **Binary
   distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
-  verify #126 still open), **More variations** (#16 — novel families), and **Mobile rework** (#13 — #66 mobile overhaul). No Project
+  verify #126 still open), **More variations** (#16 — novel families, ~16 open), **Animation**
+  (keyframe interp / motion / motion-blur / scrubber shipped v1.6.0; follow-ons open), and
+  **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
