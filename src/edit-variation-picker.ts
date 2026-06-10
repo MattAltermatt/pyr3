@@ -82,6 +82,8 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder, V.newton],
     'Map projections': [V.mercator, V.lambert, V.mollweide, V.hammer, V.stereographic],
     'Folds & IFS': [V.box_fold, V.sphere_fold, V.mandelbox_step, V.kifs_fold],
+    // #131 — modular / number-theory family (pyr3-unique; no other renderer ships these)
+    'Modular / number-theory': [V.jacobi_theta, V.modular_lambda, V.klein_j, V.weierstrass_p, V.gauss_map],
   };
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();

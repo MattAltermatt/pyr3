@@ -65,8 +65,80 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                              // #133 — DC + position warp
   if (idx === V.magnetic_pendulum) return 'dc';                   // #138 — basin DC + position warp
-  if (idx >= V.blaschke && idx <= V.magnetic_pendulum) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138
+  if (idx >= V.blaschke && idx <= V.gauss_map) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131
   return 'jwf';
+}
+
+// #131 — inline complex-math for the modular catalog warpFns (mirror chaos.wgsl,
+// including the ±1e18 clamp the WGSL applies to klein_j / weierstrass_p before
+// log-compression). Deterministic — no Math.random.
+type Cx = [number, number];
+const cxmul = (a: Cx, b: Cx): Cx => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+const cxsqr = (z: Cx): Cx => [z[0] * z[0] - z[1] * z[1], 2 * z[0] * z[1]];
+const cxdiv = (a: Cx, b: Cx): Cx => {
+  const m = Math.max(b[0] * b[0] + b[1] * b[1], 1e-100);
+  return [(a[0] * b[0] + a[1] * b[1]) / m, (a[1] * b[0] - a[0] * b[1]) / m];
+};
+const cxrecip = (z: Cx): Cx => {
+  const m = Math.max(z[0] * z[0] + z[1] * z[1], 1e-100);
+  return [z[0] / m, -z[1] / m];
+};
+const cxexp = (z: Cx): Cx => {
+  const e = Math.exp(Math.max(-20, Math.min(20, z[0])));
+  return [e * Math.cos(z[1]), e * Math.sin(z[1])];
+};
+const cxlog = (z: Cx): Cx => [0.5 * Math.log(z[0] * z[0] + z[1] * z[1] + 1e-20), Math.atan2(z[1], z[0])];
+const cxpow = (t: Cx, p: Cx): Cx => cxexp(cxmul(p, cxlog(t)));
+const clamp1e18 = (v: number): number => Math.max(-1e18, Math.min(1e18, v));
+
+function modUpperHalf(x: number, y: number, imFloor: number): Cx {
+  return [x, Math.max(Math.abs(y) + Math.max(imFloor, 0.02), 0.006435)];
+}
+function modNome(tau: Cx): Cx { return cxexp([-Math.PI * tau[1], Math.PI * tau[0]]); }
+function modTheta3(q: Cx): Cx {
+  const q2 = cxsqr(q); let qn2 = q; let odd = cxmul(q2, q); let sum: Cx = [q[0], q[1]];
+  for (let n = 2; n <= 8; n++) { qn2 = cxmul(qn2, odd); sum = [sum[0] + qn2[0], sum[1] + qn2[1]]; odd = cxmul(odd, q2); }
+  return [1 + 2 * sum[0], 2 * sum[1]];
+}
+function modTheta2(q: Cx): Cx {
+  const q2 = cxsqr(q); let term: Cx = [1, 0]; let ev = q2; let sum: Cx = [1, 0];
+  for (let n = 1; n <= 7; n++) { term = cxmul(term, ev); sum = [sum[0] + term[0], sum[1] + term[1]]; ev = cxmul(ev, q2); }
+  const q14 = cxpow(q, [0.25, 0]); const r = cxmul(q14, sum); return [2 * r[0], 2 * r[1]];
+}
+// kind: 'theta3' → θ₃(τ); 'lambda' → λ; 'j' → klein j (log-compressed, clamped).
+function modularEval(x: number, y: number, imFloor: number, kind: 'theta3' | 'lambda' | 'j'): [number, number] {
+  const q = modNome(modUpperHalf(x, y, imFloor));
+  if (kind === 'theta3') return modTheta3(q);
+  const r = cxdiv(modTheta2(q), modTheta3(q));
+  const lam = cxsqr(cxsqr(r));
+  if (kind === 'lambda') return lam;
+  const lam2 = cxsqr(lam);
+  const a: Cx = [1 - lam[0] + lam2[0], -lam[1] + lam2[1]];   // 1 − λ + λ²
+  const a3 = cxmul(cxsqr(a), a);
+  const numer: Cx = [256 * a3[0], 256 * a3[1]];
+  const oml: Cx = [1 - lam[0], -lam[1]];
+  const denom = cxmul(lam2, cxsqr(oml));
+  const j0 = cxdiv(numer, denom);
+  const j: Cx = [clamp1e18(j0[0]), clamp1e18(j0[1])];
+  const mag = Math.hypot(j[0], j[1]); const s = Math.log(1 + mag) / Math.max(mag, 1e-12);
+  return [s * j[0], s * j[1]];
+}
+function weierstrassEval(x: number, y: number, o1re: number, o1im: number, o2re: number, o2im: number): [number, number] {
+  const z: Cx = [x, y]; let acc = cxrecip(cxsqr(z));
+  for (let m = -2; m <= 2; m++) for (let n = -2; n <= 2; n++) {
+    if (m === 0 && n === 0) continue;
+    const omega: Cx = [m * o1re + n * o2re, m * o1im + n * o2im];
+    const t1 = cxrecip(cxsqr([z[0] - omega[0], z[1] - omega[1]]));
+    const t2 = cxrecip(cxsqr(omega));
+    acc = [acc[0] + t1[0] - t2[0], acc[1] + t1[1] - t2[1]];
+  }
+  const ac: Cx = [clamp1e18(acc[0]), clamp1e18(acc[1])];
+  const mag = Math.hypot(ac[0], ac[1]); const s = Math.log(1 + mag) / Math.max(mag, 1e-12);
+  return [s * ac[0], s * ac[1]];
+}
+function gaussFrac(t: number): number {
+  const r = (t < 0 ? -1 : 1) / Math.max(Math.abs(t), 1e-4);
+  return r - Math.floor(r);
 }
 
 export const CATALOG_DATA: readonly VariationDoc[] = [
@@ -5060,6 +5132,60 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       });
       return [res.x, res.y];
     },
+  },
+  {
+    idx: V.jacobi_theta,
+    name: 'jacobi_theta',
+    source: 'novel',
+    formula: '\\vartheta_3(\\tau) = 1 + 2\\sum_{n\\geq1} q^{n^2}, \\quad q = e^{i\\pi\\tau}',
+    blurb: 'Jacobi theta function θ₃ — the q-series substrate of the modular family, made visible. The point is folded into the upper half-plane (τ) and held off the real axis by im_floor; smaller im_floor crowds the real axis for more quasi-periodic horizontal banding. The gentlest of the modular set.',
+    params: [{ name: 'im_floor', default: 0.15, min: 0.02, max: 1.0, step: 0.01 }],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => modularEval(x, y, 0.15, 'theta3'),
+  },
+  {
+    idx: V.modular_lambda,
+    name: 'modular_lambda',
+    source: 'novel',
+    formula: '\\lambda(\\tau) = \\left(\\frac{\\vartheta_2(\\tau)}{\\vartheta_3(\\tau)}\\right)^{4}',
+    blurb: 'Modular lambda function — doubly-periodic and wildly self-similar under the congruence subgroup Γ(2). Maps the upper half-plane onto ℂ∖{0,1}; on the imaginary axis it is real in (0,1) with λ(i)=½. Lower im_floor reveals deeper SL(2,ℤ) tessellation (at the cost of convergence).',
+    params: [{ name: 'im_floor', default: 0.08, min: 0.02, max: 1.0, step: 0.01 }],
+    defaultWeight: 0.10,
+    warpFn: (x, y) => modularEval(x, y, 0.08, 'lambda'),
+  },
+  {
+    idx: V.klein_j,
+    name: 'klein_j',
+    source: 'novel',
+    formula: 'j = 256\\,\\frac{(1-\\lambda+\\lambda^2)^3}{\\lambda^2(1-\\lambda)^2}',
+    blurb: 'Klein j-invariant — the canonical SL(2,ℤ)-invariant function, with j(i)=1728. Blows up as λ→0,1, so output is log-compressed (direction preserved, magnitude tamed) to keep the structure framable. The deepest "number theory you can see" of the family.',
+    params: [{ name: 'im_floor', default: 0.32, min: 0.05, max: 1.0, step: 0.01 }],
+    defaultWeight: 0.03,
+    warpFn: (x, y) => modularEval(x, y, 0.32, 'j'),
+  },
+  {
+    idx: V.weierstrass_p,
+    name: 'weierstrass_p',
+    source: 'novel',
+    formula: "\\wp(z) = \\frac{1}{z^2} + \\sum_{\\omega\\neq0}\\left[\\frac{1}{(z-\\omega)^2} - \\frac{1}{\\omega^2}\\right]",
+    blurb: 'Weierstrass elliptic ℘ over a 5×5 lattice truncation with generators ω₁, ω₂. Doubly-periodic double poles tile the plane into repeating cells; output is log-compressed to tame the poles. Skew ω₂ off (0,1) to shear the lattice from square to rhombic.',
+    params: [
+      { name: 'omega1_re', default: -1.0, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'omega1_im', default: -1.1, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'omega2_re', default: -0.5, min: -2.0, max: 2.0, step: 0.05 },
+      { name: 'omega2_im', default: 1.0, min: -2.0, max: 2.0, step: 0.05 },
+    ],
+    defaultWeight: 0.18,
+    warpFn: (x, y) => weierstrassEval(x, y, -1.0, -1.1, -0.5, 1.0),
+  },
+  {
+    idx: V.gauss_map,
+    name: 'gauss_map',
+    source: 'novel',
+    formula: 'x \\mapsto \\frac{1}{x} - \\left\\lfloor \\frac{1}{x} \\right\\rfloor',
+    blurb: 'Gauss / continued-fraction map applied per axis. The arithmetic engine behind continued fractions, producing Stern-Brocot self-similarity. Each axis lands in [0,1); the discontinuities at 1/x integer crossings shatter the plane into a self-similar comb.',
+    defaultWeight: 0.20,
+    warpFn: (x, y) => [gaussFrac(x), gaussFrac(y)],
   },
 ];
 

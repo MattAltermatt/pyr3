@@ -389,6 +389,70 @@ fn complex_sin(z: vec2f) -> vec2f {
   return vec2f(safe_sin(z.x) * ch, safe_cos(z.x) * sh);
 }
 
+// ---------------------------------------------------------------------------
+// #131 — Modular / number-theory substrate.
+// θ/λ/j live on the upper half-plane (Im τ > 0 ⟺ |q| = exp(−π·Im τ) < 1).
+// The SL(2,ℤ) fractal structure crowds the real axis where the q-series
+// diverges, so to_upper_half_plane folds the point up (abs) and lifts it off
+// the axis by im_floor — the per-variation detail⇄convergence knob (spec D2).
+// ---------------------------------------------------------------------------
+fn to_upper_half_plane(p: vec2f, im_floor: f32) -> vec2f {
+  let im = abs(p.y) + max(im_floor, 0.02);
+  // Hard backstop: |q| ≤ 0.98 ⟺ Im τ ≥ −ln(0.98)/π ≈ 0.006435.
+  return vec2f(p.x, max(im, 0.006435));
+}
+
+// Nome q = exp(iπτ). iπτ = π·(−τ.y, τ.x); |q| = exp(−π·τ.y) < 1 for τ.y > 0.
+fn modular_nome(tau: vec2f) -> vec2f {
+  return complex_exp(vec2f(-PI * tau.y, PI * tau.x));
+}
+
+// θ₃(q) = 1 + 2 Σ_{n≥1} q^(n²), 8 terms. q^(n²) by recurrence
+// (q^((n+1)²) = q^(n²)·q^(2n+1)) → complex_mul-only, no per-term transcendentals.
+fn theta3(q: vec2f) -> vec2f {
+  let q2 = complex_sqr(q);            // q²
+  var qn2 = q;                        // q^(1²)
+  var odd = complex_mul(q2, q);       // q^(2·1+1) = q³
+  var sum = qn2;
+  for (var n = 2; n <= 8; n = n + 1) {
+    qn2 = complex_mul(qn2, odd);      // q^(n²)
+    sum = sum + qn2;
+    odd = complex_mul(odd, q2);       // q^(2n+1)
+  }
+  return vec2f(1.0, 0.0) + 2.0 * sum;
+}
+
+// θ₄(q) = 1 + 2 Σ_{n≥1} (−1)^n q^(n²), 8 terms.
+fn theta4(q: vec2f) -> vec2f {
+  let q2 = complex_sqr(q);
+  var qn2 = q;
+  var odd = complex_mul(q2, q);
+  var sum = -qn2;                     // n=1 → (−1)¹
+  for (var n = 2; n <= 8; n = n + 1) {
+    qn2 = complex_mul(qn2, odd);
+    let s = select(-1.0, 1.0, (n & 1) == 0);  // +1 even n, −1 odd n
+    sum = sum + s * qn2;
+    odd = complex_mul(odd, q2);
+  }
+  return vec2f(1.0, 0.0) + 2.0 * sum;
+}
+
+// θ₂(q) = 2·q^(¼)·Σ_{n≥0} q^(n(n+1)), 8 terms. q^(n(n+1)) by recurrence
+// (factor q^(2n+2) per step); one complex_pow for the q^(¼) prefactor.
+fn theta2(q: vec2f) -> vec2f {
+  let q2 = complex_sqr(q);
+  var term = vec2f(1.0, 0.0);        // q^(0·1) = 1, n=0
+  var ev = q2;                       // q^(2·0+2) = q², step factor 0→1
+  var sum = term;
+  for (var n = 1; n <= 7; n = n + 1) {
+    term = complex_mul(term, ev);    // q^(n(n+1))
+    sum = sum + term;
+    ev = complex_mul(ev, q2);        // q^(2n+2)
+  }
+  let q14 = complex_pow(q, vec2f(0.25, 0.0));
+  return 2.0 * complex_mul(q14, sum);
+}
+
 fn var_linear(p: vec2f, w: f32) -> vec2f {
   return p * w;
 }
@@ -6162,6 +6226,84 @@ fn var_magnetic_pendulum_color(p: vec2f, magnets: f32, radius: f32) -> vec3f {
   return hsl_to_rgb(vec3f(hue, 1.0, 0.55));
 }
 
+// V266 — jacobi_theta. θ₃(τ) directly: the q-series substrate made visible.
+// Gentlest of the modular family — quasi-periodic horizontal banding. θ₃ is
+// bounded (≈1 + 2q + …), so no output compression.
+fn var_jacobi_theta(p: vec2f, w: f32, im_floor: f32) -> vec2f {
+  let tau = to_upper_half_plane(p, im_floor);
+  return w * theta3(modular_nome(tau));
+}
+
+// V267 — modular_lambda. λ(τ) = (θ₂/θ₃)⁴. Doubly-periodic, Γ(2)-self-similar.
+// λ maps H onto ℂ∖{0,1}; off the axis it stays moderate → raw output.
+fn var_modular_lambda(p: vec2f, w: f32, im_floor: f32) -> vec2f {
+  let tau = to_upper_half_plane(p, im_floor);
+  let q = modular_nome(tau);
+  let r = complex_div(theta2(q), theta3(q));
+  let r2 = complex_sqr(r);
+  return w * complex_sqr(r2);           // (θ₂/θ₃)⁴
+}
+
+// V268 — klein_j. j = 256·(1−λ+λ²)³ / (λ²·(1−λ)²). Unbounded (j→∞ as λ→0,1)
+// → log(1+|j|) radial compression (spec D3) keeps direction, tames the spike.
+// j(i) = 1728 (the classic special value) — pinned by the GPU test.
+fn var_klein_j(p: vec2f, w: f32, im_floor: f32) -> vec2f {
+  let tau = to_upper_half_plane(p, im_floor);
+  let q = modular_nome(tau);
+  let r = complex_div(theta2(q), theta3(q));
+  let r2 = complex_sqr(r);
+  let lam = complex_sqr(r2);                          // λ
+  let one = vec2f(1.0, 0.0);
+  let a = one - lam + complex_sqr(lam);               // 1 − λ + λ²
+  let numer = 256.0 * complex_pow_int(a, 3);          // 256·(1−λ+λ²)³
+  let oml = one - lam;                                // 1 − λ
+  let denom = complex_mul(complex_sqr(lam), complex_sqr(oml)); // λ²(1−λ)²
+  // Near λ→0,1 the denom underflows and complex_div overflows f32 to ±Inf
+  // (log(1+Inf)/Inf = NaN). Clamp to a finite range before compressing — the
+  // direction is preserved, the spike is bounded. clamp(±Inf) → ±1e18.
+  let j = clamp(complex_div(numer, denom), vec2f(-1e18), vec2f(1e18));
+  let mag = length(j);
+  let scale = log(1.0 + mag) / max(mag, 1e-12);       // log(1+|j|)·(j/|j|)
+  return w * scale * j;
+}
+
+// V269 — weierstrass_p. ℘(z) = 1/z² + Σ'_{m,n} [1/(z−ω)² − 1/ω²], ω = m·ω₁ + n·ω₂,
+// 5×5 lattice (m,n ∈ −2..2, origin excluded). The −1/ω² counterterm is what makes
+// the sum converge. Double poles at every lattice point → log(1+|℘|) compression
+// (spec D3); clamp guards the 1/z² overflow at the poles. ℘ is even: ℘(−z) = ℘(z)
+// (symmetric lattice) — pinned by the test. PERF: heaviest of the family
+// (24 lattice terms). 3×3 (−1..1) is the fallback if it drags renders — see #131.
+fn var_weierstrass_p(p: vec2f, w: f32, o1re: f32, o1im: f32, o2re: f32, o2im: f32) -> vec2f {
+  let z = p;
+  let w1 = vec2f(o1re, o1im);
+  let w2 = vec2f(o2re, o2im);
+  var acc = complex_recip(complex_sqr(z));   // 1/z² central pole
+  for (var m = -2; m <= 2; m = m + 1) {
+    for (var n = -2; n <= 2; n = n + 1) {
+      if (m == 0 && n == 0) { continue; }
+      let omega = f32(m) * w1 + f32(n) * w2;
+      acc = acc + complex_recip(complex_sqr(z - omega)) - complex_recip(complex_sqr(omega));
+    }
+  }
+  let accc = clamp(acc, vec2f(-1e18), vec2f(1e18));    // bound the pole spike
+  let mag = length(accc);
+  let scale = log(1.0 + mag) / max(mag, 1e-12);
+  return w * scale * accc;
+}
+
+// V270 — gauss_map. Per-axis continued-fraction map x → frac(1/x). 1/t is
+// sign-guarded at |t| ≥ 1e-4. Stern-Brocot / arithmetic self-similarity; output
+// per axis lands in [0,1). Param-free (spec D4).
+fn gauss_frac(t: f32) -> f32 {
+  let at = max(abs(t), 1.0e-4);
+  let st = select(1.0, -1.0, t < 0.0);
+  let r = st / at;                       // = 1/t, guarded
+  return r - floor(r);
+}
+fn var_gauss_map(p: vec2f, w: f32) -> vec2f {
+  return w * vec2f(gauss_frac(p.x), gauss_frac(p.y));
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -6479,6 +6621,12 @@ fn apply_variation(
     case 263u: { return var_schwarzschild_lensing(p, w, p0, p1); }
     case 264u: { return var_field_dipole(p, w, p0, p1, p2, p3); }
     case 265u: { return var_magnetic_pendulum_pos(p, w, p0, p1, p2, p3); }
+    // #131 — Modular / number-theory variations
+    case 266u: { return var_jacobi_theta(p, w, p0); }
+    case 267u: { return var_modular_lambda(p, w, p0); }
+    case 268u: { return var_klein_j(p, w, p0); }
+    case 269u: { return var_weierstrass_p(p, w, p0, p1, p2, p3); }
+    case 270u: { return var_gauss_map(p, w); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

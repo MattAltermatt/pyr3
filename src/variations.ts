@@ -548,6 +548,12 @@ export const V = {
   schwarzschild_lensing: 263,
   field_dipole: 264,
   magnetic_pendulum: 265,
+  // #131 — Modular / number-theory variations (theta, lambda, j, Weierstrass ℘, Gauss)
+  jacobi_theta: 266,
+  modular_lambda: 267,
+  klein_j: 268,
+  weierstrass_p: 269,
+  gauss_map: 270,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

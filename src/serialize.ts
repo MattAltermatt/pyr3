@@ -364,6 +364,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   schwarzschild_lensing: ['mass', 'eps'],
   field_dipole: ['charge', 'separation', 'step', 'angle'],
   magnetic_pendulum: ['magnets', 'radius', 'strength', 'damping'],
+  // #131 — Modular / number-theory variations. gauss_map is param-free → absent.
+  jacobi_theta: ['im_floor'],
+  modular_lambda: ['im_floor'],
+  klein_j: ['im_floor'],
+  weierstrass_p: ['omega1_re', 'omega1_im', 'omega2_re', 'omega2_im'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -629,6 +634,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   schwarzschild_lensing: [0.5, 0.05],
   field_dipole: [1.0, 0.5, 0.2, 0.0],
   magnetic_pendulum: [3.0, 1.0, 0.5, 0.1],
+  // #131 — Modular / number-theory variations
+  jacobi_theta: [0.15],
+  modular_lambda: [0.08],
+  klein_j: [0.32],
+  weierstrass_p: [-1.0, -1.1, -0.5, 1.0],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
