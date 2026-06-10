@@ -492,6 +492,12 @@
         margin-left: 0.3rem;
         color: var(--text-muted);
       }
+      .pyr3-cat-section-pills {
+        display: flex;
+        align-items: baseline;
+        gap: 0.45rem;
+        flex-shrink: 0;
+      }
       .pyr3-cat-section-source {
         font-family: ui-monospace, monospace;
         font-size: 0.7rem;
@@ -500,7 +506,29 @@
         border: 1px solid var(--bar-border);
         padding: 0.22rem 0.6rem;
         border-radius: 999px;
+        white-space: nowrap;
       }
+      /* #222 — Direct-Color capability pill: accent-bordered, links to the
+         explainer. Distinct from the muted provenance pill so the "this one
+         paints its own color" signal reads at a glance. */
+      .pyr3-cat-section-dc {
+        font-family: ui-monospace, monospace;
+        font-size: 0.7rem;
+        color: var(--accent);
+        background: var(--bar-bg-1);
+        border: 1px solid var(--accent);
+        padding: 0.22rem 0.6rem;
+        border-radius: 999px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background 120ms, color 120ms;
+      }
+      .pyr3-cat-section-dc:hover,
+      .pyr3-cat-section-dc:focus-visible {
+        background: var(--accent);
+        color: var(--bg);
+      }
+      .pyr3-cat-section-dc-arrow { margin-left: 0.3rem; font-size: 0.85em; }
       .pyr3-cat-section-formula {
         text-align: center;
         padding: 1.3rem 0 1.5rem;

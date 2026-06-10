@@ -45,9 +45,17 @@ describe('sourceForIdx classification', () => {
     expect(sourceForIdx(V.linear)).toBe('flam3');
     expect(sourceForIdx(V.mobius)).toBe('flam3');
   });
-  it('classifies DC family', () => {
-    expect(sourceForIdx(V.dc_linear)).toBe('dc');
-    expect(sourceForIdx(V.dc_cylinder)).toBe('dc');
+  it('classifies the dc_* ports as jwf provenance (#222 — DC is a capability, not a source)', () => {
+    // dc_linear..dc_cylinder are V99..V102 = JWF0..JWF3 (Neil Slater / JWildfire
+    // lineage). Their Direct-Color capability lives in DC_VARIATION_SET, not here.
+    expect(sourceForIdx(V.dc_linear)).toBe('jwf');
+    expect(sourceForIdx(V.dc_cylinder)).toBe('jwf');
+  });
+  it('classifies DC-capable pyr3 originals as novel provenance (#222)', () => {
+    expect(sourceForIdx(V.newton)).toBe('novel');             // P0 (#133)
+    expect(sourceForIdx(V.magnetic_pendulum)).toBe('novel');  // P45 (#138)
+    expect(sourceForIdx(V.burning_ship)).toBe('novel');       // P90 (#145)
+    expect(sourceForIdx(V.halley)).toBe('novel');             // P93 (#145)
   });
   it('classifies JWildfire ports', () => {
     expect(sourceForIdx(V.cpow2)).toBe('jwf');

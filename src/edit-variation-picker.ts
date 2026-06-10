@@ -29,7 +29,7 @@
 
 import { COLORS } from './ui-tokens';
 import { buildDropdown, buildToggle, buildButton } from './edit-primitives';
-import { V, VARIATION_NAMES, DC_VARIATION_SET, getDisplayLabel, catalogAnchorSlug } from './variations';
+import { V, VARIATION_NAMES, DC_VARIATION_SET, DC_DOCS_URL, getDisplayLabel, catalogAnchorSlug } from './variations';
 
 // #114 — per-variation descriptive tooltips for the picker. Adds the
 // human-readable explanation alongside the raw variation name, mostly
@@ -43,11 +43,10 @@ export const VARIATION_TOOLTIPS: Record<string, string> = {
   newton: 'Newton-step on zⁿ−1; DC flag → iconic basin coloring per root',
 };
 
-/** Canonical reference for the DC (direct-color) variation family.
- *  Points at pyr3's own help page (self-contained explanation + examples
- *  + author credits + the canonical external link onward). Linked from
- *  the picker tile badge and the xforms-section DC chip. */
-export const DC_DOCS_URL = '/help/direct-color-variations.html';
+/** Canonical reference for the Direct-Color capability. Defined in
+ *  `variations.ts` (shared with the catalog "Direct Color" pill, #222);
+ *  re-exported here for the picker tile badge + xforms-section DC chip. */
+export { DC_DOCS_URL };
 
 // ──────────────────────────────────────────────────────────────────────
 // Tier data (preserved from the previous picker version)
@@ -79,11 +78,11 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     // #114 — DC (direct-color) family. JWildfire-origin; color comes from
     // spatial position instead of the palette index for any xform that
     // includes one of these. See VARIATION_TOOLTIPS and DC_DOCS_URL above.
-    'Direct color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder, V.newton],
+    'Direct Color': [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder, V.newton],
     'Map projections': [V.mercator, V.lambert, V.mollweide, V.hammer, V.stereographic],
     'Folds & IFS': [V.box_fold, V.sphere_fold, V.mandelbox_step, V.kifs_fold],
     // #145 — escape-time fractal single-steps. Filed as their own math-family
-    // shelf (not the 'Direct color' group): each is always-on Direct Color, but
+    // shelf (not the 'Direct Color' group): each is always-on Direct Color, but
     // the per-row "DC ⓘ" chip carries that; the group carries the math family.
     'Escape-time fractals': [V.burning_ship, V.magnet1, V.nova, V.halley],
     // #131 — modular / number-theory family (pyr3-unique; no other renderer ships these)

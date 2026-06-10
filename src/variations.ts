@@ -666,6 +666,11 @@ export const DC_VARIATION_SET: ReadonlySet<number> = new Set<number>([
   V.halley,        // #145
 ]);
 
+/** Help page explaining the Direct-Color capability (palette-indexed vs
+ *  direct RGB). Canonical home for the URL — the editor variation picker's
+ *  "DC" chip and the catalog's "Direct Color" pill both link here (#222). */
+export const DC_DOCS_URL = '/help/direct-color-variations.html';
+
 export interface Variation {
   index: VariationIndex;
   weight: number;

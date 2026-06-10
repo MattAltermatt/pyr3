@@ -1,8 +1,10 @@
 // #119 — Variation Catalog sidebar.
 //
-// Sticky left-pane index: search + four collapsible sticky-headed
-// sections (flam3 / DC family / JWildfire ports / Novel pyr3 originals).
-// All 225 variations always render in numeric order. Search filters
+// Sticky left-pane index: search + three collapsible sticky-headed
+// sections by provenance (flam3 / JWildfire ports / Novel pyr3 originals).
+// Direct-Color is a cross-cutting capability, not a provenance bucket — it's
+// surfaced as the per-section "Direct Color" pill, not a sidebar group (#222).
+// All variations always render in numeric order. Search filters
 // in-place; collapse hides a section's members but keeps its header
 // pinned. Scroll-spy is wired by the host (which knows about scroll
 // containers); this module only exposes `setActive(idx)` for the host
@@ -20,16 +22,14 @@ interface VariationRow {
   source: CatalogSource;
 }
 
-const SOURCES: readonly CatalogSource[] = ['flam3', 'dc', 'jwf', 'novel'];
+const SOURCES: readonly CatalogSource[] = ['flam3', 'jwf', 'novel'];
 const SOURCE_LABEL: Record<CatalogSource, string> = {
   flam3: 'flam3',
-  dc:    'DC family',
   jwf:   'JWildfire ports',
   novel: 'Novel pyr3 originals',
 };
 const SOURCE_BADGE: Record<CatalogSource, string> = {
   flam3: '',
-  dc:    'DC',
   jwf:   'JWF',
   novel: 'New',
 };

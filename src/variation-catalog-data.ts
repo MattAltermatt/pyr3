@@ -17,7 +17,7 @@ import {
   ts_var_magnetic_pendulum,
 } from './variations';
 
-export type CatalogSource = 'flam3' | 'dc' | 'jwf' | 'novel';
+export type CatalogSource = 'flam3' | 'jwf' | 'novel';
 
 export interface ParamDoc {
   name: string;
@@ -56,17 +56,20 @@ export interface VariationDoc {
   warpFn?: (x: number, y: number) => [number, number];
 }
 
-/** Source category from variation index. Index ranges defined by the V
- *  table in src/variations.ts: flam3 V0..V98, DC family V99..V102 +
- *  V220 newton (#133), JWildfire ports V103..V219, novel pyr3 originals
- *  V221..V224 (#133 — grep-verified absent from JWildfire source). */
+/** Source category from variation index — pure **provenance**, mirroring
+ *  the display-label namespace (V… = flam3, JWF… = JWildfire port, P… =
+ *  novel pyr3 original). The Direct-Color *capability* is orthogonal to
+ *  provenance — it's a cross-cutting attribute carried by `DC_VARIATION_SET`
+ *  and surfaced as the per-section "Direct Color" pill, NOT a source bucket
+ *  (#222). So the four dc_* ports (V99..V102 = JWF0..JWF3, Neil Slater /
+ *  JWildfire lineage) classify as 'jwf'; newton (V220 = P0, #133),
+ *  magnetic_pendulum (V265 = P45, #138) and the escape-time fractals
+ *  (V310..V313 = P90..P93, #145) classify as 'novel'. */
 export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.mobius) return 'flam3';
-  if (idx <= V.dc_cylinder) return 'dc';
-  if (idx === V.newton) return 'dc';                              // #133 — DC + position warp
-  if (idx === V.magnetic_pendulum) return 'dc';                   // #138 — basin DC + position warp
-  if (idx >= V.burning_ship && idx <= V.halley) return 'dc';      // #145 — escape-time + always-on DC escape coloring
+  if (idx === V.newton) return 'novel';                          // #133 — novel conformal (P0)
   if (idx >= V.blaschke && idx <= 309) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303 + follow-ons V304–V309 (#216/#218/#220/#221)
+  if (idx >= V.burning_ship && idx <= V.halley) return 'novel';  // #145 — novel escape-time fractals (P90..P93)
   return 'jwf';
 }
 
@@ -4221,7 +4224,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
   {
     idx: V.newton,
     name: 'newton',
-    source: 'dc',  // newton emits DC basin color when dc_flag is set
+    source: sourceForIdx(V.newton),  // novel (P0); emits DC basin color when dc_flag is set (#222: DC is a capability, not a source)
     formula: 'P_{0}(z, n) = z - \\frac{z^n - 1}{n\\,z^{n-1}}',
     blurb: 'One Newton step on zⁿ − 1. When the xform\'s DC flag is set, each splat is colored by which root the post-step coordinate is nearest to — producing the iconic Newton-fractal tri-basin (n=3), tetra-basin (n=4), or hepta-basin (n=7) painting that palette-index renderers cannot match. Without the DC flag, ships as a pure position warp with strong convergence toward the n roots on the unit circle.',
     params: [
@@ -5114,7 +5117,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
   {
     idx: V.magnetic_pendulum,
     name: 'magnetic_pendulum',
-    source: 'dc',
+    source: sourceForIdx(V.magnetic_pendulum),
     formula: "V_{265}(p) = p + s \\sum_{k=0}^{N-1} \\frac{M_k - p}{|M_k - p|^3} - d \\cdot p, \\quad M_k = R \\cdot (\\cos\\tfrac{2\\pi k}{N}, \\sin\\tfrac{2\\pi k}{N})",
     blurb: 'N-magnet pendulum (3–6 magnets on a ring of radius R). Walker is pulled by inverse-square attractions and damped toward origin; chaotic basins emerge. When dc_flag is set, each walker is coloured by its nearest-magnet basin index.',
     params: [
@@ -5714,11 +5717,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
   // #145 — Escape-time fractal single-steps. Each is one step of a classic
   // escape-time iteration AND a Direct Color variation: color is always
   // computed directly by escape_color (smooth escape/convergence depth),
-  // bypassing the palette. Catalog source = 'dc' to match newton/magnetic_pendulum.
+  // bypassing the palette. Catalog source = 'novel' (P90..P93, pyr3 originals);
+  // the Direct-Color capability is carried by DC_VARIATION_SET, not the source (#222).
   {
     idx: V.burning_ship,
     name: 'burning_ship',
-    source: 'dc',
+    source: sourceForIdx(V.burning_ship),
     formula: "z' = (|\\mathrm{Re}\\,z| + i\\,|\\mathrm{Im}\\,z|)^2 + c",
     blurb: 'A single step of the Burning Ship iteration: the coordinate is folded into the first quadrant by absolute value, squared, and offset by c. The absolute-value fold gives the family its signature angular, flame-like ridges — distinct from the smooth lobes of plain z²+c. A Direct Color variation: the color is computed directly (bypassing the palette) as a true Mandelbrot-style escape band — escape_color re-iterates the same map and colors by iters-to-bailout. No pole; growth is caught by the chaos-game bad-value reseed.',
     params: [
@@ -5731,7 +5735,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
   {
     idx: V.magnet1,
     name: 'magnet1',
-    source: 'dc',
+    source: sourceForIdx(V.magnet1),
     formula: "z' = \\left(\\dfrac{z^2 + c - 1}{2z + c - 2}\\right)^2",
     blurb: 'A single step of the Magnet I iteration (from the physics of phase transitions in the Ising model). The rational map has a pole at 2z + c − 2 = 0, guarded with the var_newton |den|²-floor precedent (the point stays put at the singularity). Convergence to the magnetic / non-magnetic fixed points carves smooth basins. A Direct Color variation: color is computed directly by escape_color from convergence depth, bypassing the palette.',
     params: [
@@ -5744,7 +5748,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
   {
     idx: V.nova,
     name: 'nova',
-    source: 'dc',
+    source: sourceForIdx(V.nova),
     formula: "z' = z - R\\,\\dfrac{z^3-1}{3z^2} + c",
     blurb: 'A single relaxed-Newton step on f(z) = z³ − 1 with a relaxation factor R and a Mandelbrot-style offset c — the Nova fractal. R = 1 recovers ordinary Newton; off-1 values over/under-relax the convergence and shift the basin geometry. The three cube roots of unity are fixed points (step = 0 there). Pole at z = 0 (f′ → 0), guarded. A Direct Color variation: color is computed directly by escape_color from convergence depth, bypassing the palette.',
     params: [
@@ -5758,7 +5762,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
   {
     idx: V.halley,
     name: 'halley',
-    source: 'dc',
+    source: sourceForIdx(V.halley),
     formula: "z' = z - \\dfrac{2ff'}{2f'^2 - ff''} + c,\\quad f = z^3 - 1",
     blurb: "A single Halley step on f(z) = z³ − 1 — Newton's cubic-convergence cousin, using f, f′ and f″ together for a tighter approach to the roots. Like Nova it fixes the three cube roots of unity, but the basin boundaries are noticeably crisper. Pole where 2f′² − ff″ = 0, guarded with the var_newton precedent. A Direct Color variation: color is computed directly by escape_color from convergence depth, bypassing the palette.",
     params: [

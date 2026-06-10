@@ -26,12 +26,12 @@ import 'katex/dist/katex.min.css';
 import type { VariationDoc } from './variation-catalog-data';
 import { buildWarpSvg } from './variation-catalog-warp';
 import { linkToEditor } from './variation-catalog-link';
-import { V, getDisplayLabel, catalogAnchorSlug } from './variations';
+import { V, getDisplayLabel, catalogAnchorSlug, DC_VARIATION_SET, DC_DOCS_URL } from './variations';
 
 const SOURCE_LABEL: Record<string, string> = {
   flam3: 'flam3 core',
-  dc:    'DC family',
   jwf:   'JWildfire ports',
+  novel: 'Novel pyr3 original',
 };
 
 export interface SectionState {
@@ -107,7 +107,25 @@ export function mountSection(
   });
   name.append(anchor);
   head.append(name);
-  head.append(el('span', 'pyr3-cat-section-source', SOURCE_LABEL[doc.source] ?? doc.source));
+  // Provenance pill (flam3 / JWildfire port / novel pyr3 original).
+  const pills = el('div', 'pyr3-cat-section-pills');
+  pills.append(el('span', 'pyr3-cat-section-source', SOURCE_LABEL[doc.source] ?? doc.source));
+  // Direct-Color capability pill — orthogonal to provenance (#222). Renders
+  // only for DC_VARIATION_SET members; links (new tab) to the explainer so a
+  // newcomer can learn why these bypass the palette. The trailing ↗ matches
+  // the new-tab convention used elsewhere (about page, "explore catalog").
+  if (DC_VARIATION_SET.has(doc.idx)) {
+    const dcPill = document.createElement('a');
+    dcPill.className = 'pyr3-cat-section-dc';
+    dcPill.href = DC_DOCS_URL;
+    dcPill.target = '_blank';
+    dcPill.rel = 'noopener noreferrer';
+    dcPill.append(document.createTextNode('Direct Color'));
+    dcPill.append(el('span', 'pyr3-cat-section-dc-arrow', '↗'));
+    dcPill.title = 'Direct Color — this variation writes RGB straight to the buffer, bypassing the palette. Learn more ↗';
+    pills.append(dcPill);
+  }
+  head.append(pills);
 
   // Formula. Use KaTeX's renderToString (a pure-string output) then re-parse
   // through DOMParser + importNode. Two reasons: (1) routes around KaTeX's

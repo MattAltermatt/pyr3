@@ -16,23 +16,18 @@ describe('listVariations', () => {
     expect(idxs).toEqual([...idxs].sort((a, b) => a - b));
   });
 
-  it('classifies the DC family + at least the original JWF batch + the novel pyr3 originals', () => {
+  it('classifies by provenance only — Direct-Color is not a source bucket (#222)', () => {
     const rows = listVariations();
-    // DC family: 4 originals (dc_linear..dc_cylinder) plus newton (V220, #133)
-    // plus magnetic_pendulum (V265, #138 — basin DC + position warp) plus the
-    // escape-time family burning_ship/magnet1/nova/halley (V310–V313, #145 —
-    // always-on escape-band DC color) = 10.
-    // Novel pyr3 originals: V221..V270 (minus magnetic_pendulum's DC slot) —
-    // blaschke, cayley, complex_gamma, lambert_w, billiards (#150),
-    // lorentz_boost + schwarzschild_lensing + field_dipole (#138),
-    // modular/number-theory V266..V270 (#131 — jacobi_theta, modular_lambda,
-    // klein_j, weierstrass_p, gauss_map).
-    // JWF + novel counts grow as batches ship — lower-bound assertions stay
-    // loose. The More Variations Marathon (#16) adds 33 novel originals
-    // (V271–V303) on top of the original 49, so novel is now ≥49 and climbing.
-    expect(rows.filter(r => r.source === 'dc')).toHaveLength(10);
+    // #222: source is pure provenance (flam3 / jwf / novel), mirroring the
+    // display-label namespace (V… / JWF… / P…). The Direct-Color capability is
+    // orthogonal — carried by DC_VARIATION_SET, surfaced as a per-section pill.
+    // The four dc_* ports (V99..V102 = JWF0..JWF3) classify as jwf; the
+    // DC-capable pyr3 originals (newton P0, magnetic_pendulum P45, escape-time
+    // P90..P93) classify as novel. No row is sourced 'dc'.
+    expect(rows.some(r => (r.source as string) === 'dc')).toBe(false);
     expect(rows.filter(r => r.source === 'novel').length).toBeGreaterThanOrEqual(49);
-    expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
+    // jwf now also holds the four dc_* ports on top of the JWF port batches.
+    expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(8);
   });
 });
 
@@ -48,11 +43,11 @@ describe('mountSidebar', () => {
     handle = mountSidebar(host, { onJump: idx => jumpedTo.push(idx) });
   });
 
-  it('renders every variation across four groups', () => {
+  it('renders every variation across three provenance groups (#222)', () => {
     const total = Object.keys(V).length;
     expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(total);
-    // flam3 / DC family / JWildfire ports / Novel pyr3 originals (#133).
-    expect(host.querySelectorAll('.pyr3-cat-group-head').length).toBe(4);
+    // flam3 / JWildfire ports / Novel pyr3 originals — DC is no longer a group.
+    expect(host.querySelectorAll('.pyr3-cat-group-head').length).toBe(3);
   });
 
   it('header count shows the grand total', () => {
@@ -75,7 +70,7 @@ describe('mountSidebar', () => {
 
   it('section with zero search matches hides its header', () => {
     handle.setSearch('cpow');
-    // flam3=cpow (V41), jwf=cpow2 (V103) + cpow3 (V104); DC has no matches
+    // flam3=cpow (V41), jwf=cpow2 (V103) + cpow3 (V104); novel has no matches
     expect(host.querySelectorAll('.pyr3-cat-group-head').length).toBe(2);
   });
 
@@ -83,17 +78,17 @@ describe('mountSidebar', () => {
     const flam3Head = host.querySelector('.pyr3-cat-group-head[data-source="flam3"]') as HTMLElement;
     flam3Head.click();
     expect(host.querySelectorAll('.pyr3-cat-group-head.collapsed').length).toBe(1);
-    // Only DC + JWF items visible.
+    // Only jwf + novel items visible (everything past the flam3 range).
     const nonFlam3 = Object.values(V).filter(idx => idx > 98).length;
     expect(host.querySelectorAll('.pyr3-cat-item').length).toBe(nonFlam3);
   });
 
   it('collapsed header still renders + can be re-expanded', () => {
-    const dcHead = host.querySelector('.pyr3-cat-group-head[data-source="dc"]') as HTMLElement;
-    dcHead.click();
-    expect(host.querySelector('.pyr3-cat-group-head[data-source="dc"].collapsed')).toBeTruthy();
-    dcHead.click();
-    expect(host.querySelector('.pyr3-cat-group-head[data-source="dc"].collapsed')).toBeNull();
+    const novelHead = host.querySelector('.pyr3-cat-group-head[data-source="novel"]') as HTMLElement;
+    novelHead.click();
+    expect(host.querySelector('.pyr3-cat-group-head[data-source="novel"].collapsed')).toBeTruthy();
+    novelHead.click();
+    expect(host.querySelector('.pyr3-cat-group-head[data-source="novel"].collapsed')).toBeNull();
   });
 
   it('setActive(idx) marks the matching item active', () => {
