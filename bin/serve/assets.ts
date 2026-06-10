@@ -34,7 +34,32 @@ function mimeFor(p: string): string {
   return MIME[extname(p).toLowerCase()] ?? 'application/octet-stream';
 }
 
-interface AssetSource {
+// Heavy corpus artifacts (chunks ≈57 MB, showcase ≈250 MB, variation-thumbs)
+// are deliberately NOT bundled into the SEA binary. On a local miss we fall
+// back to the hosted copy on pyr3.app via a 302 redirect — gh-pages sends
+// `access-control-allow-origin: *`, so the browser's cross-origin re-fetch of
+// `.flam3chunk` bytes is CORS-permitted. #202
+const PROXY_PREFIXES = ['chunks/', 'showcase/', 'variation-thumbs/'] as const;
+const PROXY_ORIGIN = process.env['PYR3_PROXY_ORIGIN'] ?? 'https://pyr3.app';
+
+/**
+ * If `assetPath` falls under a proxied corpus prefix, return the upstream
+ * pyr3.app URL to 302 to (query string preserved); else null. `assetPath` is
+ * the leading-slash-stripped request path; `rawUrl` is the original req.url
+ * (carries the query string).
+ */
+export function proxyTargetFor(
+  assetPath: string,
+  rawUrl: string,
+  origin: string = PROXY_ORIGIN,
+): string | null {
+  if (!PROXY_PREFIXES.some((p) => assetPath.startsWith(p))) return null;
+  const qIdx = rawUrl.indexOf('?');
+  const query = qIdx >= 0 ? rawUrl.slice(qIdx) : '';
+  return `${origin}/${assetPath}${query}`;
+}
+
+export interface AssetSource {
   read(path: string): Uint8Array | null;
 }
 
@@ -94,9 +119,16 @@ export function hasAssetSource(): boolean {
   return source !== null;
 }
 
-export function makeAssetHandler() {
+// Sentinel so callers can pass `null` to test the no-source 503 path while a
+// no-arg call still resolves to the module-scope `source`.
+const SOURCE_DEFAULT = Symbol('use-module-source');
+
+export function makeAssetHandler(
+  injected: AssetSource | null | typeof SOURCE_DEFAULT = SOURCE_DEFAULT,
+) {
+  const src = injected === SOURCE_DEFAULT ? source : injected;
   return function handleAsset(req: IncomingMessage, res: ServerResponse): void {
-    if (!source) {
+    if (!src) {
       res.statusCode = 503;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.end(
@@ -114,15 +146,25 @@ export function makeAssetHandler() {
     if (assetPath === '' || assetPath.endsWith('/')) {
       assetPath = `${assetPath}index.html`;
     }
-    let bytes = source.read(assetPath);
+    let bytes = src.read(assetPath);
     let mimePath = assetPath;
     if (!bytes && !extname(assetPath)) {
       // SPA fallback — clean URLs like /v1/gen/247/id/19679 resolve to
       // index.html and must carry text/html, not octet-stream.
-      bytes = source.read('index.html');
+      bytes = src.read('index.html');
       mimePath = 'index.html';
     }
     if (!bytes) {
+      // Corpus artifacts (chunks/showcase/variation-thumbs) aren't bundled —
+      // fall back to the hosted copy on pyr3.app via a 302. #202
+      const target = proxyTargetFor(assetPath, url);
+      if (target) {
+        res.statusCode = 302;
+        res.setHeader('Location', target);
+        res.setHeader('Cache-Control', 'no-store');
+        res.end();
+        return;
+      }
       res.statusCode = 404;
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.end(`Not Found: ${pathname}`);
