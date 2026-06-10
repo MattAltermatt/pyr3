@@ -208,6 +208,7 @@ async function main(): Promise<void> {
     viewer:      '/',
     gallery:     '/v1/gallery',
     editor:      '/v1/edit',
+    animate:     '/v1/animate',
     about:       '/about',
     screensaver: '/v1/screensaver',
   };
@@ -215,6 +216,7 @@ async function main(): Promise<void> {
     const p = window.location.pathname;
     if (p === '/v1/gallery' || p.startsWith('/v1/gallery/')) return 'gallery';
     if (p === '/v1/edit' || p.startsWith('/v1/edit/')) return 'editor';
+    if (p === '/v1/animate' || p.startsWith('/v1/animate/')) return 'animate';
     if (p === '/about' || p.startsWith('/about/')) return 'about';
     if (p === '/v1/screensaver' || p.startsWith('/v1/screensaver/')) return 'screensaver';
     // /v1/gen/<gen>/id/<id> deep-links are still the viewer surface; bare
@@ -389,6 +391,41 @@ async function main(): Promise<void> {
     // SPA route-leave to call screensaverHandle.destroy() the same way.
     window.addEventListener('pagehide', () => { screensaverHandle.destroy(); }, { once: true });
     setDocTitle('screensaver');
+    return;
+  }
+
+  // P6 #211 — /v1/animate short-circuit. Same pattern as /v1/screensaver:
+  // mountAnimateBar into #pyr3-bar; animate page body (canvas + playback
+  // scrubber + drop zone) lives in the bar's middleSlot. Viewer canvas hidden
+  // so the animate surface owns the visible zone. Device + format pre-acquired
+  // here and passed through.
+  if (window.location.pathname === '/v1/animate' || window.location.pathname.startsWith('/v1/animate/')) {
+    const barRoot = document.getElementById('pyr3-bar');
+    const bodyRoot = document.getElementById('pyr3-canvas-zone');
+    if (!barRoot || !bodyRoot) {
+      console.error('pyr3: /v1/animate — required DOM nodes missing');
+      return;
+    }
+    const { device: animDevice, format: animFormat } = await acquireGpu();
+    const { mountAnimateBar } = await import('./ui-bar');
+    const animateBar = mountAnimateBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    const canvas = document.getElementById('pyr3-canvas');
+    if (canvas) canvas.hidden = true;
+    const firstPaint = document.getElementById('pyr3-firstpaint');
+    if (firstPaint) firstPaint.remove();
+    const animContainer = document.createElement('div');
+    animContainer.id = 'pyr3-animate';
+    Object.assign(animContainer.style, {
+      position: 'relative',
+      height: 'calc(100vh - 44px)',
+      overflow: 'hidden',
+      background: '#000',
+    });
+    animateBar.middleSlot.appendChild(animContainer);
+    const { mountAnimatePage } = await import('./animate-mount');
+    const animateHandle = mountAnimatePage({ root: animContainer, device: animDevice, format: animFormat });
+    window.addEventListener('pagehide', () => { animateHandle.destroy(); }, { once: true });
+    setDocTitle('animation');
     return;
   }
 

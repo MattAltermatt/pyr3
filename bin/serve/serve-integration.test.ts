@@ -7,8 +7,9 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve as resolvePath } from 'node:path';
+import { readFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve as resolvePath, join as joinPath } from 'node:path';
 import { DOMParser } from 'linkedom';
 
 import { parseFlame } from '../../src/flame-import';
@@ -151,4 +152,84 @@ describeIf('pyr3 serve — integration', () => {
     expect(png![2]).toBe(0x4e);
     expect(png![3]).toBe(0x47);
   }, 90_000);
+
+  it('POST /api/animate writes N PNGs to disk + streams SSE progress', async () => {
+    // 247.29388 has 2 keyframes (the smallest committed multi-keyframe
+    // fixture). Render 2 frames at tiny dims/quality so wall-clock stays
+    // sane on slower hardware.
+    const fixturePath = resolvePath(
+      REPO_ROOT,
+      'fixtures',
+      'flam3-goldens',
+      '247.29388',
+      '247.29388.flam3',
+    );
+    const xml = readFileSync(fixturePath, 'utf8');
+    const outDir = mkdtempSync(joinPath(tmpdir(), 'pyr3-animate-test-'));
+
+    try {
+      const res = await fetch(`${server.url}/api/animate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          flame_xml: xml,
+          out_dir: outDir,
+          begin: 0,
+          end: 1,
+          dtime: 1,
+          // Crank ss WAY down to keep frame render time tiny.
+          ss: 0.05,
+          qs: 0.1,
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toBeTruthy();
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let progressEvents = 0;
+      let done = false;
+      let writtenFromDone: string[] = [];
+      const start = Date.now();
+      while (Date.now() - start < 120_000 && !done) {
+        const { value, done: streamDone } = await reader.read();
+        if (streamDone) break;
+        buffer += decoder.decode(value, { stream: true });
+        let sep: number;
+        while ((sep = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          let event = 'message';
+          const dataLines: string[] = [];
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+          }
+          const data = dataLines.join('\n');
+          if (event === 'progress') progressEvents++;
+          if (event === 'done') {
+            const d = JSON.parse(data) as { written: string[] };
+            writtenFromDone = d.written;
+            done = true;
+          }
+          if (event === 'error') throw new Error(`animate reported error: ${data}`);
+        }
+      }
+
+      expect(done).toBe(true);
+      expect(progressEvents).toBeGreaterThanOrEqual(2);
+      expect(writtenFromDone).toHaveLength(2);
+      const onDisk = readdirSync(outDir).filter((f) => f.endsWith('.png')).sort();
+      expect(onDisk).toEqual(['00000.png', '00001.png']);
+      // PNG magic on the first file.
+      const firstBytes = readFileSync(joinPath(outDir, '00000.png'));
+      expect(firstBytes[0]).toBe(0x89);
+      expect(firstBytes[1]).toBe(0x50);
+      expect(firstBytes[2]).toBe(0x4e);
+      expect(firstBytes[3]).toBe(0x47);
+    } finally {
+      if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
+    }
+  }, 150_000);
 });

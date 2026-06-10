@@ -1,10 +1,13 @@
 {
   "name": "pyr3",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "Fractal flame renderer in TypeScript + WebGPU — browser viewer and headless CLI from one engine. flam3 lineage.",
   "license": "GPL-3.0-or-later",
+  "bin": {
+    "pyr3": "bin/pyr3"
+  },
   "engines": {
     "node": ">=26"
   },
@@ -30,6 +33,7 @@
     "smoke:serve": "node scripts/smoke-serve-sea.mjs",
     "test:serve": "VITEST_INCLUDE_SERVE=1 vitest run bin/serve/serve-integration.test.ts",
     "render": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-render.ts",
+    "animate": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-animate.ts",
     "serve": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-serve.ts",
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
     "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts",

@@ -978,7 +978,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 /** Tabs in the top-bar's center cluster. `about` and `screensaver` are
  *  reserved — they live in the left cluster as links, not tabs — so those
  *  surfaces render all three real tabs in their inactive state. */
-export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'about' | 'screensaver';
+export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'animate' | 'about' | 'screensaver';
 
 export interface ChromeOpts {
   surface: TabSurface;
@@ -1126,6 +1126,44 @@ export function mountScreensaverBar(
   };
 }
 
+// ─── mountAnimateBar (#211 / P6) ───────────────────────────────────────────
+// Top-bar variant for /v1/animate — same pattern as mountScreensaverBar /
+// mountAboutBar. Renders all real tabs with 'animate' marked active.
+
+export interface AnimateBarOpts {
+  webgpu: WebGPUStatus;
+  onTabClick: (surface: TabSurface) => void;
+}
+
+export interface AnimateBarHandle {
+  /** Caller mounts the animate page (canvas + scrubber) into this slot. */
+  middleSlot: HTMLElement;
+  destroy: () => void;
+}
+
+export function mountAnimateBar(
+  root: HTMLElement,
+  opts: AnimateBarOpts,
+): AnimateBarHandle {
+  injectStylesOnce();
+  root.replaceChildren();
+  root.classList.add('pyr3-bar-root');
+
+  const chrome = mountBarChrome(root, {
+    surface: 'animate',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
+  return {
+    middleSlot: chrome.middleSlot,
+    destroy: () => {
+      chrome.destroy();
+      root.classList.remove('pyr3-bar-root');
+    },
+  };
+}
+
 function buildBrand(): HTMLElement {
   const wrap = el('a', 'pyr3-brand') as HTMLAnchorElement;
   wrap.href = import.meta.env.BASE_URL;
@@ -1150,7 +1188,7 @@ function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLEl
   const wrap = el('div', 'pyr3-tabs');
   // `about` lives in the left cluster as a link, so surface: 'about' renders
   // all four real tabs in their inactive state. `screensaver` IS a tab.
-  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor', 'screensaver'];
+  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor', 'animate', 'screensaver'];
   for (const s of surfaces) {
     const btn = el('div', 'pyr3-tab' + (s === active ? ' active' : ''));
     btn.dataset.surface = s;

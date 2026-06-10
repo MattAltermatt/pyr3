@@ -21,6 +21,8 @@ import { installWebGPUHost, acquireDawnDevice } from './host';
 import { Router } from './serve/router';
 import { makeCapabilitiesRoute } from './serve/route-capabilities';
 import { makeRenderRoute } from './serve/route-render';
+import { makeAnimateRoute } from './serve/route-animate';
+import { handlePickDir } from './serve/route-pick-dir';
 import { handleCancel } from './serve/route-cancel';
 import { makeAssetHandler, hasAssetSource } from './serve/assets';
 
@@ -89,6 +91,8 @@ async function main(): Promise<void> {
   const router = new Router();
   router.add('GET', '/api/capabilities', makeCapabilitiesRoute({}));
   router.add('POST', '/api/render', makeRenderRoute(() => device));
+  router.add('POST', '/api/animate', makeAnimateRoute(() => device));
+  router.add('POST', '/api/pick-dir', handlePickDir);
   router.add('POST', '/api/cancel/:id', handleCancel);
   router.setFallback(makeAssetHandler());
 

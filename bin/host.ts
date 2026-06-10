@@ -10,6 +10,7 @@ import { sniffKind, type LoadKind } from '../src/loader';
 import { parseFlame } from '../src/flame-import';
 import { genomeFromJson } from '../src/serialize';
 import { type Genome } from '../src/genome';
+import { type Animation } from '../src/animation';
 
 // Two require flavors, picked by call site:
 //   - `builtinRequire` resolves built-in modules (`node:sea`, `node:fs`, …).
@@ -112,6 +113,9 @@ export async function acquireDawnDevice(toolName: string): Promise<GPUDevice> {
 
 export interface ParsedGenome {
   genome: Genome;
+  /** Set only when the input was a multi-keyframe `.flam3`. Single-keyframe
+   *  or `.pyr3.json` inputs leave this undefined. (Animation P1, #206). */
+  animation?: Animation;
   kind: LoadKind;
   dropped: number;
   ignored: number;
@@ -121,9 +125,10 @@ export interface ParsedGenome {
 export function parseGenomeText(text: string, filename: string): ParsedGenome {
   const kind = sniffKind(filename, text);
   if (kind === 'flame') {
-    const { genome, report } = parseFlame(text);
+    const { genome, animation, report } = parseFlame(text);
     return {
       genome,
+      ...(animation ? { animation } : {}),
       kind,
       dropped: report.droppedVariations.length,
       ignored: report.ignoredFields.length,

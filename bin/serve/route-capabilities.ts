@@ -29,9 +29,11 @@ export function buildCapability(ctx: CapabilityCtx): ServerCapability {
     pyr3_version: pyr3Version,
     dawn_version: ctx.dawnVersion,
     max_quality: null,
-    // P0 ships render only; P4+ wires the file/animation surfaces.
-    can_write_files: false,
-    can_render_animation: false,
+    // P7 (#212) lit up /api/animate — backend writes PNG sequences to a
+    // host directory + streams SSE progress. The browser viewer's Export
+    // button gates on these flags.
+    can_write_files: true,
+    can_render_animation: true,
     scratch_dir: join(tmpdir(), 'pyr3-renders'),
     gpu_adapter: ctx.gpuAdapter,
   };

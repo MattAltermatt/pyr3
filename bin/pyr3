@@ -1,0 +1,61 @@
+#!/usr/bin/env sh
+# pyr3 — local CLI wrapper (#212 follow-up).
+#
+# Boots `pyr3 serve` from a development checkout (tsx-powered), so users
+# can run `pyr3` instead of memorising the long `npm run serve --` line.
+# The SEA binary at `./build/pyr3-serve` is the production answer
+# (`npm run build:cli serve`); this wrapper is the dev-mode equivalent.
+#
+# Usage:
+#   pyr3                # boot the local server + auto-open the browser
+#   pyr3 --port 5180    # override the default port (5174)
+#   pyr3 --no-open      # skip the auto-open
+#   pyr3 --help         # forwarded to pyr3-serve
+#
+# Make it a global command (one-time):
+#   ln -s "$(pwd)/bin/pyr3" /usr/local/bin/pyr3
+#
+# Or run from the checkout: `./bin/pyr3`.
+
+set -e
+
+# Resolve the script's repo root regardless of CWD — and regardless of how
+# the user reached this script. `npm link` plants a symlink under npm's
+# global bin dir (e.g. /opt/homebrew/bin/pyr3) that points back at the
+# checkout's bin/pyr3; walk the symlink chain so $script_dir is the
+# checkout, not the symlink's directory.
+target="$0"
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case "$link" in
+    /*) target="$link" ;;
+    *)  target="$(dirname "$target")/$link" ;;
+  esac
+done
+script_dir=$(cd "$(dirname "$target")" && pwd)
+repo_root=$(cd "$script_dir/.." && pwd)
+
+# Dev wrapper: always runs the live source via tsx. The SEA binary at
+# `build/pyr3-serve` is its own standalone production CLI (no wrapper
+# needed once installed), so we don't auto-delegate to it here — a stale
+# binary from a prior build would silently mask source changes.
+if [ ! -d "$repo_root/node_modules" ]; then
+  echo "pyr3: node_modules missing — run \`npm install\` inside $repo_root first." >&2
+  exit 1
+fi
+
+# Build the viewer assets on demand if dist/ is empty (PYR3_SERVE_FROM_DIST
+# expects them). Quick check — full build is ~1.5s on M1.
+if [ ! -f "$repo_root/dist/index.html" ]; then
+  echo "pyr3: building viewer assets …" >&2
+  (cd "$repo_root" && npm run build >/dev/null 2>&1)
+fi
+
+# Hand off to pyr3-serve via tsx + the WGSL loader (same incantation as
+# `npm run serve`, just one command surface).
+export PYR3_SERVE_FROM_DIST=1
+exec node \
+  --import tsx/esm \
+  --import "$repo_root/bin/wgsl-loader-register.mjs" \
+  "$repo_root/bin/pyr3-serve.ts" \
+  "$@"

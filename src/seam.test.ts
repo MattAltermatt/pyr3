@@ -88,6 +88,9 @@ const SEAM_EXEMPT = new Set<string>([
   'render-progress-modal.ts',  // Save Render progress modal — owns DOM (#176)
   'render-mode-bar.ts',        // shared PREVIEW/RENDER bar — owns DOM (#176 Task 3)
   'render-save.ts',            // shared Save Render helper — anchor download (#201 P0)
+  'animate-mount.ts',          // /v1/animate page body — DOM-mounting (#211 P6)
+  'animate-export-modal.ts',   // /v1/animate export modal — DOM-mounting (#212 P7)
+  'playback-bar.ts',           // /v1/animate scrubber — DOM-mounting (#211 P6)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
