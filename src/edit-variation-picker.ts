@@ -84,6 +84,29 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     'Folds & IFS': [V.box_fold, V.sphere_fold, V.mandelbox_step, V.kifs_fold],
     // #131 — modular / number-theory family (pyr3-unique; no other renderer ships these)
     'Modular / number-theory': [V.jacobi_theta, V.modular_lambda, V.klein_j, V.weierstrass_p, V.gauss_map],
+    // ── More Variations Marathon (#16) — novel families ──
+    // #132 — exotic warps (gravitational lensing, divergence-free curl noise)
+    'Physics / exotic': [V.nbody_lensing, V.curl_noise],
+    // #137 — special-function radial profiles (Bessel J0, Airy, Cornu clothoid, Struve H1)
+    'Special functions': [V.bessel_j0, V.airy_radial, V.cornu_spiral, V.struve_h1],
+    // #141 — quasi-random & digit-scramble warps
+    'Digit-scramble / quasi-random': [V.radical_inverse, V.gray_code, V.morton_zorder],
+    // #144 — orthogonal-polynomial & harmonic warps
+    'Polynomial / harmonic': [V.chebyshev, V.legendre, V.spherical_harmonic, V.fourier_warp],
+    // #146 — optics warps (refraction, GRIN lens, caustics)
+    'Optics': [V.snell_refraction, V.grin_lens, V.caustic_fold],
+    // #147 — wave & nodal-pattern warps
+    'Waves / nodal': [V.chladni, V.standing_wave, V.moire],
+    // #148 — atomic-orbital warps
+    'Quantum / orbital': [V.radial_shell, V.hydrogen_orbital],
+    // #151 — statistical-distribution warps (radial inverse-CDF)
+    'Probability / distribution': [V.weibull_cdf, V.logistic_cdf, V.cauchy_cdf, V.pareto_cdf],
+    // #152 — wavelet & signal warps
+    'Wavelet / signal': [V.morlet, V.mexican_hat, V.chirp],
+    // #153 — celestial-mechanics warps
+    'Celestial mechanics': [V.kepler_orbit, V.restricted_3body, V.hill_epicyclic],
+    // #155 — knots & braids
+    'Knots / braids': [V.torus_knot, V.braid_warp],
   };
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();

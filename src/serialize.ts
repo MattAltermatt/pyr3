@@ -369,6 +369,50 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   modular_lambda: ['im_floor'],
   klein_j: ['im_floor'],
   weierstrass_p: ['omega1_re', 'omega1_im', 'omega2_re', 'omega2_im'],
+  // #132 — Exotic warps
+  nbody_lensing: ['c1x', 'c1y', 'c2x', 'c2y', 'm1', 'm2', 'g', 'eps'],
+  curl_noise: ['freq', 'amp'],
+  // #137 — Special-function radial profiles
+  bessel_j0: ['freq'],
+  airy_radial: ['scale', 'shift'],
+  cornu_spiral: ['freq'],
+  struve_h1: ['freq'],
+  // #141 — Quasi-random & digit-scramble warps
+  radical_inverse: ['extent', 'bits'],
+  gray_code: ['extent', 'bits'],
+  morton_zorder: ['extent', 'bits'],
+  // #144 — Orthogonal-polynomial & harmonic warps
+  chebyshev: ['order_x', 'order_y'],
+  legendre: ['order_x', 'order_y'],
+  spherical_harmonic: ['degree_l', 'order_m', 'amount'],
+  fourier_warp: ['harmonics', 'amp', 'phase_seed'],
+  // #146 — Optics warps
+  snell_refraction: ['n_ratio', 'strength'],
+  grin_lens: ['focal', 'eps'],
+  caustic_fold: ['freq', 'amp', 'phase'],
+  // #147 — Wave & nodal-pattern warps
+  chladni: ['n', 'm', 'step'],
+  standing_wave: ['modes', 'freq', 'amp', 'decay'],
+  moire: ['freq', 'beat', 'angle', 'amp'],
+  // #148 — Atomic-orbital warps
+  radial_shell: ['n', 'l', 'shell_scale'],
+  hydrogen_orbital: ['n', 'l', 'm', 'shell_scale', 'lobe_mix'],
+  // #151 — Statistical-distribution warps
+  weibull_cdf: ['lambda', 'k'],
+  logistic_cdf: ['mu', 's'],
+  cauchy_cdf: ['gamma', 'tail_clamp'],
+  pareto_cdf: ['x_m', 'alpha', 'tail_clamp'],
+  // #152 — Wavelet & signal warps
+  morlet: ['freq', 'sigma', 'amp'],
+  mexican_hat: ['sigma', 'amp'],
+  chirp: ['alpha', 'amp', 'decay'],
+  // #153 — Celestial-mechanics warps
+  kepler_orbit: ['eccentricity', 'scale'],
+  restricted_3body: ['mu', 'step', 'coriolis'],
+  hill_epicyclic: ['kappa', 'phase', 'shear'],
+  // #155 — Knots & braids
+  torus_knot: ['p', 'q', 'radius', 'tube'],
+  braid_warp: ['strands', 'twist', 'crossings'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -639,6 +683,50 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   modular_lambda: [0.08],
   klein_j: [0.32],
   weierstrass_p: [-1.0, -1.1, -0.5, 1.0],
+  // #132 — Exotic warps
+  nbody_lensing: [-0.4, 0.0, 0.4, 0.0, 0.06, 0.06, 1.0, 0.05],
+  curl_noise: [2.5, 0.3],
+  // #137 — Special-function radial profiles
+  bessel_j0: [8.1],
+  airy_radial: [5.3, 0.85],
+  cornu_spiral: [3.7],
+  struve_h1: [6.1],
+  // #141 — Quasi-random & digit-scramble warps
+  radical_inverse: [1.35, 6.0],
+  gray_code: [1.0, 12.0],
+  morton_zorder: [1.0, 8.0],
+  // #144 — Orthogonal-polynomial & harmonic warps
+  chebyshev: [4.0, 3.0],
+  legendre: [5.0, 4.0],
+  spherical_harmonic: [3.0, 2.0, 1.0],
+  fourier_warp: [4.0, 0.4, 1.0],
+  // #146 — Optics warps
+  snell_refraction: [1.18, 0.5],
+  grin_lens: [0.45, 0.39],
+  caustic_fold: [4.5, 0.75, 0.01],
+  // #147 — Wave & nodal-pattern warps
+  chladni: [3.0, 5.0, 0.18],
+  standing_wave: [3.0, 1.0, 0.35, 0.6],
+  moire: [4.0, 0.6, 0.4, 0.25],
+  // #148 — Atomic-orbital warps
+  radial_shell: [3.0, 0.0, 1.0],
+  hydrogen_orbital: [3.0, 1.0, 0.0, 0.85, 1.0],
+  // #151 — Statistical-distribution warps
+  weibull_cdf: [1.17, 2.35],
+  logistic_cdf: [0.84, 1.07],
+  cauchy_cdf: [0.25, 4.0],
+  pareto_cdf: [0.61, 0.9, 4.0],
+  // #152 — Wavelet & signal warps
+  morlet: [21.0, 0.79, 0.35],
+  mexican_hat: [1.32, 0.4],
+  chirp: [8.0, 0.3, 0.6],
+  // #153 — Celestial-mechanics warps
+  kepler_orbit: [0.35, 1.3],
+  restricted_3body: [0.2, 0.15, 0.4],
+  hill_epicyclic: [1.15, -0.73, 0.5],
+  // #155 — Knots & braids
+  torus_knot: [3.0, 2.0, 0.6, 0.3],
+  braid_warp: [4.0, -1.15, 5.0],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

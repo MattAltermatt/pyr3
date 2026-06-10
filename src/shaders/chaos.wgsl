@@ -6304,6 +6304,727 @@ fn var_gauss_map(p: vec2f, w: f32) -> vec2f {
   return w * vec2f(gauss_frac(p.x), gauss_frac(p.y));
 }
 
+// =====================================================================
+// More Variations Marathon (#16) — shared helpers (V271–V303).
+// Declaration-before-use ordering is load-bearing: bits_mask before
+// fp_encode; assoc_legendre before sph_harmonic; assoc_laguerre before
+// radial_psi2. All helpers are pure + bounded (see the design spec).
+// =====================================================================
+
+// --- #132 value noise (hash01-based lattice value noise in [-1,1]) ---
+fn vnoise_corner(ix: i32, iy: i32) -> f32 {
+  let ux = bitcast<u32>(ix) * 0x9e3779b1u;
+  let uy = bitcast<u32>(iy) * 0x85ebca77u;
+  return hash01(ux ^ uy) * 2.0 - 1.0;        // [-1,1)
+}
+fn value_noise2(px: f32, py: f32) -> f32 {
+  let fx = floor(px);
+  let fy = floor(py);
+  let ix = i32(fx);
+  let iy = i32(fy);
+  let tx = px - fx;
+  let ty = py - fy;
+  let ux = tx * tx * (3.0 - 2.0 * tx);
+  let uy = ty * ty * (3.0 - 2.0 * ty);
+  let c00 = vnoise_corner(ix,     iy);
+  let c10 = vnoise_corner(ix + 1, iy);
+  let c01 = vnoise_corner(ix,     iy + 1);
+  let c11 = vnoise_corner(ix + 1, iy + 1);
+  let bottom = mix(c00, c10, ux);
+  let top    = mix(c01, c11, ux);
+  return mix(bottom, top, uy);                // [-1,1]
+}
+
+// --- #137 Bessel J0 (A&S 9.4.1 / 9.4.3), |J0|<=1 ---
+fn bessel_j0_eval(x: f32) -> f32 {
+  let ax = abs(x);
+  if (ax < 3.0) {
+    let y = (x * x) / 9.0;
+    return 1.0 + y * (-2.2499997 + y * (1.2656208 + y * (-0.3163866
+      + y * (0.0444479 + y * (-0.0039444 + y * 0.0002100)))));
+  }
+  let z = 3.0 / ax;
+  let y = z * z;
+  let amp = 0.79788456 + y * (-0.00000077 + y * (-0.00552740 + y * (-0.00009512
+    + y * (0.00137237 + y * (-0.00072805 + y * 0.00014476)))));
+  let phase = ax - 0.78539816 + y * (-0.04166397 + y * (-0.00003954
+    + y * (0.00262573 + y * (-0.00054125 + y * (-0.00029333 + y * 0.00013558)))));
+  return (amp / sqrt(ax)) * safe_cos(phase);
+}
+
+// --- #137 Airy Ai(x), |Ai|<~0.54 ---
+fn airy_ai_eval(x: f32) -> f32 {
+  if (x > 4.0) {
+    let xi = (2.0 / 3.0) * pow(x, 1.5);
+    return exp(-xi) / (2.0 * 1.7724539 * pow(x, 0.25));   // 2·sqrt(pi)
+  }
+  if (x < -5.0) {
+    let ax = -x;
+    let xi = (2.0 / 3.0) * pow(ax, 1.5);
+    return safe_sin(xi + 0.78539816) / (1.7724539 * pow(ax, 0.25));
+  }
+  let c1 = 0.355028053887817;
+  let c2 = 0.258819403792807;
+  let x3 = x * x * x;
+  var f = 1.0; var tf = 1.0;
+  var g = x;   var tg = x;
+  for (var k = 1; k < 12; k = k + 1) {
+    let kf = f32(k);
+    tf = tf * (x3 / ((3.0 * kf - 1.0) * (3.0 * kf)));
+    f = f + tf;
+    tg = tg * (x3 / ((3.0 * kf) * (3.0 * kf + 1.0)));
+    g = g + tg;
+  }
+  return c1 * f - c2 * g;
+}
+
+// --- #137 Struve H1(x), power series, arg clamped to convergence radius ---
+fn struve_h1_eval(x_in: f32) -> f32 {
+  let x = clamp(x_in, -10.0, 10.0);
+  let h = 0.5 * x;
+  let h2 = h * h;
+  var term = h2 / (0.8862269 * 1.3293404);
+  var sum = term;
+  for (var m = 1; m < 16; m = m + 1) {
+    let mf = f32(m);
+    term = term * (-(h2)) / ((mf + 0.5) * (mf + 1.5));
+    sum = sum + term;
+  }
+  return sum;
+}
+
+// --- #141 fixed-point digit-scramble codec ---
+fn bits_mask(bits: u32) -> u32 {
+  return (1u << bits) - 1u;
+}
+fn fp_encode(c: f32, extent: f32, bits: u32) -> u32 {
+  let s = max(extent, 1.0e-4);
+  let levels = f32(1u << bits);
+  let norm = (c + s) / (2.0 * s);
+  let folded = norm - floor(norm);
+  let idx = min(u32(folded * levels), bits_mask(bits));
+  return idx;
+}
+fn fp_decode(i: u32, extent: f32, bits: u32) -> f32 {
+  let s = max(extent, 1.0e-4);
+  let levels = f32(1u << bits);
+  let unit = (f32(i) + 0.5) / levels;
+  return unit * 2.0 * s - s;
+}
+
+// --- #144 orthogonal polynomials (|x|<=1 caller-guaranteed) ---
+fn cheb_T(x: f32, n: i32) -> f32 {
+  if (n <= 0) { return 1.0; }
+  if (n == 1) { return x; }
+  var tkm2 = 1.0;
+  var tkm1 = x;
+  var tk = x;
+  for (var k: i32 = 2; k <= n; k = k + 1) {
+    tk = 2.0 * x * tkm1 - tkm2;
+    tkm2 = tkm1;
+    tkm1 = tk;
+  }
+  return tk;
+}
+fn legendre_P(x: f32, n: i32) -> f32 {
+  if (n <= 0) { return 1.0; }
+  if (n == 1) { return x; }
+  var pkm2 = 1.0;
+  var pkm1 = x;
+  var pk = x;
+  for (var k: i32 = 1; k < n; k = k + 1) {
+    let fk = f32(k);
+    pk = ((2.0 * fk + 1.0) * x * pkm1 - fk * pkm2) / (fk + 1.0);
+    pkm2 = pkm1;
+    pkm1 = pk;
+  }
+  return pk;
+}
+
+// --- #144 spherical-harmonic lobe magnitude (owned here; #148 reuses) ---
+fn assoc_legendre(l: i32, m: i32, u: f32) -> f32 {
+  var pmm = 1.0;
+  if (m > 0) {
+    let somx2 = sqrt(max(1.0 - u * u, 0.0));
+    var fact = 1.0;
+    for (var i: i32 = 1; i <= m; i = i + 1) {
+      pmm = pmm * (-fact) * somx2;
+      fact = fact + 2.0;
+    }
+  }
+  if (l == m) { return pmm; }
+  var pmmp1 = u * (2.0 * f32(m) + 1.0) * pmm;
+  if (l == m + 1) { return pmmp1; }
+  var pll = 0.0;
+  for (var ll: i32 = m + 2; ll <= l; ll = ll + 1) {
+    let fll = f32(ll);
+    pll = ((2.0 * fll - 1.0) * u * pmmp1 - (fll + f32(m) - 1.0) * pmm) / (fll - f32(m));
+    pmm = pmmp1;
+    pmmp1 = pll;
+  }
+  return pll;
+}
+fn sph_harmonic(theta: f32, l: i32, m: i32) -> f32 {
+  let u = safe_cos(theta);
+  let plm = assoc_legendre(l, m, u);
+  let azim = safe_cos(f32(m) * theta);
+  let y = plm * azim;
+  return clamp(abs(y), 0.0, 4.0);
+}
+
+// --- #147 Chladni plate field F and its analytic gradient ---
+fn chladni_field_and_grad(x: f32, y: f32, n: f32, m: f32) -> vec3f {
+  let an = PI * n;
+  let am = PI * m;
+  let cnx = safe_cos(an * x);
+  let snx = safe_sin(an * x);
+  let cmy = safe_cos(am * y);
+  let smy = safe_sin(am * y);
+  let cmx = safe_cos(am * x);
+  let smx = safe_sin(am * x);
+  let cny = safe_cos(an * y);
+  let sny = safe_sin(an * y);
+  let F  = cnx * cmy - cmx * cny;
+  let Fx = -an * snx * cmy + am * smx * cny;
+  let Fy = -am * cnx * smy + an * cmx * sny;
+  return vec3f(F, Fx, Fy);
+}
+
+// --- #148 hydrogen radial wavefunction (assoc_laguerre → radial_psi2) ---
+fn assoc_laguerre(k: i32, alpha: f32, x: f32) -> f32 {
+  if (k <= 0) { return 1.0; }
+  var lkm1 = 1.0;
+  var lk = 1.0 + alpha - x;
+  if (k == 1) { return lk; }
+  for (var j = 1; j < k; j = j + 1) {
+    let fj = f32(j);
+    let lkp1 = ((2.0 * fj + 1.0 + alpha - x) * lk - (fj + alpha) * lkm1) / (fj + 1.0);
+    lkm1 = lk;
+    lk = lkp1;
+  }
+  return lk;
+}
+fn radial_psi2(n: i32, l: i32, rho: f32) -> f32 {
+  let rho_f = max(rho, 0.0);
+  let k = n - l - 1;
+  let alpha = 2.0 * f32(l) + 1.0;
+  let lag = assoc_laguerre(k, alpha, rho_f);
+  var rpow = 1.0;
+  if (l > 0) {
+    let twoL = 2 * l;
+    for (var j = 0; j < twoL; j = j + 1) { rpow = rpow * rho_f; }
+  }
+  return rpow * exp(-rho_f) * (lag * lag);
+}
+
+// =====================================================================
+// More Variations Marathon (#16) — variation kernels (V271–V303).
+// =====================================================================
+
+// --- #137 special-function radial profiles ---
+// V273 — bessel_j0. r' = J0(freq·r); |J0|<=1 → output stays inside the
+// input disk. Concentric interference rings at the zeros of J0.
+fn var_bessel_j0(p: vec2f, w: f32, freq: f32) -> vec2f {
+  let r = length(p);
+  let j = bessel_j0_eval(freq * r);
+  return w * (j * p);
+}
+// V274 — airy_radial. Radial scale by Ai(scale·(r − shift)); gain 3 lifts
+// the small |Ai| (<0.54) into a visible scale. Asymmetric caustic fold.
+fn var_airy_radial(p: vec2f, w: f32, scale: f32, shift: f32) -> vec2f {
+  let r = length(p);
+  let a = airy_ai_eval(scale * (r - shift));
+  return w * ((3.0 * a) * p);
+}
+// V275 — cornu_spiral. Euler clothoid via Heald (1985) rational Fresnel
+// approximation; chirp arg a=π·t²/2 routed through safe_sin/safe_cos.
+fn var_cornu_spiral(p: vec2f, w: f32, freq: f32) -> vec2f {
+  let t = freq * p.x;
+  let s = abs(t);
+  let sgn = select(1.0, -1.0, t < 0.0);
+  let f = (1.0 + 0.926 * s) / (2.0 + 1.792 * s + 3.104 * (s * s));
+  let g = 1.0 / (2.0 + 4.142 * s + 3.492 * (s * s) + 6.670 * (s * s * s));
+  let a = (PI * (s * s)) / 2.0;
+  let sa = safe_sin(a);
+  let ca = safe_cos(a);
+  let c_int = 0.5 + f * sa - g * ca;
+  let s_int = 0.5 - f * ca - g * sa;
+  let cx = sgn * c_int;
+  let sy = sgn * s_int;
+  return w * vec2f(cx, sy + 0.25 * p.y);
+}
+// V276 — struve_h1. r' = 0.6·H1(freq·r); series arg hard-clamped to |.|<=10.
+fn var_struve_h1(p: vec2f, w: f32, freq: f32) -> vec2f {
+  let r = length(p);
+  let h = struve_h1_eval(freq * r);
+  return w * ((0.6 * h) * p);
+}
+
+// --- #132 exotic warps ---
+// V271 — nbody_lensing. Two softened gravitational attractors deflect the
+// walker; ε floor (5e-3) removes the 1/0 singularity → bounded. No trig.
+fn nbody_pull(p: vec2f, c: vec2f, m: f32, g: f32, eps: f32) -> vec2f {
+  let d = c - p;
+  let r2 = dot(d, d) + eps;
+  let inv = g * m / (r2 * sqrt(r2));
+  return inv * d;
+}
+fn var_nbody_lensing(p: vec2f, w: f32, c1x: f32, c1y: f32, c2x: f32, c2y: f32, m1: f32, m2: f32, g: f32, eps: f32) -> vec2f {
+  let e = max(eps, 5.0e-3);
+  var disp = nbody_pull(p, vec2f(c1x, c1y), m1, g, e);
+  disp = disp + nbody_pull(p, vec2f(c2x, c2y), m2, g, e);
+  return w * (p + disp);
+}
+// V272 — curl_noise. Divergence-free swirl: displacement = amp·(∂ψ/∂y, −∂ψ/∂x)
+// where ψ is hash01-lattice value-noise (value_noise2 helper, ∈[-1,1]); the
+// central-difference gradient is clamped to ±8 before scaling.
+fn var_curl_noise(p: vec2f, w: f32, freq: f32, amp: f32) -> vec2f {
+  let f = max(freq, 1.0e-3);
+  let sx = p.x * f;
+  let sy = p.y * f;
+  let h = 1.0e-2;
+  let dpsi_dx = (value_noise2(sx + h, sy) - value_noise2(sx - h, sy)) / (2.0 * h);
+  let dpsi_dy = (value_noise2(sx, sy + h) - value_noise2(sx, sy - h)) / (2.0 * h);
+  let disp = vec2f(dpsi_dy, -dpsi_dx);
+  let dispc = clamp(disp, vec2f(-8.0), vec2f(8.0));
+  return w * (p + amp * dispc);
+}
+
+// --- #144 orthogonal-polynomial & harmonic warps ---
+// V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
+// |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
+fn var_chebyshev(p: vec2f, w: f32, order_x: f32, order_y: f32) -> vec2f {
+  let nx = i32(clamp(round(order_x), 0.0, 12.0));
+  let ny = i32(clamp(round(order_y), 0.0, 12.0));
+  let cx = clamp(p.x, -1.0, 1.0);
+  let cy = clamp(p.y, -1.0, 1.0);
+  return w * vec2f(cheb_T(cx, nx), cheb_T(cy, ny));
+}
+// V281 — legendre. Per-axis P_n via legendre_P (Bonnet); same [-1,1] clamp.
+fn var_legendre(p: vec2f, w: f32, order_x: f32, order_y: f32) -> vec2f {
+  let nx = i32(clamp(round(order_x), 0.0, 12.0));
+  let ny = i32(clamp(round(order_y), 0.0, 12.0));
+  let cx = clamp(p.x, -1.0, 1.0);
+  let cy = clamp(p.y, -1.0, 1.0);
+  return w * vec2f(legendre_P(cx, nx), legendre_P(cy, ny));
+}
+// V282 — spherical_harmonic. r' = r·(1 − amt + amt·|Y_l^m(θ)|), a lobed
+// rosette radial modulator (shared sph_harmonic helper). 0<=m<=l enforced;
+// radial factor clamped to [-3,3]; origin short-circuits to (0,0).
+fn var_spherical_harmonic(p: vec2f, w: f32, degree_l: f32, order_m: f32, amount: f32) -> vec2f {
+  let r = length(p);
+  if (r < 1.0e-6) { return vec2f(0.0, 0.0); }
+  let theta = atan2(p.y, p.x);
+  let l = i32(clamp(round(degree_l), 0.0, 6.0));
+  let m = i32(clamp(round(order_m), 0.0, f32(l)));
+  let ylm = sph_harmonic(theta, l, m);
+  let amt = clamp(amount, 0.0, 2.0);
+  let scale = (1.0 - amt) + amt * ylm;
+  let rp = r * clamp(scale, -3.0, 3.0);
+  let inv_r = 1.0 / r;
+  return w * vec2f(p.x * inv_r * rp, p.y * inv_r * rp);
+}
+// V283 — fourier_warp. r' = r·(1 + amp·Σ_{k=1}^N cos(kθ+φ_k)/k). N capped 8;
+// φ_k from hash01(seed,k); 1/k weighting + amp<0.9 + positive floor (0.05)
+// keep the radial envelope strictly positive (no fold-through).
+fn var_fourier_warp(p: vec2f, w: f32, harmonics: f32, amp: f32, phase_seed: f32) -> vec2f {
+  let r = length(p);
+  if (r < 1.0e-6) { return vec2f(0.0, 0.0); }
+  let theta = atan2(p.y, p.x);
+  let nN = i32(clamp(round(harmonics), 1.0, 8.0));
+  let amt = clamp(amp, 0.0, 0.9);
+  let sbase = u32(clamp(phase_seed, 0.0, 1024.0));
+  var acc = 0.0;
+  for (var k: i32 = 1; k <= nN; k = k + 1) {
+    let fk = f32(k);
+    let phi = hash01(sbase * 2654435761u + u32(k) * 40503u) * TAU;
+    acc = acc + safe_cos(fk * theta + phi) / fk;
+  }
+  let env = 1.0 + amt * acc;
+  let rp = r * clamp(env, 0.05, 3.0);
+  let inv_r = 1.0 / r;
+  return w * vec2f(p.x * inv_r * rp, p.y * inv_r * rp);
+}
+
+// --- #141 quasi-random & digit-scramble warps (fp_encode/fp_decode codec) ---
+// V277 — radical_inverse. Per axis: encode to a `bits`-wide index, reverse
+// its low `bits` bits, decode back. Pure u32 ops; bounded by fp_decode.
+fn reverse_bits_n(x: u32, bits: u32) -> u32 {
+  var v = x;
+  var r = 0u;
+  var k = 0u;
+  loop {
+    if (k >= bits) { break; }
+    r = (r << 1u) | (v & 1u);
+    v = v >> 1u;
+    k = k + 1u;
+  }
+  return r;
+}
+fn var_radical_inverse(p: vec2f, w: f32, extent: f32, bits_f: f32) -> vec2f {
+  let bits = u32(clamp(bits_f, 2.0, 24.0));
+  let ix = fp_encode(p.x, extent, bits);
+  let iy = fp_encode(p.y, extent, bits);
+  let rx = reverse_bits_n(ix, bits) & bits_mask(bits);
+  let ry = reverse_bits_n(iy, bits) & bits_mask(bits);
+  return w * vec2f(fp_decode(rx, extent, bits), fp_decode(ry, extent, bits));
+}
+// V278 — gray_code. Binary-reflected Gray permutation g = x ^ (x>>1) per axis.
+fn gray_encode(x: u32) -> u32 {
+  return x ^ (x >> 1u);
+}
+fn var_gray_code(p: vec2f, w: f32, extent: f32, bits_f: f32) -> vec2f {
+  let bits = u32(clamp(bits_f, 2.0, 24.0));
+  let m = bits_mask(bits);
+  let ix = fp_encode(p.x, extent, bits);
+  let iy = fp_encode(p.y, extent, bits);
+  let gx = gray_encode(ix) & m;
+  let gy = gray_encode(iy) & m;
+  return w * vec2f(fp_decode(gx, extent, bits), fp_decode(gy, extent, bits));
+}
+// V279 — morton_zorder. Interleave (ix,iy) bits into a 2·bits Morton code,
+// then split at the midpoint to fold the plane along the Z-order curve.
+// `bits` clamped to [2,16] so 2·bits<=32 (no u32 overflow).
+fn part1by1(x_in: u32, bits: u32) -> u32 {
+  var r = 0u;
+  var i = 0u;
+  loop {
+    if (i >= bits) { break; }
+    r = r | (((x_in >> i) & 1u) << (i << 1u));
+    i = i + 1u;
+  }
+  return r;
+}
+fn morton_code(ix: u32, iy: u32, bits: u32) -> u32 {
+  return part1by1(ix, bits) | (part1by1(iy, bits) << 1u);
+}
+fn var_morton_zorder(p: vec2f, w: f32, extent: f32, bits_f: f32) -> vec2f {
+  let bits = u32(clamp(bits_f, 2.0, 16.0));
+  let m = bits_mask(bits);
+  let ix = fp_encode(p.x, extent, bits);
+  let iy = fp_encode(p.y, extent, bits);
+  let code = morton_code(ix, iy, bits);
+  let nx = code & m;
+  let ny = (code >> bits) & m;
+  return w * vec2f(fp_decode(nx, extent, bits), fp_decode(ny, extent, bits));
+}
+
+// --- #146 optics warps ---
+// V284 — snell_refraction. Geometric refraction across the flat y=0 interface;
+// total internal reflection when |nr·sin1|>=1. Pure unit-direction rotation
+// rescaled to |p| → |out|=|p|, strictly bounded. No trig of a coordinate.
+fn var_snell_refraction(p: vec2f, w: f32, n_ratio: f32, strength: f32) -> vec2f {
+  let r = length(p);
+  if (r < 1.0e-6) { return w * p; }
+  let dx = p.x / r;
+  let dy = p.y / r;
+  let nr = clamp(n_ratio, 0.05, 5.0);
+  let sin1 = dx;
+  let cos1 = dy;
+  let sin2 = nr * sin1;
+  var ox: f32;
+  var oy: f32;
+  if (abs(sin2) >= 1.0) {
+    ox = dx;
+    oy = -dy;
+  } else {
+    let cos2 = sqrt(max(1.0 - sin2 * sin2, 0.0));
+    ox = sin2;
+    oy = select(-cos2, cos2, cos1 >= 0.0);
+  }
+  let s = clamp(strength, 0.0, 1.0);
+  var bx = mix(dx, ox, s);
+  var by = mix(dy, oy, s);
+  let bl = max(length(vec2f(bx, by)), 1.0e-6);
+  bx = bx / bl;
+  by = by / bl;
+  return w * r * vec2f(bx, by);
+}
+// V285 — grin_lens. Graded-index converging lens: saturating radial pull
+// g(r)=r/(r²+eps²) softens the focal singularity → bounded everywhere.
+fn var_grin_lens(p: vec2f, w: f32, focal: f32, eps: f32) -> vec2f {
+  let f = max(abs(focal), 0.05);
+  let e = max(abs(eps), 1.0e-3);
+  let r = length(p);
+  if (r < 1.0e-6) { return w * p; }
+  let soft = (e * e) / (r * r + e * e);
+  let pull = (r / f) * soft;
+  let dx = p.x / r;
+  let dy = p.y / r;
+  let nr = max(r - pull, -r);
+  return w * nr * vec2f(dx, dy);
+}
+// V286 — caustic_fold. Displace along ∇φ of φ=cos(kx+ph)+cos(ky+ph) so rays
+// fold onto bright caustic curves. safe_sin guards the freq-scaled coordinate.
+fn var_caustic_fold(p: vec2f, w: f32, freq: f32, amp: f32, phase: f32) -> vec2f {
+  let k = clamp(freq, 0.0, 16.0);
+  let a = clamp(amp, 0.0, 2.0);
+  let ax = k * p.x + phase;
+  let ay = k * p.y + phase;
+  let gx = -safe_sin(ax);
+  let gy = -safe_sin(ay);
+  var ox = p.x + a * gx;
+  var oy = p.y + a * gy;
+  ox = clamp(ox, -8.0, 8.0);
+  oy = clamp(oy, -8.0, 8.0);
+  return w * vec2f(ox, oy);
+}
+
+// --- #147 wave & nodal-pattern warps ---
+// V287 — chladni. Step down −∇|F| of the symmetric Chladni plate field so
+// walkers pile on the nodal (F=0) lines. n,m floored to integer modes [1,12];
+// step is a unit-gradient displacement → bounded by |p|+step.
+fn var_chladni(p: vec2f, w: f32, n_in: f32, m_in: f32, step: f32) -> vec2f {
+  let n = clamp(floor(n_in + 0.5), 1.0, 12.0);
+  let m = clamp(floor(m_in + 0.5), 1.0, 12.0);
+  let fg = chladni_field_and_grad(p.x, p.y, n, m);
+  let F  = fg.x;
+  var gx = fg.y;
+  var gy = fg.z;
+  let s = select(1.0, -1.0, F < 0.0);
+  gx = s * gx;
+  gy = s * gy;
+  let gl = sqrt(gx * gx + gy * gy);
+  let inv = 1.0 / (gl + 1.0e-4);
+  let nx = p.x - step * gx * inv;
+  let ny = p.y - step * gy * inv;
+  return w * vec2f(nx, ny);
+}
+// V288 — standing_wave. p + Σ_{k=1..K} amp·decay^(k-1)·(membrane mode terms).
+// Fixed 4-iter loop runtime-masked to `modes`; geometric falloff → bounded.
+fn var_standing_wave(p: vec2f, w: f32, modes_in: f32, freq: f32, amp: f32, decay: f32) -> vec2f {
+  let kmax = clamp(floor(modes_in + 0.5), 1.0, 4.0);
+  let d = clamp(decay, 0.0, 0.999);
+  var dx = 0.0;
+  var dy = 0.0;
+  var ak = amp;
+  for (var k = 1; k <= 4; k = k + 1) {
+    let kf = f32(k) * PI * freq;
+    let gate = select(0.0, 1.0, f32(k) <= kmax);   // 'active' is a WGSL reserved keyword
+    dx = dx + gate * ak * safe_sin(kf * p.x) * safe_sin(kf * p.y);
+    dy = dy + gate * ak * safe_sin(kf * p.y) * safe_cos(kf * p.x);
+    ak = ak * d;
+  }
+  return w * vec2f(p.x + dx, p.y + dy);
+}
+// V289 — moire. Two superimposed gratings (one rotated by `angle`, detuned by
+// `beat`); displacement is amp·(grating product) → slow moiré fringe. Bounded
+// by amp per axis. All trig via safe_*.
+fn var_moire(p: vec2f, w: f32, freq: f32, beat: f32, angle: f32, amp: f32) -> vec2f {
+  let ca = safe_cos(angle);
+  let sa = safe_sin(angle);
+  let u = p.x * ca + p.y * sa;
+  let v = -p.x * sa + p.y * ca;
+  let f1 = freq;
+  let f2 = freq + beat;
+  let gx = safe_sin(f1 * PI * p.x) * safe_sin(f2 * PI * u);
+  let gy = safe_sin(f1 * PI * p.y) * safe_sin(f2 * PI * v);
+  return w * vec2f(p.x + amp * gx, p.y + amp * gy);
+}
+
+// --- #148 atomic-orbital warps (radial_psi2 + #144 sph_harmonic) ---
+// V290 — radial_shell. Remap radius by |R_nl(r)|²; exp(−rho) envelope + soft
+// cap r'=1.5·A/(1+A) → bounded [0,1.5). Angle preserved. No trig of a coord.
+fn var_radial_shell(p: vec2f, w: f32, n_in: f32, l_in: f32, shell_scale: f32) -> vec2f {
+  let n = clamp(i32(round(n_in)), 1, 4);
+  let l = clamp(i32(round(l_in)), 0, n - 1);
+  let r = length(p);
+  let sc = max(shell_scale, 1.0e-3);
+  let rho = (2.0 * r) / (f32(n) * sc);
+  let amp = radial_psi2(n, l, rho);
+  let r_out = 1.5 * (amp / (1.0 + amp));
+  var dir = vec2f(1.0, 0.0);
+  if (r > 1.0e-6) { dir = p / r; }
+  return w * r_out * dir;
+}
+// V291 — hydrogen_orbital. Full |ψ_nlm|² = |R_nl|²·|Y_l^m|² radial remap.
+// The in-plane azimuth phi = atan2(y,x) feeds #144's sph_harmonic(phi,l,m)
+// (which takes cos(phi) = p.x/r internally as the polar proxy). lobe_mix blends
+// pure radial shells (0) ↔ angular-modulated orbital (1). m clamped to [-l,l].
+fn var_hydrogen_orbital(p: vec2f, w: f32, n_in: f32, l_in: f32, m_in: f32, shell_scale: f32, lobe_mix: f32) -> vec2f {
+  let n = clamp(i32(round(n_in)), 1, 4);
+  let l = clamp(i32(round(l_in)), 0, n - 1);
+  let m = clamp(i32(round(m_in)), -l, l);
+  let r = length(p);
+  let sc = max(shell_scale, 1.0e-3);
+  let rho = (2.0 * r) / (f32(n) * sc);
+  let rad = radial_psi2(n, l, rho);
+  let phi = atan2(p.y, p.x);                  // in-plane azimuth; cos(phi)=p.x/r
+  let yl = sph_harmonic(phi, l, m);           // #144-owned, bounded real Y factor
+  let ang2 = yl * yl;
+  let amp_full = rad * ang2;
+  let amp = mix(rad, amp_full, clamp(lobe_mix, 0.0, 1.0));
+  let r_out = 1.5 * (amp / (1.0 + amp));
+  var dir = vec2f(1.0, 0.0);
+  if (r > 1.0e-6) { dir = p / r; }
+  return w * r_out * dir;
+}
+
+// --- #151 statistical-distribution warps (radial inverse-CDF) ---
+// Shared pattern: u = r²/(1+r²) ∈ (0,1) bounded sigmoid → closed-form quantile
+// → re-emit along the original direction. Angle preserved; origin → origin.
+// V292 — weibull_cdf. r' = λ·(−ln(1−u))^(1/k). Elementary, fully bounded.
+fn var_weibull_cdf(p: vec2f, w: f32, lambda: f32, k: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let u  = clamp(r2 / (1.0 + r2), 1.0e-4, 1.0 - 1.0e-4);
+  let kk = max(abs(k), 0.05);
+  let rp = lambda * pow(-log(1.0 - u), 1.0 / kk);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+// V293 — logistic_cdf. r' = μ + s·logit(u), logit hard-clamped to ±12; max(.,0).
+fn var_logistic_cdf(p: vec2f, w: f32, mu: f32, s: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let u  = clamp(r2 / (1.0 + r2), 1.0e-4, 1.0 - 1.0e-4);
+  let logit = clamp(log(u / (1.0 - u)), -12.0, 12.0);
+  var rp = mu + s * logit;
+  rp = max(rp, 0.0);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+// V294 — cauchy_cdf. r' = γ·tan(π(u−0.5)), HARD-clamped to ±tail_clamp. The
+// heavy-tailed member: two-layer defense (u-map endpoint guard + r' cap).
+// safe_tan guards the (small) coord-derived arg per the safe-trig rule.
+fn var_cauchy_cdf(p: vec2f, w: f32, gamma: f32, tail_clamp: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let u  = clamp(r2 / (1.0 + r2), 1.0e-4, 1.0 - 1.0e-4);
+  let arg = PI * (u - 0.5);
+  let raw = gamma * safe_tan(arg);
+  let cap = max(tail_clamp, 0.01);
+  let rp  = clamp(raw, -cap, cap);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+// V295 — pareto_cdf. r' = x_m·(1−u)^(−1/α), algebraic heavy tail, HARD-clamped.
+fn var_pareto_cdf(p: vec2f, w: f32, x_m: f32, alpha: f32, tail_clamp: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let u  = clamp(r2 / (1.0 + r2), 1.0e-4, 1.0 - 1.0e-4);
+  let a  = max(abs(alpha), 0.05);
+  let raw = x_m * pow(1.0 - u, -1.0 / a);
+  let cap = max(tail_clamp, 0.01);
+  let rp  = min(raw, cap);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+
+// --- #152 wavelet & signal warps (radial modulation p → p·(1+amp·ψ)) ---
+// V296 — morlet. ψ = exp(−t²/2)·cos(ωr), Gaussian-windowed cosine packet.
+// cos arg freq·r may hit the Dawn trig cliff → safe_cos.
+fn var_morlet(p: vec2f, w: f32, freq: f32, sigma: f32, amp: f32) -> vec2f {
+  let r = length(p);
+  let s = max(sigma, 0.05);
+  let t = r / s;
+  let env = exp(-0.5 * min(t * t, 80.0));
+  let psi = env * safe_cos(freq * r);
+  let scale = 1.0 + amp * psi;
+  return w * scale * p;
+}
+// V297 — mexican_hat (Ricker). ψ = (1−t²)·exp(−t²/2). No trig (the safe anchor).
+fn var_mexican_hat(p: vec2f, w: f32, sigma: f32, amp: f32) -> vec2f {
+  let r = length(p);
+  let s = max(sigma, 0.05);
+  let t = r / s;
+  let t2 = min(t * t, 80.0);
+  let psi = (1.0 - t2) * exp(-0.5 * t2);
+  let scale = 1.0 + amp * psi;
+  return w * scale * p;
+}
+// V298 — chirp. ψ = exp(−β·r²)·sin(α·r²); α·r² is THE Dawn trig-cliff case → safe_sin.
+fn var_chirp(p: vec2f, w: f32, alpha: f32, amp: f32, decay: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let env = exp(-decay * min(r2, 160.0));
+  let psi = env * safe_sin(alpha * r2);
+  let scale = 1.0 + amp * psi;
+  return w * scale * p;
+}
+
+// --- #153 celestial-mechanics warps ---
+// V299 — kepler_orbit. Polar angle → mean anomaly M; two Newton iterations
+// solve M=E−e·sin E; place on the ellipse. e clamped [0,0.95] so f'≥0.05.
+fn var_kepler_orbit(p: vec2f, w: f32, e_in: f32, scale: f32) -> vec2f {
+  let e = clamp(e_in, 0.0, 0.95);
+  let M = atan2(p.y, p.x);
+  let a = scale * (length(p) + 1.0e-6);
+  var E = M;
+  let s1 = safe_sin(E);
+  let c1 = safe_cos(E);
+  E = E - (E - e * s1 - M) / max(1.0 - e * c1, 0.05);
+  let s2 = safe_sin(E);
+  let c2 = safe_cos(E);
+  E = E - (E - e * s2 - M) / max(1.0 - e * c2, 0.05);
+  let ce = safe_cos(E);
+  let se = safe_sin(E);
+  let b = sqrt(max(1.0 - e * e, 0.0));
+  return w * vec2f(a * (ce - e), a * b * se);
+}
+// V300 — restricted_3body. Step along ∇Ω of the rotating-frame effective
+// potential (two eps-softened wells + centrifugal) with a Coriolis rotation;
+// per-step displacement hard-clamped to step·2.0.
+fn var_restricted_3body(p: vec2f, w: f32, mu_in: f32, step: f32, coriolis: f32) -> vec2f {
+  let mu = clamp(mu_in, 0.01, 0.5);
+  let p1 = vec2f(-mu, 0.0);
+  let p2 = vec2f(1.0 - mu, 0.0);
+  let r1 = p - p1;
+  let r2 = p - p2;
+  let d1 = pow(dot(r1, r1) + 1.0e-3, 1.5);
+  let d2 = pow(dot(r2, r2) + 1.0e-3, 1.5);
+  let g = p - (1.0 - mu) * (r1 / d1) - mu * (r2 / d2);
+  let gc = vec2f(-g.y, g.x);
+  var disp = step * (g + coriolis * gc);
+  let dl = length(disp);
+  let cap = 2.0;
+  if (dl > cap) { disp = disp * (cap / dl); }
+  return w * (p + disp);
+}
+// V301 — hill_epicyclic. Linear epicyclic propagator (phi=phase·κ) + guiding-
+// center shear. Pure linear map (det≥1); phi trig via safe_* (cliff guard).
+fn var_hill_epicyclic(p: vec2f, w: f32, kappa: f32, phase: f32, shear: f32) -> vec2f {
+  let k = clamp(kappa, 0.2, 2.0);
+  let phi = phase * k;
+  let cf = safe_cos(phi);
+  let sf = safe_sin(phi);
+  let x_out = p.x * cf - (sf / k) * p.y;
+  let y_out = (2.0 * k) * sf * p.x + p.y * cf;
+  return w * vec2f(x_out, y_out + shear * p.x);
+}
+
+// --- #155 knots & braids ---
+// V302 — torus_knot. (p,q) torus-knot rosette: φ=atan2 drives p-fold winding,
+// q sets the tube modulation, input radius blends petals. Bounded by radius+tube.
+fn var_torus_knot(p: vec2f, w: f32, pp: f32, qq: f32, radius: f32, tube: f32) -> vec2f {
+  let phi = atan2(p.y, p.x);
+  let pf = max(round(pp), 1.0);
+  let qf = max(round(qq), 1.0);
+  let rin = length(p);
+  let amp = tube * clamp(rin, 0.0, 1.0);
+  let rr = radius + amp * safe_cos(qf * phi);
+  let kx = rr * safe_cos(pf * phi);
+  let ky = rr * safe_sin(pf * phi);
+  return w * vec2f(kx, ky);
+}
+// V303 — braid_warp. Continuous braid-σ strand weave: split the circle into
+// `strands` lanes, twist each by a smooth per-lane sinusoid with alternating
+// over/under sign. Radius PRESERVED (pure angular permutation) → bounded.
+fn var_braid_warp(p: vec2f, w: f32, strands: f32, twist: f32, crossings: f32) -> vec2f {
+  let n = max(round(strands), 2.0);
+  let cr = max(round(crossings), 1.0);
+  let r = length(p);
+  let theta = atan2(p.y, p.x);
+  let a = (theta + PI) / TAU;
+  let lane = floor(a * n);
+  let laneFrac = a * n - lane;
+  let sgn = select(1.0, -1.0, (i32(lane) & 1) == 1);
+  let weave = safe_sin(PI * laneFrac);
+  let rad = clamp(r, 0.0, 1.0);
+  let dtheta = twist * sgn * weave * safe_sin(cr * PI * laneFrac) * rad;
+  let nt = theta + dtheta;
+  return w * r * vec2f(safe_cos(nt), safe_sin(nt));
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -6627,6 +7348,50 @@ fn apply_variation(
     case 268u: { return var_klein_j(p, w, p0); }
     case 269u: { return var_weierstrass_p(p, w, p0, p1, p2, p3); }
     case 270u: { return var_gauss_map(p, w); }
+    // #132 — Exotic warps
+    case 271u: { return var_nbody_lensing(p, w, p0, p1, p2, p3, p4, p5, p6, p7); }
+    case 272u: { return var_curl_noise(p, w, p0, p1); }
+    // #137 — Special-function radial profiles
+    case 273u: { return var_bessel_j0(p, w, p0); }
+    case 274u: { return var_airy_radial(p, w, p0, p1); }
+    case 275u: { return var_cornu_spiral(p, w, p0); }
+    case 276u: { return var_struve_h1(p, w, p0); }
+    // #141 — Quasi-random & digit-scramble warps
+    case 277u: { return var_radical_inverse(p, w, p0, p1); }
+    case 278u: { return var_gray_code(p, w, p0, p1); }
+    case 279u: { return var_morton_zorder(p, w, p0, p1); }
+    // #144 — Orthogonal-polynomial & harmonic warps
+    case 280u: { return var_chebyshev(p, w, p0, p1); }
+    case 281u: { return var_legendre(p, w, p0, p1); }
+    case 282u: { return var_spherical_harmonic(p, w, p0, p1, p2); }
+    case 283u: { return var_fourier_warp(p, w, p0, p1, p2); }
+    // #146 — Optics warps
+    case 284u: { return var_snell_refraction(p, w, p0, p1); }
+    case 285u: { return var_grin_lens(p, w, p0, p1); }
+    case 286u: { return var_caustic_fold(p, w, p0, p1, p2); }
+    // #147 — Wave & nodal-pattern warps
+    case 287u: { return var_chladni(p, w, p0, p1, p2); }
+    case 288u: { return var_standing_wave(p, w, p0, p1, p2, p3); }
+    case 289u: { return var_moire(p, w, p0, p1, p2, p3); }
+    // #148 — Atomic-orbital warps
+    case 290u: { return var_radial_shell(p, w, p0, p1, p2); }
+    case 291u: { return var_hydrogen_orbital(p, w, p0, p1, p2, p3, p4); }
+    // #151 — Statistical-distribution warps
+    case 292u: { return var_weibull_cdf(p, w, p0, p1); }
+    case 293u: { return var_logistic_cdf(p, w, p0, p1); }
+    case 294u: { return var_cauchy_cdf(p, w, p0, p1); }
+    case 295u: { return var_pareto_cdf(p, w, p0, p1, p2); }
+    // #152 — Wavelet & signal warps
+    case 296u: { return var_morlet(p, w, p0, p1, p2); }
+    case 297u: { return var_mexican_hat(p, w, p0, p1); }
+    case 298u: { return var_chirp(p, w, p0, p1, p2); }
+    // #153 — Celestial-mechanics warps
+    case 299u: { return var_kepler_orbit(p, w, p0, p1); }
+    case 300u: { return var_restricted_3body(p, w, p0, p1, p2); }
+    case 301u: { return var_hill_epicyclic(p, w, p0, p1, p2); }
+    // #155 — Knots & braids
+    case 302u: { return var_torus_knot(p, w, p0, p1, p2, p3); }
+    case 303u: { return var_braid_warp(p, w, p0, p1, p2); }
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -65,7 +65,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                              // #133 — DC + position warp
   if (idx === V.magnetic_pendulum) return 'dc';                   // #138 — basin DC + position warp
-  if (idx >= V.blaschke && idx <= V.gauss_map) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131
+  if (idx >= V.blaschke && idx <= 303) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303
   return 'jwf';
 }
 
@@ -5186,6 +5186,447 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     blurb: 'Gauss / continued-fraction map applied per axis. The arithmetic engine behind continued fractions, producing Stern-Brocot self-similarity. Each axis lands in [0,1); the discontinuities at 1/x integer crossings shatter the plane into a self-similar comb.',
     defaultWeight: 0.20,
     warpFn: (x, y) => [gaussFrac(x), gaussFrac(y)],
+  },
+  // ── More Variations Marathon (#16) — V271–V303 ──
+  // #132 — Exotic warps
+  {
+    idx: V.nbody_lensing,
+    name: 'nbody_lensing',
+    source: 'novel',
+    formula: "p' = p + \\sum_{i=1}^{2} \\frac{G\\,m_i\\,(c_i-p)}{\\left(|c_i-p|^2 + \\varepsilon\\right)^{3/2}}",
+    blurb: 'Deflects the walker by the softened gravitational pull of two fixed point masses. The ε-softening turns the 1/r² singularities into smooth lensing wells, folding the plane into gravitational-caustic arcs. Default masses + ε keep displacement well inside the scaffold.',
+    params: [
+      { name: 'c1x', default: -0.4, min: -2, max: 2, step: 0.05 },
+      { name: 'c1y', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'c2x', default: 0.4, min: -2, max: 2, step: 0.05 },
+      { name: 'c2y', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'm1', default: 0.06, min: 0, max: 1, step: 0.01 },
+      { name: 'm2', default: 0.06, min: 0, max: 1, step: 0.01 },
+      { name: 'g', default: 1, min: 0, max: 4, step: 0.05 },
+      { name: 'eps', default: 0.05, min: 0.005, max: 1, step: 0.005 },
+    ],
+    warpFn: (x, y) => { const c1x=-0.4,c1y=0.0,c2x=0.4,c2y=0.0,m1=0.06,m2=0.06,g=1.0; const e=Math.max(0.05,5e-3); const pull=(cx: number,cy: number,m: number): [number, number]=>{ const dx=cx-x, dy=cy-y; const r2=dx*dx+dy*dy+e; const inv=g*m/(r2*Math.sqrt(r2)); return [inv*dx, inv*dy]; }; const a=pull(c1x,c1y,m1); const b=pull(c2x,c2y,m2); return [x+a[0]+b[0], y+a[1]+b[1]]; },
+  },
+  {
+    idx: V.curl_noise,
+    name: 'curl_noise',
+    source: 'novel',
+    formula: "p' = p + a\\left(\\tfrac{\\partial \\psi}{\\partial y},\\, -\\tfrac{\\partial \\psi}{\\partial x}\\right),\\quad \\psi = \\mathrm{noise}(f\\,p)",
+    blurb: 'Displaces the walker by the curl of a hash-based scalar value-noise potential ψ(x,y), giving a divergence-free, incompressible swirl field. The (∂ψ/∂y, −∂ψ/∂x) rotation produces smooth turbulent eddies with no sources or sinks — a procedural-graphics flow technique, not a flame idiom.',
+    params: [
+      { name: 'freq', default: 2.5, min: 0.5, max: 8, step: 0.1 },
+      { name: 'amp', default: 0.3, min: 0, max: 1.5, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const hash01 = (n: number) => { let h = n >>> 0; h = (h ^ (h >>> 17)) >>> 0; h = Math.imul(h, 0xed5ad4bb) >>> 0; h = (h ^ (h >>> 11)) >>> 0; h = Math.imul(h, 0xac4c1b51) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return h / 4294967296; }; const corner = (ix: number, iy: number) => { const ux = Math.imul(ix >>> 0, 0x9e3779b1) >>> 0; const uy = Math.imul(iy >>> 0, 0x85ebca77) >>> 0; return hash01((ux ^ uy) >>> 0) * 2 - 1; }; const vn = (px: number, py: number) => { const fx = Math.floor(px), fy = Math.floor(py); const ix = fx | 0, iy = fy | 0; const tx = px - fx, ty = py - fy; const ux = tx*tx*(3-2*tx), uy = ty*ty*(3-2*ty); const c00 = corner(ix, iy), c10 = corner(ix+1, iy), c01 = corner(ix, iy+1), c11 = corner(ix+1, iy+1); const bottom = c00 + (c10-c00)*ux, top = c01 + (c11-c01)*ux; return bottom + (top-bottom)*uy; }; const f = Math.max(2.5, 1e-3), amp = 0.3; const sx = x*f, sy = y*f, h = 1e-2; const ddx = (vn(sx+h,sy)-vn(sx-h,sy))/(2*h); const ddy = (vn(sx,sy+h)-vn(sx,sy-h))/(2*h); let dx = ddy, dy = -ddx; dx = Math.max(-8, Math.min(8, dx)); dy = Math.max(-8, Math.min(8, dy)); return [x + amp*dx, y + amp*dy]; },
+  },
+  // #137 — Special-function radial profiles
+  {
+    idx: V.bessel_j0,
+    name: 'bessel_j0',
+    source: 'novel',
+    formula: "(x',y') = J_0(k\\,r)\\,(x,y),\\quad r=\\sqrt{x^2+y^2}",
+    blurb: 'Scales the radius by the Bessel function J₀(k·r), producing concentric interference rings that alternate sign at the zeros of J₀ — the canonical diffraction-ring look. The frequency knob k packs more rings inside the unit disk. |J₀|≤1 so the disk only contracts.',
+    params: [{ name: 'freq', default: 8.1, min: 0.5, max: 12, step: 0.1 }],
+    defaultWeight: 0.33,
+    warpFn: (x, y) => { const freq = 8.1; const r = Math.hypot(x, y); const ax = Math.abs(freq * r); let j; if (ax < 3.0) { const yy = (freq*r)*(freq*r)/9.0; j = 1.0 + yy*(-2.2499997 + yy*(1.2656208 + yy*(-0.3163866 + yy*(0.0444479 + yy*(-0.0039444 + yy*0.0002100))))); } else { const z = 3.0/ax, yy = z*z; const amp = 0.79788456 + yy*(-0.00000077 + yy*(-0.00552740 + yy*(-0.00009512 + yy*(0.00137237 + yy*(-0.00072805 + yy*0.00014476))))); const ph = ax - 0.78539816 + yy*(-0.04166397 + yy*(-0.00003954 + yy*(0.00262573 + yy*(-0.00054125 + yy*(-0.00029333 + yy*0.00013558))))); j = amp/Math.sqrt(ax)*Math.cos(ph); } return [j * x, j * y]; },
+  },
+  {
+    idx: V.airy_radial,
+    name: 'airy_radial',
+    source: 'novel',
+    formula: "(x',y') = 3\\,\\mathrm{Ai}\\!\\big(s\\,(r - \\delta)\\big)\\,(x,y)",
+    blurb: 'Scales the radius by the Airy function Ai(scale·(r − shift)) — an asymmetric profile that oscillates with decaying amplitude on one side of the turning point and decays exponentially on the other, mimicking an optical caustic fold. Shifting the turning point sweeps the bright fold across the disk.',
+    params: [
+      { name: 'scale', default: 5.3, min: 0.5, max: 8, step: 0.1 },
+      // shift must be POSITIVE: the Airy oscillatory caustic region is at
+      // negative argument scale·(r−shift), reached only when r < shift. A
+      // negative shift parks the whole disk in the Ai≈0 decay tail (dead warp).
+      { name: 'shift', default: 0.85, min: -1, max: 4, step: 0.05 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => { const scale = 5.3, shift = 0.85; const r = Math.hypot(x, y); const xx = scale * (r - shift); let a; if (xx > 4.0) { const xi = (2/3)*Math.pow(xx,1.5); a = Math.exp(-xi)/(2*1.7724539*Math.pow(xx,0.25)); } else if (xx < -5.0) { const axx = -xx; const xi = (2/3)*Math.pow(axx,1.5); a = Math.sin(xi+0.78539816)/(1.7724539*Math.pow(axx,0.25)); } else { const c1=0.355028053887817,c2=0.258819403792807; const x3=xx*xx*xx; let f=1,tf=1,g=xx,tg=xx; for(let k=1;k<12;k++){tf*=x3/((3*k-1)*(3*k));f+=tf;tg*=x3/((3*k)*(3*k+1));g+=tg;} a=c1*f-c2*g; } return [3*a*x, 3*a*y]; },
+  },
+  {
+    idx: V.cornu_spiral,
+    name: 'cornu_spiral',
+    source: 'novel',
+    formula: "x' = \\int_0^{t}\\!\\cos\\!\\tfrac{\\pi s^2}{2}\\,ds,\\ y' = \\int_0^{t}\\!\\sin\\!\\tfrac{\\pi s^2}{2}\\,ds,\\ t=k\\,x",
+    blurb: 'The Cornu (Euler) clothoid, evaluated via Heald’s rational approximation of the Fresnel integrals. Curvature grows linearly with arc length, so it winds into the two signature spiral eyes that the chaos game smears into continuously-tightening filaments.',
+    params: [{ name: 'freq', default: 3.7, min: 0.2, max: 5, step: 0.05 }],
+    defaultWeight: 0.78,
+    warpFn: (x, y) => { const freq = 3.7; const t = freq * x; const s = Math.abs(t); const sgn = t < 0 ? -1 : 1; const f = (1 + 0.926*s)/(2 + 1.792*s + 3.104*s*s); const g = 1/(2 + 4.142*s + 3.492*s*s + 6.670*s*s*s); const a = Math.PI*s*s/2; const C = 0.5 + f*Math.sin(a) - g*Math.cos(a); const S = 0.5 - f*Math.cos(a) - g*Math.sin(a); return [sgn*C, sgn*S + 0.25*y]; },
+  },
+  {
+    idx: V.struve_h1,
+    name: 'struve_h1',
+    source: 'novel',
+    formula: "(x',y') = 0.6\\,H_1(k\\,r)\\,(x,y),\\quad H_1(x)=\\sum_{m\\geq0}\\frac{(-1)^m (x/2)^{2m+2}}{\\Gamma(m+\\tfrac32)\\,\\Gamma(m+\\tfrac52)}",
+    blurb: 'Scales the radius by the Struve function H₁(k·r) — an oscillatory radial profile closely related to J₁ but offset, giving asymmetric off-center interference rings with a slow secular rise before the oscillation, a distinctly different ring spacing from the Bessel variant.',
+    params: [{ name: 'freq', default: 6.1, min: 0.3, max: 8, step: 0.1 }],
+    defaultWeight: 0.69,
+    warpFn: (x, y) => { const freq = 6.1; const r = Math.hypot(x, y); const xc = Math.max(-10, Math.min(10, freq * r)); const hh = 0.5 * xc; const h2 = hh * hh; let term = h2 / (0.8862269 * 1.3293404); let sum = term; for (let m = 1; m < 16; m++) { term = term * (-(h2)) / ((m + 0.5) * (m + 1.5)); sum += term; } const g = 0.6 * sum; return [g * x, g * y]; },
+  },
+  // #141 — Quasi-random & digit-scramble warps
+  {
+    idx: V.radical_inverse,
+    name: 'radical_inverse',
+    source: 'novel',
+    formula: '\\Phi_2(i)=\\sum_{k=0}^{B-1} d_k\\,2^{\\,B-1-k},\\quad i=\\sum_{k=0}^{B-1} d_k\\,2^{k}',
+    blurb: 'Van der Corput radical-inverse warp: encode each axis to a fixed-point integer, reverse its base-2 digit string, decode back. The digit reversal is the arithmetic engine behind low-discrepancy sampling, rendered as a self-similar interleaved comb that quasi-randomizes position while staying perfectly bounded and trig-free.',
+    params: [
+      { name: 'extent', default: 1.35, min: 0.25, max: 4, step: 0.05 },
+      { name: 'bits', default: 6, min: 2, max: 24, step: 1 },
+    ],
+    defaultWeight: 0.23,
+    warpFn: (x, y) => { const extent = 1.35, bits = 6; const levels = Math.pow(2, bits); const s = Math.max(extent, 1e-4); const enc = (c: number) => { const norm = (c + s) / (2 * s); const folded = norm - Math.floor(norm); return Math.min((folded * levels) | 0, levels - 1) >>> 0; }; const rev = (v: number) => { let r = 0; for (let k = 0; k < bits; k++) { r = ((r << 1) | (v & 1)) >>> 0; v = v >>> 1; } return r >>> 0; }; const dec = (i: number) => ((i + 0.5) / levels) * 2 * s - s; const mask = (Math.pow(2, bits) - 1) >>> 0; return [dec(rev(enc(x)) & mask), dec(rev(enc(y)) & mask)]; },
+  },
+  {
+    idx: V.gray_code,
+    name: 'gray_code',
+    source: 'novel',
+    formula: 'g(i)=i\\oplus\\left\\lfloor i/2\\right\\rfloor=i\\oplus(i\\gg 1)',
+    blurb: 'Binary-reflected Gray-code warp: encode each axis to a fixed-point integer and apply the Gray permutation x ^ (x>>1), which reorders the grid so consecutive cells differ by exactly one bit. A self-similar reflected-binary scramble — a different digit-permutation texture from radical_inverse, with adjacency structure rather than reversal.',
+    params: [
+      { name: 'extent', default: 1, min: 0.25, max: 4, step: 0.05 },
+      { name: 'bits', default: 12, min: 2, max: 24, step: 1 },
+    ],
+    warpFn: (x, y) => { const extent = 1.0, bits = 12; const levels = Math.pow(2, bits); const s = Math.max(extent, 1e-4); const mask = (Math.pow(2, bits) - 1) >>> 0; const enc = (c: number) => { const norm = (c + s) / (2 * s); const folded = norm - Math.floor(norm); return Math.min((folded * levels) | 0, levels - 1) >>> 0; }; const gray = (v: number) => (v ^ (v >>> 1)) >>> 0; const dec = (i: number) => ((i + 0.5) / levels) * 2 * s - s; return [dec(gray(enc(x)) & mask), dec(gray(enc(y)) & mask)]; },
+  },
+  {
+    idx: V.morton_zorder,
+    name: 'morton_zorder',
+    source: 'novel',
+    formula: 'M(x,y)=\\sum_{k=0}^{B-1}\\big(x_k\\,2^{2k}+y_k\\,2^{2k+1}\\big)',
+    blurb: 'Morton / Z-order space-filling remap: encode (x,y) to fixed-point indices, bit-interleave them into a single 1D Morton code, then split that code back into two axes. This folds the plane along the Z-order curve, producing the recursive quadrant-nested texture that underlies quadtree locality — distinct from JWildfire’s Hilbert.',
+    params: [
+      { name: 'extent', default: 1, min: 0.25, max: 4, step: 0.05 },
+      { name: 'bits', default: 8, min: 2, max: 16, step: 1 },
+    ],
+    warpFn: (x, y) => { const extent = 1.0, bits = 8; const levels = Math.pow(2, bits); const s = Math.max(extent, 1e-4); const mask = (Math.pow(2, bits) - 1) >>> 0; const enc = (c: number) => { const norm = (c + s) / (2 * s); const folded = norm - Math.floor(norm); return Math.min((folded * levels) | 0, levels - 1) >>> 0; }; const part = (v: number) => { let r = 0; for (let i = 0; i < bits; i++) { r = (r | (((v >>> i) & 1) << (i * 2))) >>> 0; } return r >>> 0; }; const dec = (i: number) => ((i + 0.5) / levels) * 2 * s - s; const ix = enc(x), iy = enc(y); const code = (part(ix) | (part(iy) << 1)) >>> 0; const nx = code & mask; const ny = (code >>> bits) & mask; return [dec(nx), dec(ny)]; },
+  },
+  // #144 — Orthogonal-polynomial & harmonic warps
+  {
+    idx: V.chebyshev,
+    name: 'chebyshev',
+    source: 'novel',
+    formula: 'T_n(\\cos\\theta)=\\cos(n\\theta),\\quad T_0=1,\\;T_1=x,\\;T_n=2xT_{n-1}-T_{n-2}',
+    blurb: 'Per-axis Chebyshev Tₙ warp. Each coordinate is clamped into [-1,1] and pushed through the stable recurrence, where Tₙ(cos θ)=cos(nθ) folds the plane into n equal-ripple petals per axis — clean frequency multiplication without large powers. Order n sets the petal count; on [-1,1] the output is provably bounded by 1.',
+    params: [
+      { name: 'order_x', default: 4, min: 0, max: 12, step: 1 },
+      { name: 'order_y', default: 3, min: 0, max: 12, step: 1 },
+    ],
+    warpFn: (x, y) => { const T = (v: number, n: number) => { const c = Math.max(-1, Math.min(1, v)); if (n <= 0) return 1; if (n === 1) return c; let a = 1, b = c, t = c; for (let k = 2; k <= n; k++) { t = 2 * c * b - a; a = b; b = t; } return t; }; return [T(x, 4), T(y, 3)]; },
+  },
+  {
+    idx: V.legendre,
+    name: 'legendre',
+    source: 'novel',
+    formula: '(n{+}1)P_{n+1}(x)=(2n{+}1)\\,x\\,P_n(x)-n\\,P_{n-1}(x),\\quad P_0=1,\\;P_1=x',
+    blurb: 'Per-axis Legendre Pₙ warp via Bonnet’s recurrence. Like chebyshev but with the Legendre weighting — lobes crowd toward the ±1 endpoints instead of rippling evenly, giving a visibly different petal cadence. Bounded by |Pₙ(x)|≤1 on the clamped [-1,1] domain; order sets the lobe count per axis.',
+    params: [
+      { name: 'order_x', default: 5, min: 0, max: 12, step: 1 },
+      { name: 'order_y', default: 4, min: 0, max: 12, step: 1 },
+    ],
+    warpFn: (x, y) => { const P = (v: number, n: number) => { const c = Math.max(-1, Math.min(1, v)); if (n <= 0) return 1; if (n === 1) return c; let a = 1, b = c, p = c; for (let k = 1; k < n; k++) { p = ((2 * k + 1) * c * b - k * a) / (k + 1); a = b; b = p; } return p; }; return [P(x, 5), P(y, 4)]; },
+  },
+  {
+    idx: V.spherical_harmonic,
+    name: 'spherical_harmonic',
+    source: 'novel',
+    formula: "r' = r\\bigl(1-a + a\\,|Y_\\ell^m(\\theta)|\\bigr),\\quad Y_\\ell^m(\\theta)\\propto P_\\ell^m(\\cos\\theta)\\cos(m\\theta)",
+    blurb: 'Lobed-rosette warp: r′ = r·|Yₗᵐ(θ)| using the real tesseral spherical harmonic as an angular magnitude modulator. The (l,m) pair sculpts the number and arrangement of rosette lobes — raising l adds latitudinal rings, raising m adds azimuthal petals. Direction is preserved; only the radius is modulated.',
+    params: [
+      { name: 'degree_l', default: 3, min: 0, max: 6, step: 1 },
+      { name: 'order_m', default: 2, min: 0, max: 6, step: 1 },
+      { name: 'amount', default: 1, min: 0, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const r = Math.hypot(x, y); if (r < 1e-6) return [0, 0]; const th = Math.atan2(y, x); const l = 3, m = 2; const u = Math.cos(th); const assoc = (l: number, m: number, u: number) => { let pmm = 1; if (m > 0) { const s = Math.sqrt(Math.max(1 - u * u, 0)); let f = 1; for (let i = 1; i <= m; i++) { pmm *= -f * s; f += 2; } } if (l === m) return pmm; let pmmp1 = u * (2 * m + 1) * pmm; if (l === m + 1) return pmmp1; let pll = 0; for (let ll = m + 2; ll <= l; ll++) { pll = ((2 * ll - 1) * u * pmmp1 - (ll + m - 1) * pmm) / (ll - m); pmm = pmmp1; pmmp1 = pll; } return pll; }; const ylm = Math.min(4, Math.abs(assoc(l, m, u) * Math.cos(m * th))); const a = 1.0; const scale = (1 - a) + a * ylm; const rp = r * Math.max(-3, Math.min(3, scale)); return [x / r * rp, y / r * rp]; },
+  },
+  {
+    idx: V.fourier_warp,
+    name: 'fourier_warp',
+    source: 'novel',
+    formula: "r' = r\\Bigl(1 + a\\sum_{k=1}^{N}\\tfrac{1}{k}\\cos(k\\theta+\\varphi_k)\\Bigr)",
+    blurb: 'Band-limited Fourier radial warp: a capped harmonic series with fixed hash-derived phases sums up to N angular harmonics into a single ruffled radial envelope — the petal/scallop count and irregularity come from the harmonic mix, not from any single frequency. The 1/k weighting + positive floor keep it bounded with no fold-through.',
+    params: [
+      { name: 'harmonics', default: 4, min: 1, max: 8, step: 1 },
+      { name: 'amp', default: 0.4, min: 0, max: 0.9, step: 0.02 },
+      { name: 'phase_seed', default: 1, min: 0, max: 64, step: 1 },
+    ],
+    warpFn: (x, y) => { const r = Math.hypot(x, y); if (r < 1e-6) return [0, 0]; const th = Math.atan2(y, x); const N = 4, amt = 0.4, sbase = 1; const h01 = (n: number) => { let h = n >>> 0; h ^= h >>> 17; h = Math.imul(h, 0xed5ad4bb); h ^= h >>> 11; h = Math.imul(h, 0xac4c1b51); h ^= h >>> 15; return (h >>> 0) / 4294967296; }; let acc = 0; for (let k = 1; k <= N; k++) { const phi = h01((Math.imul(sbase, 2654435761) + Math.imul(k, 40503)) >>> 0) * 2 * Math.PI; acc += Math.cos(k * th + phi) / k; } const env = 1 + amt * acc; const rp = r * Math.max(0.05, Math.min(3, env)); return [x / r * rp, y / r * rp]; },
+  },
+  // #146 — Optics warps
+  {
+    idx: V.snell_refraction,
+    name: 'snell_refraction',
+    source: 'novel',
+    formula: "\\sin\\theta_2 = n_r\\sin\\theta_1,\\quad |n_r\\sin\\theta_1|\\ge 1\\Rightarrow\\text{reflect}",
+    blurb: 'Geometric refraction across a flat interface at y=0: the walker’s radial direction is bent per Snell’s law. When the index ratio exceeds the critical angle the ray totally-internally-reflects, folding walkers back across the interface and concentrating density along the boundary. A pure direction rotation, so |out|=|p|.',
+    params: [
+      { name: 'n_ratio', default: 1.18, min: 0.2, max: 3, step: 0.01 },
+      { name: 'strength', default: 0.5, min: 0, max: 1, step: 0.05 },
+    ],
+    defaultWeight: 0.9,
+    warpFn: (x, y) => { const r = Math.hypot(x, y); if (r < 1e-6) return [x, y]; const dx = x/r, dy = y/r; const nr = Math.max(0.05, Math.min(5, 1.18)); const sin1 = dx, cos1 = dy; const sin2 = nr*sin1; let ox, oy; if (Math.abs(sin2) >= 1) { ox = dx; oy = -dy; } else { const cos2 = Math.sqrt(Math.max(1-sin2*sin2, 0)); ox = sin2; oy = cos1 >= 0 ? cos2 : -cos2; } const s = 0.5; const bx = dx+(ox-dx)*s, by = dy+(oy-dy)*s; const bl = Math.max(Math.hypot(bx, by), 1e-6); return [r*bx/bl, r*by/bl]; },
+  },
+  {
+    idx: V.grin_lens,
+    name: 'grin_lens',
+    source: 'novel',
+    formula: "V(p)=\\Big(|p|-\\tfrac{|p|}{f}\\cdot\\tfrac{\\varepsilon^2}{|p|^2+\\varepsilon^2}\\Big)\\,\\widehat{p}",
+    blurb: 'Graded-index converging lens: the walker is pulled radially toward the focus by an amount that grows with distance but saturates near the focal scale, so the focus is a soft attractor rather than a hard 1/r singularity. Walkers pile into a bright focal core surrounded by a refracted halo.',
+    params: [
+      { name: 'focal', default: 0.45, min: 0.1, max: 3, step: 0.05 },
+      { name: 'eps', default: 0.39, min: 0.01, max: 1, step: 0.01 },
+    ],
+    defaultWeight: 0.21,
+    warpFn: (x, y) => { const f = Math.max(Math.abs(0.45), 0.05); const e = Math.max(Math.abs(0.39), 1e-3); const r = Math.hypot(x, y); if (r < 1e-6) return [x, y]; const soft = (e*e)/(r*r+e*e); const pull = (r/f)*soft; const dx = x/r, dy = y/r; const nr = Math.max(r-pull, -r); return [nr*dx, nr*dy]; },
+  },
+  {
+    idx: V.caustic_fold,
+    name: 'caustic_fold',
+    source: 'novel',
+    formula: "\\varphi(p)=\\cos(kx+\\phi)+\\cos(ky+\\phi),\\quad V(p)=p+a\\,\\nabla\\varphi(p)",
+    blurb: 'A smooth phase field φ(p)=cos(kx)+cos(ky) is treated as an optical wavefront; the walker is displaced along ∇φ. Where neighbouring rays cross, density piles onto bright folded curves — caustics — that self-brighten as pyr3 accumulates density along them. A glowing net of light-fold lines.',
+    params: [
+      { name: 'freq', default: 4.5, min: 0.2, max: 8, step: 0.1 },
+      { name: 'amp', default: 0.75, min: 0, max: 1, step: 0.05 },
+      { name: 'phase', default: 0.01, min: -3.14159265, max: 3.14159265, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const k = Math.max(0, Math.min(16, 4.5)); const a = Math.max(0, Math.min(2, 0.75)); const ph = 0.01; const gx = -Math.sin(k*x+ph); const gy = -Math.sin(k*y+ph); let ox = x+a*gx, oy = y+a*gy; ox = Math.max(-8, Math.min(8, ox)); oy = Math.max(-8, Math.min(8, oy)); return [ox, oy]; },
+  },
+  // #147 — Wave & nodal-pattern warps
+  {
+    idx: V.chladni,
+    name: 'chladni',
+    source: 'novel',
+    formula: "F = \\cos(n\\pi x)\\cos(m\\pi y) - \\cos(m\\pi x)\\cos(n\\pi y),\\quad p' = p - s\\,\\tfrac{\\nabla|F|}{\\lVert\\nabla|F|\\rVert+\\varepsilon}",
+    blurb: 'Warps toward the nodal set of a symmetric Chladni vibrating-plate field by stepping down the gradient of |F|, so density accumulates on the silent lines where the plate doesn’t move. The integer mode numbers n and m select the figure (use n≠m — n=m makes F≡0). The iconic sand-pattern look, never before a flame variation.',
+    params: [
+      { name: 'n', default: 3, min: 1, max: 12, step: 1 },
+      { name: 'm', default: 5, min: 1, max: 12, step: 1 },
+      { name: 'step', default: 0.18, min: 0, max: 0.6, step: 0.01 },
+    ],
+    warpFn: (x, y) => { const n = 3, m = 5, step = 0.18, PI = Math.PI; const an = PI*n, am = PI*m; const cnx=Math.cos(an*x), snx=Math.sin(an*x); const cmy=Math.cos(am*y), smy=Math.sin(am*y); const cmx=Math.cos(am*x), smx=Math.sin(am*x); const cny=Math.cos(an*y), sny=Math.sin(an*y); const F=cnx*cmy - cmx*cny; let gx=-an*snx*cmy + am*smx*cny; let gy=-am*cnx*smy + an*cmx*sny; const s = F<0?-1:1; gx*=s; gy*=s; const gl=Math.hypot(gx,gy); const inv=1/(gl+1e-4); return [x - step*gx*inv, y - step*gy*inv]; },
+  },
+  {
+    idx: V.standing_wave,
+    name: 'standing_wave',
+    source: 'novel',
+    formula: "p' = p + \\sum_{k=1}^{K} a\\,\\delta^{k-1}\\bigl(\\sin(k\\pi f x)\\sin(k\\pi f y),\\ \\sin(k\\pi f y)\\cos(k\\pi f x)\\bigr)",
+    blurb: 'Displaces each point by a finite sum of separable standing-wave modes — the superposition that builds up a vibrating membrane’s shape. The fixed 4-mode cap and geometric amplitude falloff keep it bounded while still layering interference structure. The origin is a pinned node.',
+    params: [
+      { name: 'modes', default: 3, min: 1, max: 4, step: 1 },
+      { name: 'freq', default: 1, min: 0.25, max: 4, step: 0.05 },
+      { name: 'amp', default: 0.35, min: 0, max: 1, step: 0.01 },
+      { name: 'decay', default: 0.6, min: 0.1, max: 1, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const modes=3, freq=1.0, amp=0.35, decay=0.6, PI=Math.PI; const kmax=Math.min(4,Math.max(1,Math.round(modes))); const d=Math.min(0.999,Math.max(0,decay)); let dx=0, dy=0, ak=amp; for (let k=1;k<=4;k++){ const kf=k*PI*freq; const active = k<=kmax ? 1 : 0; dx += active*ak*Math.sin(kf*x)*Math.sin(kf*y); dy += active*ak*Math.sin(kf*y)*Math.cos(kf*x); ak*=d; } return [x+dx, y+dy]; },
+  },
+  {
+    idx: V.moire,
+    name: 'moire',
+    source: 'novel',
+    formula: "p' = p + a\\bigl(\\sin(\\pi f x)\\sin(\\pi(f{+}b)u),\\ \\sin(\\pi f y)\\sin(\\pi(f{+}b)v)\\bigr),\\ (u,v)=R_\\theta\\,p",
+    blurb: 'Superimposes two rotated sinusoidal gratings and displaces along the slow beat-frequency interference pattern they create — the shimmering moiré fringes you see through two overlapping screens. The small frequency offset (beat) between the gratings sets the fringe spacing.',
+    params: [
+      { name: 'freq', default: 4, min: 0.5, max: 12, step: 0.1 },
+      { name: 'beat', default: 0.6, min: 0, max: 3, step: 0.05 },
+      { name: 'angle', default: 0.4, min: 0, max: 1.5708, step: 0.01 },
+      { name: 'amp', default: 0.25, min: 0, max: 0.8, step: 0.01 },
+    ],
+    warpFn: (x, y) => { const freq=4.0, beat=0.6, angle=0.4, amp=0.25, PI=Math.PI; const ca=Math.cos(angle), sa=Math.sin(angle); const u=x*ca+y*sa, v=-x*sa+y*ca; const f1=freq, f2=freq+beat; const gx=Math.sin(f1*PI*x)*Math.sin(f2*PI*u); const gy=Math.sin(f1*PI*y)*Math.sin(f2*PI*v); return [x+amp*gx, y+amp*gy]; },
+  },
+  // #148 — Atomic-orbital warps
+  {
+    idx: V.radial_shell,
+    name: 'radial_shell',
+    source: 'novel',
+    formula: "r' = \\tfrac{3}{2}\\,\\tfrac{|R_{nl}|^2}{1+|R_{nl}|^2},\\quad |R_{nl}|^2 = \\rho^{2l}e^{-\\rho}\\bigl[L^{2l+1}_{n-l-1}(\\rho)\\bigr]^2,\\ \\rho=\\tfrac{2r}{n\\,s}",
+    blurb: 'Hydrogen radial probability shells |R_nl(r)|² made geometric. The radius is remapped by the squared radial wavefunction (Laguerre × exp envelope), so the n−l−1 radial nodes appear as concentric density rings — 1s a single core, 2s/3s nested shells, 2p/3d outward lobes. Angle preserved; the always-bounded sibling of hydrogen_orbital.',
+    params: [
+      { name: 'n', default: 3, min: 1, max: 4, step: 1 },
+      { name: 'l', default: 0, min: 0, max: 3, step: 1 },
+      { name: 'shell_scale', default: 1, min: 0.2, max: 3, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const n = 3, l = 0, sc = 1.0; const r = Math.hypot(x, y); const rho = (2*r)/(n*Math.max(sc,1e-3)); const assocLag = (k: number, a: number, xv: number) => { if (k<=0) return 1; let lkm1=1, lk=1+a-xv; if (k===1) return lk; for (let j=1;j<k;j++){ const lkp1=((2*j+1+a-xv)*lk-(j+a)*lkm1)/(j+1); lkm1=lk; lk=lkp1; } return lk; }; const k=n-l-1, alpha=2*l+1; const lag=assocLag(k,alpha,Math.max(rho,0)); let rpow=1; for (let j=0;j<2*l;j++) rpow*=Math.max(rho,0); const amp=rpow*Math.exp(-Math.max(rho,0))*lag*lag; const rOut=1.5*(amp/(1+amp)); let dx=1, dy=0; if (r>1e-6){ dx=x/r; dy=y/r; } return [rOut*dx, rOut*dy]; },
+  },
+  {
+    idx: V.hydrogen_orbital,
+    name: 'hydrogen_orbital',
+    source: 'novel',
+    formula: "r' = \\tfrac{3}{2}\\,\\tfrac{A}{1+A},\\quad A = |R_{nl}(r)|^2\\,\\bigl|Y_l^m(\\theta)\\bigr|^2",
+    blurb: 'The full hydrogen orbital |ψ_nlm|² = |R_nl(r)|²·|Y_l^m(θ)|² as a warp: radius modulated by the radial shells AND the angular lobes, reproducing the textbook 1s/2p/3d/4f shapes — spherical cores, dumbbells, cloverleaves. Radial nodes become density gaps; angular nodes carve the lobes. Reuses #144’s spherical-harmonic evaluator.',
+    params: [
+      { name: 'n', default: 3, min: 1, max: 4, step: 1 },
+      { name: 'l', default: 1, min: 0, max: 3, step: 1 },
+      { name: 'm', default: 0, min: -3, max: 3, step: 1 },
+      { name: 'shell_scale', default: 0.85, min: 0.2, max: 3, step: 0.05 },
+      { name: 'lobe_mix', default: 1, min: 0, max: 1, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const n=3, l=1, sc=0.85, mix=1.0; const r=Math.hypot(x,y); const rho=(2*r)/(n*Math.max(sc,1e-3)); const assocLag=(k: number,a: number,xv: number)=>{ if(k<=0)return 1; let lkm1=1,lk=1+a-xv; if(k===1)return lk; for(let j=1;j<k;j++){const lkp1=((2*j+1+a-xv)*lk-(j+a)*lkm1)/(j+1); lkm1=lk; lk=lkp1;} return lk; }; const kk=n-l-1, alpha=2*l+1; const lag=assocLag(kk,alpha,Math.max(rho,0)); let rpow=1; for(let j=0;j<2*l;j++) rpow*=Math.max(rho,0); const rad=rpow*Math.exp(-Math.max(rho,0))*lag*lag; let cphi=1; if(r>1e-6) cphi=x/r; const P2=0.5*(3*cphi*cphi-1); const yl=P2; const ang2=yl*yl; const ampFull=rad*ang2; const amp=rad+(ampFull-rad)*mix; const rOut=1.5*(amp/(1+amp)); let dx=1,dy=0; if(r>1e-6){dx=x/r; dy=y/r;} return [rOut*dx, rOut*dy]; },
+  },
+  // #151 — Statistical-distribution warps (radial inverse-CDF)
+  {
+    idx: V.weibull_cdf,
+    name: 'weibull_cdf',
+    source: 'novel',
+    formula: "r' = \\lambda\\,\\bigl(-\\ln(1-u)\\bigr)^{1/k},\\quad u = \\tfrac{r^2}{1+r^2}",
+    blurb: 'Radial inverse-CDF remap by the Weibull quantile, with u a bounded sigmoid of the input radius. Shape k sculpts a soft inner ring (k>1) or a spike-toward-zero crowding (k<1); fully bounded with no tail to clamp. Angle preserved.',
+    params: [
+      { name: 'lambda', default: 1.17, min: 0.05, max: 2, step: 0.01 },
+      { name: 'k', default: 2.35, min: 0.3, max: 5, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const r2 = x*x + y*y; const r = Math.sqrt(r2); const u = Math.min(Math.max(r2/(1+r2), 1e-4), 1-1e-4); const lambda = 1.17, k = 2.35; const kk = Math.max(Math.abs(k), 0.05); const rp = lambda * Math.pow(-Math.log(1-u), 1/kk); if (r < 1e-9) return [0,0]; return [rp*(x/r), rp*(y/r)]; },
+  },
+  {
+    idx: V.logistic_cdf,
+    name: 'logistic_cdf',
+    source: 'novel',
+    formula: "r' = \\mu + s\\,\\ln\\!\\tfrac{u}{1-u},\\quad u = \\tfrac{r^2}{1+r^2}",
+    blurb: 'Smooth radial squash by the logistic (logit) quantile, u a bounded sigmoid of the input radius. The S-curve gently compresses the mid-radius band and is naturally bounded by clamping the logit — the tamest, most photogenic member. At μ=0 the unit circle collapses to the origin (the logit zero).',
+    params: [
+      // mu defaults to 0.6 (not 0): at mu=0, rp=2s·log(r) clamps the entire
+      // r<1 disk to the origin — a degenerate collapse that tanks the live
+      // renderer. mu>0 lifts the curve so the disk maps to distinct radii.
+      { name: 'mu', default: 0.84, min: -1, max: 1, step: 0.01 },
+      { name: 's', default: 1.07, min: 0.02, max: 1.5, step: 0.01 },
+    ],
+    defaultWeight: 0.25,
+    warpFn: (x, y) => { const r2 = x*x + y*y; const r = Math.sqrt(r2); const u = Math.min(Math.max(r2/(1+r2), 1e-4), 1-1e-4); const mu = 0.84, s = 1.07; let logit = Math.log(u/(1-u)); logit = Math.min(Math.max(logit, -12), 12); let rp = mu + s*logit; rp = Math.max(rp, 0); if (r < 1e-9) return [0,0]; return [rp*(x/r), rp*(y/r)]; },
+  },
+  {
+    idx: V.cauchy_cdf,
+    name: 'cauchy_cdf',
+    source: 'novel',
+    formula: "r' = \\gamma\\,\\tan\\!\\bigl(\\pi(u-\\tfrac12)\\bigr),\\quad |r'| \\le c",
+    blurb: 'The marquee heavy-tailed warp: radial Cauchy quantile, throwing sparse far-flung structure. The tan tail is HARD-clamped (Cauchy is heavy-tailed) so walkers never fling to infinity, and the trig routes through safe_tan. The unit circle is the median, mapped to the origin.',
+    params: [
+      { name: 'gamma', default: 0.25, min: 0.02, max: 1, step: 0.01 },
+      { name: 'tail_clamp', default: 4, min: 1, max: 12, step: 0.25 },
+    ],
+    warpFn: (x, y) => { const r2 = x*x + y*y; const r = Math.sqrt(r2); const u = Math.min(Math.max(r2/(1+r2), 1e-4), 1-1e-4); const gamma = 0.25, cap = 4.0; const arg = Math.PI*(u-0.5); const raw = gamma*Math.tan(arg); const rp = Math.min(Math.max(raw, -cap), cap); if (r < 1e-9) return [0,0]; return [rp*(x/r), rp*(y/r)]; },
+  },
+  {
+    idx: V.pareto_cdf,
+    name: 'pareto_cdf',
+    source: 'novel',
+    formula: "r' = x_m\\,(1-u)^{-1/\\alpha},\\quad u = \\tfrac{r^2}{1+r^2},\\ r' \\le c",
+    blurb: 'Power-law heavy-tailed warp: Pareto quantile pushing structure outward with an algebraic (not trig) tail. Distinct from cauchy_cdf in tail shape; the (1−u)^(−1/α) blow-up is HARD-clamped so the scaffold survives. Pushes a hollow ring starting at the scale x_m.',
+    params: [
+      { name: 'x_m', default: 0.61, min: 0.02, max: 1, step: 0.01 },
+      { name: 'alpha', default: 0.9, min: 0.3, max: 6, step: 0.05 },
+      { name: 'tail_clamp', default: 4, min: 1, max: 12, step: 0.25 },
+    ],
+    warpFn: (x, y) => { const r2 = x*x + y*y; const r = Math.sqrt(r2); const u = Math.min(Math.max(r2/(1+r2), 1e-4), 1-1e-4); const xm = 0.61, alpha = 0.9, cap = 4.0; const a = Math.max(Math.abs(alpha), 0.05); const raw = xm * Math.pow(1-u, -1/a); const rp = Math.min(raw, cap); if (r < 1e-9) return [0,0]; return [rp*(x/r), rp*(y/r)]; },
+  },
+  // #152 — Wavelet & signal warps
+  {
+    idx: V.morlet,
+    name: 'morlet',
+    source: 'novel',
+    formula: "\\mathbf{p} \\mapsto \\mathbf{p}\\,\\bigl(1 + A\\,e^{-r^2/2\\sigma^2}\\cos(\\omega r)\\bigr)",
+    blurb: 'Morlet wavelet packet as a radial displacement modulation: a Gaussian-windowed cosine ripples the radius, pushing points in and out along concentric shells that fade smoothly to identity past the envelope. Frequency sets the ring count; envelope width sets how far the ripples reach.',
+    params: [
+      { name: 'freq', default: 21, min: 0, max: 30, step: 0.1 },
+      { name: 'sigma', default: 0.79, min: 0.05, max: 3, step: 0.01 },
+      { name: 'amp', default: 0.35, min: -1, max: 1, step: 0.01 },
+    ],
+    warpFn: (x, y) => { const r = Math.hypot(x, y); const s = Math.max(0.79, 0.05); const t = r / s; const env = Math.exp(-0.5 * Math.min(t * t, 80)); const psi = env * Math.cos(21.0 * r); const scale = 1 + 0.35 * psi; return [x * scale, y * scale]; },
+  },
+  {
+    idx: V.mexican_hat,
+    name: 'mexican_hat',
+    source: 'novel',
+    formula: "\\mathbf{p} \\mapsto \\mathbf{p}\\,\\Bigl(1 + A\\,\\bigl(1 - \\tfrac{r^2}{\\sigma^2}\\bigr)e^{-r^2/2\\sigma^2}\\Bigr)",
+    blurb: 'Mexican-hat (Ricker) wavelet as a radial modulation: the second-derivative-of-Gaussian profile lifts a central bump ringed by a single negative trough, so points near the origin push outward while a mid-radius shell pulls inward — a smooth lens-and-moat warp. No trig at all, the family’s safe anchor.',
+    params: [
+      { name: 'sigma', default: 1.32, min: 0.05, max: 3, step: 0.01 },
+      { name: 'amp', default: 0.4, min: -1, max: 1, step: 0.01 },
+    ],
+    defaultWeight: 0.85,
+    warpFn: (x, y) => { const r = Math.hypot(x, y); const s = Math.max(1.32, 0.05); const t = r / s; const t2 = Math.min(t * t, 80); const psi = (1 - t2) * Math.exp(-0.5 * t2); const scale = 1 + 0.4 * psi; return [x * scale, y * scale]; },
+  },
+  {
+    idx: V.chirp,
+    name: 'chirp',
+    source: 'novel',
+    formula: "\\mathbf{p} \\mapsto \\mathbf{p}\\,\\bigl(1 + A\\,e^{-\\beta r^2}\\sin(\\alpha r^2)\\bigr)",
+    blurb: 'Linear-chirp frequency sweep as a radial modulation: sin(α·r²) accelerates its oscillation with radius, so the warp rings start wide near the origin and crowd tighter outward — a zone-plate / interference-fringe look. The α·r² argument is routed through safe_sin (the family’s trig-cliff case).',
+    params: [
+      { name: 'alpha', default: 8, min: 0, max: 60, step: 0.1 },
+      { name: 'amp', default: 0.3, min: -1, max: 1, step: 0.01 },
+      { name: 'decay', default: 0.6, min: 0, max: 4, step: 0.01 },
+    ],
+    warpFn: (x, y) => { const r2 = x * x + y * y; const env = Math.exp(-0.6 * Math.min(r2, 160)); const psi = env * Math.sin(8.0 * r2); const scale = 1 + 0.3 * psi; return [x * scale, y * scale]; },
+  },
+  // #153 — Celestial-mechanics warps
+  {
+    idx: V.kepler_orbit,
+    name: 'kepler_orbit',
+    source: 'novel',
+    formula: "M = E - e\\sin E,\\quad V(p)=a\\,(\\cos E - e,\\; \\sqrt{1-e^2}\\,\\sin E),\\ a=s|p|,\\ M=\\operatorname{atan2}(p_y,p_x)",
+    blurb: 'Solves Kepler’s equation M = E − e·sin E for the eccentric anomaly via two stateless Newton iterations, then places the walker on the corresponding ellipse. Eccentricity morphs the flow from concentric circles (e=0) toward sharply-focused cometary ellipses; the nonlinear M→E map crowds points near perihelion.',
+    params: [
+      { name: 'eccentricity', default: 0.35, min: 0, max: 0.95, step: 0.01 },
+      { name: 'scale', default: 1.3, min: 0.1, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.48,
+    warpFn: (x, y) => { const e = Math.min(Math.max(0.35, 0), 0.95); const scale = 1.3; const M = Math.atan2(y, x); const a = scale * (Math.hypot(x, y) + 1e-6); let E = M; for (let k = 0; k < 2; k++) { E = E - (E - e * Math.sin(E) - M) / Math.max(1 - e * Math.cos(E), 0.05); } const b = Math.sqrt(Math.max(1 - e * e, 0)); return [a * (Math.cos(E) - e), a * b * Math.sin(E)]; },
+  },
+  {
+    idx: V.restricted_3body,
+    name: 'restricted_3body',
+    source: 'novel',
+    formula: "\\Omega = \\tfrac12(x^2{+}y^2) + \\tfrac{1-\\mu}{r_1} + \\tfrac{\\mu}{r_2},\\quad V(p)=p + s(\\nabla\\Omega + c\\,R_{90}\\nabla\\Omega)",
+    blurb: 'The planar circular restricted three-body problem in the rotating frame: two primaries of mass (1−μ) and μ sit on the x-axis, and the walker is displaced along the gradient of the effective potential plus a Coriolis deflection — sculpting the five Lagrange points and their separatrix flow. Both 1/r singularities are eps-softened, the step hard-clamped.',
+    params: [
+      { name: 'mu', default: 0.2, min: 0.01, max: 0.5, step: 0.01 },
+      { name: 'step', default: 0.15, min: 0.01, max: 0.6, step: 0.01 },
+      { name: 'coriolis', default: 0.4, min: -1.5, max: 1.5, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const mu = Math.min(Math.max(0.2, 0.01), 0.5); const step = 0.15, coriolis = 0.4; const p1x = -mu, p2x = 1 - mu; const r1x = x - p1x, r1y = y, r2x = x - p2x, r2y = y; const d1 = Math.pow(r1x * r1x + r1y * r1y + 1e-3, 1.5); const d2 = Math.pow(r2x * r2x + r2y * r2y + 1e-3, 1.5); const gx = x - (1 - mu) * (r1x / d1) - mu * (r2x / d2); const gy = y - (1 - mu) * (r1y / d1) - mu * (r2y / d2); const gcx = -gy, gcy = gx; let dx = step * (gx + coriolis * gcx), dy = step * (gy + coriolis * gcy); const dl = Math.hypot(dx, dy), cap = 2.0; if (dl > cap) { dx *= cap / dl; dy *= cap / dl; } return [x + dx, y + dy]; },
+  },
+  {
+    idx: V.hill_epicyclic,
+    name: 'hill_epicyclic',
+    source: 'novel',
+    formula: "\\phi = \\kappa\\,\\phi_0,\\quad V(p)=\\begin{pmatrix}\\cos\\phi & -\\tfrac{\\sin\\phi}{\\kappa}\\\\ 2\\kappa\\sin\\phi & \\cos\\phi\\end{pmatrix}p + (0,\\ \\sigma p_x)",
+    blurb: 'Hill’s linearized near-circular orbital dynamics: a small radial+tangential perturbation drifts as an epicycle — a retrograde ellipse riding a guiding-center shear. kappa sets the epicyclic frequency (radial/tangential axis ratio) and phase advances the drift, producing sheared, slowly-precessing elliptical banding. A pure linear map.',
+    params: [
+      { name: 'kappa', default: 1.15, min: 0.2, max: 2, step: 0.05 },
+      { name: 'phase', default: -0.73, min: -6.2832, max: 6.2832, step: 0.05 },
+      { name: 'shear', default: 0.5, min: -2, max: 2, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const k = Math.min(Math.max(1.15, 0.2), 2.0); const phase = -0.73, shear = 0.5; const phi = phase * k; const cf = Math.cos(phi), sf = Math.sin(phi); const xo = x * cf - (sf / k) * y; const yo = (2 * k) * sf * x + y * cf; return [xo, yo + shear * x]; },
+  },
+  // #155 — Knots & braids
+  {
+    idx: V.torus_knot,
+    name: 'torus_knot',
+    source: 'novel',
+    formula: "\\varphi = \\operatorname{atan2}(y,x),\\ r = R + t|p|\\cos(q\\varphi),\\ V = (r\\cos p\\varphi,\\; r\\sin p\\varphi)",
+    blurb: 'Torus-knot rosette warp. The walker’s polar angle drives a (p,q) torus-knot parametrization, mapping the plane onto clean p-fold winding rosettes whose petal count is set by the q tube-winding. The input radius blends petals from center to rim so the warp shows the whole knot family. Bounded by radius+tube.',
+    params: [
+      { name: 'p', default: 3, min: 1, max: 12, step: 1 },
+      { name: 'q', default: 2, min: 1, max: 12, step: 1 },
+      { name: 'radius', default: 0.6, min: 0.1, max: 1.5, step: 0.05 },
+      { name: 'tube', default: 0.3, min: 0, max: 1, step: 0.05 },
+    ],
+    warpFn: (x, y) => { const p = 3, q = 2, radius = 0.6, tube = 0.3; const phi = Math.atan2(y, x); const rin = Math.hypot(x, y); const amp = tube * Math.max(0, Math.min(1, rin)); const rr = radius + amp * Math.cos(q * phi); return [rr * Math.cos(p * phi), rr * Math.sin(p * phi)]; },
+  },
+  {
+    idx: V.braid_warp,
+    name: 'braid_warp',
+    source: 'novel',
+    formula: "\\theta'=\\theta+\\tau(-1)^{\\ell}\\sin(\\pi f)\\sin(c\\pi f)\\min(r,1),\\ V=r(\\cos\\theta',\\sin\\theta')",
+    blurb: 'Braid-group strand warp. The circle is split into N angular strands; each strand’s angle is twisted by a smooth sinusoidal crossing (a continuous analog of a braid σ-generator) so adjacent strands weave over and under as the radius grows. Radius is preserved — only the angle is permuted — giving bounded, self-knotting rope-like braids without any persistent state.',
+    params: [
+      { name: 'strands', default: 4, min: 2, max: 10, step: 1 },
+      { name: 'twist', default: -1.15, min: -2, max: 2, step: 0.05 },
+      { name: 'crossings', default: 5, min: 1, max: 8, step: 1 },
+    ],
+    warpFn: (x, y) => { const strands = 4, twist = -1.15, crossings = 5; const n = Math.max(2, Math.round(strands)); const cr = Math.max(1, Math.round(crossings)); const r = Math.hypot(x, y); const theta = Math.atan2(y, x); const a = (theta + Math.PI) / (2 * Math.PI); const lane = Math.floor(a * n); const laneFrac = a * n - lane; const sgn = (lane & 1) === 1 ? -1 : 1; const weave = Math.sin(Math.PI * laneFrac); const rad = Math.max(0, Math.min(1, r)); const dtheta = twist * sgn * weave * Math.sin(cr * Math.PI * laneFrac) * rad; const nt = theta + dtheta; return [r * Math.cos(nt), r * Math.sin(nt)]; },
   },
 ];
 

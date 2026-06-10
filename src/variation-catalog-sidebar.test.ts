@@ -25,9 +25,11 @@ describe('listVariations', () => {
     // lorentz_boost + schwarzschild_lensing + field_dipole (#138),
     // modular/number-theory V266..V270 (#131 — jacobi_theta, modular_lambda,
     // klein_j, weierstrass_p, gauss_map).
-    // JWF count grows as batches ship — lower-bound assertion stays loose.
+    // JWF + novel counts grow as batches ship — lower-bound assertions stay
+    // loose. The More Variations Marathon (#16) adds 33 novel originals
+    // (V271–V303) on top of the original 49, so novel is now ≥49 and climbing.
     expect(rows.filter(r => r.source === 'dc')).toHaveLength(6);
-    expect(rows.filter(r => r.source === 'novel')).toHaveLength(49);
+    expect(rows.filter(r => r.source === 'novel').length).toBeGreaterThanOrEqual(49);
     expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });
 });

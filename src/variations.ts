@@ -2,10 +2,11 @@
 //
 // Each variation has a stable numeric INDEX matching the WGSL switch
 // dispatcher in `src/shaders/chaos.wgsl`. As of 2026-06-09 the catalog
-// holds V0..V261 (262 entries) — flam3 originals + DC family + Apophysis
+// holds V0..V303 (304 entries) — flam3 originals + DC family + Apophysis
 // plugin pack + JWildfire 2D long tail (V152..V213 from #121, V214..V219
 // from #170 sibling-pair completions) + Pyre originals (V220.., e.g.
-// chaotic-billiards V258..V261 from #150).
+// chaotic-billiards V258..V261 from #150, modular V266..V270 from #131,
+// and the More Variations Marathon V271..V303 from #16 — 11 novel families).
 //
 // Adding a variation = (1) add an entry to V, (2) add a `var_X` kernel
 // in chaos.wgsl, (3) add a switch case in `apply_variation`. The genome
@@ -554,6 +555,51 @@ export const V = {
   klein_j: 268,
   weierstrass_p: 269,
   gauss_map: 270,
+  // ── More Variations Marathon (#16) — novel families V271–V303 ──
+  // #132 — Exotic warps (two-body gravitational lensing, divergence-free curl noise)
+  nbody_lensing: 271,
+  curl_noise: 272,
+  // #137 — Special-function radial profiles (Bessel J0, Airy Ai, Cornu clothoid, Struve H1)
+  bessel_j0: 273,
+  airy_radial: 274,
+  cornu_spiral: 275,
+  struve_h1: 276,
+  // #141 — Quasi-random & digit-scramble warps (van der Corput, Gray code, Morton Z-order)
+  radical_inverse: 277,
+  gray_code: 278,
+  morton_zorder: 279,
+  // #144 — Orthogonal-polynomial & harmonic warps (Chebyshev T, Legendre P, spherical-harmonic rosette, Fourier ruffle)
+  chebyshev: 280,
+  legendre: 281,
+  spherical_harmonic: 282,
+  fourier_warp: 283,
+  // #146 — Optics warps (Snell refraction, GRIN lens, caustic fold)
+  snell_refraction: 284,
+  grin_lens: 285,
+  caustic_fold: 286,
+  // #147 — Wave & nodal-pattern warps (Chladni plate, standing-wave sum, moiré beat)
+  chladni: 287,
+  standing_wave: 288,
+  moire: 289,
+  // #148 — Atomic-orbital warps (hydrogen radial shells, full |ψ_nlm|² orbital)
+  radial_shell: 290,
+  hydrogen_orbital: 291,
+  // #151 — Statistical-distribution warps (Weibull, logistic, Cauchy, Pareto inverse-CDF)
+  weibull_cdf: 292,
+  logistic_cdf: 293,
+  cauchy_cdf: 294,
+  pareto_cdf: 295,
+  // #152 — Wavelet & signal warps (Morlet packet, Mexican-hat/Ricker, linear chirp)
+  morlet: 296,
+  mexican_hat: 297,
+  chirp: 298,
+  // #153 — Celestial-mechanics warps (Kepler ellipse, restricted 3-body, Hill epicycle)
+  kepler_orbit: 299,
+  restricted_3body: 300,
+  hill_epicyclic: 301,
+  // #155 — Knots & braids (torus-knot rosette, continuous braid-σ strand weave)
+  torus_knot: 302,
+  braid_warp: 303,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -562,9 +608,9 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
 
-/** Convert an internal variation index (0..261) to its user-facing display label
+/** Convert an internal variation index (0..303) to its user-facing display label
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
- *  and P0..P41 (Pyre originals). */
+ *  and P0..P83 (Pyre originals, incl. the #16 marathon families V271..V303). */
 export function getDisplayLabel(idx: number): string {
   if (idx <= 98) {
     return `V${idx}`;
