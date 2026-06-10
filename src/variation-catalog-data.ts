@@ -12,6 +12,7 @@ import {
   ts_var_billiard_sinai,
   ts_var_billiard_polygon,
   ts_var_lorentz_boost,
+  ts_var_schwarzschild_lensing,
   ts_var_field_dipole,
   ts_var_magnetic_pendulum,
 } from './variations';
@@ -4989,6 +4990,27 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
         ty: y,
         weight: 1.0,
         params: { rapidity: 0.5, angle: 0.0 },
+      });
+      return [res.x, res.y];
+    },
+  },
+  {
+    idx: V.schwarzschild_lensing,
+    name: 'schwarzschild_lensing',
+    source: 'novel',
+    formula: "V_{263}(p) = R(\\alpha)\\,p, \\quad \\alpha = \\frac{m}{|p| + \\varepsilon}",
+    blurb: 'Gravitational lensing by a point mass at the origin. The position vector is deflected — rotated by the Schwarzschild angle α = m/(|p|+ε) — strongly near the lens and vanishingly far away (the opposite radial falloff to swirl). ε softens the core singularity.',
+    params: [
+      { name: 'mass', default: 0.5, min: 0.0, max: 3.0, step: 0.05 },
+      { name: 'eps', default: 0.05, min: 0.001, max: 1.0, step: 0.01 },
+    ],
+    defaultWeight: 1.0,
+    warpFn: (x, y) => {
+      const res = ts_var_schwarzschild_lensing({
+        tx: x,
+        ty: y,
+        weight: 1.0,
+        params: { mass: 0.5, eps: 0.05 },
       });
       return [res.x, res.y];
     },

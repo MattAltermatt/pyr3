@@ -5,6 +5,7 @@ import { create, globals } from 'webgpu';
 import { extractWgslFn } from './shaders/extract';
 import {
   ts_var_lorentz_boost,
+  ts_var_schwarzschild_lensing,
   ts_var_field_dipole,
   ts_var_magnetic_pendulum,
 } from './variations';
@@ -149,6 +150,59 @@ describe('V262 lorentz_boost', () => {
     for (let i = 0; i < pts.length; i++) {
       expect(out[i * 2]).toBeCloseTo(pts[i]![0], 5);
       expect(out[i * 2 + 1]).toBeCloseTo(pts[i]![1], 5);
+    }
+  });
+});
+
+describe('V263 schwarzschild_lensing', () => {
+  it('matches expected math (TS↔WGSL)', async () => {
+    if (!device) return;
+    const fnBody = extractWgslFn(SHADER_SRC, 'var_schwarzschild_lensing');
+    const pts = [
+      [0.0, 0.0],
+      [0.5, 0.0],
+      [0.3, 0.4],
+      [-1.2, 0.7],
+    ] as const;
+    // mass=0.5, eps=0.05 → α = 0.5/(|p|+0.05) stays in [0.4, 10], well below
+    // the safe_* cliff, so native Math (TS) and safe_* (WGSL) agree.
+    const out = await dispatchKernel('var_schwarzschild_lensing', fnBody, pts, '0.5, 0.05');
+    for (let i = 0; i < pts.length; i++) {
+      const [px, py] = pts[i]!;
+      const exp = ts_var_schwarzschild_lensing({
+        tx: px, ty: py, weight: 1.0,
+        params: { mass: 0.5, eps: 0.05 },
+      });
+      expect(out[i * 2]).toBeCloseTo(exp.x, 4);
+      expect(out[i * 2 + 1]).toBeCloseTo(exp.y, 4);
+    }
+  });
+
+  it('deflects angularly — preserves radius (NOT a radial squeeze)', async () => {
+    if (!device) return;
+    // The spec form is a rotation by α(b); a pure rotation conserves |p|.
+    // This is the exact property the dropped V263 (a radial squeeze) failed.
+    const fnBody = extractWgslFn(SHADER_SRC, 'var_schwarzschild_lensing');
+    const pts = [[0.4, 0.6], [-0.3, 0.2], [1.1, -0.8]] as const;
+    const out = await dispatchKernel('var_schwarzschild_lensing', fnBody, pts, '0.7, 0.05');
+    for (let i = 0; i < pts.length; i++) {
+      const [px, py] = pts[i]!;
+      const rIn = Math.hypot(px, py);
+      const rOut = Math.hypot(out[i * 2]!, out[i * 2 + 1]!);
+      expect(rOut).toBeCloseTo(rIn, 4);
+    }
+  });
+
+  it('stays finite near the lens core (safe_* cliff path)', async () => {
+    if (!device) return;
+    // eps=0 + a sub-µm radius drives α = mass/b above SIN_SAFE_MAX (1e6),
+    // exercising safe_sin/safe_cos's deterministic hash branch. Output must
+    // be finite (no NaN/Inf), not bit-matched to native Math here.
+    const fnBody = extractWgslFn(SHADER_SRC, 'var_schwarzschild_lensing');
+    const pts = [[1e-7, 0.0], [0.0, -1e-7], [3e-7, 4e-7]] as const;
+    const out = await dispatchKernel('var_schwarzschild_lensing', fnBody, pts, '2.0, 0.0');
+    for (let i = 0; i < pts.length * 2; i++) {
+      expect(Number.isFinite(out[i]!)).toBe(true);
     }
   });
 });

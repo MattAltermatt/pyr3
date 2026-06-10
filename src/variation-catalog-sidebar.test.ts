@@ -20,11 +20,12 @@ describe('listVariations', () => {
     const rows = listVariations();
     // DC family: 4 originals (dc_linear..dc_cylinder) plus newton (V220, #133)
     // plus magnetic_pendulum (V265, #138 — basin DC + position warp).
-    // Novel pyr3 originals: V221..V262 + V264 — blaschke, cayley, complex_gamma,
-    // lambert_w, billiards (#150), lorentz_boost + field_dipole (#138).
+    // Novel pyr3 originals: V221..V264 (minus magnetic_pendulum's DC slot) —
+    // blaschke, cayley, complex_gamma, lambert_w, billiards (#150),
+    // lorentz_boost + schwarzschild_lensing + field_dipole (#138).
     // JWF count grows as batches ship — lower-bound assertion stays loose.
     expect(rows.filter(r => r.source === 'dc')).toHaveLength(6);
-    expect(rows.filter(r => r.source === 'novel')).toHaveLength(43);
+    expect(rows.filter(r => r.source === 'novel')).toHaveLength(44);
     expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });
 });

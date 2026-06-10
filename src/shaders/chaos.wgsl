@@ -6076,6 +6076,25 @@ fn var_lorentz_boost(p: vec2f, w: f32, rapidity: f32, angle: f32) -> vec2f {
   return w * vec2f(x_out, y_out);
 }
 
+// V263 — schwarzschild_lensing
+// Gravitational deflection by a point mass at the origin. A ray with
+// impact parameter b is bent by the Schwarzschild deflection angle
+// α ≈ 4GM/(c²·b); `mass` lumps the 4G/c² constant. The position vector is
+// ROTATED by α(b) about the lens — an angular deflection (strong near the
+// lens, vanishing far away — the opposite radial dependence to swirl's r²),
+// NOT a radial squeeze. b = |p| + eps softens the 1/0 at the core. α grows
+// without bound as |p|→0, so the rotation trig MUST route through
+// safe_sin/safe_cos (textbook Dawn f32 trig-cliff case).
+fn var_schwarzschild_lensing(p: vec2f, w: f32, mass: f32, eps: f32) -> vec2f {
+  let b = length(p) + max(eps, 1e-6);
+  let alpha = mass / b;
+  let ca = safe_cos(alpha);
+  let sa = safe_sin(alpha);
+  let x_out = p.x * ca - p.y * sa;
+  let y_out = p.x * sa + p.y * ca;
+  return w * vec2f(x_out, y_out);
+}
+
 // V264 — field_dipole
 // Classical electric dipole: two opposite ±charge poles offset by
 // ±separation/2 along (cos angle, sin angle). Walker is stepped along
@@ -6457,6 +6476,7 @@ fn apply_variation(
     case 260u: { return var_billiard_sinai(p, w, p0, p1, p2, p3); }
     case 261u: { return var_billiard_polygon(p, w, p0, p1, p2, p3); }
     case 262u: { return var_lorentz_boost(p, w, p0, p1); }
+    case 263u: { return var_schwarzschild_lensing(p, w, p0, p1); }
     case 264u: { return var_field_dipole(p, w, p0, p1, p2, p3); }
     case 265u: { return var_magnetic_pendulum_pos(p, w, p0, p1, p2, p3); }
     default:  { return vec2f(0.0, 0.0); }

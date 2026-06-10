@@ -361,6 +361,7 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   billiard_sinai: ['length', 'radius', 'step', 'angle'],
   billiard_polygon: ['sides', 'radius', 'step', 'angle'],
   lorentz_boost: ['rapidity', 'angle'],
+  schwarzschild_lensing: ['mass', 'eps'],
   field_dipole: ['charge', 'separation', 'step', 'angle'],
   magnetic_pendulum: ['magnets', 'radius', 'strength', 'damping'],
 };
@@ -625,6 +626,7 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   billiard_sinai: [2.0, 0.5, 0.5, 0.0],
   billiard_polygon: [5.0, 1.0, 0.5, 0.0],
   lorentz_boost: [0.5, 0.0],
+  schwarzschild_lensing: [0.5, 0.05],
   field_dipole: [1.0, 0.5, 0.2, 0.0],
   magnetic_pendulum: [3.0, 1.0, 0.5, 0.1],
 };

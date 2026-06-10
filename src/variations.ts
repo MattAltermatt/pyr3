@@ -543,8 +543,9 @@ export const V = {
   billiard_stadium: 259,
   billiard_sinai: 260,
   billiard_polygon: 261,
-  // #138 — Relativistic & physical-field warps (Lorentz boost, dipole, magnetic pendulum)
+  // #138 — Relativistic & physical-field warps (Lorentz boost, lensing, dipole, magnetic pendulum)
   lorentz_boost: 262,
+  schwarzschild_lensing: 263,
   field_dipole: 264,
   magnetic_pendulum: 265,
 } as const;
@@ -3568,6 +3569,19 @@ export function ts_var_lorentz_boost(i: VarInput): VarOutput {
   const yp = rx * sh + ry * ch;
   const x_out = xp * cos_t - yp * sin_t;
   const y_out = xp * sin_t + yp * cos_t;
+  return { x: i.weight * x_out, y: i.weight * y_out };
+}
+
+// var_schwarzschild_lensing (chaos.wgsl)
+export function ts_var_schwarzschild_lensing(i: VarInput): VarOutput {
+  const mass = i.params?.mass ?? 0.5;
+  const eps = i.params?.eps ?? 0.05;
+  const b = Math.hypot(i.tx, i.ty) + Math.max(eps, 1e-6);
+  const alpha = mass / b;
+  const ca = Math.cos(alpha);
+  const sa = Math.sin(alpha);
+  const x_out = i.tx * ca - i.ty * sa;
+  const y_out = i.tx * sa + i.ty * ca;
   return { x: i.weight * x_out, y: i.weight * y_out };
 }
 
