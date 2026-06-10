@@ -51,17 +51,20 @@ not the default.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
 same" contract holds across engines too. Both gates went green for v1.0,
-and the v1.0 → v1.4 line has shipped — the viewer is live at
+and the v1.0 → v1.6 line has shipped — the viewer is live at
 [pyr3.app](https://pyr3.app/), tagged releases are published through
-**v1.4.0** (2026-06-02), and the
+**v1.6.0** (2026-06-09), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
 tracks themed follow-on work. The **Apophysis and JWildfire** plugin
 pack (#114 / #117 / #120 / #121 / #170) plus the **More variations** arc
-(novel families: folds #129, attractors #130, cartographic #134, plane curves #135, toral #140, spirals #149, fractals #136)
-add 151 new variations (V107–V257, total catalog 258 entries). The **Binary distribution** arc
-(`npm run build:cli render` → standalone `pyr3-render`) shipped
-2026-06-06; remaining themed slots cover the gradient editor (#115),
-channel curves (#116), and the **Mobile rework** arc (#66). The
+(novel families: folds #129, attractors #130, cartographic #134, plane curves #135, toral #140, spirals #149, fractals #136, chaotic billiards #150, physical-field warps #138, modular & number-theory #131)
+grew the catalog to **271 entries (V0..V270)**. The **Binary distribution**
+arc (`npm run build:cli render` → standalone `pyr3-render`) shipped
+2026-06-06, **Color Curves** (#116) shipped 2026-06-07, and the
+**Animation** cluster (keyframe interpolation, per-xform motion,
+temporal-sampling motion blur, playback scrubber, `/v1/animate` editor +
+headless `/api/animate`) shipped in **v1.6.0**. Remaining themed slots
+cover the gradient editor (#115) and the **Mobile rework** arc (#66). The
 importer-default parity sweep (#17) shipped 2026-06-08.
 
 ## 🔥 Keep (the soul)
@@ -73,7 +76,7 @@ importer-default parity sweep (#17) shipped 2026-06-08.
   interpolation modes.
 - **Affine + nonlinear variation chain** per xform, with optional per-xform post-affine +
   finalxform lens.
-- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail (258 entries total, V0..V257).
+- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail + pyr3's own novel families (271 entries total, V0..V270).
 - **Genome-level features Electric Sheep relies on** — palette-by-index lookup, `<flame hue>`
   rotation, multi-value `color="V S"` attributes, the HSV-highpow desaturation branch of the
   tone-map, per-xform post-affine.
@@ -99,6 +102,11 @@ importer-default parity sweep (#17) shipped 2026-06-08.
 - **`/v1/screensaver` — build-up or slideshow over the corpus.** Watch one flame paint over
   a minute (literal pixel-landing → smooth settle) or crossfade through the corpus. Press
   **R** to record any session to `.webm` (#111).
+- **`/v1/animate` — keyframe animation (shipped v1.6.0).** Interpolate between flame
+  keyframes with per-xform motion elements and temporal-sampling motion blur, scrub playback
+  in the viewer, and export the sequence to frames. The headless companion is `npm run
+  animate` / the `pyr3 serve` backend's `/api/animate` route — the `flam3-render` /
+  `flam3-animate` split, modernized.
 
 ## 🗃️ Explicitly defer
 
