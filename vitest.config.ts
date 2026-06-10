@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
+import { dawnTeardownUnhandledErrorFilter } from './src/dawn-teardown-filter';
 
 const includeParity = process.env.VITEST_INCLUDE_PARITY === '1';
 // Full 26-fixture FE↔BE sweep (~13min) — pre-release only per #58. The
@@ -25,13 +26,19 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(buildDate),
   },
   test: {
-    // Dawn-node (#163-class): under concurrent forks the heaviest *.gpu.test.ts
-    // workers (e.g. issue148-orbitals) can take >10s — the vitest default — to
-    // release native GPU resources and exit. When the fork outlives the default
-    // teardown window, vitest reports "Timeout terminating forks worker" and the
-    // run fails spuriously even though every test passed. 30s gives Dawn room to
-    // unwind without throttling fork parallelism (no wall-clock cost on a clean
-    // exit). Raised when the V304–V309 follow-ons pushed the GPU file count to 51.
+    // #223 — Dawn-node's forked-worker teardown occasionally CRASHES (abnormal
+    // child exit) after a `*.gpu.test.ts` file's tests all pass, because the
+    // `create([])` instance has no disposal API and its native threads only
+    // unwind at process exit. Vitest surfaces that as a pool-level unhandled
+    // error ("Worker exited unexpectedly"), which flips the run's exit code to 1
+    // on a 0-failure suite. We swallow ONLY that exact infrastructure signature
+    // (see src/dawn-teardown-filter.ts) so real unhandled errors still fail the
+    // run — the documented, surgical alternative to dangerouslyIgnoreUnhandledErrors.
+    onUnhandledError: dawnTeardownUnhandledErrorFilter,
+    // Companion knob for the genuinely-slow (non-crash) exit case: under
+    // concurrent forks the heaviest GPU workers can take several seconds to
+    // release native GPU resources. 30s gives Dawn room to unwind without
+    // throttling fork parallelism (no wall-clock cost on a clean exit).
     teardownTimeout: 30000,
     exclude: [
       'node_modules/**',
