@@ -51,14 +51,14 @@ not the default.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
 same" contract holds across engines too. Both gates went green for v1.0,
-and the v1.0 → v1.6 line has shipped — the viewer is live at
+and the v1.0 → v1.7 line has shipped — the viewer is live at
 [pyr3.app](https://pyr3.app/), tagged releases are published through
-**v1.6.0** (2026-06-09), and the
+**v1.7.0** (2026-06-10), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
 tracks themed follow-on work. The **Apophysis and JWildfire** plugin
 pack (#114 / #117 / #120 / #121 / #170) plus the **More variations** arc
 (novel families: folds #129, attractors #130, cartographic #134, plane curves #135, toral #140, spirals #149, fractals #136, chaotic billiards #150, physical-field warps #138, modular & number-theory #131)
-grew the catalog to **271 entries (V0..V270)**. The **Binary distribution**
+grew the catalog to **310 entries (V0..V309)**. The **Binary distribution**
 arc (`npm run build:cli render` → standalone `pyr3-render`) shipped
 2026-06-06, **Color Curves** (#116) shipped 2026-06-07, and the
 **Animation** cluster (keyframe interpolation, per-xform motion,
@@ -76,7 +76,7 @@ importer-default parity sweep (#17) shipped 2026-06-08.
   interpolation modes.
 - **Affine + nonlinear variation chain** per xform, with optional per-xform post-affine +
   finalxform lens.
-- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail + pyr3's own novel families (271 entries total, V0..V270).
+- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail + pyr3's own novel families (310 entries total, V0..V309).
 - **Genome-level features Electric Sheep relies on** — palette-by-index lookup, `<flame hue>`
   rotation, multi-value `color="V S"` attributes, the HSV-highpow desaturation branch of the
   tone-map, per-xform post-affine.

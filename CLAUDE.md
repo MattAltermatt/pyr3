@@ -59,12 +59,13 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.6
-  have all shipped** (latest: `v1.6.0` on 2026-06-09 — the Animation cluster). Active themed
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.7
+  have all shipped** (latest: `v1.7.0` on 2026-06-10 — the More Variations Marathon; #16
+  follow-ons V304–V309 brought the catalog to 310). Active themed
   milestones: **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
   and Color Curves #116 all shipped; gradient editor #115 still open), **Binary
   distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
-  verify #126 still open), **More variations** (#16 — novel families, ~16 open), **Animation**
+  verify #126 still open), **More variations** (#16 — larger novel families, ~5 open), **Animation**
   (keyframe interp / motion / motion-blur / scrubber shipped v1.6.0; follow-ons open), and
   **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
