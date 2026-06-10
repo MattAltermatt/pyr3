@@ -10,6 +10,7 @@ import {
   pageForCorpusIndex,
   parseLoadIntent,
   parsePreviewOverride,
+  viewerUrl,
 } from './load-intent';
 import { DEFAULT_FILTER_SPEC } from './gallery-filter';
 import { V } from './variations';
@@ -324,6 +325,28 @@ describe('parseLoadIntent – /v1/variations grammar', () => {
 
   it('/v1/variations/anything → default', () => {
     expect(p('/v1/variations/foo')).toEqual({ kind: 'default' });
+  });
+});
+
+describe('parseLoadIntent – /v1/viewer grammar (#203)', () => {
+  it('parses /v1/viewer', () => {
+    expect(p('/v1/viewer')).toEqual({ kind: 'viewer' });
+  });
+
+  it('parses /v1/viewer/ (trailing slash)', () => {
+    expect(p('/v1/viewer/')).toEqual({ kind: 'viewer' });
+  });
+
+  it('/v1/viewer/anything → default', () => {
+    expect(p('/v1/viewer/foo')).toEqual({ kind: 'default' });
+  });
+});
+
+describe('viewerUrl — round-trips through the parser (#203)', () => {
+  it('apex base: viewerUrl() parses back to {kind:"viewer"}', () => {
+    const url = viewerUrl(); // BASE_URL '/' in the default env → '/v1/viewer'
+    expect(url).toMatch(/v1\/viewer$/);
+    expect(parseLoadIntent(url)).toEqual({ kind: 'viewer' });
   });
 });
 

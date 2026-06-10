@@ -36,6 +36,7 @@ export type LoadIntent =
   | { kind: 'edit' }
   | { kind: 'catalog-entry'; entry: CatalogEntry }
   | { kind: 'variations' }
+  | { kind: 'viewer' }
   | { kind: 'custom-reserved' }
   | { kind: 'default' };
 
@@ -209,6 +210,15 @@ export function parseLoadIntent(input: string): LoadIntent | null {
         return { kind: 'edit' };
       }
       // Malformed (/v1/edit/anything) — fall through to default
+    } else if (sub === 'viewer') {
+      // /v1/viewer — generic viewer surface for a locally-loaded (non-corpus)
+      // flame (#203). Cold start rehydrates the genome from the `pyr3-last-flame`
+      // store (src/last-flame-store.ts); absent that, falls back to the hero
+      // sheep. Bare /v1/viewer only; deeper paths fall through to default.
+      if (parts.length === 2) {
+        return { kind: 'viewer' };
+      }
+      // Malformed (/v1/viewer/anything) — fall through to default
     } else if (sub === 'variations') {
       // #119 — variation catalog page. Bare /v1/variations only; deeper
       // paths fall through to default. Deep-link to a specific variation
@@ -247,6 +257,16 @@ export function parseLoadIntent(input: string): LoadIntent | null {
  */
 export function corpusUrl(gen: number, id: number): string {
   return `${import.meta.env.BASE_URL}v1/gen/${gen}/id/${id}`;
+}
+
+/**
+ * Canonical base-aware `/v1/viewer` URL (#203). The viewer routes here when a
+ * local (non-corpus) flame is loaded; on refresh the surface rehydrates the
+ * genome from the `pyr3-last-flame` store. Round-trips through parseLoadIntent
+ * to `{kind:'viewer'}` (guarded in load-intent.test.ts).
+ */
+export function viewerUrl(): string {
+  return `${import.meta.env.BASE_URL}v1/viewer`;
 }
 
 /**

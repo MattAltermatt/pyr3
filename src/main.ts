@@ -44,8 +44,10 @@ import {
   HERO_GEN,
   HERO_ID,
   parseLoadIntent,
+  viewerUrl,
   type LoadIntent,
 } from './load-intent';
+import { loadLastFlame, saveLastFlame } from './last-flame-store';
 import { getCurrentFlame, setCurrentFlame } from './app-state';
 import { writePendingTransfer } from './edit-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
@@ -1509,6 +1511,23 @@ async function main(): Promise<void> {
     }).__pyr3LoadFlame = (text, label) => sequencer.enqueueHook(text, label);
   }
 
+  // #203 — a locally-loaded (non-corpus) flame has no gen/id URL, so reflect it
+  // as the generic /v1/viewer surface and persist the genome. A refresh on
+  // /v1/viewer then rehydrates the same flame (see the cold-start dispatch +
+  // src/last-flame-store.ts) instead of bouncing back to the hero sheep.
+  // pushState when arriving from a corpus URL (Back returns to that sheep);
+  // replaceState when already on /v1/viewer (opening another file doesn't stack
+  // redundant history entries that all point at the same single stored flame).
+  const routeToViewer = (): void => {
+    saveLastFlame(activeGenome);
+    const target = viewerUrl();
+    if (window.location.pathname === target) {
+      history.replaceState({ viewer: true }, '', target);
+    } else {
+      history.pushState({ viewer: true }, '', target);
+    }
+  };
+
   openFilePicker = (): void => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1520,6 +1539,7 @@ async function main(): Promise<void> {
         await loadFromFile(file);
         setNav(null); // user-opened file is not a corpus sheep
         setDocTitle(activeGenome.name || null); // #2: tab named after the flame
+        routeToViewer(); // #203: reflect the custom flame in the URL + persist it
       }
       input.remove();
     });
@@ -1997,6 +2017,30 @@ async function main(): Promise<void> {
     navigateCorpus(target.gen, target.id);
   });
 
+  // Hero fallback shared by the bare-root (`default`) and the empty-/v1/viewer
+  // (#203) cold-start branches. Rewrite the address bar to the canonical hero
+  // corpus URL so the landing page is real, shareable and nav-wired — but keep
+  // painting the BUNDLED fixture for an instant, chunk-free first paint instead
+  // of routing through loadCorpus' chunk + brotli-wasm fetch (which would be
+  // slower in prod and broken under `npm run dev`, PYR3-048). replaceState (not
+  // push) so Back never lands on an entry that just re-forwards. SPIRAL_GALAXY
+  // is the safety net if the welcome-fixture fetch fails.
+  const loadHeroFallback = async (): Promise<void> => {
+    history.replaceState({ gen: HERO_GEN, id: HERO_ID }, '', corpusUrl(HERO_GEN, HERO_ID));
+    const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
+    if (heroFile) {
+      await loadFromFile(heroFile);
+      await updateCorpusNav(HERO_GEN, HERO_ID); // wire ‹ › (no-ops to empty if avail unavailable)
+      setDocTitle(corpusTitleLabel(HERO_GEN, HERO_ID)); // #2: hero is a corpus sheep
+    } else {
+      console.warn('pyr3: welcome-flame fetch failed; painting SPIRAL_GALAXY default');
+      bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+      bar.setVariations(distinctVariationNames(SPIRAL_GALAXY));
+      setDocTitle(SPIRAL_GALAXY.name || null);
+      await rerender();
+    }
+  };
+
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
   // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
   // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
@@ -2036,24 +2080,19 @@ async function main(): Promise<void> {
   } else if (intent.kind === 'corpus') {
     await enqueueCorpus(intent.gen, intent.id, false); // initial load: no pushState
   } else if (intent.kind === 'default') {
-    // Bare root (A2 root-forward): rewrite the address bar to the canonical hero
-    // corpus URL so the landing page is real, shareable and nav-wired — but keep
-    // painting the BUNDLED fixture for an instant, chunk-free first paint instead
-    // of routing through loadCorpus' chunk + brotli-wasm fetch (which would be
-    // slower in prod and broken under `npm run dev`, PYR3-048). replaceState (not
-    // push) so Back never lands on a bare-root entry that just re-forwards.
-    history.replaceState({ gen: HERO_GEN, id: HERO_ID }, '', corpusUrl(HERO_GEN, HERO_ID));
-    const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
-    if (heroFile) {
-      await loadFromFile(heroFile);
-      await updateCorpusNav(HERO_GEN, HERO_ID); // wire ‹ › (no-ops to empty if avail unavailable)
-      setDocTitle(corpusTitleLabel(HERO_GEN, HERO_ID)); // #2: hero is a corpus sheep
+    await loadHeroFallback();
+  } else if (intent.kind === 'viewer') {
+    // #203 — /v1/viewer cold start: rehydrate the last-loaded custom flame from
+    // the store (a refresh after 📂 Open reloads what the user was viewing). No
+    // stored flame (e.g. a shared /v1/viewer link, or storage was cleared) →
+    // fall back to the hero sheep, same as bare root.
+    const stored = loadLastFlame();
+    if (stored) {
+      await applyLoadResult({ kind: 'pyr3-json', genome: stored }, stored.name || 'Untitled');
+      setNav(null); // rehydrated custom flame is not a corpus sheep
+      setDocTitle(activeGenome.name || null);
     } else {
-      console.warn('pyr3: welcome-flame fetch failed; painting SPIRAL_GALAXY default');
-      bar.setMeta({ flameName: SPIRAL_GALAXY.name });
-      bar.setVariations(distinctVariationNames(SPIRAL_GALAXY));
-      setDocTitle(SPIRAL_GALAXY.name || null);
-      await rerender();
+      await loadHeroFallback();
     }
   } else {
     // Deferred views (gen-list / gen-browse / custom-reserved): paint the welcome
@@ -2202,6 +2241,12 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       // Reaching here is a routing bug — log + paint welcome as a safe fallback
       // so the page isn't blank.
       console.error(`pyr3: ${intent.kind} intent reached resolveLoadIntent — dispatch order broken`);
+      return fetchAsFile(WELCOME_FLAME_URL);
+    case 'viewer':
+      // #203 — /v1/viewer is dispatched directly in main()'s cold-start block
+      // (rehydrate from the last-flame store, else hero fallback). Reaching here
+      // means that dispatch was bypassed — log + paint welcome as a safe net.
+      console.error('pyr3: viewer intent reached resolveLoadIntent — dispatch order broken');
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':
       // Bare root is handled directly in main() (replaceState root-forward +
