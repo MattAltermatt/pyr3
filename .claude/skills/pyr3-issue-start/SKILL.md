@@ -1,7 +1,6 @@
 ---
 name: pyr3-issue-start
 description: Start work on a pyr3 GitHub issue — guards against picking up an already-shipped (closed) issue, assigns it to the user, and sets up the feature branch. Use when the user says "start #N", "work on #N", "pick up issue N", or begins any issue-tracked task.
-disable-model-invocation: true
 ---
 
 # pyr3-issue-start

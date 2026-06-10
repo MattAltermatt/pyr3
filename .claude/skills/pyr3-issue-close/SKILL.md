@@ -1,7 +1,6 @@
 ---
 name: pyr3-issue-close
 description: Properly close out a finished pyr3 GitHub issue — verifies the work actually shipped (merged, tests green, docs updated), posts a closing summary comment, and closes the issue as completed. Use when the user says "close #N", "mark N done", "wrap up issue N", or finishes issue-tracked work.
-disable-model-invocation: true
 ---
 
 # pyr3-issue-close
