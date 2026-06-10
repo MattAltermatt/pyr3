@@ -14,6 +14,7 @@ import {
 import { mountSection, type SectionHandle } from './variation-catalog-section';
 import { getCatalogDoc } from './variation-catalog-data';
 import { buildCatalogGenome } from './variation-catalog-scaffold';
+import { catalogAnchorSlug } from './variations';
 import { createRenderer, type Renderer } from './renderer';
 import type { Genome } from './genome';
 
@@ -54,7 +55,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   for (const row of listVariations()) {
     const wrap = document.createElement('div');
     wrap.dataset.idx = String(row.idx);
-    wrap.id = `v${row.idx}-${row.name}`;
+    wrap.id = catalogAnchorSlug(row.idx, row.name);
     catalogHost.append(wrap);
 
     const doc = getCatalogDoc(row.idx);
@@ -283,16 +284,28 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   // URL hash → initial section + hashchange navigation
   // ────────────────────────────────────────────────────────────
   // The browser's native anchor-scroll fires before this mount finishes
-  // imperatively building the section DOM, so `#v109-juliaq` lands on the
+  // imperatively building the section DOM, so `#jwf10-juliaq` lands on the
   // top of the page instead of the section. Read the hash explicitly after
   // mount and after any hashchange.
   function jumpToHash(hash: string): void {
-    const m = hash.match(/^#?v(\d+)(?:-|$)/);
-    if (!m) return;
-    const idx = Number(m[1]);
-    if (!Number.isFinite(idx)) return;
-    const target = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
+    const id = hash.replace(/^#/, '');
+    if (!id) return;
+    // Fragments now carry the display-label namespace (#215):
+    // `#v12-julia` (flam3) · `#jwf10-juliaq` · `#p43-…`. Resolve by exact
+    // section id first.
+    let target = catalogHost.querySelector(`[id="${id}"]`) as HTMLElement | null;
+    // Backward-compat: pre-#215 deep-links used the raw registry index
+    // (`#v109-juliaq` where 109 is the array slot, now labeled JWF10). Old
+    // bookmarks / external links fall through to a raw-`v<idx>` lookup so
+    // they still resolve. (For flam3 idx ≤ 98 the two coincide, so this
+    // only fires for the JWF/P ranges.)
+    if (!target) {
+      const m = id.match(/^v(\d+)(?:-|$)/);
+      if (m) target = catalogHost.querySelector(`[data-idx="${Number(m[1])}"]`) as HTMLElement | null;
+    }
     if (!target) return;
+    const idx = Number(target.dataset.idx);
+    if (!Number.isFinite(idx)) return;
     // No smooth scroll on initial deep-link — jump straight there so the
     // user lands where they expected without a janky animation.
     catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'auto' });

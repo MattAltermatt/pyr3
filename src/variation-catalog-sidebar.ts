@@ -11,7 +11,7 @@
 // All DOM construction goes through createElement + textContent — pyr3's
 // no-innerHTML invariant (PYR3-065) is enforced by a test.
 
-import { V, getDisplayLabel } from './variations';
+import { V, getDisplayLabel, catalogAnchorSlug } from './variations';
 import { sourceForIdx, type CatalogSource } from './variation-catalog-data';
 
 interface VariationRow {
@@ -135,7 +135,7 @@ export function mountSidebar(host: HTMLElement, opts: SidebarOptions): SidebarHa
             'a',
             `pyr3-cat-item${r.idx === active ? ' active' : ''}`,
           );
-          item.href = `#v${r.idx}-${r.name}`;
+          item.href = `#${catalogAnchorSlug(r.idx, r.name)}`;
           item.dataset.idx = String(r.idx);
           item.append(el('span', 'pyr3-cat-vnum', getDisplayLabel(r.idx)));
           item.append(el('span', 'pyr3-cat-name', r.name));

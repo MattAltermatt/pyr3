@@ -26,7 +26,7 @@ import 'katex/dist/katex.min.css';
 import type { VariationDoc } from './variation-catalog-data';
 import { buildWarpSvg } from './variation-catalog-warp';
 import { linkToEditor } from './variation-catalog-link';
-import { V, getDisplayLabel } from './variations';
+import { V, getDisplayLabel, catalogAnchorSlug } from './variations';
 
 const SOURCE_LABEL: Record<string, string> = {
   flam3: 'flam3 core',
@@ -77,7 +77,7 @@ export function mountSection(
   host.replaceChildren();
   host.className = 'pyr3-cat-section';
   host.dataset.idx = String(doc.idx);
-  host.id = `v${doc.idx}-${doc.name}`;
+  host.id = catalogAnchorSlug(doc.idx, doc.name);
 
   // Header row
   const head = el('div', 'pyr3-cat-section-head');
@@ -88,14 +88,14 @@ export function mountSection(
   // hidden on idle, visible on hover (GitHub-style).
   const anchor = document.createElement('a');
   anchor.className = 'pyr3-cat-section-anchor';
-  anchor.href = `#v${doc.idx}-${doc.name}`;
+  anchor.href = `#${catalogAnchorSlug(doc.idx, doc.name)}`;
   anchor.textContent = '#';
   anchor.title = 'copy link to this variation';
   anchor.setAttribute('aria-label', `permalink to ${doc.name}`);
   anchor.addEventListener('click', (e) => {
     // Default href-jump updates the hash. Also copy to clipboard so the
     // user can paste it elsewhere without scraping the URL bar.
-    const url = `${window.location.origin}${window.location.pathname}#v${doc.idx}-${doc.name}`;
+    const url = `${window.location.origin}${window.location.pathname}#${catalogAnchorSlug(doc.idx, doc.name)}`;
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(url).catch(() => { /* clipboard blocked — silent OK */ });
     }

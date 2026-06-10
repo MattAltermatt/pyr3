@@ -65,4 +65,16 @@ describe('mountVariationCatalog', () => {
     const target = document.getElementById(`v${V.julian}-julian`);
     expect(target).toBeTruthy();
   });
+
+  it('section ids use the display-label namespace, not the raw idx (#215)', () => {
+    // flam3 stays on v-namespace; JWF/P ranges switch to jwf*/p*.
+    expect(document.getElementById('v14-julian')).toBeTruthy();
+    expect(document.getElementById('jwf10-juliaq')).toBeTruthy();
+    expect(document.getElementById('p43-schwarzschild_lensing')).toBeTruthy();
+    // The old raw-index ids must no longer exist for the JWF/P ranges.
+    expect(document.getElementById('v109-juliaq')).toBeNull();
+    expect(document.getElementById('v263-schwarzschild_lensing')).toBeNull();
+    // Each id still carries the raw idx on data-idx for IO wiring.
+    expect(document.getElementById('jwf10-juliaq')!.dataset.idx).toBe(String(V.juliaq));
+  });
 });

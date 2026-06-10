@@ -117,6 +117,8 @@ import {
   ts_var_pre_blur,
   // Batch K
   ts_var_mobius,
+  V,
+  catalogAnchorSlug,
   type VarInput,
   type VarOutput,
 } from './variations';
@@ -1182,4 +1184,24 @@ describe('variation: mobius', () => {
     },
     tol('mobius'),
   );
+});
+
+// #215 — catalog anchor slug uses the display-label namespace, not the raw
+// registry index, so copied deep-links match what the page calls the variation.
+describe('catalogAnchorSlug', () => {
+  it('keeps flam3 variations on the v-namespace (unchanged)', () => {
+    expect(catalogAnchorSlug(V.julian, 'julian')).toBe('v14-julian');
+    expect(catalogAnchorSlug(0, 'linear')).toBe('v0-linear');
+  });
+
+  it('uses jwfNN for JWildfire ports (idx 99..219)', () => {
+    // juliaq is registry idx 109 → display JWF10.
+    expect(catalogAnchorSlug(V.juliaq, 'juliaq')).toBe('jwf10-juliaq');
+  });
+
+  it('uses pNN for Pyre originals (idx ≥ 220)', () => {
+    // schwarzschild_lensing is registry idx 263 → display P43.
+    expect(catalogAnchorSlug(V.schwarzschild_lensing, 'schwarzschild_lensing'))
+      .toBe('p43-schwarzschild_lensing');
+  });
 });

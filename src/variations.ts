@@ -621,6 +621,18 @@ export function getDisplayLabel(idx: number): string {
   }
 }
 
+/** #215 — Catalog anchor/section-id slug for a variation: the display label
+ *  lowercased, joined to the variation name. So the URL fragment matches the
+ *  namespace the catalog actually shows the user:
+ *    `v12-julia` (flam3) · `jwf10-juliaq` (JWildfire) · `p43-schwarzschild_lensing`.
+ *  Shared by the /v1/variations sidebar links, per-section ids/anchors, and the
+ *  editor variation-picker's deep-link so all three agree. The raw registry
+ *  index still lives on `data-idx` for IntersectionObserver wiring; only the
+ *  human-facing fragment switched. */
+export function catalogAnchorSlug(idx: number, name: string): string {
+  return `${getDisplayLabel(idx).toLowerCase()}-${name}`;
+}
+
 /** #114 — variations whose RGB overrides the palette-indexed coloring per
  *  scatter. Used by genome.packXformInto to bake the per-xform dc_flag, and
  *  by edit-section-xforms to render the "(overridden by …)" annotation. */

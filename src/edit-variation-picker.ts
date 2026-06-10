@@ -29,7 +29,7 @@
 
 import { COLORS } from './ui-tokens';
 import { buildDropdown, buildToggle, buildButton } from './edit-primitives';
-import { V, VARIATION_NAMES, DC_VARIATION_SET, getDisplayLabel } from './variations';
+import { V, VARIATION_NAMES, DC_VARIATION_SET, getDisplayLabel, catalogAnchorSlug } from './variations';
 
 // #114 — per-variation descriptive tooltips for the picker. Adds the
 // human-readable explanation alongside the raw variation name, mostly
@@ -333,7 +333,8 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   // Catalog link — opens the live catalog (/v1/variations) in a new tab so
   // the user can preview every variation rendered + with controls before
   // picking one here. #171: anchor the deep-link to the current selection
-  // via the `v<idx>-<name>` hash convention from variation-catalog-mount.
+  // via the catalogAnchorSlug hash convention (display-label namespace,
+  // #215) shared with variation-catalog-mount.
   const catalogLink = document.createElement('a');
   catalogLink.className = 'pyr3-picker-catalog-link';
   catalogLink.target = '_blank';
@@ -346,7 +347,7 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   catalogLink.style.marginLeft = 'auto';
   function updateCatalogLink(idx: number): void {
     const name = VARIATION_NAMES[idx];
-    catalogLink.href = name ? `/v1/variations#v${idx}-${name}` : '/v1/variations';
+    catalogLink.href = name ? `/v1/variations#${catalogAnchorSlug(idx, name)}` : '/v1/variations';
   }
   updateCatalogLink(currentIndex);
 

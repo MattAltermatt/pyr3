@@ -100,6 +100,15 @@ describe('mountSidebar', () => {
     expect(active.dataset.idx).toBe(String(V.julian));
   });
 
+  it('item href uses the display-label namespace, not the raw idx (#215)', () => {
+    // juliaq is registry idx 109 → JWF10; its href must read #jwf10-…, not #v109-….
+    const jwf = host.querySelector(`.pyr3-cat-item[data-idx="${V.juliaq}"]`) as HTMLAnchorElement;
+    expect(jwf.getAttribute('href')).toBe('#jwf10-juliaq');
+    // flam3 stays on the v-namespace.
+    const flam3 = host.querySelector(`.pyr3-cat-item[data-idx="${V.julian}"]`) as HTMLAnchorElement;
+    expect(flam3.getAttribute('href')).toBe('#v14-julian');
+  });
+
   it('clicking an item fires onJump with the idx', () => {
     const item = host.querySelector(`.pyr3-cat-item[data-idx="${V.julian}"]`) as HTMLElement;
     item.click();
