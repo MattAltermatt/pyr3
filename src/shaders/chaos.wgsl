@@ -5294,6 +5294,79 @@ fn var_newton_color(p_pre: vec2f, n_in: f32) -> vec3f {
   return hsl_to_rgb(vec3f(hue, 1.0, 0.55));
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Escape-time fractal single-steps (#145). V310–V313. Each is a single step
+// of a classic escape-time iteration, expressed with the complex helpers.
+// Each emits an optional DC escape-band color via escape_color (below) when
+// the per-xform dc_flag is set. No trig → no safe_* needed. Pole guards
+// mirror var_newton: an explicit |den|² < 1e-20 check returns the passthrough
+// w*p (semantically "stays put at the singularity"; the chaos game's
+// bad-value check tolerates it).
+// ─────────────────────────────────────────────────────────────────────────
+
+// V310 burning_ship: z' = (|Re z| + i·|Im z|)² + c. No pole; growth is
+// caught by the chaos-game bad-value reseed.
+fn var_burning_ship(p: vec2f, w: f32, cx: f32, cy: f32) -> vec2f {
+  let za = vec2f(abs(p.x), abs(p.y));
+  return w * (complex_sqr(za) + vec2f(cx, cy));
+}
+
+// V311 magnet1: z' = ((z² + c − 1) / (2z + c − 2))². Pole at 2z+c−2=0.
+fn var_magnet1(p: vec2f, w: f32, cx: f32, cy: f32) -> vec2f {
+  let c = vec2f(cx, cy);
+  let num = complex_sqr(p) + c - vec2f(1.0, 0.0);
+  let den = 2.0 * p + c - vec2f(2.0, 0.0);
+  if (dot(den, den) < 1.0e-20) { return w * p; }
+  let ratio = complex_div(num, den);
+  return w * complex_sqr(ratio);
+}
+
+// V312 nova: relaxed Newton on f(z)=z³−1.  z' = z − relax·f/f' + c, f'=3z².
+// Pole at z=0 (f'→0).
+fn var_nova(p: vec2f, w: f32, cx: f32, cy: f32, relax: f32) -> vec2f {
+  let z3 = complex_pow_int(p, 3);
+  let z2 = complex_sqr(p);
+  let num = z3 - vec2f(1.0, 0.0);
+  let den = 3.0 * z2;
+  if (dot(den, den) < 1.0e-20) { return w * p; }
+  let step = relax * complex_div(num, den);
+  return w * (p - step + vec2f(cx, cy));
+}
+
+// V313 halley: Halley step on f(z)=z³−1.  z' = z − 2ff'/(2f'²−ff'') + c,
+// f'=3z², f''=6z. Pole at 2f'²−ff''=0.
+fn var_halley(p: vec2f, w: f32, cx: f32, cy: f32) -> vec2f {
+  let z3 = complex_pow_int(p, 3);
+  let z2 = complex_sqr(p);
+  let f = z3 - vec2f(1.0, 0.0);
+  let fp = 3.0 * z2;
+  let fpp = 6.0 * p;
+  let num = 2.0 * complex_mul(f, fp);
+  let den = 2.0 * complex_sqr(fp) - complex_mul(f, fpp);
+  if (dot(den, den) < 1.0e-20) { return w * p; }
+  return w * (p - complex_div(num, den) + vec2f(cx, cy));
+}
+
+// V310–V313 DC escape coloring (#145). Re-iterates the SAME map ≤12 times
+// from the post-step point; smooth-escape banding (continuous escape count).
+// Escapers band by iters-to-bailout; convergers hit the cap with small |z|,
+// banding by convergence depth. hsl L=0.55 matches dc_perlin / var_newton_color.
+fn escape_color(p_pre: vec2f, var_idx: u32, cx: f32, cy: f32, relax: f32) -> vec3f {
+  var z = p_pre;
+  var iters: i32 = 0;
+  for (var i: i32 = 0; i < 12; i = i + 1) {
+    if      (var_idx == 310u) { z = var_burning_ship(z, 1.0, cx, cy); }
+    else if (var_idx == 311u) { z = var_magnet1(z, 1.0, cx, cy); }
+    else if (var_idx == 312u) { z = var_nova(z, 1.0, cx, cy, relax); }
+    else                      { z = var_halley(z, 1.0, cx, cy); }
+    iters = i + 1;
+    if (dot(z, z) > 256.0) { break; }
+  }
+  let r = max(length(z), 1.0001);
+  let mu = f32(iters) + 1.0 - log2(max(log(r), 1.0e-6));
+  return hsl_to_rgb(vec3f(fract(mu * 0.12), 1.0, 0.55));
+}
+
 // V221 blaschke: 2-to-1 disk-symmetric Möbius factor.
 //   B(z) = z · (z − a) / (1 − ā · z)
 // Two zeros: origin + a (configurable point in the unit disk). The unit
@@ -7566,6 +7639,10 @@ fn apply_variation(
     case 307u: { return var_gaussian_cdf(p, w, p0, p1); }       // #218 distribution
     case 308u: { return var_levy_cdf(p, w, p0, p1); }           // #218 distribution
     case 309u: { return var_peano(p, w, p0, p1); }              // #221 digit-scramble
+    case 310u: { return var_burning_ship(p, w, p0, p1); }       // #145 escape-time
+    case 311u: { return var_magnet1(p, w, p0, p1); }            // #145 escape-time
+    case 312u: { return var_nova(p, w, p0, p1, p2); }           // #145 escape-time
+    case 313u: { return var_halley(p, w, p0, p1); }             // #145 escape-time
     default:  { return vec2f(0.0, 0.0); }
   }
 }
@@ -7752,6 +7829,22 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         } else if (var_idx == 265u) {
           // magnetic_pendulum params: magnets (v.z), radius (v.w).
           dc_rgb_override = var_magnetic_pendulum_color(pa_mut, v.z, v.w);
+          dc_override_active = true;
+        } else if (var_idx == 310u) {
+          // #145 burning_ship escape-band color. cx (v.z), cy (v.w).
+          dc_rgb_override = escape_color(pa_mut, 310u, v.z, v.w, 0.0);
+          dc_override_active = true;
+        } else if (var_idx == 311u) {
+          // #145 magnet1 escape-band color. cx (v.z), cy (v.w).
+          dc_rgb_override = escape_color(pa_mut, 311u, v.z, v.w, 0.0);
+          dc_override_active = true;
+        } else if (var_idx == 312u) {
+          // #145 nova escape-band color. cx (v.z), cy (v.w), relax (ve.x).
+          dc_rgb_override = escape_color(pa_mut, 312u, v.z, v.w, ve.x);
+          dc_override_active = true;
+        } else if (var_idx == 313u) {
+          // #145 halley escape-band color. cx (v.z), cy (v.w).
+          dc_rgb_override = escape_color(pa_mut, 313u, v.z, v.w, 0.0);
           dc_override_active = true;
         }
       }

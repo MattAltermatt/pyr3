@@ -420,6 +420,11 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   gaussian_cdf: ['mu', 'sigma'],
   levy_cdf: ['c', 'tail_clamp'],
   peano: ['extent', 'trits'],
+  // ── Escape-time fractal single-steps (#145) ──
+  burning_ship: ['cx', 'cy'],
+  magnet1: ['cx', 'cy'],
+  nova: ['cx', 'cy', 'relax'],
+  halley: ['cx', 'cy'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -742,6 +747,12 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   gaussian_cdf: [0.9, 0.5],
   levy_cdf: [0.35, 3.0],
   peano: [1.0, 5.0],
+  // ── Escape-time fractal single-steps (#145) — user-tuned, screenshot-
+  //    approved against the catalog scaffold (#145 Chrome verify 2026-06-10) ──
+  burning_ship: [0.4, -0.3],
+  magnet1: [0.85, -1.3],
+  nova: [0.0, 0.5, 0.85],
+  halley: [-0.25, -0.2],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

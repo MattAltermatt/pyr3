@@ -65,6 +65,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                              // #133 — DC + position warp
   if (idx === V.magnetic_pendulum) return 'dc';                   // #138 — basin DC + position warp
+  if (idx >= V.burning_ship && idx <= V.halley) return 'dc';      // #145 — escape-time + always-on DC escape coloring
   if (idx >= V.blaschke && idx <= 309) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303 + follow-ons V304–V309 (#216/#218/#220/#221)
   return 'jwf';
 }
@@ -5709,6 +5710,63 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'trits', default: 5, min: 2, max: 15, step: 1 },
     ],
     warpFn: (x, y) => { const extent = 1.0, trits = 5; const pow3 = (n: number) => { let p = 1; for (let i = 0; i < n; i++) p *= 3; return p; }; const cells = pow3(trits); const s = Math.max(extent, 1e-4); const enc = (c: number) => { const norm = (c+s)/(2*s); const folded = norm - Math.floor(norm); return Math.min((folded*cells) >>> 0, cells-1) >>> 0; }; const dec = (i: number) => ((i+0.5)/cells)*2*s - s; const scr = (idx: number) => { let flip = false, out = 0; for (let k = trits-1; k >= 0; k--) { const place = pow3(k); const d = Math.floor(idx/place) % 3; const e = flip ? 2-d : d; out += e*place; if ((e & 1) === 1) flip = !flip; } return out; }; return [dec(scr(enc(x))), dec(scr(enc(y)))]; },
+  },
+  // #145 — Escape-time fractal single-steps. Each is one step of a classic
+  // escape-time iteration AND a Direct Color variation: color is always
+  // computed directly by escape_color (smooth escape/convergence depth),
+  // bypassing the palette. Catalog source = 'dc' to match newton/magnetic_pendulum.
+  {
+    idx: V.burning_ship,
+    name: 'burning_ship',
+    source: 'dc',
+    formula: "z' = (|\\mathrm{Re}\\,z| + i\\,|\\mathrm{Im}\\,z|)^2 + c",
+    blurb: 'A single step of the Burning Ship iteration: the coordinate is folded into the first quadrant by absolute value, squared, and offset by c. The absolute-value fold gives the family its signature angular, flame-like ridges — distinct from the smooth lobes of plain z²+c. A Direct Color variation: the color is computed directly (bypassing the palette) as a true Mandelbrot-style escape band — escape_color re-iterates the same map and colors by iters-to-bailout. No pole; growth is caught by the chaos-game bad-value reseed.',
+    params: [
+      { name: 'cx', default: 0.4, min: -2, max: 2, step: 0.05 },
+      { name: 'cy', default: -0.3, min: -2, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.17,
+    warpFn: (x, y) => { const cx = 0.4, cy = -0.3; const ax = Math.abs(x), ay = Math.abs(y); return [ax*ax - ay*ay + cx, 2*ax*ay + cy]; },
+  },
+  {
+    idx: V.magnet1,
+    name: 'magnet1',
+    source: 'dc',
+    formula: "z' = \\left(\\dfrac{z^2 + c - 1}{2z + c - 2}\\right)^2",
+    blurb: 'A single step of the Magnet I iteration (from the physics of phase transitions in the Ising model). The rational map has a pole at 2z + c − 2 = 0, guarded with the var_newton |den|²-floor precedent (the point stays put at the singularity). Convergence to the magnetic / non-magnetic fixed points carves smooth basins. A Direct Color variation: color is computed directly by escape_color from convergence depth, bypassing the palette.',
+    params: [
+      { name: 'cx', default: 0.85, min: -2, max: 2, step: 0.05 },
+      { name: 'cy', default: -1.3, min: -2, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.31,
+    warpFn: (x, y) => { const cx = 0.85, cy = -1.3; const csqr = (z: [number,number]): [number,number] => [z[0]*z[0]-z[1]*z[1], 2*z[0]*z[1]]; const z2 = csqr([x, y]); const num: [number,number] = [z2[0]+cx-1, z2[1]+cy]; const den: [number,number] = [2*x+cx-2, 2*y+cy]; const d2 = den[0]*den[0]+den[1]*den[1]; if (d2 < 1e-20) return [x, y]; const ratio: [number,number] = [(num[0]*den[0]+num[1]*den[1])/d2, (num[1]*den[0]-num[0]*den[1])/d2]; return csqr(ratio); },
+  },
+  {
+    idx: V.nova,
+    name: 'nova',
+    source: 'dc',
+    formula: "z' = z - R\\,\\dfrac{z^3-1}{3z^2} + c",
+    blurb: 'A single relaxed-Newton step on f(z) = z³ − 1 with a relaxation factor R and a Mandelbrot-style offset c — the Nova fractal. R = 1 recovers ordinary Newton; off-1 values over/under-relax the convergence and shift the basin geometry. The three cube roots of unity are fixed points (step = 0 there). Pole at z = 0 (f′ → 0), guarded. A Direct Color variation: color is computed directly by escape_color from convergence depth, bypassing the palette.',
+    params: [
+      { name: 'cx', default: 0, min: -2, max: 2, step: 0.05 },
+      { name: 'cy', default: 0.5, min: -2, max: 2, step: 0.05 },
+      { name: 'relax', default: 0.85, min: 0.1, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.09,
+    warpFn: (x, y) => { const cx = 0, cy = 0.5, relax = 0.85; const cmul = (a: [number,number], b: [number,number]): [number,number] => [a[0]*b[0]-a[1]*b[1], a[0]*b[1]+a[1]*b[0]]; const z: [number,number] = [x, y]; const z2 = cmul(z, z); const z3 = cmul(z2, z); const num: [number,number] = [z3[0]-1, z3[1]]; const den: [number,number] = [3*z2[0], 3*z2[1]]; const d2 = den[0]*den[0]+den[1]*den[1]; if (d2 < 1e-20) return [x, y]; const div: [number,number] = [(num[0]*den[0]+num[1]*den[1])/d2, (num[1]*den[0]-num[0]*den[1])/d2]; return [x - relax*div[0] + cx, y - relax*div[1] + cy]; },
+  },
+  {
+    idx: V.halley,
+    name: 'halley',
+    source: 'dc',
+    formula: "z' = z - \\dfrac{2ff'}{2f'^2 - ff''} + c,\\quad f = z^3 - 1",
+    blurb: "A single Halley step on f(z) = z³ − 1 — Newton's cubic-convergence cousin, using f, f′ and f″ together for a tighter approach to the roots. Like Nova it fixes the three cube roots of unity, but the basin boundaries are noticeably crisper. Pole where 2f′² − ff″ = 0, guarded with the var_newton precedent. A Direct Color variation: color is computed directly by escape_color from convergence depth, bypassing the palette.",
+    params: [
+      { name: 'cx', default: -0.25, min: -2, max: 2, step: 0.05 },
+      { name: 'cy', default: -0.2, min: -2, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.12,
+    warpFn: (x, y) => { const cx = -0.25, cy = -0.2; const cmul = (a: [number,number], b: [number,number]): [number,number] => [a[0]*b[0]-a[1]*b[1], a[0]*b[1]+a[1]*b[0]]; const z: [number,number] = [x, y]; const z2 = cmul(z, z); const z3 = cmul(z2, z); const f: [number,number] = [z3[0]-1, z3[1]]; const fp: [number,number] = [3*z2[0], 3*z2[1]]; const fpp: [number,number] = [6*x, 6*y]; const ffp = cmul(f, fp); const num: [number,number] = [2*ffp[0], 2*ffp[1]]; const fp2 = cmul(fp, fp); const ffpp = cmul(f, fpp); const den: [number,number] = [2*fp2[0]-ffpp[0], 2*fp2[1]-ffpp[1]]; const d2 = den[0]*den[0]+den[1]*den[1]; if (d2 < 1e-20) return [x, y]; const div: [number,number] = [(num[0]*den[0]+num[1]*den[1])/d2, (num[1]*den[0]-num[0]*den[1])/d2]; return [x - div[0] + cx, y - div[1] + cy]; },
   },
 ];
 

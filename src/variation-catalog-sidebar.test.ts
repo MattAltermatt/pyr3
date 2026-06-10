@@ -19,7 +19,9 @@ describe('listVariations', () => {
   it('classifies the DC family + at least the original JWF batch + the novel pyr3 originals', () => {
     const rows = listVariations();
     // DC family: 4 originals (dc_linear..dc_cylinder) plus newton (V220, #133)
-    // plus magnetic_pendulum (V265, #138 — basin DC + position warp).
+    // plus magnetic_pendulum (V265, #138 — basin DC + position warp) plus the
+    // escape-time family burning_ship/magnet1/nova/halley (V310–V313, #145 —
+    // always-on escape-band DC color) = 10.
     // Novel pyr3 originals: V221..V270 (minus magnetic_pendulum's DC slot) —
     // blaschke, cayley, complex_gamma, lambert_w, billiards (#150),
     // lorentz_boost + schwarzschild_lensing + field_dipole (#138),
@@ -28,7 +30,7 @@ describe('listVariations', () => {
     // JWF + novel counts grow as batches ship — lower-bound assertions stay
     // loose. The More Variations Marathon (#16) adds 33 novel originals
     // (V271–V303) on top of the original 49, so novel is now ≥49 and climbing.
-    expect(rows.filter(r => r.source === 'dc')).toHaveLength(6);
+    expect(rows.filter(r => r.source === 'dc')).toHaveLength(10);
     expect(rows.filter(r => r.source === 'novel').length).toBeGreaterThanOrEqual(49);
     expect(rows.filter(r => r.source === 'jwf').length).toBeGreaterThanOrEqual(4);
   });

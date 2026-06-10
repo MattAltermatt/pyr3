@@ -608,6 +608,14 @@ export const V = {
   gaussian_cdf: 307,    // #218 — normal quantile (erfinv helper)
   levy_cdf: 308,        // #218 — Lévy α=½ quantile, hard-clamped heavy tail
   peano: 309,           // #221 — base-3 Peano reflected-ternary scramble
+  // ── Escape-time fractal single-steps (#145) — each a single step of a
+  //    classic escape-time iteration; each is a Direct Color variation (in
+  //    DC_VARIATION_SET) that always emits an escape-band
+  //    color (via escape_color) when the per-xform dc_flag is set ──
+  burning_ship: 310,    // #145 — (|Re z| + i·|Im z|)² + c
+  magnet1: 311,         // #145 — Magnet I:  ((z²+c−1)/(2z+c−2))²
+  nova: 312,            // #145 — relaxed Newton on z³−1:  z − R·f/f' + c
+  halley: 313,          // #145 — Halley step on z³−1:  z − 2ff'/(2f'²−ff'') + c
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -616,9 +624,10 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
 
-/** Convert an internal variation index (0..303) to its user-facing display label
+/** Convert an internal variation index (0..313) to its user-facing display label
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
- *  and P0..P83 (Pyre originals, incl. the #16 marathon families V271..V303). */
+ *  and P0..P93 (Pyre originals, incl. the #16 marathon families V271..V303 and
+ *  the escape-time family V310..V313 → P90..P93). */
 export function getDisplayLabel(idx: number): string {
   if (idx <= 98) {
     return `V${idx}`;
@@ -651,6 +660,10 @@ export const DC_VARIATION_SET: ReadonlySet<number> = new Set<number>([
   V.dc_cylinder,
   V.newton,  // #133 — newton emits DC basin color when dc_flag set
   V.magnetic_pendulum,  // #138 — magnetic_pendulum emits nearest-magnet basin color
+  V.burning_ship,  // #145 — escape-band color (smooth-escape via escape_color)
+  V.magnet1,       // #145
+  V.nova,          // #145
+  V.halley,        // #145
 ]);
 
 export interface Variation {

@@ -65,7 +65,7 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   milestones: **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
   and Color Curves #116 all shipped; gradient editor #115 still open), **Binary
   distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
-  verify #126 still open), **More variations** (#16 — larger novel families, ~5 open), **Animation**
+  verify #126 still open), **More variations** (#16 — larger novel families; escape-time family #145 shipped V310–V313, ~4 open), **Animation**
   (keyframe interp / motion / motion-blur / scrubber shipped v1.6.0; follow-ons open), and
   **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
