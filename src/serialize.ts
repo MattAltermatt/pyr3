@@ -413,6 +413,13 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #155 — Knots & braids
   torus_knot: ['p', 'q', 'radius', 'tube'],
   braid_warp: ['strands', 'twist', 'crossings'],
+  // ── Marathon follow-ons (#216/#218/#220/#221) ──
+  airy_caustic: ['scale', 'r0', 'amp'],
+  elliptic_E: ['scale'],
+  elliptic_K: ['scale', 'tail_clamp'],
+  gaussian_cdf: ['mu', 'sigma'],
+  levy_cdf: ['c', 'tail_clamp'],
+  peano: ['extent', 'trits'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -727,6 +734,14 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #155 — Knots & braids
   torus_knot: [3.0, 2.0, 0.6, 0.3],
   braid_warp: [4.0, -1.15, 5.0],
+  // ── Marathon follow-ons (#216/#218/#220/#221) — curated defaults
+  //    (Chrome-verified for visible structure, not collapse/explosion) ──
+  airy_caustic: [4.5, 1.1, 2.2],
+  elliptic_E: [0.8],
+  elliptic_K: [0.5, 3.0],
+  gaussian_cdf: [0.9, 0.5],
+  levy_cdf: [0.35, 3.0],
+  peano: [1.0, 5.0],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

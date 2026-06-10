@@ -65,7 +65,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx <= V.dc_cylinder) return 'dc';
   if (idx === V.newton) return 'dc';                              // #133 — DC + position warp
   if (idx === V.magnetic_pendulum) return 'dc';                   // #138 — basin DC + position warp
-  if (idx >= V.blaschke && idx <= 303) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303
+  if (idx >= V.blaschke && idx <= 309) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303 + follow-ons V304–V309 (#216/#218/#220/#221)
   return 'jwf';
 }
 
@@ -5627,6 +5627,88 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'crossings', default: 5, min: 1, max: 8, step: 1 },
     ],
     warpFn: (x, y) => { const strands = 4, twist = -1.15, crossings = 5; const n = Math.max(2, Math.round(strands)); const cr = Math.max(1, Math.round(crossings)); const r = Math.hypot(x, y); const theta = Math.atan2(y, x); const a = (theta + Math.PI) / (2 * Math.PI); const lane = Math.floor(a * n); const laneFrac = a * n - lane; const sgn = (lane & 1) === 1 ? -1 : 1; const weave = Math.sin(Math.PI * laneFrac); const rad = Math.max(0, Math.min(1, r)); const dtheta = twist * sgn * weave * Math.sin(cr * Math.PI * laneFrac) * rad; const nt = theta + dtheta; return [r * Math.cos(nt), r * Math.sin(nt)]; },
+  },
+  // ── Marathon follow-ons (#216/#218/#220/#221) ──
+  // #216 — optics follow-on (reuses #137 Airy Ai helper)
+  {
+    idx: V.airy_caustic,
+    name: 'airy_caustic',
+    source: 'novel',
+    formula: "(x',y') = \\big(1 + a\\,\\mathrm{Ai}(s\\,(r - r_0))\\big)(x,y)",
+    blurb: 'The supernumerary-ring profile of a rainbow/Airy caustic: the radius is modulated by 1 + amp·Ai(scale·(r − r0)). Unlike airy_radial (which scales the radius BY Ai and can fold through zero), the +1 envelope keeps the disk intact and overlays the faint diffraction fringes just inside the bright caustic edge at r0 — fringes that self-brighten as the chaos game accumulates density. Bounded: |Ai| decays away from the turning point and the envelope is clamped positive.',
+    params: [
+      { name: 'scale', default: 4.5, min: 0.5, max: 8, step: 0.1 },
+      { name: 'r0', default: 1.1, min: 0, max: 4, step: 0.05 },
+      { name: 'amp', default: 2.2, min: 0, max: 4, step: 0.05 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => { const scale = 4.5, r0 = 1.1, amp = 2.2; const r = Math.hypot(x, y); const xx = scale * (r - r0); let a; if (xx > 4.0) { const xi = (2/3)*Math.pow(xx,1.5); a = Math.exp(-xi)/(2*1.7724539*Math.pow(xx,0.25)); } else if (xx < -5.0) { const axx = -xx; const xi = (2/3)*Math.pow(axx,1.5); a = Math.sin(xi+0.78539816)/(1.7724539*Math.pow(axx,0.25)); } else { const c1=0.355028053887817,c2=0.258819403792807; const x3=xx*xx*xx; let f=1,tf=1,g=xx,tg=xx; for(let k=1;k<12;k++){tf*=x3/((3*k-1)*(3*k));f+=tf;tg*=x3/((3*k)*(3*k+1));g+=tg;} a=c1*f-c2*g; } const env = Math.max(0.05, Math.min(3.0, 1 + amp * a)); return [env * x, env * y]; },
+  },
+  // #220 — special-function follow-on (complete elliptic integrals)
+  {
+    idx: V.elliptic_E,
+    name: 'elliptic_E',
+    source: 'novel',
+    formula: "r' = s\\,E(m),\\quad m = \\tfrac{r^2}{1+r^2},\\quad E(m)=\\int_0^{\\pi/2}\\!\\sqrt{1-m\\sin^2\\theta}\\,d\\theta",
+    blurb: 'Radial projector by the complete elliptic integral of the second kind E(m), with the modulus m = r²/(1+r²) ∈ (0,1) driven by the radius. E(m) is inherently bounded on [1, π/2], so this is the gentle, singularity-free member: a soft monotone ring that compresses the plane toward the rim. Evaluated via the Abramowitz & Stegun 17.3.36 polynomial approximation (no AGM loop).',
+    params: [
+      { name: 'scale', default: 0.8, min: 0.1, max: 3, step: 0.05 },
+    ],
+    defaultWeight: 0.6,
+    warpFn: (x, y) => { const scale = 0.8; const r2 = x*x+y*y; const r = Math.sqrt(r2); if (r < 1e-9) return [0, 0]; const m = r2/(1+r2); const m1 = Math.max(0, Math.min(1, 1-m)); const l = Math.log(1/Math.max(m1,1e-6)); const a = 1 + m1*(0.4630151 + m1*0.1077812); const b = m1*(0.2452727 + m1*0.0412496); const e = a + b*l; const rp = scale*e; return [rp*x/r, rp*y/r]; },
+  },
+  {
+    idx: V.elliptic_K,
+    name: 'elliptic_K',
+    source: 'novel',
+    formula: "r' = \\min\\!\\big(s\\,K(m),\\,c\\big),\\quad K(m)=\\int_0^{\\pi/2}\\!\\frac{d\\theta}{\\sqrt{1-m\\sin^2\\theta}}",
+    blurb: 'Radial projector by the complete elliptic integral of the FIRST kind K(m), m = r²/(1+r²). K(m) diverges logarithmically as m → 1 (the rim) — that singularity is the visual payoff: a bright outer ring where K blows up. The modulus floor (m1 ≥ 1e-3 in the A&S 17.3.34 approximation) plus a hard r′ cap (tail_clamp) keep it bounded. Distinct outer-ring brightening from elliptic_E’s gentle compression.',
+    params: [
+      { name: 'scale', default: 0.5, min: 0.1, max: 2, step: 0.05 },
+      { name: 'tail_clamp', default: 3.0, min: 0.5, max: 8, step: 0.1 },
+    ],
+    defaultWeight: 0.55,
+    warpFn: (x, y) => { const scale = 0.5, cap = 3.0; const r2 = x*x+y*y; const r = Math.sqrt(r2); if (r < 1e-9) return [0, 0]; const m = r2/(1+r2); const m1 = Math.max(1e-3, Math.min(1, 1-m)); const l = Math.log(1/m1); const a = 1.3862944 + m1*(0.1119723 + m1*0.0725296); const b = 0.5 + m1*(0.1213478 + m1*0.0288729); const k = a + b*l; const rp = Math.min(scale*k, cap); return [rp*x/r, rp*y/r]; },
+  },
+  // #218 — statistical-distribution follow-on (inverse-CDF via erfinv)
+  {
+    idx: V.gaussian_cdf,
+    name: 'gaussian_cdf',
+    source: 'novel',
+    formula: "r' = \\mu + \\sigma\\sqrt{2}\\,\\mathrm{erf}^{-1}(2u-1),\\quad u=\\tfrac{r^2}{1+r^2}",
+    blurb: 'Normal-quantile radial remap: the bounded sigmoid u = r²/(1+r²) is pushed through the inverse Gaussian CDF (the probit). The unit circle (u = ½ → erf⁻¹(0) = 0) maps to radius μ, with a bell-shaped pile-up around it. The erf⁻¹ is the Winitzki rational approximation; the u-endpoint clamp keeps its argument off ±1 so the warp stays bounded. The bell-shaped sibling of the heavy-tailed Cauchy/Pareto/Lévy CDFs.',
+    params: [
+      { name: 'mu', default: 0.9, min: 0, max: 3, step: 0.05 },
+      { name: 'sigma', default: 0.5, min: 0.05, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.6,
+    warpFn: (x, y) => { const mu = 0.9, sigma = 0.5; const erfinv = (xi: number) => { const xc = Math.max(-0.999999, Math.min(0.999999, xi)); const a = 0.147; const ln1 = Math.log(1-xc*xc); const t1 = 2/(Math.PI*a) + 0.5*ln1; const inner = Math.sqrt(Math.max(t1*t1 - ln1/a, 0)) - t1; return Math.sign(xc)*Math.sqrt(Math.max(inner, 0)); }; const r2 = x*x+y*y; const r = Math.sqrt(r2); if (r < 1e-9) return [0, 0]; const u = Math.max(1e-4, Math.min(1-1e-4, r2/(1+r2))); const q = erfinv(2*u-1); const rp = Math.max(mu + sigma*1.4142135*q, 0); return [rp*x/r, rp*y/r]; },
+  },
+  {
+    idx: V.levy_cdf,
+    name: 'levy_cdf',
+    source: 'novel',
+    formula: "r' = \\dfrac{c}{2\\,\\big[\\mathrm{erf}^{-1}(1-u)\\big]^2},\\quad u=\\tfrac{r^2}{1+r^2}",
+    blurb: 'The Lévy (α = ½ stable) quantile — the heaviest-tailed inverse-CDF in the family. As u → 1 at the rim, erf⁻¹(1 − u) → 0 and the radius blows up, so a two-layer defence (the u-endpoint guard plus a hard tail_clamp cap) is mandatory. Produces a sharp dense inner core with a clamped outer halo: a markedly different mass distribution from the bell-shaped gaussian_cdf. Shares the erf⁻¹ helper with gaussian_cdf.',
+    params: [
+      { name: 'c', default: 0.35, min: 0.05, max: 2, step: 0.05 },
+      { name: 'tail_clamp', default: 3.0, min: 0.5, max: 8, step: 0.1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => { const c = 0.35, cap = 3.0; const erfinv = (xi: number) => { const xc = Math.max(-0.999999, Math.min(0.999999, xi)); const a = 0.147; const ln1 = Math.log(1-xc*xc); const t1 = 2/(Math.PI*a) + 0.5*ln1; const inner = Math.sqrt(Math.max(t1*t1 - ln1/a, 0)) - t1; return Math.sign(xc)*Math.sqrt(Math.max(inner, 0)); }; const r2 = x*x+y*y; const r = Math.sqrt(r2); if (r < 1e-9) return [0, 0]; const u = Math.max(1e-4, Math.min(1-1e-4, r2/(1+r2))); const e = erfinv(1-u); const denom = Math.max(2*e*e, 1e-6); const raw = Math.max(c, 1e-4)/denom; const rp = Math.min(raw, cap); return [rp*x/r, rp*y/r]; },
+  },
+  // #221 — digit-scramble follow-on (base-3 Peano)
+  {
+    idx: V.peano,
+    name: 'peano',
+    source: 'novel',
+    formula: "d_k \\to 2 - d_k\\ (\\text{when flipped}),\\quad \\text{flip} \\mathbin{\\oplus}{=} (d_k \\bmod 2)",
+    blurb: 'Per-axis base-3 Peano reflected-ternary scramble: each coordinate is encoded to a trits-digit base-3 index, then the digits are walked MSB→LSB through the Peano orientation-flip recursion (a running flip state maps digit d → 2 − d and toggles whenever the emitted digit is odd) and decoded back. The ternary cousin of the base-2 digit-scramble family (radical_inverse / gray_code / morton_zorder) — a self-similar three-fold fold with a distinctly different cell texture. Pure integer ops, perfectly bounded.',
+    params: [
+      { name: 'extent', default: 1, min: 0.25, max: 4, step: 0.05 },
+      { name: 'trits', default: 5, min: 2, max: 15, step: 1 },
+    ],
+    warpFn: (x, y) => { const extent = 1.0, trits = 5; const pow3 = (n: number) => { let p = 1; for (let i = 0; i < n; i++) p *= 3; return p; }; const cells = pow3(trits); const s = Math.max(extent, 1e-4); const enc = (c: number) => { const norm = (c+s)/(2*s); const folded = norm - Math.floor(norm); return Math.min((folded*cells) >>> 0, cells-1) >>> 0; }; const dec = (i: number) => ((i+0.5)/cells)*2*s - s; const scr = (idx: number) => { let flip = false, out = 0; for (let k = trits-1; k >= 0; k--) { const place = pow3(k); const d = Math.floor(idx/place) % 3; const e = flip ? 2-d : d; out += e*place; if ((e & 1) === 1) flip = !flip; } return out; }; return [dec(scr(enc(x))), dec(scr(enc(y)))]; },
   },
 ];
 

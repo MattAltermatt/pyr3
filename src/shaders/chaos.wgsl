@@ -6518,6 +6518,85 @@ fn radial_psi2(n: i32, l: i32, rho: f32) -> f32 {
 }
 
 // =====================================================================
+// Marathon follow-ons (#216/#218/#220/#221) — shared helpers (V304–V309).
+// Declared here (after the marathon helper block, before the kernels) so the
+// declaration-before-use ordering holds. All pure + bounded.
+// =====================================================================
+
+// --- #220 complete elliptic integrals via A&S 17.3.34 / 17.3.36 ---
+// Polynomial approximations in m1 = 1 − m, valid for m ∈ [0,1] (|err| < 4e-5).
+// E(m) ∈ [1, π/2] is inherently bounded; K(m) diverges logarithmically as
+// m → 1 (m1 → 0), so elliptic_K_eval floors m1 at 1e-3.
+fn elliptic_E_eval(m: f32) -> f32 {
+  let m1 = clamp(1.0 - m, 0.0, 1.0);
+  let l = log(1.0 / max(m1, 1.0e-6));
+  let a = 1.0 + m1 * (0.4630151 + m1 * 0.1077812);
+  let b = m1 * (0.2452727 + m1 * 0.0412496);
+  return a + b * l;
+}
+fn elliptic_K_eval(m: f32) -> f32 {
+  let m1 = clamp(1.0 - m, 1.0e-3, 1.0);   // m→1 logarithmic singularity floor
+  let l = log(1.0 / m1);
+  let a = 1.3862944 + m1 * (0.1119723 + m1 * 0.0725296);
+  let b = 0.5 + m1 * (0.1213478 + m1 * 0.0288729);
+  return a + b * l;
+}
+
+// --- #218 inverse error function (Winitzki approximation, |err| ~ 1e-3) ---
+// erfinv(x) for x ∈ (−1,1); blows up at |x| → 1 so the argument is clamped.
+fn erfinv_eval(x_in: f32) -> f32 {
+  let x = clamp(x_in, -0.999999, 0.999999);
+  let a = 0.147;
+  let ln1 = log(1.0 - x * x);
+  let t1 = 2.0 / (PI * a) + 0.5 * ln1;
+  let inner = sqrt(max(t1 * t1 - ln1 / a, 0.0)) - t1;
+  return sign(x) * sqrt(max(inner, 0.0));
+}
+
+// --- #221 base-3 fixed-point codec + Peano reflected-ternary scramble ---
+// 3^trits must stay f32-exact for the encode multiply, so trits ≤ 15
+// (3^15 = 14 348 907 < 2^24). Pure integer ops, bounded by tri_decode.
+fn pow3(n: u32) -> u32 {
+  var p = 1u;
+  var i = 0u;
+  loop { if (i >= n) { break; } p = p * 3u; i = i + 1u; }
+  return p;
+}
+fn tri_encode(c: f32, extent: f32, trits: u32) -> u32 {
+  let s = max(extent, 1.0e-4);
+  let cells = pow3(trits);
+  let levels = f32(cells);
+  let norm = (c + s) / (2.0 * s);
+  let folded = norm - floor(norm);
+  return min(u32(folded * levels), cells - 1u);
+}
+fn tri_decode(i: u32, extent: f32, trits: u32) -> f32 {
+  let s = max(extent, 1.0e-4);
+  let levels = f32(pow3(trits));
+  return ((f32(i) + 0.5) / levels) * 2.0 * s - s;
+}
+// Peano reflected-ternary permutation of a base-3 index: walk digits MSB→LSB
+// carrying a running flip state that maps digit d → 2−d, toggling whenever the
+// emitted digit is odd (the orientation-flip recursion at the heart of the
+// Peano curve). The flip state lives only inside this loop — stateless across
+// walkers.
+fn peano_scramble(idx: u32, trits: u32) -> u32 {
+  var flip = false;
+  var out = 0u;
+  var k = trits;
+  loop {
+    if (k == 0u) { break; }
+    k = k - 1u;
+    let place = pow3(k);
+    let d = (idx / place) % 3u;
+    let e = select(d, 2u - d, flip);
+    out = out + e * place;
+    if ((e & 1u) == 1u) { flip = !flip; }
+  }
+  return out;
+}
+
+// =====================================================================
 // More Variations Marathon (#16) — variation kernels (V271–V303).
 // =====================================================================
 
@@ -7025,6 +7104,94 @@ fn var_braid_warp(p: vec2f, w: f32, strands: f32, twist: f32, crossings: f32) ->
   return w * r * vec2f(safe_cos(nt), safe_sin(nt));
 }
 
+// =====================================================================
+// Marathon follow-ons (#216/#218/#220/#221) — variation kernels (V304–V309).
+// =====================================================================
+
+// --- #216 optics follow-on (reuses #137 airy_ai_eval) ---
+// V304 — airy_caustic. Supernumerary-ring caustic profile: modulate the radius
+// by 1 + amp·Ai(scale·(r − r0)). Unlike airy_radial (pure Ai scaling), the +1
+// envelope keeps the disk and overlays the diffraction fringes inside the
+// caustic edge (the oscillatory Ai region is reached where r < r0). Clamped
+// positive (0.05) so it never folds through the origin.
+fn var_airy_caustic(p: vec2f, w: f32, scale: f32, r0: f32, amp: f32) -> vec2f {
+  let r = length(p);
+  let a = airy_ai_eval(scale * (r - r0));
+  let env = clamp(1.0 + amp * a, 0.05, 3.0);
+  return w * (env * p);
+}
+
+// --- #220 special-function follow-on (complete elliptic integrals) ---
+// Both are radial inverse-profile remaps in the #151 idiom: u = r²/(1+r²) ∈
+// (0,1) drives the parameter m; angle preserved; origin → origin.
+// V305 — elliptic_E. r' = scale·E(m), E ∈ [1, π/2] inherently bounded → a
+// gentle singularity-free radial projector (a soft ring).
+fn var_elliptic_E(p: vec2f, w: f32, scale: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let m  = r2 / (1.0 + r2);
+  let e  = elliptic_E_eval(m);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * (scale * e) * dir;
+}
+// V306 — elliptic_K. r' = scale·K(m); K diverges logarithmically as m→1 (the
+// rim): elliptic_K_eval floors m1 at 1e-3 and r' is HARD-clamped to tail_clamp,
+// so the bright outer ring stays bounded.
+fn var_elliptic_K(p: vec2f, w: f32, scale: f32, tail_clamp: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let m  = r2 / (1.0 + r2);
+  let k  = elliptic_K_eval(m);
+  let cap = max(tail_clamp, 0.01);
+  let rp = min(scale * k, cap);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+
+// --- #218 statistical-distribution follow-on (inverse-CDF, erfinv) ---
+// V307 — gaussian_cdf. Normal-quantile radial remap r' = μ + σ·√2·erfinv(2u−1),
+// u = r²/(1+r²) endpoint-clamped (keeps the erfinv argument off ±1). Bell-shaped
+// pile-up: the unit circle (u=0.5 → erfinv(0)=0) maps to radius μ.
+fn var_gaussian_cdf(p: vec2f, w: f32, mu: f32, sigma: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let u  = clamp(r2 / (1.0 + r2), 1.0e-4, 1.0 - 1.0e-4);
+  let q  = erfinv_eval(2.0 * u - 1.0);
+  var rp = mu + sigma * 1.4142135 * q;
+  rp = max(rp, 0.0);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+// V308 — levy_cdf. Lévy (α=½ stable) quantile r' = c / (2·erfinv(1−u)²). The
+// heaviest-tailed member: erfinv(1−u) → 0 as u → 1 (the rim) blows r' up, so it
+// is HARD-clamped to tail_clamp (two-layer: u-endpoint guard + r' cap).
+fn var_levy_cdf(p: vec2f, w: f32, c: f32, tail_clamp: f32) -> vec2f {
+  let r2 = dot(p, p);
+  let r  = sqrt(r2);
+  let u  = clamp(r2 / (1.0 + r2), 1.0e-4, 1.0 - 1.0e-4);
+  let e  = erfinv_eval(1.0 - u);
+  let denom = max(2.0 * e * e, 1.0e-6);
+  let raw = max(c, 1.0e-4) / denom;
+  let cap = max(tail_clamp, 0.01);
+  let rp = min(raw, cap);
+  let dir = select(p / max(r, 1.0e-12), vec2f(0.0, 0.0), r < 1.0e-9);
+  return w * rp * dir;
+}
+
+// --- #221 digit-scramble follow-on (base-3 Peano) ---
+// V309 — peano. Per-axis base-3 Peano reflected-ternary scramble: encode each
+// coordinate to a `trits`-digit base-3 index, apply the orientation-flip digit
+// recursion (peano_scramble), decode back. A self-similar ternary fold —
+// distinct from the base-2 digit-scramble family. Pure integer ops, bounded.
+fn var_peano(p: vec2f, w: f32, extent: f32, trits_f: f32) -> vec2f {
+  let trits = u32(clamp(trits_f, 2.0, 15.0));
+  let ix = tri_encode(p.x, extent, trits);
+  let iy = tri_encode(p.y, extent, trits);
+  let sx = peano_scramble(ix, trits);
+  let sy = peano_scramble(iy, trits);
+  return w * vec2f(tri_decode(sx, extent, trits), tri_decode(sy, extent, trits));
+}
+
 // ---------------------------------------------------------------------
 // Variation dispatcher — runtime switch over indices.
 // V=97 (pre_blur) is handled pre-switch in the 2-pass variation chain
@@ -7392,6 +7559,13 @@ fn apply_variation(
     // #155 — Knots & braids
     case 302u: { return var_torus_knot(p, w, p0, p1, p2, p3); }
     case 303u: { return var_braid_warp(p, w, p0, p1, p2); }
+    // ── Marathon follow-ons (#216/#218/#220/#221) ──
+    case 304u: { return var_airy_caustic(p, w, p0, p1, p2); }   // #216 optics
+    case 305u: { return var_elliptic_E(p, w, p0); }             // #220 special fn
+    case 306u: { return var_elliptic_K(p, w, p0, p1); }         // #220 special fn
+    case 307u: { return var_gaussian_cdf(p, w, p0, p1); }       // #218 distribution
+    case 308u: { return var_levy_cdf(p, w, p0, p1); }           // #218 distribution
+    case 309u: { return var_peano(p, w, p0, p1); }              // #221 digit-scramble
     default:  { return vec2f(0.0, 0.0); }
   }
 }

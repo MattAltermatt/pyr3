@@ -600,6 +600,14 @@ export const V = {
   // #155 — Knots & braids (torus-knot rosette, continuous braid-σ strand weave)
   torus_knot: 302,
   braid_warp: 303,
+  // ── Marathon follow-ons (#216/#218/#220/#221) — deferred members carved
+  //    out of the marathon, unlocked by helpers it shipped ──
+  airy_caustic: 304,    // #216 — optics, reuses airy_ai_eval (supernumerary rings)
+  elliptic_E: 305,      // #220 — complete elliptic integral E(m), bounded radial
+  elliptic_K: 306,      // #220 — complete elliptic integral K(m), clamped rim
+  gaussian_cdf: 307,    // #218 — normal quantile (erfinv helper)
+  levy_cdf: 308,        // #218 — Lévy α=½ quantile, hard-clamped heavy tail
+  peano: 309,           // #221 — base-3 Peano reflected-ternary scramble
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

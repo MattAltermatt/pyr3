@@ -107,7 +107,14 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     'Celestial mechanics': [V.kepler_orbit, V.restricted_3body, V.hill_epicyclic],
     // #155 — knots & braids
     'Knots / braids': [V.torus_knot, V.braid_warp],
+    // ── Marathon follow-ons (#216/#218/#220/#221) — fold each into the family
+    //    it was carved out of, so the picker groups them with their kin ──
   };
+  // #216 optics · #218 distribution · #220 special-fn · #221 digit-scramble
+  groups['Optics']!.push(V.airy_caustic);
+  groups['Special functions']!.push(V.elliptic_E, V.elliptic_K);
+  groups['Probability / distribution']!.push(V.gaussian_cdf, V.levy_cdf);
+  groups['Digit-scramble / quasi-random']!.push(V.peano);
   // Sweep up everything else into 'Misc / exotic'.
   const seen = new Set<number>();
   for (const arr of Object.values(groups)) for (const i of arr) seen.add(i);

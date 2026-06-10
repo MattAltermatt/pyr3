@@ -25,6 +25,14 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(buildDate),
   },
   test: {
+    // Dawn-node (#163-class): under concurrent forks the heaviest *.gpu.test.ts
+    // workers (e.g. issue148-orbitals) can take >10s — the vitest default — to
+    // release native GPU resources and exit. When the fork outlives the default
+    // teardown window, vitest reports "Timeout terminating forks worker" and the
+    // run fails spuriously even though every test passed. 30s gives Dawn room to
+    // unwind without throttling fork parallelism (no wall-clock cost on a clean
+    // exit). Raised when the V304–V309 follow-ons pushed the GPU file count to 51.
+    teardownTimeout: 30000,
     exclude: [
       'node_modules/**',
       'dist/**',
