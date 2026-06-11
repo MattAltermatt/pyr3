@@ -14,7 +14,6 @@ import {
   MAX_XFORMS,
   packXforms,
   packXformDistrib,
-  totalWeight,
   XFORM_BYTES,
   XFORM_DISTRIB_BYTES,
   XFORM_DISTRIB_FALLBACK_OFFSET,
@@ -92,6 +91,10 @@ export interface ChaosPass {
 }
 
 const WORKGROUP_SIZE = 64;
+// 14 scalar slots × 4 bytes = 56 bytes of named fields (after #254 dropped the
+// two dead slots), rounded up to the 16-byte uniform-binding granularity → 64.
+// The trailing 8 bytes are unused padding; `layout:'auto'` derives the same
+// 64-byte minBindingSize from the WGSL struct, so the buffer must stay 64.
 const UNIFORMS_BYTES = 64;
 
 // 4 channels (R, G, B, count) of u32 per pixel.
@@ -284,23 +287,25 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       f32[4] = g.scale * oversample;
       f32[5] = g.cx;
       f32[6] = g.cy;
-      u32[7] = g.xforms.length;
-      f32[8] = totalWeight(g);
-      u32[9] = seed >>> 0;
-      i32[10] = g.finalxform ? g.xforms.length : -1;
-      f32[11] = ((g.rotate ?? 0) * Math.PI) / 180.0; // rotation_rad — Phase 9-rotate
+      // #254: num_xforms (old slot 7) + xform_total_weight (old slot 8) dropped —
+      // the Phase 5c xform_distrib table subsumed both and the kernel read
+      // neither, so every dispatch wrote two dead slots. Downstream slots shifted
+      // down by 2; the WGSL Uniforms struct mirrors this new numbering.
+      u32[7] = seed >>> 0;
+      i32[8] = g.finalxform ? g.xforms.length : -1;
+      f32[9] = ((g.rotate ?? 0) * Math.PI) / 180.0; // rotation_rad — Phase 9-rotate
       // Phase 9-bg-palmode: 0 = step (flam3 default), 1 = linear. Default
       // applied at this consumer boundary so the genome stays a faithful
-      // echo of source XML. Slots 13-15 stay zero.
-      u32[12] = (g.paletteMode ?? 'step') === 'linear' ? 1 : 0;
+      // echo of source XML.
+      u32[10] = (g.paletteMode ?? 'step') === 'linear' ? 1 : 0;
       // PYR3-029 Phase 5b trace gate. Default 0 = no trace emission.
-      u32[13] = opts?.traceMode ? 1 : 0;
+      u32[11] = opts?.traceMode ? 1 : 0;
       // #11 (PYR3-057): exact walker count (NOT the rounded-up thread count) so
       // chaos_main bails the padding threads of the final workgroup.
-      u32[14] = walkers;
+      u32[12] = walkers;
       // #65 Tier 1: walker jitter amplitude — runtime parameter.
       // `??` lets call sites omit it and pick up the shipped default.
-      f32[15] = opts?.walkerJitter ?? DEFAULT_WALKER_JITTER;
+      f32[13] = opts?.walkerJitter ?? DEFAULT_WALKER_JITTER;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

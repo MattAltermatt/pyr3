@@ -64,33 +64,34 @@ struct Uniforms {
   scale: f32,
   cx: f32,
   cy: f32,
-  num_xforms: u32,
-  xform_total_weight: f32,
-  seed: u32,
-  final_xform_idx: i32, // -1 = none; otherwise slot in `xforms[]`
-  rotation_rad: f32,    // slot 11 (byte 44) — Phase 9-rotate CCW camera rotation in radians (0 = none).
+  // #254: num_xforms (old slot 7) + xform_total_weight (old slot 8) removed —
+  // the Phase 5c xform_distrib table subsumed both and the kernel read neither.
+  // Downstream slots shifted down by 2 (mirrored in the src/chaos.ts packer).
+  seed: u32,            // slot 7 (byte 28)
+  final_xform_idx: i32, // slot 8 (byte 32) — -1 = none; otherwise slot in `xforms[]`
+  rotation_rad: f32,    // slot 9 (byte 36) — Phase 9-rotate CCW camera rotation in radians (0 = none).
   // Phase 9-bg-palmode: 0 = step (floor index), 1 = linear (lerp adjacent
   // entries by fractional part). flam3 default is step (flam3.c:1316).
   // Branch is uniform across walkers in a workgroup (no divergence cost).
-  palette_mode: u32,    // slot 12 (byte 48)
+  palette_mode: u32,    // slot 10 (byte 40)
   // PYR3-029 Phase 5b: per-iter trace gate. When trace_mode==1, walker 0
   // writes (pick, pax, pay, pvx_pre, pvy_pre, pvx, pvy, isBad, color, draw)
   // to trace_buffer for the first 1000 post-fuse iters. Normal renders
   // pass trace_mode=0 and the trace_buffer is a tiny stub (no perf impact).
-  trace_mode: u32,      // slot 13 (byte 52)
+  trace_mode: u32,      // slot 11 (byte 44)
   // #11 (PYR3-057): exact walker count for this dispatch. The host rounds the
   // workgroup count up to a multiple of WORKGROUP_SIZE, so the final workgroup
   // spawns threads with index >= walker_count and NO ISAAC stream of their own.
   // chaos_main bails those threads (see the guard below) so they can't run the
   // chaos loop against stale/zero RNG and atomicAdd bogus hits into the histogram.
-  walker_count: u32,    // slot 14 (byte 56)
+  walker_count: u32,    // slot 12 (byte 48)
   // #65 Tier 1: walker jitter is a runtime parameter. Per-iter scale-relative
   // perturbation on the trajectory commit (`local_mag * walker_jitter` since
   // #43); see the jx/jy site below for the rationale. Default
   // DEFAULT_WALKER_JITTER in src/chaos.ts — a dimensionless proportional
   // factor, not an absolute amplitude. Setting 0 disables jitter
   // (f32-collapse cliff returns).
-  walker_jitter: f32,   // slot 15 (byte 60)
+  walker_jitter: f32,   // slot 13 (byte 52)
 };
 
 // Variation slots:

@@ -90,7 +90,7 @@ describe('PYR3-008 — chaos splat scale reads pipeline oversample, not genome.o
 });
 
 describe('issue #11 (PYR3-057) — chaos walker bound guard + ISAAC buffer sizing', () => {
-  it('writes the real dispatch walker count to the walker_count uniform (slot 14)', () => {
+  it('writes the real dispatch walker count to the walker_count uniform (slot 12)', () => {
     // The dispatch rounds the workgroup count up to a multiple of 64, so the
     // last workgroup spawns threads with no ISAAC stream. The shader needs the
     // EXACT walker count (not the rounded-up thread count) to bail those
@@ -103,7 +103,7 @@ describe('issue #11 (PYR3-057) — chaos walker bound guard + ISAAC buffer sizin
     const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
     expect(u).toBeDefined();
     const u32 = new Uint32Array(u!.data as ArrayBuffer);
-    expect(u32[14]).toBe(10); // walker_count = real count, NOT ceil(10/64)*64
+    expect(u32[12]).toBe(10); // walker_count = real count, NOT ceil(10/64)*64
   });
 
   it('grows the ISAAC buffer so a dispatch with walkers > config.walkers never overruns it', () => {
@@ -139,10 +139,10 @@ describe('issue #11 (PYR3-057) — chaos walker bound guard + ISAAC buffer sizin
   });
 });
 
-describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 15)', () => {
-  it('writes DEFAULT_WALKER_JITTER (1e-10) into f32 slot 15 when DispatchOpts.walkerJitter is omitted', () => {
-    // Default preserves the shipped #6 behavior — any caller that doesn't
-    // explicitly pass walkerJitter must still get 1e-10, otherwise every
+describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 13)', () => {
+  it('writes DEFAULT_WALKER_JITTER (1e-7) into f32 slot 13 when DispatchOpts.walkerJitter is omitted', () => {
+    // Default preserves the shipped #43 scale-relative behavior — any caller
+    // that doesn't explicitly pass walkerJitter must still get 1e-7, otherwise every
     // existing parity-rig baseline silently shifts.
     const { genome } = parseFlame(FLAME);
     const writes: CapturedWrite[] = [];
@@ -152,13 +152,13 @@ describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 15)', () => {
     const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
     expect(u).toBeDefined();
     const f32 = new Float32Array(u!.data as ArrayBuffer);
-    // Written via f32[15] → f32 rounding of DEFAULT_WALKER_JITTER (Math.fround
+    // Written via f32[13] → f32 rounding of DEFAULT_WALKER_JITTER (Math.fround
     // is the bit-exact f32 representation; toBeCloseTo's per-decimal precision
     // can't express the ~1e-18 f32 error band at 1e-10 magnitude).
-    expect(f32[15]).toBe(Math.fround(DEFAULT_WALKER_JITTER));
+    expect(f32[13]).toBe(Math.fround(DEFAULT_WALKER_JITTER));
   });
 
-  it('writes a caller-supplied walkerJitter into f32 slot 15', () => {
+  it('writes a caller-supplied walkerJitter into f32 slot 13', () => {
     const { genome } = parseFlame(FLAME);
     const writes: CapturedWrite[] = [];
     const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
@@ -168,10 +168,10 @@ describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 15)', () => {
     const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
     expect(u).toBeDefined();
     const f32 = new Float32Array(u!.data as ArrayBuffer);
-    expect(f32[15]).toBe(Math.fround(5e-20));
+    expect(f32[13]).toBe(Math.fround(5e-20));
   });
 
-  it('writes 0 into f32 slot 15 when caller explicitly passes walkerJitter: 0', () => {
+  it('writes 0 into f32 slot 13 when caller explicitly passes walkerJitter: 0', () => {
     // Setting jitter to 0 disables the perturbation — the #43 / #6 collapse-cliff
     // probe path. `?? DEFAULT_WALKER_JITTER` must NOT trigger on a real 0.
     const { genome } = parseFlame(FLAME);
@@ -182,6 +182,6 @@ describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 15)', () => {
     const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
     expect(u).toBeDefined();
     const f32 = new Float32Array(u!.data as ArrayBuffer);
-    expect(f32[15]).toBe(0);
+    expect(f32[13]).toBe(0);
   });
 });
