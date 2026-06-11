@@ -14,7 +14,7 @@ import {
 import { mountSection, type SectionHandle } from './variation-catalog-section';
 import { getCatalogDoc } from './variation-catalog-data';
 import { buildCatalogGenome } from './variation-catalog-scaffold';
-import { catalogAnchorSlug } from './variations';
+import { catalogAnchorSlug, getDisplayLabel } from './variations';
 import { createRenderer, type Renderer } from './renderer';
 import type { Genome } from './genome';
 
@@ -82,7 +82,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
       nameLabel.textContent = row.name;
       const vnum = document.createElement('span');
       vnum.className = 'pyr3-cat-stub-vnum';
-      vnum.textContent = ` · V${row.idx}`;
+      vnum.textContent = ` · ${getDisplayLabel(row.idx)}`;
       name.append(nameLabel, vnum);
       const note = document.createElement('div');
       note.className = 'pyr3-cat-stub-note';
