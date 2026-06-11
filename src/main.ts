@@ -1136,6 +1136,16 @@ async function main(): Promise<void> {
   }
 
   const rerender = async (): Promise<void> => {
+    // #241 — refuse to start a preview render while a Save Render is iterating.
+    // Only the Save button is disabled during a save; the preview tier/quality
+    // buttons + W/H inputs are not, and their setters call `void rerender()`.
+    // viewerSaveRender nulls runHandle, so the `if (runHandle)` cancel below
+    // wouldn't serialize against it — a mid-save click would resize() to preview
+    // dims and start a competing render on the shared pipelines/histogram,
+    // corrupting the PNG or triggering a WebGPU validation error. The save's
+    // own finally clears viewerRenderInFlight BEFORE its `void rerender()`, so
+    // the post-save refresh still runs.
+    if (viewerRenderInFlight) return;
     // Cancel any in-flight orchestrator before starting a new one. The
     // promise still settles cleanly (either 'cancelled' or 'completed')
     // so awaiting it serializes the JS side.
