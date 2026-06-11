@@ -369,6 +369,67 @@ describe('interpolate — tonemap', () => {
   });
 });
 
+// ── interpolate: active flag carry-through (#260) ───────────────────────────
+// An xform / variation deactivated in the editor (active:false → packer zeros
+// its weight and skips dc_flag) must STAY deactivated across a keyframe tween.
+// Dropping the flag silently re-activates the entry — and re-enables Direct
+// Color recoloring for DC variations — mid-animation.
+
+describe('interpolate — active flag (#260)', () => {
+  const findVar = (g: Genome, xf: number, index: number) =>
+    g.xforms[xf]!.variations.find((v) => v.index === index);
+
+  it('keeps a variation inactive when active:false on both keyframes', () => {
+    const off = (): Xform => ({
+      a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+      weight: 1, color: 0, colorSpeed: 0.5,
+      variations: [linearVar(1), { index: V.dc_linear, weight: 0.8, active: false }],
+    });
+    const k0 = baseGenome({ time: 0, xforms: [off()] });
+    const k1 = baseGenome({ time: 1, xforms: [off()] });
+    const r = interpolate(anim(k0, k1), 0.5);
+    const dc = findVar(r, 0, V.dc_linear);
+    expect(dc).toBeDefined();
+    // Stays off: flagged inactive AND effective weight 0 (so the packer zeros
+    // it and never sets dc_flag — no surprise recoloring mid-tween).
+    expect(dc!.active).toBe(false);
+    expect(dc!.weight).toBe(0);
+  });
+
+  it('keeps an xform inactive when active:false on both keyframes', () => {
+    const off = (): Xform => ({
+      a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+      weight: 0.7, color: 0, colorSpeed: 0.5, active: false,
+      variations: [linearVar(1)],
+    });
+    const k0 = baseGenome({ time: 0, xforms: [id(), off()] });
+    const k1 = baseGenome({ time: 1, xforms: [id(), off()] });
+    const r = interpolate(anim(k0, k1), 0.5);
+    expect(r.xforms[1]!.active).toBe(false);
+    expect(r.xforms[1]!.weight).toBe(0);
+  });
+
+  it('ramps a variation that activates between keyframes (off → on)', () => {
+    const k0 = baseGenome({
+      time: 0,
+      xforms: [{ a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+        variations: [linearVar(1), { index: V.dc_linear, weight: 0.8, active: false }] }],
+    });
+    const k1 = baseGenome({
+      time: 1,
+      xforms: [{ a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+        variations: [linearVar(1), { index: V.dc_linear, weight: 0.8 }] }],
+    });
+    const r = interpolate(anim(k0, k1), 0.5);
+    const dc = findVar(r, 0, V.dc_linear);
+    expect(dc).toBeDefined();
+    // Effective weight ramps from 0 (inactive endpoint) toward 0.8 → ~0.4 at mid.
+    expect(dc!.weight).toBeCloseTo(0.4, 5);
+    // Mid-tween it is genuinely becoming active — not flagged inactive.
+    expect(dc!.active).not.toBe(false);
+  });
+});
+
 // ── interpolate: carry-forward fields ───────────────────────────────────────
 
 describe('interpolate — carry-forward fields', () => {

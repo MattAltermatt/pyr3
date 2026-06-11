@@ -236,7 +236,15 @@ function makeIdentityXform(): Xform {
 // affine takes the log-polar path when interpolation_type === 'log'.
 
 function interpolateXform(x0: Xform, x1: Xform, c0: number, c1: number, useLog: boolean): Xform {
-  const density = clampGE0(blend(x0.weight, x1.weight, c0, c1));   // weight ~ density
+  // active:false mirrors the packer (symmetry.ts) — an inactive xform has
+  // effective weight 0 — so a deactivated xform stays off across a tween
+  // instead of silently re-activating (#260). When inactive on BOTH keyframes
+  // the result carries active:false too; mixed off→on just ramps from 0.
+  const density = clampGE0(blend(
+    x0.active === false ? 0 : x0.weight,
+    x1.active === false ? 0 : x1.weight,
+    c0, c1,
+  ));   // weight ~ density
   const color = clamp01(blend(x0.color, x1.color, c0, c1));
   const colorSpeed = clamp01(blend(x0.colorSpeed, x1.colorSpeed, c0, c1));
   const opacity = blend(x0.opacity ?? 1, x1.opacity ?? 1, c0, c1);
@@ -286,6 +294,7 @@ function interpolateXform(x0: Xform, x1: Xform, c0: number, c1: number, useLog: 
   };
   if (opacity !== 1.0) out.opacity = opacity;
   if (post) out.post = post;
+  if (x0.active === false && x1.active === false) out.active = false;
 
   // xaos: per-cell linear interp, ≥0 clamp (interpolation.c:505-512).
   if (x0.xaos || x1.xaos) {
@@ -392,8 +401,16 @@ function interpolateVariations(v0: Variation[], v1: Variation[], c0: number, c1:
   for (const idx of indices) {
     const a = m0.get(idx);
     const b = m1.get(idx);
-    const weight = blend(a?.weight ?? 0, b?.weight ?? 0, c0, c1);
+    // active:false mirrors the packer (symmetry.ts) — an inactive variation has
+    // effective weight 0 — so a deactivated variation stays off (no surprise
+    // weight AND no dc_flag for DC variations) across a tween instead of
+    // silently re-activating mid-animation (#260). Inactive on BOTH keyframes →
+    // result stays flagged inactive; mixed off→on just ramps from 0.
+    const aOff = a?.active === false;
+    const bOff = b?.active === false;
+    const weight = blend(aOff ? 0 : (a?.weight ?? 0), bOff ? 0 : (b?.weight ?? 0), c0, c1);
     const v: Variation = { index: idx, weight };
+    if (aOff && bOff) v.active = false;
     // Lerp each param. Missing side uses 0 — same as flam3, which initializes
     // padded xforms with each variation's default params but then interpolates
     // toward them as if from 0 (PYR3 simplification: just use 0).
