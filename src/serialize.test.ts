@@ -12,7 +12,7 @@ import {
   MAX_VARIATION_PARAMS,
 } from './serialize';
 import { DEFAULT_DENSITY } from './density';
-import { V } from './variations';
+import { V, VARIATION_NAMES } from './variations';
 
 describe('genomeToJson', () => {
   it('produces version 1', () => {
@@ -774,6 +774,55 @@ describe('active round-trip', () => {
   });
 });
 
+// Issue #228 — author nick must survive the serialize boundary (Save Flame,
+// Save Render PNG metadata, /v1/viewer refresh persistence).
+describe('#228 — nick round-trip', () => {
+  it('omits nick when undefined or empty', () => {
+    const g: Genome = { ...SPIRAL_GALAXY };
+    expect(genomeToJson(g)).not.toHaveProperty('nick');
+    expect(genomeToJson({ ...SPIRAL_GALAXY, nick: '' })).not.toHaveProperty('nick');
+  });
+
+  it('preserves nick through Genome → JSON → Genome', () => {
+    const g: Genome = { ...SPIRAL_GALAXY, nick: 'spotpuff' };
+    const json = genomeToJson(g);
+    expect(json.nick).toBe('spotpuff');
+    expect(genomeFromJson(json).nick).toBe('spotpuff');
+  });
+});
+
+// Issue #229 — V214-217 params must survive round-trip now that they're
+// registered. Guards the specific bug (save+reload reset waves3 to identity).
+describe('#229 — waves3 (V214) param round-trip', () => {
+  it('preserves all 6 waves3 params through Genome → JSON → Genome', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      xforms: [
+        {
+          ...SPIRAL_GALAXY.xforms[0]!,
+          variations: [
+            {
+              index: V.waves3,
+              weight: 0.7,
+              param0: 0.11, param1: 0.22, param2: 6.0,
+              param3: 9.0, param4: 0.5, param5: 3.0,
+            },
+          ],
+        },
+        ...SPIRAL_GALAXY.xforms.slice(1),
+      ],
+    };
+    const v = genomeFromJson(genomeToJson(g)).xforms[0]!.variations[0]!;
+    expect(v.index).toBe(V.waves3);
+    expect(v.param0).toBeCloseTo(0.11, 6);
+    expect(v.param1).toBeCloseTo(0.22, 6);
+    expect(v.param2).toBeCloseTo(6.0, 6);
+    expect(v.param3).toBeCloseTo(9.0, 6);
+    expect(v.param4).toBeCloseTo(0.5, 6);
+    expect(v.param5).toBeCloseTo(3.0, 6);
+  });
+});
+
 describe('variation param-table coupling (PYR3-069 invariant)', () => {
   it('no variation declares more params than there are PARAM_KEYS slots', () => {
     for (const [arm, params] of Object.entries(VARIATION_PARAMS)) {
@@ -793,6 +842,38 @@ describe('variation param-table coupling (PYR3-069 invariant)', () => {
         `${arm}: defaults length ${defaults.length} != params length ${params!.length}`,
       ).toBe(params!.length);
     }
+  });
+
+  // #229 — registry-coverage guard. Every variation whose chaos.wgsl dispatch
+  // case passes positional params (p0..pN) MUST have a VARIATION_PARAMS entry of
+  // length ≥ N+1, or those params are silently dropped on serialize round-trip,
+  // the editor shows no sliders, and import strips them (the V214-217 bug class).
+  it('every chaos.wgsl dispatch arm that reads pN is registered in VARIATION_PARAMS', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const wgsl = readFileSync(join(here, 'shaders', 'chaos.wgsl'), 'utf8');
+    // Match: `case 214u: { return var_waves3(p, w, p0, p1, ...); }`
+    const caseRe = /case\s+(\d+)u:\s*\{\s*return\s+var_\w+\(([^)]*)\)/g;
+    const violations: string[] = [];
+    for (let m = caseRe.exec(wgsl); m !== null; m = caseRe.exec(wgsl)) {
+      const index = Number(m[1]);
+      const args = m[2]!;
+      // Highest positional-param slot the kernel reads (p0..p9). `wi`/`p`/`w`
+      // are not positional params and never match \bp<digit>\b.
+      let maxP = -1;
+      for (const pm of args.matchAll(/\bp(\d)\b/g)) {
+        maxP = Math.max(maxP, Number(pm[1]));
+      }
+      if (maxP < 0) continue; // kernel reads no positional params
+      const name = VARIATION_NAMES[index];
+      const params = name ? VARIATION_PARAMS[name] : undefined;
+      if (!name || !params || params.length < maxP + 1) {
+        violations.push(
+          `index ${index} (${name ?? '??'}) reads up to p${maxP} → needs ${maxP + 1} params, ` +
+            `VARIATION_PARAMS has ${params ? params.length : 'NONE'}`,
+        );
+      }
+    }
+    expect(violations, `unregistered param-bearing variations:\n${violations.join('\n')}`).toEqual([]);
   });
 });
 

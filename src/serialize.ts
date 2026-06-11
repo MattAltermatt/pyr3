@@ -60,6 +60,10 @@ export interface Pyr3JsonV1 {
    *  ≡ shader branches off ≡ byte-identical to no-curves render). */
   channelCurves?: ChannelCurves;
   hslAdjust?: { hue: number; sat: number; light: number };
+  /** Issue #228 — optional author nick (from `<flame nick>` / nested `<edit nick>`,
+   *  stamped at the serialize boundary by the editor). Displayed by the bar as
+   *  "By <nick>". Omitted when undefined/empty. */
+  nick?: string;
 }
 
 export type Pyr3JsonFinalxform = Omit<Pyr3JsonXform, 'weight'>;
@@ -425,6 +429,14 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   magnet1: ['cx', 'cy'],
   nova: ['cx', 'cy', 'relax'],
   halley: ['cx', 'cy'],
+  // ── #229 backfill: V214-217 were wired into chaos.wgsl + the catalog but
+  //    never registered here, so their params were dropped on save/reload,
+  //    showed zero editor sliders, and were stripped on import. Slot order
+  //    matches the WGSL kernel arg order (var_waves3/4, var_scry2, var_ennepers2).
+  waves3: ['scalex', 'scaley', 'freqx', 'freqy', 'sx_freq', 'sy_freq'],
+  waves4: ['scalex', 'scaley', 'freqx', 'freqy', 'cont', 'yfact'],
+  scry2: ['sides', 'star', 'circle'],
+  ennepers2: ['a', 'b', 'c'],
 };
 
 // v0.13 — per-variation default values for params that a .flame may omit.
@@ -753,6 +765,11 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   magnet1: [0.85, -1.3],
   nova: [0.0, 0.5, 0.85],
   halley: [-0.25, -0.2],
+  // ── #229 backfill: V214-217 catalog defaults (variation-catalog-data.ts) ──
+  waves3: [0.05, 0.05, 7.0, 13.0, 0.0, 2.0],
+  waves4: [0.05, 0.05, 7.0, 13.0, 0, 0.1],
+  scry2: [4, 0.15, 0.25],
+  ennepers2: [1.0, 0.3333, 0.075],
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.
@@ -849,6 +866,9 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
   if (g.hslAdjust && (g.hslAdjust.hue !== 0 || g.hslAdjust.sat !== 100 || g.hslAdjust.light !== 0)) {
     out.hslAdjust = { hue: g.hslAdjust.hue, sat: g.hslAdjust.sat, light: g.hslAdjust.light };
   }
+  // Issue #228 — preserve author nick across the serialize boundary (Save Flame,
+  // Save Render PNG metadata, /v1/viewer refresh persistence). Omit when blank.
+  if (g.nick) out.nick = g.nick;
   return out;
 }
 
@@ -1107,6 +1127,8 @@ export function genomeFromJson(j: unknown): Genome {
       light: Number(obj['light']) || 0,
     };
   }
+  // Issue #228 — restore author nick (see genomeToJson).
+  if (root['nick'] !== undefined) base.nick = expectString(root['nick'], 'nick');
   return base;
 }
 
