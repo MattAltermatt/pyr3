@@ -256,7 +256,24 @@ hash-spread above), applied to all non-angle-bounded variation trig.
 **For any new WGSL `sin`/`cos`/`tan` of a coord / radius / r² /
 coef-scaled value (anything not freshly `atan2`'d into [-π,π]), route it
 through `safe_*`** (and test with RUNTIME args — constant trig args get
-compiler-folded, masking the cliff). The other 4 tier-2 fixtures are not
+compiler-folded, masking the cliff).
+
+**A second corruption cliff: f32 `tanh` (#262, 2026-06-10).** Dawn's f32
+`tanh` returns NaN for `|x| ≳ 1e3` (the naive
+`(eˣ−e⁻ˣ)/(eˣ+e⁻ˣ)` form overflows its `exp` terms), which silently
+propagates and can mask an otherwise-correct trig fix. Route any non-pre-clamped `tanh` of a coord/coef-scaled value
+through `safe_tanh` in `chaos.wgsl` (arg-clamp to `±TANH_SAFE_MAX`;
+lossless, since `tanh` is already saturated to ±1 well before then). The
+accompanying **Dawn math-hazard audit** (#262) swept every transcendental
+in `chaos.wgsl` and found exactly **two** value-corruption cliffs worth
+wrapping — the trig range cliff (#72) and this `tanh` NaN. Everything else
+is a *domain* NaN (e.g. `sqrt`/`log`/`pow` of an out-of-domain arg), which
+**self-heals via the chaos kernel's bad-value retry loop** — do NOT add
+`safe_*` wrappers for those; a wrapper there only hides the retry and can
+bias the attractor. New transcendentals get a wrapper only if they corrupt
+a *valid* input (like trig/tanh), not if they merely reject an invalid one.
+
+The other 4 tier-2 fixtures are not
 waves-degenerate; their residuals remain per-fixture-unfiled. Historical
 lineage: **PYR3-056** (v0.36 DE-norm fix)
 collapsed the original wave of outliers; #43 (this commit) collapsed the
