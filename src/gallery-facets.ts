@@ -32,21 +32,28 @@ function passesFilters(
     if (rec.xforms < spec.xformMin) return false;
     if (spec.xformMax !== null && rec.xforms > spec.xformMax) return false;
   }
+  // Continuous stat axes use a HALF-OPEN [min, max) convention — inclusive
+  // lower, EXCLUSIVE upper — so the filter agrees with the floor-based
+  // histogram buckets (statDecile) and the brush's exclusive upper edge
+  // (gallery-filter-ui bucketsToRange: "bucket B = [B/N, (B+1)/N)"). With an
+  // inclusive `<=` upper, a decile-edge record (e.g. coverage 0.6 under a
+  // bucket-5 max of 0.6) was kept yet shown in the next, unhighlighted bar.
+  // Keep this in lockstep with buildMasterList in gallery-mount.ts. (#257)
   if (!exclude.coverage) {
     if (rec.coverage < spec.coverageMin) return false;
-    if (spec.coverageMax !== null && rec.coverage > spec.coverageMax) return false;
+    if (spec.coverageMax !== null && rec.coverage >= spec.coverageMax) return false;
   }
   if (!exclude.entropy) {
     if (rec.entropy < spec.entropyMin) return false;
-    if (spec.entropyMax !== null && rec.entropy > spec.entropyMax) return false;
+    if (spec.entropyMax !== null && rec.entropy >= spec.entropyMax) return false;
   }
   if (!exclude.colorVar) {
     if (rec.colorVar < spec.colorVarMin) return false;
-    if (spec.colorVarMax !== null && rec.colorVar > spec.colorVarMax) return false;
+    if (spec.colorVarMax !== null && rec.colorVar >= spec.colorVarMax) return false;
   }
   if (!exclude.meanLum) {
     if (rec.meanLum < spec.meanLumMin) return false;
-    if (spec.meanLumMax !== null && rec.meanLum > spec.meanLumMax) return false;
+    if (spec.meanLumMax !== null && rec.meanLum >= spec.meanLumMax) return false;
   }
   return true;
 }

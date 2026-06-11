@@ -60,6 +60,20 @@ describe('computeFacetCounts', () => {
     expect(c.total).toBe(3);
   });
 
+  it('decile-edge upper bound is exclusive, matching the half-open histogram buckets (#257)', () => {
+    // Brush-selecting decile bucket 5 emits coverageMax=0.6 — the EXCLUSIVE
+    // upper edge of [0.5, 0.6). statDecile floors, so a record at exactly 0.6
+    // belongs to bucket 6; it must NOT pass (else it renders in an
+    // unhighlighted bar). The min edge stays inclusive.
+    const idx = makeIndex([
+      recStats(165, 0, 0.5, 0.5, 0.5, 0.5), // lower edge — kept (>= min)
+      recStats(165, 1, 0.6, 0.5, 0.5, 0.5), // upper edge — excluded (< max)
+    ]);
+    const spec: FilterSpec = { ...DEFAULT_FILTER_SPEC, coverageMin: 0.5, coverageMax: 0.6 };
+    const c = computeFacetCounts(idx, spec);
+    expect(c.total).toBe(1);
+  });
+
   it('variation counts apply OTHER active filters (leave-one-out)', () => {
     // With xform filter [3, ∞), only records with xforms≥3 should count.
     const idx = makeIndex([
