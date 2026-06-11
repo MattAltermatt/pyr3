@@ -30,7 +30,7 @@ import {
   type DecomposedAffine as QuickOpAffine,
 } from './edit-xform-quickops';
 import { openVariationPicker } from './edit-variation-picker';
-import { wireVariationKindButton } from './edit-variation-kind';
+import { wireVariationKindButton, applyVariationKind } from './edit-variation-kind';
 import { scrubbyInput, type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 import {
   buildButton,
@@ -756,12 +756,16 @@ function buildXformCard(
       initialIndex: V.linear,
       onPreview: (idx) => {
         if (!inserted) {
-          xform.variations.push({ index: idx as Variation['index'], weight: 1 });
+          const nv: Variation = { index: idx as Variation['index'], weight: 1 };
+          applyVariationKind(nv, nv.index); // stamp the kind's default params (#261)
+          xform.variations.push(nv);
           inserted = true;
           rebuildSection();
         } else {
-          xform.variations[xform.variations.length - 1]!.index =
-            idx as Variation['index'];
+          applyVariationKind(
+            xform.variations[xform.variations.length - 1]!,
+            idx as Variation['index'],
+          );
           onChange(
             `xforms.${xformIndex}.variations.${xform.variations.length - 1}.index`,
           );

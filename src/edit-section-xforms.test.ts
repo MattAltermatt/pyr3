@@ -106,6 +106,19 @@ describe('xformsSection — variation-kind picker (#236/#237)', () => {
     expect(pslot(v, 'param1')).toBe(0.5);
   });
 
+  it('#261: "+ var" add picker stamps the new kind\'s default params', () => {
+    const { host, state } = mount(genomeWithVar({ index: V.linear, weight: 1 }));
+    (host.querySelector('.pyr3-edit-var-add') as HTMLButtonElement).click();
+    (document.querySelector(`.pyr3-picker-cell[data-vidx="${V.ngon}"]`) as HTMLElement).click();
+    (document.querySelector('.pyr3-picker-apply') as HTMLElement).click(); // commit
+    const added = state.genome.xforms[0]!.variations[1]! as unknown as Record<string, number | undefined>;
+    expect(added.index).toBe(V.ngon);
+    expect(pslot(added, 'param0')).toBe(5); // ngon defaults [5,3,1,2] — not 0
+    expect(pslot(added, 'param1')).toBe(3);
+    expect(pslot(added, 'param2')).toBe(1);
+    expect(pslot(added, 'param3')).toBe(2);
+  });
+
   it('#236: kind change stamps new defaults and leaks NO stale high param slots', () => {
     // spirograph has 9 params; switching to ngon (4 params) must not leak param4..8.
     const { host, state } = mount(genomeWithVar({
