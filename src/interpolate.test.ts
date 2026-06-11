@@ -236,6 +236,22 @@ describe('interpolate — affine log-polar', () => {
     const mag = Math.hypot(x.a, x.d);
     expect(mag).toBeCloseTo(2, 5);
   });
+
+  it('zero-magnitude column inherits the sibling column angle (#248)', () => {
+    // x0 col0 = (0,1) → angle 90°, mag 1; col1 = (0,0) → zero-length, must
+    // inherit col0's 90°. x1 col1 = (1,0) → angle 0°, mag 1.
+    const x0: Xform = { ...id(), a: 0, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    const x1: Xform = { ...id(), a: 0, b: 1, c: 0, d: 1, e: 0, f: 0 };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const a = anim(k0, k1, { interpolation_type: 'log' });
+    const x = interpolate(a, 0.5).xforms[0]!;
+    // With inheritance: col1 angle blends 90°→0° = 45°, mag 0→1 (linear) = 0.5,
+    // so (b,e) = 0.5·(cos45, sin45) ≈ (0.3536, 0.3536). WITHOUT inheritance the
+    // zero column's angle reads as 0°, giving (b,e) = (0.5, 0).
+    expect(x.b).toBeCloseTo(0.35355, 4);
+    expect(x.e).toBeCloseTo(0.35355, 4);
+  });
 });
 
 // ── interpolate: variations ─────────────────────────────────────────────────
@@ -443,5 +459,33 @@ describe('interpolate — carry-forward fields', () => {
     const r = interpolate(anim(k0, k1), 0.5);
     expect(r.density).toEqual(k0.density);
     expect(r.background).toEqual(k0.background);
+  });
+
+  it('interpolates continuous render fields when BOTH keyframes carry them (#248)', () => {
+    const k0 = baseGenome({
+      time: 0,
+      quality: 10, oversample: 1,
+      background: [0, 0, 0],
+      size: { width: 100, height: 100 },
+      spatialFilter: { radius: 1, shape: 'gaussian' },
+      density: { maxRad: 9, minRad: 0, curve: 0.4 },
+    });
+    const k1 = baseGenome({
+      time: 1,
+      quality: 30, oversample: 3,
+      background: [1, 1, 1],
+      size: { width: 200, height: 300 },
+      spatialFilter: { radius: 3, shape: 'gaussian' },
+      density: { maxRad: 5, minRad: 0, curve: 0.6 },
+    });
+    const r = interpolate(anim(k0, k1), 0.5);
+    expect(r.quality).toBeCloseTo(20);                       // 0.5·10 + 0.5·30
+    expect(r.oversample).toBe(2);                            // round(0.5·1 + 0.5·3)
+    expect(r.background).toEqual([0.5, 0.5, 0.5]);
+    expect(r.size).toEqual({ width: 150, height: 200 });     // rounded INTERI
+    expect(r.spatialFilter!.radius).toBeCloseTo(2);          // radius INTERPs
+    expect(r.spatialFilter!.shape).toBe('gaussian');         // shape carry-forward
+    expect(r.density!.maxRad).toBeCloseTo(7);                // 0.5·9 + 0.5·5
+    expect(r.density!.curve).toBeCloseTo(0.5);               // 0.5·0.4 + 0.5·0.6
   });
 });

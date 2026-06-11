@@ -118,16 +118,47 @@ export function interpolate(animation: Animation, time: number): Genome {
     if (r !== 0) out.rotate = r;
   }
 
-  // Carry-forward fields from the first keyframe. flam3 carries
-  // spatial_filter_select, symmetry, palette_mode, etc forward identically
-  // (interpolation.c:464-471).
-  if (k0.density) out.density = k0.density;
-  if (k0.spatialFilter) out.spatialFilter = k0.spatialFilter;
-  if (k0.background) out.background = k0.background;
+  // Continuous render fields — flam3 INTERPs these across keyframes
+  // (interpolation.c:489-501): quality, estimator radius/min/curve, spatial
+  // filter radius, background, and (rounded INTERI) size + oversample. A
+  // background fade or quality ramp between differing keyframes must transition,
+  // not jump at k0. When only one keyframe carries the field we carry it
+  // forward (flam3 always has them; pyr3's are optional). (#248)
+  if (both(k0.quality, k1.quality)) out.quality = blend(k0.quality!, k1.quality!, c0, c1);
+  else out.quality = k0.quality ?? k1.quality;
+  if (both(k0.density, k1.density)) {
+    out.density = {
+      maxRad: blend(k0.density!.maxRad, k1.density!.maxRad, c0, c1),
+      minRad: blend(k0.density!.minRad, k1.density!.minRad, c0, c1),
+      curve: blend(k0.density!.curve, k1.density!.curve, c0, c1),
+    };
+  } else out.density = k0.density ?? k1.density;
+  if (both(k0.spatialFilter, k1.spatialFilter)) {
+    // radius INTERPs; shape is spatial_filter_select — categorical carry-forward.
+    out.spatialFilter = {
+      radius: blend(k0.spatialFilter!.radius, k1.spatialFilter!.radius, c0, c1),
+      shape: k0.spatialFilter!.shape,
+    };
+  } else out.spatialFilter = k0.spatialFilter ?? k1.spatialFilter;
+  if (both(k0.background, k1.background)) {
+    out.background = [
+      blend(k0.background![0], k1.background![0], c0, c1),
+      blend(k0.background![1], k1.background![1], c0, c1),
+      blend(k0.background![2], k1.background![2], c0, c1),
+    ];
+  } else out.background = k0.background ?? k1.background;
+  if (both(k0.size, k1.size)) {
+    out.size = {
+      width: Math.round(blend(k0.size!.width, k1.size!.width, c0, c1)),
+      height: Math.round(blend(k0.size!.height, k1.size!.height, c0, c1)),
+    };
+  } else out.size = k0.size ?? k1.size;
+  if (both(k0.oversample, k1.oversample)) out.oversample = Math.round(blend(k0.oversample!, k1.oversample!, c0, c1));
+  else out.oversample = k0.oversample ?? k1.oversample;
+
+  // Categorical fields — flam3 carries these forward identically
+  // (interpolation.c:464-471): palette_mode, symmetry.
   if (k0.paletteMode) out.paletteMode = k0.paletteMode;
-  if (k0.size) out.size = k0.size;
-  if (k0.oversample) out.oversample = k0.oversample;
-  if (k0.quality) out.quality = k0.quality;
   if (k0.symmetry) out.symmetry = k0.symmetry;
 
   return out;
@@ -336,9 +367,15 @@ function interpolateAffineLinear(x0: Affine6, x1: Affine6, c0: number, c1: numbe
  *  loop in convert_linear_to_polar pulls k>k-1 angles into the same 2π window
  *  to take the shorter arc. */
 function interpolateAffineLogPolar(x0: Affine6, x1: Affine6, c0: number, c1: number, _usePost: boolean): Affine6 {
-  // Per-column (a, d), (b, e), (c, f) — c and f are translation, linear only.
-  const col0Result = interpColumnLogPolar(x0.a, x0.d, x1.a, x1.d, c0, c1);
-  const col1Result = interpColumnLogPolar(x0.b, x0.e, x1.b, x1.e, c0, c1);
+  // zlm angle inheritance is per-keyframe and cross-column, so it must be
+  // resolved at the xform level (interpolation.c:274-285) BEFORE the per-column
+  // blend — a column that collapses to (0,0) at one keyframe has no meaningful
+  // atan2 and must inherit the sibling column's angle so it rotates WITH the
+  // xform rather than from angle 0. (#248)
+  const p0 = polarColumns(x0);
+  const p1 = polarColumns(x1);
+  const col0Result = blendPolarColumn(p0.ang0, p0.mag0, p1.ang0, p1.mag0, c0, c1);
+  const col1Result = blendPolarColumn(p0.ang1, p0.mag1, p1.ang1, p1.mag1, c0, c1);
   return {
     a: col0Result.x,
     d: col0Result.y,
@@ -349,18 +386,28 @@ function interpolateAffineLogPolar(x0: Affine6, x1: Affine6, c0: number, c1: num
   };
 }
 
-function interpColumnLogPolar(
-  x0x: number, x0y: number,
-  x1x: number, x1y: number,
+/** Convert one keyframe's affine to per-column polar (angle, magnitude) with
+ *  zlm inheritance applied: a zero-length column (mag < EPS) borrows the
+ *  sibling column's angle. col0 = (a, d), col1 = (b, e). interpolation.c:274-285. */
+function polarColumns(aff: Affine6): { ang0: number; mag0: number; ang1: number; mag1: number } {
+  const mag0 = Math.hypot(aff.a, aff.d);
+  const mag1 = Math.hypot(aff.b, aff.e);
+  let ang0 = Math.atan2(aff.d, aff.a);
+  let ang1 = Math.atan2(aff.e, aff.b);
+  const z0 = mag0 < EPS;
+  const z1 = mag1 < EPS;
+  if (z0 && !z1) ang0 = ang1;
+  else if (z1 && !z0) ang1 = ang0;
+  return { ang0, mag0, ang1, mag1 };
+}
+
+function blendPolarColumn(
+  ang0In: number, mag0: number,
+  ang1In: number, mag1: number,
   c0: number, c1: number,
 ): { x: number; y: number } {
-  let ang0 = Math.atan2(x0y, x0x);
-  let ang1 = Math.atan2(x1y, x1x);
-  const mag0 = Math.hypot(x0x, x0y);
-  const mag1 = Math.hypot(x1x, x1y);
-
-  // Zero-magnitude column inherits angle from the other (interpolation.c:280-283).
-  // Not modeled here — falls through to the unwrap step below.
+  let ang0 = ang0In;
+  let ang1 = ang1In;
 
   // Angle unwrap: pull ang1 into [ang0 - π, ang0 + π] so the blend takes the
   // shorter arc. flam3 interpolation.c:307-318 (the non-wind branch).
@@ -614,6 +661,12 @@ function interpolateTonemap(
  *  When called via pickKeyframes, c0 + c1 === 1 within ULP. */
 function blend(v0: number, v1: number, c0: number, c1: number): number {
   return c0 * v0 + c1 * v1;
+}
+
+/** True when both keyframes carry an optional field — INTERP it; otherwise
+ *  carry whichever side has it forward. (#248) */
+function both<T>(a: T | undefined, b: T | undefined): boolean {
+  return a !== undefined && b !== undefined;
 }
 
 function clampGE0(x: number): number {

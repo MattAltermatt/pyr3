@@ -56,6 +56,21 @@ const PREVIEW_MAX_SPP = 16;
 // Tunable later via a speed selector; locked to a casual 4 s default for MVP.
 const PLAYBACK_DURATION_MS = 4000;
 
+const PLAYBACK_SPAN_EPS = 1e-9;
+
+/** Wrap an auto-play time into the closed keyframe range [tMin, tMax]. Uses the
+ *  REAL span for the modulo so sub-unit keyframe spans wrap correctly, and
+ *  clamps the result so pickKeyframes never sees an out-of-range time (which
+ *  would endpoint-extrapolate with c0<0). A degenerate span (all keyframes at
+ *  one time) pins to tMin. (#248) */
+export function wrapPlaybackTime(t: number, tMin: number, tMax: number): number {
+  const realSpan = tMax - tMin;
+  if (realSpan <= PLAYBACK_SPAN_EPS) return tMin;
+  let wrapped = t;
+  if (wrapped > tMax) wrapped = tMin + ((wrapped - tMin) % realSpan);
+  return Math.min(tMax, Math.max(tMin, wrapped));
+}
+
 export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   const { root, device, format } = opts;
   root.replaceChildren();
@@ -282,7 +297,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     if (!animation || rafId !== null) return;
     const tMin = animation.keyframes[0]!.time ?? 0;
     const tMax = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
-    const span = Math.max(1, tMax - tMin);
+    // #248 — playback advances over the REAL keyframe span (tMax - tMin) so the
+    // whole animation plays once per PLAYBACK_DURATION_MS regardless of span.
+    // The old `Math.max(1, …)` clamp made sub-unit spans both play too fast AND
+    // wrap past tMax (→ pickKeyframes endpoint extrapolation + slider desync).
+    const realSpan = tMax - tMin;
     const startedAt = performance.now();
     const startT = playbackBar?.getTime() ?? tMin;
     const tick = (now: number): void => {
@@ -291,8 +310,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         return;
       }
       const elapsed = (now - startedAt) / PLAYBACK_DURATION_MS;
-      let t = startT + elapsed * span;
-      if (t > tMax) t = tMin + ((t - tMin) % span);
+      const t = wrapPlaybackTime(startT + elapsed * realSpan, tMin, tMax);
       playbackBar.setTime(t);
       void renderAtTime(t);
       rafId = requestAnimationFrame(tick);

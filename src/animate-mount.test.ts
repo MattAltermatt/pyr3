@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { mountAnimatePage } from './animate-mount';
+import { mountAnimatePage, wrapPlaybackTime } from './animate-mount';
 import { _resetCapabilityForTest, fetchCapability, GHPAGES_DEFAULT } from './capability';
 
 function fakeDevice(): GPUDevice {
@@ -36,6 +36,32 @@ async function primeCapability(cap: typeof GHPAGES_DEFAULT | { backend: 'dawn-no
   })) as unknown) as typeof fetch;
   await fetchCapability();
 }
+
+describe('wrapPlaybackTime (#248)', () => {
+  it('wraps a sub-unit span without overshooting tMax', () => {
+    // Span 0.5: a time past tMax wraps back into [tMin, tMax), not past it.
+    expect(wrapPlaybackTime(0.6, 0, 0.5)).toBeCloseTo(0.1, 10);
+    expect(wrapPlaybackTime(0.3, 0, 0.5)).toBeCloseTo(0.3, 10); // in range, unchanged
+    expect(wrapPlaybackTime(0.5, 0, 0.5)).toBeCloseTo(0.5, 10); // exactly tMax stays
+  });
+
+  it('never returns a time outside [tMin, tMax] (no endpoint extrapolation)', () => {
+    for (const t of [-5, 0.6, 1.2, 100]) {
+      const w = wrapPlaybackTime(t, 0, 0.5);
+      expect(w).toBeGreaterThanOrEqual(0);
+      expect(w).toBeLessThanOrEqual(0.5);
+    }
+  });
+
+  it('large integer span (ESF corpus) wraps by modulo', () => {
+    expect(wrapPlaybackTime(12, 0, 10)).toBeCloseTo(2, 10);
+    expect(wrapPlaybackTime(7, 0, 10)).toBeCloseTo(7, 10); // in range
+  });
+
+  it('degenerate zero span pins to tMin', () => {
+    expect(wrapPlaybackTime(5, 2, 2)).toBe(2);
+  });
+});
 
 describe('mountAnimatePage — Export button capability gate', () => {
   it('disables Export with the install-pyr3 tooltip on gh-pages', async () => {
