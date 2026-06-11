@@ -12,6 +12,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -82,23 +83,13 @@ async function dispatch(code: string): Promise<Float32Array> {
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
   });
   dev.pushErrorScope('validation');
-  const mod = dev.createShaderModule({ code });
-  const ci = await (mod as { getCompilationInfo?: () => Promise<GPUCompilationInfo> }).getCompilationInfo?.();
-  if (ci) {
-    for (const m of ci.messages) {
-      if (m.type === 'error') {
-        // eslint-disable-next-line no-console
-        console.error(`WGSL compile error: ${m.message}`);
-      }
-    }
-  }
+  const mod = await compileChecked(dev, code);
   const pipeline = dev.createComputePipeline({
     layout: 'auto',
     compute: { module: mod, entryPoint: 'main' },
   });
   const valErr = await dev.popErrorScope();
-  // eslint-disable-next-line no-console
-  if (valErr) console.error('validation:', valErr.message);
+  if (valErr) throw new Error(`#263 — pipeline validation error: ${valErr.message}`);
   const bg = dev.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [

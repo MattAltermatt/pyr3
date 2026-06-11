@@ -5,6 +5,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -24,6 +25,7 @@ const SHADER_SRC = readFileSync(
   new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8',
 );
 
+const HASH01 = extractWgslFn(SHADER_SRC, 'hash01');
 const SAFE_SIN = extractWgslFn(SHADER_SRC, 'safe_sin');
 const SAFE_COS = extractWgslFn(SHADER_SRC, 'safe_cos');
 const SAFE_TAN = extractWgslFn(SHADER_SRC, 'safe_tan');
@@ -34,6 +36,10 @@ const VAR_HAMMER = extractWgslFn(SHADER_SRC, 'var_hammer');
 const VAR_STEREOGRAPHIC = extractWgslFn(SHADER_SRC, 'var_stereographic');
 
 const PRELUDE = `
+const SIN_SAFE_MAX: f32 = 1.0e6;
+const PI: f32 = 3.14159265358979323846;
+const TAU: f32 = 6.28318530717958647692;
+${HASH01}
 ${SAFE_SIN}
 ${SAFE_COS}
 ${SAFE_TAN}
@@ -71,7 +77,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let r = ins[i];
   outs[i] = ${fn}(r.xy, 1.0);
 }`;
-  const mod = dev.createShaderModule({ code });
+  const mod = await compileChecked(dev, code);
   const pipeline = dev.createComputePipeline({
     layout: 'auto',
     compute: { module: mod, entryPoint: 'main' },

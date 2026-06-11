@@ -22,6 +22,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -202,15 +203,11 @@ const VAR_PARAMS_TSV = [
 describe.skipIf(!device)('#163 L1-L14 V152-V198 — compile + finite smoke', () => {
   it('every variation V152-V198 emits finite output at catalog defaults', async () => {
     const dev = device!;
-    const mod = dev.createShaderModule({ code: SMOKE_SHADER });
-    // #259 — fail loudly on an invalid shader. Without this, a non-compiling
-    // module makes the dispatch a no-op, leaving outBuf zero-initialized, and
-    // `Number.isFinite(0)` passes every variation — a false-positive that hid
-    // 12+ missing helpers (the whole point of this smoke). getCompilationInfo
-    // surfaces error-severity messages the silent createShaderModule swallows.
-    const ci = await mod.getCompilationInfo();
-    const compileErrors = ci.messages.filter((m) => m.type === 'error');
-    expect(compileErrors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`)).toEqual([]);
+    // #259/#263 — compileChecked fails loudly on an invalid shader. Without it,
+    // a non-compiling module makes the dispatch a no-op, leaving outBuf zero and
+    // Number.isFinite(0) passing every variation (the false-positive that hid
+    // 12+ missing helpers here). See src/gpu-compile-guard.ts.
+    const mod = await compileChecked(dev, SMOKE_SHADER);
     const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: 'main' } });
     const N = 7;
     const uBuf = dev.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });

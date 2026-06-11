@@ -17,6 +17,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -128,7 +129,7 @@ fn main() {
     const inBuf = dev.createBuffer({ size: 2 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     dev.queue.writeBuffer(inBuf, 0, new Float32Array([1e10, 0.5]));
     const buf = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: await compileChecked(dev, code), entryPoint: 'main' } });
     const bg = dev.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: buf } }] });
     const enc = dev.createCommandEncoder();
     const pass = enc.beginComputePass();
@@ -203,7 +204,7 @@ fn main() {
     const inBuf = dev.createBuffer({ size: 2 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     dev.queue.writeBuffer(inBuf, 0, new Float32Array([1e8, 1e8]));
     const buf = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: await compileChecked(dev, code), entryPoint: 'main' } });
     const bg = dev.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: buf } }] });
     const enc = dev.createCommandEncoder();
     const pass = enc.beginComputePass();
@@ -256,7 +257,7 @@ fn main() {
     const inBuf = dev.createBuffer({ size: 2 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     dev.queue.writeBuffer(inBuf, 0, new Float32Array([1e8, 0.5]));
     const buf = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: await compileChecked(dev, code), entryPoint: 'main' } });
     const bg = dev.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: buf } }] });
     const enc = dev.createCommandEncoder();
     const pass = enc.beginComputePass();

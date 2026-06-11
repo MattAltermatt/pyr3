@@ -10,6 +10,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -71,7 +72,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let r = ins[i];
   outs[i] = ${expr};
 }`;
-  const mod = dev.createShaderModule({ code });
+  const mod = await compileChecked(dev, code);
   const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: 'main' } });
   const bg = dev.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),

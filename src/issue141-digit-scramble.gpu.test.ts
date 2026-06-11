@@ -8,6 +8,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -102,7 +103,7 @@ async function runCompute<T extends Float32Array | Uint32Array>(
   Ctor: { new (b: ArrayBuffer): T },
 ): Promise<T> {
   const dev = device!;
-  const mod = dev.createShaderModule({ code });
+  const mod = await compileChecked(dev, code);
   const bgl = dev.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },

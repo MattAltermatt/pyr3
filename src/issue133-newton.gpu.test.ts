@@ -10,6 +10,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
 import { extractWgslFn } from './shaders/extract';
+import { compileChecked } from './gpu-compile-guard';
 
 Object.assign(globalThis, globals);
 
@@ -83,7 +84,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let r = ins[i];
   outs[i] = var_newton(r.xy, 1.0, r.z);
 }`;
-  const mod = dev.createShaderModule({ code });
+  const mod = await compileChecked(dev, code);
   const pipeline = dev.createComputePipeline({
     layout: 'auto',
     compute: { module: mod, entryPoint: 'main' },
@@ -144,7 +145,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let rgb = var_newton_color(r.xy, r.z);
   outs[i] = vec4f(rgb, 0.0);
 }`;
-  const mod = dev.createShaderModule({ code });
+  const mod = await compileChecked(dev, code);
   const pipeline = dev.createComputePipeline({
     layout: 'auto',
     compute: { module: mod, entryPoint: 'main' },
