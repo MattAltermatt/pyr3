@@ -22,6 +22,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
 
@@ -39,35 +40,36 @@ const V152_V213_REGION = SHADER_SRC.slice(
   SHADER_SRC.indexOf(endMarker),
 );
 
+// #259 — extract the shipped helpers from chaos.wgsl rather than redefining
+// weaker private copies. The old prelude hand-rolled only 7 of the ~19 helpers
+// the V152-V213 region actually depends on (and a far weaker `&0xff/256` hash01
+// vs the shipped 3-round mix), so the assembled shader referenced 12+ undefined
+// symbols and was INVALID — yet the finite-on-zero smoke passed on the no-op
+// dispatch's zero-initialized output. The compile guard in the test body below
+// now fails loudly on any such invalid shader.
+//
+// HELPER_FNS is the full transitive closure of shared primitives the region
+// calls (computed by walking each helper's own calls until only builtins +
+// rand01 remain). rand01 stays hand-written: the engine's rand01 reads the
+// isaac_states binding (isaac_irand) the test doesn't provide. Module-scope
+// consts do NOT travel with extractWgslFn — mirror chaos.wgsl's exact values.
+// WGSL module-scope fn declarations are order-independent, so concatenation
+// order doesn't matter; we list them roughly in dependency order anyway.
+const HELPER_FNS = [
+  'hash01', 'safe_sin', 'safe_cos', 'safe_tan', 'safe_tanh',
+  'complex_mul', 'complex_sqr', 'complex_div', 'complex_recip', 'complex_sqrt',
+  'complex_log', 'complex_exp', 'complex_pow', 'complex_sin',
+  'to_upper_half_plane', 'modular_nome', 'theta3', 'theta2', 'hsl_to_rgb',
+];
+const EXTRACTED_HELPERS = HELPER_FNS.map((fn) => extractWgslFn(SHADER_SRC, fn)).join('\n');
+
 const PRELUDE = `
 const TAU: f32 = 6.28318530717958647692;
 const PI: f32 = 3.14159265358979323846;
 const EPS: f32 = 1e-10;
 const SIN_SAFE_MAX: f32 = 1.0e6;
-fn hash01(x: u32) -> f32 { return f32(x & 0xffu) / 256.0; }
-fn safe_sin(a: f32) -> f32 {
-  if (abs(a) <= SIN_SAFE_MAX) { return sin(a); }
-  return sin(hash01(bitcast<u32>(a)) * TAU);
-}
-fn safe_cos(a: f32) -> f32 {
-  if (abs(a) <= SIN_SAFE_MAX) { return cos(a); }
-  return cos(hash01(bitcast<u32>(a)) * TAU);
-}
-fn safe_tan(a: f32) -> f32 {
-  let s = safe_sin(a);
-  let c = safe_cos(a);
-  return s / select(c, 1e-30, abs(c) < 1e-30);
-}
-fn complex_sqr(z: vec2f) -> vec2f { return vec2f(z.x*z.x-z.y*z.y, 2.0*z.x*z.y); }
-fn complex_div(a: vec2f, b: vec2f) -> vec2f {
-  let d = b.x*b.x+b.y*b.y+1e-30;
-  return vec2f((a.x*b.x+a.y*b.y)/d, (a.y*b.x-a.x*b.y)/d);
-}
-fn complex_sqrt(z: vec2f) -> vec2f {
-  let r = sqrt(sqrt(z.x*z.x+z.y*z.y));
-  let t = 0.5 * atan2(z.y, z.x);
-  return vec2f(r*cos(t), r*sin(t));
-}
+const TANH_SAFE_MAX: f32 = 20.0;
+${EXTRACTED_HELPERS}
 var<private> rand_counter: u32 = 0u;
 fn rand01(wi: u32) -> f32 {
   rand_counter = rand_counter + 1u;
@@ -201,6 +203,14 @@ describe.skipIf(!device)('#163 L1-L14 V152-V198 — compile + finite smoke', () 
   it('every variation V152-V198 emits finite output at catalog defaults', async () => {
     const dev = device!;
     const mod = dev.createShaderModule({ code: SMOKE_SHADER });
+    // #259 — fail loudly on an invalid shader. Without this, a non-compiling
+    // module makes the dispatch a no-op, leaving outBuf zero-initialized, and
+    // `Number.isFinite(0)` passes every variation — a false-positive that hid
+    // 12+ missing helpers (the whole point of this smoke). getCompilationInfo
+    // surfaces error-severity messages the silent createShaderModule swallows.
+    const ci = await mod.getCompilationInfo();
+    const compileErrors = ci.messages.filter((m) => m.type === 'error');
+    expect(compileErrors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`)).toEqual([]);
     const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: 'main' } });
     const N = 7;
     const uBuf = dev.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
