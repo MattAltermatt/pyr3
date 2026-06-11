@@ -464,7 +464,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'd', default: -1, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const a = 1.4, b = 1.6, c = 1.0, d = 0.7;
+      // #252 — must match params[].default (a=b=c=d=-1), not the canonical
+      // 1.4/1.6/1.0/0.7, so the static diagram shows the same figure as the
+      // live flame. (Aligning the diagram, not retuning the slider default.)
+      const a = -1, b = -1, c = -1, d = -1;
       const nx1 = Math.cos(b * x), nx2 = Math.sin(c * x);
       const ny1 = Math.sin(a * y), ny2 = Math.cos(d * y);
       return [ny1 - nx1, nx2 - ny2];
@@ -584,7 +587,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'val', default: 0.45, min: -3, max: 3, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const val = 0.5;
+      const val = 0.45; // #252 — match params[].default (was 0.5)
       const r0 = Math.hypot(x, y);
       const r_eps = r0 + 1e-10;
       const sina = x / r_eps, cosa = y / r_eps;
@@ -1479,7 +1482,8 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'swirl', default: 0, min: -2, max: 2, step: 0.05 },
     ],
     warpFn: (x, y) => {
-      const angle = 0.6, hole = 0, count = 4, swirl = 0;
+      // #252 — match params[].default (angle=0, count=1); was angle=0.6, count=4.
+      const angle = 0, hole = 0, count = 1, swirl = 0;
       const r0 = Math.hypot(x, y);
       const r_inv = 1.0 / (r0 + 1e-10);
       let a = Math.atan2(y, x) + swirl * r_inv;
@@ -4390,7 +4394,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'k', default: 1.0, min: 1.0, max: 10.0, step: 1.0 },
     ],
     defaultWeight: 0.45,
-    warpFn: (x, y, k = 3.0) => {
+    warpFn: (x, y, k = 1.0) => { // #252 — k default must match params[].default (was 3.0)
       const theta = Math.atan2(y, x);
       const k1 = k + 1.0;
       const xp = k1 * Math.cos(theta) - Math.cos(k1 * theta);
@@ -4408,7 +4412,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'a', default: 0.2, min: 0.1, max: 5.0, step: 0.1 },
     ],
     defaultWeight: 0.45,
-    warpFn: (x, y, a = 1.0) => {
+    warpFn: (x, y, a = 0.2) => { // #252 — a default must match params[].default (was 1.0)
       const yp = a * Math.cosh(x / a);
       return [x, yp];
     },
@@ -4506,7 +4510,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'limit', default: 0.4, min: 0.1, max: 2.0, step: 0.1 },
     ],
     defaultWeight: 1.0,
-    warpFn: (x, y, limit = 1.0) => {
+    warpFn: (x, y, limit = 0.4) => { // #252 — limit default must match params[].default (was 1.0)
       let xp = x;
       let yp = y;
       if (xp > limit) xp = 2.0 * limit - xp;
@@ -4601,7 +4605,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'k', default: 0.5, min: 0.0, max: 5.0, step: 0.01 },
     ],
     defaultWeight: 0.45,
-    warpFn: (x, y, k = 1.0) => {
+    warpFn: (x, y, k = 0.5) => { // #252 — k default must match params[].default (was 1.0)
       const xp = x + k * Math.sin(y);
       const yp = y + xp;
       return [xp, yp];
