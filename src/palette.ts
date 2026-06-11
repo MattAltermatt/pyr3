@@ -62,7 +62,10 @@ export function bakeLUT(
       data[i * 4 + 2] = lo.b;
     } else {
       const span = hi.t - lo.t || 1;
-      const u = (t - lo.t) / span;
+      // Clamp to [0,1]: out-of-range coords (no enclosing segment, so lo/hi
+      // keep the full-palette endpoints) take the nearest endpoint color
+      // instead of extrapolating to negative / >1 RGB. (#240)
+      const u = Math.max(0, Math.min(1, (t - lo.t) / span));
       data[i * 4 + 0] = lo.r + (hi.r - lo.r) * u;
       data[i * 4 + 1] = lo.g + (hi.g - lo.g) * u;
       data[i * 4 + 2] = lo.b + (hi.b - lo.b) * u;

@@ -48,6 +48,33 @@ describe('bakeLUT', () => {
     expect(lut[2]).toBeCloseTo(0, 5);
   });
 
+  it('clamps out-of-range coords to the nearest endpoint (partial-span palette, #240)', () => {
+    // Stops span only t=0.2..0.8 — coords below 0.2 and above 0.8 have no
+    // enclosing segment and must take the nearest endpoint, never extrapolate.
+    const lut = bakeLUT([
+      { t: 0.2, r: 0.0, g: 0.0, b: 0.0 },
+      { t: 0.5, r: 0.5, g: 0.5, b: 0.5 },
+      { t: 0.8, r: 1.0, g: 1.0, b: 1.0 },
+    ]);
+    // Every baked channel stays inside [0,1] — no negative / >1 extrapolation.
+    for (let i = 0; i < PALETTE_SIZE; i++) {
+      for (let c = 0; c < 3; c++) {
+        const v = lut[i * 4 + c]!;
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    // Entry 0 (t=0) equals the first stop's color (nearest endpoint).
+    expect(lut[0]).toBeCloseTo(0.0, 6);
+    expect(lut[1]).toBeCloseTo(0.0, 6);
+    expect(lut[2]).toBeCloseTo(0.0, 6);
+    // Entry 255 (t=1) equals the last stop's color.
+    const last = (PALETTE_SIZE - 1) * 4;
+    expect(lut[last + 0]).toBeCloseTo(1.0, 6);
+    expect(lut[last + 1]).toBeCloseTo(1.0, 6);
+    expect(lut[last + 2]).toBeCloseTo(1.0, 6);
+  });
+
   it("mode='step' uses the lower stop's color verbatim within each segment", () => {
     const lut = bakeLUT(
       [
