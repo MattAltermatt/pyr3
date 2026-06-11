@@ -45,6 +45,19 @@ describe('#72 — chaos.wgsl ships safe_sin/safe_cos (source invariant)', () => 
   });
 });
 
+describe('#235 — var_tancos / var_funnel route trig through safe_cos (source invariant)', () => {
+  it('var_tancos uses safe_cos, not raw cos', () => {
+    const tancos = extractWgslFn(SHADER_SRC, 'var_tancos');
+    expect(tancos).toContain('safe_cos(');
+    expect(tancos).not.toMatch(/[^_]\bcos\(/); // no un-wrapped cos( in tancos
+  });
+  it('var_funnel uses safe_cos, not raw cos', () => {
+    const funnel = extractWgslFn(SHADER_SRC, 'var_funnel');
+    expect(funnel).toContain('safe_cos(');
+    expect(funnel).not.toMatch(/[^_]\bcos\(/); // no un-wrapped cos( in funnel
+  });
+});
+
 describe.skipIf(!device)('#72 — safe_sin/safe_cos tame Dawn f32 trig cliff (real GPU)', () => {
   it('Dawn sin/cos cliff to 0 at 1e10, but safe_* stay bounded and non-zero', async () => {
     const dev = device!;
@@ -108,5 +121,74 @@ fn main() {
     // Below the threshold safe_* are exactly the native trig (faithful path).
     expect(safeSinSmall).toBe(sinSmall);
     expect(safeCosSmall).toBe(cosSmall);
+  });
+});
+
+describe.skipIf(!device)('#235 — var_tancos/var_funnel survive far-field coords (real GPU)', () => {
+  it('shipped (safe_cos) variations stay non-degenerate where raw cos would cliff', async () => {
+    const dev = device!;
+    const HASH01 = extractWgslFn(SHADER_SRC, 'hash01');
+    const SAFE_SIN = extractWgslFn(SHADER_SRC, 'safe_sin');
+    const SAFE_COS = extractWgslFn(SHADER_SRC, 'safe_cos');
+    const TANCOS = extractWgslFn(SHADER_SRC, 'var_tancos');
+    const FUNNEL = extractWgslFn(SHADER_SRC, 'var_funnel');
+    // p comes from a buffer (runtime value) so the cos cliff is NOT constant-folded.
+    const code = `
+const SIN_SAFE_MAX: f32 = 1.0e6;
+const TAU: f32 = 6.28318530717958647692;
+const PI: f32 = 3.14159265358979323846;
+${HASH01}
+${SAFE_SIN}
+${SAFE_COS}
+${TANCOS}
+${FUNNEL}
+@group(0) @binding(0) var<storage, read> a: array<f32>;
+@group(0) @binding(1) var<storage, read_write> o: array<f32>;
+@compute @workgroup_size(1)
+fn main() {
+  let p = vec2f(a[0], a[1]);   // 1e8, 1e8 — r² ~2e16, far past the trig cliff
+  // --- tancos: clean cos isolation (the y-channel is cos-only; x uses tanh) ---
+  let tc = var_tancos(p, 1.0);
+  o[0] = tc.y;                                        // safe path: non-zero
+  let d1 = 1e-6 + p.x * p.x + p.y * p.y;
+  o[1] = (1.0 / d1) * cos(d1) * 2.0 * p.y;            // raw tancos.y -> 0 (cliff)
+  // --- funnel: isolate the secant path #235 actually changes. funnel's tanh(p)
+  // NaNs the full output for |p|>~1e3 (Dawn exp-overflow), masking the cos fix
+  // at the genome level, so we assert on the cos-derived secant directly. ---
+  let cxSafe = safe_cos(p.x);
+  o[2] = 1.0 / select(cxSafe, 1e-30, abs(cxSafe) < 1e-30);   // safe secant: bounded
+  let cxRaw = cos(p.x);
+  o[3] = 1.0 / select(cxRaw, 1e-30, abs(cxRaw) < 1e-30);     // raw secant: ->1e30/NaN
+}`;
+    const N = 4;
+    const inBuf = dev.createBuffer({ size: 2 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    dev.queue.writeBuffer(inBuf, 0, new Float32Array([1e8, 1e8]));
+    const buf = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const bg = dev.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: buf } }] });
+    const enc = dev.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(1); pass.end();
+    const rb = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    enc.copyBufferToBuffer(buf, 0, rb, 0, N * 4);
+    dev.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const o = Array.from(new Float32Array(rb.getMappedRange().slice(0)));
+    rb.unmap(); buf.destroy(); rb.destroy(); inBuf.destroy();
+
+    const [tancosY, rawTancosY, safeSecx, rawSecx] =
+      o as [number, number, number, number];
+    const degenerate = (v: number) => v === 0 || !Number.isFinite(v) || Math.abs(v) > 1e20;
+
+    // tancos: raw cos(d1)->0 collapses the y-channel; safe_cos keeps it alive.
+    expect(degenerate(rawTancosY)).toBe(true);       // raw -> 0
+    expect(Number.isFinite(tancosY)).toBe(true);
+    expect(tancosY).not.toBe(0);                     // safe_cos recovers the channel
+
+    // funnel secant: raw cos cliff routes the secant to the 1e30 sentinel / NaN;
+    // safe_cos keeps it a bounded, finite value (no spurious far-field reseed).
+    expect(degenerate(rawSecx)).toBe(true);          // raw -> ±1e30 or NaN
+    expect(Number.isFinite(safeSecx)).toBe(true);
+    expect(Math.abs(safeSecx)).toBeLessThan(1e6);    // bounded — sentinel avoided
   });
 });

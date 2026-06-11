@@ -4416,8 +4416,12 @@ fn var_target(p: vec2f, w: f32, even: f32, odd: f32, size: f32) -> vec2f {
 // produces a funnel-shape projection. Beware: sec(x) = 1/cos(x) has
 // singularities at x = π/2 + nπ — guard.
 fn var_funnel(p: vec2f, w: f32, effect_p: f32) -> vec2f {
-  let cx = cos(p.x);
-  let cy = cos(p.y);
+  // safe_cos: bare iterate coords reach ~1e10; raw cos hits the Dawn f32
+  // trig cliff (→0 past |arg|~1e7), routing the secant to the 1e30 sentinel
+  // and spuriously reseeding far-field walkers. The sec-singularity guard
+  // below composes cleanly with safe_cos. (#235)
+  let cx = safe_cos(p.x);
+  let cy = safe_cos(p.y);
   let secx = 1.0 / select(cx, 1e-30, abs(cx) < 1e-30);
   let secy = 1.0 / select(cy, 1e-30, abs(cy) < 1e-30);
   let off = effect_p * PI;
@@ -4669,9 +4673,12 @@ fn var_rays3(p: vec2f, w: f32) -> vec2f {
 fn var_tancos(p: vec2f, w: f32) -> vec2f {
   let d1 = 1e-6 + p.x * p.x + p.y * p.y;
   let d2 = w / d1;
+  // safe_cos: d1 is r²; past |p|~3163 raw cos hits the Dawn f32 trig cliff
+  // (→0) and the d2=w/d1 damping keeps the bad output too small for the
+  // bad-value retry to catch, silently collapsing the y-channel. (#235)
   return vec2f(
     d2 * tanh(d1) * 2.0 * p.x,
-    d2 * cos(d1) * 2.0 * p.y,
+    d2 * safe_cos(d1) * 2.0 * p.y,
   );
 }
 
