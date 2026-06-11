@@ -83,6 +83,20 @@ describe('genomeFromJson', () => {
     expect(() => genomeFromJson(bad)).toThrow(/version/);
   });
 
+  it('clamps/normalizes out-of-range hslAdjust on import (#249)', () => {
+    // Hand-edited / external JSON can carry values past the editor slider
+    // ranges (hue -180..180, sat 0..200, light -100..100). Without clamping,
+    // hue:720 reaches the shader and a single wrap leaves a wrong-but-defined
+    // color. Normalize hue mod 360 into [-180,180]; clamp sat/light.
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const reparsed = genomeFromJson({ ...json, hslAdjust: { hue: 720, sat: 500, light: 250 } });
+    expect(reparsed.hslAdjust).toEqual({ hue: 0, sat: 200, light: 100 });
+
+    const reparsed2 = genomeFromJson({ ...json, hslAdjust: { hue: 270, sat: -50, light: -250 } });
+    // 270 → -90 (same rotation, in slider range); sat floored to 0; light to -100.
+    expect(reparsed2.hslAdjust).toEqual({ hue: -90, sat: 0, light: -100 });
+  });
+
   it('throws on unknown variation name', () => {
     const json = genomeToJson(SPIRAL_GALAXY);
     const bad = JSON.parse(JSON.stringify(json));

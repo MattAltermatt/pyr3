@@ -226,8 +226,9 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   if (u.hslActive != 0u) {
     var hsv = rgb2hsv(out);
     hsv.x = hsv.x + u.hslHue;
-    if (hsv.x < 0.0) { hsv.x += 360.0; }
-    if (hsv.x >= 360.0) { hsv.x -= 360.0; }
+    // Modulo wrap — correct for any hue offset, not just a single ±360 step
+    // (defense-in-depth if hslHue ever exceeds ±180; also handles negatives). (#249)
+    hsv.x = hsv.x - 360.0 * floor(hsv.x / 360.0);
     hsv.y = clamp(hsv.y * u.hslSat, 0.0, 1.0);
     hsv.z = clamp(hsv.z + u.hslLight, 0.0, 1.0);
     out = hsv2rgb(hsv);

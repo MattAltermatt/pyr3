@@ -1144,10 +1144,21 @@ export function genomeFromJson(j: unknown): Genome {
   }
   if (root['hslAdjust'] !== undefined) {
     const obj = expectObject(root['hslAdjust'], 'hslAdjust');
+    // Clamp/normalize to the editor slider ranges (hue -180..180, sat 0..200,
+    // light -100..100). Hand-edited / external JSON can carry out-of-range
+    // values that otherwise reach the shader verbatim — a single hue wrap then
+    // leaves a wrong-but-defined color. Normalize hue mod 360 into [-180,180]
+    // (same rotation), and clamp sat/light. Mirrors parseChannelCurves'
+    // validation rigor. (#249)
+    const rawHue = Number(obj['hue']) || 0;
+    const hueMod = ((rawHue % 360) + 360) % 360;          // → [0, 360)
+    const hue = hueMod > 180 ? hueMod - 360 : hueMod;     // → [-180, 180]
+    const rawSat = obj['sat'] !== undefined ? Number(obj['sat']) : 100;
+    const rawLight = Number(obj['light']) || 0;
     base.hslAdjust = {
-      hue: Number(obj['hue']) || 0,
-      sat: obj['sat'] !== undefined ? Number(obj['sat']) : 100,
-      light: Number(obj['light']) || 0,
+      hue,
+      sat: Math.max(0, Math.min(200, Number.isFinite(rawSat) ? rawSat : 100)),
+      light: Math.max(-100, Math.min(100, Number.isFinite(rawLight) ? rawLight : 0)),
     };
   }
   // Issue #228 — restore author nick (see genomeToJson).
