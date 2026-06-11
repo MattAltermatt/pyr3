@@ -8099,6 +8099,23 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
               // magnetic_pendulum params: magnets (v.z), radius (v.w).
               dc_rgb_override = var_magnetic_pendulum_color(fpa_mut, v.z, v.w);
               dc_override_active = true;
+            } else if (var_idx == 310u) {
+              // #232 #145 burning_ship escape-band color (finalxform parallel
+              // to the normal chain). cx (v.z), cy (v.w).
+              dc_rgb_override = escape_color(fpa_mut, 310u, v.z, v.w, 0.0);
+              dc_override_active = true;
+            } else if (var_idx == 311u) {
+              // #232 #145 magnet1 escape-band color. cx (v.z), cy (v.w).
+              dc_rgb_override = escape_color(fpa_mut, 311u, v.z, v.w, 0.0);
+              dc_override_active = true;
+            } else if (var_idx == 312u) {
+              // #232 #145 nova escape-band color. cx (v.z), cy (v.w), relax (ve.x).
+              dc_rgb_override = escape_color(fpa_mut, 312u, v.z, v.w, ve.x);
+              dc_override_active = true;
+            } else if (var_idx == 313u) {
+              // #232 #145 halley escape-band color. cx (v.z), cy (v.w).
+              dc_rgb_override = escape_color(fpa_mut, 313u, v.z, v.w, 0.0);
+              dc_override_active = true;
             }
           }
         }
