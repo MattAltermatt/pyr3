@@ -277,15 +277,8 @@ function buildRecordPill(cb: RecordPillCallbacks): RecordPillHandle {
   return { el: pill };
 }
 
-/** Per-page tracker so the fullscreenchange listener can tell apart "user
- *  pressed F to toggle off" (no stop) from "user pressed Esc / browser
- *  exited" (stop playback). Set true just before our toggle calls
- *  exitFullscreen; cleared on the resulting fullscreenchange. */
-const fullscreenIntent = { userToggledOff: false };
-
 async function toggleFullscreen(target: HTMLElement): Promise<void> {
   if (document.fullscreenElement) {
-    fullscreenIntent.userToggledOff = true;
     await document.exitFullscreen();
   } else {
     await target.requestFullscreen();
@@ -1191,7 +1184,6 @@ export function mountScreensaverPage(
     canvasHost.replaceChildren();
     // Exit fullscreen if we're in it. Idempotent if windowed.
     if (document.fullscreenElement) {
-      fullscreenIntent.userToggledOff = true;
       void document.exitFullscreen().catch(() => {});
     }
     landing.card.classList.remove('hidden');
