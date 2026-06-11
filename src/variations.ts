@@ -2702,8 +2702,12 @@ export function ts_var_curl2(i: VarInput): VarOutput {
   const y3 = y2 * y;
   // Real part: c3·(x³−3xy²) + c2·(x²−y²) + c1·x + 1
   const re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
-  // Imaginary part: c3·(x²y−y³)·1 (factor 3 lives in cc3 elsewhere; matches
-  // Xyrus02 source: `c3*x²·y − c3·y³ + cc2·x·y + c1·y`).
+  // Imaginary part: c3·(3x²y−y³) + 2c2·xy + c1·y — the correct Im of the
+  // complex cubic 1 + c1·z + c2·z² + c3·z³. pyr3 DELIBERATELY uses cc3 (=3·c3)
+  // on the x²y term: the only curl2 reference (Apophysis xyrus02 curl2.h) has
+  // a typo there using plain c3, which is not a valid complex cubic. Do NOT
+  // "restore parity" by reverting cc3→c3 — that reintroduces the source bug.
+  // (#234, intent B: keep the corrected math.)
   const im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
   const denom = re * re + im * im;
   // Source has no explicit guard; division by zero produces ±Inf which the

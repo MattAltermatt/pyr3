@@ -2493,6 +2493,11 @@ fn var_curl2(p: vec2f, w: f32, c1: f32, c2: f32, c3: f32) -> vec2f {
   let y2 = y * y;
   let y3 = y2 * y;
   let re = c3 * x3 - cc3 * x * y2 + c2 * x2 - c2 * y2 + c1 * x + 1.0;
+  // im uses cc3 (=3·c3) on x²y — the correct Im of the complex cubic
+  // 1 + c1·z + c2·z² + c3·z³. Apophysis xyrus02 curl2.h (the only curl2
+  // reference) has a typo here using plain c3; pyr3 deliberately corrects it.
+  // Do NOT revert cc3→c3 to "restore parity" — that reintroduces the source
+  // bug. (#234, intent B: prefer the correct math.)
   let im = cc3 * x2 * y - c3 * y3 + cc2 * x * y + c1 * y;
   let denom = re * re + im * im;
   // Match source: no explicit guard; the chaos game reseed handles
