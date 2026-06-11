@@ -16,9 +16,22 @@
 // time t before getting blended."
 
 import { type Xform } from './genome';
-import { type Variation, type VariationIndex } from './variations';
+import { type Variation, type VariationIndex, MAX_VARIATIONS_PER_XFORM } from './variations';
 
 const TWO_PI = 2 * Math.PI;
+
+/** Warn-once-per-index when a motion overlay targets a variation absent from
+ *  the base xform but the xform is already at the variation cap, so the
+ *  synthesized slot can't be added. Deduped to avoid per-frame log spam. */
+const warnedMotionCapIndices = new Set<number>();
+function warnMotionCap(index: number): void {
+  if (warnedMotionCapIndices.has(index)) return;
+  warnedMotionCapIndices.add(index);
+  console.warn(
+    `pyr3 motion: cannot fade in variation ${index} — xform is at the ` +
+    `${MAX_VARIATIONS_PER_XFORM}-variation cap; this motion contribution is dropped.`,
+  );
+}
 
 /** flam3 motion_func enum codes. 0 = none (handled separately). */
 export type MotionFuncCode = 1 | 2 | 3;
@@ -114,14 +127,27 @@ export function applyMotionParameters(xform: Xform, blend: number): Xform {
       out.post.f += m.post.f * w;
     }
 
-    // Per-variation weight + params. Match by variation index — motion
-    // contributions on a variation absent from the base xform are dropped.
+    // Per-variation weight + params. Match by variation index. flam3 allocates
+    // all 99 variation slots, so a motion overlay can fade a base-weight-0
+    // variation up to non-zero; pyr3 stores variations sparsely, so when a
+    // motion element targets a variation absent from the base xform we
+    // synthesize a zero-weight slot for it (mirroring flam3's always-allocated
+    // slots) instead of dropping the contribution. If the xform is already at
+    // the variation cap, warn rather than silently drop. (#238)
     if (m.variations.length > 0) {
       const baseByIdx = new Map<VariationIndex, Variation>();
       for (const v of out.variations) baseByIdx.set(v.index, v);
       for (const mv of m.variations) {
-        const target = baseByIdx.get(mv.index);
-        if (!target) continue;
+        let target = baseByIdx.get(mv.index);
+        if (!target) {
+          if (out.variations.length >= MAX_VARIATIONS_PER_XFORM) {
+            warnMotionCap(mv.index);
+            continue;
+          }
+          target = { index: mv.index, weight: 0 };
+          out.variations.push(target);
+          baseByIdx.set(mv.index, target);
+        }
         target.weight += mv.weight * w;
         for (const pk of PARAM_KEYS) {
           const mvp = (mv as unknown as Record<string, number | undefined>)[pk];

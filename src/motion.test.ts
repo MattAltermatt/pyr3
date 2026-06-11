@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { motionFuncs, applyMotionParameters } from './motion';
 import { type Xform } from './genome';
-import { linear as linearVar, julian, V } from './variations';
+import { linear as linearVar, julian, V, type VariationIndex } from './variations';
 
 // ── motionFuncs ────────────────────────────────────────────────────────────
 
@@ -167,19 +167,44 @@ describe('applyMotionParameters', () => {
     expect(r.variations[0]!.weight).toBeCloseTo(3);
   });
 
-  it('drops motion contributions for variations missing from base xform', () => {
-    // Base xform has only linear. Motion element overlays julian — no match, drop.
+  it('synthesizes a zero-weight slot for a variation absent from the base xform (#238)', () => {
+    // Base xform has only linear. Motion element fades julian in — flam3 allocates
+    // all 99 slots, so this must synthesize a julian slot rather than drop it.
     const motionEl: Xform = base({
       motion_freq: 1, motion_func: 1,
       a: 0, b: 0, c: 0, d: 0, e: 0, f: 0,
       weight: 0, color: 0, colorSpeed: 0,
-      variations: [julian(2, 3, 1)],
+      variations: [julian(2, 3, 1)],  // weight=2, power=3 ...
     });
     const x = base({ motion: [motionEl] });
-    const r = applyMotionParameters(x, 0.25);
-    // Base xform should still only have linear; no julian appears.
-    expect(r.variations).toHaveLength(1);
+    const r = applyMotionParameters(x, 0.25); // sin(2π·0.25)=1 → full contribution
+    expect(r.variations).toHaveLength(2);
     expect(r.variations[0]!.index).toBe(V.linear);
+    const julianOut = r.variations.find((v) => v.index === V.julian)!;
+    expect(julianOut).toBeDefined();
+    expect(julianOut.weight).toBeCloseTo(2); // 0 (synthesized) + 2*1
+    // Params land on the synthesized slot too (param0 = power).
+    expect(julianOut.param0).toBeCloseTo(3); // 0 + 3*1
+    // Base xform is not mutated.
+    expect(x.variations).toHaveLength(1);
+  });
+
+  it('warns and drops a base-absent motion target when the xform is at the variation cap (#238)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Fill the base xform to the 8-variation cap.
+    const full = Array.from({ length: 8 }, (_, i) => ({ index: i as VariationIndex, weight: 1 }));
+    const motionEl: Xform = base({
+      motion_freq: 1, motion_func: 1,
+      a: 0, b: 0, c: 0, d: 0, e: 0, f: 0,
+      weight: 0, color: 0, colorSpeed: 0,
+      variations: [julian(2, 3, 1)],  // index not among 0..7
+    });
+    const x = base({ variations: full, motion: [motionEl] });
+    const r = applyMotionParameters(x, 0.25);
+    expect(r.variations).toHaveLength(8); // dropped, not synthesized past the cap
+    expect(r.variations.some((v) => v.index === V.julian)).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('applies motion to variation params when matched', () => {
