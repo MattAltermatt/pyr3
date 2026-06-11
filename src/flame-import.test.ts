@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { parseFlame, parseCoefs } from './flame-import';
+import { genomeToJson, genomeFromJson } from './serialize';
 import { SPIRAL_GALAXY, MAX_XFORMS } from './genome';
 import { V } from './variations';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -1412,6 +1413,21 @@ describe('P1 #206 — animation schema + parser', () => {
       const { genome } = parseFlame(wrapWithXform('animate="1"'));
       expect(genome.xforms[0]!.animate).toBeUndefined();
     });
+
+    it('#247 motion fields survive an XML→JSON→reload round-trip', () => {
+      const xml = `<flame name="t" size="100 100" center="0 0" scale="50" time="4">${minPalette}<xform weight="1" color="0" coefs="1 0 0 1 0 0" linear="1" motion_frequency="3" motion_function="triangle" animate="0"><motion motion_frequency="1" motion_function="sin" coefs="0.1 0 0 0.1 0 0"/></xform></flame>`;
+      const { genome } = parseFlame(xml);
+      const back = genomeFromJson(genomeToJson(genome));
+      expect(back.time).toBe(4);
+      expect(back.xforms[0]!.motion_freq).toBe(3);
+      expect(back.xforms[0]!.motion_func).toBe(2);
+      expect(back.xforms[0]!.animate).toBe(0);
+      expect(back.xforms[0]!.motion).toHaveLength(1);
+      expect(back.xforms[0]!.motion![0]!.motion_freq).toBe(1);
+      expect(back.xforms[0]!.motion![0]!.motion_func).toBe(1);
+      // full structural equality — no field silently dropped on save
+      expect(back).toEqual(genome);
+    });
   });
 
   describe('<motion> child elements', () => {
@@ -1463,5 +1479,28 @@ describe('P1 #206 — animation schema + parser', () => {
       // it lives as inert markup at the DOM level but doesn't surface on the Xform.
       expect(genome.xforms[0]!.motion![0]!.motion).toBeUndefined();
     });
+  });
+});
+
+describe('#247 fractional supersample floored at import boundary', () => {
+  it('floors a fractional supersample so it survives JSON save→reload', () => {
+    // The importer used to accept supersample="2.5" verbatim; genomeToJson
+    // emitted 2.5; genomeFromJson then threw "oversample must be a positive
+    // integer" — a flame that loaded once was unloadable after save.
+    const { genome } = parseFlame(wrapFlame(oneXform, 'supersample="2.5"'));
+    expect(genome.oversample).toBe(2);
+    // round-trip must not throw on reload
+    expect(() => genomeFromJson(genomeToJson(genome))).not.toThrow();
+    expect(genomeFromJson(genomeToJson(genome)).oversample).toBe(2);
+  });
+
+  it('drops a fractional supersample that floors to 1 (≡ no oversample)', () => {
+    const { genome } = parseFlame(wrapFlame(oneXform, 'supersample="1.5"'));
+    expect(genome.oversample).toBeUndefined();
+  });
+
+  it('still honors an integer supersample', () => {
+    const { genome } = parseFlame(wrapFlame(oneXform, 'supersample="3"'));
+    expect(genome.oversample).toBe(3);
   });
 });

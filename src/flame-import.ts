@@ -1043,7 +1043,12 @@ function parseSingleFlame(flame: Element, _flameIndex: number, flameCount: numbe
   // Phase 9-cal-B v3: extract supersample factor for k1 calibration.
   const supersampleAttr = flame.getAttribute('supersample');
   if (supersampleAttr !== null) {
-    const s = expectFiniteNumber(supersampleAttr, 'supersample');
+    // #247 — flam3 reads supersample as an integer; a fractional value here
+    // would pass the importer's s>1 gate, get emitted by genomeToJson, then
+    // throw "oversample must be a positive integer" on JSON reload (a flame
+    // unloadable after save). Floor at the boundary to match the reload
+    // validator's integer contract.
+    const s = Math.floor(expectFiniteNumber(supersampleAttr, 'supersample'));
     if (s > 1) genome.oversample = s;
   }
   if (size) genome.size = size;

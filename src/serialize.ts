@@ -64,6 +64,9 @@ export interface Pyr3JsonV1 {
    *  stamped at the serialize boundary by the editor). Displayed by the bar as
    *  "By <nick>". Omitted when undefined/empty. */
   nick?: string;
+  /** #247 — keyframe timestamp from `<flame time=…>` (P1 of the Animation
+   *  milestone). Parsed on import; now round-tripped. Omitted when undefined. */
+  time?: number;
 }
 
 export type Pyr3JsonFinalxform = Omit<Pyr3JsonXform, 'weight'>;
@@ -92,6 +95,14 @@ export interface Pyr3JsonXform {
   post?: { a: number; b: number; c: number; d: number; e: number; f: number };
   /** Editor-only on/off toggle. Omitted unless explicitly false. */
   active?: boolean;
+  /** #247 — per-xform animation fields (flam3 `motion_frequency` /
+   *  `motion_function` / `animate` / `<motion>` overlays). Parsed on import,
+   *  consumed by the animation pipeline; now round-tripped through JSON.
+   *  Each omitted at its flam3 default (freq 0 / func 0 / animate 1 / no motion). */
+  motion_freq?: number;
+  motion_func?: 0 | 1 | 2 | 3;
+  motion?: Pyr3JsonXform[];
+  animate?: number;
 }
 
 export interface Pyr3JsonVariation {
@@ -812,8 +823,11 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
   };
   if (g.finalxform) {
     const xj = xformToJson(g.finalxform);
-    // Strip weight — meaningless on finalxform.
-    const { weight: _ignored, ...rest } = xj;
+    // Strip weight AND xaos — both meaningless on finalxform (it isn't in the
+    // chaos pick). #247: xformToJson emits xaos, but finalxformFromJson skips
+    // it (parseXformBody's `!isFinal` guard), so emitting it was a
+    // written-then-ignored field. Drop it at the boundary for symmetry.
+    const { weight: _ignored, xaos: _xaosIgnored, ...rest } = xj;
     out.finalxform = rest;
   }
   if (g.symmetry) {
@@ -869,6 +883,9 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
   // Issue #228 — preserve author nick across the serialize boundary (Save Flame,
   // Save Render PNG metadata, /v1/viewer refresh persistence). Omit when blank.
   if (g.nick) out.nick = g.nick;
+  // #247 — round-trip the genome-level keyframe timestamp. Omit at the flam3
+  // default 0 (matches the importer's `t !== 0` guard → canonical form).
+  if (g.time !== undefined && g.time !== 0) out.time = g.time;
   return out;
 }
 
@@ -911,6 +928,12 @@ function xformToJson(x: Xform): Pyr3JsonXform {
     out.post = { a: x.post.a, b: x.post.b, c: x.post.c, d: x.post.d, e: x.post.e, f: x.post.f };
   }
   if (x.active === false) out.active = false;
+  // #247 — round-trip the animation fields. Each omitted at its flam3 default
+  // (matches the importer's emit guards in flame-import.ts).
+  if (x.motion_freq !== undefined && x.motion_freq !== 0) out.motion_freq = x.motion_freq;
+  if (x.motion_func !== undefined && x.motion_func !== 0) out.motion_func = x.motion_func;
+  if (x.animate !== undefined && x.animate !== 1) out.animate = x.animate;
+  if (x.motion && x.motion.length > 0) out.motion = x.motion.map(xformToJson);
   return out;
 }
 
@@ -1129,6 +1152,14 @@ export function genomeFromJson(j: unknown): Genome {
   }
   // Issue #228 — restore author nick (see genomeToJson).
   if (root['nick'] !== undefined) base.nick = expectString(root['nick'], 'nick');
+  // #247 — restore the keyframe timestamp (see genomeToJson).
+  if (root['time'] !== undefined) {
+    const t = expectNumber(root['time'], 'time');
+    if (!Number.isFinite(t)) {
+      throw new Error(`pyr3: time must be a finite number, got: ${t}`);
+    }
+    if (t !== 0) base.time = t;
+  }
   return base;
 }
 
@@ -1202,6 +1233,33 @@ function parseXformBody(j: unknown, path: string, isFinal: boolean): Xform {
     };
   }
   if (o['active'] === false) out.active = false;
+  // #247 — restore the animation fields (see xformToJson). `motion` entries are
+  // full xforms parsed via the same body (flat — no nested motion in flam3).
+  if (o['motion_freq'] !== undefined) {
+    const mfr = expectNumber(o['motion_freq'], `${path}.motion_freq`);
+    if (!Number.isFinite(mfr)) {
+      throw new Error(`pyr3: ${path}.motion_freq must be a finite number, got: ${mfr}`);
+    }
+    out.motion_freq = mfr;
+  }
+  if (o['motion_func'] !== undefined) {
+    const mf = expectNumber(o['motion_func'], `${path}.motion_func`);
+    if (mf !== 0 && mf !== 1 && mf !== 2 && mf !== 3) {
+      throw new Error(`pyr3: ${path}.motion_func must be 0..3, got: ${mf}`);
+    }
+    out.motion_func = mf as 0 | 1 | 2 | 3;
+  }
+  if (o['animate'] !== undefined) {
+    const av = expectNumber(o['animate'], `${path}.animate`);
+    if (!Number.isFinite(av)) {
+      throw new Error(`pyr3: ${path}.animate must be a finite number, got: ${av}`);
+    }
+    out.animate = av;
+  }
+  if (o['motion'] !== undefined) {
+    const arr = expectArray(o['motion'], `${path}.motion`);
+    out.motion = arr.map((m, i) => parseXformBody(m, `${path}.motion[${i}]`, false));
+  }
   return out;
 }
 

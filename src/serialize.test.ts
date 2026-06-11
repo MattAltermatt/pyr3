@@ -1000,3 +1000,64 @@ describe('#116 — channelCurves round-trip', () => {
     expect(() => genomeFromJson(j)).toThrow(/monotonic/);
   });
 });
+
+describe('#247 animation/motion + finalxform-xaos round-trip', () => {
+  it('round-trips per-xform motion fields + genome.time', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      time: 12.5,
+      xforms: SPIRAL_GALAXY.xforms.map((x, i) =>
+        i === 0
+          ? {
+              ...x,
+              motion_freq: 2,
+              motion_func: 1,
+              animate: 0,
+              motion: [
+                {
+                  a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+                  weight: 0, color: 0.5, colorSpeed: 0,
+                  variations: [{ index: V.linear, weight: 1 }],
+                  motion_freq: 1,
+                  motion_func: 2,
+                },
+              ],
+            }
+          : x,
+      ),
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back).toEqual(g);
+  });
+
+  it('omits motion fields at their defaults (canonical form)', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    expect(json).not.toHaveProperty('time');
+    expect(json.xforms[0]).not.toHaveProperty('motion_freq');
+    expect(json.xforms[0]).not.toHaveProperty('motion_func');
+    expect(json.xforms[0]).not.toHaveProperty('animate');
+    expect(json.xforms[0]).not.toHaveProperty('motion');
+  });
+
+  it('omits time at the flam3 default 0 (canonical form, matches importer)', () => {
+    const json = genomeToJson({ ...SPIRAL_GALAXY, time: 0 });
+    expect(json).not.toHaveProperty('time');
+    expect(genomeFromJson(json).time).toBeUndefined();
+  });
+
+  it('strips xaos from the serialized finalxform (write-then-ignore)', () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      finalxform: {
+        a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+        weight: 0, color: 0.7, colorSpeed: 0.3,
+        xaos: [0.5, 0.5, 0.5],
+        variations: [{ index: V.julia, weight: 1 }],
+      },
+    };
+    const json = genomeToJson(g);
+    expect(json.finalxform).not.toHaveProperty('xaos');
+    const back = genomeFromJson(json);
+    expect(back.finalxform!.xaos).toBeUndefined();
+  });
+});
