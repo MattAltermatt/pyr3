@@ -3251,14 +3251,17 @@ fn var_murl2(p: vec2f, w: f32, c: f32, power_f: f32) -> vec2f {
   // pow(0, x) returns 0 for x>0 so the natural formula handles it.
   let cp1 = c + 1.0;
   let vp = w * pow(abs(cp1), 2.0 * invp) * select(-1.0, 1.0, cp1 >= 0.0);
+  // safe_*: a1/a2 are atan2 × power (a1) and atan2 × 2/power (a2). Large or
+  // tiny `power` pushes the angle past the Dawn trig cliff — the exact shape
+  // sibling var_murl (and var_cardioid) already route through safe_*. (#262)
   let a1 = atan2(p.y, p.x) * safe_pow;
   let r0 = c * pow(abs(dot(p, p)), p2);
-  let re0 = r0 * cos(a1) + 1.0;
-  let im0 = r0 * sin(a1);
+  let re0 = r0 * safe_cos(a1) + 1.0;
+  let im0 = r0 * safe_sin(a1);
   let r1 = pow(abs(re0 * re0 + im0 * im0), invp);
   let a2 = atan2(im0, re0) * 2.0 * invp;
-  let re1 = r1 * cos(a2);
-  let im1 = r1 * sin(a2);
+  let re1 = r1 * safe_cos(a2);
+  let im1 = r1 * safe_sin(a2);
   let rl = vp / max(r1 * r1, 1e-30);
   return vec2f(
     rl * (p.x * re1 + p.y * im1),
@@ -3686,11 +3689,13 @@ fn var_asteria(p: vec2f, w: f32, alpha: f32, wi: u32) -> vec2f {
 // JWildfire by Brad Stefanov. 4 params (a, b, c, d). Pure 2D map:
 //   x' = sin(a·y) + c·cos(a·x)
 //   y' = sin(b·x) + d·cos(b·y)
-// All trig args are bounded under the typical |p|·|coef| ≤ 5 product —
-// well under SIN_SAFE_MAX=1e6, so raw sin/cos are fine here.
+// safe_sin/safe_cos (#262 audit): args are coef × raw iterate coord. The
+// Clifford attractor self-bounds, but in the chaos game other xforms can
+// push |p| far past the attractor basin (→1e10), so coef·p hits the Dawn
+// f32 trig cliff (→0). Same shape var_waves3/waves4 route through safe_*.
 fn var_clifford_js(p: vec2f, w: f32, a: f32, b: f32, c: f32, d: f32) -> vec2f {
-  let nx = sin(a * p.y) + c * cos(a * p.x);
-  let ny = sin(b * p.x) + d * cos(b * p.y);
+  let nx = safe_sin(a * p.y) + c * safe_cos(a * p.x);
+  let ny = safe_sin(b * p.x) + d * safe_cos(b * p.y);
   return vec2f(w * nx, w * ny);
 }
 
@@ -3876,6 +3881,10 @@ fn var_bcollide(p: vec2f, w: f32, num_p: f32, a: f32) -> vec2f {
 // non-zero output instead of being hidden). Keep raw `sin`/`cos` here;
 // the `abs(sin_x) < 1e-6` guard already intercepts both the exact-zero
 // singularity AND the cliff-produced exact-zero, both routing to (0,0).
+// #262 audit: the X-direction trig (sin_x/cos_x on arg_x) stays raw per the
+// above. But `cos(p.y + sy)` below is the ORTHOGONAL Y-arg — NOT covered by
+// the doHide guard — so a cliff there silently zeros a SURVIVING walker's
+// x-output. That one routes through safe_cos (doesn't touch doHide).
 fn var_bsplit(p: vec2f, w: f32, sx: f32, sy: f32) -> vec2f {
   let arg_x = p.x + sx;
   let sin_x = sin(arg_x);
@@ -3886,7 +3895,7 @@ fn var_bsplit(p: vec2f, w: f32, sx: f32, sy: f32) -> vec2f {
   let tan_x = sin_x / cos_x;
   let tan_safe = select(tan_x, sign(tan_x) * 1e6, abs(cos_x) < 1e-6);
   return vec2f(
-    w / tan_safe * cos(p.y + sy),
+    w / tan_safe * safe_cos(p.y + sy),
     w / sin_x * (-1.0 * p.y + sy),
   );
 }
@@ -4251,7 +4260,9 @@ fn var_phoenix_julia(p: vec2f, w: f32, power: f32, dist: f32, x_distort: f32, y_
   let a = atan2(preY, preX) * inv_n + randint * inv_2pi_n;
   let sumsq = p.x * p.x + p.y * p.y;
   let r = w * pow(max(sumsq, 1e-30), cn);
-  return vec2f(r * cos(a), r * sin(a));
+  // safe_*: a = atan2·(dist/power) + randint·(2π/power); small `power` blows
+  // the angle past the Dawn trig cliff (same julian-style shape as e_julia). (#262)
+  return vec2f(r * safe_cos(a), r * safe_sin(a));
 }
 
 // unpolar — Apophysis plugin pack. 0 params. Inverse-polar mapping:
@@ -4739,9 +4750,12 @@ fn var_e_julia(p: vec2f, w: f32, power_p: f32, wi: u32) -> vec2f {
   let randint = floor(rand01(wi) * pow_abs);
   nu = nu / pow_safe + (2.0 * PI / pow_safe) * randint;
   let mu = mu_raw / pow_safe;
+  // safe_*: nu = acos(t)/power + (2π/power)·randint; small `power` pushes the
+  // angle past the Dawn trig cliff. (cosh/sinh of mu diverge truthfully → Inf
+  // → bad-value retry, which is correct, so only the trig is wrapped.) (#262)
   return vec2f(
-    w * cosh(mu) * cos(nu),
-    w * sinh(mu) * sin(nu),
+    w * cosh(mu) * safe_cos(nu),
+    w * sinh(mu) * safe_sin(nu),
   );
 }
 

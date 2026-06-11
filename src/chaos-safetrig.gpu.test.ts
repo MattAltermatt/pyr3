@@ -73,6 +73,27 @@ describe('#262 — tanh of unbounded args routes through safe_tanh (source invar
   }
 });
 
+describe('#262 audit — raw sin/cos of cliff-prone args routed through safe_* (source invariant)', () => {
+  // The 4 variations the audit found feeding sin/cos a coord×coef or
+  // atan2×power argument (the #235 cliff class the #72/#167 sweeps missed).
+  // After the fix these have NO un-wrapped sin(/cos( at all.
+  for (const fn of ['var_clifford_js', 'var_murl2', 'var_phoenix_julia', 'var_e_julia']) {
+    it(`${fn} uses safe_sin/safe_cos, not raw sin/cos`, () => {
+      const body = extractWgslFn(SHADER_SRC, fn);
+      expect(body).toMatch(/safe_(sin|cos)\(/);
+      expect(body).not.toMatch(/[^_]\bsin\(/); // no un-wrapped sin(
+      expect(body).not.toMatch(/[^_]\bcos\(/); // no un-wrapped cos(
+    });
+  }
+  // var_bsplit intentionally keeps raw sin_x/cos_x for its doHide guard, but
+  // the orthogonal cos(p.y + sy) must be safe_cos (cliff there zeros a
+  // surviving walker rather than hiding it).
+  it('var_bsplit wraps the orthogonal Y-arg in safe_cos (doHide trig stays raw)', () => {
+    const body = extractWgslFn(SHADER_SRC, 'var_bsplit');
+    expect(body).toContain('safe_cos(p.y + sy)');
+  });
+});
+
 describe.skipIf(!device)('#72 — safe_sin/safe_cos tame Dawn f32 trig cliff (real GPU)', () => {
   it('Dawn sin/cos cliff to 0 at 1e10, but safe_* stay bounded and non-zero', async () => {
     const dev = device!;
