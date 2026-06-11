@@ -95,6 +95,33 @@ GPL-3.0-or-later — <https://github.com/scottdraves/flam3>) for algorithmic cla
 TypeScript + WGSL in this repo is an independent reimplementation. flam3-C is the parity
 ground truth (see the ship-gate + R-tolerance sections below).
 
+## Variation porting: correct over faithful (2026-06-11 pivot)
+
+When porting a variation from a **third-party source** (Apophysis / JWildfire /
+xyrus02 / etc. — any source that is **not** the flam3-C parity rig), **prefer the
+mathematically-correct form over verbatim reproduction of a source bug or typo.**
+This supersedes the old "faithful verbatim port, quirks included" pattern (e.g. the
+bwraps V107 "ports verbatim" framing) for these third-party ports.
+
+- **Document the deliberate correction at the code site** with a note that names the
+  source typo and says **"do not restore parity by reverting"** — both the TS oracle
+  (`src/variations.ts`) and the GPU site (`src/shaders/chaos.wgsl`). Canonical example:
+  `var_curl2` (#234) keeps the correct pure complex cubic `Im` and warns against
+  re-introducing the `curl2.h` `c3` typo.
+- **Provenance comments must be honest.** A comment claiming "matches `<source>`" when
+  the code deliberately deviates is a maintenance hazard (it invites a future "parity
+  restore" that re-adds the bug). Say what the code actually does and why.
+
+**Scope boundary — this does NOT touch the flam3-C ground truth.** The v1.0 ship gate
+(26-fixture BE-vs-flam3-C parity rig + goldens, `npm run test:parity`; FE↔BE at quick-mode
+dims) stays the canonical *measurement* contract. We still match flam3-C within R tolerance
+there — we do **not** deviate from flam3-C even where flam3-C itself has a quirk. "Be
+correct" applies only to exotic third-party variation ports that have no flam3-C reference.
+
+This pivot re-frames several open issues toward "correct, not faithful" (re-evaluate when
+worked, don't bulk-rework): #233 (var_parallel weight), #246 (param-domain divergences),
+#245 (provenance-comment honesty).
+
 ## Locked decisions (load-bearing)
 
 The authoritative design record is kept in the local design spec under
