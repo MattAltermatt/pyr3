@@ -1139,6 +1139,18 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       notifyHistoryChange();
     },
     redo(): void {
+      // Mirror undo()'s flush: a fresh edit made after an undo schedules a
+      // debounced commit; clicking Redo within that window must commit it
+      // BEFORE stepping forward, else applyNewGenome('preserve') replaces
+      // state.genome with the redo-tail entry, the surviving timer fires,
+      // sees the redone entry (sameContent → no-op) and the user's
+      // intervening edit is silently dropped from history. The post-undo
+      // push also truncates the redo tail, so canRedo() correctly clears. (#250)
+      if (historyCommitTimer !== null) {
+        clearTimeout(historyCommitTimer);
+        historyCommitTimer = null;
+        history.push(state.genome);
+      }
       const restored = history.redo();
       if (!restored) return;
       void applyNewGenome(restored, undefined, 'preserve');
