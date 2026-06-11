@@ -166,6 +166,27 @@ async function buildIndex(fetchImpl: typeof fetch): Promise<BuiltIndex> {
     return terminalEmpty();
   }
 
+  // Truncation guard: decodeHeader validates magic + length≥41 but NOT that
+  // recordCount*30 record bytes actually follow. A truncated index (partial
+  // deploy, hand-edited / re-compressed file whose header disagrees with the
+  // table) would otherwise make the binary search read past the buffer
+  // (RangeError) or decodeRecord throw 'truncated record' — an uncaught
+  // rejection that bubbles to main().catch → dead "init failed" overlay. This
+  // is the same terminal/structural-corruption class as a bad magic, so honor
+  // the module's "never throw into boot, degrade to EMPTY" contract. (#256)
+  const availableRecords = Math.floor(
+    (bytes.length - FEATURE_INDEX_HEADER_BYTES) / FEATURE_INDEX_RECORD_BYTES,
+  );
+  if (availableRecords < header.recordCount) {
+    if (!warnedMagic) {
+      warnedMagic = true;
+      console.warn(
+        `pyr3: feature index truncated (header claims ${header.recordCount} records, body holds ${availableRecords}); filter chips disabled`,
+      );
+    }
+    return terminalEmpty();
+  }
+
   const recordsStart = FEATURE_INDEX_HEADER_BYTES;
   const recordsBytes = bytes.subarray(
     recordsStart,

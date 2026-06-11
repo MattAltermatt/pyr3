@@ -181,6 +181,35 @@ describe('loadFeatureIndex', () => {
     warn.mockRestore();
   });
 
+  it('truncated body (header record_count exceeds the bytes present) → empty sentinel (#256)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Valid header claiming sample.length records, but only ONE record's
+    // worth of body bytes follow — a partial deploy / hand-edited file.
+    const header = encodeHeader({
+      schemaVersion: FEATURE_INDEX_SCHEMA_V1,
+      corpusTag: 'test-corpus',
+      recordCount: sample.length,
+    });
+    const recBytes = encodeRecord(sample[0]!); // 1 of sample.length records
+    const uncompressed = new Uint8Array(header.length + recBytes.length);
+    uncompressed.set(header, 0);
+    uncompressed.set(recBytes, header.length);
+    const compressed = brotliCompressSync(uncompressed);
+    const ab = compressed.buffer.slice(
+      compressed.byteOffset,
+      compressed.byteOffset + compressed.byteLength,
+    );
+    const f = vi.fn(async () => new Response(ab));
+    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    // Degrades to EMPTY rather than throwing into boot (.catch → dead overlay).
+    expect(idx.schemaVersion).toBe(0);
+    expect(idx.recordCount).toBe(0);
+    expect(idx.has(245, 100)).toBe(false);
+    expect(idx.filter(() => true)).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('transient fetch failure does NOT poison the cache — retry succeeds', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     let attempt = 0;
