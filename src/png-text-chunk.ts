@@ -141,10 +141,12 @@ function spliceAt(png: Uint8Array, iendOff: number, chunk: Uint8Array): Uint8Arr
   return out;
 }
 
-/** Read all tEXt chunks (key → value) from a PNG. Used by future PNG-import
- *  reader. Decodes `\uXXXX` escapes back to Unicode. Returns empty object
- *  on a non-PNG input rather than throwing — callers can decide what to
- *  do with the absence of metadata. */
+/** Read all tEXt chunks (key → value) from a PNG. Used by the PNG-import
+ *  reader (src/loader.ts). Returns the raw Latin-1 value verbatim — any
+ *  `\uXXXX` escapes encodeAsciiSafe() added stay as JSON-native escapes that
+ *  the consumer's JSON.parse decodes (#239). Returns an empty object on a
+ *  non-PNG input rather than throwing — callers can decide what to do with
+ *  the absence of metadata. */
 export function readPngTextChunks(png: Uint8Array): Record<string, string> {
   const out: Record<string, string> = {};
   if (png.length < SIG_LEN + 12) return out;
@@ -169,10 +171,15 @@ export function readPngTextChunks(png: Uint8Array): Record<string, string> {
         for (let i = 0; i < sep; i++) key += String.fromCharCode(data[i]!);
         let value = '';
         for (let i = sep + 1; i < data.length; i++) value += String.fromCharCode(data[i]!);
-        // Unescape \uXXXX -> Unicode (JSON-safe; matches encodeAsciiSafe)
-        const decoded = value.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) =>
-          String.fromCharCode(parseInt(h, 16)));
-        out[key] = decoded;
+        // #239 — do NOT unescape \uXXXX here. encodeAsciiSafe() emits
+        // JSON-native \uXXXX escapes for non-ASCII chars, so the stored value
+        // is already valid JSON; the consumer's JSON.parse decodes them
+        // natively. A readback-time regex unescape cannot distinguish an escape
+        // the encoder added from a literal `\uXXXX` already present in the JSON
+        // (e.g. a flame name like `testAliteral`, whose backslash JSON
+        // doubles to `\\u0041`); decoding corrupted it into invalid JSON and
+        // crashed reload. Returning the raw Latin-1 value is lossless.
+        out[key] = value;
       }
     }
     // IEND? Done.

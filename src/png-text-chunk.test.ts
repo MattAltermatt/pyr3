@@ -60,6 +60,31 @@ describe('#123 PNG tEXt chunk', () => {
     expect(parsed.name).toBe('日本');
   });
 
+  it('#239 round-trips a name containing a literal backslash-uXXXX sequence', () => {
+    const png = makeMinimalPng();
+    // A free-text name with a literal backslash followed by `u0041`. JSON.stringify
+    // escapes the backslash to `\\`, so the stored tEXt value holds `\\u0041`. The
+    // old readback unescape regex matched the trailing `A`, ate one backslash,
+    // and produced invalid JSON (`\A`), crashing reload. The value must survive.
+    const name = 'test\\u0041literal';
+    const value = JSON.stringify({ name });
+    const injected = injectPngTextChunk(png, 'pyr3', value);
+    const chunks = readPngTextChunks(injected);
+    expect(chunks.pyr3).toBeDefined();
+    const parsed = JSON.parse(chunks.pyr3!);
+    expect(parsed.name).toBe(name);
+  });
+
+  it('#239 round-trips a name mixing literal backslash-u and real non-ASCII', () => {
+    const png = makeMinimalPng();
+    const name = 'café \\u00e9 日';
+    const value = JSON.stringify({ name });
+    const injected = injectPngTextChunk(png, 'pyr3', value);
+    const chunks = readPngTextChunks(injected);
+    const parsed = JSON.parse(chunks.pyr3!);
+    expect(parsed.name).toBe(name);
+  });
+
   it('rejects empty or too-long keys', () => {
     const png = makeMinimalPng();
     expect(() => injectPngTextChunk(png, '', 'x')).toThrow();
