@@ -3684,10 +3684,12 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{189}(x, y) = w\\,(\\tanh x\\,(\\sec x + \\text{effect}\\cdot\\pi),\\; \\tanh y\\,(\\sec y + \\text{effect}\\cdot\\pi)),\\; \\sec\\xi = 1/\\cos\\xi",
     blurb: "Raykoid666's funnel — tanh + sec composition produces a funnel-shape projection. The `effect` integer scales the secant baseline. Sharp singularities at x or y = π/2 + nπ (guarded with epsilon).",
     defaultWeight: 0.06,
-    // JWF default `effect`=1 (FunnelFunc.java). Bumped to 2 for catalog
-    // visibility against the sierpinski scaffold; defaultWeight=0.06
-    // produces the canonical funnel-from-sierpinski silhouette (user
-    // hand-tune 2026-06-07).
+    // JWF/Raykoid666 default `effect`=8 (FunnelFunc.java; the runtime/parity
+    // default in serialize.ts is also 8). This catalog slider-init is a
+    // cosmetic hand-tune (2026-06-07): 2 gives more catalog visibility
+    // against the sierpinski scaffold, and defaultWeight=0.06 produces the
+    // canonical funnel-from-sierpinski silhouette. Catalog defaults only set
+    // the editor slider + gallery thumbnail; they never affect parity.
     params: [{ name: 'effect', default: 2, min: 0, max: 20, step: 1 }],
     warpFn: (x, y) => {
       const effect = 2;

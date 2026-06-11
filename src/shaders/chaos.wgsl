@@ -338,8 +338,11 @@ fn complex_sqr(z: vec2f) -> vec2f {
   return vec2f(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y);
 }
 fn complex_div(a: vec2f, b: vec2f) -> vec2f {
-  // |b|² floor at 1e-100 matches JWildfire MagInv() — degenerate denom
-  // returns the unscaled numerator instead of NaN.
+  // |b|² floor at 1e-100 keeps a degenerate denom finite (the division by
+  // 1e-100 scales the numerator by ~1e100 rather than NaN-ing). Note this
+  // does NOT reproduce JWildfire MagInv(), which returns the raw numerator
+  // (×1.0) when degenerate — but the |b|²<1e-100 region is f32-unreachable,
+  // so the two agree on every representable input.
   let m2 = max(dot(b, b), 1e-100);
   return vec2f(
     (a.x * b.x + a.y * b.y) / m2,
@@ -2525,10 +2528,10 @@ fn var_murl(p: vec2f, w: f32, c_in: f32, power_in: f32) -> vec2f {
   let r = c * pow(p.x * p.x + p.y * p.y, p2);
   let re = r * cosa + 1.0;
   let im = r * sina;
-  // Murl source uses 1e-29 to dodge degeneracy at (c=0, r=0). f32 floor
-  // is ~1.18e-38, so 1e-29 is well-representable; but the Dawn FTZ
-  // cliff (subnormals → 0) applies to any value ≤ ~1.18e-38, NOT 1e-29.
-  // 1e-29 is safe — round-trips as a normal f32.
+  // pyr3-added GPU guard (NOT from the Murl source — neither JWF MurlFunc
+  // nor Fractorium carries this epsilon): +1e-29 dodges a 0/0 at (c=0, r=0).
+  // f32 floor is ~1.18e-38, so 1e-29 round-trips as a normal f32; the Dawn
+  // FTZ cliff (subnormals → 0) bites only ≤ ~1.18e-38, well below 1e-29.
   let r1 = vp / (re * re + im * im + 1.0e-29);
   return vec2f(r1 * (p.x * re + p.y * im), r1 * (p.y * re - p.x * im));
 }
@@ -3678,9 +3681,11 @@ fn var_asteria(p: vec2f, w: f32, alpha: f32, wi: u32) -> vec2f {
   if (in1) {
     return vec2f(x0, y0);
   }
-  // Asteria branch — yy lives in [-1, 1] after rotation, but sqrt
-  // domain guards prevent NaN at the edges. JWildfire has no guards;
-  // we add `max(..., 0)` to stay finite under f32 rounding.
+  // Asteria branch — ryy is an unbounded rotation of (x0, y0), NOT in
+  // [-1, 1]. The sqrt-domain floors (1e-30 on `denom`, 0 on `inner`)
+  // substitute finite values across the entire |ryy| > 1 region (reachable
+  // whenever the rotated point lands outside the unit circle), not merely
+  // "at the edges". JWildfire has no guards; we add them to stay finite.
   let rxx = x0 * cosa - y0 * sina;
   let ryy = x0 * sina + y0 * cosa;
   let denom = sqrt(max(1.0 - ryy * ryy, 1e-30));
@@ -5407,7 +5412,8 @@ fn var_halley(p: vec2f, w: f32, cx: f32, cy: f32) -> vec2f {
 }
 
 // V310–V313 DC escape coloring (#145). Re-iterates the SAME map ≤12 times
-// from the post-step point; smooth-escape banding (continuous escape count).
+// from the pre-step (chain-input) point — call sites pass `pa_mut`, the
+// variation input, not its output; smooth-escape banding (continuous escape count).
 // Escapers band by iters-to-bailout; convergers hit the cap with small |z|,
 // banding by convergence depth. hsl L=0.55 matches dc_perlin / var_newton_color.
 fn escape_color(p_pre: vec2f, var_idx: u32, cx: f32, cy: f32, relax: f32) -> vec3f {
