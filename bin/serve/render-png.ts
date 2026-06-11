@@ -7,6 +7,7 @@ import { PNG } from 'pngjs';
 import { createRenderer, computeDispatch, DEFAULT_FILTER_RADIUS, type Renderer } from '../../src/renderer';
 import { type Genome } from '../../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../../src/chaos';
+import { AsyncMutex } from './async-mutex';
 
 export interface RenderRequestSpec {
   genome: Genome;
@@ -103,11 +104,30 @@ function ensureRenderer(
   return cached;
 }
 
+// #231 — serialize all renders. The cached renderer/texture/histogram is a
+// single shared resource; two concurrent /api/render requests would interleave
+// at the chunk-loop yields and corrupt each other. The mutex keeps the warm
+// renderer (the reason it's cached) while guaranteeing one render at a time.
+const renderMutex = new AsyncMutex();
+
 /** Render a genome to a PNG byte array. Streams progress through
  *  `onProgress` between chunks. The PNG contains pixels only — the
  *  caller (client) injects the `pyr3` tEXt chunk so the metadata format
- *  stays a viewer/editor concern (spec § 3 PNG metadata side). */
-export async function renderGenomeToPng(
+ *  stays a viewer/editor concern (spec § 3 PNG metadata side).
+ *
+ *  Serialized via `renderMutex` (#231): concurrent calls queue and run one at
+ *  a time. A queued call whose client already disconnected aborts immediately
+ *  when its turn arrives (the `abortSignal.aborted` check below). */
+export function renderGenomeToPng(
+  device: GPUDevice,
+  spec: RenderRequestSpec,
+  onProgress: (p: RenderProgress) => void,
+  abortSignal: AbortSignal,
+): Promise<Uint8Array> {
+  return renderMutex.run(() => renderGenomeToPngInner(device, spec, onProgress, abortSignal));
+}
+
+async function renderGenomeToPngInner(
   device: GPUDevice,
   spec: RenderRequestSpec,
   onProgress: (p: RenderProgress) => void,

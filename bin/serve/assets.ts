@@ -5,7 +5,7 @@
 // rebuild.
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { resolve, join, extname, normalize } from 'node:path';
+import { resolve, join, extname, normalize, sep } from 'node:path';
 import { createRequire } from 'node:module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -80,14 +80,18 @@ class SeaAssetSource implements AssetSource {
   }
 }
 
-class FsAssetSource implements AssetSource {
+export class FsAssetSource implements AssetSource {
   private root: string;
   constructor(root: string) {
     this.root = resolve(root);
   }
   read(path: string): Uint8Array | null {
     const full = normalize(join(this.root, path));
-    if (!full.startsWith(this.root)) return null; // path traversal guard
+    // Path-traversal guard. The trailing-sep check is load-bearing (#258):
+    // a bare `startsWith(this.root)` would let a sibling like `/abs/dist-x`
+    // pass for root `/abs/dist`. Allow `full === root` (a request for the
+    // root dir itself) but otherwise require the separator boundary.
+    if (full !== this.root && !full.startsWith(this.root + sep)) return null;
     if (!existsSync(full)) return null;
     if (!statSync(full).isFile()) return null;
     return new Uint8Array(readFileSync(full));

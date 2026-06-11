@@ -25,6 +25,7 @@ import { makeAnimateRoute } from './serve/route-animate';
 import { handlePickDir } from './serve/route-pick-dir';
 import { handleCancel } from './serve/route-cancel';
 import { makeAssetHandler, hasAssetSource } from './serve/assets';
+import { checkSameOrigin } from './serve/request-guard';
 
 installWebGPUHost();
 
@@ -89,6 +90,13 @@ async function main(): Promise<void> {
   }
 
   const router = new Router();
+  // #230 — same-origin gate on every /api route (matched routes only; the
+  // static-asset fallback is exempt). Closes DNS-rebinding / CSRF-via-fetch
+  // against /api/render, /api/animate (arbitrary out_dir write), /api/pick-dir.
+  router.setGuard((req) => {
+    const verdict = checkSameOrigin(req.headers);
+    return verdict.ok ? null : verdict.reason;
+  });
   router.add('GET', '/api/capabilities', makeCapabilitiesRoute({}));
   router.add('POST', '/api/render', makeRenderRoute(() => device));
   router.add('POST', '/api/animate', makeAnimateRoute(() => device));

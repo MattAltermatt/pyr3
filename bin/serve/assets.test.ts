@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-import { proxyTargetFor, makeAssetHandler } from './assets';
+import { proxyTargetFor, makeAssetHandler, FsAssetSource } from './assets';
 import type { AssetSource } from './assets';
 
 describe('proxyTargetFor', () => {
@@ -86,5 +89,41 @@ describe('makeAssetHandler — corpus proxy fallback', () => {
     const res = fakeRes();
     handler(fakeReq('/chunks/999/00000.flam3chunk'), res);
     expect(res._status).toBe(503);
+  });
+});
+
+// #258 — FsAssetSource path-traversal guard must use the separator boundary,
+// or a sibling directory sharing the root's name prefix (`/abs/dist-secret`
+// vs root `/abs/dist`) leaks through `..`.
+describe('FsAssetSource — sibling-prefix traversal guard (#258)', () => {
+  let base: string;
+  let root: string;
+
+  beforeAll(() => {
+    // realpath the tmp base so macOS /var → /private/var doesn't defeat the
+    // FsAssetSource(resolve(root)) containment check under test.
+    base = realpathSync(mkdtempSync(join(tmpdir(), 'pyr3-assets-')));
+    root = join(base, 'dist');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'index.html'), 'inside');
+    // Sibling dir whose name shares the `dist` prefix — the bypass target.
+    mkdirSync(join(base, 'dist-secret'), { recursive: true });
+    writeFileSync(join(base, 'dist-secret', 'leak.txt'), 'secret');
+  });
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('reads a legitimate file inside the root', () => {
+    const src = new FsAssetSource(root);
+    expect(src.read('index.html')).not.toBeNull();
+  });
+
+  it('blocks `..`-traversal into a sibling dir sharing the name prefix', () => {
+    const src = new FsAssetSource(root);
+    // `dist/../dist-secret/leak.txt` resolves to `<base>/dist-secret/leak.txt`,
+    // which startsWith(`<base>/dist`) lexically but is NOT under `<base>/dist/`.
+    expect(src.read('../dist-secret/leak.txt')).toBeNull();
   });
 });

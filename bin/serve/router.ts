@@ -11,6 +11,11 @@ export type RouteHandler = (
   params: Record<string, string>,
 ) => void | Promise<void>;
 
+/** Per-request gate run before a matched route's handler (never the static
+ *  fallback). Returns null to allow, or a reason string to reject 403. Used to
+ *  enforce same-origin on the /api surface (#230). */
+export type RouteGuard = (req: IncomingMessage) => string | null;
+
 interface Route {
   method: string;
   pattern: RegExp;
@@ -32,6 +37,7 @@ function compile(pathPattern: string): { pattern: RegExp; paramNames: string[] }
 export class Router {
   private routes: Route[] = [];
   private fallback: RouteHandler | null = null;
+  private guard: RouteGuard | null = null;
 
   add(method: string, pathPattern: string, handler: RouteHandler): void {
     const { pattern, paramNames } = compile(pathPattern);
@@ -42,6 +48,12 @@ export class Router {
     this.fallback = handler;
   }
 
+  /** Install a guard run before every matched route handler. The static
+   *  fallback is exempt (assets are same-origin GETs; the SPA must load). */
+  setGuard(guard: RouteGuard): void {
+    this.guard = guard;
+  }
+
   async dispatch(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = (req.method ?? 'GET').toUpperCase();
     const url = req.url ?? '/';
@@ -50,6 +62,16 @@ export class Router {
       if (route.method !== method) continue;
       const match = route.pattern.exec(pathname);
       if (!match) continue;
+      if (this.guard) {
+        const reason = this.guard(req);
+        if (reason !== null) {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(JSON.stringify({ error: `forbidden: ${reason}` }));
+          return;
+        }
+      }
       const params: Record<string, string> = {};
       route.paramNames.forEach((name, i) => {
         params[name] = decodeURIComponent(match[i + 1] ?? '');

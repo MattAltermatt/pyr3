@@ -17,7 +17,7 @@
 // on disk; user sees a 'cancelled at frame N' toast").
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { resolve as resolvePath, isAbsolute, sep } from 'node:path';
 
 import { parseFlame } from '../../src/flame-import';
@@ -160,12 +160,19 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       return;
     }
 
-    // Resolve out_dir against cwd; create if missing.
-    const outDir = isAbsolute(body.out_dir) ? body.out_dir : resolvePath(process.cwd(), body.out_dir);
+    // Resolve out_dir against cwd; create if missing. Then realpath-resolve so
+    // the per-frame containment check below operates on the symlink-resolved
+    // path (#258): if out_dir is/contains a symlink, the lexical prefix check
+    // alone would pass while writes followed the link elsewhere. The same-
+    // origin guard (#230) already bars cross-origin callers from reaching this
+    // route at all; this is filesystem-level defense-in-depth.
+    const requestedDir = isAbsolute(body.out_dir) ? body.out_dir : resolvePath(process.cwd(), body.out_dir);
+    let outDir: string;
     try {
-      if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+      if (!existsSync(requestedDir)) mkdirSync(requestedDir, { recursive: true });
+      outDir = realpathSync(requestedDir);
     } catch (err) {
-      jsonError(res, 400, `failed to create out_dir ${outDir}: ${(err as Error).message}`);
+      jsonError(res, 400, `failed to create out_dir ${requestedDir}: ${(err as Error).message}`);
       return;
     }
 
@@ -207,10 +214,10 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
         const frameStr = String(t).padStart(5, '0');
         const filename = `${prefix}${frameStr}.png`;
         const outPath = resolvePath(outDir, filename);
-        // Belt-and-suspenders: confirm the resolved path stays under
-        // out_dir. The prefix regex above already blocks separators / ..,
-        // but this catches symlink-pivot tricks if out_dir itself contains
-        // a malicious component.
+        // Belt-and-suspenders: confirm the resolved path stays under out_dir.
+        // The prefix regex above already blocks separators / .., and `outDir`
+        // is realpath-resolved (so this is a real containment check, not the
+        // purely-lexical one the old comment wrongly claimed defeated symlinks).
         if (!outPath.startsWith(outDir + sep) && outPath !== outDir) {
           writeSseEvent(res, 'error', { message: 'path traversal blocked' });
           res.end();

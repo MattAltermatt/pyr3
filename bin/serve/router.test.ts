@@ -7,6 +7,10 @@ function fakeReq(method: string, url: string): IncomingMessage {
   return { method, url } as IncomingMessage;
 }
 
+function fakeReqH(method: string, url: string, headers: Record<string, string>): IncomingMessage {
+  return { method, url, headers } as unknown as IncomingMessage;
+}
+
 function fakeRes(): ServerResponse & { _ended: string; _status: number; _headers: Record<string, string> } {
   const res = {
     _status: 0,
@@ -91,5 +95,41 @@ describe('Router', () => {
     await r.dispatch(fakeReq('POST', '/api/capabilities'), res);
     expect(get).not.toHaveBeenCalled();
     expect(res._status).toBe(404);
+  });
+});
+
+describe('Router — guard (#230)', () => {
+  it('rejects a matched route 403 when the guard returns a reason', async () => {
+    const r = new Router();
+    const handler = vi.fn((_req, res: ServerResponse) => { res.end('ok'); });
+    r.add('POST', '/api/render', handler);
+    r.setGuard((req) => (req.headers.host === 'evil.com' ? 'non-loopback Host' : null));
+    const res = fakeRes();
+    await r.dispatch(fakeReqH('POST', '/api/render', { host: 'evil.com' }), res);
+    expect(handler).not.toHaveBeenCalled();
+    expect(res._status).toBe(403);
+    expect(JSON.parse(res._ended).error).toMatch(/forbidden: non-loopback Host/);
+  });
+
+  it('lets a same-origin request through to the handler', async () => {
+    const r = new Router();
+    const handler = vi.fn((_req, res: ServerResponse) => { res.end('ok'); });
+    r.add('POST', '/api/render', handler);
+    r.setGuard((req) => (req.headers.host === 'evil.com' ? 'non-loopback Host' : null));
+    const res = fakeRes();
+    await r.dispatch(fakeReqH('POST', '/api/render', { host: '127.0.0.1:5174' }), res);
+    expect(handler).toHaveBeenCalled();
+    expect(res._ended).toBe('ok');
+  });
+
+  it('does NOT guard the static-asset fallback (assets stay reachable)', async () => {
+    const r = new Router();
+    const fb = vi.fn((_req, res: ServerResponse) => { res.end('asset'); });
+    r.setFallback(fb);
+    r.setGuard(() => 'should never run on fallback');
+    const res = fakeRes();
+    await r.dispatch(fakeReqH('GET', '/index.html', { host: 'evil.com' }), res);
+    expect(fb).toHaveBeenCalled();
+    expect(res._ended).toBe('asset');
   });
 });
