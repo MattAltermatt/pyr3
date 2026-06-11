@@ -41,6 +41,7 @@ import {
   type DecomposedAffine as QuickOpAffine,
 } from './edit-xform-quickops';
 import { openVariationPicker } from './edit-variation-picker';
+import { wireVariationKindButton } from './edit-variation-kind';
 import {
   scrubbyInput,
   type FieldKind,
@@ -454,27 +455,7 @@ function buildVariationRow(
   kindBtn.className = 'pyr3-edit-var-kind-btn';
   kindBtn.textContent = VARIATION_NAMES[v.index] ?? `var${v.index}`;
   kindBtn.title = 'Click to pick a different variation kind.';
-  kindBtn.addEventListener('click', () => {
-    const initialIndex = v.index;
-    openVariationPicker({
-      host: document.body,
-      initialIndex,
-      onPreview: (idx) => {
-        v.index = idx as Variation['index'];
-        (v as unknown as Record<string, unknown>)['param0'] = undefined;
-        (v as unknown as Record<string, unknown>)['param1'] = undefined;
-        (v as unknown as Record<string, unknown>)['param2'] = undefined;
-        kindBtn.textContent = VARIATION_NAMES[idx] ?? `var${idx}`;
-        onChange(`finalxform.variations.${varIndex}.index`);
-      },
-      onCommit: () => {},
-      onCancel: () => {
-        v.index = initialIndex as Variation['index'];
-        kindBtn.textContent = VARIATION_NAMES[initialIndex] ?? `var${initialIndex}`;
-        onChange(`finalxform.variations.${varIndex}.index`);
-      },
-    });
-  });
+  wireVariationKindButton(kindBtn, v, `finalxform.variations.${varIndex}.index`, onChange);
 
   const weightInput = makeNumberInput(
     v.weight,

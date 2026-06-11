@@ -208,6 +208,11 @@ export interface VariationPickerOpts {
    *  "abandon picker state" — the most recent preview was a no-op in
    *  retrospect. */
   onCancel: () => void;
+  /** Called when the user clicks ⟲ revert (picker stays open). When provided,
+   *  the host restores its full pre-picker state — index AND params (#237) —
+   *  instead of the picker re-previewing `initialIndex`, which would re-stamp
+   *  defaults and lose tuned params. Falls back to `onPreview(initialIndex)`. */
+  onRevert?: () => void;
 }
 
 export interface VariationPickerHandle {
@@ -597,7 +602,11 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     icon: '⟲',
     onClick: () => {
       currentIndex = snapshot;
-      opts.onPreview(snapshot);
+      // Restore the host's full pre-picker variation (index + params, #237)
+      // when it supplied onRevert; otherwise fall back to re-previewing the
+      // opened-on index.
+      if (opts.onRevert) opts.onRevert();
+      else opts.onPreview(snapshot);
       paintActive(snapshot);
       refreshSelectedInfo();
     },

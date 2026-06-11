@@ -6,7 +6,7 @@
 // (no GPU); the slow-lane integration that re-iterates on those onChange
 // callbacks is covered by the lane-scheduler tests in edit-state.test.ts.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { xformsSection } from './edit-section-xforms';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
@@ -59,6 +59,69 @@ function typeInto(cell: HTMLElement, value: string): void {
   inp.value = value;
   inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
+
+// ── variation-kind picker: param leak (#236) + cancel/revert loss (#237) ────
+
+import { PYRE_PALETTE } from './palette';
+
+function genomeWithVar(v: Record<string, number>): Genome {
+  return {
+    name: 'k',
+    xforms: [{ a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+      variations: [v as unknown as Genome['xforms'][number]['variations'][number]] }],
+    scale: 100, cx: 0, cy: 0, palette: PYRE_PALETTE,
+  };
+}
+
+const pslot = (v: Record<string, number | undefined>, pk: string) => v[pk];
+
+describe('xformsSection — variation-kind picker (#236/#237)', () => {
+  // Pickers append to document.body; revert keeps the picker open, so strip any
+  // leftover picker between cases to keep the global cell selectors unambiguous.
+  afterEach(() => {
+    document.querySelectorAll('.pyr3-picker').forEach((p) => p.remove());
+  });
+
+  it('#237: Cancel restores the original variation index AND tuned params', () => {
+    const { host, state } = mount(genomeWithVar({ index: V.julian, weight: 1, param0: 2, param1: 0.5 }));
+    (host.querySelector('.pyr3-edit-var-kind-btn') as HTMLButtonElement).click();
+    // Preview a different kind (destroys params via live preview)...
+    (document.querySelector(`.pyr3-picker-cell[data-vidx="${V.spirograph}"]`) as HTMLElement).click();
+    // ...then Cancel.
+    (document.querySelector('.pyr3-picker-close') as HTMLElement).click();
+    const v = state.genome.xforms[0]!.variations[0]! as unknown as Record<string, number | undefined>;
+    expect(v.index).toBe(V.julian);
+    expect(pslot(v, 'param0')).toBe(2);
+    expect(pslot(v, 'param1')).toBe(0.5);
+  });
+
+  it('#237: Revert restores the original variation index AND tuned params', () => {
+    const { host, state } = mount(genomeWithVar({ index: V.julian, weight: 1, param0: 2, param1: 0.5 }));
+    (host.querySelector('.pyr3-edit-var-kind-btn') as HTMLButtonElement).click();
+    (document.querySelector(`.pyr3-picker-cell[data-vidx="${V.spirograph}"]`) as HTMLElement).click();
+    (document.querySelector('.pyr3-picker-revert') as HTMLElement).click();
+    const v = state.genome.xforms[0]!.variations[0]! as unknown as Record<string, number | undefined>;
+    expect(v.index).toBe(V.julian);
+    expect(pslot(v, 'param0')).toBe(2);
+    expect(pslot(v, 'param1')).toBe(0.5);
+  });
+
+  it('#236: kind change stamps new defaults and leaks NO stale high param slots', () => {
+    // spirograph has 9 params; switching to ngon (4 params) must not leak param4..8.
+    const { host, state } = mount(genomeWithVar({
+      index: V.spirograph, weight: 1,
+      param0: 7, param1: 7, param2: 7, param3: 7, param4: 7,
+      param5: 7, param6: 7, param7: 7, param8: 7,
+    }));
+    (host.querySelector('.pyr3-edit-var-kind-btn') as HTMLButtonElement).click();
+    (document.querySelector(`.pyr3-picker-cell[data-vidx="${V.ngon}"]`) as HTMLElement).click();
+    (document.querySelector('.pyr3-picker-apply') as HTMLElement).click(); // commit
+    const v = state.genome.xforms[0]!.variations[0]! as unknown as Record<string, number | undefined>;
+    expect(v.index).toBe(V.ngon);
+    expect(pslot(v, 'param3')).toBe(2); // ngon default corners — not the leaked 7
+    for (let i = 4; i < 10; i++) expect(pslot(v, `param${i}`)).toBeUndefined();
+  });
+});
 
 describe('xformsSection — DOM smoke', () => {
   it('exposes the canonical SectionMount contract', () => {
