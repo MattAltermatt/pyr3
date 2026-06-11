@@ -46,12 +46,21 @@ export function decomposedToRaw(d: DecomposedAffine): RawAffine {
  *  editor's decomposed fields from a freshly-opened genome. Canonical
  *  form: scale_x ≥ 0 absorbs any sign flip on the X column. scale_y
  *  carries the determinant sign (negative → matrix flips orientation). */
+/** Singular X-column threshold. Below this, shear = (a·b+d·e)/scaleX² divides
+ *  by a vanishing denominator and explodes the displayed shear/scaleY. Chosen
+ *  well below the smallest scaleX seen in real fixtures (~0.0085) so no genuine
+ *  xform collapses to the sentinel — only hand-crafted degenerate matrices do. */
+export const SINGULAR_SCALE_EPS = 1e-6;
+
 export function rawToDecomposed(r: RawAffine): DecomposedAffine {
   const scaleX = Math.sqrt(r.a * r.a + r.d * r.d);
-  if (scaleX === 0) {
-    // Singular X column. The decomposition is non-unique. Return a sentinel
-    // that round-trips through decomposedToRaw to the identity rather than
-    // emitting NaN; the editor disables shear/scaleY until scaleX !== 0.
+  if (scaleX < SINGULAR_SCALE_EPS) {
+    // (Near-)singular X column. The decomposition is non-unique and the shear
+    // term would blow up. Return a sentinel that round-trips through
+    // decomposedToRaw to a translation-only matrix rather than emitting huge
+    // finite values. (#251 — the guard was previously `=== 0`, catching only
+    // an EXACT zero; a tiny-but-nonzero column exploded the fields. There is no
+    // editor disable for this case — it is unreachable from real fixtures.)
     return { scaleX: 0, scaleY: 0, rotation: 0, shear: 0, positionX: r.c, positionY: r.f };
   }
   const rotation = Math.atan2(r.d, r.a);

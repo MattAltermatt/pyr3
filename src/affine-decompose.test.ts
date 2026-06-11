@@ -86,6 +86,20 @@ describe('rawToDecomposed — inverse', () => {
     expect(d.shear).toBe(0);
     expect(d.rotation).toBe(0);
   });
+
+  it('near-singular X column (a=1e-9) hits the sentinel, not exploded fields (#251)', () => {
+    // Below the singular-column epsilon: shear = (a·b+d·e)/scaleX² would divide
+    // by ~1e-18 and explode the displayed shear/scaleY. The widened guard must
+    // collapse it to the sentinel (well below the smallest real fixture scaleX
+    // of ~0.0085, so no real xform is affected).
+    const d = rawToDecomposed({ a: 1e-9, b: 1, c: 0.3, d: 0, e: 1, f: -0.2 });
+    expect(d.scaleX).toBe(0);
+    expect(d.scaleY).toBe(0);
+    expect(d.shear).toBe(0);
+    expect(Number.isFinite(d.shear)).toBe(true);
+    expect(d.positionX).toBe(0.3);
+    expect(d.positionY).toBe(-0.2);
+  });
 });
 
 describe('round-trip', () => {
