@@ -5068,38 +5068,43 @@ fn var_parallel(
 ) -> vec2f {
   let x2height: f32 = 0.5;   // hardcoded — JWildfire default
   let x2move: f32 = 1.0;     // hardcoded — JWildfire default
+  // #233: JWF ParallelFunc emits the tile + height fold terms with NO pAmount;
+  // only the additive move offset is scaled by weight. So w multiplies the move
+  // term ONLY — the tile lattice stays fixed as the xform weight varies. The
+  // w==0 short-circuit mirrors V205 var_intersection (weight=0 -> true no-op).
+  if (w == 0.0) { return vec2f(0.0, 0.0); }
   let xr1 = x1mod2 * x1mod1;
   let xr2 = x2mod2 * x2mod1;
   if (rand01(wi) < 0.5) {
     let x1 = select(-x1width, x1width, rand01(wi) < 0.5);
-    let ox = w * x1tilesize * (p.x + round(x1 * log(max(rand01(wi), 1e-30))));
+    let ox = x1tilesize * (p.x + round(x1 * log(max(rand01(wi), 1e-30))));
     var oy: f32;
     if (p.y > x1mod1) {
       let arg = p.y + x1mod1;
       let r_safe = max(xr1, 1e-30);
-      oy = w * x1height * (-x1mod1 + (arg - floor(arg / r_safe) * r_safe)) + w * x1move;
+      oy = x1height * (-x1mod1 + (arg - floor(arg / r_safe) * r_safe)) + w * x1move;
     } else if (p.y < -x1mod1) {
       let arg = x1mod1 - p.y;
       let r_safe = max(xr1, 1e-30);
-      oy = w * x1height * (x1mod1 - (arg - floor(arg / r_safe) * r_safe)) + w * x1move;
+      oy = x1height * (x1mod1 - (arg - floor(arg / r_safe) * r_safe)) + w * x1move;
     } else {
-      oy = w * x1height * p.y + w * x1move;
+      oy = x1height * p.y + w * x1move;
     }
     return vec2f(ox, oy);
   }
   let x2 = select(-x2width, x2width, rand01(wi) < 0.5);
-  let ox = w * x2tilesize * (p.x + round(x2 * log(max(rand01(wi), 1e-30))));
+  let ox = x2tilesize * (p.x + round(x2 * log(max(rand01(wi), 1e-30))));
   var oy: f32;
   if (p.y > x2mod1) {
     let arg = p.y + x2mod1;
     let r_safe = max(xr2, 1e-30);
-    oy = w * x2height * (-x2mod1 + (arg - floor(arg / r_safe) * r_safe)) - w * x2move;
+    oy = x2height * (-x2mod1 + (arg - floor(arg / r_safe) * r_safe)) - w * x2move;
   } else if (p.y < -x2mod1) {
     let arg = x2mod1 - p.y;
     let r_safe = max(xr2, 1e-30);
-    oy = w * x2height * (x2mod1 - (arg - floor(arg / r_safe) * r_safe)) - w * x2move;
+    oy = x2height * (x2mod1 - (arg - floor(arg / r_safe) * r_safe)) - w * x2move;
   } else {
-    oy = w * x2height * p.y - w * x2move;
+    oy = x2height * p.y - w * x2move;
   }
   return vec2f(ox, oy);
 }
