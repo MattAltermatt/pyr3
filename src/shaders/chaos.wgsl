@@ -3813,8 +3813,13 @@ fn var_atan(p: vec2f, w: f32, mode_p: f32, stretch: f32) -> vec2f {
   if (mode == 1) {
     return vec2f(norm * atan(stretch * p.x), w * p.y);
   }
-  // mode == 2 (or anything else → fall through to dual atan)
-  return vec2f(norm * atan(stretch * p.x), norm * atan(stretch * p.y));
+  if (mode == 2) {
+    return vec2f(norm * atan(stretch * p.x), norm * atan(stretch * p.y));
+  }
+  // #246: JWF AtanFunc switch has an empty `default` — an out-of-range mode is
+  // a no-op (the variation contributes nothing). Only reachable via a hand-
+  // edited / imported genome (the slider is 0-2). Return (0,0), not dual-atan.
+  return vec2f(0.0, 0.0);
 }
 
 // cardioid — Michael Faber. 1 param (a — angle multiplier). Polar curve
@@ -4262,7 +4267,12 @@ fn var_phoenix_julia(p: vec2f, w: f32, power: f32, dist: f32, x_distort: f32, y_
   let cn = dist / (2.0 * pow_safe);
   let preX = p.x * (x_distort + 1.0);
   let preY = p.y * (y_distort + 1.0);
-  let randint = floor(rand01(wi) * abs(pow_safe));
+  // #246: JWF uses random(Integer.MAX_VALUE) for the branch index. Mirror with
+  // a large bounded int so NON-integer power matches JWF's dense branch
+  // sampling; for integer power the branch-angle distribution (k·2π/power
+  // mod 2π) is identical to the old [0,|power|) range. The angle `a` below is
+  // already routed through safe_* for the small-power cliff.
+  let randint = floor(rand01(wi) * 32768.0);
   let a = atan2(preY, preX) * inv_n + randint * inv_2pi_n;
   let sumsq = p.x * p.x + p.y * p.y;
   let r = w * pow(max(sumsq, 1e-30), cn);
@@ -4285,7 +4295,11 @@ fn var_unpolar(p: vec2f, w: f32) -> vec2f {
 // shredrad — Zy0rg. 2 params (n, width). Radial shredder: divides the
 // angular coord into n wedges, applies a width-controlled fold within
 // each wedge. Bake α = 2π/n inline.
-fn var_shredrad(p: vec2f, w: f32, n: f32, width: f32) -> vec2f {
+fn var_shredrad(p: vec2f, w: f32, n: f32, width_in: f32) -> vec2f {
+  // #246: JWF ShredradFunc clamps width to [-1,1] (Tools.limitValue) at
+  // param-set time; mirror it so out-of-range slider / imported values match
+  // JWF instead of producing a wider unbounded fold.
+  let width = clamp(width_in, -1.0, 1.0);
   let n_safe = max(0.001, n);
   let alpha = 2.0 * PI / n_safe;
   let ang = atan2(p.y, p.x);
@@ -6583,9 +6597,14 @@ fn assoc_legendre(l: i32, m: i32, u: f32) -> f32 {
   return pll;
 }
 fn sph_harmonic(theta: f32, l: i32, m: i32) -> f32 {
+  // #246: assoc_legendre is defined for 0<=m<=l. Negative m is reachable from
+  // hydrogen_orbital's m=-l..l slider; feed |m| (|Y_l^{-m}| = |Y_l^m| for the
+  // real magnitude). cos is even so the azimuth is unchanged, but use |m|
+  // explicitly. The other caller (rosette) already passes m>=0, so unaffected.
+  let mm = abs(m);
   let u = safe_cos(theta);
-  let plm = assoc_legendre(l, m, u);
-  let azim = safe_cos(f32(m) * theta);
+  let plm = assoc_legendre(l, mm, u);
+  let azim = safe_cos(f32(mm) * theta);
   let y = plm * azim;
   return clamp(abs(y), 0.0, 4.0);
 }

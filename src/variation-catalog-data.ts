@@ -3495,6 +3495,10 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     formula: "V_{178}(x, y) = w \\cdot x \\cdot \\text{radius} \\cdot (\\cos t,\\; \\sin t),\\; t = x^2 + y^2",
     blurb: "Will Evans's layered spiral. Polar spiral where the angular phase is r² (so points further from origin spin faster) and the radial scale is x·radius. Produces concentric spiral arms with x-axis-modulated brightness.",
     params: [
+      // #246: curated default (JWF/engine use 1.0). radius is a linear gain on
+      // the output, so 2.10 just makes a livelier, more spread-out default
+      // catalog thumbnail — cosmetic only; existing/imported flames carry their
+      // own radius and are unaffected.
       { name: 'radius', default: 2.10, min: 0.05, max: 5, step: 0.05 },
     ],
     warpFn: (x, y) => {
@@ -5468,7 +5472,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'shell_scale', default: 0.85, min: 0.2, max: 3, step: 0.05 },
       { name: 'lobe_mix', default: 1, min: 0, max: 1, step: 0.05 },
     ],
-    warpFn: (x, y) => { const n=3, l=1, sc=0.85, mix=1.0; const r=Math.hypot(x,y); const rho=(2*r)/(n*Math.max(sc,1e-3)); const assocLag=(k: number,a: number,xv: number)=>{ if(k<=0)return 1; let lkm1=1,lk=1+a-xv; if(k===1)return lk; for(let j=1;j<k;j++){const lkp1=((2*j+1+a-xv)*lk-(j+a)*lkm1)/(j+1); lkm1=lk; lk=lkp1;} return lk; }; const kk=n-l-1, alpha=2*l+1; const lag=assocLag(kk,alpha,Math.max(rho,0)); let rpow=1; for(let j=0;j<2*l;j++) rpow*=Math.max(rho,0); const rad=rpow*Math.exp(-Math.max(rho,0))*lag*lag; let cphi=1; if(r>1e-6) cphi=x/r; const P2=0.5*(3*cphi*cphi-1); const yl=P2; const ang2=yl*yl; const ampFull=rad*ang2; const amp=rad+(ampFull-rad)*mix; const rOut=1.5*(amp/(1+amp)); let dx=1,dy=0; if(r>1e-6){dx=x/r; dy=y/r;} return [rOut*dx, rOut*dy]; },
+    warpFn: (x, y) => { const n=3, l=1, sc=0.85, mix=1.0; const r=Math.hypot(x,y); const rho=(2*r)/(n*Math.max(sc,1e-3)); const assocLag=(k: number,a: number,xv: number)=>{ if(k<=0)return 1; let lkm1=1,lk=1+a-xv; if(k===1)return lk; for(let j=1;j<k;j++){const lkp1=((2*j+1+a-xv)*lk-(j+a)*lkm1)/(j+1); lkm1=lk; lk=lkp1;} return lk; }; const kk=n-l-1, alpha=2*l+1; const lag=assocLag(kk,alpha,Math.max(rho,0)); let rpow=1; for(let j=0;j<2*l;j++) rpow*=Math.max(rho,0); const rad=rpow*Math.exp(-Math.max(rho,0))*lag*lag; let cphi=1; if(r>1e-6) cphi=x/r; const yl=cphi; /* #246: P_1^0(cphi)=cphi, matching the engine's default l=1,m=0 (was hardcoded l=2 P2) */ const ang2=yl*yl; const ampFull=rad*ang2; const amp=rad+(ampFull-rad)*mix; const rOut=1.5*(amp/(1+amp)); let dx=1,dy=0; if(r>1e-6){dx=x/r; dy=y/r;} return [rOut*dx, rOut*dy]; },
   },
   // #151 — Statistical-distribution warps (radial inverse-CDF)
   {
