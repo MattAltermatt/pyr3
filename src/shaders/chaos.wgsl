@@ -316,6 +316,15 @@ fn safe_cos(a: f32) -> f32 {
 fn safe_tan(a: f32) -> f32 {
   return safe_sin(a) / safe_cos(a);
 }
+// safe_tanh (#262): Dawn's f32 tanh NaNs for |x|≳1e3 (naive (e^x−e^−x)/(e^x+e^−x)
+// overflows: e^2000→Inf, Inf/Inf→NaN). Unlike safe_sin/cos this recovers the EXACT
+// value, not a hash-spread: tanh saturates to ±1 at its true limit and is already
+// exactly ±1 in f32 by |x|≈9, so clamping the argument is lossless. NaN overflow
+// only at |x|≳44; TANH_SAFE_MAX=20 sits safely past saturation, below overflow.
+const TANH_SAFE_MAX: f32 = 20.0;
+fn safe_tanh(a: f32) -> f32 {
+  return tanh(clamp(a, -TANH_SAFE_MAX, TANH_SAFE_MAX));
+}
 
 // #120 batch B3 — complex-math primitives (z = vec2f(re, im)). Direct
 // ports of JWildfire's `Complex.java` semantics (LGPL-2.1+, NOTICE.md);
@@ -1682,14 +1691,16 @@ fn var_dc_cylinder_color(p: vec2f) -> vec3f {
   // Use the cylinder-mapped coords for the color — fold p.x via sin to
   // get a periodic hue cycle along x, modulate lightness by y.
   //
-  // Raw `tanh` (not `safe_tanh`) on p.y is intentional: the Dawn f32
-  // trig range cliff (#72) is a range-reduction issue specific to
-  // sin/cos/tan (periodic functions reduced via π mod). tanh is
-  // monotonic, saturates asymptotically toward ±1 for any finite arg,
-  // and has no periodic range-reduction step → no Dawn cliff. The outer
-  // clamp [0.2, 0.85] is the final guard regardless of tanh output.
+  // safe_tanh on p.y (#262): the prior code used raw tanh on the theory
+  // that tanh has no periodic range-reduction step → no Dawn cliff. That's
+  // half-true — but Dawn's NAIVE f32 tanh still overflows e^x→Inf→NaN for
+  // |arg|≳1e3 (a separate failure mode from the #72 sin/cos cliff). Here a
+  // NaN would feed a COLOR (clamp(NaN,…) is impl-defined → can poison a
+  // histogram bin, worse than a position reseed). safe_tanh clamps the arg
+  // losslessly (tanh is f32-saturated by |x|≈9); the outer [0.2,0.85] clamp
+  // remains the final guard.
   let hue = fract(0.5 + 0.5 * safe_sin(p.x));
-  let lit = clamp(0.5 + 0.25 * tanh(p.y * 0.5), 0.2, 0.85);
+  let lit = clamp(0.5 + 0.25 * safe_tanh(p.y * 0.5), 0.2, 0.85);
   return hsl_to_rgb(vec3f(hue, 0.9, lit));
 }
 
@@ -4425,9 +4436,10 @@ fn var_funnel(p: vec2f, w: f32, effect_p: f32) -> vec2f {
   let secx = 1.0 / select(cx, 1e-30, abs(cx) < 1e-30);
   let secy = 1.0 / select(cy, 1e-30, abs(cy) < 1e-30);
   let off = effect_p * PI;
+  // safe_tanh: bare coords reach ~1e10; raw tanh NaNs for |p|≳1e3 (#262).
   return vec2f(
-    w * tanh(p.x) * (secx + off),
-    w * tanh(p.y) * (secy + off),
+    w * safe_tanh(p.x) * (secx + off),
+    w * safe_tanh(p.y) * (secy + off),
   );
 }
 
@@ -4676,8 +4688,9 @@ fn var_tancos(p: vec2f, w: f32) -> vec2f {
   // safe_cos: d1 is r²; past |p|~3163 raw cos hits the Dawn f32 trig cliff
   // (→0) and the d2=w/d1 damping keeps the bad output too small for the
   // bad-value retry to catch, silently collapsing the y-channel. (#235)
+  // safe_tanh: d1=r² NaNs raw tanh for |p|≳31 (#262).
   return vec2f(
-    d2 * tanh(d1) * 2.0 * p.x,
+    d2 * safe_tanh(d1) * 2.0 * p.x,
     d2 * safe_cos(d1) * 2.0 * p.y,
   );
 }
@@ -5720,7 +5733,7 @@ fn var_catenary(p: vec2f, w: f32, a: f32) -> vec2f {
 
 // V245 tractrix:
 fn var_tractrix(p: vec2f, w: f32) -> vec2f {
-  let xp = p.x - tanh(p.x);
+  let xp = p.x - safe_tanh(p.x); // raw tanh NaNs for |p.x|≳1e3 (#262)
   let yp = 1.0 / cosh(p.x);
   return w * vec2f(xp, yp);
 }

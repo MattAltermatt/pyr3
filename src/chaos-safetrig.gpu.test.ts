@@ -58,6 +58,21 @@ describe('#235 — var_tancos / var_funnel route trig through safe_cos (source i
   });
 });
 
+describe('#262 — tanh of unbounded args routes through safe_tanh (source invariant)', () => {
+  it('defines safe_tanh + TANH_SAFE_MAX', () => {
+    expect(SHADER_SRC).toContain('fn safe_tanh(');
+    expect(SHADER_SRC).toContain('const TANH_SAFE_MAX');
+  });
+  // Every variation that feeds tanh a non-bounded coord/radius must wrap it.
+  for (const fn of ['var_funnel', 'var_tancos', 'var_tractrix', 'var_dc_cylinder_color']) {
+    it(`${fn} uses safe_tanh, not raw tanh`, () => {
+      const body = extractWgslFn(SHADER_SRC, fn);
+      expect(body).toContain('safe_tanh(');
+      expect(body).not.toMatch(/[^_]\btanh\(/); // no un-wrapped tanh( in the fn
+    });
+  }
+});
+
 describe.skipIf(!device)('#72 — safe_sin/safe_cos tame Dawn f32 trig cliff (real GPU)', () => {
   it('Dawn sin/cos cliff to 0 at 1e10, but safe_* stay bounded and non-zero', async () => {
     const dev = device!;
@@ -130,16 +145,19 @@ describe.skipIf(!device)('#235 — var_tancos/var_funnel survive far-field coord
     const HASH01 = extractWgslFn(SHADER_SRC, 'hash01');
     const SAFE_SIN = extractWgslFn(SHADER_SRC, 'safe_sin');
     const SAFE_COS = extractWgslFn(SHADER_SRC, 'safe_cos');
+    const SAFE_TANH = extractWgslFn(SHADER_SRC, 'safe_tanh');
     const TANCOS = extractWgslFn(SHADER_SRC, 'var_tancos');
     const FUNNEL = extractWgslFn(SHADER_SRC, 'var_funnel');
     // p comes from a buffer (runtime value) so the cos cliff is NOT constant-folded.
     const code = `
 const SIN_SAFE_MAX: f32 = 1.0e6;
+const TANH_SAFE_MAX: f32 = 20.0;
 const TAU: f32 = 6.28318530717958647692;
 const PI: f32 = 3.14159265358979323846;
 ${HASH01}
 ${SAFE_SIN}
 ${SAFE_COS}
+${SAFE_TANH}
 ${TANCOS}
 ${FUNNEL}
 @group(0) @binding(0) var<storage, read> a: array<f32>;
@@ -190,5 +208,54 @@ fn main() {
     expect(degenerate(rawSecx)).toBe(true);          // raw -> ±1e30 or NaN
     expect(Number.isFinite(safeSecx)).toBe(true);
     expect(Math.abs(safeSecx)).toBeLessThan(1e6);    // bounded — sentinel avoided
+  });
+});
+
+describe.skipIf(!device)('#262 — safe_tanh tames Dawn f32 tanh NaN-overflow (real GPU)', () => {
+  it('raw tanh NaNs at large args, but safe_tanh saturates to ±1 (and is exact below)', async () => {
+    const dev = device!;
+    const SAFE_TANH = extractWgslFn(SHADER_SRC, 'safe_tanh');
+    // Args from a buffer (runtime) so the overflow is NOT constant-folded.
+    const code = `
+const TANH_SAFE_MAX: f32 = 20.0;
+${SAFE_TANH}
+@group(0) @binding(0) var<storage, read> a: array<f32>;
+@group(0) @binding(1) var<storage, read_write> o: array<f32>;
+@compute @workgroup_size(1)
+fn main() {
+  let big = a[0];   // 1e8 — past the e^x overflow point
+  let small = a[1]; // 0.5 — well within range
+  o[0] = tanh(big);        // raw Dawn -> NaN (the overflow bug)
+  o[1] = safe_tanh(big);   // fixed -> +1 (true saturation limit)
+  o[2] = safe_tanh(-big);  // fixed -> -1
+  o[3] = safe_tanh(small); // below clamp -> exactly tanh(small)
+  o[4] = tanh(small);
+}`;
+    const N = 5;
+    const inBuf = dev.createBuffer({ size: 2 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    dev.queue.writeBuffer(inBuf, 0, new Float32Array([1e8, 0.5]));
+    const buf = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const bg = dev.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: buf } }] });
+    const enc = dev.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(1); pass.end();
+    const rb = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    enc.copyBufferToBuffer(buf, 0, rb, 0, N * 4);
+    dev.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const o = Array.from(new Float32Array(rb.getMappedRange().slice(0)));
+    rb.unmap(); buf.destroy(); rb.destroy(); inBuf.destroy();
+
+    const [rawBig, safeBig, safeNegBig, safeSmall, tanhSmall] =
+      o as [number, number, number, number, number];
+
+    // Dawn's raw f32 tanh overflows to NaN for the large arg (the documented bug).
+    expect(Number.isNaN(rawBig)).toBe(true);
+    // safe_tanh recovers the EXACT saturation limit (±1) — lossless, no hash-spread.
+    expect(safeBig).toBe(1);
+    expect(safeNegBig).toBe(-1);
+    // Below the clamp threshold safe_tanh is exactly native tanh (faithful path).
+    expect(safeSmall).toBe(tanhSmall);
   });
 });

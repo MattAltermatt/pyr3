@@ -27,6 +27,7 @@ const SHADER_SRC = readFileSync(
 const HASH01 = extractWgslFn(SHADER_SRC, 'hash01');
 const SAFE_SIN = extractWgslFn(SHADER_SRC, 'safe_sin');
 const SAFE_COS = extractWgslFn(SHADER_SRC, 'safe_cos');
+const SAFE_TANH = extractWgslFn(SHADER_SRC, 'safe_tanh'); // var_tractrix routes tanh through it (#262)
 const VAR_SUPERELLIPSE = extractWgslFn(SHADER_SRC, 'var_superellipse');
 const VAR_LIMACON = extractWgslFn(SHADER_SRC, 'var_limacon');
 const VAR_EPICYCLOID = extractWgslFn(SHADER_SRC, 'var_epicycloid');
@@ -35,10 +36,12 @@ const VAR_TRACTRIX = extractWgslFn(SHADER_SRC, 'var_tractrix');
 
 const PRELUDE = `
 const SIN_SAFE_MAX: f32 = 1.0e6;
+const TANH_SAFE_MAX: f32 = 20.0;
 const TAU: f32 = 6.28318530717958647692;
 ${HASH01}
 ${SAFE_SIN}
 ${SAFE_COS}
+${SAFE_TANH}
 ${VAR_SUPERELLIPSE}
 ${VAR_LIMACON}
 ${VAR_EPICYCLOID}
