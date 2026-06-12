@@ -20,6 +20,15 @@
             "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in */src/shaders/*.wgsl) printf '[hook] WGSL edited (%s) — render path may have changed. Run `npm run test:parity` (~91s) before FF-merge to verify BE↔flam3-C parity.\\n' \"$(basename \"$f\")\" >&2 ;; esac"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in */src/*.test.ts) ;; */src/*.ts) grep -nE 'typeof window|typeof process|isNode|process\\.env|globalThis\\.(navigator|window|document)[[:space:]]*=' \"$f\" >/dev/null 2>&1 && printf '[hook] %s touches an env branch — the FE/BE seam forbids env branching in engine modules (#15). Run `npm run typecheck:engine` to confirm the no-DOM kernel still compiles.\\n' \"$(basename \"$f\")\" >&2; grep -nE '\\.innerHTML\\b' \"$f\" >/dev/null 2>&1 && printf '[hook] %s uses .innerHTML — pyr3 forbids it (src/no-innerhtml.test.ts). Build DOM with createElement/textContent.\\n' \"$(basename \"$f\")\" >&2 ;; esac"
+          }
+        ]
       }
     ],
     "SessionStart": [
