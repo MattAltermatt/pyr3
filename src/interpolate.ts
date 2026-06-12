@@ -83,6 +83,17 @@ export function interpolate(animation: Animation, time: number): Genome {
   // spherical/ngon/etc — deferred follow-up).
   const { aligned0, aligned1 } = alignXformCounts(k0, k1);
 
+  // #225 xform correspondence remapping: reorder the SECOND keyframe's aligned
+  // xforms by this segment's permutation before the index-aligned blend. perm is
+  // defined over the ALIGNED length so it can target a padded (zero-weight) slot
+  // for intentional appear/disappear. Absent/identity/invalid ⇒ positional
+  // (b1 === aligned1) ⇒ byte-identical to today. finalxform is exempt (never in
+  // the xforms[] array), matching flam3's final-xform exemption.
+  const perm = animation.segmentPermutation?.[i1];
+  const b1 = isPermutation(perm, aligned1.xforms.length)
+    ? { ...aligned1, xforms: perm.map((j) => aligned1.xforms[j]!) }
+    : aligned1;
+
   const useLog = animation.interpolation_type === 'log';
 
   // P3 #208 — pre-apply per-xform motion overlays to each keyframe's xforms
@@ -95,7 +106,7 @@ export function interpolate(animation: Animation, time: number): Genome {
   const xforms: Xform[] = [];
   for (let i = 0; i < aligned0.xforms.length; i++) {
     const xf0 = applyMotionParameters(aligned0.xforms[i]!, rawC1);
-    const xf1 = applyMotionParameters(aligned1.xforms[i]!, rawC1);
+    const xf1 = applyMotionParameters(b1.xforms[i]!, rawC1);
     xforms.push(interpolateXform(xf0, xf1, c0, c1, useLog));
   }
 
@@ -693,4 +704,17 @@ function clamp01(x: number): number {
   if (x < 0) return 0;
   if (x > 1) return 1;
   return x;
+}
+
+/** True iff `perm` is a bijection over [0, n) — length n, every index 0..n-1
+ *  present exactly once. Absent or invalid ⇒ caller falls back to positional
+ *  (identity) so a stale/garbage permutation degrades rather than corrupts. */
+function isPermutation(perm: number[] | undefined, n: number): perm is number[] {
+  if (!perm || perm.length !== n) return false;
+  const seen = new Array<boolean>(n).fill(false);
+  for (const v of perm) {
+    if (!Number.isInteger(v) || v < 0 || v >= n || seen[v]) return false;
+    seen[v] = true;
+  }
+  return true;
 }

@@ -61,6 +61,17 @@ export interface Animation {
    *  easing slot, so `.flam3` import never sets it. #227 evolves this into per-clip
    *  transition curves on the same segment key. */
   segmentEasing?: (EasingCurve | undefined)[];
+  /** Per-segment xform correspondence remapping (#225), sparse, indexed by
+   *  keyframe gap: segmentPermutation[i] reorders the SECOND keyframe's ALIGNED
+   *  xform list before the keyframes[i] → keyframes[i+1] blend. perm[a] = b means
+   *  keyframes[i]'s aligned xform `a` morphs into keyframes[i+1]'s aligned xform
+   *  `b`. Each entry is a bijection over [0, n) where n is the aligned
+   *  (post-padding, max-count) xform count. ABSENT (field or entry, or an identity
+   *  permutation) ⇒ positional-by-index ⇒ byte-identical to today. An out-of-range
+   *  or non-bijective entry DEGRADES to identity (never corrupts). pyr3 JSON only —
+   *  flam3 XML has no slot, so `.flam3` import never sets it. #227 carries this
+   *  forward as one permutation per clip boundary. */
+  segmentPermutation?: (number[] | undefined)[];
 }
 
 /** flam3-C `clear_cp` defaults for the Animation cross-keyframe fields.

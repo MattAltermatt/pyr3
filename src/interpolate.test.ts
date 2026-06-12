@@ -526,3 +526,96 @@ describe('interpolate — segmentEasing (#224)', () => {
     expect(interpolate(anim(k0, k1, { segmentEasing: [] }), 0.5).cx).toBeCloseTo(5);
   });
 });
+
+// ── #225 segmentPermutation ──────────────────────────────────────────────────
+describe('interpolate — segmentPermutation (#225)', () => {
+  // Two keyframes whose xforms carry a distinguishing tag in `c` (affine
+  // translate-x) so we can assert which source paired with which target.
+  const tagged = (tags: number[], time: number): Genome =>
+    baseGenome({
+      time,
+      xforms: tags.map((t) => ({
+        a: 1, b: 0, c: t, d: 0, e: 1, f: 0,
+        weight: 1, color: 0, colorSpeed: 0.5,
+        variations: [linearVar(1)],
+      })),
+    });
+
+  it('absent segmentPermutation is byte-identical to positional', () => {
+    const k0 = tagged([10, 20, 30], 0);
+    const k1 = tagged([11, 21, 31], 1);
+    const positional = interpolate(anim(k0, k1), 0.5);
+    const identity = interpolate(anim(k0, k1, { segmentPermutation: [[0, 1, 2]] }), 0.5);
+    expect(identity.xforms.map((x) => x.c)).toEqual(positional.xforms.map((x) => x.c));
+    expect(positional.xforms.map((x) => x.c)).toEqual([10.5, 20.5, 30.5]);
+  });
+
+  it('reverse permutation pairs A.x0↔B.x2, A.x1↔B.x1, A.x2↔B.x0', () => {
+    const k0 = tagged([10, 20, 30], 0);
+    const k1 = tagged([11, 21, 31], 1);
+    const r = interpolate(anim(k0, k1, { segmentPermutation: [[2, 1, 0]] }), 0.5);
+    // slot0: mean(A.x0=10, B.x2=31)=20.5 ; slot1: mean(20,21)=20.5 ; slot2: mean(30,11)=20.5
+    expect(r.xforms.map((x) => x.c)).toEqual([20.5, 20.5, 20.5]);
+  });
+
+  it('non-self-inverse permutation ([1,2,0]) applies the correct gather direction', () => {
+    // Distinct expected values pin the gather direction — a scattered (inverted)
+    // impl would yield [15, 5, 10] instead. Anchor A all-zero so result = ½·B.
+    const k0 = tagged([0, 0, 0], 0);
+    const k1 = tagged([10, 20, 30], 1);
+    const r = interpolate(anim(k0, k1, { segmentPermutation: [[1, 2, 0]] }), 0.5);
+    // slot0 → aligned1.xforms[1]=20 → mean(0,20)=10
+    // slot1 → aligned1.xforms[2]=30 → mean(0,30)=15
+    // slot2 → aligned1.xforms[0]=10 → mean(0,10)=5
+    expect(r.xforms.map((x) => x.c)).toEqual([10, 15, 5]);
+  });
+
+  it('sparse array: a missing entry for the active segment is positional', () => {
+    const k0 = tagged([10, 20, 30], 0);
+    const k1 = tagged([11, 21, 31], 1);
+    const r = interpolate(anim(k0, k1, { segmentPermutation: [] }), 0.5);
+    expect(r.xforms.map((x) => x.c)).toEqual([10.5, 20.5, 30.5]);
+  });
+
+  it('maps a real xform onto a padded slot → that xform fades out (weight→0)', () => {
+    const k0 = tagged([10, 20], 0); // A: 2 real xforms, weight 1 each
+    const k1 = baseGenome({ time: 1, xforms: [
+      { a: 1, b: 0, c: 99, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5, variations: [linearVar(1)] },
+    ] }); // B: 1 real xform → aligned length 2 (padded with zero-weight id)
+    // perm=[1,0]: slot0 pairs A.x0 with B.aligned[1] (the padded zero-weight slot).
+    const r = interpolate(anim(k0, k1, { segmentPermutation: [[1, 0]] }), 0.5);
+    expect(r.xforms[0]!.weight).toBeCloseTo(0.5); // ramps toward 0 over the segment
+    expect(r.xforms[1]!.c).toBeCloseTo((20 + 99) / 2); // A.x1 ↔ B's real xform
+  });
+
+  it('permutation does not disturb finalxform blending', () => {
+    const finalA: Xform = { a: 1, b: 0, c: 5, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5, variations: [linearVar(1)] };
+    const finalB: Xform = { a: 1, b: 0, c: 7, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5, variations: [linearVar(1)] };
+    const k0 = { ...tagged([10, 20], 0), finalxform: finalA };
+    const k1 = { ...tagged([11, 21], 1), finalxform: finalB };
+    const r = interpolate(anim(k0, k1, { segmentPermutation: [[1, 0]] }), 0.5);
+    expect(r.finalxform).toBeDefined();
+    expect(r.finalxform!.c).toBeCloseTo(6); // mean(5,7) — unaffected by xform-array permutation
+  });
+
+  it('invalid permutation (wrong length) degrades to positional', () => {
+    const k0 = tagged([10, 20, 30], 0);
+    const k1 = tagged([11, 21, 31], 1);
+    expect(interpolate(anim(k0, k1, { segmentPermutation: [[0, 1]] }), 0.5).xforms.map((x) => x.c))
+      .toEqual([10.5, 20.5, 30.5]);
+  });
+
+  it('invalid permutation (duplicate target) degrades to positional', () => {
+    const k0 = tagged([10, 20, 30], 0);
+    const k1 = tagged([11, 21, 31], 1);
+    expect(interpolate(anim(k0, k1, { segmentPermutation: [[0, 0, 1]] }), 0.5).xforms.map((x) => x.c))
+      .toEqual([10.5, 20.5, 30.5]);
+  });
+
+  it('invalid permutation (out-of-range index) degrades to positional', () => {
+    const k0 = tagged([10, 20, 30], 0);
+    const k1 = tagged([11, 21, 31], 1);
+    expect(interpolate(anim(k0, k1, { segmentPermutation: [[0, 1, 5]] }), 0.5).xforms.map((x) => x.c))
+      .toEqual([10.5, 20.5, 30.5]);
+  });
+});
