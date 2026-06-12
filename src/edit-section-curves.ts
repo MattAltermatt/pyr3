@@ -14,10 +14,29 @@
 // Presets / before-after / histogram land in Task 7.
 
 import { type SectionMount } from './edit-ui';
-import { type EditState } from './edit-state';
+import { type EditState, type SettledPixels } from './edit-state';
 import type { ChannelCurves, CurvePoint } from './genome';
 import { IDENTITY_POINTS, bakeOne } from './channel-curves';
+import {
+  binChannels,
+  normalizeBins,
+  peakOf,
+  type ChannelHistogram,
+} from './channel-histogram';
 import { COLORS } from './ui-tokens';
+
+// #175 — per-channel histogram tint colors (under the curve spline). RGB
+// triples (CSS rgba body) chosen to read against the dark canvas.
+const HIST_COLORS: Record<Channel, string> = {
+  composite: '200,205,215', // unused (composite overlays r/g/b)
+  r: '255,95,95',
+  g: '95,210,125',
+  b: '105,150,255',
+  luma: '205,210,220',
+};
+// Fraction of canvas height the tallest histogram bin reaches — leaves
+// headroom so the fill never crowds the spline at the top.
+const HIST_MAX_FILL = 0.82;
 
 const HIT_RADIUS_FRAC = 6 / 240; // 6px in canvas-coord fractions
 const MIN_X_GAP = 1e-3;
@@ -387,9 +406,28 @@ export const curvesSection: SectionMount = {
 
     host.appendChild(footer);
 
+    // #175 — latest PRE-curve histogram from the settled-pixels feed. null
+    // until the first settled render lands; drawn under the spline as a
+    // placement reference. Curve-invariant, so it holds still while grading.
+    let latestHist: ChannelHistogram | null = null;
+
     function redrawCanvas() {
-      drawCurveCanvas(canvas, getCurve(state, state.activeColorCurveChannel!));
+      drawCurveCanvas(
+        canvas,
+        getCurve(state, state.activeColorCurveChannel!),
+        latestHist,
+        state.activeColorCurveChannel ?? 'composite',
+      );
     }
+
+    // Subscribe to the editor's settled-pixels feed (#175). edit-mount invokes
+    // this after each full render with the post-tonemap, pre-curve canvas
+    // bytes. We bin and redraw — cheap, and only fires on settle (not per drag).
+    const onSettledPixels = (px: SettledPixels): void => {
+      latestHist = binChannels(px.rgba, px.width, px.height);
+      redrawCanvas();
+    };
+    (state.settledPixelsListeners ??= []).push(onSettledPixels);
 
     function syncSelectionUI() {
       const ch = state.activeColorCurveChannel ?? 'composite';
@@ -641,7 +679,60 @@ export const curvesSection: SectionMount = {
   },
 };
 
-function drawCurveCanvas(canvas: HTMLCanvasElement, curve: CurvePoint[]): void {
+// #175 — draw one channel's normalized bins as a soft filled area from the
+// canvas baseline up. x spans 0..w across the 256 bins; height scales by
+// HIST_MAX_FILL so the tallest bin leaves headroom under the spline.
+function drawHistFill(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  norm: Float32Array,
+  rgb: string,
+  alpha: number,
+): void {
+  ctx.fillStyle = `rgba(${rgb},${alpha})`;
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  const last = norm.length - 1;
+  for (let i = 0; i < norm.length; i++) {
+    const x = (i / last) * w;
+    const y = h - norm[i]! * HIST_MAX_FILL * h;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w, h);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHistogram(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  hist: ChannelHistogram,
+  channel: Channel,
+): void {
+  // Log scale — a flame's vast black background spikes bin 0; linear scaling
+  // would crush every mid-tone to invisibility. See normalizeBins.
+  if (channel === 'composite') {
+    // Overlay R+G+B at 30% each, normalized to a SHARED peak so the three
+    // channels stay height-comparable.
+    const peak = peakOf(hist.r, hist.g, hist.b);
+    drawHistFill(ctx, w, h, normalizeBins(hist.r, peak, 'log'), HIST_COLORS.r, 0.30);
+    drawHistFill(ctx, w, h, normalizeBins(hist.g, peak, 'log'), HIST_COLORS.g, 0.30);
+    drawHistFill(ctx, w, h, normalizeBins(hist.b, peak, 'log'), HIST_COLORS.b, 0.30);
+    return;
+  }
+  const bins =
+    channel === 'r' ? hist.r : channel === 'g' ? hist.g : channel === 'b' ? hist.b : hist.luma;
+  drawHistFill(ctx, w, h, normalizeBins(bins, undefined, 'log'), HIST_COLORS[channel], 0.42);
+}
+
+function drawCurveCanvas(
+  canvas: HTMLCanvasElement,
+  curve: CurvePoint[],
+  hist: ChannelHistogram | null = null,
+  channel: Channel = 'composite',
+): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const w = canvas.width;
@@ -662,6 +753,9 @@ function drawCurveCanvas(canvas: HTMLCanvasElement, curve: CurvePoint[]): void {
     ctx.lineTo(w, p);
     ctx.stroke();
   }
+
+  // Histogram fill UNDER the spline — the input-referred tonal reference.
+  if (hist) drawHistogram(ctx, w, h, hist, channel);
 
   // Identity diagonal (bottom-left → top-right in screen coords).
   ctx.strokeStyle = 'rgba(255,255,255,0.25)';

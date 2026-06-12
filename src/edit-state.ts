@@ -91,6 +91,22 @@ export interface EditState {
    *  paletteIdentifier(). Defaults to `flame #N` inferred from
    *  state.genome.palette.name when unset. */
   paletteSource?: PaletteSource;
+  /** #175 — sections push a listener here in build(); the editor host
+   *  (edit-mount) invokes them after each settled render with the post-
+   *  tonemap, PRE-curve canvas pixels (true RGBA, channel-swap undone). The
+   *  Color Curves histogram overlay is the first consumer; the Scopes panel
+   *  (#174) and targeted Color Curves (#173) reuse the same readback. UI-only;
+   *  never serialized. */
+  settledPixelsListeners?: Array<(pixels: SettledPixels) => void>;
+}
+
+/** Post-tonemap, PRE-curve canvas pixels emitted on render-settle (#175).
+ *  `rgba` is tightly packed (4 bytes/pixel, no row padding) and in TRUE RGBA
+ *  order regardless of the swap-chain's bgra8unorm/rgba8unorm format. */
+export interface SettledPixels {
+  width: number;
+  height: number;
+  rgba: Uint8ClampedArray;
 }
 
 export function createEditState(genome: Genome, seed: number): EditState {

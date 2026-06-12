@@ -21,6 +21,7 @@ import {
   type EditState,
   type LaneScheduler,
   type Lane,
+  type SettledPixels,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
@@ -538,6 +539,107 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const renderStart = performance.now();
     await awaitGpuThenMaybeHide(myTicket);
     nudge?.recordRender(performance.now() - renderStart);
+    // #175 — emit the settled, PRE-curve canvas pixels to any subscribed
+    // section (Color Curves histogram overlay; future Scopes #174). Best-
+    // effort: failures must never break the render path.
+    void captureSettledPixels(myTicket, spp);
+  }
+
+  // #175 — re-present the just-settled histogram into an offscreen COPY_SRC
+  // texture with channelCurves stripped (the INPUT-referred image the curves
+  // grade against), read it back, and hand TRUE-RGBA bytes to listeners. The
+  // pre-curve image is curve-invariant (curves are a present-pass op), so the
+  // overlay stays still while the user drags spline points.
+  //
+  // Cost note: the swap-chain texture isn't readable (WebGPU), so an offscreen
+  // re-present is mandatory for ANY readback; stripping channelCurves here is
+  // ~free over reading the graded canvas. applyLane('fast') reuses the
+  // existing histogram (no chaos re-iterate).
+  async function captureSettledPixels(myTicket: number, spp: number): Promise<void> {
+    const listeners = state.settledPixelsListeners;
+    if (!listeners || listeners.length === 0) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    if (W <= 0 || H <= 0) return;
+
+    let tex: GPUTexture | undefined;
+    let buf: GPUBuffer | undefined;
+    try {
+      tex = opts.device.createTexture({
+        label: 'pyr3.edit.histogram-readback',
+        size: { width: W, height: H },
+        format: opts.format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      // Strip channelCurves for the pre-curve (input-referred) readback.
+      const base = adjustedGenomeFor(W, H);
+      const preCurve = base.channelCurves ? { ...base, channelCurves: undefined } : base;
+      editRenderer.applyLane('fast', preCurve, state.seed, tex.createView(), W, H, { targetSpp: spp });
+
+      const bytesPerPixel = 4;
+      const unpaddedBytesPerRow = W * bytesPerPixel;
+      // copyTextureToBuffer requires bytesPerRow aligned to 256.
+      const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
+      buf = opts.device.createBuffer({
+        label: 'pyr3.edit.histogram-readback.buf',
+        size: bytesPerRow * H,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const enc = opts.device.createCommandEncoder();
+      enc.copyTextureToBuffer(
+        { texture: tex },
+        { buffer: buf, bytesPerRow, rowsPerImage: H },
+        { width: W, height: H },
+      );
+      opts.device.queue.submit([enc.finish()]);
+
+      await buf.mapAsync(GPUMapMode.READ);
+      // A newer render superseded us while we awaited — drop this frame; the
+      // newer settle will emit its own pixels.
+      if (inflightTicket !== myTicket) {
+        buf.unmap();
+        return;
+      }
+      const padded = new Uint8Array(buf.getMappedRange());
+      // Strip row padding into tight TRUE-RGBA. macOS Chrome's swap chain is
+      // commonly bgra8unorm — undo the channel swap here so downstream binning
+      // is format-agnostic.
+      const swapBR = opts.format === 'bgra8unorm';
+      const rgba = new Uint8ClampedArray(W * H * 4);
+      for (let y = 0; y < H; y++) {
+        const srcRow = y * bytesPerRow;
+        const dstRow = y * unpaddedBytesPerRow;
+        for (let x = 0; x < W; x++) {
+          const s = srcRow + x * 4;
+          const d = dstRow + x * 4;
+          if (swapBR) {
+            rgba[d] = padded[s + 2]!;
+            rgba[d + 1] = padded[s + 1]!;
+            rgba[d + 2] = padded[s]!;
+          } else {
+            rgba[d] = padded[s]!;
+            rgba[d + 1] = padded[s + 1]!;
+            rgba[d + 2] = padded[s + 2]!;
+          }
+          rgba[d + 3] = padded[s + 3]!;
+        }
+      }
+      buf.unmap();
+
+      const payload: SettledPixels = { width: W, height: H, rgba };
+      for (const fn of listeners) {
+        try {
+          fn(payload);
+        } catch {
+          // A misbehaving listener must not break the render path.
+        }
+      }
+    } catch {
+      // Readback is a non-critical overlay feed; swallow GPU/mapping errors.
+    } finally {
+      buf?.destroy();
+      tex?.destroy();
+    }
   }
 
   // Lane scheduler. Slow + rebuild lanes now render at LIVE dims (fast). The
@@ -762,6 +864,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
     notifyStateChange();
     await awaitGpuThenMaybeHide(myTicket);
+    // #175 — refresh the curves histogram for the new flame (reroll / open).
+    void captureSettledPixels(myTicket, spp);
   }
 
   function handleReroll(): void {
@@ -1036,7 +1140,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const view0 = ctx.getCurrentTexture().createView();
   editRenderer.applyLane('slow', adjustedGenomeFor(initialDims.width, initialDims.height), state.seed, view0, initialDims.width, initialDims.height, { targetSpp: previewCfg.quality });
   notifyStateChange();
-  void awaitGpuThenMaybeHide(inflightTicket);
+  // #175 — fire the curves histogram readback after the first paint settles
+  // (cold start never routes through runSettledRender, so wire it here too).
+  const coldTicket = inflightTicket;
+  void awaitGpuThenMaybeHide(coldTicket).then(() => captureSettledPixels(coldTicket, previewCfg.quality));
 
   // #176 — mount the render-mode-bar. Wires preview side to the editor's
   // PreviewRenderConfig (persisted to localStorage); render side to
