@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { DOMParser } from 'linkedom';
 
 import { applyExportOverrides } from './render-animation-png';
-import { makeAnimateRoute } from './route-animate';
+import { makeAnimateRoute, applySegmentEasing } from './route-animate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from '../../src/animation';
 import { type Genome, type Xform } from '../../src/genome';
 import { linear as linearVar } from '../../src/variations';
@@ -112,6 +112,19 @@ describe('applyExportOverrides — nsteps default in route', () => {
     const a = anim({ ntemporal_samples: 1000 });
     const out = applyExportOverrides(a, { nsteps: 1 });
     expect(out.ntemporal_samples).toBe(1);
+  });
+});
+
+describe('applySegmentEasing', () => {
+  it('stamps segment_easing from the request body onto the animation', () => {
+    const animation = { segmentEasing: undefined } as { segmentEasing?: unknown[] };
+    applySegmentEasing(animation as never, { segment_easing: [{ kind: 'preset', name: 'easeIn' }] });
+    expect(animation.segmentEasing).toEqual([{ kind: 'preset', name: 'easeIn' }]);
+  });
+  it('ignores a non-array segment_easing', () => {
+    const animation = { segmentEasing: undefined } as { segmentEasing?: unknown[] };
+    applySegmentEasing(animation as never, { segment_easing: 'nope' });
+    expect(animation.segmentEasing).toBeUndefined();
   });
 });
 

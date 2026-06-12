@@ -21,6 +21,7 @@ import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { resolve as resolvePath, isAbsolute, sep } from 'node:path';
 
 import { parseFlame } from '../../src/flame-import';
+import { type EasingCurve } from '../../src/easing';
 
 import { createJob, clearJob } from './jobs';
 import {
@@ -55,6 +56,21 @@ interface AnimateRequestBody {
   walker_jitter?: number;
   /** Deterministic seed base. */
   seed?: number;
+  /** Per-segment easing curves (#224). Stamped onto the parsed animation —
+   *  flam3 XML has no easing slot. Index i applies to keyframes[i]→[i+1]. */
+  segment_easing?: (EasingCurve | undefined)[];
+}
+
+/** Stamp request-provided per-segment easing onto the parsed animation.
+ *  No-op unless `segment_easing` is an array — the engine tolerates unknown
+ *  curve kinds, so no deep validation is needed here. */
+export function applySegmentEasing(
+  animation: { segmentEasing?: (EasingCurve | undefined)[] },
+  body: { segment_easing?: unknown },
+): void {
+  if (Array.isArray(body.segment_easing)) {
+    animation.segmentEasing = body.segment_easing as (EasingCurve | undefined)[];
+  }
 }
 
 function readJsonBody(req: IncomingMessage, limitBytes: number): Promise<unknown> {
@@ -135,6 +151,7 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       jsonError(res, 400, 'flame_xml has no animation surface — single <flame> only');
       return;
     }
+    applySegmentEasing(parsed.animation, body);
 
     // Default ntemporal_samples to 1 (no per-frame motion blur) for the
     // sequence-export path. ESF .flam3 files author ntemporal_samples=1000

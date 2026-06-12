@@ -489,3 +489,40 @@ describe('interpolate — carry-forward fields', () => {
     expect(r.density!.curve).toBeCloseTo(0.5);               // 0.5·0.4 + 0.5·0.6
   });
 });
+
+// ── #224 segmentEasing ───────────────────────────────────────────────────────
+
+describe('interpolate — segmentEasing (#224)', () => {
+  const seg = (k0cx: number, k1cx: number) =>
+    [baseGenome({ time: 0, cx: k0cx }), baseGenome({ time: 1, cx: k1cx })] as const;
+
+  it('absent segmentEasing is byte-identical to linear (cx=5 at midpoint)', () => {
+    const [k0, k1] = seg(0, 10);
+    expect(interpolate(anim(k0, k1), 0.5).cx).toBeCloseTo(5);
+  });
+
+  it("an explicit 'linear' curve matches the absent default", () => {
+    const [k0, k1] = seg(0, 10);
+    const r = interpolate(anim(k0, k1, { segmentEasing: [{ kind: 'preset', name: 'linear' }] }), 0.5);
+    expect(r.cx).toBeCloseTo(5);
+  });
+
+  it('easeIn pulls the midpoint toward k0 (eased c1 = 0.25 → cx = 2.5)', () => {
+    const [k0, k1] = seg(0, 10);
+    const r = interpolate(anim(k0, k1, { segmentEasing: [{ kind: 'preset', name: 'easeIn' }] }), 0.5);
+    expect(r.cx).toBeCloseTo(2.5);
+  });
+
+  it('endpoint extrapolation (t>last, rawC1>1) skips easing', () => {
+    const [k0, k1] = seg(0, 10);
+    const plain = interpolate(anim(k0, k1), 1.5).cx;
+    const eased = interpolate(anim(k0, k1, { segmentEasing: [{ kind: 'preset', name: 'easeIn' }] }), 1.5).cx;
+    expect(eased).toBeCloseTo(plain);
+    expect(eased).toBeCloseTo(15);
+  });
+
+  it('a short/sparse segmentEasing array treats missing entries as linear', () => {
+    const [k0, k1] = seg(0, 10);
+    expect(interpolate(anim(k0, k1, { segmentEasing: [] }), 0.5).cx).toBeCloseTo(5);
+  });
+});

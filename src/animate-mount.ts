@@ -22,6 +22,8 @@ import { getCapability } from './capability';
 import { exportAnimate, type ExportAnimateProgress } from './animate-export';
 import { openAnimateExportModal, type AnimateExportModalHandle } from './animate-export-modal';
 import { estimateExport } from './animate-estimate';
+import { buildEasingPanel } from './animate-easing-panel';
+import { type EasingCurve } from './easing';
 
 export interface MountAnimateOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -280,6 +282,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   let pendingRenderTime: number | null = null;
   let exportAbort: AbortController | null = null;
   let exportModal: AnimateExportModalHandle | null = null;
+  // #224 — per-segment easing UI, (re)built on each animation load.
+  let easingPanel: HTMLElement | null = null;
+  // Track the most-recently-rendered time so an easing change re-renders the
+  // frame the user is currently looking at.
+  let lastRenderedTime = 0;
   // #226 — throughput anchor for the up-front export ETA: this machine's
   // measured chaos samples/sec, smoothed (EMA) from the preview renders that
   // already run on load / scrub. null until the first preview frame times out.
@@ -327,6 +334,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   }
 
   async function renderAtTime(t: number): Promise<void> {
+    lastRenderedTime = t;
     if (!animation || !renderer || !context) return;
     // Single-flight: drop intermediate frames so seeks during a slow render
     // don't queue up. The last requested time always wins.
@@ -444,6 +452,16 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       }
       animation = parsed.animation;
       loadedFlameXml = text;
+      if (easingPanel) { easingPanel.remove(); easingPanel = null; }
+      easingPanel = buildEasingPanel({
+        animation,
+        onChange: (segmentIndex: number, curve: EasingCurve) => {
+          if (!animation) return;
+          (animation.segmentEasing ??= [])[segmentIndex] = curve;
+          void renderAtTime(lastRenderedTime);
+        },
+      });
+      controls.insertBefore(easingPanel, scrubHost);
       empty.style.display = 'none';
       buildRenderer();
       mountPlaybackForAnimation();
@@ -536,6 +554,9 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           qs: values.qs,
           prefix: values.prefix,
           outDir: values.outDir,
+          // #224 — carry the in-memory per-segment easing into the backend
+          // export so the rendered sequence matches the scrubber preview.
+          ...(animation?.segmentEasing ? { segmentEasing: animation.segmentEasing } : {}),
         },
         onProgress: (info: ExportAnimateProgress) => {
           if (exportModal) {
@@ -583,6 +604,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       playbackBar = null;
       renderer?.destroy();
       renderer = null;
+      if (easingPanel) { easingPanel.remove(); easingPanel = null; }
       animation = null;
       loadedFlameXml = null;
       root.replaceChildren();

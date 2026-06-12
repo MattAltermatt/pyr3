@@ -32,6 +32,7 @@ import {
 import { type ColorStop, type Palette, bakeLUT, PALETTE_SIZE } from './palette';
 import { type Tonemap } from './tonemap';
 import { applyMotionParameters } from './motion';
+import { evalEasing } from './easing';
 
 /** flam3 EPS (interpolation.c:312). Guards against the ±π wrap discontinuity. */
 const EPS = 1e-9;
@@ -58,9 +59,23 @@ export function interpolate(animation: Animation, time: number): Genome {
     console.warn('pyr3: smooth (Catmull-Rom) interp not yet implemented; using linear');
   }
 
-  const { i1, i2, c0, c1 } = pickKeyframes(keyframes, time);
+  const { i1, i2, c0: rawC0, c1: rawC1 } = pickKeyframes(keyframes, time);
   const k0 = keyframes[i1]!;
   const k1 = keyframes[i2]!;
+
+  // #224 easing: reshape the linear blend weight through this segment's curve.
+  // Only ease in-range — pickKeyframes endpoint-extrapolates (rawC1 outside
+  // [0,1]) where easing is undefined, so pass those through linearly. The eased
+  // (c0, c1) drive EVERY downstream blend uniformly; the motion-overlay clock
+  // below deliberately keeps the raw linear weight so oscillation rate stays
+  // steady across the segment.
+  let c0 = rawC0;
+  let c1 = rawC1;
+  const easeCurve = animation.segmentEasing?.[i1];
+  if (easeCurve && rawC1 >= 0 && rawC1 <= 1) {
+    c1 = evalEasing(easeCurve, rawC1);
+    c0 = 1 - c1;
+  }
 
   // Align xform counts — pad the shorter side with identity xforms so
   // both genomes have the same length (and same finalxform presence) before
@@ -71,15 +86,16 @@ export function interpolate(animation: Animation, time: number): Genome {
   const useLog = animation.interpolation_type === 'log';
 
   // P3 #208 — pre-apply per-xform motion overlays to each keyframe's xforms
-  // before linear blend (flam3.c:533-541 sheep_edge pattern). The blend used
-  // as the motion clock is c1 — the in-window time in [0, 1] for this
-  // 2-keyframe pair (c1=0 at the first keyframe, c1=1 at the second).
-  // applyMotionParameters is a pure no-op when xform.motion is empty, so the
-  // common case adds zero overhead.
+  // before linear blend (flam3.c:533-541 sheep_edge pattern). The motion clock
+  // is the RAW (un-eased) linear weight rawC1 — the in-window time in [0, 1] for
+  // this 2-keyframe pair (rawC1=0 at the first keyframe, =1 at the second). It
+  // stays linear (not eased by #224) so a motion oscillation keeps a steady rate
+  // across the segment. applyMotionParameters is a pure no-op when xform.motion
+  // is empty, so the common case adds zero overhead.
   const xforms: Xform[] = [];
   for (let i = 0; i < aligned0.xforms.length; i++) {
-    const xf0 = applyMotionParameters(aligned0.xforms[i]!, c1);
-    const xf1 = applyMotionParameters(aligned1.xforms[i]!, c1);
+    const xf0 = applyMotionParameters(aligned0.xforms[i]!, rawC1);
+    const xf1 = applyMotionParameters(aligned1.xforms[i]!, rawC1);
     xforms.push(interpolateXform(xf0, xf1, c0, c1, useLog));
   }
 

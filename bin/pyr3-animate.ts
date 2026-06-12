@@ -26,6 +26,7 @@ import { type Animation } from '../src/animation';
 import { renderAnimationFrame } from '../src/animate-render';
 import { totalSampleBudget, formatCount, formatEstTime, estimateSeconds } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
+import { parseEasingFlag } from './pyr3-animate-args';
 
 installWebGPUHost();
 
@@ -125,6 +126,11 @@ async function main(): Promise<void> {
           return g;
         }),
       };
+
+  // #224 — optional per-segment easing override (`--easing <json EasingCurve[]>`).
+  // Stamped onto the SAME object passed to interpolate(animation, t) below.
+  const easing = parseEasingFlag(process.argv.slice(2));
+  if (easing) animation.segmentEasing = easing;
 
   // Default begin/end from keyframe times (flam3-animate.c:181-185 behavior).
   const firstKfTime = animation.keyframes[0]!.time ?? 0;

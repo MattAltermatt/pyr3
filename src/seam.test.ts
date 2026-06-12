@@ -91,6 +91,7 @@ const SEAM_EXEMPT = new Set<string>([
   'render-save.ts',            // shared Save Render helper — anchor download (#201 P0)
   'animate-mount.ts',          // /v1/animate page body — DOM-mounting (#211 P6)
   'animate-export-modal.ts',   // /v1/animate export modal — DOM-mounting (#212 P7)
+  'animate-easing-panel.ts',   // /v1/animate per-segment easing panel — DOM-mounting (#224)
   'playback-bar.ts',           // /v1/animate scrubber — DOM-mounting (#211 P6)
   'palette-editor.ts',         // /v1/gradient stop-bar editor — DOM-mounting (#115)
   'color-picker.ts',           // /v1/gradient HSV picker popover — owns DOM (#115)

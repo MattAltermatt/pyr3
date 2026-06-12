@@ -5,6 +5,8 @@
 // on completion or `'cancelled'` if the host aborted mid-flight. P7 of
 // the Animation milestone (#212).
 
+import { type EasingCurve } from './easing';
+
 export interface ExportAnimateParams {
   /** Raw `.flam3` XML (the contents of the loaded file). */
   flameXml: string;
@@ -19,6 +21,8 @@ export interface ExportAnimateParams {
   outDir: string;
   walkerJitter?: number;
   seed?: number;
+  /** Per-segment easing curves (#224); sent as `segment_easing`. */
+  segmentEasing?: (EasingCurve | undefined)[];
 }
 
 export interface ExportAnimateProgress {
@@ -91,6 +95,7 @@ export async function exportAnimate(opts: ExportAnimateOpts): Promise<ExportAnim
     ...(opts.params.prefix !== undefined ? { prefix: opts.params.prefix } : {}),
     ...(opts.params.walkerJitter !== undefined ? { walker_jitter: opts.params.walkerJitter } : {}),
     ...(opts.params.seed !== undefined ? { seed: opts.params.seed } : {}),
+    ...(opts.params.segmentEasing ? { segment_easing: opts.params.segmentEasing } : {}),
   };
 
   let jobId: string | null = null;

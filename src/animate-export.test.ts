@@ -142,6 +142,21 @@ describe('exportAnimate', () => {
     expect(cancels).toContain('/api/cancel/job-abort');
   });
 
+  it('includes segment_easing in the POST body when present', async () => {
+    const fetchImpl = mockFetch({
+      events: ['event: done\ndata: {"written":[]}\n\n'],
+    });
+    await exportAnimate({
+      params: { flameXml: '<flame/>', outDir: '/tmp', segmentEasing: [{ kind: 'preset', name: 'easeIn' }] },
+      abortSignal: new AbortController().signal,
+      onProgress: () => {},
+      fetchImpl,
+    }).catch(() => {});
+    const calls = (fetchImpl as unknown as { mock: { calls: [unknown, { body: string }][] } }).mock.calls;
+    const body = JSON.parse(calls[0]![1].body);
+    expect(body.segment_easing).toEqual([{ kind: 'preset', name: 'easeIn' }]);
+  });
+
   it('throws when the response is not ok', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,

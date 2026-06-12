@@ -9,6 +9,7 @@
 // Source: flam3-C flam3.h + flam3.c:1340-1400 (clear_cp defaults), interpolation.c.
 
 import { type Genome } from './genome';
+import { type EasingCurve } from './easing';
 
 /** flam3 `interpolation` field — controls which interp curve is used between
  *  adjacent keyframes. flam3-C default: `linear`. */
@@ -54,6 +55,12 @@ export interface Animation {
   /** Motion-blur exponent — only used when `temporal_filter_type === 'exp'`.
    *  flam3 default 0.0 (flam3.c:1395). */
   temporal_filter_exp: number;
+  /** Per-segment easing (#224), sparse, indexed by keyframe gap: segmentEasing[i]
+   *  reshapes the blend from keyframes[i] → keyframes[i+1]. ABSENT (field or an
+   *  entry) ⇒ linear ⇒ byte-identical to today. pyr3 JSON only — flam3 XML has no
+   *  easing slot, so `.flam3` import never sets it. #227 evolves this into per-clip
+   *  transition curves on the same segment key. */
+  segmentEasing?: (EasingCurve | undefined)[];
 }
 
 /** flam3-C `clear_cp` defaults for the Animation cross-keyframe fields.
