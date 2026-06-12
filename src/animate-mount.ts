@@ -21,6 +21,7 @@ import { DEFAULT_WALKER_JITTER } from './chaos';
 import { getCapability } from './capability';
 import { exportAnimate, type ExportAnimateProgress } from './animate-export';
 import { openAnimateExportModal, type AnimateExportModalHandle } from './animate-export-modal';
+import { estimateExport } from './animate-estimate';
 
 export interface MountAnimateOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -279,6 +280,13 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   let pendingRenderTime: number | null = null;
   let exportAbort: AbortController | null = null;
   let exportModal: AnimateExportModalHandle | null = null;
+  // #226 — throughput anchor for the up-front export ETA: this machine's
+  // measured chaos samples/sec, smoothed (EMA) from the preview renders that
+  // already run on load / scrub. null until the first preview frame times out.
+  // The browser-GPU preview is a rough proxy for the backend Dawn-node export
+  // path (same silicon, different driver), and the during-render ETA re-anchors
+  // it per frame — so a cold approximation is fine.
+  let previewSamplesPerSec: number | null = null;
 
   function setStatus(msg: string, tone: 'info' | 'error' = 'info'): void {
     status.textContent = msg;
@@ -343,11 +351,22 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
             : PREVIEW_MAX_SPP,
         })),
       };
-      renderAnimationFrame(renderer, previewAnim, t, {
+      const gpuStart = performance.now();
+      const previewResult = renderAnimationFrame(renderer, previewAnim, t, {
         outputView: context.getCurrentTexture().createView(),
         walkerJitter: DEFAULT_WALKER_JITTER,
       });
       await device.queue.onSubmittedWorkDone();
+      // #226 — sample this machine's throughput from the preview render so the
+      // export modal can show a real up-front ETA. EMA-smooth so the first
+      // (pipeline-warmup-inflated) frame doesn't dominate.
+      const gpuMs = performance.now() - gpuStart;
+      if (gpuMs > 0 && previewResult.totalSamples > 0) {
+        const sps = previewResult.totalSamples / (gpuMs / 1000);
+        previewSamplesPerSec = previewSamplesPerSec === null
+          ? sps
+          : previewSamplesPerSec * 0.6 + sps * 0.4;
+      }
       // Yield to rAF so the browser can composite the just-rendered frame
       // before we acquire the next swap-chain texture. Without this, back-to-
       // back scrubs can get the SAME swap-chain texture twice — Chrome
@@ -454,6 +473,12 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     exportModal = openAnimateExportModal({
       host: root,
       defaults: { begin, end, dtime: 1, qs: 1.0, prefix: '' },
+      // #226 — live up-front ETA, recomputed as the user edits begin/end/dtime/qs.
+      // Closes over the loaded animation + this machine's measured throughput.
+      estimate: (range) =>
+        animation
+          ? estimateExport(animation, range, previewSamplesPerSec)
+          : { frames: 0, totalSamples: 0, seconds: null },
       // Only wire the Browse button when running under pyr3 serve —
       // can_write_files is the right capability bit (true on the backend
       // path where /api/pick-dir exists, false on gh-pages where the

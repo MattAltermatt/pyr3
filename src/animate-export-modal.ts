@@ -13,6 +13,8 @@
 // relative paths against the `pyr3 serve` cwd. The input is blank by
 // default — the user must type a path before Start lights up.
 
+import { type ExportRange, type ExportEstimate, formatExportEstimate } from './animate-estimate';
+
 export interface AnimateExportFormValues {
   begin: number;
   end: number;
@@ -34,6 +36,10 @@ export interface AnimateExportModalOpts {
    *  message on a missing-picker / failure. Caller wires this to
    *  POST /api/pick-dir when running under pyr3 serve. */
   pickDirectory?(): Promise<string | null>;
+  /** #226 — up-front render-time estimate for the current form range, shown
+   *  live in the form and recomputed as begin/end/dtime/qs change. Omit to
+   *  hide the estimate line. */
+  estimate?(range: ExportRange): ExportEstimate;
 }
 
 export interface AnimateExportProgressInfo {
@@ -250,6 +256,35 @@ export function openAnimateExportModal(
   }
 
   form.append(beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row);
+
+  // #226 — live up-front estimate line. Recomputed whenever a cost-affecting
+  // field (begin/end/dtime/qs) changes. Hidden when no estimate hook is wired
+  // (e.g. tests / gh-pages where export is never reachable).
+  const estimateLine = document.createElement('div');
+  estimateLine.setAttribute('data-export-estimate', '');
+  Object.assign(estimateLine.style, {
+    fontSize: '11px',
+    color: '#9cd',
+    marginTop: '8px',
+    minHeight: '14px',
+  });
+  form.appendChild(estimateLine);
+
+  function refreshEstimate(): void {
+    if (!opts.estimate) {
+      estimateLine.style.display = 'none';
+      return;
+    }
+    const v = readForm();
+    estimateLine.textContent = formatExportEstimate(
+      opts.estimate({ begin: v.begin, end: v.end, dtime: v.dtime, qs: v.qs }),
+    );
+  }
+
+  for (const f of [beginIn, endIn, dtimeIn, qsIn]) {
+    f.input.addEventListener('input', refreshEstimate);
+  }
+  refreshEstimate();
 
   const formNote = document.createElement('div');
   formNote.textContent =

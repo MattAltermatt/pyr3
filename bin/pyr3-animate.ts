@@ -24,6 +24,7 @@ import { injectPngTextChunk } from '../src/png-text-chunk';
 import { interpolate } from '../src/interpolate';
 import { type Animation } from '../src/animation';
 import { renderAnimationFrame } from '../src/animate-render';
+import { totalSampleBudget, formatCount, formatEstTime, estimateSeconds } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
 
 installWebGPUHost();
@@ -159,6 +160,19 @@ async function main(): Promise<void> {
       `[pyr3-animate] rendering ${frames.length} frame(s): ` +
         `t=${frames[0]}..${frames[frames.length - 1]} stride ${dtime}`,
     );
+    // #226 — up-front sample budget. qs is already baked into the keyframes
+    // above, so the range uses qs:1. No throughput anchor exists before the
+    // first frame on the CLI (no preview phase), so the time estimate prints
+    // once frame 1 lands (see the running ETA in the loop below).
+    const upFrontBudget = totalSampleBudget(animation, {
+      begin: frames[0]!,
+      end: frames[frames.length - 1]!,
+      dtime,
+      qs: 1,
+    });
+    console.log(
+      `[pyr3-animate] est. work: ${frames.length} frames · ${formatCount(upFrontBudget)} samples total`,
+    );
   }
 
   // Acquire GPU device + texture/renderer (rebuilt per-frame only if dims change).
@@ -167,6 +181,12 @@ async function main(): Promise<void> {
   let renderer: ReturnType<typeof createRenderer> | null = null;
   let texture: GPUTexture | null = null;
   let cached: { width: number; height: number; oversample: number; filterRadius: number } | null = null;
+
+  // #226 — running ETA accumulators. After each frame we re-anchor samples/sec
+  // from real wall-clock and project the remaining frames.
+  let doneSamples = 0;
+  let doneSeconds = 0;
+  let frameNum = 0;
 
   for (const t of frames) {
     // ss/qs already baked into `animation` upfront; interpolate just picks
@@ -250,9 +270,27 @@ async function main(): Promise<void> {
     const outPath = resolve(outDir, outName);
     writeFileSync(outPath, withMetadata);
 
+    const frameSeconds = (Date.now() - t0) / 1000;
+    frameNum++;
+    doneSamples += frameResult.totalSamples;
+    doneSeconds += frameSeconds;
+
     if (verbose) {
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
-      console.log(`[pyr3-animate] wrote ${outName} (${width}×${height}) in ${elapsed}s`);
+      const elapsed = frameSeconds.toFixed(2);
+      // #226 — project the remaining frames from this-run throughput.
+      const framesLeft = frames.length - frameNum;
+      let etaSuffix = '';
+      if (framesLeft > 0) {
+        const samplesPerSec = doneSamples / Math.max(1e-6, doneSeconds);
+        const avgPerFrame = doneSamples / frameNum;
+        const remSec = estimateSeconds(avgPerFrame * framesLeft, samplesPerSec);
+        if (remSec !== null) {
+          etaSuffix = ` · est. time remaining ${formatEstTime(remSec)} (${framesLeft} left)`;
+        }
+      }
+      console.log(
+        `[pyr3-animate] wrote ${outName} (${width}×${height}) in ${elapsed}s${etaSuffix}`,
+      );
     }
   }
 
