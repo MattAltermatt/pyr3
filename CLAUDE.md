@@ -23,8 +23,8 @@ npm run animate <in.flam3> <out-dir>                # headless keyframe-animatio
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 
-The viewer routes are `/v1` (viewer), `/v1/edit`, `/v1/animate`, and
-`/v1/screensaver`. The `pyr3` global command (via `npm link`) boots
+The viewer routes are `/v1` (viewer), `/v1/edit`, `/v1/gradient`, `/v1/animate`,
+and `/v1/screensaver`. The `pyr3` global command (via `npm link`) boots
 `pyr3 serve`, whose backend exposes `/api/render` + `/api/animate` (SSE-
 streamed) for renders past the browser's quality cap.
 

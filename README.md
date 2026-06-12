@@ -29,6 +29,10 @@ GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through th
   cartographic warps), and pyr3's own **direct-color (DC) family** (`dc_linear` · `dc_perlin` ·
   `dc_gridout` · `dc_cylinder`) — plus palette picker, undo/redo, name templates, save to
   `.pyr3.json`.
+- 🎨 **[Design a palette](https://pyr3.app/v1/gradient)** — a standalone gradient editor: drag
+  color stops (linear / smooth / step interpolation), recolor via an HSV picker, reverse /
+  mirror / rotate / invert-luminance transforms, save to a personal library, and import/export
+  `.pyre-palette.json` files.
 - 🎬 **[Animate a flame](https://pyr3.app/v1/animate)** — keyframe interpolation, per-xform
   motion, temporal-sampling motion blur, and a playback scrubber; export the sequence to frames.
 - 📺 **[Run as a screensaver](https://pyr3.app/v1/screensaver)** — build-up mode (watch one

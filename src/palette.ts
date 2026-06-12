@@ -5,7 +5,7 @@
 export const PALETTE_SIZE = 256;
 export const PALETTE_BYTES = PALETTE_SIZE * 16; // 256 × vec4f
 
-export type PaletteMode = 'linear' | 'step';
+export type PaletteMode = 'linear' | 'step' | 'smooth';
 
 export interface ColorStop {
   t: number; // [0, 1]
@@ -21,6 +21,17 @@ export interface Palette {
   mode?: PaletteMode;  // default 'linear'
 }
 
+// Cardinal Catmull-Rom (tension B=0.5) for one channel across 4 control values.
+// Mirror of channel-curves.ts:evalSpline — kept local so palette.ts has no
+// cross-module dependency on the curves editor. (#115 smooth interpolation.)
+function catmullRom(u: number, xa: number, xb: number, xc: number, xd: number): number {
+  const B = 0.5;
+  let c = u * u * u * (-B * xa + (2 - B) * xb + (B - 2) * xc + B * xd);
+  c += u * u * (2 * B * xa + (B - 3) * xb + (3 - 2 * B) * xc - B * xd);
+  c += u * (-B * xa + B * xc);
+  return c + xb;
+}
+
 /** Bake a 256-entry RGBA LUT (Float32Array, length 1024) from gradient stops.
  *  Pure function; allocates a fresh array.
  *
@@ -28,7 +39,9 @@ export interface Palette {
  *  @param hue Optional HSV hue rotation in degrees, applied to each stop
  *             before interpolation. Default 0 (no rotation).
  *  @param mode Optional interpolation mode. 'linear' = piecewise-linear (default).
- *              'step' = piecewise-constant (use lower stop's color verbatim). */
+ *              'step' = piecewise-constant (use lower stop's color verbatim).
+ *              'smooth' = Catmull-Rom through the stops (≥3 stops; clamps to [0,1];
+ *              falls back to linear for <3 stops). */
 export function bakeLUT(
   stops: ColorStop[],
   hue: number = 0,
@@ -45,17 +58,17 @@ export function bakeLUT(
   const data = new Float32Array(PALETTE_SIZE * 4);
   for (let i = 0; i < PALETTE_SIZE; i++) {
     const t = i / (PALETTE_SIZE - 1);
-    let lo = sorted[0]!;
-    let hi = sorted[sorted.length - 1]!;
+    let loIdx = 0;
+    let hiIdx = sorted.length - 1;
     for (let s = 0; s < sorted.length - 1; s++) {
-      const a = sorted[s]!;
-      const b = sorted[s + 1]!;
-      if (t >= a.t && t <= b.t) {
-        lo = a;
-        hi = b;
+      if (t >= sorted[s]!.t && t <= sorted[s + 1]!.t) {
+        loIdx = s;
+        hiIdx = s + 1;
         break;
       }
     }
+    const lo = sorted[loIdx]!;
+    const hi = sorted[hiIdx]!;
     if (mode === 'step') {
       data[i * 4 + 0] = lo.r;
       data[i * 4 + 1] = lo.g;
@@ -66,9 +79,19 @@ export function bakeLUT(
       // keep the full-palette endpoints) take the nearest endpoint color
       // instead of extrapolating to negative / >1 RGB. (#240)
       const u = Math.max(0, Math.min(1, (t - lo.t) / span));
-      data[i * 4 + 0] = lo.r + (hi.r - lo.r) * u;
-      data[i * 4 + 1] = lo.g + (hi.g - lo.g) * u;
-      data[i * 4 + 2] = lo.b + (hi.b - lo.b) * u;
+      if (mode === 'smooth' && sorted.length >= 3) {
+        // Catmull-Rom through the stops, with phantom-duplicated endpoints
+        // (mirror of channel-curves.ts:evalCurve). Clamp overshoot to [0,1].
+        const a = sorted[Math.max(0, loIdx - 1)]!;
+        const d = sorted[Math.min(sorted.length - 1, hiIdx + 1)]!;
+        data[i * 4 + 0] = Math.max(0, Math.min(1, catmullRom(u, a.r, lo.r, hi.r, d.r)));
+        data[i * 4 + 1] = Math.max(0, Math.min(1, catmullRom(u, a.g, lo.g, hi.g, d.g)));
+        data[i * 4 + 2] = Math.max(0, Math.min(1, catmullRom(u, a.b, lo.b, hi.b, d.b)));
+      } else {
+        data[i * 4 + 0] = lo.r + (hi.r - lo.r) * u;
+        data[i * 4 + 1] = lo.g + (hi.g - lo.g) * u;
+        data[i * 4 + 2] = lo.b + (hi.b - lo.b) * u;
+      }
     }
     data[i * 4 + 3] = 0;
   }

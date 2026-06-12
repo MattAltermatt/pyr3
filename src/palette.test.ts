@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paletteFromStops, bakeLUT, rotateHueRGB, PALETTE_SIZE } from './palette';
+import { paletteFromStops, bakeLUT, rotateHueRGB, PALETTE_SIZE, PYRE_PALETTE, type ColorStop } from './palette';
 
 describe('bakeLUT', () => {
   it('matches first stop exactly at LUT entry 0', () => {
@@ -146,5 +146,64 @@ describe('rotateHueRGB', () => {
     expect(out.r).toBeCloseTo(0.5, 6);
     expect(out.g).toBeCloseTo(0.5, 6);
     expect(out.b).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('bakeLUT smooth mode (#115)', () => {
+  // PARITY GUARD — linear/step output must never change.
+  it('linear output is unchanged by the smooth addition', () => {
+    const lut = bakeLUT(PYRE_PALETTE.stops, 0, 'linear');
+    expect(lut[0]).toBeCloseTo(0.18, 6); // stop t=0 r
+    expect(lut[1]).toBeCloseTo(0.0, 6); // stop t=0 g
+    expect(lut[255 * 4 + 0]).toBeCloseTo(1.0, 6); // stop t=1 r
+    expect(lut[3]).toBe(0); // alpha always 0
+  });
+
+  it('step output is unchanged by the smooth addition', () => {
+    const stops: ColorStop[] = [
+      { t: 0, r: 0, g: 0, b: 0 },
+      { t: 1, r: 1, g: 1, b: 1 },
+    ];
+    const lut = bakeLUT(stops, 0, 'step');
+    expect(lut[0]).toBe(0); // lower stop verbatim
+    expect(lut[254 * 4]).toBe(0); // still lower stop just below t=1
+  });
+
+  it('smooth passes through the stop colors at the stops', () => {
+    const stops: ColorStop[] = [
+      { t: 0, r: 0.1, g: 0.2, b: 0.3 },
+      { t: 0.5, r: 0.8, g: 0.1, b: 0.4 },
+      { t: 1, r: 0.2, g: 0.9, b: 0.7 },
+    ];
+    const lut = bakeLUT(stops, 0, 'smooth');
+    expect(lut[0]).toBeCloseTo(0.1, 5); // t=0 r
+    expect(lut[255 * 4 + 1]).toBeCloseTo(0.9, 5); // t=1 g
+    expect(lut[128 * 4 + 0]).toBeCloseTo(0.8, 1); // near the middle stop r
+  });
+
+  it('smooth clamps overshoot into [0,1]', () => {
+    const stops: ColorStop[] = [
+      { t: 0, r: 1, g: 0, b: 0 },
+      { t: 0.5, r: 0, g: 0, b: 0 },
+      { t: 0.5001, r: 1, g: 0, b: 0 },
+      { t: 1, r: 0, g: 0, b: 0 },
+    ];
+    const lut = bakeLUT(stops, 0, 'smooth');
+    for (let i = 0; i < PALETTE_SIZE; i++) {
+      for (let c = 0; c < 3; c++) {
+        expect(lut[i * 4 + c]).toBeGreaterThanOrEqual(0);
+        expect(lut[i * 4 + c]).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('smooth falls back to linear for <3 stops', () => {
+    const stops: ColorStop[] = [
+      { t: 0, r: 0, g: 0, b: 0 },
+      { t: 1, r: 1, g: 1, b: 1 },
+    ];
+    const smooth = bakeLUT(stops, 0, 'smooth');
+    const linear = bakeLUT(stops, 0, 'linear');
+    for (let i = 0; i < smooth.length; i++) expect(smooth[i]).toBeCloseTo(linear[i]!, 6);
   });
 });

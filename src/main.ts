@@ -210,6 +210,7 @@ async function main(): Promise<void> {
     viewer:      '/',
     gallery:     '/v1/gallery',
     editor:      '/v1/edit',
+    gradient:    '/v1/gradient',
     animate:     '/v1/animate',
     about:       '/about',
     screensaver: '/v1/screensaver',
@@ -218,6 +219,7 @@ async function main(): Promise<void> {
     const p = window.location.pathname;
     if (p === '/v1/gallery' || p.startsWith('/v1/gallery/')) return 'gallery';
     if (p === '/v1/edit' || p.startsWith('/v1/edit/')) return 'editor';
+    if (p === '/v1/gradient' || p.startsWith('/v1/gradient/')) return 'gradient';
     if (p === '/v1/animate' || p.startsWith('/v1/animate/')) return 'animate';
     if (p === '/about' || p.startsWith('/about/')) return 'about';
     if (p === '/v1/screensaver' || p.startsWith('/v1/screensaver/')) return 'screensaver';
@@ -355,6 +357,38 @@ async function main(): Promise<void> {
       // undefined so mountAbout's "WebGPU" fallback shows on the chip.
     });
     setDocTitle('about');
+    return;
+  }
+
+  // #115 — /v1/gradient short-circuit. The gradient / palette editor is a
+  // CPU-only page (the 256-LUT bakes on CPU), so no GPU device is acquired.
+  // Bar chrome with the Gradient tab active; the page body lives in the bar's
+  // middleSlot. Viewer canvas + first-paint cue hidden so the page owns the zone.
+  if (window.location.pathname === '/v1/gradient' || window.location.pathname.startsWith('/v1/gradient/')) {
+    const barRoot = document.getElementById('pyr3-bar');
+    const bodyRoot = document.getElementById('pyr3-canvas-zone');
+    if (!barRoot || !bodyRoot) {
+      console.error('pyr3: /v1/gradient — required DOM nodes missing');
+      return;
+    }
+    const { mountBarChrome } = await import('./ui-bar');
+    const chrome = mountBarChrome(barRoot, { surface: 'gradient', webgpu, onTabClick: handleTabClick });
+    const canvas = document.getElementById('pyr3-canvas');
+    if (canvas) canvas.hidden = true;
+    const firstPaint = document.getElementById('pyr3-firstpaint');
+    if (firstPaint) firstPaint.remove();
+    const gradContainer = document.createElement('div');
+    gradContainer.id = 'pyr3-gradient';
+    Object.assign(gradContainer.style, {
+      position: 'relative',
+      height: 'calc(100vh - 44px)',
+      overflow: 'auto',
+    });
+    chrome.middleSlot.appendChild(gradContainer);
+    const { mountGradientPage } = await import('./gradient-page');
+    const gradientHandle = mountGradientPage({ root: gradContainer });
+    window.addEventListener('pagehide', () => { gradientHandle.destroy(); }, { once: true });
+    setDocTitle('gradient');
     return;
   }
 

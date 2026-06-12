@@ -12,7 +12,7 @@
 //   │    title · badge · close-x                         │
 //   │    search input                                    │
 //   │    chip-row (Task 9.5 fills)                       │
-//   │    tabs: all (701) · ★ favorites (N)               │
+//   │    tabs: all (701) · ★ favorites (N) · mine (N)    │
 //   │    controls: sort dropdown · auto-apply toggle     │
 //   │  pyr3-palette-picker-body                          │
 //   │    (Task 9.4: 3-col cell grid; Task 9.5: filtered) │
@@ -42,6 +42,7 @@ import {
 } from './flam3-palette-names';
 import { FLAM3_PALETTE_COUNT, getLibraryStops, getLibraryPaletteName } from './flam3-palettes';
 import { type ColorStop } from './palette';
+import { listMine } from './palette-library';
 import {
   COLOR_TAGS,
   type ColorTag,
@@ -275,7 +276,10 @@ export function mountPalettePicker(
   const favTab = document.createElement('div');
   favTab.className = 'pyr3-palette-picker-tab';
   favTab.dataset['tab'] = 'favorites';
-  tabsRow.append(allTab, favTab);
+  const mineTab = document.createElement('div');
+  mineTab.className = 'pyr3-palette-picker-tab';
+  mineTab.dataset['tab'] = 'mine';
+  tabsRow.append(allTab, favTab, mineTab);
   head.appendChild(tabsRow);
 
   // Controls row: sort dropdown · auto-apply toggle
@@ -342,7 +346,7 @@ export function mountPalettePicker(
 
   // Live favorite set + tab state ------------------------------------------
   const favorites = readFavorites();
-  let activeTab: 'all' | 'favorites' = 'all';
+  let activeTab: 'all' | 'favorites' | 'mine' = 'all';
   // 2026-06-05: auto-apply ON by default — single-clicking a palette
   // immediately re-renders in that color so the user can preview without
   // a separate commit. apply&close locks the pick; closing any other way
@@ -453,6 +457,84 @@ export function mountPalettePicker(
     starByIdx.set(entry.idx, star);
     paintStar(entry.idx);
   }
+
+  // ── Mine grid (user-saved palettes, #115) ───────────────────────────────
+  // A second grid container that spans the body. The flam3 cells live as
+  // direct children of `body`; the mine container is one more direct child
+  // that grid-spans all 3 columns. Tab switching toggles which is visible:
+  // `mine` shows mineGrid + hides the flam3 cells; `all`/`favorites` reverse
+  // it. Mine cells are rebuilt from `listMine()` each time the tab activates
+  // so newly-saved palettes appear without a remount.
+  const mineGrid = document.createElement('div');
+  mineGrid.className = 'pyr3-palette-picker-mine-grid';
+  mineGrid.style.display = 'none';
+  mineGrid.style.gridColumn = '1 / -1';
+  body.appendChild(mineGrid);
+
+  function renderMineCells(): void {
+    mineGrid.replaceChildren();
+    const saved = listMine();
+    if (saved.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'pyr3-palette-picker-mine-empty';
+      empty.textContent = 'no saved palettes yet — save one from the gradient editor';
+      empty.style.fontSize = '11px';
+      empty.style.color = COLORS.text.dim;
+      empty.style.padding = '8px 0';
+      empty.style.textAlign = 'center';
+      mineGrid.appendChild(empty);
+      return;
+    }
+    for (const entry of saved) {
+      const cell = document.createElement('div');
+      cell.className = 'pyr3-palette-picker-cell pyr3-palette-picker-mine-cell';
+      cell.dataset['mine'] = entry.name;
+      cell.title = entry.name;
+      cell.style.cursor = 'pointer';
+      cell.style.padding = '4px';
+      cell.style.borderRadius = '3px';
+      cell.style.border = '1px solid transparent';
+      cell.style.background = 'transparent';
+      cell.style.position = 'relative';
+
+      if (selectedSource.kind === 'mine' && selectedSource.name === entry.name) {
+        cell.classList.add('active');
+        cell.style.borderColor = COLORS.flame.top;
+        cell.style.background = COLORS.bg.action;
+      }
+
+      cell.addEventListener('click', () => {
+        setSelected({ kind: 'mine', name: entry.name });
+        if (autoApplyOn) opts.onApply(selectedSource);
+      });
+
+      const ribbon = document.createElement('div');
+      ribbon.className = 'pyr3-palette-picker-cell-ribbon';
+      ribbon.style.height = '36px';
+      ribbon.style.borderRadius = '2px';
+      ribbon.style.border = `1px solid ${COLORS.border}`;
+      ribbon.style.background = gradientCss(entry.stops);
+      cell.appendChild(ribbon);
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'pyr3-palette-picker-cell-name';
+      nameEl.textContent = entry.name;
+      nameEl.style.fontSize = '10px';
+      nameEl.style.color = COLORS.text.muted;
+      nameEl.style.marginTop = '4px';
+      nameEl.style.overflow = 'hidden';
+      nameEl.style.textOverflow = 'ellipsis';
+      nameEl.style.whiteSpace = 'nowrap';
+      nameEl.style.textAlign = 'center';
+      cell.appendChild(nameEl);
+
+      mineGrid.appendChild(cell);
+    }
+  }
+  // Lay the mine cells out in the same 3-col grid as the flam3 cells.
+  mineGrid.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+  mineGrid.style.gap = '8px';
+
   picker.appendChild(body);
 
   // Selection helpers — paint the active border on the cell matching
@@ -460,6 +542,16 @@ export function mountPalettePicker(
   function paintActive(idx: number | null): void {
     for (const [i, cell] of cellByIdx) {
       const isActive = i === idx;
+      cell.classList.toggle('active', isActive);
+      cell.style.borderColor = isActive ? COLORS.flame.top : 'transparent';
+      cell.style.background = isActive ? COLORS.bg.action : 'transparent';
+    }
+    // Mirror the active highlight onto the mine grid (#115). A mine cell is
+    // active when selectedSource is the matching `mine` entry; any flam3
+    // selection clears every mine cell.
+    for (const cell of mineGrid.querySelectorAll<HTMLElement>('.pyr3-palette-picker-mine-cell')) {
+      const isActive =
+        selectedSource.kind === 'mine' && cell.dataset['mine'] === selectedSource.name;
       cell.classList.toggle('active', isActive);
       cell.style.borderColor = isActive ? COLORS.flame.top : 'transparent';
       cell.style.background = isActive ? COLORS.bg.action : 'transparent';
@@ -526,6 +618,16 @@ export function mountPalettePicker(
   // vs favorites). Badge shows total when nothing is filtering, else
   // `visible / total`.
   function applyFilter(): void {
+    // Mine tab swaps the flam3 grid out for the user-saved grid wholesale —
+    // search / chip / favorites filters don't apply to saved palettes.
+    if (activeTab === 'mine') {
+      for (const cell of cellByIdx.values()) cell.style.display = 'none';
+      mineGrid.style.display = 'grid';
+      renderMineCells();
+      badge.textContent = `${listMine().length}`;
+      return;
+    }
+    mineGrid.style.display = 'none';
     const q = search.value.trim().toLowerCase();
     const chipsOn = activeChips.size > 0;
     const favTab = activeTab === 'favorites';
@@ -557,15 +659,18 @@ export function mountPalettePicker(
   function refreshTabCounts(): void {
     allTab.textContent = `all (${FLAM3_PALETTE_COUNT})`;
     favTab.textContent = `★ favorites (${favorites.size})`;
+    mineTab.textContent = `mine (${listMine().length})`;
   }
-  function setTab(tab: 'all' | 'favorites'): void {
+  function setTab(tab: 'all' | 'favorites' | 'mine'): void {
     activeTab = tab;
     allTab.classList.toggle('active', tab === 'all');
     favTab.classList.toggle('active', tab === 'favorites');
+    mineTab.classList.toggle('active', tab === 'mine');
     applyFilter();
   }
   allTab.addEventListener('click', () => setTab('all'));
   favTab.addEventListener('click', () => setTab('favorites'));
+  mineTab.addEventListener('click', () => setTab('mine'));
   refreshTabCounts();
 
   // ── Footer: selected info · revert · apply&close ────────────────────────

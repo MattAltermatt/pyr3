@@ -92,6 +92,10 @@ const SEAM_EXEMPT = new Set<string>([
   'animate-mount.ts',          // /v1/animate page body — DOM-mounting (#211 P6)
   'animate-export-modal.ts',   // /v1/animate export modal — DOM-mounting (#212 P7)
   'playback-bar.ts',           // /v1/animate scrubber — DOM-mounting (#211 P6)
+  'palette-editor.ts',         // /v1/gradient stop-bar editor — DOM-mounting (#115)
+  'color-picker.ts',           // /v1/gradient HSV picker popover — owns DOM (#115)
+  'gradient-page.ts',          // /v1/gradient page shell — DOM-mounting (#115)
+  'palette-file.ts',           // /v1/gradient .pyre-palette.json import/export — anchor download (#115)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND

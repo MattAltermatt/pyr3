@@ -978,7 +978,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 /** Tabs in the top-bar's center cluster. `about` and `screensaver` are
  *  reserved — they live in the left cluster as links, not tabs — so those
  *  surfaces render all three real tabs in their inactive state. */
-export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'animate' | 'about' | 'screensaver';
+export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'gradient' | 'animate' | 'about' | 'screensaver';
 
 export interface ChromeOpts {
   surface: TabSurface;
@@ -1188,7 +1188,7 @@ function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLEl
   const wrap = el('div', 'pyr3-tabs');
   // `about` lives in the left cluster as a link, so surface: 'about' renders
   // all four real tabs in their inactive state. `screensaver` IS a tab.
-  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor', 'animate', 'screensaver'];
+  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor', 'gradient', 'animate', 'screensaver'];
   for (const s of surfaces) {
     const btn = el('div', 'pyr3-tab' + (s === active ? ' active' : ''));
     btn.dataset.surface = s;

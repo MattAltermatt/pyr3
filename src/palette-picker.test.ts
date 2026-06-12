@@ -14,6 +14,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mountPalettePicker, type PalettePickerOpts } from './palette-picker';
 import { type PaletteSource } from './flam3-palette-names';
+import { saveMine } from './palette-library';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -78,16 +79,19 @@ describe('palette picker — shell DOM', () => {
     expect(root.querySelector('.pyr3-palette-picker-chip-row')).toBeTruthy();
   });
 
-  it('header has tabs: `all` and `★ favorites` with counts', () => {
+  it('header has tabs: `all`, `★ favorites`, and `mine` with counts', () => {
     const { root } = mount();
     const tabs = root.querySelectorAll('.pyr3-palette-picker-tab');
-    expect(tabs.length).toBe(2);
+    expect(tabs.length).toBe(3);
     const allTab = root.querySelector('.pyr3-palette-picker-tab[data-tab="all"]') as HTMLElement;
     const favTab = root.querySelector('.pyr3-palette-picker-tab[data-tab="favorites"]') as HTMLElement;
+    const mineTab = root.querySelector('.pyr3-palette-picker-tab[data-tab="mine"]') as HTMLElement;
     expect(allTab).toBeTruthy();
     expect(favTab).toBeTruthy();
+    expect(mineTab).toBeTruthy();
     expect(allTab.textContent).toContain('all');
     expect(favTab.textContent).toContain('favorites');
+    expect(mineTab.textContent).toContain('mine');
   });
 
   it('controls row has a sort dropdown + auto-apply toggle', () => {
@@ -591,5 +595,25 @@ describe('palette picker — sort dropdown re-orders the cell grid', () => {
       const after = cellIdxOrder(root);
       expect(after).not.toEqual(baseline);
     }
+  });
+});
+
+describe('palette picker — mine tab (#115)', () => {
+  it('shows a mine tab and applies a saved palette (#115)', () => {
+    installLocalStorageStub();
+    saveMine({ name: 'ember', stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }] });
+    saveMine({ name: 'ice', stops: [{ t: 0, r: 0, g: 0, b: 1 }, { t: 1, r: 1, g: 1, b: 1 }] });
+    const host = document.createElement('div'); document.body.appendChild(host);
+    const onApply = vi.fn();
+    const h = mountPalettePicker(host, { current: { kind: 'flam3', number: 0 }, onApply, onClose: () => {} });
+    const mineTab = host.querySelector('[data-tab="mine"]') as HTMLElement;
+    expect(mineTab).toBeTruthy();
+    expect(mineTab.textContent).toMatch(/2/);
+    mineTab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const cell = host.querySelector('[data-mine="ember"]') as HTMLElement;
+    expect(cell).toBeTruthy();
+    cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onApply).toHaveBeenCalledWith({ kind: 'mine', name: 'ember' });
+    h.destroy();
   });
 });
