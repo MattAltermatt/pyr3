@@ -23,7 +23,8 @@ export const FLAM3_PALETTE_NAMES: readonly string[] = ["south-sea-bather", "sky-
 export type PaletteSource =
   | { kind: 'corpus'; gen: number; id: number }
   | { kind: 'flam3'; number: number }
-  | { kind: 'mine'; name: string };
+  | { kind: 'mine'; name: string }
+  | { kind: 'custom' };
 
 export interface PaletteIdentifier {
   prefix: string | null;
@@ -53,6 +54,11 @@ export function paletteIdentifier(source: PaletteSource): PaletteIdentifier {
     }
     case 'mine': {
       return { prefix: 'mine', name: `"${source.name}"`, monospace: false };
+    }
+    case 'custom': {
+      // #266 — a gradient the user edited in /v1/gradient and applied back to
+      // the flame. No prefix, no library identity — it just says what it is.
+      return { prefix: null, name: 'custom gradient', monospace: false };
     }
   }
 }

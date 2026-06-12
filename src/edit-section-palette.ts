@@ -26,7 +26,7 @@
 // stateless wrt picker lifecycle; the editor host owns the docking.
 
 import { type SectionMount } from './edit-ui';
-import { type Palette, type PaletteMode, type ColorStop } from './palette';
+import { type Palette, type PaletteMode, type ColorStop, rotateHueRGB } from './palette';
 import { FLAM3_PALETTE_COUNT, getLibraryStops } from './flam3-palettes';
 import {
   type PaletteSource,
@@ -35,6 +35,12 @@ import {
 import { COLORS } from './ui-tokens';
 import { buildRow, buildSlider, buildButton } from './edit-primitives';
 import { mountPalettePicker, type PalettePickerHandle } from './palette-picker';
+import { writeGradientHandoff } from './edit-state';
+
+// Overridable for tests — real nav is a full page load to the gradient page.
+export const gradientNav = {
+  go(): void { window.location.href = '/v1/gradient'; },
+};
 
 // Parse `flame #N` → N. Returns null when the name doesn't match.
 function parseFlameIndex(name: string): number | null {
@@ -101,6 +107,41 @@ export const paletteSection: SectionMount = {
     ribbon.style.cursor = 'pointer';
     ribbon.style.marginBottom = '10px';
     host.appendChild(ribbon);
+
+    // ── "Edit gradient →" — round-trip into /v1/gradient (#266) ─────────────
+    const editGradientBtn = buildButton({
+      variant: 'accent',
+      label: 'Edit gradient',
+      icon: '🎨',
+      onClick: () => {
+        const p = state.genome.palette;
+        const hue = p.hue ?? 0;
+        // Bake hue into the stops so the gradient strip shows what the flame
+        // renders; emit with hue omitted (the strip colors are now literal).
+        const stops = (hue === 0 || hue === 360)   // 360° is identity — skip the bake
+          ? p.stops.map((s) => ({ ...s }))
+          : p.stops.map((s) => {
+              const rgb = rotateHueRGB(s.r, s.g, s.b, hue);
+              return { t: s.t, r: rgb.r, g: rgb.g, b: rgb.b };
+            });
+        // Mark as "mine" so /v1/gradient reopens it directly editable (no
+        // read-only Modify gate) when it's a gradient the user crafted here. (#266)
+        const isCustom = state.paletteSource?.kind === 'custom';
+        writeGradientHandoff({
+          name: p.name,
+          stops,
+          ...(p.mode ? { mode: p.mode } : {}),
+        }, isCustom);
+        gradientNav.go();
+      },
+    });
+    editGradientBtn.classList.add('pyr3-edit-gradient-link');
+    const editGradientRow = document.createElement('div');
+    editGradientRow.style.display = 'flex';
+    editGradientRow.style.justifyContent = 'flex-end';
+    editGradientRow.style.margin = '0 0 8px';
+    editGradientRow.appendChild(editGradientBtn);
+    host.appendChild(editGradientRow);
 
     // ── palette row (launcher button) ──────────────────────────────────────
     const launcher = document.createElement('div');

@@ -12,6 +12,8 @@ import {
   type SectionKey,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
+import { applyGradientReturn } from './edit-mount';
+import { writeGradientReturn } from './edit-state';
 
 // Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
 // globally under vitest. See src/prefs.test.ts for the canonical pattern.
@@ -217,6 +219,38 @@ describe('resolveColdStartCollapse (Task 6.5)', () => {
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(stored));
     expect(resolveColdStartCollapse()).toEqual(stored);
+  });
+});
+
+describe('applyGradientReturn (#266)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('patches palette, resets hue, sets custom source', () => {
+    const g = generateRandomGenome(seededRng(1));
+    g.palette = {
+      name: 'old', hue: 120, mode: 'step',
+      stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }],
+    };
+    const state = createEditState(g, 1);
+    writeGradientReturn({
+      name: 'mine', stops: [
+        { t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 1, b: 0 }],
+    });
+    expect(applyGradientReturn(state)).toBe(true);
+    expect(state.genome.palette.name).toBe('mine');
+    expect(state.genome.palette.hue).toBe(0);   // reset to 0 (literal colors)
+    expect(state.genome.palette.mode).toBe('step');      // preserved
+    expect(state.paletteSource).toEqual({ kind: 'custom' });
+  });
+
+  it('is a no-op when nothing is queued', () => {
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    expect(applyGradientReturn(state)).toBe(false);
   });
 });
 

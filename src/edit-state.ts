@@ -11,6 +11,7 @@
 
 import { type Genome } from './genome';
 import { type PaletteSource } from './flam3-palette-names';
+import { type Palette } from './palette';
 
 export type Lane = 'fast' | 'slow' | 'rebuild';
 
@@ -286,6 +287,80 @@ export function consumePendingTransfer(): PendingTransfer | null {
   } catch {
     return null;
   }
+}
+
+// ── Editor ↔ Gradient-editor round-trip (#266) ────────────────────────
+// Single-shot, TTL-guarded localStorage handoffs mirroring PENDING_TRANSFER.
+//   handoff: /v1/edit → /v1/gradient  (carries the flame's palette to seed)
+//   return:  /v1/gradient → /v1/edit  (carries the edited palette to apply)
+// Consume-on-read makes each a single click→nav round trip; a later refresh
+// can't replay it.
+
+export const GRADIENT_HANDOFF_KEY = 'pyr3.gradient.handoff';
+export const GRADIENT_RETURN_KEY = 'pyr3.gradient.return';
+// Freshness window for the single click→page-load round trip. Generous enough
+// to cover a slow editor cold-start (cold GPU cache / large genome) so an
+// "Apply to flame" never reads as stale, while still refusing to resurrect a
+// long-abandoned palette on some unrelated later visit.
+export const GRADIENT_HANDOFF_TTL_MS = 15000;
+
+interface GradientSlot {
+  palette: Palette;
+  /** Handoff direction only: the palette is already the user's own custom
+   *  gradient (paletteSource === 'custom'), so /v1/gradient should open it
+   *  directly editable instead of behind the read-only Modify gate. */
+  editable?: boolean;
+  timestamp: number;
+}
+
+/** What `consumeGradientHandoff` hands back: the seed palette plus whether it
+ *  is the user's own custom gradient (open-editable) vs a dense flame palette. */
+export interface GradientHandoff {
+  palette: Palette;
+  editable: boolean;
+}
+
+function writeGradientSlot(key: string, palette: Palette, editable: boolean): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ palette, editable, timestamp: Date.now() }));
+  } catch {
+    // localStorage disabled / full — silently no-op.
+  }
+}
+
+function consumeGradientSlot(key: string): GradientHandoff | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    localStorage.removeItem(key); // remove first so a stale/bad slot still clears
+    const parsed = JSON.parse(raw) as Partial<GradientSlot>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.timestamp !== 'number') return null;
+    if (Date.now() - parsed.timestamp > GRADIENT_HANDOFF_TTL_MS) return null;
+    if (!parsed.palette || !Array.isArray(parsed.palette.stops)) return null;
+    return { palette: parsed.palette as Palette, editable: parsed.editable === true };
+  } catch {
+    return null;
+  }
+}
+
+/** Stash the flame's palette for /v1/gradient to seed from. `editable` marks it
+ *  as the user's own custom gradient (open it directly, not behind the gate).
+ *  Best-effort. */
+export function writeGradientHandoff(palette: Palette, editable = false): void {
+  writeGradientSlot(GRADIENT_HANDOFF_KEY, palette, editable);
+}
+/** Consume the edit→gradient handoff (single-shot). null when empty/stale/bad. */
+export function consumeGradientHandoff(): GradientHandoff | null {
+  return consumeGradientSlot(GRADIENT_HANDOFF_KEY);
+}
+/** Stash the edited palette for /v1/edit to apply on return. Best-effort. */
+export function writeGradientReturn(palette: Palette): void {
+  writeGradientSlot(GRADIENT_RETURN_KEY, palette, false);
+}
+/** Consume the gradient→edit return (single-shot). null when empty/stale/bad. */
+export function consumeGradientReturn(): Palette | null {
+  return consumeGradientSlot(GRADIENT_RETURN_KEY)?.palette ?? null;
 }
 
 // Debounced persistence — coalesces a rapid edit stream into a single

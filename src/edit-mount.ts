@@ -16,6 +16,8 @@ import {
   resolveColdStartCollapse,
   resolveColdStartGenomeWithSource,
   schedulePersist,
+  persistWip,
+  consumeGradientReturn,
   type EditState,
   type LaneScheduler,
   type Lane,
@@ -43,6 +45,25 @@ import { setCurrentFlame } from './app-state';
 import { createHistory, type History } from './edit-history';
 import { hasTemplate, resolveTemplate } from './flame-name-template';
 import { peekIndex, bumpIndex } from './flame-name-counter';
+
+/** Apply a pending gradient-return onto the editor state, if one is queued.
+ *  Patches only the palette: stops + name from the return, hue forced to 0
+ *  (the returned stops are the literal final colors), mode preserved from the
+ *  prior genome palette. Marks the source as a custom gradient. Returns true
+ *  when a return was consumed. (#266) */
+export function applyGradientReturn(state: EditState): boolean {
+  const ret = consumeGradientReturn();
+  if (!ret) return false;
+  const prevMode = state.genome.palette.mode;
+  state.genome.palette = {
+    name: ret.name || 'custom gradient',
+    stops: ret.stops,
+    hue: 0, // edited stops are the literal final colors — no re-rotation (#266)
+    ...(prevMode ? { mode: prevMode } : {}),
+  };
+  state.paletteSource = { kind: 'custom' };
+  return true;
+}
 
 export interface MountEditPageOpts {
   /** Root container the editor takes over (replaceChildren). The caller
@@ -221,6 +242,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   applyEditorDefaults(initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
+
+  // #266 — if the user round-tripped through the gradient editor, apply the
+  // returned palette on top of the restored WIP genome. Patches palette only.
+  // Persist immediately so a later reload keeps the applied custom gradient
+  // (cold-start otherwise only persists on the next user edit).
+  if (applyGradientReturn(state)) persistWip(state.genome);
 
   // #108 — undo/redo stack, seeded with the cold-start genome. push happens
   // on every commit gesture (onPathChange), debounced via the same window

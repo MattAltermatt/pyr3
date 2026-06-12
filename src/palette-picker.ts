@@ -96,6 +96,9 @@ function favoriteIdFor(source: PaletteSource): string {
     case 'flam3':  return `flam3:${source.number}`;
     case 'corpus': return `corpus:${source.gen}/${source.id}`;
     case 'mine':   return `mine:${source.name}`;
+    // #266 — a custom-edited gradient is transient (not a library entry), so it
+    // is never favorited; the case exists only to keep the switch exhaustive.
+    case 'custom': return 'custom';
   }
 }
 

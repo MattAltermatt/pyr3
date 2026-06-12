@@ -59,4 +59,12 @@ describe('paletteIdentifier', () => {
       monospace: false,
     });
   });
+
+  it('custom-edited gradient: { kind: "custom" } → "custom gradient" (#266)', () => {
+    expect(paletteIdentifier({ kind: 'custom' })).toEqual({
+      prefix: null,
+      name: 'custom gradient',
+      monospace: false,
+    });
+  });
 });
