@@ -3,6 +3,19 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mountGradientPage, gradReturnNav } from './gradient-page';
 import { writeGradientHandoff, consumeGradientReturn } from './edit-state';
 import { listMine } from './palette-library';
+import { generateRandomGenome } from './edit-seed';
+
+function makeStops(n: number): { t: number; r: number; g: number; b: number }[] {
+  return Array.from({ length: n }, (_, i) => ({
+    t: n === 1 ? 0 : i / (n - 1), r: i / Math.max(1, n - 1), g: 0.5, b: 1 - i / Math.max(1, n - 1),
+  }));
+}
+// #269 — the handoff now carries a Genome; seed its palette with `n` stops.
+function genomeWithStops(n: number) {
+  const g = generateRandomGenome();
+  g.palette = { name: 'custom gradient', stops: makeStops(n) };
+  return g;
+}
 
 function installLocalStorageStub(): void {
   const store = new Map<string, string>();
@@ -25,6 +38,34 @@ describe('gradient-page (#115 T11)', () => {
     expect(root.querySelector('[data-role="strip"]')).toBeTruthy();
     for (const r of ['browse', 'save', 'export', 'import'])
       expect(root.querySelector(`[data-role="${r}"]`)).toBeTruthy();
+    h.destroy();
+  });
+
+  it('lays out actions in a right column and reserves a flame zone (#269)', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });
+    expect(root.querySelector('[data-zone="top"]')).toBeTruthy();
+    const actionsZone = root.querySelector('[data-zone="actions"]') as HTMLElement;
+    expect(actionsZone).toBeTruthy();
+    expect(actionsZone.querySelector('[data-role="browse"]')).toBeTruthy(); // actions live in the right column
+    expect(root.querySelector('[data-zone="flame"]')).toBeTruthy();
+    h.destroy();
+  });
+
+  it('shows a flame-zone placeholder when no device/flame is present (#269)', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });                  // no device, no handoff
+    const zone = root.querySelector('[data-zone="flame"]') as HTMLElement;
+    expect(zone.querySelector('[data-role="flame-placeholder"]')).toBeTruthy();
+    expect(zone.querySelector('canvas')).toBeNull();        // no canvas without a device
+    h.destroy();
+  });
+
+  it('has a "Load flame…" button in the actions column (#269)', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });
+    const actionsZone = root.querySelector('[data-zone="actions"]') as HTMLElement;
+    expect(actionsZone.querySelector('[data-role="load-flame"]')).toBeTruthy();
     h.destroy();
   });
 
@@ -56,17 +97,11 @@ describe('gradient-page (#115 T11)', () => {
   });
 });
 
-const FLAME_PAL = {
-  name: 'flame', stops: Array.from({ length: 256 }, (_, i) => ({
-    t: i / 255, r: i / 255, g: 0, b: 1 - i / 255,
-  })),
-};
-
 describe('gradient page round-trip mode', () => {
   beforeEach(() => { installLocalStorageStub(); document.body.replaceChildren(); });
 
   it('shows read-only strip + Modify + Apply when a handoff is present', () => {
-    writeGradientHandoff(FLAME_PAL);
+    writeGradientHandoff(genomeWithStops(256));
     const root = document.createElement('div');
     mountGradientPage({ root });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeTruthy();
@@ -81,7 +116,7 @@ describe('gradient page round-trip mode', () => {
   });
 
   it('Modify → confirm resamples to ~16 editable stops', () => {
-    writeGradientHandoff(FLAME_PAL);
+    writeGradientHandoff(genomeWithStops(256));
     const root = document.createElement('div');
     mountGradientPage({ root });
     (root.querySelector('[data-role="modify"]') as HTMLElement).click();
@@ -91,7 +126,7 @@ describe('gradient page round-trip mode', () => {
   });
 
   it('Apply writes the return payload and navigates', () => {
-    writeGradientHandoff(FLAME_PAL);
+    writeGradientHandoff(genomeWithStops(256));
     let navd = false;
     gradReturnNav.go = () => { navd = true; };
     const root = document.createElement('div');
@@ -104,7 +139,7 @@ describe('gradient page round-trip mode', () => {
   it('Reset before Modify does NOT bypass the gate (stays read-only)', () => {
     // Regression (#266 review): Reset must not silently mount the live editor
     // before the user opts into the lossy conversion via Modify + confirm.
-    writeGradientHandoff(FLAME_PAL);
+    writeGradientHandoff(genomeWithStops(256));
     const root = document.createElement('div');
     mountGradientPage({ root });
     (root.querySelector('[data-role="reset"]') as HTMLElement).click();
@@ -114,16 +149,10 @@ describe('gradient page round-trip mode', () => {
     expect(root.querySelector('[data-role="handle"]')).toBeNull();
   });
 
-  function makeStops(n: number): { t: number; r: number; g: number; b: number }[] {
-    return Array.from({ length: n }, (_, i) => ({
-      t: i / (n - 1), r: i / (n - 1), g: 0.5, b: 1 - i / (n - 1),
-    }));
-  }
-
   it('an already-sparse gradient opens editable — sparse fallback, no gate (#266)', () => {
     // ≤16 stops → opens directly editable even without the editable flag
     // (durable fallback that survives a reload losing custom provenance).
-    writeGradientHandoff({ name: 'custom gradient', stops: makeStops(16) });
+    writeGradientHandoff(genomeWithStops(16));
     const root = document.createElement('div');
     mountGradientPage({ root });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeNull();
@@ -136,7 +165,7 @@ describe('gradient page round-trip mode', () => {
   it('a custom gradient with >16 stops opens editable via the editable flag (#266)', () => {
     // 30 hand-placed stops, flagged custom (paletteSource was 'custom') → the
     // provenance flag wins over stop-count: opens editable, no Modify gate.
-    writeGradientHandoff({ name: 'custom gradient', stops: makeStops(30) }, true);
+    writeGradientHandoff(genomeWithStops(30), true);
     const root = document.createElement('div');
     mountGradientPage({ root });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeNull();
@@ -147,7 +176,7 @@ describe('gradient page round-trip mode', () => {
   it('a dense palette stays gated even when flagged custom (#266)', () => {
     // 256 stops (a library palette pulled in via Browse, applied as custom) is
     // too dense to render handle-per-stop → still goes behind the Modify gate.
-    writeGradientHandoff({ name: 'custom gradient', stops: makeStops(256) }, true);
+    writeGradientHandoff(genomeWithStops(256), true);
     const root = document.createElement('div');
     mountGradientPage({ root });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeTruthy();
@@ -155,7 +184,7 @@ describe('gradient page round-trip mode', () => {
   });
 
   it('Cancel, return to flame navigates WITHOUT writing a return (#266)', () => {
-    writeGradientHandoff(FLAME_PAL);
+    writeGradientHandoff(genomeWithStops(256));
     let navd = false;
     gradReturnNav.go = () => { navd = true; };
     const root = document.createElement('div');

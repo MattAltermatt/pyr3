@@ -9,8 +9,20 @@ import { buildButton } from './edit-primitives';
 import { COLORS } from './ui-tokens';
 import { consumeGradientHandoff, writeGradientReturn } from './edit-state';
 import { resampleToN } from './palette-transforms';
+import { type Genome } from './genome';
+import { createRenderer, type Renderer } from './renderer';
+import { startChunkedRender, type RunHandle } from './render-orchestrator';
+import { load as loadFlameFile } from './loader';
 
-export interface GradientPageOpts { root: HTMLElement; initialPalette?: Palette; }
+export interface GradientPageOpts {
+  root: HTMLElement;
+  initialPalette?: Palette;
+  /** #269 — optional GPU device/format. When present (passed from main.ts), the
+   *  page renders the flame below the bar; absent (unit tests / no WebGPU) it
+   *  stays a palette-only editor with a placeholder in the flame zone. */
+  device?: GPUDevice;
+  format?: GPUTextureFormat;
+}
 export interface GradientPageHandle { destroy(): void }
 
 // Overridable for tests — real nav returns to the editor page.
@@ -49,7 +61,7 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
 
   // basic instructions (collapsible, open by default)
   const help = document.createElement('details');
-  help.open = true;
+  help.open = false; // #269 — collapsed by default to reclaim vertical space
   Object.assign(help.style, {
     margin: '0 0 14px', padding: '8px 12px', fontSize: '12px', lineHeight: '1.55',
     color: COLORS.text.muted, background: COLORS.bg.info,
@@ -101,7 +113,8 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   // (explicit opt-in to a lossy resample) plus an "Apply to flame" return.
   const handoff = consumeGradientHandoff();      // null in standalone mode
   const roundTrip = handoff !== null;
-  const seed: Palette = handoff?.palette ?? opts.initialPalette ?? PYRE_PALETTE;
+  const handoffGenome = handoff?.genome ?? null; // #269 — render this flame
+  const seed: Palette = handoffGenome?.palette ?? opts.initialPalette ?? PYRE_PALETTE;
 
   // #266 — open the editor directly (no read-only Modify gate) when the handed
   // palette is the user's OWN custom gradient. Two signals: `editable` (the
@@ -124,7 +137,7 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     editorHost.replaceChildren();
     editor = mountPaletteEditor(editorHost, {
       initial: { name, stops },
-      onChange: () => {},
+      onChange: () => scheduleFlameRender(),   // #269 — live-update the flame
     });
     nameInput.value = name;
   }
@@ -282,7 +295,30 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   const resetBtn = buildButton({ variant: 'plain', label: '↺ Reset', onClick: doReset });
   resetBtn.dataset['role'] = 'reset';
   resetBtn.style.marginLeft = 'auto'; // push Reset to the far end, away from constructive actions
-  actions.append(browse, save, exportBtn, importBtn, resetBtn, fileInput);
+
+  // #269 — "Load flame…" — open a flame file, render it, adopt its palette.
+  const loadFlameInput = document.createElement('input');
+  loadFlameInput.type = 'file';
+  loadFlameInput.accept = '.pyr3.json,.json,.flame,.flam3,.png,application/xml,text/xml';
+  loadFlameInput.hidden = true;
+  loadFlameInput.addEventListener('change', () => {
+    const f = loadFlameInput.files?.[0];
+    if (!f) return;
+    loadFlameFile(f)
+      .then((res) => {
+        currentFlame = res.genome;                 // adopt + render
+        setPaletteOrMount(res.genome.palette);     // override the bar
+        nameInput.value = res.genome.palette.name;
+        renderFlame();
+        setStatus(`Loaded flame "${f.name}"`);
+      })
+      .catch((err: Error) => setStatus(err.message))
+      .finally(() => { loadFlameInput.value = ''; });
+  });
+  const loadFlameBtn = buildButton({ variant: 'primary', label: 'Load flame…', icon: '🔥', onClick: () => loadFlameInput.click() });
+  loadFlameBtn.dataset['role'] = 'load-flame';
+
+  actions.append(loadFlameBtn, browse, save, exportBtn, importBtn, resetBtn, fileInput, loadFlameInput);
 
   // #266 — round-trip mode adds an "Apply to flame" CTA that leads the row;
   // it writes the (possibly untouched) palette back for /v1/edit to consume.
@@ -304,14 +340,104 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     actions.insertBefore(applyBtn, actions.firstChild);  // lead the row
   }
 
-  wrap.appendChild(actions);
-  wrap.appendChild(status);
+  // #269 — three-zone layout: [ editor | actions ] on top, flame below.
+  // nameRow + editorHost were appended to `wrap` earlier; re-parent them into
+  // the editor column (appendChild moves existing nodes).
+  const topZone = document.createElement('div');
+  topZone.dataset['zone'] = 'top';
+  Object.assign(topZone.style, { display: 'flex', gap: '16px', alignItems: 'flex-start' });
+
+  const editorCol = document.createElement('div');
+  Object.assign(editorCol.style, { flex: '1 1 0', minWidth: '0' });
+  editorCol.append(nameRow, editorHost, status);
+
+  const actionsCol = document.createElement('div');
+  actionsCol.dataset['zone'] = 'actions';
+  Object.assign(actionsCol.style, {
+    display: 'flex', flexDirection: 'column', gap: '8px', flex: '0 0 auto', minWidth: '150px',
+  });
+  // `actions` already holds the buttons; restyle from a wrap-row to a column.
+  Object.assign(actions.style, { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '0' });
+  resetBtn.style.marginLeft = '0'; // no longer pushing to the far end of a row
+  actionsCol.appendChild(actions);
+
+  topZone.append(editorCol, actionsCol);
+
+  // #269 — flame zone: render the flame below the bar (device-optional).
+  const flameZone = document.createElement('div');
+  flameZone.dataset['zone'] = 'flame';
+  Object.assign(flameZone.style, { marginTop: '16px' });
+
+  let currentFlame: Genome | null = handoffGenome;   // the flame to render (null = none)
+  let renderer: Renderer | null = null;
+  let runHandle: RunHandle | null = null;
+  let flameCtx: GPUCanvasContext | null = null;      // configured once (constant dims)
+
+  const placeholder = document.createElement('div');
+  placeholder.dataset['role'] = 'flame-placeholder';
+  placeholder.textContent = 'Load a flame to see your palette on it.';
+  Object.assign(placeholder.style, {
+    color: COLORS.text.muted, fontSize: '13px', padding: '24px', textAlign: 'center',
+  });
+
+  const flameCanvas = document.createElement('canvas');
+  flameCanvas.dataset['role'] = 'flame-canvas';
+  Object.assign(flameCanvas.style, {
+    width: '100%', maxWidth: '512px', display: 'block', margin: '0 auto', borderRadius: '4px',
+  });
+
+  const FLAME_DIM = 384;            // preview size; aspect refinement can come later
+  const FLAME_PREVIEW_SPP = 16;     // browser preview cap (#211)
+
+  function renderFlame(): void {
+    if (!opts.device || !opts.format || !currentFlame) {
+      runHandle?.cancel(); runHandle = null;
+      flameZone.replaceChildren(placeholder);
+      return;
+    }
+    if (flameZone.firstChild !== flameCanvas) flameZone.replaceChildren(flameCanvas);
+    // Configure the canvas context ONCE — dims are constant, so re-setting
+    // canvas.width / re-configuring per edit would thrash the swap chain.
+    if (!flameCtx) {
+      flameCanvas.width = FLAME_DIM; flameCanvas.height = FLAME_DIM;
+      flameCtx = flameCanvas.getContext('webgpu') as GPUCanvasContext | null;
+      if (!flameCtx) { flameZone.replaceChildren(placeholder); return; }
+      flameCtx.configure({ device: opts.device, format: opts.format, alphaMode: 'opaque' });
+    }
+    const ctx = flameCtx;
+    if (!renderer) renderer = createRenderer(opts.device, opts.format, { width: FLAME_DIM, height: FLAME_DIM });
+    runHandle?.cancel();
+    // Bake the CURRENT bar palette into the genome so the flame shows it.
+    const g: Genome = { ...currentFlame, palette: currentPalette() };
+    runHandle = startChunkedRender({
+      renderer,
+      genome: g,
+      outputViewProvider: () => ctx.getCurrentTexture().createView(),
+      targetSamples: FLAME_PREVIEW_SPP * FLAME_DIM * FLAME_DIM,
+      seedBase: 1,
+      onProgress: () => {},
+    });
+  }
+
+  // Debounce flame re-renders during a palette drag (a full re-iterate is
+  // needed since RGB is baked at splat time — present-only won't reflect it).
+  let _flameTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleFlameRender(): void {
+    if (_flameTimer) clearTimeout(_flameTimer);
+    _flameTimer = setTimeout(() => { _flameTimer = null; renderFlame(); }, 250);
+  }
+
+  wrap.append(topZone, flameZone);
 
   opts.root.appendChild(wrap);
+  renderFlame();   // paint the flame (or placeholder) once mounted
 
   return {
     destroy(): void {
       closePicker();
+      if (_flameTimer) clearTimeout(_flameTimer);
+      runHandle?.cancel();
+      renderer?.destroy();        // release GPU buffers (every renderer surface must)
       if (editor) editor.destroy();
       wrap.remove();
     },

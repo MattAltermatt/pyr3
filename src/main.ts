@@ -360,10 +360,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // #115 — /v1/gradient short-circuit. The gradient / palette editor is a
-  // CPU-only page (the 256-LUT bakes on CPU), so no GPU device is acquired.
-  // Bar chrome with the Gradient tab active; the page body lives in the bar's
-  // middleSlot. Viewer canvas + first-paint cue hidden so the page owns the zone.
+  // #115 — /v1/gradient short-circuit. Bar chrome with the Gradient tab active;
+  // the page body lives in the bar's middleSlot. Viewer canvas + first-paint cue
+  // hidden so the page owns the zone. #269 — the page now renders the flame, so
+  // a GPU device is acquired (best-effort) and passed in.
   if (window.location.pathname === '/v1/gradient' || window.location.pathname.startsWith('/v1/gradient/')) {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
@@ -385,8 +385,17 @@ async function main(): Promise<void> {
       overflow: 'auto',
     });
     chrome.middleSlot.appendChild(gradContainer);
+    // #269 — acquire a GPU device so the gradient editor can render the flame.
+    // Best-effort: if WebGPU is unavailable the page still works palette-only.
+    let gradGpu: { device: GPUDevice; format: GPUTextureFormat } | undefined;
+    try {
+      const { device, format } = await acquireGpu();
+      gradGpu = { device, format };
+    } catch (err) {
+      console.warn('pyr3: /v1/gradient — GPU unavailable, palette-only mode', err);
+    }
     const { mountGradientPage } = await import('./gradient-page');
-    const gradientHandle = mountGradientPage({ root: gradContainer });
+    const gradientHandle = mountGradientPage({ root: gradContainer, ...(gradGpu ?? {}) });
     window.addEventListener('pagehide', () => { gradientHandle.destroy(); }, { once: true });
     setDocTitle('gradient');
     return;

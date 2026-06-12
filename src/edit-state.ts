@@ -305,7 +305,12 @@ export const GRADIENT_RETURN_KEY = 'pyr3.gradient.return';
 export const GRADIENT_HANDOFF_TTL_MS = 15000;
 
 interface GradientSlot {
-  palette: Palette;
+  /** Handoff direction (edit→gradient) carries the full genome so /v1/gradient
+   *  can RENDER the flame (and seed the bar from genome.palette). (#269) */
+  genome?: Genome;
+  /** Return direction (gradient→edit) carries only the edited palette to apply
+   *  back — /v1/edit stays the flame's source of truth. */
+  palette?: Palette;
   /** Handoff direction only: the palette is already the user's own custom
    *  gradient (paletteSource === 'custom'), so /v1/gradient should open it
    *  directly editable instead of behind the read-only Modify gate. */
@@ -313,22 +318,22 @@ interface GradientSlot {
   timestamp: number;
 }
 
-/** What `consumeGradientHandoff` hands back: the seed palette plus whether it
- *  is the user's own custom gradient (open-editable) vs a dense flame palette. */
+/** What `consumeGradientHandoff` hands back: the seed genome plus whether it is
+ *  the user's own custom gradient (open-editable) vs a dense flame palette. */
 export interface GradientHandoff {
-  palette: Palette;
+  genome: Genome;
   editable: boolean;
 }
 
-function writeGradientSlot(key: string, palette: Palette, editable: boolean): void {
+function writeSlot(key: string, payload: Omit<GradientSlot, 'timestamp'>): void {
   try {
-    localStorage.setItem(key, JSON.stringify({ palette, editable, timestamp: Date.now() }));
+    localStorage.setItem(key, JSON.stringify({ ...payload, timestamp: Date.now() }));
   } catch {
     // localStorage disabled / full — silently no-op.
   }
 }
 
-function consumeGradientSlot(key: string): GradientHandoff | null {
+function readSlot(key: string): GradientSlot | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -337,30 +342,33 @@ function consumeGradientSlot(key: string): GradientHandoff | null {
     if (!parsed || typeof parsed !== 'object') return null;
     if (typeof parsed.timestamp !== 'number') return null;
     if (Date.now() - parsed.timestamp > GRADIENT_HANDOFF_TTL_MS) return null;
-    if (!parsed.palette || !Array.isArray(parsed.palette.stops)) return null;
-    return { palette: parsed.palette as Palette, editable: parsed.editable === true };
+    return parsed as GradientSlot;
   } catch {
     return null;
   }
 }
 
-/** Stash the flame's palette for /v1/gradient to seed from. `editable` marks it
- *  as the user's own custom gradient (open it directly, not behind the gate).
- *  Best-effort. */
-export function writeGradientHandoff(palette: Palette, editable = false): void {
-  writeGradientSlot(GRADIENT_HANDOFF_KEY, palette, editable);
+/** Stash the flame's genome for /v1/gradient to render + seed from. `editable`
+ *  marks it as the user's own custom gradient (open it directly, not behind the
+ *  gate). Best-effort. */
+export function writeGradientHandoff(genome: Genome, editable = false): void {
+  writeSlot(GRADIENT_HANDOFF_KEY, { genome, editable });
 }
 /** Consume the edit→gradient handoff (single-shot). null when empty/stale/bad. */
 export function consumeGradientHandoff(): GradientHandoff | null {
-  return consumeGradientSlot(GRADIENT_HANDOFF_KEY);
+  const slot = readSlot(GRADIENT_HANDOFF_KEY);
+  if (!slot || !slot.genome || !Array.isArray(slot.genome.palette?.stops)) return null;
+  return { genome: slot.genome, editable: slot.editable === true };
 }
 /** Stash the edited palette for /v1/edit to apply on return. Best-effort. */
 export function writeGradientReturn(palette: Palette): void {
-  writeGradientSlot(GRADIENT_RETURN_KEY, palette, false);
+  writeSlot(GRADIENT_RETURN_KEY, { palette });
 }
 /** Consume the gradient→edit return (single-shot). null when empty/stale/bad. */
 export function consumeGradientReturn(): Palette | null {
-  return consumeGradientSlot(GRADIENT_RETURN_KEY)?.palette ?? null;
+  const slot = readSlot(GRADIENT_RETURN_KEY);
+  if (!slot || !slot.palette || !Array.isArray(slot.palette.stops)) return null;
+  return slot.palette;
 }
 
 // Debounced persistence — coalesces a rapid edit stream into a single

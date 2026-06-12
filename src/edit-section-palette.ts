@@ -36,6 +36,7 @@ import { COLORS } from './ui-tokens';
 import { buildRow, buildSlider, buildButton } from './edit-primitives';
 import { mountPalettePicker, type PalettePickerHandle } from './palette-picker';
 import { writeGradientHandoff } from './edit-state';
+import { type Genome } from './genome';
 
 // Overridable for tests — real nav is a full page load to the gradient page.
 export const gradientNav = {
@@ -124,14 +125,16 @@ export const paletteSection: SectionMount = {
               const rgb = rotateHueRGB(s.r, s.g, s.b, hue);
               return { t: s.t, r: rgb.r, g: rgb.g, b: rgb.b };
             });
+        // Carry the whole genome so /v1/gradient can RENDER the flame; the
+        // palette is the hue-baked form (hue omitted → literal colors). (#269)
         // Mark as "mine" so /v1/gradient reopens it directly editable (no
         // read-only Modify gate) when it's a gradient the user crafted here. (#266)
+        const handoffGenome: Genome = {
+          ...state.genome,
+          palette: { name: p.name, stops, ...(p.mode ? { mode: p.mode } : {}) },
+        };
         const isCustom = state.paletteSource?.kind === 'custom';
-        writeGradientHandoff({
-          name: p.name,
-          stops,
-          ...(p.mode ? { mode: p.mode } : {}),
-        }, isCustom);
+        writeGradientHandoff(handoffGenome, isCustom);
         gradientNav.go();
       },
     });

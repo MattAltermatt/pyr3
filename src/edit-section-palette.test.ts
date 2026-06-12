@@ -340,10 +340,10 @@ describe('paletteSection — Edit gradient round-trip (#266)', () => {
 
       const handed = consumeGradientHandoff();
       const expected = rotateHueRGB(1, 0, 0, 90);
-      expect(handed?.palette.hue).toBeUndefined();           // hue baked out
-      expect(handed?.palette.stops[0]!.r).toBeCloseTo(expected.r, 5);
-      expect(handed?.palette.stops[0]!.g).toBeCloseTo(expected.g, 5);
-      expect(handed?.palette.stops[0]!.b).toBeCloseTo(expected.b, 5);
+      expect(handed?.genome.palette.hue).toBeUndefined();           // hue baked out
+      expect(handed?.genome.palette.stops[0]!.r).toBeCloseTo(expected.r, 5);
+      expect(handed?.genome.palette.stops[0]!.g).toBeCloseTo(expected.g, 5);
+      expect(handed?.genome.palette.stops[0]!.b).toBeCloseTo(expected.b, 5);
     } finally {
       gradientNav.go = realGo;
     }
@@ -364,10 +364,10 @@ describe('paletteSection — Edit gradient round-trip (#266)', () => {
 
       (host.querySelector('.pyr3-edit-gradient-link') as HTMLElement).click();
       const handed = consumeGradientHandoff();
-      expect(handed?.palette.hue).toBeUndefined();
-      expect(handed?.palette.stops[0]!.r).toBeCloseTo(0.25, 5);
-      expect(handed?.palette.stops[0]!.g).toBeCloseTo(0.5, 5);
-      expect(handed?.palette.stops[0]!.b).toBeCloseTo(0.75, 5);
+      expect(handed?.genome.palette.hue).toBeUndefined();
+      expect(handed?.genome.palette.stops[0]!.r).toBeCloseTo(0.25, 5);
+      expect(handed?.genome.palette.stops[0]!.g).toBeCloseTo(0.5, 5);
+      expect(handed?.genome.palette.stops[0]!.b).toBeCloseTo(0.75, 5);
     } finally {
       gradientNav.go = realGo;
     }

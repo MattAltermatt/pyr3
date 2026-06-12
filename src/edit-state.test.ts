@@ -431,31 +431,33 @@ const ROUNDTRIP_PAL: Palette = {
   stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }],
 };
 
-describe('gradient handoff (edit → gradient) — #266', () => {
+describe('gradient handoff (edit → gradient) — #266/#269', () => {
   beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('round-trips a palette', () => {
-    writeGradientHandoff(ROUNDTRIP_PAL);
+  it('round-trips a genome', () => {
+    const g = generateRandomGenome();
+    g.name = 'handoff-flame';
+    writeGradientHandoff(g);
     const h = consumeGradientHandoff();
-    expect(h?.palette.name).toBe('x');
+    expect(h?.genome.name).toBe('handoff-flame');
     expect(h?.editable).toBe(false);   // default — not flagged custom
   });
 
   it('carries the editable (custom-provenance) flag', () => {
-    writeGradientHandoff(ROUNDTRIP_PAL, true);
+    writeGradientHandoff(generateRandomGenome(), true);
     expect(consumeGradientHandoff()?.editable).toBe(true);
   });
 
   it('is single-shot — second consume is null', () => {
-    writeGradientHandoff(ROUNDTRIP_PAL);
+    writeGradientHandoff(generateRandomGenome());
     consumeGradientHandoff();
     expect(consumeGradientHandoff()).toBeNull();
   });
 
   it('rejects a stale payload', () => {
     localStorage.setItem(GRADIENT_HANDOFF_KEY, JSON.stringify({
-      palette: ROUNDTRIP_PAL, timestamp: Date.now() - GRADIENT_HANDOFF_TTL_MS - 1,
+      genome: generateRandomGenome(), timestamp: Date.now() - GRADIENT_HANDOFF_TTL_MS - 1,
     }));
     expect(consumeGradientHandoff()).toBeNull();
   });
