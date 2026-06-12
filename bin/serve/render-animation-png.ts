@@ -37,24 +37,52 @@ export interface AnimationFramePng {
 
 interface RendererBundle {
   renderer: Renderer;
-  texture: GPUTexture;
+  /** Double-buffered output textures (#214). submitFrame renders frame N into
+   *  textures[N % 2] so frame N's texture→buffer readback can stay in flight
+   *  while frame N+1 renders into the other slot. */
+  textures: [GPUTexture, GPUTexture];
   width: number;
   height: number;
   oversample: number;
   filterRadius: number;
 }
 
-/** Animation render context — holds the cached renderer/texture so a single
+/** A frame whose GPU work (iterate → present → texture→buffer copy) has been
+ *  submitted to the queue, with its readback `mapAsync` already in flight. The
+ *  CPU-side pack + PNG encode happens later in `finishFrame`, so the GPU can be
+ *  working on the next frame while this one's bytes are still being encoded. */
+export interface InFlightFrame {
+  readBuf: GPUBuffer;
+  mapped: Promise<undefined>;
+  width: number;
+  height: number;
+  bytesPerRow: number;
+  unpaddedBytesPerRow: number;
+  centerGenome: Genome;
+}
+
+/** Animation render context — holds the cached renderer/textures so a single
  *  `/api/animate` POST can iterate frames without paying per-frame
  *  createRenderer/createTexture costs when dims are stable across keyframes.
  *  Caller is responsible for calling `destroy()` when the request ends. */
 export class AnimationRenderContext {
   private bundle: RendererBundle | null = null;
+  /** Monotonic frame counter selecting the double-buffer slot (parity). */
+  private frameCounter = 0;
 
   constructor(
     private readonly device: GPUDevice,
     private readonly animation: Animation,
   ) {}
+
+  private makeOutputTexture(width: number, height: number): GPUTexture {
+    return this.device.createTexture({
+      label: 'pyr3-serve.animate.output',
+      size: { width, height },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+  }
 
   private ensureBundle(width: number, height: number, oversample: number, filterRadius: number): RendererBundle {
     const format = 'rgba8unorm' as const;
@@ -65,23 +93,26 @@ export class AnimationRenderContext {
       || this.bundle.oversample !== oversample
       || this.bundle.filterRadius !== filterRadius
     ) {
-      this.bundle?.texture.destroy();
+      this.bundle?.textures[0].destroy();
+      this.bundle?.textures[1].destroy();
       this.bundle?.renderer.destroy();
       const renderer = createRenderer(this.device, format, { width, height, oversample, filterRadius });
-      const texture = this.device.createTexture({
-        label: 'pyr3-serve.animate.output',
-        size: { width, height },
-        format,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-      });
-      this.bundle = { renderer, texture, width, height, oversample, filterRadius };
+      const textures: [GPUTexture, GPUTexture] = [
+        this.makeOutputTexture(width, height),
+        this.makeOutputTexture(width, height),
+      ];
+      this.bundle = { renderer, textures, width, height, oversample, filterRadius };
     }
     return this.bundle;
   }
 
-  /** Render one frame of the animation and return PNG bytes (with the
-   *  `pyr3` metadata chunk injected). Caller streams these to disk. */
-  async renderFrame(req: AnimationFrameRequest): Promise<AnimationFramePng> {
+  /** Phase 1 (#214): run a frame's GPU work and kick off the readback map,
+   *  returning before the map resolves. The renderer is single + shared, so
+   *  callers must `submitFrame` serially (the route does); but the returned
+   *  handle can be `finishFrame`d while the NEXT frame's GPU work is already
+   *  in flight. GPU queue ordering + the texture double-buffer keep frame N's
+   *  copy and frame N+1's render from colliding. */
+  submitFrame(req: AnimationFrameRequest): InFlightFrame {
     const centerGenome = interpolate(this.animation, req.time);
     const width = centerGenome.size?.width ?? 1024;
     const height = centerGenome.size?.height ?? 1024;
@@ -90,9 +121,11 @@ export class AnimationRenderContext {
     const walkerJitter = req.walkerJitter ?? DEFAULT_WALKER_JITTER;
 
     const bundle = this.ensureBundle(width, height, oversample, filterRadius);
+    const texture = bundle.textures[this.frameCounter % 2]!;
+    this.frameCounter++;
 
     renderAnimationFrame(bundle.renderer, this.animation, req.time, {
-      outputView: bundle.texture.createView(),
+      outputView: texture.createView(),
       walkerJitter,
       ...(req.seed !== undefined ? { seed: req.seed } : {}),
     });
@@ -107,12 +140,22 @@ export class AnimationRenderContext {
     });
     const encoder = this.device.createCommandEncoder({ label: 'pyr3-serve.animate.encoder' });
     encoder.copyTextureToBuffer(
-      { texture: bundle.texture },
+      { texture },
       { buffer: readBuf, bytesPerRow, rowsPerImage: height },
       { width, height },
     );
     this.device.queue.submit([encoder.finish()]);
-    await readBuf.mapAsync(GPUMapMode.READ);
+    const mapped = readBuf.mapAsync(GPUMapMode.READ);
+
+    return { readBuf, mapped, width, height, bytesPerRow, unpaddedBytesPerRow, centerGenome };
+  }
+
+  /** Phase 2 (#214): await the in-flight frame's readback and do the CPU-side
+   *  pack + PNG encode + metadata inject. Runs concurrently with the next
+   *  frame's GPU work when the caller submits ahead. */
+  async finishFrame(frame: InFlightFrame): Promise<AnimationFramePng> {
+    const { readBuf, width, height, bytesPerRow, unpaddedBytesPerRow, centerGenome } = frame;
+    await frame.mapped;
     const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
     readBuf.unmap();
     readBuf.destroy();
@@ -137,8 +180,15 @@ export class AnimationRenderContext {
     return { png, width, height, centerGenome };
   }
 
+  /** Render one frame end-to-end (submit + finish). Backward-compatible serial
+   *  path; the pipelined route uses submitFrame/finishFrame directly. */
+  renderFrame(req: AnimationFrameRequest): Promise<AnimationFramePng> {
+    return this.finishFrame(this.submitFrame(req));
+  }
+
   destroy(): void {
-    this.bundle?.texture.destroy();
+    this.bundle?.textures[0].destroy();
+    this.bundle?.textures[1].destroy();
     this.bundle?.renderer.destroy();
     this.bundle = null;
   }

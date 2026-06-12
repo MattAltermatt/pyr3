@@ -23,7 +23,12 @@ import { resolve as resolvePath, isAbsolute, sep } from 'node:path';
 import { parseFlame } from '../../src/flame-import';
 
 import { createJob, clearJob } from './jobs';
-import { AnimationRenderContext, applyExportOverrides } from './render-animation-png';
+import {
+  AnimationRenderContext,
+  applyExportOverrides,
+  type AnimationFrameRequest,
+  type InFlightFrame,
+} from './render-animation-png';
 
 interface AnimateRequestBody {
   /** Raw `.flam3` XML payload — server parses with parseFlame. */
@@ -195,7 +200,25 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
 
     console.log(`[pyr3-serve] /api/animate job ${job.id.slice(0, 8)} — ${frames.length} frame(s) → ${outDir}`);
 
+    // #214 — depth-1 pipeline: submit frame N+1's GPU work before encoding
+    // frame N on the CPU, so the host PNG encode + writeFileSync overlaps with
+    // the next frame's GPU iterate (the GPU was previously idle during encode).
+    const reqFor = (i: number): AnimationFrameRequest => {
+      const frameSeed = body.seed !== undefined ? body.seed + i : undefined;
+      return {
+        time: frames[i]!,
+        ...(body.walker_jitter !== undefined ? { walkerJitter: body.walker_jitter } : {}),
+        ...(frameSeed !== undefined ? { seed: frameSeed } : {}),
+      };
+    };
+
+    // Hoisted so the `finally` can drain whatever frame is still in flight on
+    // any exit path (abort, path-traversal, finishFrame throw, normal done).
+    let inflight: InFlightFrame | null = null;
     try {
+      // Prime the pipeline with frame 0's GPU work already in flight.
+      inflight = frames.length > 0 ? ctx.submitFrame(reqFor(0)) : null;
+
       for (let i = 0; i < frames.length; i++) {
         if (job.controller.signal.aborted) {
           writeSseEvent(res, 'cancelled', { jobId: job.id, written });
@@ -203,13 +226,11 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
           return;
         }
         const t = frames[i]!;
-        const frameSeed = body.seed !== undefined ? body.seed + i : undefined;
         const t0 = Date.now();
-        const result = await ctx.renderFrame({
-          time: t,
-          ...(body.walker_jitter !== undefined ? { walkerJitter: body.walker_jitter } : {}),
-          ...(frameSeed !== undefined ? { seed: frameSeed } : {}),
-        });
+        const cur = inflight!;
+        // Kick off the next frame's GPU work before we await + encode this one.
+        inflight = i + 1 < frames.length ? ctx.submitFrame(reqFor(i + 1)) : null;
+        const result = await ctx.finishFrame(cur);
 
         const frameStr = String(t).padStart(5, '0');
         const filename = `${prefix}${frameStr}.png`;
@@ -247,6 +268,10 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       writeSseEvent(res, 'error', { message: (err as Error).message });
       res.end();
     } finally {
+      // Drain any frame whose GPU work is still in flight but was never
+      // finished (abort / path-traversal / finishFrame throw). destroy()
+      // rejects the pending mapAsync — swallow it so it isn't unhandled.
+      if (inflight) { inflight.mapped.catch(() => {}); inflight.readBuf.destroy(); }
       ctx.destroy();
       clearJob(job.id);
     }
