@@ -13,6 +13,10 @@ import { type Genome } from './genome';
 import { createRenderer, type Renderer } from './renderer';
 import { startChunkedRender, type RunHandle } from './render-orchestrator';
 import { load as loadFlameFile } from './loader';
+import {
+  downsampleIndexMap, brushHistogram, regionMask, insertStopAtIndex,
+  clientToPixel, colorAtIndex, type IndexMap,
+} from './color-index-map';
 
 export interface GradientPageOpts {
   root: HTMLElement;
@@ -86,6 +90,7 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     bullet('Interpolation:', 'how colors blend across the bar — linear, smooth, or step.'),
     bullet('Transforms:', 'reverse / mirror / rotate / invert-lum reshape the palette; resample to N turns it into N editable stops.'),
     bullet('Save to library', 'keeps it (appears under the “mine” tab in Browse). Export / Import as .pyre-palette.json. Reset starts over.'),
+    bullet('Point-to-paint:', 'hover the flame to light up where it maps on the gradient bar; hover the gradient bar to highlight the matching flame regions; double-click the flame to add a stop there.'),
   );
   help.append(summary, helpBody);
   wrap.appendChild(help);
@@ -140,6 +145,66 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
       onChange: () => scheduleFlameRender(),   // #269 — live-update the flame
     });
     nameInput.value = name;
+    wireBarOverlay();   // #269 Phase 2 — (re)attach the point-to-paint overlay
+  }
+
+  // #269 Phase 2 — point-to-paint hint is painted ON the gradient bar itself
+  // (the [data-role="strip"] the palette editor owns). mountEditor rebuilds the
+  // strip on every (re)mount, so wireBarOverlay re-attaches the overlay canvas
+  // + scrub listener each time. The overlay is pointer-events:none so the bar's
+  // own drag/dblclick handlers stay live.
+  const HINT_BINS = 64;
+  let hintOverlayCtx: CanvasRenderingContext2D | null = null;
+
+  // #269 Phase 2 — point-to-paint state. The index map is a property of the
+  // GEOMETRY, so it survives palette edits: capture ONCE per genome, reuse
+  // across recolors. Declared before mountEditor (which wires the bar overlay
+  // and reads indexMap via refreshOverlayCapability). Invalidated only when the
+  // genome changes (Load flame).
+  let indexMap: IndexMap | null = null;
+  let indexMapGenome: Genome | null = null;   // identity guard for "capture once"
+  let captureNeeded = false;                   // set when a fresh genome renders
+
+  function wireBarOverlay(): void {
+    hintOverlayCtx = null;
+    const strip = editorHost.querySelector('[data-role="strip"]') as HTMLElement | null;
+    if (!strip) return;
+    const ov = document.createElement('canvas');
+    ov.dataset['role'] = 'bar-hint-overlay';
+    ov.width = HINT_BINS; ov.height = 1;   // CSS-stretched over the 40px bar
+    Object.assign(ov.style, {
+      position: 'absolute', inset: '0', width: '100%', height: '100%',
+      pointerEvents: 'none', borderRadius: '3px', imageRendering: 'pixelated',
+    });
+    strip.appendChild(ov);
+    hintOverlayCtx = ov.getContext('2d');
+    // Scrub the gradient bar → highlight matching flame regions. Plain hover
+    // (no mouse button) doesn't conflict with the strip's mousedown stop-drag.
+    strip.addEventListener('mousemove', onBarScrub);
+    strip.addEventListener('mouseleave', onBarLeave);
+    refreshOverlayCapability();
+  }
+  function onBarScrub(e: MouseEvent): void {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    paintRegion(t);
+  }
+  function onBarLeave(): void { paintRegion(null); }
+
+  // Hover-flame hint as a SPOTLIGHT on the bar: dim the gradient zones that do
+  // NOT feed the brushed region, leaving the contributing zones bright. Reads
+  // as "this part of the gradient colors what you're pointing at."
+  function paintHint(hist: Float32Array | null): void {
+    if (!hintOverlayCtx) return;
+    hintOverlayCtx.clearRect(0, 0, HINT_BINS, 1);
+    if (!hist) return;   // not hovering the flame → no dimming, full gradient
+    for (let b = 0; b < HINT_BINS; b++) {
+      const w = hist[b] ?? 0;
+      const dim = 0.62 * (1 - Math.min(1, w));   // w=1 → no dim; w=0 → 0.62 dim
+      if (dim <= 0.01) continue;
+      hintOverlayCtx.fillStyle = `rgba(8, 8, 12, ${dim})`;
+      hintOverlayCtx.fillRect(b, 0, 1, 1);
+    }
   }
 
   if (!roundTrip) {
@@ -349,7 +414,23 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
 
   const editorCol = document.createElement('div');
   Object.assign(editorCol.style, { flex: '1 1 0', minWidth: '0' });
-  editorCol.append(nameRow, editorHost, status);
+  // #269 Phase 2 — persistent teaching caption under the bar (the interactions
+  // aren't obvious; the transient status line only shows after you act).
+  const barHint = document.createElement('div');
+  barHint.dataset['role'] = 'point-to-paint-hint';
+  Object.assign(barHint.style, {
+    fontSize: '11px', lineHeight: '1.5', color: COLORS.text.muted, margin: '2px 0 0',
+  });
+  const barHintLead = document.createElement('strong');
+  barHintLead.textContent = 'Point-to-paint:';
+  barHintLead.style.color = COLORS.text.primary;
+  barHint.append(
+    '🎯 ', barHintLead,
+    ' hover the flame to spotlight where it maps on this bar · '
+    + 'hover the bar to highlight those flame regions · '
+    + 'click a flame spot to select its stop · double-click to add one.',
+  );
+  editorCol.append(nameRow, editorHost, status, barHint);
 
   const actionsCol = document.createElement('div');
   actionsCol.dataset['zone'] = 'actions';
@@ -372,10 +453,15 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   let renderer: Renderer | null = null;
   let runHandle: RunHandle | null = null;
   let flameCtx: GPUCanvasContext | null = null;      // configured once (constant dims)
+  // (indexMap / indexMapGenome / captureNeeded declared above, before mountEditor.)
 
   const placeholder = document.createElement('div');
   placeholder.dataset['role'] = 'flame-placeholder';
-  placeholder.textContent = 'Load a flame to see your palette on it.';
+  // Sell the point-to-paint value, not just "see your palette" (#269 Phase 2).
+  placeholder.textContent =
+    'Load a flame ("Load flame… 🔥") to paint with it: hover the flame to see '
+    + 'which gradient colors land where, click a spot to jump to its stop, and '
+    + 'double-click to add one — so recoloring stops being guesswork.';
   Object.assign(placeholder.style, {
     color: COLORS.text.muted, fontSize: '13px', padding: '24px', textAlign: 'center',
   });
@@ -389,23 +475,56 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   const FLAME_DIM = 384;            // preview size; aspect refinement can come later
   const FLAME_PREVIEW_SPP = 16;     // browser preview cap (#211)
 
+  // #269 Phase 2 — re-evaluate which point-to-paint affordances are live once
+  // the index map exists. The mousemove/dblclick handlers read `indexMap`
+  // directly, so this is a hook for cursor/label affordances; kept minimal.
+  function refreshOverlayCapability(): void {
+    // Cursor affordance: crosshair on the gradient bar once the map is live
+    // (signals it's scrubbable for region highlight).
+    const strip = editorHost.querySelector('[data-role="strip"]') as HTMLElement | null;
+    if (strip) strip.style.cursor = indexMap ? 'crosshair' : '';
+  }
+
+  // #269 Phase 2 — placeholder and flameStack both live in flameZone (mounted
+  // below); toggle visibility instead of swapping children, so the overlay
+  // canvas + flame canvas stay in the DOM (and re-rendering doesn't thrash the
+  // node tree). Returns true when the flame is being shown.
+  function showFlame(on: boolean): void {
+    placeholder.style.display = on ? 'none' : '';
+    flameStack.style.display = on ? '' : 'none';
+  }
+
   function renderFlame(): void {
     if (!opts.device || !opts.format || !currentFlame) {
       runHandle?.cancel(); runHandle = null;
-      flameZone.replaceChildren(placeholder);
+      showFlame(false);
       return;
     }
-    if (flameZone.firstChild !== flameCanvas) flameZone.replaceChildren(flameCanvas);
+    showFlame(true);
     // Configure the canvas context ONCE — dims are constant, so re-setting
     // canvas.width / re-configuring per edit would thrash the swap chain.
     if (!flameCtx) {
       flameCanvas.width = FLAME_DIM; flameCanvas.height = FLAME_DIM;
       flameCtx = flameCanvas.getContext('webgpu') as GPUCanvasContext | null;
-      if (!flameCtx) { flameZone.replaceChildren(placeholder); return; }
+      if (!flameCtx) { showFlame(false); return; }
       flameCtx.configure({ device: opts.device, format: opts.format, alphaMode: 'opaque' });
     }
     const ctx = flameCtx;
     if (!renderer) renderer = createRenderer(opts.device, opts.format, { width: FLAME_DIM, height: FLAME_DIM });
+
+    // #269 Phase 2 — (re)capture the index map only when the genome itself
+    // changed. Palette edits keep the same genome identity → reuse the cached
+    // map (the index is geometry, not color, so recoloring never moves it).
+    if (currentFlame !== indexMapGenome) {
+      indexMap = null;
+      indexMapGenome = currentFlame;
+      captureNeeded = true;
+      renderer.setCaptureIndex(true);
+      refreshOverlayCapability();
+    } else {
+      renderer.setCaptureIndex(false);
+    }
+
     runHandle?.cancel();
     // Bake the CURRENT bar palette into the genome so the flame shows it.
     const g: Genome = { ...currentFlame, palette: currentPalette() };
@@ -417,6 +536,18 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
       seedBase: 1,
       onProgress: () => {},
     });
+    if (captureNeeded) {
+      const r = renderer;
+      const handleAtStart = runHandle;
+      void runHandle.promise.then(async (outcome) => {
+        // Ignore if a newer render superseded this one (palette drag / reload).
+        if (outcome !== 'completed' || runHandle !== handleAtStart) return;
+        const { idxSum, count, width, height } = await r.readIndexMap();
+        indexMap = downsampleIndexMap(idxSum, count, width, height, FLAME_DIM, FLAME_DIM);
+        captureNeeded = false;
+        refreshOverlayCapability();   // affordances live now the map exists
+      });
+    }
   }
 
   // Debounce flame re-renders during a palette drag (a full re-iterate is
@@ -427,6 +558,122 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     _flameTimer = setTimeout(() => { _flameTimer = null; renderFlame(); }, 250);
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // #269 Phase 2 — point-to-paint interactions, built on the cached index map.
+  // The flame→bar hint (paintHint) + bar→flame scrub (wireBarOverlay) live up
+  // near mountEditor (they re-bind to the editor strip per (re)mount). Below:
+  // the flame-side overlay canvas + its region painter.
+  // ────────────────────────────────────────────────────────────────────────
+
+  // Scrub the gradient bar → highlight matching flame regions on a 2D overlay
+  // layered over the flame (pointer-events:none → never eats flame mouse
+  // events). flameStack wraps the flame + overlay for absolute layering.
+  const flameStack = document.createElement('div');
+  Object.assign(flameStack.style, { position: 'relative', maxWidth: '512px', margin: '0 auto' });
+  const overlayCanvas = document.createElement('canvas');
+  overlayCanvas.dataset['role'] = 'flame-overlay';
+  overlayCanvas.width = FLAME_DIM; overlayCanvas.height = FLAME_DIM;
+  Object.assign(overlayCanvas.style, {
+    position: 'absolute', inset: '0', width: '100%', height: '100%',
+    display: 'block', pointerEvents: 'none', borderRadius: '4px',
+  });
+  // flameCanvas fills the stack; the stack owns the centering + max width.
+  Object.assign(flameCanvas.style, { width: '100%', maxWidth: 'none', margin: '0' });
+  flameStack.append(flameCanvas, overlayCanvas);
+  // Both placeholder + flameStack live in flameZone from mount; renderFlame's
+  // showFlame() toggles which is visible (keeps the overlay in the DOM).
+  flameStack.style.display = 'none';
+  flameZone.append(placeholder, flameStack);
+
+  const overlayCtx = overlayCanvas.getContext('2d');
+  const REGION_EPSILON = 0.03;   // ±3% of the index range; tunable
+  function paintRegion(stopIndex: number | null): void {
+    if (!overlayCtx) return;
+    overlayCtx.clearRect(0, 0, FLAME_DIM, FLAME_DIM);
+    if (stopIndex === null || !indexMap) return;
+    const mask = regionMask(indexMap, stopIndex, REGION_EPSILON);
+    const img = overlayCtx.createImageData(FLAME_DIM, FLAME_DIM);
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i]) {
+        // Bright cyan highlight at moderate alpha → matching regions pop.
+        img.data[i * 4 + 0] = 80; img.data[i * 4 + 1] = 240; img.data[i * 4 + 2] = 255;
+        img.data[i * 4 + 3] = 150;
+      }
+    }
+    overlayCtx.putImageData(img, 0, 0);
+  }
+
+  // Listeners attached once — the canvas + strip elements are stable across
+  // re-renders. All read `indexMap` directly (no-op until the map is captured).
+  const FLAME_BRUSH_RADIUS = 10;   // px in FLAME_DIM space
+  const STOP_DEDUP = 0.02;         // don't duplicate within 2% of an existing stop
+  flameCanvas.addEventListener('mousemove', (e) => {
+    if (!indexMap) { paintHint(null); return; }
+    const px = clientToPixel(flameCanvas.getBoundingClientRect(), e.clientX, e.clientY, FLAME_DIM, FLAME_DIM);
+    if (!px) { paintHint(null); return; }
+    paintHint(brushHistogram(indexMap, px.ox, px.oy, FLAME_BRUSH_RADIUS, HINT_BINS));
+  });
+  flameCanvas.addEventListener('mouseleave', () => paintHint(null));
+
+  // avg index at client coords, or null if off-canvas / an empty (no-hit) pixel.
+  function indexAtClient(clientX: number, clientY: number): number | null {
+    if (!indexMap) return null;
+    const px = clientToPixel(flameCanvas.getBoundingClientRect(), clientX, clientY, FLAME_DIM, FLAME_DIM);
+    if (!px) return null;
+    const o = px.oy * FLAME_DIM + px.ox;
+    return indexMap.mask[o] ? indexMap.avg[o]! : null;
+  }
+
+  // Interaction: single click on the flame → if the point maps to an existing
+  // stop with high precision, select that stop on the bar AND open its color
+  // picker (ready to recolor). Deferred behind a short timer so a
+  // double-click-to-add cancels it (no picker pop mid-add).
+  const SELECT_PRECISION = 0.04;   // within 4% of a stop's index → "maps to it"
+  const DBLCLICK_GUARD_MS = 250;
+  let pendingClick: ReturnType<typeof setTimeout> | null = null;
+  flameCanvas.addEventListener('click', (e) => {
+    if (!editor) return;
+    const cx = e.clientX, cy = e.clientY;   // capture before the deferred fire
+    if (pendingClick) clearTimeout(pendingClick);
+    pendingClick = setTimeout(() => {
+      pendingClick = null;
+      const ed = editor;
+      if (!ed) return;
+      const t = indexAtClient(cx, cy);
+      if (t === null) return;
+      const stops = currentPalette().stops;
+      let best = -1;
+      let bestD = SELECT_PRECISION;
+      stops.forEach((s, i) => { const d = Math.abs(s.t - t); if (d <= bestD) { bestD = d; best = i; } });
+      if (best >= 0) {
+        ed.selectStop(best);   // highlights + opens the HSV picker on that stop
+        setStatus(`Selected the stop at ${(stops[best]!.t * 100).toFixed(0)}% — recolor it to repaint this region.`);
+      } else {
+        setStatus(`This region maps to ~${(t * 100).toFixed(0)}% of the gradient — double-click to add a stop there.`);
+      }
+    }, DBLCLICK_GUARD_MS);
+  });
+
+  // Interaction 3 — double-click the flame → add a stop at that region's index.
+  flameCanvas.addEventListener('dblclick', (e) => {
+    if (pendingClick) { clearTimeout(pendingClick); pendingClick = null; }  // cancel the pending select
+    if (!indexMap || !editor) return;   // need a map + a live editable bar
+    const px = clientToPixel(flameCanvas.getBoundingClientRect(), e.clientX, e.clientY, FLAME_DIM, FLAME_DIM);
+    if (!px) return;
+    const o = px.oy * FLAME_DIM + px.ox;
+    if (!indexMap.mask[o]) { setStatus('That spot is empty — no color to map.'); return; }
+    const t = indexMap.avg[o]!;
+    const pal = currentPalette();
+    const rgb = colorAtIndex(pal.stops, pal.hue ?? 0, pal.mode ?? 'linear', t);
+    const res = insertStopAtIndex(pal.stops, t, rgb, STOP_DEDUP);
+    if (res.selectedExisting) { setStatus(`A stop already maps near here (${(t * 100).toFixed(0)}%).`); return; }
+    editor.setPalette({ ...pal, stops: res.stops });
+    setStatus(`Added a stop at ${(t * 100).toFixed(0)}% — recolor it to repaint that region.`);
+    scheduleFlameRender();   // same genome identity → reuses the cached map
+  });
+  // (bar scrub → flame region highlight is wired in wireBarOverlay, attached to
+  // the gradient bar strip on each editor (re)mount.)
+
   wrap.append(topZone, flameZone);
 
   opts.root.appendChild(wrap);
@@ -436,9 +683,11 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     destroy(): void {
       closePicker();
       if (_flameTimer) clearTimeout(_flameTimer);
+      if (pendingClick) clearTimeout(pendingClick);
       runHandle?.cancel();
       renderer?.destroy();        // release GPU buffers (every renderer surface must)
       if (editor) editor.destroy();
+      indexMap = null; indexMapGenome = null;   // #269 Phase 2 — drop the cache
       wrap.remove();
     },
   };

@@ -85,6 +85,14 @@ export interface ChaosPass {
   setPalette(palette: Palette): void;
   reset(): void;
   dispatch(genome: Genome, seed: number, opts?: DispatchOpts): void;
+  /** #269 Phase 2 — enable/disable per-pixel color-index capture (off by
+   *  default). When on, subsequent dispatches accumulate idx_sum; reset()
+   *  zeros it. */
+  setCaptureIndex(on: boolean): void;
+  /** #269 Phase 2 — read back idx_sum + the histogram count channel for every
+   *  super-pixel. Caller downsamples to output dims (see color-index-map.ts).
+   *  Call after the render's iteration completes. */
+  readIndexAndCount(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }>;
   /** Phase 9-size: release owned GPU buffers. Caller is responsible for not
    *  using the pass after destroy(). */
   destroy(): void;
@@ -113,6 +121,19 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
     size: UNIFORMS_BYTES,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+
+  // #269 Phase 2 — per-super-pixel color-index accumulator. One u32 per pixel
+  // (stride 1, NOT HIST_CHANNELS). COPY_SRC for readback. Always allocated;
+  // written by the kernel only when captureIndex is on (the gradient page).
+  const idxSumBytes = config.width * config.height * 4;
+  const idxSum = device.createBuffer({
+    label: 'pyr3.chaos.idx_sum',
+    size: idxSumBytes,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+  });
+  // #269 Phase 2 — capture gate, toggled via setCaptureIndex(); off for every
+  // non-gradient consumer so the histogram output stays byte-identical.
+  let captureIndex = false;
 
   const xforms = device.createBuffer({
     label: 'pyr3.chaos.xforms',
@@ -186,6 +207,7 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
         { binding: 5, resource: { buffer: isaacBuffer } },
         { binding: 6, resource: { buffer: traceBuffer } },
         { binding: 7, resource: { buffer: xformDistribBuffer } },
+        { binding: 8, resource: { buffer: idxSum } }, // #269 Phase 2
       ],
     });
   }
@@ -200,6 +222,41 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       device.queue.writeBuffer(paletteBuffer, 0, packPalette(p));
     },
 
+    setCaptureIndex(on: boolean): void {
+      captureIndex = on;
+    },
+
+    async readIndexAndCount(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }> {
+      const w = config.width;
+      const h = config.height;
+      const idxStaging = device.createBuffer({
+        label: 'pyr3.chaos.idx_sum.read',
+        size: idxSumBytes,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const histStaging = device.createBuffer({
+        label: 'pyr3.chaos.hist.read',
+        size: histogramBytes,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const enc = device.createCommandEncoder({ label: 'pyr3.chaos.idxread' });
+      enc.copyBufferToBuffer(idxSum, 0, idxStaging, 0, idxSumBytes);
+      enc.copyBufferToBuffer(histogram, 0, histStaging, 0, histogramBytes);
+      device.queue.submit([enc.finish()]);
+      await idxStaging.mapAsync(GPUMapMode.READ);
+      await histStaging.mapAsync(GPUMapMode.READ);
+      const idxArr = new Uint32Array(idxStaging.getMappedRange().slice(0));
+      const histArr = new Uint32Array(histStaging.getMappedRange().slice(0));
+      idxStaging.unmap();
+      histStaging.unmap();
+      idxStaging.destroy();
+      histStaging.destroy();
+      // Extract the count channel (channel 3 of HIST_CHANNELS) per pixel.
+      const count = new Uint32Array(w * h);
+      for (let i = 0; i < w * h; i++) count[i] = histArr[i * HIST_CHANNELS + 3]!;
+      return { idxSum: idxArr, count, width: w, height: h };
+    },
+
     reset(): void {
       const zero = new Uint8Array(histogramBytes);
       device.queue.writeBuffer(histogram, 0, zero);
@@ -208,6 +265,9 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
         0,
         new Uint8Array(TRACE_ENTRIES * TRACE_FLOATS_PER_ENTRY * 4),
       );
+      // #269 Phase 2 — zero idx_sum in lockstep with the histogram so a
+      // capturing render accumulates from a clean buffer.
+      device.queue.writeBuffer(idxSum, 0, new Uint8Array(idxSumBytes));
     },
 
     destroy(): void {
@@ -218,6 +278,7 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       isaacBuffer.destroy();
       traceBuffer.destroy();
       xformDistribBuffer.destroy();
+      idxSum.destroy(); // #269 Phase 2
     },
 
     dispatch(genome: Genome, seed: number, opts?: DispatchOpts): void {
@@ -306,6 +367,9 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // #65 Tier 1: walker jitter amplitude — runtime parameter.
       // `??` lets call sites omit it and pick up the shipped default.
       f32[13] = opts?.walkerJitter ?? DEFAULT_WALKER_JITTER;
+      // #269 Phase 2 — capture gate (slot 14). Off for every non-gradient
+      // consumer → idx_sum untouched → histogram output byte-identical.
+      u32[14] = captureIndex ? 1 : 0;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

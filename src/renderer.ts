@@ -163,6 +163,17 @@ export interface Renderer {
   readonly superH: number;
   readonly oversample: number;
   readonly filterRadius: number;
+
+  /** #269 Phase 2 — enable/disable per-pixel color-index capture (off by
+   *  default). When on, subsequent iterate() dispatches accumulate idx_sum;
+   *  reset() zeros it. */
+  setCaptureIndex(on: boolean): void;
+  /** #269 Phase 2 — read back the super-res idx_sum + count channel. Returns
+   *  super-res dims (superW/superH); caller downsamples to output dims via
+   *  color-index-map's downsampleIndexMap. Call after the chunked render's
+   *  promise resolves. */
+  readIndexMap(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }>;
+
   destroy(): void;
 }
 
@@ -247,6 +258,14 @@ export function createRenderer(
     get superH() { return pipelines.superH; },
     get oversample() { return pipelines.oversample; },
     get filterRadius() { return pipelines.filterRadius; },
+
+    setCaptureIndex(on: boolean): void {
+      pipelines.chaos.setCaptureIndex(on);
+    },
+
+    readIndexMap(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }> {
+      return pipelines.chaos.readIndexAndCount();
+    },
 
     destroy(): void {
       destroyPipelines(pipelines);

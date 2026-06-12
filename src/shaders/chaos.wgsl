@@ -92,6 +92,13 @@ struct Uniforms {
   // factor, not an absolute amplitude. Setting 0 disables jitter
   // (f32-collapse cliff returns).
   walker_jitter: f32,   // slot 13 (byte 52)
+  // #269 Phase 2 — point-to-paint index capture gate. 0 = off (default; every
+  // non-gradient render: parity / CLI / gallery), 1 = on (the /v1/gradient
+  // page). When on, each splat also accumulates the hit-weighted color coord
+  // into idx_sum (binding 8). NOTHING in the density/visualize/readout path
+  // reads idx_sum, so the 4-channel histogram output is byte-identical
+  // regardless of this flag. Buffer stays 64 bytes (slot 14 = byte 56).
+  capture_index: u32,   // slot 14 (byte 56)
 };
 
 // Variation slots:
@@ -158,6 +165,14 @@ struct IsaacState {
 // the no-prior-xform fallback (used at iter 0 / after the give-up bad-iter
 // branch). Mirrors flam3.c:200-256 (`flam3_create_chaos_distrib`).
 @group(0) @binding(7) var<storage, read> xform_distrib: array<u32>;
+// #269 Phase 2 — per-super-pixel hit-weighted color-coord accumulator. One u32
+// per super-res pixel, same row-major layout as `hist` (stride 1, not
+// HIST_CHANNELS). Written ONLY when u.capture_index == 1u (the gradient page).
+// avg_index = idx_sum / count, where count is hist channel 3 — both carry the
+// opacity*255 weight, so the ratio is the weighted-average color coord in
+// [0,1]. Always bound (statically referenced → not stripped by layout:'auto');
+// every renderer allocates it, only the capturing one writes.
+@group(0) @binding(8) var<storage, read_write> idx_sum: array<atomic<u32>>;
 const CHOOSE_XFORM_GRAIN: u32 = 16384u;
 const CHOOSE_XFORM_GRAIN_M1: u32 = 16383u;
 
@@ -7744,6 +7759,24 @@ fn atomic_add_sat(idx: u32, delta: u32) {
   }
 }
 
+// #269 Phase 2 — saturating atomic add into idx_sum (sibling of atomic_add_sat,
+// referencing the `idx_sum` binding instead of `hist`). Same u32::MAX pin: a
+// wrapped idx_sum would corrupt the avg-index readback at the brightest pixels.
+fn atomic_add_sat_idx(idx: u32, delta: u32) {
+  if (delta == 0u) {
+    return;
+  }
+  var old = atomicLoad(&idx_sum[idx]);
+  loop {
+    let capped = select(old + delta, 0xffffffffu, (0xffffffffu - old) < delta);
+    let res = atomicCompareExchangeWeak(&idx_sum[idx], old, capped);
+    if (res.exchanged) {
+      break;
+    }
+    old = res.old_value;
+  }
+}
+
 @compute @workgroup_size(64)
 fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   let walker_id = gid.x;
@@ -8249,6 +8282,16 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         atomic_add_sat(base + 1u, g_add);
         atomic_add_sat(base + 2u, b_add);
         atomic_add_sat(base + 3u, count_add);
+        // #269 Phase 2 — capture the hit-weighted color coord. splat_p.z is the
+        // contracted color coordinate (same value indexing the palette above),
+        // weighted by the same opacity*255 as count_add so the readback ratio
+        // idx_sum/count is the weighted-average index in [0,1]. Gated so every
+        // non-gradient render deposits nothing → histogram output unchanged.
+        if (u.capture_index == 1u) {
+          let idx_pixel = u32(yi) * u.width + u32(xi);
+          let idx_add = u32(clamp(splat_p.z, 0.0, 1.0) * weight);
+          atomic_add_sat_idx(idx_pixel, idx_add);
+        }
       }
     }
   }

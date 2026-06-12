@@ -56,8 +56,13 @@ describe('gradient-page (#115 T11)', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
     const h = mountGradientPage({ root });                  // no device, no handoff
     const zone = root.querySelector('[data-zone="flame"]') as HTMLElement;
-    expect(zone.querySelector('[data-role="flame-placeholder"]')).toBeTruthy();
-    expect(zone.querySelector('canvas')).toBeNull();        // no canvas without a device
+    const ph = zone.querySelector('[data-role="flame-placeholder"]') as HTMLElement;
+    expect(ph).toBeTruthy();
+    expect(ph.style.display).not.toBe('none');               // placeholder visible
+    // #269 Phase 2: the flame + overlay canvases now live in the DOM but the
+    // stack is hidden (display:none) until a device renders — assert hidden.
+    const stack = (zone.querySelector('[data-role="flame-overlay"]') as HTMLElement).parentElement as HTMLElement;
+    expect(stack.style.display).toBe('none');
     h.destroy();
   });
 
@@ -192,5 +197,42 @@ describe('gradient page round-trip mode', () => {
     (root.querySelector('[data-role="cancel-return"]') as HTMLElement).click();
     expect(navd).toBe(true);
     expect(consumeGradientReturn()).toBeNull(); // flame keeps its palette
+  });
+});
+
+describe('gradient page point-to-paint (#269 Phase 2)', () => {
+  beforeEach(() => installLocalStorageStub());
+
+  it('overlays the point-to-paint hint on the gradient bar', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });   // GPU-free path (editor mounts → strip exists)
+    const strip = root.querySelector('[data-role="strip"]') as HTMLElement;
+    expect(strip).not.toBeNull();
+    // wireBarOverlay appends the hint canvas INTO the editor's gradient bar.
+    expect(strip.querySelector('[data-role="bar-hint-overlay"]')).not.toBeNull();
+    h.destroy();
+  });
+
+  it('mounts the flame overlay canvas', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });
+    expect(root.querySelector('[data-role="flame-overlay"]')).not.toBeNull();
+    h.destroy();
+  });
+
+  it('help mentions point-to-paint', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });
+    expect(root.textContent).toContain('Point-to-paint');
+    h.destroy();
+  });
+
+  it('shows a persistent point-to-paint hint caption under the bar', () => {
+    const root = document.createElement('div'); document.body.appendChild(root);
+    const h = mountGradientPage({ root });
+    const hint = root.querySelector('[data-role="point-to-paint-hint"]');
+    expect(hint).not.toBeNull();
+    expect(hint!.textContent).toContain('click a flame spot to select its stop');
+    h.destroy();
   });
 });

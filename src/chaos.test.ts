@@ -185,3 +185,37 @@ describe('#65 Tier 1 — walker_jitter is a runtime uniform (slot 13)', () => {
     expect(f32[13]).toBe(0);
   });
 });
+
+describe('#269 Phase 2 — idx_sum capture buffer + capture_index uniform (slot 14)', () => {
+  it('allocates an idx_sum buffer sized one u32 per super-pixel', () => {
+    const buffers: CapturedBuffer[] = [];
+    const pass = createChaosPass(makeMockDevice([], buffers), baseConfig(1));
+    const idx = buffers.find((b) => b.label === 'pyr3.chaos.idx_sum');
+    expect(idx).toBeDefined();
+    // baseConfig: 64×64 super-pixels × 4 bytes (u32, stride 1).
+    expect(idx!.size).toBe(64 * 64 * 4);
+    expect(typeof pass.setCaptureIndex).toBe('function');
+    expect(typeof pass.readIndexAndCount).toBe('function');
+  });
+
+  it('writes 0 into u32 slot 14 by default (capture off → histogram byte-identical)', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    const u32 = new Uint32Array(u!.data as ArrayBuffer);
+    expect(u32[14]).toBe(0);
+  });
+
+  it('writes 1 into u32 slot 14 after setCaptureIndex(true)', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.setCaptureIndex(true);
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    const u32 = new Uint32Array(u!.data as ArrayBuffer);
+    expect(u32[14]).toBe(1);
+  });
+});

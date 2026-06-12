@@ -29,6 +29,10 @@ export interface PaletteEditorOpts {
 export interface PaletteEditorHandle {
   getPalette(): Palette;
   setPalette(p: Palette): void;
+  /** #269 Phase 2 — programmatically select a stop by index (e.g. when the user
+   *  clicks a flame region that maps to it): highlights it AND opens the HSV
+   *  picker anchored to its handle, same as a bar-handle click. */
+  selectStop(idx: number): void;
   destroy(): void;
 }
 
@@ -249,10 +253,11 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   // ── Task 7: handle click → HSV color picker ────────────────────────────
   let picker: ColorPickerHandle | null = null;
   function closePicker(): void { if (picker) { picker.destroy(); picker = null; } }
-  function onClick(e: MouseEvent): void {
-    if (dragMoved) return; // a drag, not a click
-    const idx = hitHandle(palette.stops, tForEvent(e.clientX));
-    if (idx < 0) return; // empty strip — dblclick adds, click does nothing
+  // Select a stop by index: highlight it and open the HSV picker anchored to
+  // its handle. Shared by bar-handle clicks (onClick) and the #269 Phase 2
+  // flame-click → select-its-stop path (handle.selectStop).
+  function selectStop(idx: number): void {
+    if (idx < 0 || idx >= palette.stops.length) return;
     selectedIdx = idx;
     render();
     closePicker();
@@ -270,6 +275,12 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
       },
       onClose: () => { picker = null; },
     });
+  }
+  function onClick(e: MouseEvent): void {
+    if (dragMoved) return; // a drag, not a click
+    const idx = hitHandle(palette.stops, tForEvent(e.clientX));
+    if (idx < 0) return; // empty strip — dblclick adds, click does nothing
+    selectStop(idx);
   }
   strip.addEventListener('click', onClick);
 
@@ -326,6 +337,7 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   return {
     getPalette: () => clone(palette),
     setPalette: (p: Palette) => { palette = clone(p); selectedIdx = -1; closePicker(); render(); },
+    selectStop: (idx: number) => selectStop(idx),
     destroy: () => {
       closePicker();
       document.removeEventListener('mousemove', onMouseMove);

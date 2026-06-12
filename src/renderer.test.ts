@@ -41,6 +41,10 @@ function recordingRenderer(): {
       presentedViews.push(req.outputView);
     },
     resize() {},
+    setCaptureIndex() {},
+    readIndexMap() {
+      return Promise.resolve({ idxSum: new Uint32Array(0), count: new Uint32Array(0), width: 512, height: 512 });
+    },
     destroy() {},
     get width() { return 512; },
     get height() { return 512; },

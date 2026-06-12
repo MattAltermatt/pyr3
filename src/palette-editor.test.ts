@@ -18,6 +18,22 @@ describe('palette-editor core (#115)', () => {
     h.destroy();
   });
 
+  it('selectStop(idx) highlights the stop at that index (#269 Phase 2)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const h = mountPaletteEditor(host, { initial: { name: 'x', stops: [
+      { t: 0, r: 0, g: 0, b: 0 }, { t: 0.5, r: 1, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 },
+    ] }, onChange: () => {} });
+    h.selectStop(1);
+    const handles = host.querySelectorAll('[data-role="handle"]');
+    expect((handles[1] as HTMLElement).dataset['selected']).toBe('true');
+    expect((handles[0] as HTMLElement).dataset['selected']).toBeUndefined();
+    // out-of-range is a no-op (no throw, no selection change)
+    h.selectStop(99);
+    expect((host.querySelectorAll('[data-role="handle"]')[1] as HTMLElement).dataset['selected']).toBe('true');
+    h.destroy();
+  });
+
   it('setPalette swaps the working palette and re-renders handles', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
