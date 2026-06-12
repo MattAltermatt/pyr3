@@ -3,15 +3,20 @@
 // (interpolation.c:373-720). Given an Animation and a target time `t`,
 // derive a concrete Genome by 2-keyframe blend.
 //
-// Linear keyframe interp only — smooth/Catmull-Rom (animation.interpolation
-// === 'smooth') logs a warning and falls back to linear. Stagger (P4) and
-// asymmetric rotation refangles (rare; only fires when one keyframe has
-// `xform.animate=0` and the other has `animate=1`) are deferred to follow-up
-// issues filed against the same milestone. The 7-variation-list 180°-rotated
-// identity padding (spherical / ngon / julian / juliascope / polar /
-// wedge_sph / wedge_julia) is also deferred — plain identity is good enough
-// for the common case; the rotated-identity dodge only matters when an
-// xform with one of those variations has weight=0 in the source genome.
+// Linear 2-keyframe blend is the default. #213 added three flam3-C parity
+// refinements (Animation milestone #17):
+//   - Catmull-Rom smooth interp (animation.interpolation === 'smooth' on an
+//     interior segment) — a contained n=4 path (interpolateCatmullRom); the
+//     2-keyframe linear path stays byte-identical.
+//   - Asymmetric rotation wind refangles (establishWind) — fires when one
+//     keyframe's xform has `animate=0` and the other animates; pins the
+//     log-polar winding direction.
+//   - 180°-rotated identity padding (makeIdentityXform) for the 7-variation
+//     list (spherical / polar / julian / juliascope / ngon / wedge_sph /
+//     wedge_julia) under log interp, to dodge black wedges when an xform
+//     appears/disappears across keyframes.
+// Stagger (P4) remains deferred. #225 added per-segment xform correspondence
+// remapping (segmentPermutation); #224 added per-segment easing.
 //
 // flam3-C source map for callers cross-checking:
 //   interpolation.c:31-54      motion_funcs              -> deferred to P3
@@ -21,7 +26,7 @@
 //   interpolation.c:373-720    flam3_interpolate_n       -> interpolate
 //   flam3.c:797-882            flam3_interpolate         -> pickKeyframes + interpolate
 
-import { type Animation } from './animation';
+import { type Animation, type InterpolationType } from './animation';
 import { type Genome, type Xform } from './genome';
 import {
   type Variation,
@@ -53,11 +58,6 @@ export function interpolate(animation: Animation, time: number): Genome {
   if (keyframes.length < 2) {
     throw new Error('pyr3: interpolate requires Animation.keyframes.length >= 2');
   }
-  if (animation.interpolation === 'smooth') {
-    // Catmull-Rom is a deferred P2 follow-up; surface once per call so the
-    // missing-feature is loud but not blocking.
-    console.warn('pyr3: smooth (Catmull-Rom) interp not yet implemented; using linear');
-  }
 
   const { i1, i2, c0: rawC0, c1: rawC1 } = pickKeyframes(keyframes, time);
   const k0 = keyframes[i1]!;
@@ -77,11 +77,22 @@ export function interpolate(animation: Animation, time: number): Genome {
     c0 = 1 - c1;
   }
 
+  // #213 Catmull-Rom smooth interp (flam3.c:832-877). Smooth is illegal on the
+  // first/last segment (needs a keyframe on each side) → fall through to the
+  // linear 2-keyframe path there, matching flam3's warn-and-revert. Otherwise
+  // blend the 4 keyframes [i1-1, i1, i1+1, i1+2] with the cubic basis weights.
+  // Easing (if present) composes as a time-warp on the cubic parameter `t`.
+  if (animation.interpolation === 'smooth' && i1 !== 0 && i2 !== keyframes.length - 1) {
+    const cmc = catmullRomWeights(c1);
+    const kfs = [keyframes[i1 - 1]!, keyframes[i1]!, keyframes[i1 + 1]!, keyframes[i1 + 2]!];
+    return interpolateCatmullRom(kfs, cmc, animation, time, rawC1);
+  }
+
   // Align xform counts — pad the shorter side with identity xforms so
   // both genomes have the same length (and same finalxform presence) before
   // interp. Plain identity for now (no special-case 180° rotation for
   // spherical/ngon/etc — deferred follow-up).
-  const { aligned0, aligned1 } = alignXformCounts(k0, k1);
+  const { aligned0, aligned1 } = alignXformCounts(k0, k1, animation.interpolation_type);
 
   // #225 xform correspondence remapping: reorder the SECOND keyframe's aligned
   // xforms by this segment's permutation before the index-aligned blend. perm is
@@ -96,6 +107,11 @@ export function interpolate(animation: Animation, time: number): Genome {
 
   const useLog = animation.interpolation_type === 'log';
 
+  // #213 asymmetric wind: only relevant for log-polar affine interp, and only
+  // when an xform's animate flag differs across the (post-permutation) pair.
+  // establishWind returns undefined per symmetric xform → no behavior change.
+  const wind = useLog ? establishWind(aligned0, b1) : undefined;
+
   // P3 #208 — pre-apply per-xform motion overlays to each keyframe's xforms
   // before linear blend (flam3.c:533-541 sheep_edge pattern). The motion clock
   // is the RAW (un-eased) linear weight rawC1 — the in-window time in [0, 1] for
@@ -107,7 +123,7 @@ export function interpolate(animation: Animation, time: number): Genome {
   for (let i = 0; i < aligned0.xforms.length; i++) {
     const xf0 = applyMotionParameters(aligned0.xforms[i]!, rawC1);
     const xf1 = applyMotionParameters(b1.xforms[i]!, rawC1);
-    xforms.push(interpolateXform(xf0, xf1, c0, c1, useLog));
+    xforms.push(interpolateXform(xf0, xf1, c0, c1, useLog, wind?.[i]));
   }
 
   let finalxform: Xform | undefined;
@@ -250,8 +266,13 @@ function endpointBlend(keyframes: Genome[], i1: number, i2: number, time: number
 // beyond linear(1)) so both genomes have the same xform count. Special-case
 // 180° rotated identity for 7 listed variations is deferred.
 
-function alignXformCounts(k0: Genome, k1: Genome): { aligned0: Genome; aligned1: Genome } {
+function alignXformCounts(
+  k0: Genome,
+  k1: Genome,
+  interpolationType: InterpolationType,
+): { aligned0: Genome; aligned1: Genome } {
   const n = Math.max(k0.xforms.length, k1.xforms.length);
+  const useLog = interpolationType === 'log';
 
   // Quick path: same lengths + matching finalxform presence → no padding.
   if (
@@ -262,38 +283,101 @@ function alignXformCounts(k0: Genome, k1: Genome): { aligned0: Genome; aligned1:
     return { aligned0: k0, aligned1: k1 };
   }
 
-  const padIfShort = (g: Genome): Genome => {
-    const xforms = g.xforms.length === n
-      ? g.xforms
-      : g.xforms.concat(
-          Array.from({ length: n - g.xforms.length }, () => makeIdentityXform()),
-        );
+  // Pad the short side. For each padded slot j, peek at the OTHER (longer) side's
+  // xform[j]: if it carries one of the spherical-family variations and interp is
+  // log, use a 180°-rotated identity so the appearing/disappearing xform rotates
+  // through the short arc instead of collapsing through a black wedge (#213,
+  // flam3 interpolation.c:846-895).
+  const padIfShort = (g: Genome, other: Genome): Genome => {
+    let xforms = g.xforms;
+    if (g.xforms.length < n) {
+      const pads = Array.from({ length: n - g.xforms.length }, (_unused, k) => {
+        const j = g.xforms.length + k;
+        // flam3 checks ANY variation slot with positive weight (interpolation.c
+        // :877-883), not just the first — scan for a listed-family member.
+        const hint = other.xforms[j]?.variations.find(
+          (v) => FLIPPED_IDENTITY_VARS.has(v.index) && v.active !== false,
+        )?.index;
+        return makeIdentityXform(hint, useLog);
+      });
+      xforms = g.xforms.concat(pads);
+    }
     let finalxform = g.finalxform;
     if (!finalxform && (k0.finalxform || k1.finalxform)) {
-      finalxform = makeIdentityXform();
+      finalxform = makeIdentityXform();   // final-xform pad stays plain identity
     }
     return finalxform ? { ...g, xforms, finalxform } : { ...g, xforms };
   };
 
-  return { aligned0: padIfShort(k0), aligned1: padIfShort(k1) };
+  return { aligned0: padIfShort(k0, k1), aligned1: padIfShort(k1, k0) };
 }
 
-function makeIdentityXform(): Xform {
+/** pyr3 variation indices whose padded identity should be 180°-rotated under log
+ *  interp (flam3's spherical-family black-wedge dodge, interpolation.c:868-880):
+ *  spherical, polar, julian, juliascope, ngon, wedge_sph, wedge_julia. */
+const FLIPPED_IDENTITY_VARS = new Set<VariationIndex>([2, 5, 14, 39, 48, 89, 96]);
+
+function makeIdentityXform(variationHint?: VariationIndex, useLog?: boolean): Xform {
+  // Flipped (180°-rotated) identity when the companion xform carries a
+  // spherical-family variation AND interp is log; plain identity otherwise.
+  const flip = useLog === true
+    && variationHint !== undefined
+    && FLIPPED_IDENTITY_VARS.has(variationHint);
   return {
-    a: 1, b: 0, c: 0,
-    d: 0, e: 1, f: 0,
+    a: flip ? -1 : 1, b: 0, c: 0,
+    d: 0, e: flip ? -1 : 1, f: 0,
     weight: 0,                         // zero weight: pad never participates in chaos pick
     color: 0,
     colorSpeed: 0.5,                   // flam3 parser default
-    variations: [linearVar(1)],
+    variations: [linearVar(flip ? -1 : 1)],
   };
+}
+
+/** #213 asymmetric rotation refangles (flam3 establish_asymmetric_refangles,
+ *  interpolation.c:710-766). When one keyframe's xform is stationary
+ *  (animate===0) and the other animates, derive a per-column reference angle
+ *  that pins the rotation winding direction so the log-polar blend doesn't snap
+ *  the long arc through 180°. Returns per-xform `[windCol0, windCol1]` (or
+ *  undefined when that xform is symmetric → standard ±π unwrap). Final xform is
+ *  excluded (callers pass only the xforms[] pairs). flam3's `padsymflag` is
+ *  hardwired 0, so the trigger reduces to an animate-flag mismatch (absent
+ *  animate ⇒ 1 ⇒ animated). Pass the two genomes actually being blended (after
+ *  any #225 permutation) so the angles match the realized pairing. */
+function establishWind(g0: Genome, g1: Genome): ([number, number] | undefined)[] {
+  const n = Math.min(g0.xforms.length, g1.xforms.length);
+  const out: ([number, number] | undefined)[] = [];
+  for (let i = 0; i < n; i++) {
+    const xf0 = g0.xforms[i]!;
+    const xf1 = g1.xforms[i]!;
+    const sym0 = xf0.animate === 0;
+    const sym1 = xf1.animate === 0;
+    if (sym0 === sym1) { out.push(undefined); continue; }   // symmetric → no wind
+    const w: [number, number] = [0, 0];
+    for (let col = 0; col < 2; col++) {
+      const a0 = col === 0 ? Math.atan2(xf0.d, xf0.a) : Math.atan2(xf0.e, xf0.b);
+      let a1 = col === 0 ? Math.atan2(xf1.d, xf1.a) : Math.atan2(xf1.e, xf1.b);
+      // flam3 pre-adjusts a1 into the ±π window before deriving the reference.
+      const d = a1 - a0;
+      if (d > Math.PI + EPS) a1 -= 2 * Math.PI;
+      else if (d < -(Math.PI - EPS)) a1 += 2 * Math.PI;
+      // Reference angle (+2π so the value is >0, flagging "wind active"). sym1 ⇒
+      // k1 is stationary ⇒ reference is k0's angle (a0); sym0 ⇒ k0 is stationary
+      // ⇒ reference is k1's angle (a1). (flam3 interpolation.c:758-759.)
+      w[col] = (sym1 ? a0 : a1) + 2 * Math.PI;
+    }
+    out.push(w);
+  }
+  return out;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
 // Per-xform interp — interpolation.c:512-660. Linear fields are trivial;
 // affine takes the log-polar path when interpolation_type === 'log'.
 
-function interpolateXform(x0: Xform, x1: Xform, c0: number, c1: number, useLog: boolean): Xform {
+function interpolateXform(
+  x0: Xform, x1: Xform, c0: number, c1: number, useLog: boolean,
+  wind?: [number, number],
+): Xform {
   // active:false mirrors the packer (symmetry.ts) — an inactive xform has
   // effective weight 0 — so a deactivated xform stays off across a tween
   // instead of silently re-activating (#260). When inactive on BOTH keyframes
@@ -315,7 +399,7 @@ function interpolateXform(x0: Xform, x1: Xform, c0: number, c1: number, useLog: 
   //   flam3 column 1 (the y-component) = (b, e)
   //   flam3 column 2 (translation)     = (c, f)  — linear interp always
   const aff = useLog
-    ? interpolateAffineLogPolar(x0, x1, c0, c1, /* usePost */ false)
+    ? interpolateAffineLogPolar(x0, x1, c0, c1, /* usePost */ false, wind)
     : interpolateAffineLinear(x0, x1, c0, c1, /* usePost */ false);
 
   // Post-affine: identity-on-both → identity (no interp). Otherwise interp.
@@ -393,7 +477,10 @@ function interpolateAffineLinear(x0: Affine6, x1: Affine6, c0: number, c1: numbe
  *  LOG_MAG_THRESHOLD). Translation (column 2) stays linear. The angle-unwrap
  *  loop in convert_linear_to_polar pulls k>k-1 angles into the same 2π window
  *  to take the shorter arc. */
-function interpolateAffineLogPolar(x0: Affine6, x1: Affine6, c0: number, c1: number, _usePost: boolean): Affine6 {
+function interpolateAffineLogPolar(
+  x0: Affine6, x1: Affine6, c0: number, c1: number, _usePost: boolean,
+  wind?: [number, number],
+): Affine6 {
   // zlm angle inheritance is per-keyframe and cross-column, so it must be
   // resolved at the xform level (interpolation.c:274-285) BEFORE the per-column
   // blend — a column that collapses to (0,0) at one keyframe has no meaningful
@@ -401,8 +488,8 @@ function interpolateAffineLogPolar(x0: Affine6, x1: Affine6, c0: number, c1: num
   // xform rather than from angle 0. (#248)
   const p0 = polarColumns(x0);
   const p1 = polarColumns(x1);
-  const col0Result = blendPolarColumn(p0.ang0, p0.mag0, p1.ang0, p1.mag0, c0, c1);
-  const col1Result = blendPolarColumn(p0.ang1, p0.mag1, p1.ang1, p1.mag1, c0, c1);
+  const col0Result = blendPolarColumn(p0.ang0, p0.mag0, p1.ang0, p1.mag0, c0, c1, wind?.[0]);
+  const col1Result = blendPolarColumn(p0.ang1, p0.mag1, p1.ang1, p1.mag1, c0, c1, wind?.[1]);
   return {
     a: col0Result.x,
     d: col0Result.y,
@@ -432,15 +519,29 @@ function blendPolarColumn(
   ang0In: number, mag0: number,
   ang1In: number, mag1: number,
   c0: number, c1: number,
+  wind?: number,
 ): { x: number; y: number } {
   let ang0 = ang0In;
   let ang1 = ang1In;
 
-  // Angle unwrap: pull ang1 into [ang0 - π, ang0 + π] so the blend takes the
-  // shorter arc. flam3 interpolation.c:307-318 (the non-wind branch).
-  const d = ang1 - ang0;
-  if (d > Math.PI + EPS) ang1 -= 2 * Math.PI;
-  else if (d < -(Math.PI - EPS)) ang1 += 2 * Math.PI;
+  if (wind !== undefined && wind > 0) {
+    // #213 asymmetric wind branch (flam3 interpolation.c:293-309). When one
+    // keyframe's xform is stationary (animate=0) and the other animates, the
+    // rotation winding direction is pinned by a reference angle so the blend
+    // doesn't snap the long arc through 180°. Bring both angles into the 2π
+    // window [refang, refang + 2π].
+    const refang = wind - 2 * Math.PI;
+    while (ang0 < refang) ang0 += 2 * Math.PI;
+    while (ang0 > refang + 2 * Math.PI) ang0 -= 2 * Math.PI;
+    while (ang1 < refang) ang1 += 2 * Math.PI;
+    while (ang1 > refang + 2 * Math.PI) ang1 -= 2 * Math.PI;
+  } else {
+    // Angle unwrap: pull ang1 into [ang0 - π, ang0 + π] so the blend takes the
+    // shorter arc. flam3 interpolation.c:307-318 (the non-wind branch).
+    const d = ang1 - ang0;
+    if (d > Math.PI + EPS) ang1 -= 2 * Math.PI;
+    else if (d < -(Math.PI - EPS)) ang1 += 2 * Math.PI;
+  }
 
   // Magnitude mode: log unless either keyframe is too tiny.
   const useLogMag = Math.log(mag0 + EPS) >= LOG_MAG_THRESHOLD &&
@@ -678,6 +779,359 @@ function interpolateTonemap(
     vibrancy: blend(a.vibrancy, b.vibrancy, c0, c1),
     highlightPower: blend(a.highlightPower, b.highlightPower, c0, c1),
     gammaThreshold: blend(a.gammaThreshold, b.gammaThreshold, c0, c1),
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// #213 Catmull-Rom smooth interp — the only N-keyframe (n=4) blend path. The
+// 2-keyframe linear path above stays untouched / byte-identical; this contained
+// path mirrors flam3's flam3_interpolate_n(result, 4, cpi, cmc) (the smooth
+// branch of flam3.c:832-877 + interpolation.c:326-337). Wind (#213 part 2) is a
+// 2-keyframe concern and is NOT applied here — flam3's smooth path uses the
+// standard unwrap. hsv_circular / sweep palette blends use a dominant-keyframe
+// simplification (documented inline) since the exact N-keyframe palette edge is
+// vanishingly rare (smooth needs ≥4 keyframes).
+
+/** Catmull-Rom cubic basis weights for the 4 keyframes [i1-1, i1, i1+1, i1+2]
+ *  at segment position t∈[0,1] (interpolation.c:326-337). Sums to 1 for all t;
+ *  at t=0 ⇒ [0,1,0,0] (passes through keyframes[i1]), at t=1 ⇒ [0,0,1,0]
+ *  (passes through keyframes[i1+1]). */
+export function catmullRomWeights(t: number): [number, number, number, number] {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return [
+    (2 * t2 - t - t3) / 2,
+    (3 * t3 - 5 * t2 + 2) / 2,
+    (4 * t2 - 3 * t3 + t) / 2,
+    (t3 - t2) / 2,
+  ];
+}
+
+/** Σ weights[k]·values[k] — the N-keyframe generalization of `blend`. */
+function blendN(values: number[], weights: number[]): number {
+  let s = 0;
+  for (let k = 0; k < values.length; k++) s += weights[k]! * values[k]!;
+  return s;
+}
+
+function interpolateCatmullRom(
+  kfs: Genome[],
+  cmc: number[],
+  animation: Animation,
+  time: number,
+  rawC1: number,
+): Genome {
+  const useLog = animation.interpolation_type === 'log';
+  const aligned = alignXformCountsN(kfs, animation.interpolation_type);
+  const n = aligned[0]!.xforms.length;
+
+  // Per-xform N-keyframe blend (motion overlay applied per keyframe on the RAW
+  // segment clock, before the cmc blend — matches the 2-keyframe path).
+  const xforms: Xform[] = [];
+  for (let i = 0; i < n; i++) {
+    const xfs = aligned.map((g) => applyMotionParameters(g.xforms[i]!, rawC1));
+    xforms.push(interpolateXformN(xfs, cmc, useLog));
+  }
+
+  let finalxform: Xform | undefined;
+  if (aligned.every((g) => g.finalxform)) {
+    finalxform = interpolateXformN(aligned.map((g) => g.finalxform!), cmc, useLog);
+  }
+
+  const out: Genome = {
+    name: kfs[1]!.name,
+    xforms,
+    scale: blendN(kfs.map((k) => k.scale), cmc),
+    cx: blendN(kfs.map((k) => k.cx), cmc),
+    cy: blendN(kfs.map((k) => k.cy), cmc),
+    palette: interpolatePaletteN(animation, kfs, cmc),
+    time,
+  };
+  if (kfs[1]!.nick !== undefined) out.nick = kfs[1]!.nick;
+  if (finalxform) out.finalxform = finalxform;
+
+  if (kfs.some((k) => k.tonemap)) {
+    out.tonemap = interpolateTonemapN(kfs.map((k) => k.tonemap), cmc);
+  }
+
+  const rots = kfs.map((k) => k.rotate ?? 0);
+  if (rots.some((r) => r !== 0)) {
+    const r = blendN(rots, cmc);
+    if (r !== 0) out.rotate = r;
+  }
+
+  // Continuous fields: blend when ALL keyframes carry the field, else carry the
+  // first present (generalizes the 2-keyframe both()/carry-forward rule).
+  const allHave = <T>(get: (k: Genome) => T | undefined): boolean => kfs.every((k) => get(k) !== undefined);
+  const firstPresent = <T>(get: (k: Genome) => T | undefined): T | undefined => {
+    for (const k of kfs) { const v = get(k); if (v !== undefined) return v; }
+    return undefined;
+  };
+
+  if (allHave((k) => k.quality)) out.quality = blendN(kfs.map((k) => k.quality!), cmc);
+  else out.quality = firstPresent((k) => k.quality);
+
+  if (allHave((k) => k.density)) {
+    out.density = {
+      maxRad: blendN(kfs.map((k) => k.density!.maxRad), cmc),
+      minRad: blendN(kfs.map((k) => k.density!.minRad), cmc),
+      curve: blendN(kfs.map((k) => k.density!.curve), cmc),
+    };
+  } else out.density = firstPresent((k) => k.density);
+
+  if (allHave((k) => k.spatialFilter)) {
+    out.spatialFilter = {
+      radius: blendN(kfs.map((k) => k.spatialFilter!.radius), cmc),
+      shape: kfs[1]!.spatialFilter!.shape,
+    };
+  } else out.spatialFilter = firstPresent((k) => k.spatialFilter);
+
+  if (allHave((k) => k.background)) {
+    out.background = [
+      blendN(kfs.map((k) => k.background![0]), cmc),
+      blendN(kfs.map((k) => k.background![1]), cmc),
+      blendN(kfs.map((k) => k.background![2]), cmc),
+    ];
+  } else out.background = firstPresent((k) => k.background);
+
+  if (allHave((k) => k.size)) {
+    out.size = {
+      width: Math.round(blendN(kfs.map((k) => k.size!.width), cmc)),
+      height: Math.round(blendN(kfs.map((k) => k.size!.height), cmc)),
+    };
+  } else out.size = firstPresent((k) => k.size);
+
+  if (allHave((k) => k.oversample)) out.oversample = Math.round(blendN(kfs.map((k) => k.oversample!), cmc));
+  else out.oversample = firstPresent((k) => k.oversample);
+
+  // Categorical fields — carry from the dominant inner keyframe (kfs[1] = i1).
+  if (kfs[1]!.paletteMode) out.paletteMode = kfs[1]!.paletteMode;
+  if (kfs[1]!.symmetry) out.symmetry = kfs[1]!.symmetry;
+
+  return out;
+}
+
+/** N-keyframe xform-count alignment. Pads every keyframe to the max xform count
+ *  (and to finalxform presence if any has one), reusing the spherical-family
+ *  flipped-identity hint (#213 part 3); the hint is the first keyframe whose
+ *  xform[j] carries a listed variation. */
+function alignXformCountsN(kfs: Genome[], interpolationType: InterpolationType): Genome[] {
+  const n = Math.max(...kfs.map((k) => k.xforms.length));
+  const anyFinal = kfs.some((k) => k.finalxform);
+  const useLog = interpolationType === 'log';
+  const hintFor = (j: number): VariationIndex | undefined => {
+    for (const k of kfs) {
+      // Scan all variation slots (flam3 interpolation.c:877-883), not just [0].
+      const v = k.xforms[j]?.variations.find(
+        (vv) => FLIPPED_IDENTITY_VARS.has(vv.index) && vv.active !== false,
+      );
+      if (v !== undefined) return v.index;
+    }
+    return undefined;
+  };
+  return kfs.map((g) => {
+    let xforms = g.xforms;
+    if (g.xforms.length < n) {
+      const pads = Array.from({ length: n - g.xforms.length }, (_unused, k) =>
+        makeIdentityXform(hintFor(g.xforms.length + k), useLog));
+      xforms = g.xforms.concat(pads);
+    }
+    let finalxform = g.finalxform;
+    if (!finalxform && anyFinal) finalxform = makeIdentityXform();
+    return finalxform ? { ...g, xforms, finalxform } : { ...g, xforms };
+  });
+}
+
+function interpolateXformN(xfs: Xform[], cmc: number[], useLog: boolean): Xform {
+  const eff = (x: Xform) => (x.active === false ? 0 : x.weight);
+  const density = clampGE0(blendN(xfs.map(eff), cmc));
+  const color = clamp01(blendN(xfs.map((x) => x.color), cmc));
+  const colorSpeed = clamp01(blendN(xfs.map((x) => x.colorSpeed), cmc));
+  const opacity = blendN(xfs.map((x) => x.opacity ?? 1), cmc);
+
+  const aff = useLog ? interpolateAffineLogPolarN(xfs, cmc) : interpolateAffineLinearN(xfs, cmc);
+
+  let post: Affine6 | undefined;
+  if (xfs.some((x) => x.post)) {
+    const allId = xfs.every((x) => !x.post || isIdentityAffine(x.post));
+    if (!allId) {
+      const posts = xfs.map((x) => x.post ?? IDENTITY_AFFINE);
+      const interp = useLog ? interpolateAffineLogPolarN(posts, cmc) : interpolateAffineLinearN(posts, cmc);
+      if (!isIdentityAffine(interp)) post = interp;
+    }
+  }
+
+  const variations = interpolateVariationsN(xfs.map((x) => x.variations), cmc);
+
+  const out: Xform = {
+    a: aff.a, b: aff.b, c: aff.c, d: aff.d, e: aff.e, f: aff.f,
+    weight: density, color, colorSpeed, variations,
+  };
+  if (opacity !== 1.0) out.opacity = opacity;
+  if (post) out.post = post;
+  if (xfs.every((x) => x.active === false)) out.active = false;
+  if (xfs.some((x) => x.xaos)) {
+    const xaos = interpolateXaosN(xfs.map((x) => x.xaos), cmc);
+    if (xaos) out.xaos = xaos;
+  }
+  return out;
+}
+
+function interpolateAffineLinearN(affs: Affine6[], cmc: number[]): Affine6 {
+  return {
+    a: blendN(affs.map((x) => x.a), cmc),
+    b: blendN(affs.map((x) => x.b), cmc),
+    c: blendN(affs.map((x) => x.c), cmc),
+    d: blendN(affs.map((x) => x.d), cmc),
+    e: blendN(affs.map((x) => x.e), cmc),
+    f: blendN(affs.map((x) => x.f), cmc),
+  };
+}
+
+function interpolateAffineLogPolarN(affs: Affine6[], cmc: number[]): Affine6 {
+  const cols = affs.map((a) => polarColumns(a));
+  const col0 = blendPolarColumnN(cols.map((c) => c.ang0), cols.map((c) => c.mag0), cmc);
+  const col1 = blendPolarColumnN(cols.map((c) => c.ang1), cols.map((c) => c.mag1), cmc);
+  return {
+    a: col0.x, d: col0.y,
+    b: col1.x, e: col1.y,
+    c: blendN(affs.map((a) => a.c), cmc),
+    f: blendN(affs.map((a) => a.f), cmc),
+  };
+}
+
+function blendPolarColumnN(angsIn: number[], mags: number[], cmc: number[]): { x: number; y: number } {
+  const angs = angsIn.slice();
+  // Sequential ±π unwrap: pull each angle into the prior keyframe's window.
+  for (let k = 1; k < angs.length; k++) {
+    const d = angs[k]! - angs[k - 1]!;
+    if (d > Math.PI + EPS) angs[k] = angs[k]! - 2 * Math.PI;
+    else if (d < -(Math.PI - EPS)) angs[k] = angs[k]! + 2 * Math.PI;
+  }
+  const useLogMag = mags.every((m) => Math.log(m + EPS) >= LOG_MAG_THRESHOLD);
+  const ang = blendN(angs, cmc);
+  const mag = useLogMag
+    ? Math.exp(blendN(mags.map((m) => Math.log(m + EPS)), cmc))
+    : blendN(mags, cmc);
+  return { x: mag * Math.cos(ang), y: mag * Math.sin(ang) };
+}
+
+function interpolateVariationsN(vss: Variation[][], cmc: number[]): Variation[] {
+  const maps = vss.map((vs) => {
+    const m = new Map<VariationIndex, Variation>();
+    for (const v of vs) m.set(v.index, v);
+    return m;
+  });
+  const indices: VariationIndex[] = [];
+  const seen = new Set<VariationIndex>();
+  for (const vs of vss) for (const v of vs) if (!seen.has(v.index)) { seen.add(v.index); indices.push(v.index); }
+
+  const out: Variation[] = [];
+  for (const idx of indices) {
+    const weights = maps.map((m) => {
+      const v = m.get(idx);
+      return v?.active === false ? 0 : (v?.weight ?? 0);
+    });
+    const v: Variation = { index: idx, weight: blendN(weights, cmc) };
+    if (maps.every((m) => m.get(idx)?.active === false)) v.active = false;
+    for (const pk of PARAM_KEYS) {
+      const present = maps.some((m) => (m.get(idx) as Record<string, number | undefined> | undefined)?.[pk] !== undefined);
+      if (present) {
+        const vals = maps.map((m) => (m.get(idx) as Record<string, number | undefined> | undefined)?.[pk] ?? 0);
+        (v as unknown as Record<string, number>)[pk] = blendN(vals, cmc);
+      }
+    }
+    out.push(v);
+  }
+  if (out.length > MAX_VARIATIONS_PER_XFORM) out.length = MAX_VARIATIONS_PER_XFORM;
+  if (out.length === 0) out.push(linearVar(1));
+  return out;
+}
+
+function interpolateXaosN(xss: (number[] | undefined)[], cmc: number[]): number[] | undefined {
+  const n = Math.max(...xss.map((x) => x?.length ?? 0));
+  if (n === 0) return undefined;
+  const out: number[] = [];
+  let allOne = true;
+  for (let i = 0; i < n; i++) {
+    const v = clampGE0(blendN(xss.map((x) => x?.[i] ?? 1), cmc));
+    out.push(v);
+    if (v !== 1) allOne = false;
+  }
+  return allOne ? undefined : out;
+}
+
+function interpolatePaletteN(animation: Animation, kfs: Genome[], cmc: number[]): Palette {
+  const luts = kfs.map((k) => bakeLUT(k.palette.stops, k.palette.hue ?? 0, k.palette.mode ?? 'linear'));
+  const mode = animation.palette_interpolation;
+  const name = kfs[1]!.palette.name;
+
+  // Dominant keyframe = argmax(cmc) — used for sweep selection + hsv-circular ref.
+  let dom = 0;
+  for (let k = 1; k < cmc.length; k++) if (cmc[k]! > cmc[dom]!) dom = k;
+
+  if (mode === 'sweep') {
+    // N-keyframe simplification: hard-pick the dominant keyframe's LUT.
+    const lut = luts[dom]!;
+    const stops: ColorStop[] = [];
+    for (let i = 0; i < PALETTE_SIZE; i++) {
+      stops.push({ t: i / (PALETTE_SIZE - 1), r: lut[i * 4]!, g: lut[i * 4 + 1]!, b: lut[i * 4 + 2]! });
+    }
+    return { name, stops };
+  }
+
+  let rgbFraction = 0;
+  if (mode === 'rgb') rgbFraction = 1;
+  else if (mode === 'hsv_circular') rgbFraction = animation.hsv_rgb_palette_blend;
+
+  const stops: ColorStop[] = [];
+  for (let i = 0; i < PALETTE_SIZE; i++) {
+    const rs = luts.map((l) => l[i * 4]!);
+    const gs = luts.map((l) => l[i * 4 + 1]!);
+    const bs = luts.map((l) => l[i * 4 + 2]!);
+    const rRgb = blendN(rs, cmc);
+    const gRgb = blendN(gs, cmc);
+    const bRgb = blendN(bs, cmc);
+
+    const hsvs = rs.map((_r, k) => rgb2hsvFlam3(rs[k]!, gs[k]!, bs[k]!));
+    if (mode === 'hsv_circular') {
+      // Generalized ±6 shortcut: pull each hue to the shorter arc vs the
+      // dominant keyframe's hue (the 2-keyframe per-index correction, N-ized).
+      const domH = hsvs[dom]!.h;
+      for (const h of hsvs) {
+        const dh = h.h - domH;
+        if (dh > 3.0) h.h -= 6;
+        else if (dh < -3.0) h.h += 6;
+      }
+    }
+    const { r: rHsv, g: gHsv, b: bHsv } = hsv2rgbFlam3(
+      blendN(hsvs.map((h) => h.h), cmc),
+      blendN(hsvs.map((h) => h.s), cmc),
+      blendN(hsvs.map((h) => h.v), cmc),
+    );
+
+    stops.push({
+      t: i / (PALETTE_SIZE - 1),
+      r: clamp01(rgbFraction * rRgb + (1 - rgbFraction) * rHsv),
+      g: clamp01(rgbFraction * gRgb + (1 - rgbFraction) * gHsv),
+      b: clamp01(rgbFraction * bRgb + (1 - rgbFraction) * bHsv),
+    });
+  }
+  return { name, stops };
+}
+
+function interpolateTonemapN(ts: (Tonemap | undefined)[], cmc: number[]): Tonemap {
+  const FALLBACK: Tonemap = {
+    gamma: 4.0, brightness: 4.0, vibrancy: 1.0,
+    highlightPower: -1.0, gammaThreshold: 0.01,
+  };
+  const a = ts.map((t) => t ?? FALLBACK);
+  return {
+    gamma: blendN(a.map((t) => t.gamma), cmc),
+    brightness: blendN(a.map((t) => t.brightness), cmc),
+    vibrancy: blendN(a.map((t) => t.vibrancy), cmc),
+    highlightPower: blendN(a.map((t) => t.highlightPower), cmc),
+    gammaThreshold: blendN(a.map((t) => t.gammaThreshold), cmc),
   };
 }
 

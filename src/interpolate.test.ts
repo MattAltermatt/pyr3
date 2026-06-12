@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { interpolate, pickKeyframes } from './interpolate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from './animation';
 import { type Genome, type Xform } from './genome';
-import { linear as linearVar, julian, V } from './variations';
+import { linear as linearVar, julian, V, type VariationIndex } from './variations';
 import { PYRE_PALETTE } from './palette';
 
 // ── test helpers ───────────────────────────────────────────────────────────
@@ -617,5 +617,150 @@ describe('interpolate — segmentPermutation (#225)', () => {
     const k1 = tagged([11, 21, 31], 1);
     expect(interpolate(anim(k0, k1, { segmentPermutation: [[0, 1, 5]] }), 0.5).xforms.map((x) => x.c))
       .toEqual([10.5, 20.5, 30.5]);
+  });
+});
+
+// ── #213 Part 3: flipped-identity padding ────────────────────────────────────
+describe('interpolate — flipped-identity padding (#213)', () => {
+  // pyr3 indices: spherical=2, polar=5, julian=14, ngon=39, juliascope=48,
+  // wedge_sph=89, wedge_julia=96.
+  const withVar = (idx: number): Xform => ({
+    a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+    variations: [{ index: idx as VariationIndex, weight: 1 }],
+  });
+
+  it('pads flipped identity when other side has spherical (log interp)', () => {
+    const k0 = baseGenome({ time: 0, xforms: [id()] });                 // short side
+    const k1 = baseGenome({ time: 1, xforms: [id(), withVar(2)] });     // longer (spherical at idx 1)
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0); // fully k0 → padded slot
+    expect(r.xforms[1]!.a).toBeCloseTo(-1);
+    expect(r.xforms[1]!.e).toBeCloseTo(-1);
+  });
+
+  it('pads flipped identity for each of the 7 listed variations (log)', () => {
+    for (const idx of [2, 5, 14, 39, 48, 89, 96]) {
+      const k0 = baseGenome({ time: 0, xforms: [id()] });
+      const k1 = baseGenome({ time: 1, xforms: [id(), withVar(idx)] });
+      const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0);
+      expect(r.xforms[1]!.a).toBeCloseTo(-1);
+      expect(r.xforms[1]!.e).toBeCloseTo(-1);
+    }
+  });
+
+  it('flips when a listed variation is NOT in slot 0 (scans all slots)', () => {
+    // spherical(2) listed second after linear — flam3 checks any positive slot.
+    const xf: Xform = {
+      a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+      variations: [linearVar(0.5), { index: 2 as VariationIndex, weight: 0.5 }],
+    };
+    const k0 = baseGenome({ time: 0, xforms: [id()] });
+    const k1 = baseGenome({ time: 1, xforms: [id(), xf] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0);
+    expect(r.xforms[1]!.a).toBeCloseTo(-1);
+    expect(r.xforms[1]!.e).toBeCloseTo(-1);
+  });
+
+  it('pads plain identity when other side has no listed variation', () => {
+    const k0 = baseGenome({ time: 0, xforms: [id()] });
+    const k1 = baseGenome({ time: 1, xforms: [id(), id()] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0);
+    expect(r.xforms[1]!.a).toBeCloseTo(1);
+    expect(r.xforms[1]!.e).toBeCloseTo(1);
+  });
+
+  it('pads plain identity under linear interp even with spherical (flipped is log-only)', () => {
+    const k0 = baseGenome({ time: 0, xforms: [id()] });
+    const k1 = baseGenome({ time: 1, xforms: [id(), withVar(2)] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0);
+    expect(r.xforms[1]!.a).toBeCloseTo(1);
+    expect(r.xforms[1]!.e).toBeCloseTo(1);
+  });
+});
+
+// ── #213 Part 2: asymmetric wind refangles ───────────────────────────────────
+describe('interpolate — asymmetric wind (#213)', () => {
+  // Pure rotation by `deg`: col0 = (a,d) = (cosθ, sinθ) → angle θ.
+  const rot = (deg: number, animate?: number): Xform => {
+    const th = (deg * Math.PI) / 180;
+    const x: Xform = {
+      a: Math.cos(th), b: -Math.sin(th), c: 0, d: Math.sin(th), e: Math.cos(th), f: 0,
+      weight: 1, color: 0, colorSpeed: 0.5, variations: [linearVar(1)],
+    };
+    if (animate !== undefined) x.animate = animate;
+    return x;
+  };
+
+  it('symmetric pair (both animated) takes the short arc — no wind', () => {
+    const k0 = baseGenome({ time: 0, xforms: [rot(10, 1)] });
+    const k1 = baseGenome({ time: 1, xforms: [rot(-10, 1)] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0.5).xforms[0]!;
+    // short arc through 0° → col0 ≈ (1, 0)
+    expect(r.a).toBeCloseTo(1, 3);
+    expect(r.d).toBeCloseTo(0, 3);
+  });
+
+  it('asymmetric pair (one animate=0) winds the long way via the reference angle', () => {
+    const k0 = baseGenome({ time: 0, xforms: [rot(10, 1)] });   // animated
+    const k1 = baseGenome({ time: 1, xforms: [rot(-10, 0)] });  // stationary
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0.5).xforms[0]!;
+    // wind constrains both angles into [refang, refang+2π] → mid ≈ 180° → col0 ≈ (-1, 0)
+    expect(r.a).toBeCloseTo(-1, 3);
+    expect(r.d).toBeCloseTo(0, 3);
+  });
+
+  it('final xform is exempt from wind (takes the short arc)', () => {
+    const k0 = baseGenome({ time: 0, xforms: [id()], finalxform: rot(10, 1) });
+    const k1 = baseGenome({ time: 1, xforms: [id()], finalxform: rot(-10, 0) });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0.5);
+    expect(r.finalxform!.a).toBeCloseTo(1, 3); // NOT -1
+  });
+});
+
+// ── #213 Part 1: Catmull-Rom smooth interp ───────────────────────────────────
+import { catmullRomWeights } from './interpolate';
+
+describe('catmullRomWeights (#213)', () => {
+  it('sums to 1 for all t', () => {
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(catmullRomWeights(t).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+    }
+  });
+  it('passes through inner control points at t=0 and t=1', () => {
+    expect(catmullRomWeights(0)).toEqual([0, 1, 0, 0]);
+    expect(catmullRomWeights(1)).toEqual([0, 0, 1, 0]);
+  });
+});
+
+describe('interpolate — Catmull-Rom smooth (#213)', () => {
+  const line = (cx: number, t: number): Genome => baseGenome({ time: t, cx });
+  const ks = () => [line(0, 0), line(10, 1), line(40, 2), line(90, 3)];
+  const smooth = (overrides = {}) => ({ interpolation: 'smooth' as const, keyframes: ks(), ...overrides });
+
+  it('passes through inner keyframes at segment endpoints', () => {
+    const a = anim(ks()[0]!, ks()[1]!, smooth());
+    expect(interpolate(a, 1).cx).toBeCloseTo(10); // keyframes[1]
+    expect(interpolate(a, 2).cx).toBeCloseTo(40); // keyframes[2]
+  });
+
+  it('smooth on the first segment falls back to linear', () => {
+    const a = anim(ks()[0]!, ks()[1]!, smooth());
+    expect(interpolate(a, 0.5).cx).toBeCloseTo(5); // linear midpoint of [0,10]
+  });
+
+  it('smooth on the last segment falls back to linear', () => {
+    const a = anim(ks()[0]!, ks()[1]!, smooth());
+    expect(interpolate(a, 2.5).cx).toBeCloseTo(65); // linear midpoint of [40,90]
+  });
+
+  it('linear interpolation is unaffected (regression guard)', () => {
+    const a = anim(ks()[0]!, ks()[1]!, { interpolation: 'linear', keyframes: ks() });
+    expect(interpolate(a, 1.5).cx).toBeCloseTo(25); // pure linear midpoint of [10,40]
+  });
+
+  it('mid-segment smooth value differs from linear (curve is cubic)', () => {
+    const lin = interpolate(anim(ks()[0]!, ks()[1]!, { interpolation: 'linear', keyframes: ks() }), 1.5).cx;
+    const sm = interpolate(anim(ks()[0]!, ks()[1]!, smooth()), 1.5).cx;
+    expect(sm).toBeCloseTo(22.5); // cmc(0.5)·[0,10,40,90]
+    expect(sm).not.toBeCloseTo(lin, 2);
   });
 });
