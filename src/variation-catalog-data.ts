@@ -274,7 +274,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.spiral,
     name: 'spiral',
     source: sourceForIdx(V.spiral),
-    formula: 'V_9(x, y) = \\tfrac{1}{r}\\,(\\cos\\alpha + \\sin r,\\; \\sin\\alpha - \\cos r),\\; \\alpha = \\mathrm{atan2}(y, x),\\; r = \\sqrt{x^2+y^2}',
+    formula: 'V_9(x, y) = \\tfrac{w}{r}\\,(\\cos\\alpha + \\sin r,\\; \\sin\\alpha - \\cos r),\\; \\alpha = \\mathrm{atan2}(x, y),\\; r = \\sqrt{x^2+y^2}',
     blurb: 'Combines a 1/r radial inversion with sin/cos perturbations at radius r. Produces the characteristic logarithmic spiral arms.',
     warpFn: (x, y) => {
       const r = Math.hypot(x, y) + 1e-10;
@@ -879,7 +879,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.rays,
     name: 'rays',
     source: sourceForIdx(V.rays),
-    formula: 'V_{50}(x, y) = \\tan(\\pi w r_0) \\cdot \\tfrac{w}{r^2+\\epsilon}\\,(\\cos x,\\; \\sin y)',
+    formula: 'V_{50}(x, y) = \\tan(\\pi w r_0) \\cdot \\tfrac{w^2}{r^2+\\epsilon}\\,(\\cos x,\\; \\sin y),\\; r_0 \\sim U[0,1)',
     blurb: 'Beam-like radial rays at random angles, scaled by 1/r². Produces god-ray attractors radiating from the origin.',
   },
   {
@@ -1081,7 +1081,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.elliptic,
     name: 'elliptic',
     source: sourceForIdx(V.elliptic),
-    formula: 'V_{69}(x, y) = \\tfrac{2}{\\pi}\\,(\\mathrm{atan2}(x/x_\\text{max},\\, \\sqrt{b}),\\; \\pm\\ln(x_\\text{max} + \\sqrt{x_\\text{max}^2-1})),\\; x_\\text{max} = \\tfrac{1}{2}(\\sqrt{(r^2+1)+2x} + \\sqrt{(r^2+1)-2x}),\\; b = 1 - (x/x_\\text{max})^2,\\; r^2 = x^2 + y^2,\\; \\text{sign} = \\text{sign}(y)',
+    formula: 'V_{69}(x, y) = \\tfrac{2}{\\pi}\\,(\\mathrm{atan2}(x/x_\\text{max},\\, \\sqrt{b}),\\; \\pm\\ln(x_\\text{max} + \\sqrt{x_\\text{max}-1})),\\; x_\\text{max} = \\tfrac{1}{2}(\\sqrt{(r^2+1)+2x} + \\sqrt{(r^2+1)-2x}),\\; b = 1 - (x/x_\\text{max})^2,\\; r^2 = x^2 + y^2,\\; \\text{sign} = \\text{sign}(y)',
     blurb: 'Elliptic coordinates — maps the plane to a half-strip via Jacobi-elliptic functions. Sign of y picks the upper/lower branch.',
     warpFn: (x, y) => {
       const sumsq = x * x + y * y;
@@ -1560,7 +1560,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.boarders,
     name: 'boarders',
     source: sourceForIdx(V.boarders),
-    formula: 'V_{95}(x, y) = w\\,\\begin{cases} (\\hat x + 0.5(x - \\hat x),\\; \\hat y + 0.5(y - \\hat y)) & r_0 \\ge 0.75 \\\\ \\hat x + 0.5\\,\\text{sgn}(x - \\hat x)/(|y - \\hat y| + 1),\\; \\hat y + 0.5(y - \\hat y) & r_0 < 0.75,\\; |x - \\hat x| \\ge |y - \\hat y| \\\\ \\hat x + 0.5(x - \\hat x),\\; \\hat y + 0.5\\,\\text{sgn}(y - \\hat y)/(|x - \\hat x| + 1) & \\text{else} \\end{cases},\\; \\hat x = \\mathrm{round}(x),\\; \\hat y = \\mathrm{round}(y),\\; r_0 \\sim U[0,1)',
+    formula: 'V_{95}(x, y) = w\\,\\begin{cases} (\\hat x + \\tfrac{u}{2},\\; \\hat y + \\tfrac{v}{2}) & r_0 \\ge 0.75 \\\\ (\\hat x + \\tfrac{u}{2} + \\tfrac{s_u}{4},\\; \\hat y + \\tfrac{v}{2} + s_u\\tfrac{v}{4u}) & r_0 < 0.75,\\; |u| \\ge |v| \\\\ (\\hat x + \\tfrac{u}{2} + s_v\\tfrac{u}{4v},\\; \\hat y + \\tfrac{v}{2} + \\tfrac{s_v}{4}) & \\text{else} \\end{cases},\\; \\hat x = \\mathrm{round}(x),\\, \\hat y = \\mathrm{round}(y),\\, u = x-\\hat x,\\, v = y-\\hat y,\\, s_u = \\mathrm{sgn}(u),\\, s_v = \\mathrm{sgn}(v),\\, r_0 \\sim U[0,1)',
     blurb: 'Snaps inputs onto cell borders or centers based on a 75/25 random gate. Produces sharp-edged rectangular borders around integer cells.',
   },
   {
@@ -1764,7 +1764,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.bwraps,
     name: 'bwraps',
     source: sourceForIdx(V.bwraps),
-    formula: 'JWF_{8}: \\text{inside a hash-spaced bubble of radius } r,\\; p \\to c + R(\\theta(|p-c|))\\cdot \\tfrac{g^2}{|p-c|^2+1}(p-c);\\; \\text{else identity}',
+    formula: 'JWF_{8}\\ \\text{(gist)}:\\ c = \\text{cell-grid centre of } p;\\ \\ell = p-c;\\ \\text{if } |\\ell|^2 > r^2 \\text{ identity, else } \\ell \\mathrel{*}= g_2,\\; \\ell \\mathrel{*}= \\tfrac{\\rho}{|\\ell|^2/4 + 1},\\; \\theta = \\theta_{in}(1-f) + \\theta_{out}f,\\; p \\to w\\,(c + R(\\theta)\\,\\ell);\\quad g_2 = \\tfrac{g^2}{\\text{cellsize}},\\; \\rho = r/\\max(b,\\,\\epsilon),\\; f = |\\ell|^2/r^2',
     blurb: 'Bubble-wrap lattice (Apophysis 7X / JWildfire). Cellular grid where each cell carries a circular "bubble" — inside, the point gets hyperbolically pulled toward the bubble center with an inner/outer twist; outside, it passes through. Produces the soap-bubble / lens-array texture.',
     params: [
       { name: 'cellsize',     default: 1,     min: 0.1, max: 4, step: 0.05 },
@@ -2861,7 +2861,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.eclipse,
     name: 'eclipse',
     source: sourceForIdx(V.eclipse),
-    formula: 'JWF_{50}(x, y) = \\begin{cases} w\\,(c_2\\,\\mathrm{shift} + x,\\; y) & |y| \\le w,\\; r < 1,\\; (x + c_2\\,\\mathrm{shift})^2 < 1 \\\\ w\\,(-c_2\\,\\mathrm{shift} - x,\\; y) & |y| \\le w,\\; r < 1,\\; \\text{else} \\\\ w\\,(x, y) & \\text{otherwise} \\end{cases},\\; c_2 = \\sqrt{w^2 - y^2},\\; r = c_2^2/(x^2 + y^2)',
+    formula: 'JWF_{50}(x, y) = \\begin{cases} w\\,(x + \\mathrm{shift}\\cdot w,\\; y) & |y| \\le w,\\; |x| \\le c_2,\\; |x + \\mathrm{shift}\\cdot w| < c_2 \\\\ w\\,(-x,\\; y) & |y| \\le w,\\; |x| \\le c_2,\\; |x + \\mathrm{shift}\\cdot w| \\ge c_2 \\\\ w\\,(x,\\; y) & \\text{otherwise} \\end{cases},\\; c_2 = \\sqrt{\\max(w^2 - y^2,\\,0)}',
     blurb: 'Branchy ellipse fold by Michael Faber. Inside the strip |y| ≤ w the variation computes the half-width c₂ = √(w² − y²) and either passes x through, shifts it by `shift·w`, or negates it depending on which sub-region the iterate lands in. Outside the strip, plain passthrough. Distinctive eclipse-crescent silhouettes around the strip boundary.',
     params: [
       // Catalog default shift RETUNED from 0.0 — at shift=0 the fold is
@@ -3658,7 +3658,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.target,
     name: 'target',
     source: sourceForIdx(V.target),
-    formula: "V_{188}: \\text{ring index from }\\lfloor\\log r/\\text{size}\\rfloor;\\; \\text{angle += even or odd; preserve r}",
+    formula: "V_{188}(x, y) = w\\,r\\,(\\cos a',\\; \\sin a'),\\; a' = \\mathrm{atan2}(y, x) + \\begin{cases} \\text{even} & t' < \\tfrac{\\text{size}}{2} \\\\ \\text{odd} & \\text{else} \\end{cases};\\; t = \\ln r,\\; t \\mathrel{-}= \\tfrac{\\text{size}}{2}\\ \\text{if } t<0,\\; t' = |t| \\bmod \\text{size},\\; r = \\sqrt{x^2+y^2}",
     blurb: "Michael Faber's target — log-radial ring rotator. Divides log(r) into rings of `size` width, then applies `even` or `odd` angle offset depending on which ring the iterate sits in. Produces rotating bullseye / target patterns with alternating-ring angular distortion.",
     params: [
       { name: 'even', default: 0.5, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -4806,7 +4806,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.droste,
     name: 'droste',
     source: 'novel',
-    formula: 'z \\to z \\cdot s^{i \\theta / 2\\pi}',
+    formula: 'z \\to w\\,z^{\\,1 + i\\,\\ln s / 2\\pi},\\; z = x + iy',
     blurb: 'Droste effect conformal mapping. Zooms exponentially while rotating to tile the plane.',
     params: [
       { name: 's', default: 5.50, min: 0.1, max: 10.0, step: 0.1 },
@@ -5063,7 +5063,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.lorentz_boost,
     name: 'lorentz_boost',
     source: 'novel',
-    formula: "V_{262}(p) = R(-\\theta) \\cdot \\begin{bmatrix} \\cosh\\varphi & \\sinh\\varphi \\\\ \\sinh\\varphi & \\cosh\\varphi \\end{bmatrix} \\cdot R(\\theta) \\cdot p",
+    formula: "V_{262}(p) = w\\,R(\\theta) \\cdot \\begin{bmatrix} \\cosh\\varphi & \\sinh\\varphi \\\\ \\sinh\\varphi & \\cosh\\varphi \\end{bmatrix} \\cdot R(-\\theta) \\cdot p",
     blurb: 'Lorentz boost by rapidity φ along an axis at angle θ — the Minkowski analog of swirl. Reduces to identity at φ=0; expands shear along the boost axis as φ grows.',
     params: [
       { name: 'rapidity', default: 0.5, min: -2.0, max: 2.0, step: 0.05 },
@@ -5264,7 +5264,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.cornu_spiral,
     name: 'cornu_spiral',
     source: 'novel',
-    formula: "x' = \\int_0^{t}\\!\\cos\\!\\tfrac{\\pi s^2}{2}\\,ds,\\ y' = \\int_0^{t}\\!\\sin\\!\\tfrac{\\pi s^2}{2}\\,ds,\\ t=k\\,x",
+    formula: "x' = w\\!\\int_0^{t}\\!\\cos\\!\\tfrac{\\pi s^2}{2}\\,ds,\\ y' = w\\Big(\\!\\int_0^{t}\\!\\sin\\!\\tfrac{\\pi s^2}{2}\\,ds + \\tfrac{y}{4}\\Big),\\ t=k\\,x",
     blurb: 'The Cornu (Euler) clothoid, evaluated via Heald’s rational approximation of the Fresnel integrals. Curvature grows linearly with arc length, so it winds into the two signature spiral eyes that the chaos game smears into continuously-tightening filaments.',
     params: [{ name: 'freq', default: 3.7, min: 0.2, max: 5, step: 0.05 }],
     defaultWeight: 0.78,
@@ -5400,7 +5400,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.caustic_fold,
     name: 'caustic_fold',
     source: 'novel',
-    formula: "\\varphi(p)=\\cos(kx+\\phi)+\\cos(ky+\\phi),\\quad V(p)=p+a\\,\\nabla\\varphi(p)",
+    formula: "V(p)=w\\big(p - a\\,(\\sin(kx+\\phi),\\; \\sin(ky+\\phi))\\big)",
     blurb: 'A smooth phase field φ(p)=cos(kx)+cos(ky) is treated as an optical wavefront; the walker is displaced along ∇φ. Where neighbouring rays cross, density piles onto bright folded curves — caustics — that self-brighten as pyr3 accumulates density along them. A glowing net of light-fold lines.',
     params: [
       { name: 'freq', default: 4.5, min: 0.2, max: 8, step: 0.1 },
