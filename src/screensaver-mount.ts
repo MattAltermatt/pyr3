@@ -533,6 +533,12 @@ function startSlideshow(args: {
     front.canvas.style.opacity = '0';
     back.canvas.style.opacity = '0';
 
+    // #242 — free both renderers' GPU pipelines + histogram buffers when the
+    // loop drains. cancel() sets state.cancelled; the loop returns at its next
+    // isCancelled() checkpoint, so the finally runs only after any in-flight
+    // render has resolved — no use-after-destroy. Without this, each
+    // Play→Stop cycle leaked 2 renderers (~2×33MB histograms at 1080p).
+    try {
     status.setText('Loading corpus index…');
     const index = await loadFeatureIndex();
     if (isCancelled()) return;
@@ -626,6 +632,10 @@ function startSlideshow(args: {
 
       activeIsFront = !activeIsFront;
     }
+    } finally {
+      front.renderer.destroy();
+      back.renderer.destroy();
+    }
   })();
 
   return {
@@ -672,6 +682,10 @@ function startBuildUp(args: {
       filterRadius: DEFAULT_FILTER_RADIUS,
     });
 
+    // #242 — destroy the renderer's GPU pipelines + histogram buffers when the
+    // loop drains (cancel() → next isCancelled() checkpoint → finally). Without
+    // this, each Play→Stop cycle leaked one renderer's pipeline set + histogram.
+    try {
     status.setText('Loading corpus index…');
     const index = await loadFeatureIndex();
     if (isCancelled()) return;
@@ -839,6 +853,9 @@ function startBuildUp(args: {
       canvas.style.opacity = '0';
       await sleepCancellable(2200, isCancelled);
     }
+    } finally {
+      renderer.destroy();
+    }
   })();
 
   return {
@@ -896,6 +913,10 @@ function runRecordSession(args: {
       width: W, height: H, oversample: 1, filterRadius: DEFAULT_FILTER_RADIUS,
     });
 
+    // #242 — free the renderer's GPU pipelines + buffers on every exit path
+    // (load-fail, cancel-abort, settle-and-save). The recorder is torn down
+    // separately via recorder.stop(); this finally only owns the renderer.
+    try {
     let genome: Genome;
     try {
       status.setText(`Loading flame ${pickedRef.gen}/${pickedRef.id}…`);
@@ -995,6 +1016,9 @@ function runRecordSession(args: {
     status.setText('Saving recording…');
     await recorder.stop(true);
     fireOnce();
+    } finally {
+      renderer.destroy();
+    }
   })();
 
   return {
