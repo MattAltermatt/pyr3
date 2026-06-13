@@ -15,20 +15,12 @@
 
 import { type ExportRange, type ExportEstimate, formatExportEstimate } from './animate-estimate';
 
-export interface AnimateExportFormValues {
-  begin: number;
-  end: number;
-  dtime: number;
-  qs: number;
-  prefix: string;
-  outDir: string;
-}
+export type AnimateExportFormValues =
+  | { mode: 'animation'; begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string }
+  | { mode: 'timeline'; fps: number; quality: number; prefix: string; outDir: string };
 
-export interface AnimateExportModalOpts {
+interface BaseModalOpts {
   host: HTMLElement;
-  /** Defaults derived from the loaded Animation's keyframe time range. */
-  defaults: Pick<AnimateExportFormValues, 'begin' | 'end' | 'dtime' | 'qs' | 'prefix'>;
-  onStart(values: AnimateExportFormValues): void;
   onCancel(): void;
   onClose(): void;
   /** Pop a native OS folder picker. Resolves to the absolute path the
@@ -36,11 +28,29 @@ export interface AnimateExportModalOpts {
    *  message on a missing-picker / failure. Caller wires this to
    *  POST /api/pick-dir when running under pyr3 serve. */
   pickDirectory?(): Promise<string | null>;
-  /** #226 — up-front render-time estimate for the current form range, shown
-   *  live in the form and recomputed as begin/end/dtime/qs change. Omit to
-   *  hide the estimate line. */
+}
+
+/** Animation export — begin/end frame + dtime stride + qs scale (#212/#226). */
+interface AnimationModalOpts extends BaseModalOpts {
+  mode: 'animation';
+  /** Defaults derived from the loaded Animation's keyframe time range. */
+  defaults: { begin: number; end: number; dtime: number; qs: number; prefix: string };
+  onStart(values: Extract<AnimateExportFormValues, { mode: 'animation' }>): void;
   estimate?(range: ExportRange): ExportEstimate;
 }
+
+/** Timeline export (#227) — fps + absolute quality; renders the whole timeline.
+ *  A read-only "duration → N frames" line replaces begin/end/dtime. */
+interface TimelineModalOpts extends BaseModalOpts {
+  mode: 'timeline';
+  /** Σ clip durations — drives the read-only frames readout. */
+  durationSeconds: number;
+  defaults: { fps: number; quality: number; prefix: string };
+  onStart(values: Extract<AnimateExportFormValues, { mode: 'timeline' }>): void;
+  estimate?(range: { fps: number; quality: number }): ExportEstimate;
+}
+
+export type AnimateExportModalOpts = AnimationModalOpts | TimelineModalOpts;
 
 export interface AnimateExportProgressInfo {
   frame: number;
@@ -71,6 +81,31 @@ function formatEta(s: number): string {
   const m = Math.floor(secs / 60);
   const sec = secs % 60;
   return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+/** Concrete example filename(s) for the current form — actual prefix, actual
+ *  frame range, actual zero-pad width (≥5, auto-widened to fit the last frame,
+ *  matching the backend). Shows `first … last` so the user sees exactly what
+ *  lands on disk. */
+function frameNameExample(v: AnimateExportFormValues, durationSeconds: number): string {
+  let first: number;
+  let last: number;
+  if (v.mode === 'timeline') {
+    const count = Math.max(1, Math.round(durationSeconds * v.fps));
+    first = 0;
+    last = count - 1;
+  } else if (!Number.isFinite(v.begin) || !Number.isFinite(v.end) || v.end < v.begin) {
+    first = 0;
+    last = 0;
+  } else {
+    const step = Math.max(1, Math.floor(v.dtime));
+    const count = Math.floor((v.end - v.begin) / step) + 1;
+    first = v.begin;
+    last = v.begin + (count - 1) * step;
+  }
+  const pad = Math.max(5, String(last).length);
+  const name = (n: number): string => `${v.prefix}${String(n).padStart(pad, '0')}.png`;
+  return first === last ? name(first) : `${name(first)} … ${name(last)}`;
 }
 
 function makeNumberInput(label: string, value: number, min?: number, step?: number): {
@@ -224,10 +259,26 @@ export function openAnimateExportModal(
   });
   panel.appendChild(form);
 
-  const beginIn = makeNumberInput('begin (frame)', opts.defaults.begin, 0, 1);
-  const endIn = makeNumberInput('end (frame)', opts.defaults.end, 0, 1);
-  const dtimeIn = makeNumberInput('dtime (stride)', opts.defaults.dtime, 1, 1);
-  const qsIn = makeNumberInput('quality scale', opts.defaults.qs, 0.05, 0.05);
+  // Mode-specific cost fields. Animation: begin/end/dtime/qs. Timeline: a
+  // read-only duration→frames readout + fps + absolute quality (#227).
+  let beginIn!: ReturnType<typeof makeNumberInput>;
+  let endIn!: ReturnType<typeof makeNumberInput>;
+  let dtimeIn!: ReturnType<typeof makeNumberInput>;
+  let qsIn!: ReturnType<typeof makeNumberInput>;
+  let fpsIn!: ReturnType<typeof makeNumberInput>;
+  let qualityIn!: ReturnType<typeof makeNumberInput>;
+  let framesReadout: HTMLElement | null = null;
+  if (opts.mode === 'animation') {
+    beginIn = makeNumberInput('begin (frame)', opts.defaults.begin, 0, 1);
+    endIn = makeNumberInput('end (frame)', opts.defaults.end, 0, 1);
+    dtimeIn = makeNumberInput('dtime (stride)', opts.defaults.dtime, 1, 1);
+    qsIn = makeNumberInput('quality scale', opts.defaults.qs, 0.05, 0.05);
+  } else {
+    framesReadout = document.createElement('div');
+    Object.assign(framesReadout.style, { fontSize: '12px', color: '#bbb', marginBottom: '2px' });
+    fpsIn = makeNumberInput('fps', opts.defaults.fps, 1, 1);
+    qualityIn = makeNumberInput('quality', opts.defaults.quality, 1, 1);
+  }
   const prefixIn = makeTextInput('prefix', opts.defaults.prefix, 'optional filename prefix');
   const outDirIn = makeTextInput('output dir', '', 'absolute or relative to pyr3 serve cwd');
   outDirIn.input.required = true;
@@ -255,11 +306,15 @@ export function openAnimateExportModal(
     outDirIn.row.appendChild(browse);
   }
 
-  form.append(beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row);
+  if (opts.mode === 'animation') {
+    form.append(beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row);
+  } else {
+    form.append(framesReadout!, fpsIn.row, qualityIn.row, prefixIn.row, outDirIn.row);
+  }
 
   // #226 — live up-front estimate line. Recomputed whenever a cost-affecting
-  // field (begin/end/dtime/qs) changes. Hidden when no estimate hook is wired
-  // (e.g. tests / gh-pages where export is never reachable).
+  // field changes. Hidden when no estimate hook is wired (e.g. tests / gh-pages
+  // where export is never reachable).
   const estimateLine = document.createElement('div');
   estimateLine.setAttribute('data-export-estimate', '');
   Object.assign(estimateLine.style, {
@@ -271,30 +326,50 @@ export function openAnimateExportModal(
   form.appendChild(estimateLine);
 
   function refreshEstimate(): void {
+    const v = readForm();
+    if (v.mode === 'timeline' && framesReadout) {
+      const frames = Math.max(1, Math.round((opts as TimelineModalOpts).durationSeconds * v.fps));
+      framesReadout.textContent = `duration ${(opts as TimelineModalOpts).durationSeconds.toFixed(2)}s → ${frames} frames`;
+    }
     if (!opts.estimate) {
       estimateLine.style.display = 'none';
       return;
     }
-    const v = readForm();
-    estimateLine.textContent = formatExportEstimate(
-      opts.estimate({ begin: v.begin, end: v.end, dtime: v.dtime, qs: v.qs }),
-    );
+    const est = v.mode === 'animation'
+      ? (opts as AnimationModalOpts).estimate!({ begin: v.begin, end: v.end, dtime: v.dtime, qs: v.qs })
+      : (opts as TimelineModalOpts).estimate!({ fps: v.fps, quality: v.quality });
+    estimateLine.textContent = formatExportEstimate(est);
   }
-
-  for (const f of [beginIn, endIn, dtimeIn, qsIn]) {
-    f.input.addEventListener('input', refreshEstimate);
-  }
-  refreshEstimate();
 
   const formNote = document.createElement('div');
-  formNote.textContent =
-    'Files: <prefix><frame:05>.png. Existing files in the directory are overwritten.';
   Object.assign(formNote.style, {
     fontSize: '11px',
     color: '#666',
     marginTop: '6px',
   });
   panel.appendChild(formNote);
+
+  // Live file-name hint: the `<prefix><frame:05>.png` template + a concrete
+  // example using the actual prefix + frame range, so the user sees the real
+  // names before rendering. Recomputed as prefix / fps / begin-end-dtime change.
+  function refreshFileNote(): void {
+    const v = readForm();
+    const dur = opts.mode === 'timeline' ? (opts as TimelineModalOpts).durationSeconds : 0;
+    formNote.textContent =
+      `Files: <prefix><frame:05>.png — e.g. ${frameNameExample(v, dur)}. `
+      + 'Existing files in the directory are overwritten.';
+  }
+
+  function refreshForm(): void {
+    refreshEstimate();
+    refreshFileNote();
+  }
+
+  const costInputs = opts.mode === 'animation' ? [beginIn, endIn, dtimeIn, qsIn] : [fpsIn, qualityIn];
+  for (const f of [...costInputs, prefixIn]) {
+    f.input.addEventListener('input', refreshForm);
+  }
+  refreshForm();
 
   panel.appendChild(validationMsg);
 
@@ -398,7 +473,9 @@ export function openAnimateExportModal(
         return;
       }
       validationMsg.textContent = '';
-      opts.onStart(values);
+      // `values.mode` matches `opts.mode` by construction (readForm reads the
+      // mode-appropriate fields); the union widening defeats TS narrowing here.
+      (opts.onStart as (v: AnimateExportFormValues) => void)(values);
     } else if (state === 'done') {
       opts.onClose();
     }
@@ -409,20 +486,36 @@ export function openAnimateExportModal(
 
   // ── helpers ────────────────────────────────────────────────────────────
   function readForm(): AnimateExportFormValues {
+    const prefix = prefixIn.input.value;
+    const outDir = outDirIn.input.value.trim();
+    if (opts.mode === 'animation') {
+      return {
+        mode: 'animation',
+        begin: Number(beginIn.input.value),
+        end: Number(endIn.input.value),
+        dtime: Math.max(1, Math.floor(Number(dtimeIn.input.value) || 1)),
+        qs: Math.max(0.01, Number(qsIn.input.value) || 1),
+        prefix,
+        outDir,
+      };
+    }
     return {
-      begin: Number(beginIn.input.value),
-      end: Number(endIn.input.value),
-      dtime: Math.max(1, Math.floor(Number(dtimeIn.input.value) || 1)),
-      qs: Math.max(0.01, Number(qsIn.input.value) || 1),
-      prefix: prefixIn.input.value,
-      outDir: outDirIn.input.value.trim(),
+      mode: 'timeline',
+      fps: Math.max(1, Math.floor(Number(fpsIn.input.value) || 30)),
+      quality: Math.max(1, Math.floor(Number(qualityIn.input.value) || 200)),
+      prefix,
+      outDir,
     };
   }
 
   function validate(v: AnimateExportFormValues): string | null {
     if (v.outDir.length === 0) return 'output dir is required';
-    if (!Number.isFinite(v.begin) || !Number.isFinite(v.end)) return 'begin / end must be numbers';
-    if (v.end < v.begin) return 'end must be ≥ begin';
+    if (v.mode === 'animation') {
+      if (!Number.isFinite(v.begin) || !Number.isFinite(v.end)) return 'begin / end must be numbers';
+      if (v.end < v.begin) return 'end must be ≥ begin';
+    } else if (!Number.isFinite(v.fps) || v.fps < 1) {
+      return 'fps must be ≥ 1';
+    }
     return null;
   }
 

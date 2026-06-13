@@ -175,4 +175,28 @@ describe('exportAnimate', () => {
       }),
     ).rejects.toThrow(/400/);
   });
+
+  it('posts a timeline body (timeline_json/fps/quality, no flame_xml) when timelineJson is set', async () => {
+    const fetchImpl = mockFetch({
+      events: [
+        'event: open\ndata: {"jobId":"j1","frames":2,"out_dir":"/out"}\n\n',
+        'event: progress\ndata: {"frame":1,"total":2,"percent":0.5,"written":"/out/00000.png"}\n\n',
+        'event: done\ndata: {"written":["/out/00000.png","/out/00001.png"]}\n\n',
+      ],
+    });
+    const outcome = await exportAnimate({
+      params: { timelineJson: '{"format":"pyr3-timeline"}', fps: 30, quality: 200, outDir: '/out', prefix: 'tl_' },
+      onProgress: () => {},
+      abortSignal: new AbortController().signal,
+      fetchImpl,
+    });
+    expect(outcome.status).toBe('completed');
+    const calls = (fetchImpl as unknown as { mock: { calls: [unknown, { body: string }][] } }).mock.calls;
+    const body = JSON.parse(calls[0]![1].body);
+    expect(body.timeline_json).toBe('{"format":"pyr3-timeline"}');
+    expect(body.fps).toBe(30);
+    expect(body.quality).toBe(200);
+    expect(body.prefix).toBe('tl_');
+    expect(body.flame_xml).toBeUndefined();
+  });
 });

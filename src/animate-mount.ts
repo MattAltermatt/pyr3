@@ -21,7 +21,7 @@ import { DEFAULT_WALKER_JITTER } from './chaos';
 import { getCapability } from './capability';
 import { exportAnimate, type ExportAnimateProgress } from './animate-export';
 import { openAnimateExportModal, type AnimateExportModalHandle } from './animate-export-modal';
-import { estimateExport } from './animate-estimate';
+import { estimateExport, estimateTimelineExport } from './animate-estimate';
 import { buildEasingPanel } from './animate-easing-panel';
 import { type EasingCurve } from './easing';
 import { type Timeline, timelineDuration } from './timeline';
@@ -294,7 +294,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     // Loaded-but-no-export => disabled with capability tooltip
     // Loaded-and-can-export => enabled
     // Nothing-loaded => disabled (no tooltip override)
-    const noAnimation = animation === null;
+    // #227 — timeline export rides the same backend route + capability bit.
+    const noSource = animation === null && timeline === null;
     if (!canExport) {
       exportBtn.disabled = true;
       exportBtn.style.opacity = '0.45';
@@ -302,11 +303,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       exportBtn.title =
         'Animation export needs filesystem access. Install pyr3 locally: '
         + '`npm install -g pyr3` then run `pyr3` — same UI, same flame, with export enabled.';
-    } else if (noAnimation) {
+    } else if (noSource) {
       exportBtn.disabled = true;
       exportBtn.style.opacity = '0.45';
       exportBtn.style.cursor = 'not-allowed';
-      exportBtn.title = 'Load a multi-keyframe .flam3 to enable export.';
+      exportBtn.title = 'Load a multi-keyframe .flam3 or build a timeline to enable export.';
     } else {
       exportBtn.disabled = false;
       exportBtn.style.opacity = '1';
@@ -354,6 +355,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   exportBtn.addEventListener('click', () => {
     if (exportBtn.disabled) return;
+    if (timeline) { openTimelineExportModal(); return; }
     if (!animation || !loadedFlameXml) return;
     openExportModal();
   });
@@ -800,6 +802,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     exportAbort = new AbortController();
     exportModal = openAnimateExportModal({
       host: root,
+      mode: 'animation',
       defaults: { begin, end, dtime: 1, qs: 1.0, prefix: '' },
       // #226 — live up-front ETA, recomputed as the user edits begin/end/dtime/qs.
       // Closes over the loaded animation + this machine's measured throughput.
@@ -836,6 +839,82 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         exportAbort = null;
       },
     });
+  }
+
+  // #227 — timeline export. Reuses the same backend route + SSE client; the
+  // modal swaps begin/end/dtime/qs for fps + absolute quality (whole timeline).
+  function openTimelineExportModal(): void {
+    if (!timeline) return;
+    stopPlayback();
+    const tl = timeline;
+    const durationSeconds = timelineDuration(tl);
+    exportAbort = new AbortController();
+    exportModal = openAnimateExportModal({
+      host: root,
+      mode: 'timeline',
+      durationSeconds,
+      defaults: { fps: 30, quality: 200, prefix: '' },
+      estimate: (range) => estimateTimelineExport(tl, range, previewSamplesPerSec),
+      ...(getCapability().can_write_files ? { pickDirectory: pickDirectoryViaBackend } : {}),
+      onStart: (values) => {
+        if (!exportModal) return;
+        exportModal.showProgress();
+        void runTimelineExport(timelineToJson(tl), values);
+      },
+      onCancel: () => {
+        if (exportAbort) exportAbort.abort();
+        if (exportModal) { exportModal.close(); exportModal = null; }
+        exportAbort = null;
+      },
+      onClose: () => {
+        if (exportModal) { exportModal.close(); exportModal = null; }
+        exportAbort = null;
+      },
+    });
+  }
+
+  async function runTimelineExport(
+    timelineJson: string,
+    values: { fps: number; quality: number; prefix: string; outDir: string },
+  ): Promise<void> {
+    if (!exportAbort || !exportModal) return;
+    const signal = exportAbort.signal;
+    try {
+      const outcome = await exportAnimate({
+        params: {
+          timelineJson,
+          fps: values.fps,
+          quality: values.quality,
+          prefix: values.prefix,
+          outDir: values.outDir,
+        },
+        onProgress: (info: ExportAnimateProgress) => {
+          if (exportModal) {
+            exportModal.setProgress({
+              frame: info.frame, total: info.total, percent: info.percent,
+              written: info.written, elapsedSeconds: info.elapsedSeconds, etaSeconds: info.etaSeconds,
+            });
+          }
+        },
+        abortSignal: signal,
+      });
+      if (exportModal) {
+        if (outcome.status === 'completed') {
+          exportModal.showResult(
+            `Wrote ${outcome.written.length} PNG${outcome.written.length === 1 ? '' : 's'} to ${values.outDir}.`,
+            'success',
+          );
+        } else {
+          exportModal.showResult(
+            `Cancelled — ${outcome.written.length} frame${outcome.written.length === 1 ? '' : 's'} written.`,
+            'info',
+          );
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (exportModal) exportModal.showResult(`Export failed: ${msg}`, 'error');
+    }
   }
 
   async function pickDirectoryViaBackend(): Promise<string | null> {

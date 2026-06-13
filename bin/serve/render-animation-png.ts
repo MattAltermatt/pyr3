@@ -12,8 +12,9 @@ import { PNG } from 'pngjs';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from '../../src/renderer';
 import { type Animation } from '../../src/animation';
 import { type Genome } from '../../src/genome';
+import { type Timeline, timelineGenomeAt } from '../../src/timeline';
 import { interpolate } from '../../src/interpolate';
-import { renderAnimationFrame } from '../../src/animate-render';
+import { renderAnimationFrame, renderTimelineFrame } from '../../src/animate-render';
 import { DEFAULT_WALKER_JITTER } from '../../src/chaos';
 import { injectPngTextChunk } from '../../src/png-text-chunk';
 import { genomeToJson } from '../../src/serialize';
@@ -61,18 +62,71 @@ export interface InFlightFrame {
   centerGenome: Genome;
 }
 
-/** Animation render context — holds the cached renderer/textures so a single
- *  `/api/animate` POST can iterate frames without paying per-frame
- *  createRenderer/createTexture costs when dims are stable across keyframes.
- *  Caller is responsible for calling `destroy()` when the request ends. */
-export class AnimationRenderContext {
+/** Per-frame render strategy. Animation and timeline export differ at exactly
+ *  two points — which genome is visible at time T, and which render fn paints
+ *  it — so everything below (double-buffer, readback, PNG encode) is shared. */
+export interface FrameSource {
+  /** Genome visible at frame time T (drives dims, metadata, reset). */
+  centerGenomeAt(time: number): Genome;
+  /** Paint frame time T into `opts.outputView`. */
+  renderInto(
+    renderer: Renderer,
+    time: number,
+    opts: { outputView: GPUTextureView; walkerJitter: number; seed?: number },
+  ): void;
+}
+
+export function animationFrameSource(animation: Animation): FrameSource {
+  return {
+    centerGenomeAt: (t) => interpolate(animation, t),
+    renderInto: (renderer, t, opts) => renderAnimationFrame(renderer, animation, t, opts),
+  };
+}
+
+export function timelineFrameSource(timeline: Timeline): FrameSource {
+  return {
+    centerGenomeAt: (t) => timelineGenomeAt(timeline, t),
+    renderInto: (renderer, t, opts) => renderTimelineFrame(renderer, timeline, t, opts),
+  };
+}
+
+/** Timeline export overrides — absolute `quality` (sets every clip's
+ *  genome.quality, uniform across the whole video, unlike the animation path's
+ *  qs *scale*) + `nsteps` (the timeline's ntemporal_samples; collapse to 1 to
+ *  avoid the ESF 1000-sub-frame trap that createTimeline() inherits). No-op
+ *  when both are undefined. */
+export function applyTimelineExportOverrides(
+  source: Timeline,
+  overrides: { quality?: number; nsteps?: number },
+): Timeline {
+  const { quality, nsteps } = overrides;
+  if (quality === undefined && nsteps === undefined) return source;
+  return {
+    ...source,
+    ...(nsteps !== undefined ? { ntemporal_samples: nsteps } : {}),
+    clips: quality === undefined
+      ? source.clips
+      : source.clips.map((c) => ({
+          ...c,
+          flame: { ...c.flame, genome: { ...c.flame.genome, quality } },
+        })),
+  };
+}
+
+/** Frame-sequence render context — holds the cached renderer/textures so a
+ *  single `/api/animate` POST can iterate frames without paying per-frame
+ *  createRenderer/createTexture costs when dims are stable across frames.
+ *  Driven by a FrameSource so the same pipeline serves both `.flam3`
+ *  animations and timelines. Caller must call `destroy()` when the request
+ *  ends. */
+export class FrameSequenceRenderContext {
   private bundle: RendererBundle | null = null;
   /** Monotonic frame counter selecting the double-buffer slot (parity). */
   private frameCounter = 0;
 
   constructor(
     private readonly device: GPUDevice,
-    private readonly animation: Animation,
+    private readonly source: FrameSource,
   ) {}
 
   private makeOutputTexture(width: number, height: number): GPUTexture {
@@ -113,7 +167,7 @@ export class AnimationRenderContext {
    *  in flight. GPU queue ordering + the texture double-buffer keep frame N's
    *  copy and frame N+1's render from colliding. */
   submitFrame(req: AnimationFrameRequest): InFlightFrame {
-    const centerGenome = interpolate(this.animation, req.time);
+    const centerGenome = this.source.centerGenomeAt(req.time);
     const width = centerGenome.size?.width ?? 1024;
     const height = centerGenome.size?.height ?? 1024;
     const oversample = Math.max(1, Math.floor(centerGenome.oversample ?? 1));
@@ -124,7 +178,7 @@ export class AnimationRenderContext {
     const texture = bundle.textures[this.frameCounter % 2]!;
     this.frameCounter++;
 
-    renderAnimationFrame(bundle.renderer, this.animation, req.time, {
+    this.source.renderInto(bundle.renderer, req.time, {
       outputView: texture.createView(),
       walkerJitter,
       ...(req.seed !== undefined ? { seed: req.seed } : {}),

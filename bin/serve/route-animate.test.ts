@@ -11,10 +11,11 @@ import { tmpdir } from 'node:os';
 
 import { DOMParser } from 'linkedom';
 
-import { applyExportOverrides } from './render-animation-png';
-import { makeAnimateRoute, applySegmentEasing } from './route-animate';
+import { applyExportOverrides, applyTimelineExportOverrides } from './render-animation-png';
+import { makeAnimateRoute, applySegmentEasing, computeTimelineFrames } from './route-animate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from '../../src/animation';
 import { type Genome, type Xform } from '../../src/genome';
+import { type Timeline } from '../../src/timeline';
 import { linear as linearVar } from '../../src/variations';
 import { PYRE_PALETTE } from '../../src/palette';
 
@@ -238,5 +239,72 @@ describe('makeAnimateRoute — SSE handshake', () => {
     expect(res._writes).toMatch(/event: open/);
     // First-frame render fails (no real GPU); surface an error event.
     expect(res._writes).toMatch(/event: error/);
+  });
+});
+
+// ── applyTimelineExportOverrides (#227 — absolute quality) ───────────────────
+
+function twoClipTimeline(q1: number, q2: number): Timeline {
+  return {
+    ...FLAM3_ANIMATION_DEFAULTS,
+    clips: [
+      { flame: { genome: baseGenome({ time: 0, quality: q1 }) }, duration: 1, transitionDuration: 0.5 },
+      { flame: { genome: baseGenome({ time: 1, quality: q2 }) }, duration: 1, transitionDuration: 0 },
+    ],
+  };
+}
+
+describe('applyTimelineExportOverrides', () => {
+  it('sets every clip genome.quality to the absolute value', () => {
+    const out = applyTimelineExportOverrides(twoClipTimeline(2000, 500), { quality: 200 });
+    expect(out.clips.map((c) => c.flame.genome.quality)).toEqual([200, 200]);
+  });
+  it('collapses ntemporal_samples (guards the ESF 1000-sub-frame trap)', () => {
+    const src = { ...twoClipTimeline(2000, 500), ntemporal_samples: 1000 };
+    expect(applyTimelineExportOverrides(src, { nsteps: 1 }).ntemporal_samples).toBe(1);
+    expect(applyTimelineExportOverrides(src, { quality: 200, nsteps: 4 }).ntemporal_samples).toBe(4);
+  });
+  it('returns the source unchanged when no overrides are given', () => {
+    const src = twoClipTimeline(2000, 500);
+    expect(applyTimelineExportOverrides(src, {})).toBe(src);
+  });
+});
+
+// ── computeTimelineFrames + timeline-input validation (#227) ─────────────────
+
+describe('computeTimelineFrames', () => {
+  it('= max(1, round(duration×fps)) frames at time i/fps', () => {
+    const frames = computeTimelineFrames(2, 30);
+    expect(frames.length).toBe(60);
+    expect(frames[0]).toEqual({ index: 0, time: 0 });
+    expect(frames[1]!.time).toBeCloseTo(1 / 30, 6);
+    expect(frames[59]!.index).toBe(59);
+  });
+  it('always yields at least one frame', () => {
+    expect(computeTimelineFrames(0, 30).length).toBe(1);
+  });
+  it('defaults to 30fps for non-positive fps', () => {
+    expect(computeTimelineFrames(1, 0).length).toBe(30);
+  });
+});
+
+describe('makeAnimateRoute — timeline input validation', () => {
+  it('rejects when both flame_xml and timeline_json are present', async () => {
+    const handle = makeAnimateRoute(fakeDevice);
+    const res = fakeRes();
+    await handle(fakeReq({ flame_xml: '<flame/>', timeline_json: '{}', out_dir: tmpdir() }), res);
+    expect(res.statusCode).toBe(400);
+  });
+  it('rejects when neither flame_xml nor timeline_json is present', async () => {
+    const handle = makeAnimateRoute(fakeDevice);
+    const res = fakeRes();
+    await handle(fakeReq({ out_dir: tmpdir() }), res);
+    expect(res.statusCode).toBe(400);
+  });
+  it('rejects a malformed timeline_json with 400', async () => {
+    const handle = makeAnimateRoute(fakeDevice);
+    const res = fakeRes();
+    await handle(fakeReq({ timeline_json: 'not json', out_dir: tmpdir() }), res);
+    expect(res.statusCode).toBe(400);
   });
 });

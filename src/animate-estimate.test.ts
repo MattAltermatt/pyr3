@@ -7,9 +7,13 @@ import {
   formatEstTime,
   estimateExport,
   formatExportEstimate,
+  countTimelineFrames,
+  timelineSampleBudget,
+  estimateTimelineExport,
 } from './animate-estimate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from './animation';
 import { type Genome, type Xform } from './genome';
+import { type Timeline } from './timeline';
 import { linear as linearVar } from './variations';
 import { PYRE_PALETTE } from './palette';
 import { computeDispatch } from './renderer';
@@ -165,5 +169,59 @@ describe('formatExportEstimate', () => {
   it('reports an empty range plainly', () => {
     expect(formatExportEstimate({ frames: 0, totalSamples: 0, seconds: null }))
       .toContain('no frames in range');
+  });
+});
+
+// ── timeline export (#227) ───────────────────────────────────────────────────
+
+/** A single-clip timeline at constant dims/quality (probe-averaging collapses
+ *  to the exact per-frame value). Mirrors the `{ ...DEFAULTS, clips }` idiom. */
+const oneClipTl = (quality: number, durationSeconds: number): Timeline => ({
+  ...FLAM3_ANIMATION_DEFAULTS,
+  clips: [
+    {
+      flame: { genome: baseGenome({ time: 0, size: { width: 100, height: 100 }, quality }) },
+      duration: durationSeconds,
+      transitionDuration: 0,
+    },
+  ],
+});
+
+describe('countTimelineFrames', () => {
+  it('= round(duration × fps), floored to >= 1', () => {
+    expect(countTimelineFrames(7.5, 30)).toBe(225);
+    expect(countTimelineFrames(1, 30)).toBe(30);
+    expect(countTimelineFrames(0, 30)).toBe(1); // matches CLI max(1, …)
+  });
+  it('is 0 for invalid fps', () => {
+    expect(countTimelineFrames(5, 0)).toBe(0);
+    expect(countTimelineFrames(5, -1)).toBe(0);
+  });
+});
+
+describe('timelineSampleBudget', () => {
+  it('scales with frame count and uses absolute quality (not a scale)', () => {
+    const tl = oneClipTl(200, 1); // 30 frames @ 30fps
+    const budget = timelineSampleBudget(tl, { fps: 30, quality: 200 });
+    expect(budget).toBeGreaterThan(0);
+    // doubling fps ⇒ ~2× frames ⇒ ~2× budget
+    const budget2 = timelineSampleBudget(tl, { fps: 60, quality: 200 });
+    expect(budget2).toBeGreaterThan(budget * 1.8);
+  });
+  it('is 0 for invalid fps', () => {
+    expect(timelineSampleBudget(oneClipTl(200, 1), { fps: 0, quality: 200 })).toBe(0);
+  });
+});
+
+describe('estimateTimelineExport', () => {
+  it('returns frames + budget + null seconds when no anchor', () => {
+    const est = estimateTimelineExport(oneClipTl(200, 1), { fps: 30, quality: 200 }, null);
+    expect(est.frames).toBe(30);
+    expect(est.totalSamples).toBeGreaterThan(0);
+    expect(est.seconds).toBeNull();
+  });
+  it('returns seconds when an anchor exists', () => {
+    const est = estimateTimelineExport(oneClipTl(200, 1), { fps: 30, quality: 200 }, 1e6);
+    expect(est.seconds).toBeGreaterThan(0);
   });
 });

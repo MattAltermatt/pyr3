@@ -22,11 +22,17 @@ import { resolve as resolvePath, isAbsolute, sep } from 'node:path';
 
 import { parseFlame } from '../../src/flame-import';
 import { type EasingCurve } from '../../src/easing';
+import { timelineFromJson } from '../../src/timeline-serialize';
+import { timelineDuration } from '../../src/timeline';
 
 import { createJob, clearJob } from './jobs';
 import {
-  AnimationRenderContext,
+  FrameSequenceRenderContext,
+  animationFrameSource,
+  timelineFrameSource,
   applyExportOverrides,
+  applyTimelineExportOverrides,
+  type FrameSource,
   type AnimationFrameRequest,
   type InFlightFrame,
 } from './render-animation-png';
@@ -59,6 +65,13 @@ interface AnimateRequestBody {
   /** Per-segment easing curves (#224). Stamped onto the parsed animation —
    *  flam3 XML has no easing slot. Index i applies to keyframes[i]→[i+1]. */
   segment_easing?: (EasingCurve | undefined)[];
+  /** Serialized .pyr3.timeline.json — alternative to flame_xml (#227). Exactly
+   *  one of flame_xml | timeline_json is required. */
+  timeline_json?: string;
+  /** Frames per second for timeline export. Default 30. */
+  fps?: number;
+  /** Absolute quality (samples/px) applied to every clip — timeline only. */
+  quality?: number;
 }
 
 /** Stamp request-provided per-segment easing onto the parsed animation.
@@ -71,6 +84,18 @@ export function applySegmentEasing(
   if (Array.isArray(body.segment_easing)) {
     animation.segmentEasing = body.segment_easing as (EasingCurve | undefined)[];
   }
+}
+
+/** Frame list for a timeline export at `fps`. Mirrors the CLI buildTimelinePlan:
+ *  frameCount = max(1, round(duration × fps)), frame i renders at time i/fps and
+ *  is named by its index (not its fractional time). Non-positive fps → 30. */
+export function computeTimelineFrames(
+  durationSeconds: number,
+  fps: number,
+): { index: number; time: number }[] {
+  const f = fps > 0 ? fps : 30;
+  const frameCount = Math.max(1, Math.round(Math.max(0, durationSeconds) * f));
+  return Array.from({ length: frameCount }, (_, i) => ({ index: i, time: i / f }));
 }
 
 function readJsonBody(req: IncomingMessage, limitBytes: number): Promise<unknown> {
@@ -120,8 +145,11 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       return;
     }
 
-    if (typeof body.flame_xml !== 'string' || body.flame_xml.length === 0) {
-      jsonError(res, 400, 'flame_xml is required (raw .flam3 XML)');
+    // Exactly one of flame_xml (animation) | timeline_json (#227) is required.
+    const hasTimeline = typeof body.timeline_json === 'string' && body.timeline_json.length > 0;
+    const hasFlame = typeof body.flame_xml === 'string' && body.flame_xml.length > 0;
+    if (hasTimeline === hasFlame) {
+      jsonError(res, 400, 'exactly one of flame_xml | timeline_json is required');
       return;
     }
     if (typeof body.out_dir !== 'string' || body.out_dir.length === 0) {
@@ -140,46 +168,76 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       return;
     }
 
-    let parsed: ReturnType<typeof parseFlame>;
-    try {
-      parsed = parseFlame(body.flame_xml);
-    } catch (err) {
-      jsonError(res, 400, `failed to parse flame XML: ${(err as Error).message}`);
-      return;
-    }
-    if (!parsed.animation) {
-      jsonError(res, 400, 'flame_xml has no animation surface — single <flame> only');
-      return;
-    }
-    applySegmentEasing(parsed.animation, body);
+    // Build a FrameSource + frameJobs ({ label, time }: label is the filename
+    // number, time is the render time) for whichever input was provided.
+    let source: FrameSource;
+    let frameJobs: { label: number; time: number }[];
 
-    // Default ntemporal_samples to 1 (no per-frame motion blur) for the
-    // sequence-export path. ESF .flam3 files author ntemporal_samples=1000
-    // (offline-quality motion blur budget); without this override each
-    // frame would be a 1000-sub-render stack — minutes-to-hours per frame
-    // and no cancel hook fires until a frame completes. flam3-render's
-    // static-render path already force-collapses ntemporal_samples to 1;
-    // we mirror that here. Callers can opt into motion blur explicitly
-    // via the `nsteps` body field.
-    const animation = applyExportOverrides(parsed.animation, {
-      qs: body.qs,
-      ss: body.ss,
-      nsteps: body.nsteps ?? 1,
-      ...(body.blur_width !== undefined ? { blurWidth: body.blur_width } : {}),
-    });
+    if (hasTimeline) {
+      let timeline;
+      try {
+        timeline = timelineFromJson(body.timeline_json!);
+      } catch (err) {
+        jsonError(res, 400, `failed to parse timeline JSON: ${(err as Error).message}`);
+        return;
+      }
+      // Absolute quality (every clip) + collapse ntemporal_samples to 1 (no
+      // per-frame motion blur) unless the caller opts in via `nsteps`. The
+      // nsteps default mirrors the animation path: createTimeline() inherits
+      // FLAM3_ANIMATION_DEFAULTS.ntemporal_samples=1000, so an authored timeline
+      // would otherwise render 1000 sub-frames per frame (minutes each, no
+      // mid-frame cancel) — the same ESF trap the animation path guards.
+      timeline = applyTimelineExportOverrides(timeline, {
+        ...(body.quality !== undefined ? { quality: body.quality } : {}),
+        nsteps: body.nsteps ?? 1,
+      });
+      const tlFrames = computeTimelineFrames(timelineDuration(timeline), body.fps ?? 30);
+      frameJobs = tlFrames.map((fr) => ({ label: fr.index, time: fr.time }));
+      source = timelineFrameSource(timeline);
+    } else {
+      let parsed: ReturnType<typeof parseFlame>;
+      try {
+        parsed = parseFlame(body.flame_xml!);
+      } catch (err) {
+        jsonError(res, 400, `failed to parse flame XML: ${(err as Error).message}`);
+        return;
+      }
+      if (!parsed.animation) {
+        jsonError(res, 400, 'flame_xml has no animation surface — single <flame> only');
+        return;
+      }
+      applySegmentEasing(parsed.animation, body);
 
-    const firstKfTime = animation.keyframes[0]!.time ?? 0;
-    const lastKfTime = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
-    const begin = Math.floor(body.begin ?? firstKfTime);
-    const endDefault = Math.max(begin, Math.floor(lastKfTime) - 1);
-    const end = Math.floor(body.end ?? endDefault);
-    const dtime = Math.max(1, Math.floor(body.dtime ?? 1));
+      // Default ntemporal_samples to 1 (no per-frame motion blur) for the
+      // sequence-export path. ESF .flam3 files author ntemporal_samples=1000
+      // (offline-quality motion blur budget); without this override each
+      // frame would be a 1000-sub-render stack — minutes-to-hours per frame
+      // and no cancel hook fires until a frame completes. flam3-render's
+      // static-render path already force-collapses ntemporal_samples to 1;
+      // we mirror that here. Callers can opt into motion blur explicitly
+      // via the `nsteps` body field.
+      const animation = applyExportOverrides(parsed.animation, {
+        qs: body.qs,
+        ss: body.ss,
+        nsteps: body.nsteps ?? 1,
+        ...(body.blur_width !== undefined ? { blurWidth: body.blur_width } : {}),
+      });
 
-    const frames: number[] = [];
-    for (let t = begin; t <= end; t += dtime) frames.push(t);
-    if (frames.length === 0) {
-      jsonError(res, 400, `empty frame range (begin=${begin} end=${end} dtime=${dtime})`);
-      return;
+      const firstKfTime = animation.keyframes[0]!.time ?? 0;
+      const lastKfTime = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
+      const begin = Math.floor(body.begin ?? firstKfTime);
+      const endDefault = Math.max(begin, Math.floor(lastKfTime) - 1);
+      const end = Math.floor(body.end ?? endDefault);
+      const dtime = Math.max(1, Math.floor(body.dtime ?? 1));
+
+      const labels: number[] = [];
+      for (let t = begin; t <= end; t += dtime) labels.push(t);
+      if (labels.length === 0) {
+        jsonError(res, 400, `empty frame range (begin=${begin} end=${end} dtime=${dtime})`);
+        return;
+      }
+      frameJobs = labels.map((t) => ({ label: t, time: t }));
+      source = animationFrameSource(animation);
     }
 
     // Resolve out_dir against cwd; create if missing. Then realpath-resolve so
@@ -206,16 +264,19 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Job-ID', job.id);
     res.flushHeaders?.();
-    writeSseEvent(res, 'open', { jobId: job.id, frames: frames.length, out_dir: outDir });
+    writeSseEvent(res, 'open', { jobId: job.id, frames: frameJobs.length, out_dir: outDir });
 
     req.on('close', () => {
       if (!job.controller.signal.aborted) job.controller.abort();
     });
 
-    const ctx = new AnimationRenderContext(deviceProvider(), animation);
+    const ctx = new FrameSequenceRenderContext(deviceProvider(), source);
     const written: string[] = [];
+    // 5-digit zero-pad (matches the ffmpeg %05d convention); auto-widen only if
+    // the largest frame label needs more (a >99999-frame timeline ≈ 55min@30fps).
+    const padWidth = Math.max(5, String(frameJobs[frameJobs.length - 1]!.label).length);
 
-    console.log(`[pyr3-serve] /api/animate job ${job.id.slice(0, 8)} — ${frames.length} frame(s) → ${outDir}`);
+    console.log(`[pyr3-serve] /api/animate job ${job.id.slice(0, 8)} — ${frameJobs.length} frame(s) → ${outDir}`);
 
     // #214 — depth-1 pipeline: submit frame N+1's GPU work before encoding
     // frame N on the CPU, so the host PNG encode + writeFileSync overlaps with
@@ -223,7 +284,7 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     const reqFor = (i: number): AnimationFrameRequest => {
       const frameSeed = body.seed !== undefined ? body.seed + i : undefined;
       return {
-        time: frames[i]!,
+        time: frameJobs[i]!.time,
         ...(body.walker_jitter !== undefined ? { walkerJitter: body.walker_jitter } : {}),
         ...(frameSeed !== undefined ? { seed: frameSeed } : {}),
       };
@@ -234,22 +295,22 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     let inflight: InFlightFrame | null = null;
     try {
       // Prime the pipeline with frame 0's GPU work already in flight.
-      inflight = frames.length > 0 ? ctx.submitFrame(reqFor(0)) : null;
+      inflight = frameJobs.length > 0 ? ctx.submitFrame(reqFor(0)) : null;
 
-      for (let i = 0; i < frames.length; i++) {
+      for (let i = 0; i < frameJobs.length; i++) {
         if (job.controller.signal.aborted) {
           writeSseEvent(res, 'cancelled', { jobId: job.id, written });
           res.end();
           return;
         }
-        const t = frames[i]!;
+        const label = frameJobs[i]!.label;
         const t0 = Date.now();
         const cur = inflight!;
         // Kick off the next frame's GPU work before we await + encode this one.
-        inflight = i + 1 < frames.length ? ctx.submitFrame(reqFor(i + 1)) : null;
+        inflight = i + 1 < frameJobs.length ? ctx.submitFrame(reqFor(i + 1)) : null;
         const result = await ctx.finishFrame(cur);
 
-        const frameStr = String(t).padStart(5, '0');
+        const frameStr = String(label).padStart(padWidth, '0');
         const filename = `${prefix}${frameStr}.png`;
         const outPath = resolvePath(outDir, filename);
         // Belt-and-suspenders: confirm the resolved path stays under out_dir.
@@ -266,13 +327,13 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
 
         const elapsedMs = Date.now() - t0;
         console.log(
-          `[pyr3-serve]   frame ${i + 1}/${frames.length} t=${t} ${result.width}×${result.height} → ${filename} (${(elapsedMs / 1000).toFixed(1)}s)`,
+          `[pyr3-serve]   frame ${i + 1}/${frameJobs.length} label=${label} ${result.width}×${result.height} → ${filename} (${(elapsedMs / 1000).toFixed(1)}s)`,
         );
 
         writeSseEvent(res, 'progress', {
           frame: i + 1,
-          total: frames.length,
-          percent: (i + 1) / frames.length,
+          total: frameJobs.length,
+          percent: (i + 1) / frameJobs.length,
           written: outPath,
         });
       }

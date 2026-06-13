@@ -16,6 +16,7 @@
 // it does not multiply it — so motion-blur sub-samples are budget-neutral here.
 
 import { type Animation } from './animation';
+import { type Timeline, timelineDuration, timelineGenomeAt } from './timeline';
 import { interpolate } from './interpolate';
 import { computeDispatch } from './renderer';
 
@@ -125,6 +126,56 @@ export function formatEstTime(seconds: number): string {
     return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   }
   return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+export interface TimelineExportRange {
+  /** Frames per second. */
+  fps: number;
+  /** Absolute quality (samples/px) applied to every clip — NOT a scale. */
+  quality: number;
+}
+
+/** Frame count for a timeline export. Mirrors the CLI buildTimelinePlan:
+ *  frameCount = max(1, round(duration × fps)). 0 for invalid fps. */
+export function countTimelineFrames(durationSeconds: number, fps: number): number {
+  if (!Number.isFinite(durationSeconds) || !Number.isFinite(fps) || fps <= 0 || durationSeconds < 0) {
+    return 0;
+  }
+  return Math.max(1, Math.round(durationSeconds * fps));
+}
+
+/** Total chaos-sample budget for a timeline export. Per-frame cost =
+ *  computeDispatch(absoluteQuality, w, h).actualSamples — the same dispatch math
+ *  the real render uses, with the absolute quality (no qs multiply). */
+export function timelineSampleBudget(tl: Timeline, range: TimelineExportRange): number {
+  const total = timelineDuration(tl);
+  const frames = countTimelineFrames(total, range.fps);
+  if (frames === 0) return 0;
+  const quality = range.quality > 0 ? range.quality : 16;
+  const probes = Math.min(frames, BUDGET_SAMPLE_CAP);
+  let sum = 0;
+  for (let i = 0; i < probes; i++) {
+    const frameIdx = probes === 1 ? 0 : Math.round((i * (frames - 1)) / (probes - 1));
+    const t = frameIdx / range.fps;
+    const g = timelineGenomeAt(tl, t);
+    const w = g.size?.width ?? 1024;
+    const h = g.size?.height ?? 1024;
+    sum += computeDispatch(quality, w, h).actualSamples;
+  }
+  return Math.round((sum / probes) * frames);
+}
+
+/** Bundle frame count + sample budget + (when an anchor exists) seconds for a
+ *  timeline export. Reuses estimateSeconds + the ExportEstimate shape so the
+ *  modal's formatExportEstimate renders it unchanged. */
+export function estimateTimelineExport(
+  tl: Timeline,
+  range: TimelineExportRange,
+  samplesPerSec: number | null,
+): ExportEstimate {
+  const frames = countTimelineFrames(timelineDuration(tl), range.fps);
+  const totalSamples = timelineSampleBudget(tl, range);
+  return { frames, totalSamples, seconds: estimateSeconds(totalSamples, samplesPerSec) };
 }
 
 /** Render the up-front estimate as one human line. Spells out "est. time" with

@@ -147,6 +147,29 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
           Object.assign(thumb.style, { width: '100%', height: '100%', objectFit: 'cover', display: 'block' });
           node.appendChild(thumb);
         }
+        // Pause cue (#227d): a node's hold is otherwise invisible on the track —
+        // a flame holding 2s looks identical to one holding 0s. The terminal
+        // flame's pause is a frozen TAIL at the end (looks "stuck"), so flag it
+        // amber; mid-chain holds get a neutral chip.
+        const pauseSecs = s.tEnd - s.tStart;
+        if (pauseSecs > 0) {
+          const isLastNode = s.index === timeline.clips.length - 1;
+          const badge = document.createElement('div');
+          badge.textContent = isLastNode
+            ? `⏸ ${pauseSecs.toFixed(1)}s end`
+            : `⏸ ${pauseSecs.toFixed(1)}s`;
+          badge.title = isLastNode
+            ? `The animation freezes on this final flame for ${pauseSecs.toFixed(1)}s at the end.`
+            : `Holds on this flame for ${pauseSecs.toFixed(1)}s before evolving.`;
+          Object.assign(badge.style, {
+            position: 'absolute', left: '3px', bottom: '3px',
+            padding: '1px 5px', borderRadius: '8px', fontSize: '9px',
+            fontFamily: 'ui-monospace,monospace', pointerEvents: 'none', zIndex: '3',
+            background: isLastNode ? 'rgba(255,140,26,.9)' : 'rgba(0,0,0,.72)',
+            color: isLastNode ? '#1a1206' : '#cfe9f3',
+          });
+          node.appendChild(badge);
+        }
         node.addEventListener('click', () => opts.onSelectNode(s.index));
         lane.appendChild(node);
       } else {

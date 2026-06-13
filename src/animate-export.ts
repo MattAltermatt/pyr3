@@ -8,21 +8,27 @@
 import { type EasingCurve } from './easing';
 
 export interface ExportAnimateParams {
-  /** Raw `.flam3` XML (the contents of the loaded file). */
-  flameXml: string;
+  /** Raw `.flam3` XML (animation path). Exactly one of flameXml | timelineJson. */
+  flameXml?: string;
   /** Inclusive frame range. Defaults derive from animation time on the server. */
   begin?: number;
   end?: number;
   dtime?: number;
   qs?: number;
   ss?: number;
+  /** Per-segment easing curves (#224); sent as `segment_easing`. */
+  segmentEasing?: (EasingCurve | undefined)[];
+  /** Serialized .pyr3.timeline.json (timeline path, #227). */
+  timelineJson?: string;
+  /** Frames per second (timeline path). */
+  fps?: number;
+  /** Absolute quality override applied to every clip (timeline path). */
+  quality?: number;
   prefix?: string;
   /** Absolute path or path relative to `pyr3 serve`'s cwd. Required. */
   outDir: string;
   walkerJitter?: number;
   seed?: number;
-  /** Per-segment easing curves (#224); sent as `segment_easing`. */
-  segmentEasing?: (EasingCurve | undefined)[];
 }
 
 export interface ExportAnimateProgress {
@@ -84,19 +90,33 @@ interface ErrorEvent {
 export async function exportAnimate(opts: ExportAnimateOpts): Promise<ExportAnimateOutcome> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const elapsedStart = performance.now();
-  const body = {
-    flame_xml: opts.params.flameXml,
-    out_dir: opts.params.outDir,
-    ...(opts.params.begin !== undefined ? { begin: opts.params.begin } : {}),
-    ...(opts.params.end !== undefined ? { end: opts.params.end } : {}),
-    ...(opts.params.dtime !== undefined ? { dtime: opts.params.dtime } : {}),
-    ...(opts.params.qs !== undefined ? { qs: opts.params.qs } : {}),
-    ...(opts.params.ss !== undefined ? { ss: opts.params.ss } : {}),
-    ...(opts.params.prefix !== undefined ? { prefix: opts.params.prefix } : {}),
-    ...(opts.params.walkerJitter !== undefined ? { walker_jitter: opts.params.walkerJitter } : {}),
-    ...(opts.params.seed !== undefined ? { seed: opts.params.seed } : {}),
-    ...(opts.params.segmentEasing ? { segment_easing: opts.params.segmentEasing } : {}),
-  };
+  const p = opts.params;
+  // Exactly one of timelineJson | flameXml is set (caller guarantees). The
+  // timeline body carries fps + absolute quality; the animation body carries
+  // the begin/end/dtime/qs frame controls.
+  const body = p.timelineJson !== undefined
+    ? {
+        timeline_json: p.timelineJson,
+        out_dir: p.outDir,
+        ...(p.fps !== undefined ? { fps: p.fps } : {}),
+        ...(p.quality !== undefined ? { quality: p.quality } : {}),
+        ...(p.prefix !== undefined ? { prefix: p.prefix } : {}),
+        ...(p.walkerJitter !== undefined ? { walker_jitter: p.walkerJitter } : {}),
+        ...(p.seed !== undefined ? { seed: p.seed } : {}),
+      }
+    : {
+        flame_xml: p.flameXml,
+        out_dir: p.outDir,
+        ...(p.begin !== undefined ? { begin: p.begin } : {}),
+        ...(p.end !== undefined ? { end: p.end } : {}),
+        ...(p.dtime !== undefined ? { dtime: p.dtime } : {}),
+        ...(p.qs !== undefined ? { qs: p.qs } : {}),
+        ...(p.ss !== undefined ? { ss: p.ss } : {}),
+        ...(p.prefix !== undefined ? { prefix: p.prefix } : {}),
+        ...(p.walkerJitter !== undefined ? { walker_jitter: p.walkerJitter } : {}),
+        ...(p.seed !== undefined ? { seed: p.seed } : {}),
+        ...(p.segmentEasing ? { segment_easing: p.segmentEasing } : {}),
+      };
 
   let jobId: string | null = null;
   const cancelByJobId = () => {

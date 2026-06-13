@@ -4,6 +4,7 @@ import { openAnimateExportModal } from './animate-export-modal';
 import { type ExportEstimate } from './animate-estimate';
 
 const baseOpts = {
+  mode: 'animation' as const,
   defaults: { begin: 0, end: 9, dtime: 1, qs: 1, prefix: '' },
   onStart: () => {},
   onCancel: () => {},
@@ -58,6 +59,53 @@ describe('animate export modal — up-front estimate (#226)', () => {
     const handle = openAnimateExportModal({ host, ...baseOpts });
     const line = host.querySelector('[data-export-estimate]') as HTMLElement;
     expect(line.style.display).toBe('none');
+    handle.close();
+  });
+});
+
+describe('animate export modal — timeline mode (#227)', () => {
+  it('renders fps + quality fields and a duration→frames readout', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({
+      host, mode: 'timeline', durationSeconds: 7.5,
+      defaults: { fps: 30, quality: 200, prefix: '' },
+      onStart: () => {}, onCancel: () => {}, onClose: () => {},
+    });
+    expect(host.textContent ?? '').toContain('225 frames'); // 7.5 × 30
+    const labels = Array.from(host.querySelectorAll('span')).map((s) => s.textContent);
+    expect(labels).toContain('fps');
+    expect(labels).toContain('quality');
+    expect(labels).not.toContain('begin (frame)');
+    handle.close();
+  });
+
+  it('file-name hint shows a concrete example reflecting prefix + frame range', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({
+      host, mode: 'timeline', durationSeconds: 7.5,
+      defaults: { fps: 30, quality: 200, prefix: 'tl_' },
+      onStart: () => {}, onCancel: () => {}, onClose: () => {},
+    });
+    const note = [...host.querySelectorAll('div')].map((d) => d.textContent).find((t) => t?.includes('Files:'));
+    expect(note).toContain('e.g. tl_00000.png');
+    expect(note).toContain('tl_00224.png'); // 7.5 × 30 = 225 frames → last index 224
+    handle.close();
+  });
+
+  it('onStart yields mode/fps/quality/prefix/outDir', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let started: unknown = null;
+    const handle = openAnimateExportModal({
+      host, mode: 'timeline', durationSeconds: 1,
+      defaults: { fps: 30, quality: 200, prefix: 'tl_' },
+      onStart: (v) => { started = v; }, onCancel: () => {}, onClose: () => {},
+    });
+    (host.querySelector('input[required]') as HTMLInputElement).value = '/tmp/out';
+    (host.querySelector('[data-action]') as HTMLButtonElement).click();
+    expect(started).toMatchObject({ mode: 'timeline', fps: 30, quality: 200, prefix: 'tl_', outDir: '/tmp/out' });
     handle.close();
   });
 });
