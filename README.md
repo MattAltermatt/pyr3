@@ -114,7 +114,9 @@ it to `~/.cache/pyr3/dawn-<sha>.node` on first launch (~150ms one-time;
 subsequent runs hit the cache). Upgrade with `git pull && npm run build:cli
 render`. Animation shipped in v1.6.0: render frames headlessly with
 `npm run animate` (tsx) or the bundled `pyr3 serve` backend + `/api/animate`
-route — the headless companion to the browser's `/v1/animate` editor.
+route — the headless companion to the browser's `/v1/animate` editor. The
+editor's timeline mode (build a sequence of key flames, then 📤 Export sequence)
+renders the whole timeline to a PNG frame sequence through the same backend (#227).
 
 **Platform status (as of v1.7):**
 

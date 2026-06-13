@@ -26,7 +26,10 @@ npm run build:cli:serve                             # produce ./build/pyr3-serve
 The viewer routes are `/v1` (viewer), `/v1/edit`, `/v1/gradient`, `/v1/animate`,
 and `/v1/screensaver`. The `pyr3` global command (via `npm link`) boots
 `pyr3 serve`, whose backend exposes `/api/render` + `/api/animate` (SSE-
-streamed) for renders past the browser's quality cap.
+streamed) for renders past the browser's quality cap. `/api/animate` accepts
+**either** a `.flam3` multi-keyframe animation (`flame_xml`) **or** a built
+timeline (`timeline_json`, the `/v1/animate` 📤 Export sequence button in
+timeline mode — fps × duration framing, absolute quality, index-named frames; #227).
 
 Before commit: `npm run typecheck && npm test`. The BE↔flam3-C parity rig
 (`npm run test:parity`, 91s) is optional but recommended when the render
