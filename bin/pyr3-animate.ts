@@ -1,16 +1,17 @@
 #!/usr/bin/env -S node --experimental-strip-types
 // pyr3-animate — P4 of Animation milestone (#17 / #209).
 //
-// Renders a sequence of PNG frames from a multi-keyframe `.flam3` file.
-// Mirrors flam3-animate env-var conventions (begin/end/time/dtime/qs/ss/prefix).
+// Renders a sequence of PNG frames from either:
+//   • a multi-keyframe `.flam3` file (mirrors flam3-animate env-var conventions
+//     begin/end/time/dtime/qs/ss/prefix), or
+//   • a `.pyr3.timeline.json` timeline doc (#227) — clips of standalone flames;
+//     frame N is rendered at T = N / fps (default fps=30).
 //
-// Usage:
-//   pyr3-animate <input.flam3> [out-dir]
-//   env: begin end time dtime qs ss prefix verbose
-//
-// Frame N is rendered at time T=N (matches flam3-animate.c:225-228 — f.time =
-// (double) ftime); the interp module bridges T to a derived Genome via
-// `interpolate(animation, T)`. Output filename: `<prefix><frame-zero-padded>.png`.
+// For the .flam3 path, frame N is rendered at time T=N (matches
+// flam3-animate.c:225-228); the interp module bridges T to a derived Genome via
+// `interpolate(animation, T)`. For the timeline path the bridge is
+// `timelineGenomeAt(timeline, T)` (reuses interpolate per clip pair).
+// Output filename: `<prefix><frame-zero-padded>.png`.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -23,7 +24,14 @@ import { genomeToJson } from '../src/serialize';
 import { injectPngTextChunk } from '../src/png-text-chunk';
 import { interpolate } from '../src/interpolate';
 import { type Animation } from '../src/animation';
-import { renderAnimationFrame } from '../src/animate-render';
+import {
+  renderAnimationFrame,
+  renderTimelineFrame,
+  type AnimationFrameRenderOpts,
+  type AnimationFrameRenderResult,
+} from '../src/animate-render';
+import { type Timeline, timelineDuration, timelineGenomeAt } from '../src/timeline';
+import { timelineFromJson, TIMELINE_FORMAT } from '../src/timeline-serialize';
 import { totalSampleBudget, formatCount, formatEstTime, estimateSeconds } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
 import { parseEasingFlag } from './pyr3-animate-args';
@@ -46,11 +54,186 @@ function envStr(name: string, def: string): string {
   return process.env[name] ?? def;
 }
 
+/** Scale a genome's size/quality by ss/qs (flam3-animate semantics). Linear in
+ *  the scaled fields, so applying it per keyframe/clip commutes with interp. */
+function scaleGenome(g: Genome, ss: number, qs: number): Genome {
+  let out = g;
+  if (ss !== 1.0) {
+    out = {
+      ...out,
+      scale: out.scale * ss,
+      ...(out.size
+        ? {
+            size: {
+              width: Math.max(1, Math.round(out.size.width * ss)),
+              height: Math.max(1, Math.round(out.size.height * ss)),
+            },
+          }
+        : {}),
+    };
+  }
+  if (qs !== 1.0 && out.quality !== undefined) {
+    out = { ...out, quality: out.quality * qs };
+  }
+  return out;
+}
+
+/** One frame to render: a filename label + the global time to sample at. */
+interface FrameJob {
+  label: number;
+  time: number;
+}
+
+/** Path-agnostic render plan — both the .flam3 and timeline inputs reduce to this. */
+interface FramePlan {
+  describeLines: string[];
+  jobs: FrameJob[];
+  /** Optional up-front sample-budget estimate (printed when present). */
+  upFrontBudget: number | null;
+  centerGenomeAt: (time: number) => Genome;
+  renderFrame: (
+    renderer: ReturnType<typeof createRenderer>,
+    time: number,
+    opts: AnimationFrameRenderOpts,
+  ) => AnimationFrameRenderResult;
+}
+
+function isTimelineInput(inputPath: string, text: string): boolean {
+  if (inputPath.endsWith('.timeline.json')) return true;
+  try {
+    return (JSON.parse(text) as { format?: string })?.format === TIMELINE_FORMAT;
+  } catch {
+    return false;
+  }
+}
+
+/** Build the timeline render plan (#227). */
+function buildTimelinePlan(
+  text: string,
+  ss: number,
+  qs: number,
+  nstepsOverride: number | null,
+  blurWidthOverride: number | null,
+): FramePlan {
+  let timeline: Timeline = timelineFromJson(text);
+  if (
+    ss !== 1.0 ||
+    qs !== 1.0 ||
+    nstepsOverride !== null ||
+    blurWidthOverride !== null
+  ) {
+    timeline = {
+      ...timeline,
+      ...(nstepsOverride !== null ? { ntemporal_samples: nstepsOverride } : {}),
+      ...(blurWidthOverride !== null ? { temporal_filter_width: blurWidthOverride } : {}),
+      clips:
+        ss === 1.0 && qs === 1.0
+          ? timeline.clips
+          : timeline.clips.map((c) => ({
+              ...c,
+              flame: { ...c.flame, genome: scaleGenome(c.flame.genome, ss, qs) },
+            })),
+    };
+  }
+
+  const fps = envInt('fps', 30);
+  const total = timelineDuration(timeline);
+  const frameCount = Math.max(1, Math.round(total * fps));
+  const jobs: FrameJob[] = Array.from({ length: frameCount }, (_, i) => ({
+    label: i,
+    time: i / fps,
+  }));
+  return {
+    describeLines: [
+      `[pyr3-animate] timeline: ${timeline.clips.length} clips, ${total.toFixed(2)}s, ` +
+        `${frameCount} frames @ ${fps}fps`,
+    ],
+    jobs,
+    upFrontBudget: null,
+    centerGenomeAt: (time) => timelineGenomeAt(timeline, time),
+    renderFrame: (renderer, time, opts) => renderTimelineFrame(renderer, timeline, time, opts),
+  };
+}
+
+/** Build the .flam3 multi-keyframe render plan (pre-#227 behavior, unchanged). */
+function buildFlamePlan(
+  text: string,
+  inputPath: string,
+  argv: string[],
+  ss: number,
+  qs: number,
+  nstepsOverride: number | null,
+  blurWidthOverride: number | null,
+  dtime: number,
+): FramePlan {
+  const parsed = parseGenomeText(text, inputPath);
+  if (!parsed.animation) {
+    console.error(
+      'pyr3-animate: input has no animation surface — single <flame> only.\n' +
+        '             Use pyr3-render for single-frame .flam3 / .pyr3.json input.',
+    );
+    process.exit(1);
+  }
+  // Apply ss/qs/nsteps to the animation by scaling each keyframe up-front.
+  const animation: Animation =
+    ss === 1.0 && qs === 1.0 && nstepsOverride === null && blurWidthOverride === null
+      ? parsed.animation
+      : {
+          ...parsed.animation,
+          ...(nstepsOverride !== null ? { ntemporal_samples: nstepsOverride } : {}),
+          ...(blurWidthOverride !== null ? { temporal_filter_width: blurWidthOverride } : {}),
+          keyframes: parsed.animation.keyframes.map((k) => scaleGenome(k, ss, qs)),
+        };
+
+  // #224 — optional per-segment easing override (`--easing <json EasingCurve[]>`).
+  const easing = parseEasingFlag(argv);
+  if (easing) animation.segmentEasing = easing;
+
+  // Default begin/end from keyframe times (flam3-animate.c:181-185 behavior).
+  const firstKfTime = animation.keyframes[0]!.time ?? 0;
+  const lastKfTime = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
+  const begin = envInt('begin', Math.floor(firstKfTime));
+  const endDefault = Math.max(begin, Math.floor(lastKfTime) - 1);
+  const end = envInt('end', endDefault);
+
+  const singleTime = process.env['time'];
+  const times: number[] = [];
+  if (singleTime !== undefined) {
+    const n = parseInt(singleTime, 10);
+    if (Number.isFinite(n)) times.push(n);
+  } else {
+    for (let t = begin; t <= end; t += dtime) times.push(t);
+  }
+  if (times.length === 0) {
+    console.error(`pyr3-animate: empty frame range (begin=${begin} end=${end} dtime=${dtime})`);
+    process.exit(1);
+  }
+
+  const upFrontBudget = totalSampleBudget(animation, {
+    begin: times[0]!,
+    end: times[times.length - 1]!,
+    dtime,
+    qs: 1,
+  });
+  return {
+    describeLines: [
+      `[pyr3-animate] ${animation.keyframes.length}-keyframe sequence ` +
+        `(times ${animation.keyframes.map((k) => k.time ?? 0).join(', ')})`,
+      `[pyr3-animate] rendering ${times.length} frame(s): ` +
+        `t=${times[0]}..${times[times.length - 1]} stride ${dtime}`,
+    ],
+    jobs: times.map((t) => ({ label: t, time: t })),
+    upFrontBudget,
+    centerGenomeAt: (time) => interpolate(animation, time),
+    renderFrame: (renderer, time, opts) => renderAnimationFrame(renderer, animation, time, opts),
+  };
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.error('usage: pyr3-animate <input.flam3> [out-dir]');
-    console.error('  env: begin end time dtime qs ss prefix verbose');
+    console.error('usage: pyr3-animate <input.flam3 | input.timeline.json> [out-dir]');
+    console.error('  env: begin end time dtime qs ss prefix verbose fps nsteps blur');
     process.exit(1);
   }
   const inputPath = resolve(args[0]!);
@@ -62,123 +245,30 @@ async function main(): Promise<void> {
   const qs = envFloat('qs', 1.0);
   const ss = envFloat('ss', 1.0);
   const verbose = envInt('verbose', 1);
-  // pyr3-specific overrides for motion-blur tuning. flam3-animate has no
-  // equivalents; pyr3 adds them so smoke tests don't burn 1000× per frame:
-  //   nsteps=N    — override Animation.ntemporal_samples (default = imported).
-  //   blur=W      — override Animation.temporal_filter_width. Bigger W spans
-  //                 more inter-frame time → more visible motion blur on
-  //                 sparse animations.
-  const nstepsOverride = process.env['nsteps'] !== undefined
-    ? envInt('nsteps', 1)
-    : null;
-  const blurWidthOverride = process.env['blur'] !== undefined
-    ? envFloat('blur', 1.0)
-    : null;
+  // pyr3-specific motion-blur overrides (flam3-animate has no equivalents):
+  //   nsteps=N — override ntemporal_samples (default = imported).
+  //   blur=W   — override temporal_filter_width.
+  const nstepsOverride = process.env['nsteps'] !== undefined ? envInt('nsteps', 1) : null;
+  const blurWidthOverride = process.env['blur'] !== undefined ? envFloat('blur', 1.0) : null;
 
   if (dtime < 1) {
     console.error('pyr3-animate: dtime must be positive');
     process.exit(1);
   }
 
-  // Load + parse the .flam3.
   const text = readFileSync(inputPath, 'utf8');
-  const parsed = parseGenomeText(text, inputPath);
-  if (!parsed.animation) {
-    console.error(
-      'pyr3-animate: input has no animation surface — single <flame> only.\n' +
-        '             Use pyr3-render for single-frame .flam3 / .pyr3.json input.',
-    );
-    process.exit(1);
-  }
-  // Apply ss/qs/nsteps to the animation by scaling each keyframe up-front.
-  // Same semantics as flam3-animate (scales sample_density, width/height,
-  // ppu by qs/ss). Scaling each keyframe once is correct because
-  // interpolation is linear in the scaled fields — scaling commutes with
-  // the linear blend.
-  const animation: Animation = (
-    ss === 1.0 && qs === 1.0 &&
-    nstepsOverride === null && blurWidthOverride === null
-  )
-    ? parsed.animation
-    : {
-        ...parsed.animation,
-        ...(nstepsOverride !== null ? { ntemporal_samples: nstepsOverride } : {}),
-        ...(blurWidthOverride !== null ? { temporal_filter_width: blurWidthOverride } : {}),
-        keyframes: parsed.animation.keyframes.map((k) => {
-          let g: Genome = k;
-          if (ss !== 1.0) {
-            g = {
-              ...g,
-              scale: g.scale * ss,
-              ...(g.size
-                ? {
-                    size: {
-                      width: Math.max(1, Math.round(g.size.width * ss)),
-                      height: Math.max(1, Math.round(g.size.height * ss)),
-                    },
-                  }
-                : {}),
-            };
-          }
-          if (qs !== 1.0 && g.quality !== undefined) {
-            g = { ...g, quality: g.quality * qs };
-          }
-          return g;
-        }),
-      };
-
-  // #224 — optional per-segment easing override (`--easing <json EasingCurve[]>`).
-  // Stamped onto the SAME object passed to interpolate(animation, t) below.
-  const easing = parseEasingFlag(process.argv.slice(2));
-  if (easing) animation.segmentEasing = easing;
-
-  // Default begin/end from keyframe times (flam3-animate.c:181-185 behavior).
-  const firstKfTime = animation.keyframes[0]!.time ?? 0;
-  const lastKfTime = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
-  const begin = envInt('begin', Math.floor(firstKfTime));
-  // flam3 default for `end` is `last_keyframe.time - 1`, but we add a guard so
-  // a single-time-zero pair (rare) still renders at least one frame.
-  const endDefault = Math.max(begin, Math.floor(lastKfTime) - 1);
-  const end = envInt('end', endDefault);
-
-  // Single-frame override.
-  const singleTime = process.env['time'];
-
-  const frames: number[] = [];
-  if (singleTime !== undefined) {
-    const n = parseInt(singleTime, 10);
-    if (Number.isFinite(n)) frames.push(n);
-  } else {
-    for (let t = begin; t <= end; t += dtime) frames.push(t);
-  }
-
-  if (frames.length === 0) {
-    console.error(`pyr3-animate: empty frame range (begin=${begin} end=${end} dtime=${dtime})`);
-    process.exit(1);
-  }
+  const plan = isTimelineInput(inputPath, text)
+    ? buildTimelinePlan(text, ss, qs, nstepsOverride, blurWidthOverride)
+    : buildFlamePlan(text, inputPath, args, ss, qs, nstepsOverride, blurWidthOverride, dtime);
 
   if (verbose) {
-    console.log(
-      `[pyr3-animate] ${animation.keyframes.length}-keyframe sequence ` +
-        `(times ${animation.keyframes.map((k) => k.time ?? 0).join(', ')})`,
-    );
-    console.log(
-      `[pyr3-animate] rendering ${frames.length} frame(s): ` +
-        `t=${frames[0]}..${frames[frames.length - 1]} stride ${dtime}`,
-    );
-    // #226 — up-front sample budget. qs is already baked into the keyframes
-    // above, so the range uses qs:1. No throughput anchor exists before the
-    // first frame on the CLI (no preview phase), so the time estimate prints
-    // once frame 1 lands (see the running ETA in the loop below).
-    const upFrontBudget = totalSampleBudget(animation, {
-      begin: frames[0]!,
-      end: frames[frames.length - 1]!,
-      dtime,
-      qs: 1,
-    });
-    console.log(
-      `[pyr3-animate] est. work: ${frames.length} frames · ${formatCount(upFrontBudget)} samples total`,
-    );
+    for (const line of plan.describeLines) console.log(line);
+    if (plan.upFrontBudget !== null) {
+      console.log(
+        `[pyr3-animate] est. work: ${plan.jobs.length} frames · ` +
+          `${formatCount(plan.upFrontBudget)} samples total`,
+      );
+    }
   }
 
   // Acquire GPU device + texture/renderer (rebuilt per-frame only if dims change).
@@ -188,16 +278,13 @@ async function main(): Promise<void> {
   let texture: GPUTexture | null = null;
   let cached: { width: number; height: number; oversample: number; filterRadius: number } | null = null;
 
-  // #226 — running ETA accumulators. After each frame we re-anchor samples/sec
-  // from real wall-clock and project the remaining frames.
+  // #226 — running ETA accumulators.
   let doneSamples = 0;
   let doneSeconds = 0;
   let frameNum = 0;
 
-  for (const t of frames) {
-    // ss/qs already baked into `animation` upfront; interpolate just picks
-    // dims off the scaled keyframes.
-    const centerGenome: Genome = interpolate(animation, t);
+  for (const job of plan.jobs) {
+    const centerGenome: Genome = plan.centerGenomeAt(job.time);
 
     const width = centerGenome.size?.width ?? 1024;
     const height = centerGenome.size?.height ?? 1024;
@@ -222,15 +309,11 @@ async function main(): Promise<void> {
     }
 
     const t0 = Date.now();
-    // P5 #210 — when animation.ntemporal_samples > 1, this routes through the
-    // temporal-sampled path (N sub-renders at t + delta[i], walkers
-    // proportional to filter[i]/sumfilt). When ==1, it's a single interp+render.
-    const frameResult = renderAnimationFrame(renderer!, animation, t, {
+    const frameResult = plan.renderFrame(renderer!, job.time, {
       outputView: texture!.createView(),
       walkerJitter: DEFAULT_WALKER_JITTER,
     });
-    // genome used for PNG metadata = the center-time genome (matches the
-    // visual midpoint of any motion-blur smear).
+    // genome used for PNG metadata = the center-time genome.
     const genome = frameResult.centerGenome;
 
     // Read back texture → PNG.
@@ -271,7 +354,7 @@ async function main(): Promise<void> {
       pyr3Json,
     );
 
-    const frameStr = String(t).padStart(5, '0');
+    const frameStr = String(job.label).padStart(5, '0');
     const outName = `${prefix}${frameStr}.png`;
     const outPath = resolve(outDir, outName);
     writeFileSync(outPath, withMetadata);
@@ -283,8 +366,7 @@ async function main(): Promise<void> {
 
     if (verbose) {
       const elapsed = frameSeconds.toFixed(2);
-      // #226 — project the remaining frames from this-run throughput.
-      const framesLeft = frames.length - frameNum;
+      const framesLeft = plan.jobs.length - frameNum;
       let etaSuffix = '';
       if (framesLeft > 0) {
         const samplesPerSec = doneSamples / Math.max(1e-6, doneSeconds);

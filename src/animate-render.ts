@@ -9,6 +9,7 @@
 // atomically. No WGSL change — reuses existing renderer.iterate() interface.
 
 import { type Animation } from './animation';
+import { type Timeline, timelineSegmentAt } from './timeline';
 import { type Genome } from './genome';
 import { type Renderer, computeDispatch } from './renderer';
 import { interpolate } from './interpolate';
@@ -138,4 +139,17 @@ export function renderAnimationFrame(
     totalWalkers,
     totalSamples,
   };
+}
+
+/** Render one output frame of a Timeline at global time `t`. Locates the active
+ *  clip's ephemeral 2-keyframe segment and delegates to renderAnimationFrame so
+ *  the temporal-filter / motion-blur path is reused verbatim (#227). */
+export function renderTimelineFrame(
+  renderer: Renderer,
+  timeline: Timeline,
+  t: number,
+  opts: AnimationFrameRenderOpts,
+): AnimationFrameRenderResult {
+  const seg = timelineSegmentAt(timeline, t);
+  return renderAnimationFrame(renderer, seg.animation, seg.localTime, opts);
 }
