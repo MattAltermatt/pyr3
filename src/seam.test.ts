@@ -99,6 +99,9 @@ const SEAM_EXEMPT = new Set<string>([
   'palette-file.ts',           // /v1/gradient .pyre-palette.json import/export — anchor download (#115)
   'timeline-track.ts',         // /v1/animate timeline lane — DOM-mounting (clip blocks, draggable playhead) (#227c)
   'timeline-thumbnails.ts',    // /v1/animate clip thumbnails — creates offscreen canvases via document (#227c)
+  'timeline-sections.ts',      // /v1/animate section-model authoring track — DOM-mounting (#227d)
+  'timeline-section-editor.ts',// /v1/animate clip/section inspector — DOM-mounting (#227d)
+  'timeline-add-dialog.ts',    // /v1/animate animation-import modal — DOM-mounting (#227d)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND

@@ -25,10 +25,17 @@ import { estimateExport } from './animate-estimate';
 import { buildEasingPanel } from './animate-easing-panel';
 import { type EasingCurve } from './easing';
 import { type Timeline, timelineDuration } from './timeline';
-import { timelineFromJson } from './timeline-serialize';
+import { timelineFromJson, timelineToJson } from './timeline-serialize';
 import { renderTimelineFrame } from './animate-render';
-import { mountTimelineTrack, type TimelineTrackHandle } from './timeline-track';
 import { renderClipThumbnails } from './timeline-thumbnails';
+// #227d — section-model authoring.
+import { genomeFromJson } from './serialize';
+import {
+  createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, removeNode,
+} from './timeline-edit';
+import { mountSectionTrack, type SectionTrackHandle, type Selection } from './timeline-sections';
+import { mountSectionEditor, type SectionEditorHandle } from './timeline-section-editor';
+import { openAddAnimationDialog } from './timeline-add-dialog';
 
 export interface MountAnimateOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -169,7 +176,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   empty.append(emptyHeader, emptyLine, emptyHint);
   // #227c — timeline docs are also loadable here.
   const emptyTimelineHint = document.createElement('div');
-  emptyTimelineHint.textContent = '…or a .pyr3.timeline.json timeline';
+  emptyTimelineHint.textContent = 'or ＋ Add key flame to start building a timeline';
   emptyTimelineHint.style.opacity = '0.7';
   empty.append(emptyTimelineHint);
   canvasZone.appendChild(empty);
@@ -213,6 +220,30 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   });
   topRow.appendChild(loadBtn);
 
+  // #227d — Add a key flame to the timeline. Single flame → one node; a
+  // multi-keyframe animation .flam3 opens the import dialog.
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.textContent = '＋ Add key flame';
+  addBtn.title = 'Add a flame (.flame/.flam3/.pyr3.json) to the timeline';
+  Object.assign(addBtn.style, {
+    background: 'transparent', border: '1px solid #9cd', color: '#cfe9f3',
+    cursor: 'pointer', padding: '4px 10px', borderRadius: '3px', fontSize: '12px',
+  });
+  topRow.appendChild(addBtn);
+
+  const addInput = document.createElement('input');
+  addInput.type = 'file';
+  addInput.accept = '.flame,.flam3,.json';
+  addInput.style.display = 'none';
+  root.appendChild(addInput);
+  addBtn.addEventListener('click', () => addInput.click());
+  addInput.addEventListener('change', () => {
+    const f = addInput.files?.[0];
+    if (f) void handleAddFlame(f);
+    addInput.value = '';
+  });
+
   // P7 (#212) — Export sequence button. Capability-gated: enabled only when
   // `pyr3 serve` is hosting the page (can_render_animation === true). On
   // gh-pages the fetch returns the GHPAGES_DEFAULT capability where the flag
@@ -231,6 +262,32 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     fontSize: '12px',
   });
   topRow.appendChild(exportBtn);
+
+  // #227d — Save the authored timeline as a .pyr3.timeline.json (browser
+  // download — no backend, works on gh-pages). Hidden until a timeline exists.
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.textContent = '💾 Save timeline';
+  saveBtn.title = 'Download this timeline as a .pyr3.timeline.json';
+  Object.assign(saveBtn.style, {
+    background: 'transparent', border: '1px solid #5a7', color: '#bfe9cf',
+    cursor: 'pointer', padding: '4px 10px', borderRadius: '3px', fontSize: '12px', display: 'none',
+  });
+  topRow.appendChild(saveBtn);
+
+  function saveTimeline(): void {
+    if (!timeline) return;
+    const json = timelineToJson(timeline);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const nick = timeline.clips[0]?.flame.genome.nick;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${nick ?? 'timeline'}.pyr3.timeline.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  saveBtn.addEventListener('click', saveTimeline);
 
   function refreshExportButtonCapability(): void {
     const canExport = getCapability().can_render_animation;
@@ -307,7 +364,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // `animation` / `timeline` is non-null at a time.
   let timeline: Timeline | null = null;
   let timelinePreview: Timeline | null = null;
-  let track: TimelineTrackHandle | null = null;
+  // #227d — authoring uses the editable section track + inspector. (The #227c
+  // clip-strip `mountTimelineTrack` is retired from this path.)
+  let sectionTrack: SectionTrackHandle | null = null;
+  let sectionEditor: SectionEditorHandle | null = null;
+  let selection: Selection = null;
   // P7 (#212) — keep the source XML around so the Export button can POST
   // it verbatim. The /api/animate route re-parses server-side; we don't
   // round-trip through a Genome JSON serializer.
@@ -431,8 +492,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           : previewSamplesPerSec * 0.6 + sps * 0.4;
       }
       // #227c — keep the timeline track's playhead in sync with auto-play /
-      // scrub (no-op in animation mode where track is null).
-      track?.setPlayhead(t);
+      // scrub (no-op in animation mode where the section track is null).
+      sectionTrack?.setPlayhead(t);
       // Yield to rAF so the browser can composite the just-rendered frame
       // before we acquire the next swap-chain texture. Without this, back-to-
       // back scrubs can get the SAME swap-chain texture twice — Chrome
@@ -497,50 +558,153 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     renderer = createRenderer(device, format, { width, height, oversample: 1, filterRadius });
   }
 
-  // #227c — enter timeline mode: parse the doc, build the renderer, mount the
-  // NLE track + transport over [0, timelineDuration], render the first frame,
-  // then fill in GPU thumbnails. Clears any prior animation-mode state.
-  async function buildTimelineMode(file: File, text: string): Promise<void> {
-    timeline = timelineFromJson(text);
+  // #227d — (re)mount the transport bar over [0, dur]. PlaybackBarHandle has no
+  // range setter, so range changes (evolve/pause edits) remount it.
+  function mountTimelinePlaybackBar(dur: number, initialT: number): void {
+    playbackBar?.destroy();
+    playbackBar = mountPlaybackBar(scrubHost, {
+      tMin: 0, tMax: dur, initialT: Math.min(initialT, dur),
+      onScrub: (t) => { stopPlayback(); void renderAtTime(t); },
+      onPlayToggle: (isPlaying) => { if (isPlaying) startPlayback(); else stopPlayback(); },
+    });
+  }
+
+  // #227d — enter section authoring mode for the current `timeline` (built by
+  // Add or loaded). Builds the renderer, mounts the section track + inspector +
+  // transport, renders the first frame, then fills thumbnails. Replaces the
+  // #227c read-only viewer mount; clears any prior animation-mode state.
+  async function enterSectionMode(): Promise<void> {
+    if (!timeline) return;
     timelinePreview = previewTimeline(timeline);
     animation = null;
     loadedFlameXml = null;
     if (easingPanel) { easingPanel.remove(); easingPanel = null; }
     empty.style.display = 'none';
+    saveBtn.style.display = timeline.clips.length > 0 ? 'inline-block' : 'none';
     buildTimelineRenderer();
 
-    // Mount the NLE track + transport bar into scrubHost.
-    track?.destroy();
-    track = mountTimelineTrack(scrubHost, {
+    selection = null;
+    sectionTrack?.destroy();
+    sectionTrack = mountSectionTrack(scrubHost, {
       timeline,
-      // Keep the transport bar's slider + time readout in lockstep with a
-      // track-playhead drag (playbackBar is assigned just below; the closure
-      // reads it at interaction time).
-      onSeek: (t) => { stopPlayback(); playbackBar?.setTime(t); void renderAtTime(t); },
-    });
-    playbackBar?.destroy();
-    const dur = timelineDuration(timeline);
-    playbackBar = mountPlaybackBar(scrubHost, {
-      tMin: 0,
-      tMax: dur,
-      initialT: 0,
-      onScrub: (t) => { stopPlayback(); void renderAtTime(t); },
-      onPlayToggle: (isPlaying) => { if (isPlaying) startPlayback(); else stopPlayback(); },
+      onSelectNode: (i) => {
+        selection = { kind: 'node', index: i };
+        sectionTrack?.setSelection(selection);
+        if (timeline) sectionEditor?.showNode(timeline, i);
+      },
+      onSelectSection: (i) => {
+        selection = { kind: 'section', index: i };
+        sectionTrack?.setSelection(selection);
+        if (timeline) sectionEditor?.showSection(timeline, i);
+      },
+      onAdd: () => addInput.click(),
     });
 
+    sectionEditor?.destroy();
+    sectionEditor = mountSectionEditor(scrubHost, {
+      onEvolveChange: (i, s) => applyEdit(setEvolve(timeline!, i, s)),
+      onLingerChange: (i, l) => applyEdit(setLinger(timeline!, i, l)),
+      onPauseChange: (i, s) => applyEdit(setPause(timeline!, i, s)),
+      onRemoveNode: (i) => {
+        selection = null;
+        sectionEditor?.clear();
+        applyEdit(removeNode(timeline!, i), { structural: true });
+      },
+    });
+
+    mountTimelinePlaybackBar(timelineDuration(timeline), 0);
     refreshExportButtonCapability(); // timeline ⇒ animation===null ⇒ export stays disabled
     await renderAtTime(0);
-    setStatus(`${file.name} — ${timeline.clips.length} clips, ${dur.toFixed(2)} s`);
+    setStatus(`${timeline.clips.length} clips, ${timelineDuration(timeline).toFixed(2)} s`);
+    await refreshThumbnails();
+  }
 
-    // Thumbnails after the first preview paints. Best-effort: a thumbnail
-    // failure must not break load or playback.
+  // Apply a pure timeline mutation: swap state, refresh preview/track/bar/editor,
+  // re-render. `structural` (add/remove) also re-renders thumbnails.
+  function applyEdit(next: Timeline, opts: { structural?: boolean } = {}): void {
+    timeline = next;
+    timelinePreview = previewTimeline(timeline);
+    saveBtn.style.display = timeline.clips.length > 0 ? 'inline-block' : 'none';
+    if (timeline.clips.length === 0) {
+      // Removed the last node — drop back to the empty state.
+      sectionTrack?.destroy(); sectionTrack = null;
+      sectionEditor?.clear();
+      playbackBar?.destroy(); playbackBar = null;
+      empty.style.display = 'flex';
+      setStatus('no timeline');
+      return;
+    }
+    // Drop a stale selection if a structural edit shrank the chain past it
+    // (append never shifts indices, but this guards future insert/reorder).
+    if (selection) {
+      const maxIdx = selection.kind === 'section' ? timeline.clips.length - 2 : timeline.clips.length - 1;
+      if (selection.index > maxIdx) { selection = null; sectionEditor?.clear(); }
+    }
+    sectionTrack?.rebuild(timeline);
+    if (selection) sectionTrack?.setSelection(selection);
+    // Re-show the open editor panel so linger pills / input values stay current.
+    if (selection?.kind === 'section') sectionEditor?.showSection(timeline, selection.index);
+    else if (selection?.kind === 'node') sectionEditor?.showNode(timeline, selection.index);
+    const dur = timelineDuration(timeline);
+    mountTimelinePlaybackBar(dur, Math.min(lastRenderedTime, dur));
+    void renderAtTime(Math.min(lastRenderedTime, dur));
+    setStatus(`${timeline.clips.length} clips, ${dur.toFixed(2)} s`);
+    if (opts.structural) void refreshThumbnails();
+  }
+
+  async function refreshThumbnails(): Promise<void> {
+    if (!timeline) return;
     try {
-      const thumbs = await renderClipThumbnails(device, format, timeline);
-      thumbs.forEach((c, i) => track?.setThumbnail(i, c));
+      const list = await renderClipThumbnails(device, format, timeline);
+      list.forEach((c, i) => sectionTrack?.setThumbnail(i, c));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('pyr3: timeline thumbnails failed', err);
     }
+  }
+
+  // #227d — add a key flame to the timeline from a file. Single flame → one
+  // node; multi-keyframe animation → import-all / pick-one dialog.
+  async function handleAddFlame(file: File): Promise<void> {
+    setStatus(`adding ${file.name} …`);
+    try {
+      const text = await file.text();
+      const base = timeline ?? createTimeline();
+      let next: Timeline;
+      if (/\.json$/i.test(file.name)) {
+        const doc = JSON.parse(text) as Record<string, unknown>;
+        if (doc.format === 'pyr3-timeline') {
+          setStatus('that’s a timeline — use Load, not Add', 'error');
+          return;
+        }
+        next = appendFlame(base, genomeFromJson(doc), { kind: 'json' });
+      } else {
+        const parsed = parseFlame(text);
+        if (parsed.animation && parsed.animation.keyframes.length > 1) {
+          const choice = await openAddAnimationDialog(root, parsed.animation.keyframes.length);
+          if (!choice) { setStatus('add cancelled'); return; }
+          next = choice.kind === 'all'
+            ? appendAnimationAll(base, parsed.animation)
+            : appendFlame(base, parsed.animation.keyframes[choice.keyframeIndex]!, { kind: 'upload', filename: file.name });
+        } else {
+          next = appendFlame(base, parsed.genome, { kind: 'upload', filename: file.name });
+        }
+      }
+      const wasEmpty = !timeline;
+      timeline = next;
+      if (wasEmpty) await enterSectionMode();
+      else applyEdit(next, { structural: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(`failed to add: ${msg}`, 'error');
+    }
+  }
+
+  // #227c/#227d — load an existing .pyr3.timeline.json into the editable track.
+  async function buildTimelineMode(file: File, text: string): Promise<void> {
+    timeline = timelineFromJson(text);
+    await enterSectionMode();
+    setStatus(`${file.name} — ${timeline.clips.length} clips, ${timelineDuration(timeline).toFixed(2)} s`);
   }
 
   function mountPlaybackForAnimation(): void {
@@ -592,8 +756,10 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       // path for this freshly loaded .flam3.
       timeline = null;
       timelinePreview = null;
-      track?.destroy();
-      track = null;
+      sectionTrack?.destroy();
+      sectionTrack = null;
+      sectionEditor?.destroy();
+      sectionEditor = null;
       animation = parsed.animation;
       loadedFlameXml = text;
       if (easingPanel) { easingPanel.remove(); easingPanel = null; }
@@ -746,8 +912,10 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       exportModal = null;
       playbackBar?.destroy();
       playbackBar = null;
-      track?.destroy();
-      track = null;
+      sectionTrack?.destroy();
+      sectionTrack = null;
+      sectionEditor?.destroy();
+      sectionEditor = null;
       renderer?.destroy();
       renderer = null;
       if (easingPanel) { easingPanel.remove(); easingPanel = null; }

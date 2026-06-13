@@ -1,0 +1,198 @@
+// #227d — the editable "section model" timeline track: key-flame nodes joined
+// by evolve sections. Pure geometry (sectionLayout/playheadX) + a createElement
+// DOM lane (no innerHTML, per the repo invariant). Selection drives the
+// inspector in timeline-section-editor.ts; scrub/play stays on the playback bar.
+
+import { type Timeline } from './timeline';
+
+export interface SectionLayoutOpts {
+  /** Fixed px width of a key-flame node thumbnail. */
+  nodeW: number;
+  /** Minimum px width of an evolve bar. */
+  edgeMinW: number;
+  /** Px per evolve-second (bar width = max(edgeMinW, evolve*edgePxPerSec)). */
+  edgePxPerSec: number;
+}
+
+export interface LayoutSeg {
+  kind: 'node' | 'edge';
+  /** node index (kind='node') OR section index i meaning i→i+1 (kind='edge'). */
+  index: number;
+  x: number;
+  w: number;
+  /** Global-time span this visual segment covers. */
+  tStart: number;
+  tEnd: number;
+}
+
+/** Lay a timeline out as node / edge / node / … segments. Node = a clip's
+ *  leading hold (pause); edge = that clip's trailing evolve. */
+export function sectionLayout(tl: Timeline, opts: SectionLayoutOpts): LayoutSeg[] {
+  const { nodeW, edgeMinW, edgePxPerSec } = opts;
+  const segs: LayoutSeg[] = [];
+  const clips = tl.clips;
+  let x = 0;
+  let clipStart = 0;
+  for (let i = 0; i < clips.length; i++) {
+    const c = clips[i]!;
+    const dur = Math.max(0, c.duration);
+    const evolve = Math.max(0, Math.min(c.transitionDuration, dur));
+    const pause = dur - evolve;
+    const isLast = i === clips.length - 1;
+    // Node segment = the pause (leading hold) of this flame.
+    segs.push({ kind: 'node', index: i, x, w: nodeW, tStart: clipStart, tEnd: clipStart + pause });
+    x += nodeW;
+    if (!isLast) {
+      const w = Math.max(edgeMinW, evolve * edgePxPerSec);
+      segs.push({
+        kind: 'edge', index: i, x, w,
+        tStart: clipStart + pause, tEnd: clipStart + pause + evolve,
+      });
+      x += w;
+    }
+    clipStart += dur;
+  }
+  return segs;
+}
+
+/** Forward map global time `t` → playhead x across a section layout. */
+export function playheadX(segs: LayoutSeg[], t: number): number {
+  if (segs.length === 0) return 0;
+  const first = segs[0]!;
+  const last = segs[segs.length - 1]!;
+  if (t <= first.tStart) return first.x;
+  if (t >= last.tEnd) return last.x + last.w;
+  for (const s of segs) {
+    if (t >= s.tStart && t <= s.tEnd) {
+      const span = s.tEnd - s.tStart;
+      if (span <= 0) return s.x; // zero-time node (pause 0)
+      return s.x + ((t - s.tStart) / span) * s.w;
+    }
+  }
+  return last.x + last.w;
+}
+
+// ---------------------------------------------------------------------------
+// DOM lane
+// ---------------------------------------------------------------------------
+
+export type Selection =
+  | { kind: 'node'; index: number }
+  | { kind: 'section'; index: number }
+  | null;
+
+export interface SectionTrackOpts {
+  timeline: Timeline;
+  onSelectNode: (index: number) => void;
+  onSelectSection: (index: number) => void;
+  onAdd: () => void;
+}
+
+export interface SectionTrackHandle {
+  setPlayhead(t: number): void;
+  setSelection(sel: Selection): void;
+  /** Drop a rendered thumbnail into node `index`. */
+  setThumbnail(index: number, thumb: HTMLCanvasElement): void;
+  /** Rebuild from a mutated timeline (e.g. after add/edit/remove). */
+  rebuild(timeline: Timeline): void;
+  destroy(): void;
+}
+
+const TRACK_OPTS: SectionLayoutOpts = { nodeW: 64, edgeMinW: 34, edgePxPerSec: 44 };
+const TRACK_HEIGHT = 96;
+
+export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): SectionTrackHandle {
+  let timeline = opts.timeline;
+  let selection: Selection = null;
+  const thumbs = new Map<number, HTMLCanvasElement>();
+
+  const root = document.createElement('div');
+  Object.assign(root.style, {
+    position: 'relative', height: `${TRACK_HEIGHT}px`, margin: '0 16px 8px',
+    background: '#0c0c0e', border: '1px solid #2a2a2a', borderRadius: '6px',
+    overflowX: 'auto', overflowY: 'hidden', userSelect: 'none', whiteSpace: 'nowrap',
+  });
+  host.appendChild(root);
+
+  const lane = document.createElement('div');
+  Object.assign(lane.style, { position: 'relative', height: '100%', display: 'inline-block', padding: '12px 0' });
+  root.appendChild(lane);
+
+  const playhead = document.createElement('div');
+  Object.assign(playhead.style, {
+    position: 'absolute', top: '6px', bottom: '6px', width: '2px',
+    background: '#ff8c1a', boxShadow: '0 0 5px rgba(255,140,26,.9)', left: '0', pointerEvents: 'none', zIndex: '4',
+  });
+  lane.appendChild(playhead);
+
+  function render(): void {
+    // Clear everything except the playhead.
+    for (const child of Array.from(lane.children)) if (child !== playhead) child.remove();
+    const segs = sectionLayout(timeline, TRACK_OPTS);
+    let contentW = 0;
+    for (const s of segs) {
+      contentW = Math.max(contentW, s.x + s.w);
+      if (s.kind === 'node') {
+        const node = document.createElement('div');
+        const selN = selection?.kind === 'node' && selection.index === s.index;
+        Object.assign(node.style, {
+          position: 'absolute', top: '12px', left: `${s.x}px`, width: `${s.w}px`,
+          height: `${TRACK_HEIGHT - 24}px`, borderRadius: '7px', background: '#191922',
+          boxShadow: selN ? '0 0 0 2px #ff8c1a' : '0 0 0 2px #000, 0 0 0 3px #333',
+          overflow: 'hidden', cursor: 'pointer', zIndex: '2',
+        });
+        node.title = `key flame ${s.index + 1}`;
+        const thumb = thumbs.get(s.index);
+        if (thumb) {
+          Object.assign(thumb.style, { width: '100%', height: '100%', objectFit: 'cover', display: 'block' });
+          node.appendChild(thumb);
+        }
+        node.addEventListener('click', () => opts.onSelectNode(s.index));
+        lane.appendChild(node);
+      } else {
+        const edge = document.createElement('div');
+        const selE = selection?.kind === 'section' && selection.index === s.index;
+        Object.assign(edge.style, {
+          position: 'absolute', top: `${TRACK_HEIGHT / 2 - 13}px`, left: `${s.x}px`, width: `${s.w}px`,
+          height: '26px', borderRadius: '13px', cursor: 'pointer', zIndex: '1',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'repeating-linear-gradient(90deg,#3a4a55 0 8px,#2a3640 8px 16px)',
+          boxShadow: selE ? '0 0 0 2px #ff8c1a, inset 0 0 0 1px #9cd' : 'inset 0 0 0 1px #44545f',
+        });
+        const evolve = timeline.clips[s.index]!.transitionDuration;
+        const lbl = document.createElement('span');
+        lbl.textContent = `${evolve.toFixed(1)}s`;
+        Object.assign(lbl.style, { fontSize: '10px', color: '#cfe9f3', fontFamily: 'ui-monospace,monospace', pointerEvents: 'none' });
+        edge.appendChild(lbl);
+        edge.addEventListener('click', () => opts.onSelectSection(s.index));
+        lane.appendChild(edge);
+      }
+    }
+    // ＋ add affordance after the chain.
+    const add = document.createElement('div');
+    Object.assign(add.style, {
+      position: 'absolute', top: '12px', left: `${contentW + 14}px`, width: '60px',
+      height: `${TRACK_HEIGHT - 24}px`, borderRadius: '7px', border: '1px dashed #3a6',
+      color: '#bfe9cf', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: '11px', fontFamily: 'ui-monospace,monospace', cursor: 'pointer', textAlign: 'center', zIndex: '2',
+    });
+    add.textContent = '＋ add';
+    add.title = 'Add a key flame';
+    add.addEventListener('click', () => opts.onAdd());
+    lane.appendChild(add);
+
+    lane.style.width = `${contentW + 90}px`;
+  }
+
+  render();
+
+  return {
+    setPlayhead(t: number): void {
+      playhead.style.left = `${playheadX(sectionLayout(timeline, TRACK_OPTS), t)}px`;
+    },
+    setSelection(sel: Selection): void { selection = sel; render(); },
+    setThumbnail(index: number, thumb: HTMLCanvasElement): void { thumbs.set(index, thumb); render(); },
+    rebuild(next: Timeline): void { timeline = next; render(); },
+    destroy(): void { root.remove(); thumbs.clear(); },
+  };
+}
