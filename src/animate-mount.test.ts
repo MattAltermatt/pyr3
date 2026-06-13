@@ -117,7 +117,7 @@ describe('mountAnimatePage — Export button capability gate', () => {
 
     // Load button by content match — no data attribute for it.
     const buttons = Array.from(root.querySelectorAll('button'));
-    const load = buttons.find((b) => b.textContent?.includes('Load .flam3'));
+    const load = buttons.find((b) => b.textContent?.includes('Load'));
     const exportBtn = buttons.find((b) => b.hasAttribute('data-export-sequence'));
     expect(load).toBeTruthy();
     expect(exportBtn).toBeTruthy();

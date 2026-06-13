@@ -24,6 +24,11 @@ import { openAnimateExportModal, type AnimateExportModalHandle } from './animate
 import { estimateExport } from './animate-estimate';
 import { buildEasingPanel } from './animate-easing-panel';
 import { type EasingCurve } from './easing';
+import { type Timeline, timelineDuration } from './timeline';
+import { timelineFromJson } from './timeline-serialize';
+import { renderTimelineFrame } from './animate-render';
+import { mountTimelineTrack, type TimelineTrackHandle } from './timeline-track';
+import { renderClipThumbnails } from './timeline-thumbnails';
 
 export interface MountAnimateOpts {
   /** Container the page renders into. Cleared on mount. */
@@ -72,6 +77,28 @@ export function wrapPlaybackTime(t: number, tMin: number, tMax: number): number 
   let wrapped = t;
   if (wrapped > tMax) wrapped = tMin + ((wrapped - tMin) % realSpan);
   return Math.min(tMax, Math.max(tMin, wrapped));
+}
+
+/** Quality-capped, single-sub-frame copy of a timeline for the browser preview
+ *  path — mirrors the `previewAnim` cap applied to the Animation path so ESF
+ *  `quality=2000` clips don't freeze the compositor (#211). */
+function previewTimeline(tl: Timeline): Timeline {
+  return {
+    ...tl,
+    ntemporal_samples: 1,
+    clips: tl.clips.map((c) => ({
+      ...c,
+      flame: {
+        ...c.flame,
+        genome: {
+          ...c.flame.genome,
+          quality: c.flame.genome.quality !== undefined
+            ? Math.min(c.flame.genome.quality, PREVIEW_MAX_SPP)
+            : PREVIEW_MAX_SPP,
+        },
+      },
+    })),
+  };
 }
 
 export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
@@ -140,6 +167,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   emptyHint.textContent = 'or use the load button below';
   emptyHint.style.opacity = '0.7';
   empty.append(emptyHeader, emptyLine, emptyHint);
+  // #227c — timeline docs are also loadable here.
+  const emptyTimelineHint = document.createElement('div');
+  emptyTimelineHint.textContent = '…or a .pyr3.timeline.json timeline';
+  emptyTimelineHint.style.opacity = '0.7';
+  empty.append(emptyTimelineHint);
   canvasZone.appendChild(empty);
 
   // Bottom controls strip: load button + playback bar (mounted into scrubHost
@@ -168,7 +200,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   const loadBtn = document.createElement('button');
   loadBtn.type = 'button';
-  loadBtn.textContent = '📂 Load .flam3';
+  loadBtn.textContent = '📂 Load';
+  loadBtn.title = 'Load a multi-keyframe .flam3 animation or a .pyr3.timeline.json timeline';
   Object.assign(loadBtn.style, {
     background: 'transparent',
     border: '1px solid #444',
@@ -236,7 +269,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.flam3,.flame';
+  fileInput.accept = '.flam3,.flame,.json';
   fileInput.style.display = 'none';
   root.appendChild(fileInput);
   loadBtn.addEventListener('click', () => fileInput.click());
@@ -270,6 +303,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   // Runtime state.
   let animation: Animation | null = null;
+  // #227c — timeline mode runs alongside animation mode. At most one of
+  // `animation` / `timeline` is non-null at a time.
+  let timeline: Timeline | null = null;
+  let timelinePreview: Timeline | null = null;
+  let track: TimelineTrackHandle | null = null;
   // P7 (#212) — keep the source XML around so the Export button can POST
   // it verbatim. The /api/animate route re-parses server-side; we don't
   // round-trip through a Genome JSON serializer.
@@ -309,18 +347,26 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   }
 
   function startPlayback(): void {
-    if (!animation || rafId !== null) return;
-    const tMin = animation.keyframes[0]!.time ?? 0;
-    const tMax = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
-    // #248 — playback advances over the REAL keyframe span (tMax - tMin) so the
-    // whole animation plays once per PLAYBACK_DURATION_MS regardless of span.
-    // The old `Math.max(1, …)` clamp made sub-unit spans both play too fast AND
-    // wrap past tMax (→ pickKeyframes endpoint extrapolation + slider desync).
+    if ((!animation && !timeline) || rafId !== null) return;
+    // #227c — timeline mode plays over [0, timelineDuration]; animation mode
+    // over the keyframe span.
+    let tMin: number, tMax: number;
+    if (timeline) {
+      tMin = 0;
+      tMax = timelineDuration(timeline);
+    } else {
+      tMin = animation!.keyframes[0]!.time ?? 0;
+      tMax = animation!.keyframes[animation!.keyframes.length - 1]!.time ?? 0;
+    }
+    // #248 — playback advances over the REAL span (tMax - tMin) so the whole
+    // animation plays once per PLAYBACK_DURATION_MS regardless of span. The old
+    // `Math.max(1, …)` clamp made sub-unit spans both play too fast AND wrap
+    // past tMax (→ pickKeyframes endpoint extrapolation + slider desync).
     const realSpan = tMax - tMin;
     const startedAt = performance.now();
     const startT = playbackBar?.getTime() ?? tMin;
     const tick = (now: number): void => {
-      if (!animation || !playbackBar) {
+      if ((!animation && !timeline) || !playbackBar) {
         stopPlayback();
         return;
       }
@@ -335,7 +381,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   async function renderAtTime(t: number): Promise<void> {
     lastRenderedTime = t;
-    if (!animation || !renderer || !context) return;
+    if (!renderer || !context || (!animation && !timeline)) return;
     // Single-flight: drop intermediate frames so seeks during a slow render
     // don't queue up. The last requested time always wins.
     if (renderInFlight) {
@@ -348,22 +394,31 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       // browser preview path. ESF authors flames with quality=2000 (offline
       // budget); rendering that in-browser at 800×592 dispatches ~940M
       // samples and freezes the GPU + display compositor. CLI / pyr3 serve
-      // are the unrestricted paths (see #210, P4).
-      const previewAnim: Animation = {
-        ...animation,
-        ntemporal_samples: 1,
-        keyframes: animation.keyframes.map((g) => ({
-          ...g,
-          quality: g.quality !== undefined
-            ? Math.min(g.quality, PREVIEW_MAX_SPP)
-            : PREVIEW_MAX_SPP,
-        })),
-      };
+      // are the unrestricted paths (see #210, P4). The timeline path applies
+      // the same cap via previewTimeline() (built once on load).
       const gpuStart = performance.now();
-      const previewResult = renderAnimationFrame(renderer, previewAnim, t, {
-        outputView: context.getCurrentTexture().createView(),
-        walkerJitter: DEFAULT_WALKER_JITTER,
-      });
+      let previewResult;
+      if (timeline && timelinePreview) {
+        previewResult = renderTimelineFrame(renderer, timelinePreview, t, {
+          outputView: context.getCurrentTexture().createView(),
+          walkerJitter: DEFAULT_WALKER_JITTER,
+        });
+      } else {
+        const previewAnim: Animation = {
+          ...animation!,
+          ntemporal_samples: 1,
+          keyframes: animation!.keyframes.map((g) => ({
+            ...g,
+            quality: g.quality !== undefined
+              ? Math.min(g.quality, PREVIEW_MAX_SPP)
+              : PREVIEW_MAX_SPP,
+          })),
+        };
+        previewResult = renderAnimationFrame(renderer, previewAnim, t, {
+          outputView: context.getCurrentTexture().createView(),
+          walkerJitter: DEFAULT_WALKER_JITTER,
+        });
+      }
       await device.queue.onSubmittedWorkDone();
       // #226 — sample this machine's throughput from the preview render so the
       // export modal can show a real up-front ETA. EMA-smooth so the first
@@ -375,6 +430,9 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           ? sps
           : previewSamplesPerSec * 0.6 + sps * 0.4;
       }
+      // #227c — keep the timeline track's playhead in sync with auto-play /
+      // scrub (no-op in animation mode where track is null).
+      track?.setPlayhead(t);
       // Yield to rAF so the browser can composite the just-rendered frame
       // before we acquire the next swap-chain texture. Without this, back-to-
       // back scrubs can get the SAME swap-chain texture twice — Chrome
@@ -418,6 +476,73 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     });
   }
 
+  // #227c — size the renderer from the timeline's first clip and (re)acquire
+  // the canvas WebGPU context. Mirrors buildRenderer() for the timeline path.
+  function buildTimelineRenderer(): void {
+    const firstG = timeline!.clips[0]!.flame.genome;
+    const declW = firstG.size?.width ?? CANVAS_DEFAULT_W;
+    const declH = firstG.size?.height ?? CANVAS_DEFAULT_H;
+    const scaleW = declW > CANVAS_MAX_W ? CANVAS_MAX_W / declW : 1;
+    const scaleH = declH > CANVAS_MAX_H ? CANVAS_MAX_H / declH : 1;
+    const scale = Math.min(scaleW, scaleH);
+    const width = Math.max(1, Math.round(declW * scale));
+    const height = Math.max(1, Math.round(declH * scale));
+    canvas.width = width;
+    canvas.height = height;
+    context = canvas.getContext('webgpu') as GPUCanvasContext | null;
+    if (!context) throw new Error('animate-mount: WebGPU canvas context unavailable');
+    context.configure({ device, format, alphaMode: 'premultiplied' });
+    const filterRadius = firstG.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+    renderer?.destroy();
+    renderer = createRenderer(device, format, { width, height, oversample: 1, filterRadius });
+  }
+
+  // #227c — enter timeline mode: parse the doc, build the renderer, mount the
+  // NLE track + transport over [0, timelineDuration], render the first frame,
+  // then fill in GPU thumbnails. Clears any prior animation-mode state.
+  async function buildTimelineMode(file: File, text: string): Promise<void> {
+    timeline = timelineFromJson(text);
+    timelinePreview = previewTimeline(timeline);
+    animation = null;
+    loadedFlameXml = null;
+    if (easingPanel) { easingPanel.remove(); easingPanel = null; }
+    empty.style.display = 'none';
+    buildTimelineRenderer();
+
+    // Mount the NLE track + transport bar into scrubHost.
+    track?.destroy();
+    track = mountTimelineTrack(scrubHost, {
+      timeline,
+      // Keep the transport bar's slider + time readout in lockstep with a
+      // track-playhead drag (playbackBar is assigned just below; the closure
+      // reads it at interaction time).
+      onSeek: (t) => { stopPlayback(); playbackBar?.setTime(t); void renderAtTime(t); },
+    });
+    playbackBar?.destroy();
+    const dur = timelineDuration(timeline);
+    playbackBar = mountPlaybackBar(scrubHost, {
+      tMin: 0,
+      tMax: dur,
+      initialT: 0,
+      onScrub: (t) => { stopPlayback(); void renderAtTime(t); },
+      onPlayToggle: (isPlaying) => { if (isPlaying) startPlayback(); else stopPlayback(); },
+    });
+
+    refreshExportButtonCapability(); // timeline ⇒ animation===null ⇒ export stays disabled
+    await renderAtTime(0);
+    setStatus(`${file.name} — ${timeline.clips.length} clips, ${dur.toFixed(2)} s`);
+
+    // Thumbnails after the first preview paints. Best-effort: a thumbnail
+    // failure must not break load or playback.
+    try {
+      const thumbs = await renderClipThumbnails(device, format, timeline);
+      thumbs.forEach((c, i) => track?.setThumbnail(i, c));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('pyr3: timeline thumbnails failed', err);
+    }
+  }
+
   function mountPlaybackForAnimation(): void {
     playbackBar?.destroy();
     const tMin = animation!.keyframes[0]!.time ?? 0;
@@ -440,6 +565,18 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   async function handleFile(file: File): Promise<void> {
     setStatus(`loading ${file.name} …`);
     stopPlayback();
+    // #227c — timeline docs route to timeline mode. Sniff by extension first,
+    // then validate via timelineFromJson (which rejects a non-pyr3-timeline body).
+    if (/\.json$/i.test(file.name)) {
+      try {
+        const text = await file.text();
+        await buildTimelineMode(file, text);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setStatus(`not a pyr3 timeline: ${msg}`, 'error');
+      }
+      return;
+    }
     try {
       const text = await file.text();
       const parsed = parseFlame(text);
@@ -450,6 +587,13 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         );
         return;
       }
+      // #227c — clear any prior timeline-mode state so renderAtTime /
+      // startPlayback (which branch on `timeline` first) take the animation
+      // path for this freshly loaded .flam3.
+      timeline = null;
+      timelinePreview = null;
+      track?.destroy();
+      track = null;
       animation = parsed.animation;
       loadedFlameXml = text;
       if (easingPanel) { easingPanel.remove(); easingPanel = null; }
@@ -602,10 +746,14 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       exportModal = null;
       playbackBar?.destroy();
       playbackBar = null;
+      track?.destroy();
+      track = null;
       renderer?.destroy();
       renderer = null;
       if (easingPanel) { easingPanel.remove(); easingPanel = null; }
       animation = null;
+      timeline = null;
+      timelinePreview = null;
       loadedFlameXml = null;
       root.replaceChildren();
     },

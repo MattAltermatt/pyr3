@@ -97,6 +97,8 @@ const SEAM_EXEMPT = new Set<string>([
   'color-picker.ts',           // /v1/gradient HSV picker popover — owns DOM (#115)
   'gradient-page.ts',          // /v1/gradient page shell — DOM-mounting (#115)
   'palette-file.ts',           // /v1/gradient .pyre-palette.json import/export — anchor download (#115)
+  'timeline-track.ts',         // /v1/animate timeline lane — DOM-mounting (clip blocks, draggable playhead) (#227c)
+  'timeline-thumbnails.ts',    // /v1/animate clip thumbnails — creates offscreen canvases via document (#227c)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
