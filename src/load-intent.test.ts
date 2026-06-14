@@ -18,6 +18,47 @@ import { V } from './variations';
 // Shorthand: p(pathname) → parseLoadIntent
 const p = (pathname: string) => parseLoadIntent(pathname);
 
+// ── flat route grammar (#264) ────────────────────────────────────────────
+
+describe('parseLoadIntent — flat routes (#264)', () => {
+  it('/viewer → basic viewer', () => {
+    expect(p('/viewer')).toEqual({ kind: 'viewer' });
+  });
+  it('/editor → edit', () => {
+    expect(p('/editor')).toEqual({ kind: 'edit' });
+  });
+  it('/gradient → gradient', () => {
+    expect(p('/gradient')).toEqual({ kind: 'gradient' });
+  });
+  it('/animate → animate', () => {
+    expect(p('/animate')).toEqual({ kind: 'animate' });
+  });
+  it('/screensaver → screensaver', () => {
+    expect(p('/screensaver')).toEqual({ kind: 'screensaver' });
+  });
+  it('/variations → variations', () => {
+    expect(p('/variations')).toEqual({ kind: 'variations' });
+  });
+  it('/esf → esf viewer (bare)', () => {
+    expect(p('/esf')).toEqual({ kind: 'esf' });
+  });
+  it('/esf/gen/247/id/19679 → esf corpus leaf', () => {
+    expect(p('/esf/gen/247/id/19679')).toEqual({ kind: 'corpus', gen: 247, id: 19679 });
+  });
+  it('/esf/gallery → gallery page 1', () => {
+    const r = p('/esf/gallery');
+    expect(r?.kind).toBe('gallery');
+    expect((r as { page: number }).page).toBe(1);
+  });
+  it('/esf/gallery/p/3 → gallery page 3', () => {
+    expect((p('/esf/gallery/p/3') as { page: number }).page).toBe(3);
+  });
+  it('/esf/gallery?sort=interest preserves filter parse', () => {
+    const r = p('/esf/gallery?sort=interest');
+    expect(r?.kind).toBe('gallery');
+  });
+});
+
 // ── /v1 path grammar ─────────────────────────────────────────────────────
 
 describe('parseLoadIntent – /v1 path grammar', () => {
@@ -180,19 +221,19 @@ describe('parseLoadIntent – /v1/gallery grammar', () => {
 // ── galleryUrl + pageForCorpusIndex ──────────────────────────────────────
 
 describe('galleryUrl', () => {
-  it('page 1 produces the bare /v1/gallery URL', () => {
-    expect(galleryUrl(1)).toMatch(/v1\/gallery$/);
+  it('page 1 produces the bare /esf/gallery URL', () => {
+    expect(galleryUrl(1)).toMatch(/esf\/gallery$/);
   });
 
   it('page 0 and negatives also collapse to the bare URL (clamped)', () => {
-    expect(galleryUrl(0)).toMatch(/v1\/gallery$/);
-    expect(galleryUrl(-5)).toMatch(/v1\/gallery$/);
+    expect(galleryUrl(0)).toMatch(/esf\/gallery$/);
+    expect(galleryUrl(-5)).toMatch(/esf\/gallery$/);
   });
 
   it('page ≥ 2 includes the /p/N suffix', () => {
-    expect(galleryUrl(2)).toMatch(/v1\/gallery\/p\/2$/);
-    expect(galleryUrl(27)).toMatch(/v1\/gallery\/p\/27$/);
-    expect(galleryUrl(5778)).toMatch(/v1\/gallery\/p\/5778$/);
+    expect(galleryUrl(2)).toMatch(/esf\/gallery\/p\/2$/);
+    expect(galleryUrl(27)).toMatch(/esf\/gallery\/p\/27$/);
+    expect(galleryUrl(5778)).toMatch(/esf\/gallery\/p\/5778$/);
   });
 
   it('round-trips through parseLoadIntent for typical pages', () => {
@@ -209,8 +250,8 @@ describe('galleryUrl', () => {
 
   it('honors a non-root base prefix', () => {
     vi.stubEnv('BASE_URL', '/pyr3/');
-    expect(galleryUrl(1)).toMatch(/\/pyr3\/v1\/gallery$/);
-    expect(galleryUrl(27)).toMatch(/\/pyr3\/v1\/gallery\/p\/27$/);
+    expect(galleryUrl(1)).toMatch(/\/pyr3\/esf\/gallery$/);
+    expect(galleryUrl(27)).toMatch(/\/pyr3\/esf\/gallery\/p\/27$/);
     vi.unstubAllEnvs();
   });
 });
@@ -344,44 +385,44 @@ describe('parseLoadIntent – /v1/viewer grammar (#203)', () => {
 
 describe('viewerUrl — round-trips through the parser (#203)', () => {
   it('apex base: viewerUrl() parses back to {kind:"viewer"}', () => {
-    const url = viewerUrl(); // BASE_URL '/' in the default env → '/v1/viewer'
-    expect(url).toMatch(/v1\/viewer$/);
+    const url = viewerUrl(); // BASE_URL '/' in the default env → '/viewer'
+    expect(url).toMatch(/\/viewer$/);
     expect(parseLoadIntent(url)).toEqual({ kind: 'viewer' });
   });
 });
 
 describe('galleryUrl — filter round-trip', () => {
-  it('default filter → bare /v1/gallery', () => {
-    expect(galleryUrl(1)).toMatch(/v1\/gallery$/);
+  it('default filter → bare /esf/gallery', () => {
+    expect(galleryUrl(1)).toMatch(/esf\/gallery$/);
   });
 
-  it('default filter, page 3 → /v1/gallery/p/3 (no querystring)', () => {
-    expect(galleryUrl(3, DEFAULT_FILTER_SPEC)).toMatch(/v1\/gallery\/p\/3$/);
+  it('default filter, page 3 → /esf/gallery/p/3 (no querystring)', () => {
+    expect(galleryUrl(3, DEFAULT_FILTER_SPEC)).toMatch(/esf\/gallery\/p\/3$/);
   });
 
-  it('non-default filter on page 1 emits /v1/gallery?...', () => {
+  it('non-default filter on page 1 emits /esf/gallery?...', () => {
     const url = galleryUrl(1, { ...DEFAULT_FILTER_SPEC, sort: 'interest' });
-    expect(url).toMatch(/v1\/gallery\?sort=interest$/);
+    expect(url).toMatch(/esf\/gallery\?sort=interest$/);
   });
 
-  it('non-default filter on page 3 emits /v1/gallery/p/3?...', () => {
+  it('non-default filter on page 3 emits /esf/gallery/p/3?...', () => {
     const url = galleryUrl(3, { ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [V.julia] });
-    expect(url).toMatch(/v1\/gallery\/p\/3\?sort=interest&vars=julia$/);
+    expect(url).toMatch(/esf\/gallery\/p\/3\?sort=interest&vars=julia$/);
   });
 });
 
 describe('tab-navigation URL helpers', () => {
-  it('editorUrlForFlame returns /v1/edit?gen=&id= when corpusId present', () => {
-    expect(editorUrlForFlame({ gen: 198, id: 7372 })).toBe('/v1/edit?gen=198&id=7372');
+  it('editorUrlForFlame returns /editor?gen=&id= when corpusId present', () => {
+    expect(editorUrlForFlame({ gen: 198, id: 7372 })).toBe('/editor?gen=198&id=7372');
   });
 
-  it('editorUrlForFlame returns bare /v1/edit when no corpusId', () => {
-    expect(editorUrlForFlame(undefined)).toBe('/v1/edit');
+  it('editorUrlForFlame returns bare /editor when no corpusId', () => {
+    expect(editorUrlForFlame(undefined)).toBe('/editor');
   });
 
-  it('galleryUrlForFlame returns /v1/gallery/p/N where N contains the corpusId', () => {
+  it('galleryUrlForFlame returns /esf/gallery/p/N where N contains the corpusId', () => {
     // assuming page size 9; flame at corpus-list index 124 → page 14
-    expect(galleryUrlForFlame({ gen: 198, id: 7372 }, 124)).toBe('/v1/gallery/p/14');
+    expect(galleryUrlForFlame({ gen: 198, id: 7372 }, 124)).toBe('/esf/gallery/p/14');
   });
 });
 
@@ -429,5 +470,27 @@ describe('parsePreviewOverride', () => {
   });
   it('?quick=0 → ignored', () => {
     expect(parsePreviewOverride('?quick=0')).toBeUndefined();
+  });
+});
+
+describe('URL builders emit flat routes (#264)', () => {
+  it('corpusUrl → /esf/gen/.. and round-trips', () => {
+    const u = corpusUrl(247, 19679);
+    expect(u.endsWith('/esf/gen/247/id/19679')).toBe(true);
+    expect(parseLoadIntent(u)).toEqual({ kind: 'corpus', gen: 247, id: 19679 });
+  });
+  it('viewerUrl → /viewer and round-trips', () => {
+    expect(viewerUrl().endsWith('/viewer')).toBe(true);
+    expect(parseLoadIntent(viewerUrl())).toEqual({ kind: 'viewer' });
+  });
+  it('galleryUrl(1) → /esf/gallery', () => {
+    expect(galleryUrl(1).endsWith('/esf/gallery')).toBe(true);
+  });
+  it('galleryUrl(3) → /esf/gallery/p/3', () => {
+    expect(galleryUrl(3).endsWith('/esf/gallery/p/3')).toBe(true);
+  });
+  it('editorUrlForFlame embeds gen/id at /editor', () => {
+    expect(editorUrlForFlame({ gen: 1, id: 2 })).toBe('/editor?gen=1&id=2');
+    expect(editorUrlForFlame()).toBe('/editor');
   });
 });

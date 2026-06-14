@@ -68,9 +68,15 @@ describe('Viewer bar interactions integration test (#180)', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    // #264 — reset the URL so a test that booted under /esf doesn't leak its
+    // ESF (corpus) viewer mode into the next test's basic-viewer mount.
+    window.history.replaceState({}, '', '/');
   });
 
-  async function mountViewer() {
+  // #264 — `path` selects the viewer mode: '/esf' boots the corpus browser
+  // (Surprise + prev/next present); the default '/' boots the basic viewer.
+  async function mountViewer(path = '/') {
+    window.history.replaceState({}, '', path);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -124,7 +130,7 @@ describe('Viewer bar interactions integration test (#180)', () => {
   });
 
   it('surprise me keeps the UI bar intact', async () => {
-    await mountViewer();
+    await mountViewer('/esf');  // #264 — Surprise (🎲) is an ESF-mode control
     const dice = document.querySelector('.pyr3-bar-viewer-dice') as HTMLElement;
     expect(dice).not.toBeNull();
     dice.click();

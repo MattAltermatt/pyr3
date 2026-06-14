@@ -19,19 +19,29 @@ npm run bundle:cli render                           # produce build/.tmp/pyr3-re
 npm run smoke:cli                                   # end-to-end smoke for the bundled CJS
 npm run build:cli render                            # produce ./build/pyr3-render — standalone SEA binary (~155 MB)
 npm run serve                                       # `pyr3 serve` — local CLI host w/ Dawn-node backend rendering (lifts the 200-q browser cap; #201)
-npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /v1/animate viewer (#209)
+npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /animate viewer (#209)
 npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275)
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 
-The viewer routes are `/v1` (viewer), `/v1/edit`, `/v1/gradient`, `/v1/animate`,
-and `/v1/screensaver`. The `pyr3` global command (via `npm link`) boots
+The nav is **5 top menus** (#264): **Viewer** · **Editor ▾** (Flame `/editor` ·
+Gradient `/gradient`) · **Animate ▾** (Timeline `/animate` · Screensaver
+`/screensaver`) · **ESF ▾** (ESF Viewer `/esf` + `/esf/gen/N/id/M` ·
+Gallery `/esf/gallery`) · **Discover ▾** (Variations `/variations` · About ·
+Showcase · help pages). Routes are **flat** (the `/v1/` prefix was dropped;
+old `/v1/*` URLs redirect at boot via `src/route-redirects.ts`). The basic
+viewer (`/viewer`, also bare `/`) opens/views any flame (📂 Open + Save, no
+Surprise/loop); the ESF viewer (`/esf`) is the corpus browser (Surprise + loop,
+no file open). Flames move between surfaces only via the explicit **✏️ Edit
+this flame** button — never an implicit transfer-on-navigate.
+
+The `pyr3` global command (via `npm link`) boots
 `pyr3 serve`, whose backend exposes `/api/render` + `/api/animate` (SSE-
 streamed) for renders past the browser's quality cap. `/api/animate` accepts
 **either** a `.flam3` multi-keyframe animation (`flame_xml`) **or** a built
-timeline (`timeline_json`, the `/v1/animate` 📤 Export sequence button in
+timeline (`timeline_json`, the `/animate` 📤 Export sequence button in
 timeline mode — fps × duration framing, absolute quality, index-named frames; #227).
-Both export paths accept absolute output dimensions via the `/v1/animate` chrome's
+Both export paths accept absolute output dimensions via the `/animate` chrome's
 `SIZE_PRESETS` dropdown (HD/2K/4K/square/portrait + Custom W×H) → `out_width`/
 `out_height` (long-edge rescale, drives the live preview + export; #274), and
 `resume` to skip frames already on disk (default-on FE checkbox / CLI `resume=1`;
@@ -54,7 +64,7 @@ tests in `npm test` catch the class of regressions it used to guard.
 If the request would add a CPU fallback, fork the engine into separate FE/BE copies, or
 introduce a WASM bridge — push back. Those are not in scope.
 
-Markov-chain flame generation (#36) stays a deferred research arc. The visual editor (`/v1/edit`)
+Markov-chain flame generation (#36) stays a deferred research arc. The visual editor (`/editor`)
 already shipped across many small issues post-v1.0 — `#37` is closed as superseded.
 
 ## Planning lives in GitHub (2026-05-30 pivot)
@@ -189,7 +199,7 @@ v0.1):
 
 Any code that breaks this seam should be loudly questioned before landing.
 
-## Editor affine decomposition (`/v1/edit` xforms v2)
+## Editor affine decomposition (`/editor` xforms v2)
 
 The xforms section presents each xform's affine pre-transform as 5 plain
 fields (scale x, scale y, rotation in degrees, position x, position y)

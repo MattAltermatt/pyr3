@@ -5,12 +5,12 @@ import { V } from './variations';
 describe('linkToEditor', () => {
   it('builds bare URL with no params', () => {
     expect(linkToEditor({ idx: V.linear, weight: 1, params: [] }))
-      .toBe('/v1/edit?from=catalog&v=0&w=1');
+      .toBe('/editor?from=catalog&v=0&w=1');
   });
 
   it('encodes weight + positional params', () => {
     expect(linkToEditor({ idx: V.julian, weight: 0.8, params: [5, 0.7] }))
-      .toBe('/v1/edit?from=catalog&v=14&w=0.8&p=5,0.7');
+      .toBe('/editor?from=catalog&v=14&w=0.8&p=5,0.7');
   });
 });
 

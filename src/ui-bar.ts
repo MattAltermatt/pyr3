@@ -11,6 +11,7 @@
 // octocat is assembled via createElementNS for the same reason.
 
 import { corpusUrl, galleryUrl, QUALITY_PRESETS, SETTLE_PRESETS, SIZE_PRESETS } from './load-intent';
+import { buildNavMenu } from './nav-menu';
 import type { QualityRequest } from './presets';
 import { composeFlameFilename } from './save-flame';
 import { composeSaveFilename } from './save-image';
@@ -26,6 +27,12 @@ export interface BarMeta {
 
 export interface BarOpts {
   webgpu: WebGPUStatus;
+  /** #264 — which viewer this bar is chrome for:
+   *  - 'basic' (`/viewer`): a general open-and-view surface. Shows 📂 Open +
+   *    Save; hides Surprise + corpus prev/next (those are ESF-only).
+   *  - 'esf' (`/esf`, `/esf/gen/N/id/M`): the corpus browser. Shows Surprise +
+   *    prev/next + gallery; hides 📂 Open (corpus-only, no local file load). */
+  mode: 'basic' | 'esf';
   onOpenFile: () => void;
   /** Render the current flame at a chosen quality (preset tier or custom dims/SPP)
    *  via the decoupled orchestrator. The default first paint stays Preview. */
@@ -49,10 +56,13 @@ export interface BarOpts {
    *  elite, 20% from the middle band, bottom 5% excluded) and navigates
    *  to it. Sibling of the gallery 🎲 (uniform across the full corpus). */
   onSurpriseMe: () => void;
-  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here.
-   *  Phase 2 wires the real handler (viewer-only currentFlame transfer rule);
-   *  for Phase 1 callers can stub `() => {}`. */
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — explicit "✏️ Edit this flame" button. Replaces the old implicit
+   *  viewer→editor transfer-on-tab-click; main carries the current flame into
+   *  the editor (corpus deep-link `?gen=&id=` or a localStorage genome stash). */
+  onEditFlame: () => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
 }
 
 /** Resolved cost of a custom render request. */
@@ -137,7 +147,9 @@ export interface GalleryBarOpts {
    *  to the drawer's toggleOpen(). */
   onFilterToggle(): void;
   /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface GalleryBarHandle {
@@ -188,7 +200,9 @@ export interface EditBarOpts {
   initialName?: string;
   initialNick?: string;
   /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
   /** #103 Phase 6 Task 6.2 — action row callbacks. The editor's action row
    *  mirrors the viewer's pattern (📂 Open · 📐 Size ▾ · QUALITY [10·25·…] ·
    *  🧬 Save Flame · 💾 Save Render) and adds 🎲 Reroll between Open and
@@ -617,7 +631,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   // pill + octocat CTAs. The viewer's per-surface content (info row + action
   // row + Advanced custom-render row) drops into chrome.middleSlot.
   const chrome = mountBarChrome(root, {
-    surface: 'viewer',
+    surface: opts.mode === 'esf' ? 'esf' : 'viewer',
     webgpu: opts.webgpu,
     onTabClick: opts.onTabClick,
   });
@@ -711,7 +725,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   saveBtn.disabled = true;
   saveBtn.title = 'Download the current render as a PNG';
 
-  actionLeft.append(openBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn);
+  // #264 — explicit "Edit this flame" button (both modes). Replaces the old
+  // implicit transfer-on-tab-click; main carries the current flame into /editor.
+  const editFlameBtn = button('✏️ Edit', 'pyr3-bar-btn pyr3-bar-edit-flame', () => opts.onEditFlame());
+  editFlameBtn.title = 'Open the current flame in the editor';
+
+  // #264 — 📂 Open is basic-viewer-only; ESF is corpus-only (no local file load).
+  if (opts.mode === 'basic') actionLeft.append(openBtn);
+  actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn, editFlameBtn);
 
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
   // curated showcase set (sibling of the gallery dice #50, which picks from
@@ -730,7 +751,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   };
   // Corpus-nav cluster (filled by setCorpusNav in PYR3-041); right-aligned.
   const navSlot = el('div', 'pyr3-bar-nav');
-  actionRow.append(actionLeft, dicePill, navSlot);
+  // #264 — Surprise (🎲) + corpus prev/next are ESF-only; the basic viewer
+  // omits them entirely (it's a general open-and-view surface, not a corpus
+  // browser). setCorpusNav still mutates navSlot harmlessly if ever called.
+  if (opts.mode === 'esf') {
+    actionRow.append(actionLeft, dicePill, navSlot);
+  } else {
+    actionRow.append(actionLeft);
+  }
 
   // Size dropdown menu — lazy-built on first click. Lives outside the action
   // row in `document.body` so the overflow/clip context of the bar doesn't
@@ -978,12 +1006,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 /** Tabs in the top-bar's center cluster. `about` and `screensaver` are
  *  reserved — they live in the left cluster as links, not tabs — so those
  *  surfaces render all three real tabs in their inactive state. */
-export type TabSurface = 'viewer' | 'gallery' | 'editor' | 'gradient' | 'animate' | 'about' | 'screensaver';
+export type TabSurface = 'viewer' | 'esf' | 'gallery' | 'editor' | 'gradient' | 'animate' | 'about' | 'screensaver';
 
 export interface ChromeOpts {
   surface: TabSurface;
   webgpu: WebGPUStatus;
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface ChromeHandle {
@@ -1016,8 +1046,14 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   const left = el('div', 'pyr3-left-cluster');
   left.append(buildBrand(), buildAboutLink());
 
-  // Center: tab group (viewer / gallery / editor)
-  const tabs = buildTabs(opts.surface, opts.onTabClick);
+  // Center: top-nav menus (#264 — buildNavMenu replaces the flat tab row).
+  // Leaf clicks navigate directly; the menu stays pure presentation and the
+  // host owns window.location. opts.onTabClick is retained on ChromeOpts for
+  // the per-surface callers but is no longer routed through the nav.
+  const tabs = buildNavMenu(opts.surface, (route, newTab) => {
+    if (newTab) { window.open(route, '_blank', 'noopener'); return; }
+    window.location.href = route;
+  });
 
   // Right cluster: WebGPU pill + fork-it octocat + more-flames octocat
   const right = buildRightCluster(opts.webgpu);
@@ -1032,6 +1068,7 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   return {
     middleSlot,
     destroy: () => {
+      tabs.dispatchEvent(new Event('pyr3:destroy'));  // remove nav document listeners
       bar.remove();
       middleSlot.remove();
     },
@@ -1048,7 +1085,9 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
 export interface AboutBarOpts {
   webgpu: WebGPUStatus;
   /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface AboutBarHandle {
@@ -1094,7 +1133,9 @@ export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHa
 
 export interface ScreensaverBarOpts {
   webgpu: WebGPUStatus;
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface ScreensaverBarHandle {
@@ -1132,7 +1173,9 @@ export function mountScreensaverBar(
 
 export interface AnimateBarOpts {
   webgpu: WebGPUStatus;
-  onTabClick: (surface: TabSurface) => void;
+  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
+   *  this callback is no longer invoked. Kept optional for back-compat. */
+  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface AnimateBarHandle {
@@ -1182,21 +1225,6 @@ function buildAboutLink(): HTMLElement {
   a.rel = 'noopener';
   a.textContent = 'about';
   return a;
-}
-
-function buildTabs(active: TabSurface, onClick: (s: TabSurface) => void): HTMLElement {
-  const wrap = el('div', 'pyr3-tabs');
-  // `about` lives in the left cluster as a link, so surface: 'about' renders
-  // all four real tabs in their inactive state. `screensaver` IS a tab.
-  const surfaces: Exclude<TabSurface, 'about'>[] = ['viewer', 'gallery', 'editor', 'gradient', 'animate', 'screensaver'];
-  for (const s of surfaces) {
-    const btn = el('div', 'pyr3-tab' + (s === active ? ' active' : ''));
-    btn.dataset.surface = s;
-    btn.textContent = s[0]!.toUpperCase() + s.slice(1);
-    btn.addEventListener('click', () => onClick(s));
-    wrap.append(btn);
-  }
-  return wrap;
 }
 
 function buildRightCluster(webgpu: WebGPUStatus): HTMLElement {

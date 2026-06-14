@@ -23,19 +23,19 @@ GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through th
   tier (up to **4K, in the browser**) to render it sharper, or drop into the Electric Sheep
   corpus and press **← / →** (or the `‹ prev` / `next ›` buttons) to roam 52,000+ flames.
 - 🖼 **[Browse the gallery](https://pyr3.app/showcase)** — a wall of rendered flames to scroll.
-- 🎛 **[Edit a flame](https://pyr3.app/v1/edit)** — visual editor: xforms (decomposed
+- 🎛 **[Edit a flame](https://pyr3.app/editor)** — visual editor: xforms (decomposed
   scale / rotation / position), affine + post-affine, the full **314-variation catalog** — the
   99 flam3 core variations, **JWildfire / Apophysis expansions** (folds, attractors,
   cartographic warps), and pyr3's own **direct-color (DC) family** (`dc_linear` · `dc_perlin` ·
   `dc_gridout` · `dc_cylinder`) — plus palette picker, undo/redo, name templates, save to
   `.pyr3.json`.
-- 🎨 **[Design a palette](https://pyr3.app/v1/gradient)** — a standalone gradient editor: drag
+- 🎨 **[Design a palette](https://pyr3.app/gradient)** — a standalone gradient editor: drag
   color stops (linear / smooth / step interpolation), recolor via an HSV picker, reverse /
   mirror / rotate / invert-luminance transforms, save to a personal library, and import/export
   `.pyre-palette.json` files.
-- 🎬 **[Animate a flame](https://pyr3.app/v1/animate)** — keyframe interpolation, per-xform
+- 🎬 **[Animate a flame](https://pyr3.app/animate)** — keyframe interpolation, per-xform
   motion, temporal-sampling motion blur, and a playback scrubber; export the sequence to frames.
-- 📺 **[Run as a screensaver](https://pyr3.app/v1/screensaver)** — build-up mode (watch one
+- 📺 **[Run as a screensaver](https://pyr3.app/screensaver)** — build-up mode (watch one
   flame paint over a minute) or slideshow mode (prefetch + crossfade through the corpus).
   Press **R** to record any session to `.webm`.
 
@@ -114,7 +114,7 @@ it to `~/.cache/pyr3/dawn-<sha>.node` on first launch (~150ms one-time;
 subsequent runs hit the cache). Upgrade with `git pull && npm run build:cli
 render`. Animation shipped in v1.6.0: render frames headlessly with
 `npm run animate` (tsx) or the bundled `pyr3 serve` backend + `/api/animate`
-route — the headless companion to the browser's `/v1/animate` editor. The
+route — the headless companion to the browser's `/animate` editor. The
 editor's timeline mode (build a sequence of key flames, then 📤 Export sequence)
 renders the whole timeline to a PNG frame sequence through the same backend (#227).
 

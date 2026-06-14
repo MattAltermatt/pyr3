@@ -49,6 +49,7 @@ const SEAM_EXEMPT = new Set<string>([
   'load-intent.ts',       // galleryUrl/corpusUrl read import.meta.env.BASE_URL
   'loader.ts',            // user-facing file loader, uses File API
   'ui-bar.ts',            // viewer bar — uses document
+  'nav-menu.ts',          // top-nav menus — DOM-mounting + document dismiss listeners (#264)
   'about-mount.ts',       // /about page body — DOM-mounting (#103 visual overhaul)
   'variation-picker.ts',  // DOM-mounting variation picker (#79)
   'screensaver-mount.ts', // /v1/screensaver page body — DOM-mounting (#109)
@@ -211,8 +212,8 @@ describe('seam invariant — engine module surface is stable', () => {
   it('load-intent exports the gallery URL shape used by both surfaces', () => {
     expect(typeof galleryUrl).toBe('function');
     expect(GALLERY_PAGE_SIZE).toBe(9);
-    expect(galleryUrl(1)).toMatch(/v1\/gallery$/);
-    expect(galleryUrl(27)).toMatch(/v1\/gallery\/p\/27$/);
+    expect(galleryUrl(1)).toMatch(/esf\/gallery$/);
+    expect(galleryUrl(27)).toMatch(/esf\/gallery\/p\/27$/);
   });
 });
 

@@ -37,6 +37,10 @@ export type LoadIntent =
   | { kind: 'catalog-entry'; entry: CatalogEntry }
   | { kind: 'variations' }
   | { kind: 'viewer' }
+  | { kind: 'gradient' }
+  | { kind: 'animate' }
+  | { kind: 'screensaver' }
+  | { kind: 'esf' }
   | { kind: 'custom-reserved' }
   | { kind: 'default' };
 
@@ -168,7 +172,50 @@ export function parseLoadIntent(input: string): LoadIntent | null {
   const stripped = pathname.replace(/^\//, '').replace(/\/$/, '');
   const parts = stripped.length === 0 ? [] : stripped.split('/');
 
-  // Only handle /v1/... paths
+  // ── Flat route grammar (#264) ────────────────────────────────────────────
+  // Tool-identity routes with no /v1 prefix. ESF corpus features live under an
+  // /esf namespace (a genuine gen→id resource path); every other surface is a
+  // single flat segment. Legacy /v1/* URLs are redirected to these at boot by
+  // route-redirects.ts, but parse still tolerates /v1/* below for direct callers.
+  const head = parts[0];
+  if (head === 'viewer' && parts.length === 1) return { kind: 'viewer' };
+  if (head === 'editor' && parts.length === 1) {
+    // #119 catalog → editor deep-link (same query codec as the legacy /v1/edit).
+    const entry = parseCatalogEntry(new URLSearchParams(search));
+    if (entry) return { kind: 'catalog-entry', entry };
+    return { kind: 'edit' };
+  }
+  if (head === 'gradient' && parts.length === 1) return { kind: 'gradient' };
+  if (head === 'animate' && parts.length === 1) return { kind: 'animate' };
+  if (head === 'screensaver' && parts.length === 1) return { kind: 'screensaver' };
+  if (head === 'variations' && parts.length === 1) return { kind: 'variations' };
+  if (head === 'esf') {
+    if (parts.length === 1) return { kind: 'esf' };
+    if (
+      parts[1] === 'gen' &&
+      parts.length === 5 &&
+      isNonNegInt(parts[2]!) &&
+      parts[3] === 'id' &&
+      isNonNegInt(parts[4]!)
+    ) {
+      return { kind: 'corpus', gen: Number(parts[2]), id: Number(parts[4]) };
+    }
+    if (parts[1] === 'gallery') {
+      const filter = parseFilterSpec(new URLSearchParams(search));
+      if (parts.length === 2) return { kind: 'gallery', page: 1, filter };
+      if (
+        parts.length === 4 &&
+        parts[2] === 'p' &&
+        isNonNegInt(parts[3]!) &&
+        Number(parts[3]) >= 1
+      ) {
+        return { kind: 'gallery', page: Number(parts[3]), filter };
+      }
+    }
+    // Malformed /esf/... — fall through to default.
+  }
+
+  // Only handle /v1/... paths (legacy — redirected at boot, kept for direct parse)
   if (parts[0] === 'v1') {
     const sub = parts[1]; // may be undefined
 
@@ -251,27 +298,27 @@ export function parseLoadIntent(input: string): LoadIntent | null {
 
 /**
  * Canonical base-aware corpus share URL for a sheep. Single source of truth for
- * the `/v1/gen/{gen}/id/{id}` route shape (parsed by parseLoadIntent above) —
- * used by both the pushState navigation and the action-bar nav pills so they
- * can never drift from the parser.
+ * the flat `/esf/gen/{gen}/id/{id}` route shape (#264, parsed by parseLoadIntent
+ * above) — used by both the pushState navigation and the action-bar nav pills so
+ * they can never drift from the parser.
  */
 export function corpusUrl(gen: number, id: number): string {
-  return `${import.meta.env.BASE_URL}v1/gen/${gen}/id/${id}`;
+  return `${import.meta.env.BASE_URL}esf/gen/${gen}/id/${id}`;
 }
 
 /**
- * Canonical base-aware `/v1/viewer` URL (#203). The viewer routes here when a
- * local (non-corpus) flame is loaded; on refresh the surface rehydrates the
- * genome from the `pyr3-last-flame` store. Round-trips through parseLoadIntent
- * to `{kind:'viewer'}` (guarded in load-intent.test.ts).
+ * Canonical base-aware flat `/viewer` URL (#203, flattened in #264). The viewer
+ * routes here when a local (non-corpus) flame is loaded; on refresh the surface
+ * rehydrates the genome from the `pyr3-last-flame` store. Round-trips through
+ * parseLoadIntent to `{kind:'viewer'}` (guarded in load-intent.test.ts).
  */
 export function viewerUrl(): string {
-  return `${import.meta.env.BASE_URL}v1/viewer`;
+  return `${import.meta.env.BASE_URL}viewer`;
 }
 
 /**
  * Canonical base-aware gallery share URL. Page 1 produces the bare
- * `/v1/gallery` URL (no `/p/1` suffix); page ≥ 2 includes `/p/N`. Single
+ * `/esf/gallery` URL (#264, no `/p/1` suffix); page ≥ 2 includes `/p/N`. Single
  * source of truth for the gallery route shape — round-trips through
  * parseLoadIntent (guarded in load-intent.test.ts). Mirrors corpusUrl's
  * relationship with the corpus route.
@@ -279,8 +326,8 @@ export function viewerUrl(): string {
 export function galleryUrl(page: number, filter?: FilterSpec): string {
   const base =
     page <= 1
-      ? `${import.meta.env.BASE_URL}v1/gallery`
-      : `${import.meta.env.BASE_URL}v1/gallery/p/${page}`;
+      ? `${import.meta.env.BASE_URL}esf/gallery`
+      : `${import.meta.env.BASE_URL}esf/gallery/p/${page}`;
   if (!filter) return base;
   const qs = encodeFilterSpec(filter).toString();
   return qs.length === 0 ? base : `${base}?${qs}`;
@@ -304,14 +351,14 @@ export function pageForCorpusIndex(corpusIndex: number, perPage = GALLERY_PAGE_S
  * corpusId as query params so the editor preloads it; galleryUrlForFlame
  * resolves the page that contains the flame so the gallery centers on it.
  *
- * These helpers are intentionally framework-agnostic (`/v1/edit` / `/showcase`
- * are the locked surface paths) — they do NOT touch import.meta.env.BASE_URL
- * because the consumers (main.ts handleTabClick) navigate via
- * window.location.href which is base-aware on its own.
+ * These helpers are intentionally framework-agnostic (`/editor` / `/esf/gallery`
+ * are the locked flat surface paths, #264) — they do NOT touch
+ * import.meta.env.BASE_URL because the consumers (main.ts handleTabClick)
+ * navigate via window.location.href which is base-aware on its own.
  */
 export function editorUrlForFlame(corpusId?: { gen: number; id: number }): string {
-  if (!corpusId) return '/v1/edit';
-  return `/v1/edit?gen=${corpusId.gen}&id=${corpusId.id}`;
+  if (!corpusId) return '/editor';
+  return `/editor?gen=${corpusId.gen}&id=${corpusId.id}`;
 }
 
 export function galleryUrlForFlame(
@@ -319,5 +366,5 @@ export function galleryUrlForFlame(
   flameCorpusIndex: number,
 ): string {
   const page = Math.floor(flameCorpusIndex / GALLERY_PAGE_SIZE) + 1;
-  return `/v1/gallery/p/${page}`;
+  return `/esf/gallery/p/${page}`;
 }

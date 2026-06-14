@@ -18,10 +18,10 @@ const VALID_INDICES: ReadonlySet<number> = new Set(Object.values(V));
 export function linkToEditor(e: CatalogEntry): string {
   const parts = [`from=catalog`, `v=${e.idx}`, `w=${e.weight}`];
   if (e.params.length > 0) parts.push(`p=${e.params.join(',')}`);
-  return `/v1/edit?${parts.join('&')}`;
+  return `/editor?${parts.join('&')}`;
 }
 
-/** Parse a catalog-entry deep-link from a /v1/edit URL's search params.
+/** Parse a catalog-entry deep-link from a /editor URL's search params.
  *  Returns null when the URL isn't a catalog handoff or any value is
  *  malformed — callers fall back to the normal editor cold-start. */
 export function parseCatalogEntry(q: URLSearchParams): CatalogEntry | null {

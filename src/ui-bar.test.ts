@@ -21,12 +21,14 @@ const STUB_WEBGPU: WebGPUStatus = { available: true, adapter: {} as GPUAdapter }
 function makeBarOpts(over: Partial<BarOpts> = {}): BarOpts {
   return {
     webgpu: STUB_WEBGPU,
+    mode: 'esf',
     onOpenFile: vi.fn(),
     onRenderQuality: vi.fn(),
     onNavigate: vi.fn(),
     onSave: vi.fn(),
     onSaveFlame: vi.fn(),
     onSurpriseMe: vi.fn(),
+    onEditFlame: vi.fn(),
     estimateCost: () => ({ width: 1024, height: 1024, mb: 4, fits: true }),
     onTabClick: vi.fn(),
     ...over,
@@ -301,9 +303,9 @@ describe('mountBarChrome', () => {
     });
 
     expect(root.querySelector('.pyr3-brand')).toBeTruthy();
-    expect(root.querySelector('.pyr3-tabs')).toBeTruthy();
-    expect(root.querySelector('.pyr3-tab[data-surface="viewer"].active')).toBeTruthy();
-    expect(root.querySelector('.pyr3-tab[data-surface="gallery"].active')).toBeFalsy();
+    expect(root.querySelector('.pyr3-nav')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="viewer"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="editor"].active')).toBeFalsy();
     expect(root.querySelector('.pyr3-right-cluster')).toBeTruthy();
     expect(handle.middleSlot.classList.contains('pyr3-middle-slot')).toBe(true);
 
@@ -311,21 +313,22 @@ describe('mountBarChrome', () => {
     expect(root.children).toHaveLength(0);
   });
 
-  it('routes tab clicks to onTabClick', () => {
+  it('mounts the nav menu and highlights the active surface under its parent menu', () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.getElementById('root')!;
-    const onTabClick = vi.fn();
     const handle = mountBarChrome(root, {
       surface: 'gallery',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick,
+      onTabClick: vi.fn(),
     });
-    (root.querySelector('.pyr3-tab[data-surface="editor"]') as HTMLElement).click();
-    expect(onTabClick).toHaveBeenCalledWith('editor');
+    // #264 — gallery lives under the ESF dropdown, so ESF (top) + Gallery (leaf)
+    // both carry the active class.
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="esf"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="gallery"].active')).toBeTruthy();
     handle.destroy();
   });
 
-  it('surface: "about" renders the tab group with NO tab active', () => {
+  it('surface: "about" highlights the Discover menu (About lives under Discover)', () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.getElementById('root')!;
     const handle = mountBarChrome(root, {
@@ -333,8 +336,9 @@ describe('mountBarChrome', () => {
       webgpu: { available: true } as WebGPUStatus,
       onTabClick: vi.fn(),
     });
-    expect(root.querySelector('.pyr3-tabs')).toBeTruthy();
-    expect(root.querySelector('.pyr3-tab.active')).toBeFalsy();
+    expect(root.querySelector('.pyr3-nav')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="about"].active')).toBeTruthy();
     handle.destroy();
   });
 
@@ -623,6 +627,54 @@ describe('viewer action row — Size + QUALITY (#103 Phase 3 Task 3.2)', () => {
     mountBar(root, makeBarOpts());
     expect(root.querySelector('.pyr3-bar-viewer-dice')).not.toBeNull();
     expect(root.querySelector('.pyr3-bar-nav')).not.toBeNull();
+  });
+});
+
+describe('viewer mode split — basic vs esf (#264)', () => {
+  const openBtn = (root: HTMLElement): HTMLElement | null =>
+    ([...root.querySelectorAll('.pyr3-bar-btn')].find((b) => b.textContent?.includes('Open')) as HTMLElement | undefined) ?? null;
+
+  it('esf mode shows Surprise + corpus nav, hides 📂 Open', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts({ mode: 'esf' }));
+    expect(root.querySelector('.pyr3-bar-viewer-dice')).not.toBeNull();
+    expect(root.querySelector('.pyr3-bar-nav')).not.toBeNull();
+    expect(openBtn(root)).toBeNull();
+  });
+
+  it('basic mode shows 📂 Open, hides Surprise + corpus nav', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts({ mode: 'basic' }));
+    expect(openBtn(root)).not.toBeNull();
+    expect(root.querySelector('.pyr3-bar-viewer-dice')).toBeNull();
+    expect(root.querySelector('.pyr3-bar-nav')).toBeNull();
+  });
+
+  it('renders "✏️ Edit" in both modes and fires onEditFlame on click', () => {
+    for (const mode of ['basic', 'esf'] as const) {
+      document.body.innerHTML = '<div id="root"></div>';
+      const root = document.getElementById('root')!;
+      const onEditFlame = vi.fn();
+      mountBar(root, makeBarOpts({ mode, onEditFlame }));
+      const edit = root.querySelector('.pyr3-bar-edit-flame') as HTMLElement;
+      expect(edit).not.toBeNull();
+      edit.click();
+      expect(onEditFlame).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('basic mode chrome marks the Viewer menu active; esf marks ESF', () => {
+    document.body.innerHTML = '<div id="b"></div>';
+    const basic = document.getElementById('b')!;
+    mountBar(basic, makeBarOpts({ mode: 'basic' }));
+    expect(basic.querySelector('.pyr3-nav-top[data-nav-top="viewer"].active')).not.toBeNull();
+
+    document.body.innerHTML = '<div id="e"></div>';
+    const esf = document.getElementById('e')!;
+    mountBar(esf, makeBarOpts({ mode: 'esf' }));
+    expect(esf.querySelector('.pyr3-nav-top[data-nav-top="esf"].active')).not.toBeNull();
   });
 });
 

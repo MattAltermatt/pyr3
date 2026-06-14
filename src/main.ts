@@ -16,7 +16,6 @@ import {
   GALLERY_NAV_COALESCE_MS,
   mountGallery,
   pageForSheep,
-  pageForSheepFiltered,
   totalPagesFiltered,
   type GalleryMountHandle,
 } from './gallery-mount';
@@ -39,7 +38,6 @@ import {
   corpusUrl,
   editorUrlForFlame,
   galleryUrl,
-  galleryUrlForFlame,
   GALLERY_PAGE_SIZE,
   HERO_GEN,
   HERO_ID,
@@ -47,6 +45,7 @@ import {
   viewerUrl,
   type LoadIntent,
 } from './load-intent';
+import { redirectLegacyPath } from './route-redirects';
 import { loadLastFlame, saveLastFlame } from './last-flame-store';
 import { getCurrentFlame, setCurrentFlame } from './app-state';
 import { writePendingTransfer } from './edit-state';
@@ -125,6 +124,20 @@ function corpusTitleLabel(gen: number, id: number): string {
 }
 
 async function main(): Promise<void> {
+  // #264 — rewrite legacy /v1/* URLs to the new flat routes in-place before any
+  // dispatch. Strip the Vite base prefix (project-Pages serves under /pyr3/) so
+  // the /v1 grammar matches, then re-attach it. replaceState (no reload) — the
+  // rest of main() reads the rewritten location.
+  {
+    const prefix = import.meta.env.BASE_URL !== '/' ? import.meta.env.BASE_URL.replace(/\/$/, '') : '';
+    let relPath = window.location.pathname;
+    if (prefix && (relPath === prefix || relPath.startsWith(prefix + '/'))) {
+      relPath = relPath.slice(prefix.length) || '/';
+    }
+    const dest = redirectLegacyPath(relPath, window.location.search);
+    if (dest) history.replaceState(null, '', prefix + dest);
+  }
+
   // #201 P0 Task 3 — fire-and-forget capability probe. Null fetch (the
   // gh-pages case) memoizes the safe browser-only default; a `pyr3 serve`
   // host answers with `backend: 'dawn-node'` + `max_quality: null`. The
@@ -202,119 +215,22 @@ async function main(): Promise<void> {
     console.warn('pyr3: save invoked before canvas init');
   };
 
-  // #103 Phase 2 Task 2.3 — tab-navigation contract. Reads the path to
-  // classify the current surface, then for viewer-origin clicks transfers
-  // the app-state.currentFlame context to the destination surface (gallery
-  // pages to the flame's corpus page; editor preloads via ?gen=&id=). All
-  // other transitions fall through to the bare surface URL.
-  const SURFACE_FALLBACK: Record<TabSurface, string> = {
-    viewer:      '/',
-    gallery:     '/v1/gallery',
-    editor:      '/v1/edit',
-    gradient:    '/v1/gradient',
-    animate:     '/v1/animate',
-    about:       '/about',
-    screensaver: '/v1/screensaver',
-  };
+  // #264 — surface classifier. The nav menu self-navigates (window.location),
+  // so there is no tab-click handler or context-transfer here anymore; the only
+  // consumer left is the viewer-mode pick (basic /viewer vs ESF /esf) below.
   function currentTabSurface(): TabSurface {
     const p = window.location.pathname;
-    if (p === '/v1/gallery' || p.startsWith('/v1/gallery/')) return 'gallery';
-    if (p === '/v1/edit' || p.startsWith('/v1/edit/')) return 'editor';
-    if (p === '/v1/gradient' || p.startsWith('/v1/gradient/')) return 'gradient';
-    if (p === '/v1/animate' || p.startsWith('/v1/animate/')) return 'animate';
+    if (p === '/esf/gallery' || p.startsWith('/esf/gallery')) return 'gallery';
+    if (p === '/editor' || p.startsWith('/editor')) return 'editor';
+    if (p === '/gradient') return 'gradient';
+    if (p === '/animate') return 'animate';
     if (p === '/about' || p.startsWith('/about/')) return 'about';
-    if (p === '/v1/screensaver' || p.startsWith('/v1/screensaver/')) return 'screensaver';
-    // /v1/gen/<gen>/id/<id> deep-links are still the viewer surface; bare
-    // `/` and any unrecognized path also resolve to viewer.
+    if (p === '/screensaver') return 'screensaver';
+    if (p === '/viewer') return 'viewer';
+    // /esf and /esf/gen/<gen>/id/<id> deep-links are the ESF corpus surface;
+    // bare `/` and any unrecognized path resolve to the basic viewer.
+    if (p === '/esf' || p.startsWith('/esf/')) return 'esf';
     return 'viewer';
-  }
-  function handleTabClick(target: TabSurface): void {
-    const here = currentTabSurface();
-    const cf = getCurrentFlame();
-
-    // Bug B (2026-06-04): when the user came from a gallery page (recorded
-    // in sessionStorage on every gallery mount), restore that exact page on
-    // viewer→gallery — even if the flame they're currently viewing belongs
-    // to a different page. Matches user mental model: "Gallery" = back to
-    // where I was browsing.
-    if (here === 'viewer' && target === 'gallery') {
-      try {
-        const last = sessionStorage.getItem('pyr3.gallery.lastUrl');
-        if (last && last.startsWith('/v1/gallery')) {
-          window.location.href = last;
-          return;
-        }
-      } catch { /* sessionStorage blocked — fall through */ }
-    }
-
-    // Viewer-only transfer rule: when leaving the viewer with a known flame,
-    // carry it into the destination surface. Resolve corpusId from
-    // currentFlame first; fall back to parsing the viewer's URL path (the
-    // `/v1/gen/<gen>/id/<id>` route) so the transfer is resilient even when
-    // currentFlame hasn't been populated yet by the corpus-load callback
-    // (Bug A 2026-06-04: user reports landing on bare /v1/gallery from a
-    // freshly-loaded deep-link viewer).
-    const corpusFromUrl = (() => {
-      const m = window.location.pathname.match(/^\/v1\/gen\/(\d+)\/id\/(\d+)\/?$/);
-      if (!m) return null;
-      return { gen: Number(m[1]), id: Number(m[2]) };
-    })();
-    const corpusId = cf?.corpusId ?? corpusFromUrl;
-
-    if (here === 'viewer' && target === 'gallery' && corpusId) {
-      const { gen, id } = corpusId;
-      // The gallery anchor needs the flame's corpus-list index to land on
-      // the page containing it. pageForSheepFiltered does that resolution
-      // under the live filter+sort (currentFilter) — the unfiltered
-      // pageForSheep walks gens in native order, which mismatches the
-      // gallery's default time-desc sort and lands on the wrong page on
-      // cold-start (no sessionStorage lastUrl). Bound the lookup with a
-      // 2000ms timeout so a slow / hung index fetch falls through to the
-      // bare /v1/gallery URL instead of stalling — and guard with a
-      // `settled` flag so a late resolve doesn't pull the user back to
-      // gallery after they've moved on (e.g. clicked another tab).
-      let settled = false;
-      const onResolve = (page: number): void => {
-        if (settled) return;
-        settled = true;
-        // pageForSheepFiltered returns a 1-indexed page. galleryUrlForFlame
-        // expects the 0-indexed corpus list index. Convert by (page - 1) *
-        // GALLERY_PAGE_SIZE — close enough to land on the right page (any
-        // in-page offset is a cosmetic concern, not a navigational one).
-        const approxIndex = (page - 1) * GALLERY_PAGE_SIZE;
-        window.location.href = galleryUrlForFlame({ gen, id }, approxIndex);
-      };
-      const onFallback = (): void => {
-        if (settled) return;
-        settled = true;
-        window.location.href = SURFACE_FALLBACK.gallery;
-      };
-      setTimeout(onFallback, 2000);
-      void ensureFeatureIndex()
-        .then((index) => pageForSheepFiltered(gen, id, GALLERY_PAGE_SIZE, currentFilter, { index }))
-        .then(onResolve)
-        .catch(onFallback);
-      return;
-    }
-    if (here === 'viewer' && target === 'editor') {
-      // When the viewer has a genome loaded (corpus OR file-opened), carry it
-      // across the navigation via localStorage. The editor's cold-start path
-      // (resolveColdStartGenome → consumePendingTransfer) reads this back
-      // ahead of WIP / random-reroll. Without this stash, file-opened genomes
-      // would be lost on tab click — only the corpusId is in the URL.
-      if (cf?.genome) {
-        writePendingTransfer({
-          genome: cf.genome,
-          corpusId: cf.corpusId ?? corpusFromUrl ?? null,
-          timestamp: Date.now(),
-        });
-      }
-      window.location.href = editorUrlForFlame(cf?.corpusId ?? corpusFromUrl ?? undefined);
-      return;
-    }
-
-    // All other transitions: bare surface URL.
-    window.location.href = SURFACE_FALLBACK[target];
   }
 
   // #103 Phase 2 Task 2.5 — /about short-circuit. Like /v1/edit, this route
@@ -331,7 +247,7 @@ async function main(): Promise<void> {
       console.error('pyr3: /about — required DOM nodes (#pyr3-bar / #pyr3-canvas-zone) missing');
       return;
     }
-    const aboutBar = mountAboutBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    const aboutBar = mountAboutBar(barRoot, { webgpu });
     // Hide the canvas + first-paint cue so the About body owns the visible
     // zone (same pattern as the gallery / edit short-circuits).
     const canvas = document.getElementById('pyr3-canvas');
@@ -365,7 +281,7 @@ async function main(): Promise<void> {
   // the page body lives in the bar's middleSlot. Viewer canvas + first-paint cue
   // hidden so the page owns the zone. #269 — the page now renders the flame, so
   // a GPU device is acquired (best-effort) and passed in.
-  if (window.location.pathname === '/v1/gradient' || window.location.pathname.startsWith('/v1/gradient/')) {
+  if (window.location.pathname === '/gradient' || window.location.pathname.startsWith('/gradient/')) {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
     if (!barRoot || !bodyRoot) {
@@ -373,7 +289,7 @@ async function main(): Promise<void> {
       return;
     }
     const { mountBarChrome } = await import('./ui-bar');
-    const chrome = mountBarChrome(barRoot, { surface: 'gradient', webgpu, onTabClick: handleTabClick });
+    const chrome = mountBarChrome(barRoot, { surface: 'gradient', webgpu });
     const canvas = document.getElementById('pyr3-canvas');
     if (canvas) canvas.hidden = true;
     const firstPaint = document.getElementById('pyr3-firstpaint');
@@ -407,7 +323,7 @@ async function main(): Promise<void> {
   // middleSlot. Viewer canvas + first-paint cue hidden so the screensaver
   // owns the visible zone. Device + format are pre-acquired here and passed
   // to the screensaver mount so it can run the build-up / slideshow loops.
-  if (window.location.pathname === '/v1/screensaver' || window.location.pathname.startsWith('/v1/screensaver/')) {
+  if (window.location.pathname === '/screensaver' || window.location.pathname.startsWith('/screensaver/')) {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
     if (!barRoot || !bodyRoot) {
@@ -416,7 +332,7 @@ async function main(): Promise<void> {
     }
     const { device: ssDevice, format: ssFormat } = await acquireGpu();
     const { mountScreensaverBar } = await import('./ui-bar');
-    const screensaverBar = mountScreensaverBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    const screensaverBar = mountScreensaverBar(barRoot, { webgpu });
     const canvas = document.getElementById('pyr3-canvas');
     if (canvas) canvas.hidden = true;
     const firstPaint = document.getElementById('pyr3-firstpaint');
@@ -445,7 +361,7 @@ async function main(): Promise<void> {
   // scrubber + drop zone) lives in the bar's middleSlot. Viewer canvas hidden
   // so the animate surface owns the visible zone. Device + format pre-acquired
   // here and passed through.
-  if (window.location.pathname === '/v1/animate' || window.location.pathname.startsWith('/v1/animate/')) {
+  if (window.location.pathname === '/animate' || window.location.pathname.startsWith('/animate/')) {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
     if (!barRoot || !bodyRoot) {
@@ -454,7 +370,7 @@ async function main(): Promise<void> {
     }
     const { device: animDevice, format: animFormat } = await acquireGpu();
     const { mountAnimateBar } = await import('./ui-bar');
-    const animateBar = mountAnimateBar(barRoot, { webgpu, onTabClick: handleTabClick });
+    const animateBar = mountAnimateBar(barRoot, { webgpu });
     const canvas = document.getElementById('pyr3-canvas');
     if (canvas) canvas.hidden = true;
     const firstPaint = document.getElementById('pyr3-firstpaint');
@@ -475,8 +391,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  // #264 — pick the viewer mode from the current surface: /esf (+ corpus
+  // deep-links) is the ESF browser; bare / and /viewer are the basic viewer.
+  const viewerMode: 'basic' | 'esf' = currentTabSurface() === 'esf' ? 'esf' : 'basic';
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
+    mode: viewerMode,
     onOpenFile: () => openFilePicker(),
     onRenderQuality: (req) => renderQualityFn(req),
     onNavigate: (gen, id) => navigateCorpus(gen, id),
@@ -492,6 +412,22 @@ async function main(): Promise<void> {
         saveFlame(current.genome, filename);
       });
     },
+    // #264 — explicit "✏️ Edit this flame": carry the current flame into the
+    // editor. Corpus sheep go via the shareable /editor?gen=&id= deep-link; a
+    // locally-opened (non-corpus) flame stashes its genome in localStorage for
+    // the editor's cold-start to consume (the same vehicle the old implicit
+    // tab-transfer used — now button-triggered, not surprising).
+    onEditFlame: () => {
+      const cf = getCurrentFlame();
+      if (cf?.corpusId) {
+        window.location.href = editorUrlForFlame(cf.corpusId);
+        return;
+      }
+      if (cf?.genome) {
+        writePendingTransfer({ genome: cf.genome, corpusId: null, timestamp: Date.now() });
+      }
+      window.location.href = editorUrlForFlame();
+    },
     onSurpriseMe: () => {
       // #23: pick a flame from the corpus weighted by interestingness +
       // navigate to it. The first click awaits the feature-index load
@@ -504,9 +440,6 @@ async function main(): Promise<void> {
         navigateCorpus(pick.gen, pick.id);
       });
     },
-    // #103 Phase 2 Task 2.3 — chrome substrate tab clicks wire to
-    // handleTabClick (viewer-only currentFlame transfer rule above).
-    onTabClick: handleTabClick,
   });
 
   if (!webgpu.available) {
@@ -604,9 +537,6 @@ async function main(): Promise<void> {
       },
       onSaveFlame: () => editorRef?.saveFlame(),
       onSave: () => { void editorRef?.saveRender(); },
-      // #103 Phase 2 Task 2.3 — editor tab clicks fall through to
-      // handleTabClick (no transfer rules apply when leaving editor).
-      onTabClick: handleTabClick,
     });
 
     const { mountEditPage } = await import('./edit-mount');
@@ -1885,9 +1815,6 @@ async function main(): Promise<void> {
       },
       activeAxes: activeFilterCount(currentFilter),
       onFilterToggle: () => drawerHandle?.toggleOpen(),
-      // #103 Phase 2 Task 2.3 — gallery tab clicks fall through to
-      // handleTabClick (no transfer rules apply when leaving gallery).
-      onTabClick: handleTabClick,
     });
 
     // #49 Phase B6 — mount drawer EAGERLY with loading=true, before
@@ -2095,6 +2022,26 @@ async function main(): Promise<void> {
     }
   };
 
+  // #264 — bare / and /viewer (no stored flame): paint the hero as a BASIC
+  // viewer flame. Reflect the URL as /viewer (not the corpus leaf) and wire no
+  // corpus nav — the basic viewer is not ESF-aware. (ESF entry uses
+  // loadHeroFallback above, which lands on the /esf/gen/HERO corpus leaf.)
+  const loadHeroBasic = async (): Promise<void> => {
+    history.replaceState({ viewer: true }, '', viewerUrl());
+    const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
+    if (heroFile) {
+      await loadFromFile(heroFile);
+      setNav(null);
+      setDocTitle(activeGenome.name || null);
+    } else {
+      console.warn('pyr3: welcome-flame fetch failed; painting SPIRAL_GALAXY default');
+      bar.setMeta({ flameName: SPIRAL_GALAXY.name });
+      bar.setVariations(distinctVariationNames(SPIRAL_GALAXY));
+      setDocTitle(SPIRAL_GALAXY.name || null);
+      await rerender();
+    }
+  };
+
   // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
   // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
   // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
@@ -2113,9 +2060,9 @@ async function main(): Promise<void> {
   ) {
     console.info(
       `pyr3: ${intent.kind} route is deferred (v1 §12, superseded by #39 gallery)`
-      + ' — redirecting to /v1/gallery.',
+      + ' — redirecting to /esf/gallery.',
     );
-    history.replaceState(null, '', `${import.meta.env.BASE_URL}v1/gallery`);
+    history.replaceState(null, '', `${import.meta.env.BASE_URL}esf/gallery`);
     intent = parseLoadIntent(window.location.pathname + window.location.search)
       ?? { kind: 'default' as const };
   }
@@ -2134,19 +2081,26 @@ async function main(): Promise<void> {
   } else if (intent.kind === 'corpus') {
     await enqueueCorpus(intent.gen, intent.id, false); // initial load: no pushState
   } else if (intent.kind === 'default') {
+    // #264 — bare / lands on the basic viewer (/viewer), hero painted, no ESF chrome.
+    await loadHeroBasic();
+  } else if (intent.kind === 'esf') {
+    // #264 — bare /esf is the ESF corpus viewer entry. Land on the hero sheep
+    // (loadHeroFallback replaceStates to /esf/gen/HERO); Surprise / loop /
+    // gallery nav stay available. Phase 3 gates the mode-specific controls;
+    // routing-wise this mirrors the default landing.
     await loadHeroFallback();
   } else if (intent.kind === 'viewer') {
-    // #203 — /v1/viewer cold start: rehydrate the last-loaded custom flame from
+    // #203 — /viewer cold start: rehydrate the last-loaded custom flame from
     // the store (a refresh after 📂 Open reloads what the user was viewing). No
-    // stored flame (e.g. a shared /v1/viewer link, or storage was cleared) →
-    // fall back to the hero sheep, same as bare root.
+    // stored flame (e.g. a shared /viewer link, or storage was cleared) → fall
+    // back to the hero as a BASIC viewer flame (#264 — not the ESF corpus leaf).
     const stored = loadLastFlame();
     if (stored) {
       await applyLoadResult({ kind: 'pyr3-json', genome: stored }, stored.name || 'Untitled');
       setNav(null); // rehydrated custom flame is not a corpus sheep
       setDocTitle(activeGenome.name || null);
     } else {
-      await loadHeroFallback();
+      await loadHeroBasic();
     }
   } else {
     // Deferred views (gen-list / gen-browse / custom-reserved): paint the welcome
@@ -2297,10 +2251,19 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       console.error(`pyr3: ${intent.kind} intent reached resolveLoadIntent — dispatch order broken`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'viewer':
-      // #203 — /v1/viewer is dispatched directly in main()'s cold-start block
+      // #203 — /viewer is dispatched directly in main()'s cold-start block
       // (rehydrate from the last-flame store, else hero fallback). Reaching here
       // means that dispatch was bypassed — log + paint welcome as a safe net.
       console.error('pyr3: viewer intent reached resolveLoadIntent — dispatch order broken');
+      return fetchAsFile(WELCOME_FLAME_URL);
+    case 'gradient':
+    case 'animate':
+    case 'screensaver':
+    case 'esf':
+      // #264 — /gradient, /animate, /screensaver, /esf all dispatch via their
+      // own early short-circuits in main() BEFORE this function runs. Reaching
+      // here is a routing bug — log loudly + paint welcome as a safe fallback.
+      console.error(`pyr3: ${intent.kind} intent reached resolveLoadIntent — dispatch order broken`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':
       // Bare root is handled directly in main() (replaceState root-forward +
