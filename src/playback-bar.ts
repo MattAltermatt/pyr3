@@ -1,7 +1,14 @@
-// Playback scrubber widget for the /v1/animate surface (P6 of Animation
-// milestone #17 / #211). Pure DOM, framework-free, mounted under a canvas.
+// Playback transport for the /v1/animate surface (P6 of Animation milestone
+// #17 / #211; reworked #276). Pure DOM, framework-free, mounted under a canvas.
 // Caller owns the rAF playback loop and pushes time updates via setTime();
-// onScrub fires while the user drags; onPlayToggle when the user hits play.
+// onScrub fires while the user drags the ruler; onPlayToggle on play/pause;
+// onStep / onJump / onSpeedChange from the transport controls.
+//
+// #276 — the bare range slider is replaced by a linear time ruler (shared
+// tick/scrub code from timeline-scale.ts), so the transport reads like the
+// section "timing bar": tick markings, click-to-seek, a draggable playhead.
+
+import { linearScale, fitPxPerSec, tickLayout, renderTicks, attachScrub, type Scale } from './timeline-scale';
 
 export interface PlaybackBarOpts {
   /** Range of the time scrubber (typically the animation's keyframe time span). */
@@ -9,22 +16,30 @@ export interface PlaybackBarOpts {
   tMax: number;
   /** Initial scrubber position. */
   initialT: number;
-  /** Fires as the user drags the scrubber. */
+  /** Fires as the user drags / clicks the ruler. */
   onScrub: (t: number) => void;
   /** Fires when the user toggles play/pause. */
   onPlayToggle: (isPlaying: boolean) => void;
+  /** #276 — step one frame back (-1) / forward (+1). */
+  onStep?: (dir: -1 | 1) => void;
+  /** #276 — jump to start / end. */
+  onJump?: (where: 'start' | 'end') => void;
+  /** #276 — playback speed multiplier changed (0.5 / 1 / 2 / 4). */
+  onSpeedChange?: (mult: number) => void;
 }
 
 export interface PlaybackBarHandle {
-  /** Current scrubber time. The caller's play-loop reads this on each tick
-   *  to pick up where the user left the slider. */
+  /** Current scrubber time. The caller's play-loop reads this on each tick. */
   getTime(): number;
-  /** Update the scrubber position + time readout. Called by the playback
-   *  rAF loop (caller-owned) to keep the UI in sync. */
+  /** Update the scrubber position + time readout. Called by the playback loop. */
   setTime(t: number): void;
+  /** #276 — change the time range (evolve/pause edits resize the timeline). */
+  setDuration(tMax: number): void;
   /** Whether playback is currently active. */
   isPlaying(): boolean;
   setPlaying(p: boolean): void;
+  /** Enable/disable all transport controls (no-jump empty state). */
+  setEnabled(on: boolean): void;
   show(): void;
   hide(): void;
   destroy(): void;
@@ -33,93 +48,143 @@ export interface PlaybackBarHandle {
 export function mountPlaybackBar(host: HTMLElement, opts: PlaybackBarOpts): PlaybackBarHandle {
   const root = document.createElement('div');
   root.className = 'pyr3-playback-bar';
-  root.style.display = 'flex';
-  root.style.alignItems = 'center';
-  root.style.gap = '12px';
-  root.style.padding = '8px 16px';
-  root.style.background = 'rgba(0,0,0,0.55)';
-  root.style.color = '#eee';
-  root.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-  root.style.fontSize = '12px';
-  root.style.borderTop = '1px solid #2a2a2a';
-
-  const playBtn = document.createElement('button');
-  playBtn.type = 'button';
-  playBtn.className = 'pyr3-playback-bar-play';
-  playBtn.textContent = '▶';
-  playBtn.style.background = 'transparent';
-  playBtn.style.border = '1px solid #444';
-  playBtn.style.color = '#eee';
-  playBtn.style.cursor = 'pointer';
-  playBtn.style.padding = '4px 10px';
-  playBtn.style.borderRadius = '3px';
-  playBtn.style.fontSize = '12px';
-  playBtn.title = 'Play / pause';
-  root.appendChild(playBtn);
-
-  const slider = document.createElement('input');
-  slider.type = 'range';
-  slider.className = 'pyr3-playback-bar-scrub';
-  slider.min = String(opts.tMin);
-  slider.max = String(opts.tMax);
-  slider.step = String(Math.max(0.001, (opts.tMax - opts.tMin) / 500));
-  slider.value = String(opts.initialT);
-  slider.style.flex = '1';
-  root.appendChild(slider);
-
-  const timeReadout = document.createElement('span');
-  timeReadout.className = 'pyr3-playback-bar-time';
-  timeReadout.style.minWidth = '120px';
-  timeReadout.style.textAlign = 'right';
-  timeReadout.style.color = '#9cd';
-  timeReadout.textContent = formatReadout(opts.initialT, opts.tMax);
-  root.appendChild(timeReadout);
-
-  host.appendChild(root);
-
-  let playing = false;
-
-  function updateButton(): void {
-    playBtn.textContent = playing ? '⏸' : '▶';
-  }
-
-  slider.addEventListener('input', () => {
-    const t = Number(slider.value);
-    timeReadout.textContent = formatReadout(t, opts.tMax);
-    opts.onScrub(t);
+  Object.assign(root.style, {
+    display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 16px',
+    background: 'rgba(0,0,0,0.55)', color: '#eee',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px',
+    borderTop: '1px solid #2a2a2a',
   });
 
-  playBtn.addEventListener('click', () => {
+  // --- control row ---------------------------------------------------------
+  const ctlRow = document.createElement('div');
+  Object.assign(ctlRow.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+
+  const ctlBtn = (cls: string, txt: string, title: string, fn: () => void): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = cls; b.textContent = txt; b.title = title;
+    Object.assign(b.style, {
+      background: 'transparent', border: '1px solid #444', color: '#eee',
+      cursor: 'pointer', padding: '4px 8px', borderRadius: '3px', fontSize: '12px',
+    });
+    b.addEventListener('click', fn);
+    return b;
+  };
+
+  const jumpStart = ctlBtn('pyr3-pb-jump-start', '◀◀', 'Jump to start', () => opts.onJump?.('start'));
+  const stepBack = ctlBtn('pyr3-pb-step-back', '◀▮', 'Step back one frame', () => opts.onStep?.(-1));
+  const playBtn = ctlBtn('pyr3-playback-bar-play', '▶', 'Play / pause', () => {
     playing = !playing;
     updateButton();
     opts.onPlayToggle(playing);
   });
+  const stepFwd = ctlBtn('pyr3-pb-step-fwd', '▮▶', 'Step forward one frame', () => opts.onStep?.(1));
+  const jumpEnd = ctlBtn('pyr3-pb-jump-end', '▶▶', 'Jump to end', () => opts.onJump?.('end'));
+
+  const speed = document.createElement('select');
+  speed.className = 'pyr3-pb-speed';
+  for (const m of [0.5, 1, 2, 4]) {
+    const o = document.createElement('option');
+    o.value = String(m); o.textContent = `${m}×`;
+    if (m === 1) o.selected = true;
+    speed.appendChild(o);
+  }
+  Object.assign(speed.style, {
+    background: '#0c0c0e', color: '#ddd', border: '1px solid #3a3a44',
+    borderRadius: '3px', fontSize: '12px', padding: '2px 4px',
+  });
+  speed.title = 'Playback speed (1× = real authored duration)';
+  speed.addEventListener('change', () => opts.onSpeedChange?.(Number(speed.value)));
+
+  const timeReadout = document.createElement('span');
+  timeReadout.className = 'pyr3-playback-bar-time';
+  Object.assign(timeReadout.style, { minWidth: '120px', marginLeft: 'auto', textAlign: 'right', color: '#9cd' });
+
+  ctlRow.append(jumpStart, stepBack, playBtn, stepFwd, jumpEnd, speed, timeReadout);
+
+  // --- ruler row -----------------------------------------------------------
+  const rulerRow = document.createElement('div');
+  Object.assign(rulerRow.style, { position: 'relative', height: '26px', marginTop: '2px' });
+
+  const playhead = document.createElement('div');
+  Object.assign(playhead.style, {
+    position: 'absolute', top: '0', bottom: '0', width: '3px',
+    background: '#ff8c1a', boxShadow: '0 0 5px rgba(255,140,26,.9)', left: '0',
+    cursor: 'ew-resize', zIndex: '4',
+  });
+
+  root.append(ctlRow, rulerRow);
+  host.appendChild(root);
+
+  // --- state ---------------------------------------------------------------
+  let playing = false;
+  let tMin = opts.tMin;
+  let tMax = opts.tMax;
+  let curT = opts.initialT;
+  let scale: Scale = makeScale();
+
+  function viewportPx(): number { return rulerRow.clientWidth || 600; }
+  /** Linear scale over [tMin, tMax] (offset so animation-mode tMin≠0 works). */
+  function makeScale(): Scale {
+    const span = Math.max(tMax - tMin, 1e-6);
+    const pps = fitPxPerSec(span, viewportPx());
+    const base = linearScale(span, pps);
+    return {
+      contentWidth: base.contentWidth,
+      timeToX: (t) => base.timeToX(t - tMin),
+      xToTime: (x) => tMin + base.xToTime(x),
+    };
+  }
+  function relayout(): void {
+    scale = makeScale();
+    const span = Math.max(tMax - tMin, 1e-6);
+    renderTicks(rulerRow, tickLayout(span, fitPxPerSec(span, viewportPx()), viewportPx()));
+    rulerRow.appendChild(playhead); // renderTicks cleared the row — re-add the cached node
+    playhead.style.left = `${scale.timeToX(curT)}px`;
+  }
+
+  function updateButton(): void { playBtn.textContent = playing ? '⏸' : '▶'; }
+
+  const detachScrub = attachScrub({
+    strip: rulerRow, playhead, getScale: () => scale,
+    onSeek: (t) => {
+      curT = t;
+      playhead.style.left = `${scale.timeToX(t)}px`;
+      timeReadout.textContent = formatReadout(t, tMax);
+      opts.onScrub(t);
+    },
+  });
+
+  timeReadout.textContent = formatReadout(curT, tMax);
+  relayout();
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => relayout()) : null;
+  ro?.observe(rulerRow);
 
   return {
-    getTime(): number {
-      return Number(slider.value);
-    },
+    getTime(): number { return curT; },
     setTime(t: number): void {
-      slider.value = String(t);
-      timeReadout.textContent = formatReadout(t, opts.tMax);
+      curT = t;
+      playhead.style.left = `${scale.timeToX(t)}px`;
+      timeReadout.textContent = formatReadout(t, tMax);
     },
-    isPlaying(): boolean {
-      return playing;
+    setDuration(next: number): void {
+      tMax = Math.max(next, tMin + 1e-6);
+      relayout();
+      timeReadout.textContent = formatReadout(curT, tMax);
     },
+    isPlaying(): boolean { return playing; },
     setPlaying(p: boolean): void {
       if (playing === p) return;
       playing = p;
       updateButton();
     },
-    show(): void {
-      root.style.display = 'flex';
+    setEnabled(on: boolean): void {
+      for (const b of [jumpStart, stepBack, playBtn, stepFwd, jumpEnd]) b.disabled = !on;
+      speed.disabled = !on;
+      root.style.opacity = on ? '1' : '0.45';
     },
-    hide(): void {
-      root.style.display = 'none';
-    },
-    destroy(): void {
-      root.remove();
-    },
+    show(): void { root.style.display = 'flex'; },
+    hide(): void { root.style.display = 'none'; },
+    destroy(): void { detachScrub(); ro?.disconnect(); root.remove(); },
   };
 }
 

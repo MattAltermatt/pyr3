@@ -86,10 +86,6 @@ export function computeOutputAwarePreviewDims(
 // "Fast" preview tier so playback feels responsive even on weaker GPUs.
 const PREVIEW_MAX_SPP = 16;
 
-// Playback duration: how long an end-to-end scrub takes during auto-play.
-// Tunable later via a speed selector; locked to a casual 4 s default for MVP.
-const PLAYBACK_DURATION_MS = 4000;
-
 const PLAYBACK_SPAN_EPS = 1e-9;
 
 /** Wrap an auto-play time into the closed keyframe range [tMin, tMax]. Uses the
@@ -103,6 +99,15 @@ export function wrapPlaybackTime(t: number, tMin: number, tMax: number): number 
   let wrapped = t;
   if (wrapped > tMax) wrapped = tMin + ((wrapped - tMin) % realSpan);
   return Math.min(tMax, Math.max(tMin, wrapped));
+}
+
+/** Real-time playback mapping: timeline time after `elapsedMs` of wall-clock at
+ *  `speed`× from `startT`, wrapped into [tMin, tMax]. 1× = authored duration, so
+ *  a 30 s timeline plays in 30 s (replaces the old fixed 4 s loop). (#276) */
+export function playbackTimeAt(
+  startT: number, elapsedMs: number, speed: number, tMin: number, tMax: number,
+): number {
+  return wrapPlaybackTime(startT + (elapsedMs / 1000) * speed, tMin, tMax);
 }
 
 /** Quality-capped, single-sub-frame copy of a timeline for the browser preview
@@ -290,9 +295,18 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   saveBtn.title = 'Download this timeline as a .pyr3.timeline.json';
   Object.assign(saveBtn.style, {
     background: 'transparent', border: '1px solid #5a7', color: '#bfe9cf',
-    cursor: 'pointer', padding: '4px 10px', borderRadius: '3px', fontSize: '12px', display: 'none',
+    cursor: 'pointer', padding: '4px 10px', borderRadius: '3px', fontSize: '12px',
   });
+  // #276 — no-jump: present-but-disabled until a timeline exists (was display:none).
+  saveBtn.disabled = true;
+  saveBtn.style.opacity = '0.45';
   topRow.appendChild(saveBtn);
+
+  /** #276 — enable/dim Save in place (no appear/disappear). */
+  function refreshSaveButton(): void {
+    saveBtn.disabled = timeline === null || timeline.clips.length === 0;
+    saveBtn.style.opacity = saveBtn.disabled ? '0.45' : '1';
+  }
 
   function saveTimeline(): void {
     if (!timeline) return;
@@ -414,6 +428,69 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // frame the user is currently looking at.
   let lastRenderedTime = 0;
 
+  // #276 — transport state + helpers. playbackSpeed feeds the real-time loop
+  // (Task 8). Step is one frame at STEP_FPS; seek/jump clamp into the span.
+  let playbackSpeed = 1;
+  const STEP_FPS = 30;
+  function playbackTMin(): number {
+    return timeline ? 0 : (animation?.keyframes[0]!.time ?? 0);
+  }
+  function playbackTMax(): number {
+    if (timeline) return timelineDuration(timeline);
+    if (animation) return animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
+    return 0;
+  }
+  function seekTo(t: number): void {
+    const c = Math.min(playbackTMax(), Math.max(playbackTMin(), t));
+    playbackBar?.setTime(c);
+    sectionTrack?.setPlayhead(c);
+    void renderAtTime(c);
+  }
+  function stepFrame(dir: -1 | 1): void { seekTo(lastRenderedTime + dir / STEP_FPS); }
+
+  // #276 — node-boundary times: timeline-mode clip starts, animation-mode keyframe times.
+  function nodeTimes(): number[] {
+    if (timeline) {
+      let t = 0;
+      const out = [0];
+      for (const c of timeline.clips) { t += Math.max(0, c.duration); out.push(t); }
+      return out;
+    }
+    if (animation) return animation.keyframes.map((k) => k.time ?? 0);
+    return [0];
+  }
+  function prevNodeTime(): number {
+    return [...nodeTimes()].reverse().find((t) => t < lastRenderedTime - 1e-6) ?? playbackTMin();
+  }
+  function nextNodeTime(): number {
+    return nodeTimes().find((t) => t > lastRenderedTime + 1e-6) ?? playbackTMax();
+  }
+
+  // #276 — keyboard transport. Ignored while typing in a field.
+  function onKey(e: KeyboardEvent): void {
+    const tgt = e.target as HTMLElement | null;
+    if (tgt && /^(INPUT|SELECT|TEXTAREA)$/.test(tgt.tagName)) return;
+    if (!animation && !timeline) return;
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        if (rafId !== null) stopPlayback();
+        else { startPlayback(); playbackBar?.setPlaying(true); }
+        break;
+      case 'ArrowLeft':
+        e.preventDefault(); stopPlayback();
+        if (e.shiftKey) seekTo(prevNodeTime()); else stepFrame(-1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault(); stopPlayback();
+        if (e.shiftKey) seekTo(nextNodeTime()); else stepFrame(1);
+        break;
+      case 'Home': e.preventDefault(); stopPlayback(); seekTo(playbackTMin()); break;
+      case 'End': e.preventDefault(); stopPlayback(); seekTo(playbackTMax()); break;
+    }
+  }
+  window.addEventListener('keydown', onKey);
+
   // #274 — output-size control in the chrome (before the Export button). Drives
   // both the live preview aspect and the export request. Initialised to defaults;
   // setSize is called to the first flame's native size when a source loads.
@@ -469,11 +546,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       tMin = animation!.keyframes[0]!.time ?? 0;
       tMax = animation!.keyframes[animation!.keyframes.length - 1]!.time ?? 0;
     }
-    // #248 — playback advances over the REAL span (tMax - tMin) so the whole
-    // animation plays once per PLAYBACK_DURATION_MS regardless of span. The old
-    // `Math.max(1, …)` clamp made sub-unit spans both play too fast AND wrap
-    // past tMax (→ pickKeyframes endpoint extrapolation + slider desync).
-    const realSpan = tMax - tMin;
+    // #276 — real-time playback: `t` is derived from wall-clock elapsed × speed,
+    // so 1× plays the timeline at its authored duration. The single-flight render
+    // loop (renderAtTime) drops frames when a render can't keep up, so tempo stays
+    // locked to the clock — never slow-motion, never faster than real time. (#248
+    // wrap keeps sub-unit spans from overshooting tMax → endpoint extrapolation.)
     const startedAt = performance.now();
     const startT = playbackBar?.getTime() ?? tMin;
     const tick = (now: number): void => {
@@ -481,8 +558,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         stopPlayback();
         return;
       }
-      const elapsed = (now - startedAt) / PLAYBACK_DURATION_MS;
-      const t = wrapPlaybackTime(startT + elapsed * realSpan, tMin, tMax);
+      const t = playbackTimeAt(startT, now - startedAt, playbackSpeed, tMin, tMax);
       playbackBar.setTime(t);
       void renderAtTime(t);
       rafId = requestAnimationFrame(tick);
@@ -614,7 +690,33 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       tMin: 0, tMax: dur, initialT: Math.min(initialT, dur),
       onScrub: (t) => { stopPlayback(); void renderAtTime(t); },
       onPlayToggle: (isPlaying) => { if (isPlaying) startPlayback(); else stopPlayback(); },
+      onStep: (dir) => { stopPlayback(); stepFrame(dir); },
+      onJump: (where) => { stopPlayback(); seekTo(where === 'start' ? playbackTMin() : playbackTMax()); },
+      onSpeedChange: (m) => { playbackSpeed = m; },
     });
+    playbackBar.setEnabled(true);
+  }
+
+  // #276 — no-jump: the section track + transport are present (disabled) from
+  // first paint. The empty track shows only the live ＋add tile; the transport
+  // is mounted disabled. A real load destroys + replaces both in place, so the
+  // bottom region never appears/reflows. Idempotent — destroys any prior pair.
+  function mountEmptyScaffold(): void {
+    sectionTrack?.destroy();
+    sectionTrack = mountSectionTrack(scrubHost, {
+      timeline: createTimeline(),
+      onSelectNode: () => {},
+      onSelectSection: () => {},
+      onAdd: () => addInput.click(),
+      onSeek: () => {}, // empty scaffold — nothing to scrub
+    });
+    playbackBar?.destroy();
+    playbackBar = mountPlaybackBar(scrubHost, {
+      tMin: 0, tMax: 1, initialT: 0,
+      onScrub: (t) => { stopPlayback(); void renderAtTime(t); },
+      onPlayToggle: (isPlaying) => { if (isPlaying) startPlayback(); else stopPlayback(); },
+    });
+    playbackBar.setEnabled(false);
   }
 
   // #227d — enter section authoring mode for the current `timeline` (built by
@@ -628,7 +730,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     loadedFlameXml = null;
     if (easingPanel) { easingPanel.remove(); easingPanel = null; }
     empty.style.display = 'none';
-    saveBtn.style.display = timeline.clips.length > 0 ? 'inline-block' : 'none';
+    refreshSaveButton();
     buildTimelineRenderer();
 
     selection = null;
@@ -646,6 +748,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         if (timeline) sectionEditor?.showSection(timeline, i);
       },
       onAdd: () => addInput.click(),
+      onSeek: (t) => { stopPlayback(); playbackBar?.setTime(t); void renderAtTime(t); }, // #276
     });
 
     sectionEditor?.destroy();
@@ -672,14 +775,18 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   function applyEdit(next: Timeline, opts: { structural?: boolean } = {}): void {
     timeline = next;
     timelinePreview = previewTimeline(timeline);
-    saveBtn.style.display = timeline.clips.length > 0 ? 'inline-block' : 'none';
+    refreshSaveButton();
     if (timeline.clips.length === 0) {
-      // Removed the last node — drop back to the empty state.
-      sectionTrack?.destroy(); sectionTrack = null;
+      // Removed the last node — drop back to the empty state. #276 — restore the
+      // disabled scaffold (track + transport stay present) instead of unmounting.
+      timeline = null;
+      timelinePreview = null;
       sectionEditor?.clear();
-      playbackBar?.destroy(); playbackBar = null;
       empty.style.display = 'flex';
       setStatus('no timeline');
+      refreshSaveButton();
+      mountEmptyScaffold();
+      refreshExportButtonCapability();
       return;
     }
     // Drop a stale selection if a structural edit shrank the chain past it
@@ -771,7 +878,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         if (isPlaying) startPlayback();
         else stopPlayback();
       },
+      onStep: (dir) => { stopPlayback(); stepFrame(dir); },
+      onJump: (where) => { stopPlayback(); seekTo(where === 'start' ? playbackTMin() : playbackTMax()); },
+      onSpeedChange: (m) => { playbackSpeed = m; },
     });
+    playbackBar.setEnabled(true);
   }
 
   async function handleFile(file: File): Promise<void> {
@@ -1037,11 +1148,15 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     }
   }
 
+  // #276 — no-jump: mount the disabled section track + transport before any
+  // source loads, so the bottom region is stable from first paint.
+  mountEmptyScaffold();
   refreshExportButtonCapability();
 
   return {
     destroy(): void {
       stopPlayback();
+      window.removeEventListener('keydown', onKey);
       if (exportAbort) exportAbort.abort();
       exportAbort = null;
       exportModal?.close();

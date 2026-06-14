@@ -4,6 +4,7 @@
 // inspector in timeline-section-editor.ts; scrub/play stays on the playback bar.
 
 import { type Timeline } from './timeline';
+import { segmentScale, attachScrub } from './timeline-scale';
 
 export interface SectionLayoutOpts {
   /** Fixed px width of a key-flame node thumbnail. */
@@ -86,6 +87,8 @@ export interface SectionTrackOpts {
   onSelectNode: (index: number) => void;
   onSelectSection: (index: number) => void;
   onAdd: () => void;
+  /** #276 — fires when the user clicks/drags the track background to scrub. */
+  onSeek: (t: number, final: boolean) => void;
 }
 
 export interface SectionTrackHandle {
@@ -98,21 +101,73 @@ export interface SectionTrackHandle {
   destroy(): void;
 }
 
-const TRACK_OPTS: SectionLayoutOpts = { nodeW: 64, edgeMinW: 34, edgePxPerSec: 44 };
+// #276 — edgePxPerSec is now zoomable. DEFAULT keeps short evolves compact (a
+// 30 s evolve reads tight, not sprawling); tune in Chrome verify. Node
+// thumbnails stay fixed-width (a key flame is a time-point, not a span).
+const DEFAULT_EDGE_PX_PER_SEC = 12;
+const ZOOM_MIN = 3;
+const ZOOM_MAX = 120;
+const ZOOM_STEP = 1.5; // multiplicative per click
+const BASE_TRACK_OPTS = { nodeW: 64, edgeMinW: 34 } as const;
 const TRACK_HEIGHT = 96;
 
 export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): SectionTrackHandle {
   let timeline = opts.timeline;
   let selection: Selection = null;
+  let edgePxPerSec = DEFAULT_EDGE_PX_PER_SEC; // #276 — zoom state
+  let lastT = 0;                              // #276 — last playhead time, for zoom re-sync
   const thumbs = new Map<number, HTMLCanvasElement>();
+
+  const trackOpts = (): SectionLayoutOpts => ({ ...BASE_TRACK_OPTS, edgePxPerSec });
+
+  // #276 — outer wrapper is the non-scrolling layer (holds the zoom control over
+  // the top-right); `root` inside it is the horizontally-scrolling track viewport.
+  const wrapper = document.createElement('div');
+  Object.assign(wrapper.style, { position: 'relative', margin: '0 16px 8px' });
+  host.appendChild(wrapper);
 
   const root = document.createElement('div');
   Object.assign(root.style, {
-    position: 'relative', height: `${TRACK_HEIGHT}px`, margin: '0 16px 8px',
+    position: 'relative', height: `${TRACK_HEIGHT}px`,
     background: '#0c0c0e', border: '1px solid #2a2a2a', borderRadius: '6px',
     overflowX: 'auto', overflowY: 'hidden', userSelect: 'none', whiteSpace: 'nowrap',
   });
-  host.appendChild(root);
+  wrapper.appendChild(root);
+
+  // #276 — zoom control, fixed over the track's top-right (in the wrapper, so it
+  // ignores the track's horizontal scroll).
+  function fitEdgePxPerSec(): number {
+    const totalEvolve = timeline.clips.reduce(
+      (a, c) => a + Math.max(0, Math.min(c.transitionDuration, c.duration)), 0);
+    const nodePx = timeline.clips.length * BASE_TRACK_OPTS.nodeW;
+    const avail = Math.max(100, root.clientWidth - nodePx - 100);
+    return totalEvolve > 0
+      ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, avail / totalEvolve))
+      : DEFAULT_EDGE_PX_PER_SEC;
+  }
+  function syncPlayhead(): void {
+    playhead.style.left = `${segmentScale(sectionLayout(timeline, trackOpts())).timeToX(lastT)}px`;
+  }
+  const zoomBox = document.createElement('div');
+  Object.assign(zoomBox.style, {
+    position: 'absolute', top: '4px', right: '6px', display: 'flex', gap: '4px', zIndex: '6',
+  });
+  const zoomBtn = (txt: string, title: string, fn: () => void): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = txt; b.title = title;
+    Object.assign(b.style, {
+      background: '#181820', border: '1px solid #3a3a44', color: '#cdd',
+      borderRadius: '3px', fontSize: '11px', cursor: 'pointer', padding: '1px 6px', fontFamily: 'inherit',
+    });
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    return b;
+  };
+  zoomBox.append(
+    zoomBtn('−', 'Zoom out', () => { edgePxPerSec = Math.max(ZOOM_MIN, edgePxPerSec / ZOOM_STEP); render(); syncPlayhead(); }),
+    zoomBtn('fit', 'Fit timeline to width', () => { edgePxPerSec = fitEdgePxPerSec(); render(); syncPlayhead(); }),
+    zoomBtn('+', 'Zoom in', () => { edgePxPerSec = Math.min(ZOOM_MAX, edgePxPerSec * ZOOM_STEP); render(); syncPlayhead(); }),
+  );
+  wrapper.appendChild(zoomBox);
 
   const lane = document.createElement('div');
   Object.assign(lane.style, { position: 'relative', height: '100%', display: 'inline-block', padding: '12px 0' });
@@ -120,15 +175,36 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
 
   const playhead = document.createElement('div');
   Object.assign(playhead.style, {
-    position: 'absolute', top: '6px', bottom: '6px', width: '2px',
-    background: '#ff8c1a', boxShadow: '0 0 5px rgba(255,140,26,.9)', left: '0', pointerEvents: 'none', zIndex: '4',
+    position: 'absolute', top: '6px', bottom: '6px', width: '3px',
+    background: '#ff8c1a', boxShadow: '0 0 5px rgba(255,140,26,.9)', left: '0',
+    cursor: 'ew-resize', zIndex: '4', // #276 — grabbable to scrub
   });
   lane.appendChild(playhead);
 
+  // #276 — time bubble shown next to the cursor while dragging the playhead.
+  const bubble = document.createElement('div');
+  Object.assign(bubble.style, {
+    position: 'absolute', top: '-2px', transform: 'translateX(-50%)', display: 'none',
+    background: '#ff8c1a', color: '#1a1206', fontSize: '10px', padding: '1px 5px',
+    borderRadius: '8px', fontFamily: 'ui-monospace,monospace', pointerEvents: 'none', zIndex: '7',
+  });
+  lane.appendChild(bubble);
+
+  // #276 — lane background = seek surface; tiles stopPropagation so click=select
+  // never also seeks. attachScrub re-reads the scale each event so zoom applies.
+  const detachScrub = attachScrub({
+    strip: lane, playhead, bubble,
+    getScale: () => segmentScale(sectionLayout(timeline, trackOpts())),
+    onSeek: (t, final) => { lastT = t; opts.onSeek(t, final); },
+  });
+
   function render(): void {
-    // Clear everything except the playhead.
-    for (const child of Array.from(lane.children)) if (child !== playhead) child.remove();
-    const segs = sectionLayout(timeline, TRACK_OPTS);
+    // Clear everything except the playhead + drag bubble (both are mutated by
+    // reference and must survive a re-render — #276).
+    for (const child of Array.from(lane.children)) {
+      if (child !== playhead && child !== bubble) child.remove();
+    }
+    const segs = sectionLayout(timeline, trackOpts());
     let contentW = 0;
     for (const s of segs) {
       contentW = Math.max(contentW, s.x + s.w);
@@ -170,6 +246,7 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
           });
           node.appendChild(badge);
         }
+        node.addEventListener('pointerdown', (e) => e.stopPropagation()); // #276 — click=select, not seek
         node.addEventListener('click', () => opts.onSelectNode(s.index));
         lane.appendChild(node);
       } else {
@@ -187,6 +264,7 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
         lbl.textContent = `${evolve.toFixed(1)}s`;
         Object.assign(lbl.style, { fontSize: '10px', color: '#cfe9f3', fontFamily: 'ui-monospace,monospace', pointerEvents: 'none' });
         edge.appendChild(lbl);
+        edge.addEventListener('pointerdown', (e) => e.stopPropagation()); // #276 — click=select, not seek
         edge.addEventListener('click', () => opts.onSelectSection(s.index));
         lane.appendChild(edge);
       }
@@ -201,6 +279,7 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
     });
     add.textContent = '＋ add';
     add.title = 'Add a key flame';
+    add.addEventListener('pointerdown', (e) => e.stopPropagation()); // #276 — click=add, not seek
     add.addEventListener('click', () => opts.onAdd());
     lane.appendChild(add);
 
@@ -211,11 +290,12 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
 
   return {
     setPlayhead(t: number): void {
-      playhead.style.left = `${playheadX(sectionLayout(timeline, TRACK_OPTS), t)}px`;
+      lastT = t; // #276 — remembered so zoom changes can re-place the playhead
+      playhead.style.left = `${playheadX(sectionLayout(timeline, trackOpts()), t)}px`;
     },
     setSelection(sel: Selection): void { selection = sel; render(); },
     setThumbnail(index: number, thumb: HTMLCanvasElement): void { thumbs.set(index, thumb); render(); },
     rebuild(next: Timeline): void { timeline = next; render(); },
-    destroy(): void { root.remove(); thumbs.clear(); },
+    destroy(): void { detachScrub(); wrapper.remove(); thumbs.clear(); },
   };
 }

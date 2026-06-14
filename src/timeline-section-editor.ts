@@ -40,12 +40,13 @@ function numberField(value: number, onCommit: (n: number) => void): HTMLInputEle
   return inp;
 }
 
-function row(labelText: string): { row: HTMLDivElement; add: (el: HTMLElement | Text) => void } {
+function row(labelText: string, title?: string): { row: HTMLDivElement; add: (el: HTMLElement | Text) => void } {
   const r = document.createElement('div');
   Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '8px', margin: '7px 0', fontSize: '12px', color: '#bbb' });
   const lab = document.createElement('label');
   lab.textContent = labelText;
-  Object.assign(lab.style, { width: '92px', color: '#888' });
+  if (title) lab.title = title; // #276 — hover affordance for bare controls
+  Object.assign(lab.style, { width: '92px', color: '#888', cursor: title ? 'help' : 'default' });
   r.appendChild(lab);
   return { row: r, add: (el) => r.appendChild(el) };
 }
@@ -83,19 +84,30 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     root.style.display = 'block';
     root.appendChild(header(`▸ Evolve section: flame ${index + 1} → flame ${index + 2}`));
 
-    const evolveRow = row('evolve time');
+    const evolveRow = row('evolve time', 'Seconds to morph from this flame into the next.');
     const evolve = timeline.clips[index]!.transitionDuration;
     evolveRow.add(numberField(evolve, (n) => opts.onEvolveChange(index, n)));
     const unit = document.createElement('span'); unit.textContent = 's'; unit.style.color = '#888';
     evolveRow.add(unit);
     root.appendChild(evolveRow.row);
 
-    const lingerRow = row('linger');
+    const lingerRow = row(
+      'linger',
+      'Linger eases the morph so it dwells near each key flame:\n'
+      + '• none — constant speed\n• gentle — soft ease-in/out\n• strong — long hold at each end',
+    );
     const current = easingToLinger(timeline.clips[index]!.easing);
+    const LINGER_TIP: Record<Linger, string> = {
+      none: 'Constant-speed morph — even pacing across the whole transition.',
+      gentle: 'Soft ease-in/out — slows near each key flame, smooth and subtle.',
+      strong: 'Long hold at each end — dwells on each flame before/after the morph.',
+      custom: 'Custom easing curve set via the easing panel.',
+    };
     for (const l of LINGERS) {
       const pill = document.createElement('button');
       pill.type = 'button';
       pill.textContent = l;
+      pill.title = LINGER_TIP[l]; // #276 — per-pill hover info
       const on = current === l;
       Object.assign(pill.style, {
         background: '#181820', border: `1px solid ${on ? '#9cd' : '#3a3a44'}`,

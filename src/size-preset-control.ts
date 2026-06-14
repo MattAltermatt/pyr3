@@ -47,16 +47,20 @@ export function createSizePresetControl(opts: SizePresetControlOpts): SizePreset
     select.appendChild(og);
   }
 
+  select.title = 'Output dimensions for the live preview and the exported frames.'; // #276
+
   const wIn = document.createElement('input');
   wIn.type = 'number';
   wIn.min = '1';
   wIn.dataset['sizeW'] = '';
   wIn.style.width = '72px';
+  wIn.title = 'Output width in pixels.'; // #276
   const hIn = document.createElement('input');
   hIn.type = 'number';
   hIn.min = '1';
   hIn.dataset['sizeH'] = '';
   hIn.style.width = '72px';
+  hIn.title = 'Output height in pixels.'; // #276
   const times = document.createElement('span');
   times.textContent = '×';
 

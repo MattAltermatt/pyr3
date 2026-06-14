@@ -104,7 +104,7 @@ function frameNameExample(v: AnimateExportFormValues, durationSeconds: number): 
   return first === last ? name(first) : `${name(first)} … ${name(last)}`;
 }
 
-function makeNumberInput(label: string, value: number, min?: number, step?: number): {
+function makeNumberInput(label: string, value: number, min?: number, step?: number, title?: string): {
   row: HTMLElement;
   input: HTMLInputElement;
 } {
@@ -116,6 +116,7 @@ function makeNumberInput(label: string, value: number, min?: number, step?: numb
     fontSize: '12px',
     color: '#ccc',
   });
+  if (title) row.title = title; // #276 — hover hint for the field
   const labelEl = document.createElement('span');
   labelEl.textContent = label;
   labelEl.style.minWidth = '110px';
@@ -265,17 +266,18 @@ export function openAnimateExportModal(
   let qualityIn!: ReturnType<typeof makeNumberInput>;
   let framesReadout: HTMLElement | null = null;
   if (opts.mode === 'animation') {
-    beginIn = makeNumberInput('begin (frame)', opts.defaults.begin, 0, 1);
-    endIn = makeNumberInput('end (frame)', opts.defaults.end, 0, 1);
-    dtimeIn = makeNumberInput('dtime (stride)', opts.defaults.dtime, 1, 1);
-    qsIn = makeNumberInput('quality scale', opts.defaults.qs, 0.05, 0.05);
+    beginIn = makeNumberInput('begin (frame)', opts.defaults.begin, 0, 1, 'First frame number to render.');
+    endIn = makeNumberInput('end (frame)', opts.defaults.end, 0, 1, 'Last frame number to render.');
+    dtimeIn = makeNumberInput('dtime (stride)', opts.defaults.dtime, 1, 1, 'Frame stride — render every Nth frame (1 = every frame).');
+    qsIn = makeNumberInput('quality scale', opts.defaults.qs, 0.05, 0.05, 'Multiplies each keyframe’s sample budget — higher is cleaner but slower.');
   } else {
     framesReadout = document.createElement('div');
     Object.assign(framesReadout.style, { fontSize: '12px', color: '#bbb', marginBottom: '2px' });
-    fpsIn = makeNumberInput('fps', opts.defaults.fps, 1, 1);
-    qualityIn = makeNumberInput('quality', opts.defaults.quality, 1, 1);
+    fpsIn = makeNumberInput('fps', opts.defaults.fps, 1, 1, 'Frames per second of the exported sequence (total frames = fps × duration).');
+    qualityIn = makeNumberInput('quality', opts.defaults.quality, 1, 1, 'Samples per pixel — higher is cleaner but slower to render.');
   }
   const prefixIn = makeTextInput('prefix', opts.defaults.prefix, 'optional filename prefix');
+  prefixIn.row.title = 'Filename prefix — frames are named <prefix><frame#>.png.'; // #276
   const outDirIn = makeTextInput('output dir *', '', 'required — absolute or relative to pyr3 serve cwd');
   outDirIn.input.required = true;
   outDirIn.input.dataset['outDir'] = '';
@@ -303,6 +305,10 @@ export function openAnimateExportModal(
   Object.assign(resumeRow.style, {
     display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#ccc',
   });
+  resumeRow.title = 'Skip frames already written to the output folder (crash-safe resume). '
+    + 'Uncheck to re-render and overwrite every frame.'; // #276
+  Object.assign(dimsEcho.style, { cursor: 'help' });
+  dimsEcho.title = 'Final pixel dimensions of every exported frame (set via the size control).'; // #276
   const resumeIn = document.createElement('input');
   resumeIn.type = 'checkbox';
   resumeIn.checked = true;

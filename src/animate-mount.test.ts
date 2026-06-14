@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { mountAnimatePage, wrapPlaybackTime, computeOutputAwarePreviewDims } from './animate-mount';
+import { mountAnimatePage, wrapPlaybackTime, playbackTimeAt, computeOutputAwarePreviewDims } from './animate-mount';
 import { _resetCapabilityForTest, fetchCapability, GHPAGES_DEFAULT } from './capability';
 
 function fakeDevice(): GPUDevice {
@@ -60,6 +60,23 @@ describe('wrapPlaybackTime (#248)', () => {
 
   it('degenerate zero span pins to tMin', () => {
     expect(wrapPlaybackTime(5, 2, 2)).toBe(2);
+  });
+});
+
+describe('playbackTimeAt (real-time, #276)', () => {
+  it('1× advances one timeline second per real second', () => {
+    expect(playbackTimeAt(0, 1000, 1, 0, 30)).toBeCloseTo(1, 6);
+    expect(playbackTimeAt(0, 5000, 1, 0, 30)).toBeCloseTo(5, 6);
+  });
+  it('scales with speed', () => {
+    expect(playbackTimeAt(0, 1000, 2, 0, 30)).toBeCloseTo(2, 6);
+    expect(playbackTimeAt(0, 1000, 0.5, 0, 30)).toBeCloseTo(0.5, 6);
+  });
+  it('wraps within the span', () => {
+    expect(playbackTimeAt(0, 32000, 1, 0, 30)).toBeCloseTo(2, 6); // 32 s into a 30 s span → 2 s
+  });
+  it('respects a non-zero start time', () => {
+    expect(playbackTimeAt(10, 1000, 1, 0, 30)).toBeCloseTo(11, 6);
   });
 });
 
