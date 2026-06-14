@@ -392,6 +392,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #217 — statistical copula warps
   copula_gaussian: ['strength', 'rho'],
   copula_clayton: ['strength', 'theta'],
+  // #154 — conformal-geometry warps
+  schwarz_christoffel: ['sc_sides'],
+  doyle: ['doyle_p', 'doyle_q'],
   // #137 — Special-function radial profiles
   bessel_j0: ['freq'],
   airy_radial: ['scale', 'shift'],
@@ -731,6 +734,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #217 — statistical copula warps
   copula_gaussian: [1.0, 0.6],
   copula_clayton: [1.0, 2.0],
+  // #154 — conformal-geometry warps
+  schwarz_christoffel: [5],
+  doyle: [2, 1],
   // #137 — Special-function radial profiles
   bessel_j0: [8.1],
   airy_radial: [5.3, 0.85],

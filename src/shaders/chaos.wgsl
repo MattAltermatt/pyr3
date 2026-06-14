@@ -6959,6 +6959,55 @@ fn var_copula_clayton(p: vec2f, w: f32, strength: f32, theta_in: f32) -> vec2f {
   return w * vec2f(p.x, yp);
 }
 
+// --- #154 conformal-geometry warps (Schwarz-Christoffel & Doyle) ---
+// V317 — schwarz_christoffel. Conformal map of the unit disk onto a regular
+// n-gon interior via the closed-form SC integral w(z)=∫₀ᶻ(1−ζⁿ)^(−2/n)dζ. The
+// integrand expands as the binomial series (1−u)^(−2/n)=Σ pochhammer(2/n,k)/k!·uᵏ
+// (u=zⁿ), integrated term-by-term: w = Σ cₖ·z^(nk+1)/(nk+1), with the running
+// coefficient cₖ₊₁ = cₖ·(2/n + k)/(k+1). Fixed 10-term loop. The series converges
+// only inside the unit disk, so the input radius is soft-clamped to 0.999 BEFORE
+// mapping — a deliberate domain map for robust polygon fill, NOT a corruption
+// guard; do-not-remove. Novel construction (no flam3-C / JWF reference).
+fn var_schwarz_christoffel(p: vec2f, w: f32, sides: f32) -> vec2f {
+  let n = max(round(sides), 3.0);
+  let ni = i32(n);
+  let r = length(p);
+  var z = p;
+  if (r > 0.999) { z = p * (0.999 / max(r, 1.0e-12)); } // soft-clamp into open disk
+  let a = 2.0 / n;                 // exponent of (1−u)^(−2/n) → pochhammer(2/n, k)
+  var acc = vec2f(0.0, 0.0);
+  var coef = 1.0;                  // c₀ = pochhammer(a,0)/0! = 1
+  for (var k: i32 = 0; k < 10; k = k + 1) {
+    let pidx = ni * k + 1;                                  // power z^(nk+1)
+    acc = acc + (coef / f32(pidx)) * complex_pow_int(z, pidx);
+    coef = coef * (a + f32(k)) / f32(k + 1);               // advance cₖ → cₖ₊₁
+  }
+  return w * acc;
+}
+
+// V318 — doyle. Conformal hexagonal circle-packing spiral, computed in log
+// space: L=log z sends the Doyle packing's log-spiral lattice to a regular
+// triangular lattice. A (p,q)-derived shear of the (ln r, θ) strip produces the
+// p spiral arms (pitch = q/p, angle bleeding into radius); a triangular ripple
+// places the tangent-circle nodes along the arms. Mapped back by exp (which
+// clamps Re to ±20 → output always bounded). The (p,q) basis is evaluated
+// CONTINUOUSLY (no integer snap) so /animate interpolation morphs the spiral
+// smoothly. us is NOT angle-bounded → ripple trig routed through safe_*. Novel
+// construction (no flam3-C / JWF reference).
+fn var_doyle(p: vec2f, w: f32, dp: f32, dq: f32) -> vec2f {
+  let pp = max(abs(dp), 1.0);    // arm count (≥1), continuous
+  let qq = dq;                   // secondary winding, continuous
+  let L = complex_log(p);        // (ln r, θ); θ from atan2 ∈ [-π,π]
+  let u = L.x;                   // ln r  (NOT angle-bounded)
+  let v = L.y;                   // θ
+  let pitch = qq / pp;           // spiral tightness
+  let us = u + pitch * v;        // log-spiral shear: p arms
+  // triangular (hex) node ripple along the arms; safe_* (us not angle-bounded)
+  let ripple = 0.12 * (safe_sin(pp * v) + safe_cos(pp * v - TAU * us));
+  let vs = v + pitch * ripple;
+  return w * complex_exp(vec2f(us + ripple, vs));
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -7863,6 +7912,8 @@ fn apply_variation(
     case 314u: { return var_lichtenberg(p, w, p0, p1, p2, p3, p4); }   // #219
     case 315u: { return var_copula_gaussian(p, w, p0, p1); }    // #217 copula (cross-axis)
     case 316u: { return var_copula_clayton(p, w, p0, p1); }     // #217 copula (cross-axis)
+    case 317u: { return var_schwarz_christoffel(p, w, p0); }    // #154 conformal (n-gon)
+    case 318u: { return var_doyle(p, w, p0, p1); }              // #154 conformal (spiral)
     default:  { return vec2f(0.0, 0.0); }
   }
 }

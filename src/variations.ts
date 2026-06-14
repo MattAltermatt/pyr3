@@ -621,6 +621,9 @@ export const V = {
   // #217 — statistical copula warps (cross-axis dependence, genuine 2D coupling)
   copula_gaussian: 315,   // symmetric elliptical correlation shear (probit + Cholesky)
   copula_clayton: 316,    // asymmetric lower-tail dependence (θ-capped at 8)
+  // #154 — conformal-geometry warps (extend the #133 conformal family)
+  schwarz_christoffel: 317,   // regular-n-gon SC conformal map (10-term series)
+  doyle: 318,                 // hexagonal circle-packing log-spiral
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -632,7 +635,8 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
 /** Convert an internal variation index (0..316) to its user-facing display label
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
  *  and P0..P96 (Pyre originals, incl. the #16 marathon families V271..V303, the
- *  escape-time family V310..V313 → P90..P93, and the copula warps V315..V316 → P95..P96). */
+ *  escape-time family V310..V313 → P90..P93, the copula warps V315..V316 → P95..P96,
+ *  and the conformal pair V317..V318 → P97..P98). */
 export function getDisplayLabel(idx: number): string {
   if (idx <= 98) {
     return `V${idx}`;

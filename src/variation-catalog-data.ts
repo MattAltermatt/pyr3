@@ -72,6 +72,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx >= V.burning_ship && idx <= V.halley) return 'novel';  // #145 — novel escape-time fractals (P90..P93)
   if (idx === V.lichtenberg) return 'novel';                     // #219 — stateless filament warp (P94)
   if (idx === V.copula_gaussian || idx === V.copula_clayton) return 'novel'; // #217 — copula warps (P95/P96)
+  if (idx === V.schwarz_christoffel || idx === V.doyle) return 'novel'; // #154 — conformal pair (P97/P98)
   return 'jwf';
 }
 
@@ -5296,6 +5297,64 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     ],
     defaultWeight: 0.5,
     warpFn: (x, y) => { const s = 1.0, theta = 2.0; const sig = (t: number) => 1 / (1 + Math.exp(-t)); const ss = Math.max(s, 1e-3); const u = Math.max(1e-4, Math.min(1 - 1e-4, sig(ss * x))); const v = Math.max(1e-4, Math.min(1 - 1e-4, sig(ss * y))); const th = Math.max(0.05, Math.min(8, theta)); const ua = Math.pow(u, -th); const va = Math.pow(v, -th); const base = Math.max(ua + va - 1, 1e-6); const h = Math.pow(u, -th - 1) * Math.pow(base, -1 - 1 / th); const up = Math.max(1e-4, Math.min(1 - 1e-4, h)); const yp = Math.max(-12, Math.min(12, Math.log(up / (1 - up)))) / ss; return [x, yp]; },
+  },
+  // #154 — conformal-geometry warps (extend the #133 conformal family: blaschke,
+  // mobius, schwarzschild_lensing, newton, cayley, complex_gamma, lambert_w).
+  // Novel constructions with no JWF / flam3-C reference (verified 0 matches).
+  {
+    idx: V.schwarz_christoffel,
+    name: 'schwarz_christoffel',
+    source: 'novel',
+    formula: "w(z) = \\int_0^z (1-\\zeta^n)^{-2/n}\\,d\\zeta = \\sum_k \\frac{(2/n)_k}{k!}\\,\\frac{z^{nk+1}}{nk+1}",
+    blurb: 'The Schwarz-Christoffel map — the conformal transformation that sends the unit disk onto the interior of a regular polygon, here in its closed-form regular-n-gon case. The SC integral ∫₀ᶻ(1−ζⁿ)^(−2/n)dζ has no elementary antiderivative, so it is evaluated as the binomial series (1−u)^(−2/n) = Σ (2/n)ₖ/k!·uᵏ integrated term-by-term, a fast 10-term loop. sc_sides chooses the polygon — triangle, square, pentagon (the default), hexagon and up — and the disk fills that polygon with the characteristic conformal crowding toward the corners. Because the series converges only inside the unit disk, the input radius is soft-clamped just inside it, so every walker lands in the polygon interior. A true polygonal conformal warp, distinct from the radial and Möbius members of the conformal family.',
+    params: [
+      { name: 'sc_sides', default: 5, min: 3, max: 12, step: 1 },
+    ],
+    defaultWeight: 0.6,
+    warpFn: (x, y) => {
+      const n = 5; const ni = n;
+      let zx = x, zy = y; const r = Math.hypot(x, y);
+      if (r > 0.999) { const s = 0.999 / Math.max(r, 1e-12); zx *= s; zy *= s; }
+      const a = 2 / n;
+      const cpow = (k: number): [number, number] => {
+        let rx = 1, ry = 0, bx = zx, by = zy, e = k;
+        while (e > 0) {
+          if (e & 1) { const nx = rx * bx - ry * by; ry = rx * by + ry * bx; rx = nx; }
+          const sx = bx * bx - by * by; by = 2 * bx * by; bx = sx; e >>= 1;
+        }
+        return [rx, ry];
+      };
+      let ax = 0, ay = 0, coef = 1;
+      for (let k = 0; k < 10; k++) {
+        const pidx = ni * k + 1; const [px, py] = cpow(pidx);
+        ax += (coef / pidx) * px; ay += (coef / pidx) * py;
+        coef = coef * (a + k) / (k + 1);
+      }
+      return [ax, ay];
+    },
+  },
+  {
+    idx: V.doyle,
+    name: 'doyle',
+    source: 'novel',
+    formula: "L=\\log z,\\; u'=u+\\tfrac{q}{p}v,\\; z'=\\exp\\!\\big(u'+\\rho,\\; v+\\tfrac{q}{p}\\rho\\big)",
+    blurb: 'The Doyle spiral — a conformal hexagonal packing of mutually-tangent circles spiralling to the origin. Taking the complex logarithm sends that log-spiral lattice to a regular triangular lattice, so the whole construction becomes a shear of the (ln r, θ) strip: doyle_p sets the number of spiral arms, doyle_q the secondary winding, and their ratio is the spiral pitch (how fast angle bleeds into radius). A triangular ripple along the arms places the tangent-circle nodes, then the exponential maps everything back to the plane. The (p,q) basis is evaluated continuously, so animating between integer keyframes morphs the spiral smoothly rather than snapping. Where the Schwarz-Christoffel map fills a polygon, the Doyle warp winds the plane into self-similar spiral arms.',
+    params: [
+      { name: 'doyle_p', default: 2, min: 1, max: 8, step: 1 },
+      { name: 'doyle_q', default: 1, min: 0, max: 8, step: 1 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => {
+      const pp = 2, qq = 1;
+      const u = 0.5 * Math.log(x * x + y * y + 1e-20);
+      const v = Math.atan2(y, x);
+      const pitch = qq / pp;
+      const us = u + pitch * v;
+      const ripple = 0.12 * (Math.sin(pp * v) + Math.cos(pp * v - 2 * Math.PI * us));
+      const vs = v + pitch * ripple;
+      const ex = Math.exp(Math.max(-20, Math.min(20, us + ripple)));
+      return [ex * Math.cos(vs), ex * Math.sin(vs)];
+    },
   },
   // #137 — Special-function radial profiles
   {
