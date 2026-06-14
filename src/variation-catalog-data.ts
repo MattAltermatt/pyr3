@@ -71,6 +71,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx >= V.blaschke && idx <= 309) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303 + follow-ons V304–V309 (#216/#218/#220/#221)
   if (idx >= V.burning_ship && idx <= V.halley) return 'novel';  // #145 — novel escape-time fractals (P90..P93)
   if (idx === V.lichtenberg) return 'novel';                     // #219 — stateless filament warp (P94)
+  if (idx === V.copula_gaussian || idx === V.copula_clayton) return 'novel'; // #217 — copula warps (P95/P96)
   return 'jwf';
 }
 
@@ -5266,6 +5267,35 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       if (slen > 2.0) { sx *= 2.0/slen; sy *= 2.0/slen; }
       return [x + strength*sx, y + strength*sy];
     },
+  },
+  // #217 — statistical copula warps (cross-axis dependence). The catalog's first
+  // ANISOTROPIC statistical warp: x passes through, y' depends on BOTH coords via a
+  // dependence parameter. copula_gaussian reuses the #218 erfinv (probit) helper.
+  {
+    idx: V.copula_gaussian,
+    name: 'copula_gaussian',
+    source: 'novel',
+    formula: "z_y' = \\rho\\,z_x + \\sqrt{1-\\rho^2}\\,z_y,\\quad z=\\sqrt{2}\\,\\mathrm{erf}^{-1}\\!\\big(2\\sigma(sx)-1\\big)",
+    blurb: 'The Gaussian copula — the catalog’s first anisotropic statistical warp. Each coordinate is mapped to a uniform by the logistic sigmoid, lifted to a standard-normal score by the probit (√2·erf⁻¹), then the two scores are mixed by the Cholesky correlation shear z_y′ = ρ·z_x + √(1−ρ²)·z_y before y′ is read back to coordinate scale. Unlike the rotationally-symmetric radial CDF family (weibull / cauchy / pareto / gaussian / levy_cdf, all r′ = f(r)), this is genuine 2D coupling: y′ depends on x. ρ controls the correlation — a symmetric elliptical shear along the diagonal, equal in both tails. The coupling is the exact Gaussian copula; the sigmoid (not the exact normal CDF) sets the coordinate map, chosen so the warp stays bounded in normal-score space.',
+    params: [
+      { name: 'strength', default: 1.0, min: 0.1, max: 4, step: 0.05 },
+      { name: 'rho', default: 0.6, min: -0.95, max: 0.95, step: 0.05 },
+    ],
+    defaultWeight: 0.6,
+    warpFn: (x, y) => { const s = 1.0, rho = 0.6; const sig = (t: number) => 1 / (1 + Math.exp(-t)); const erfinv = (xi: number) => { const xc = Math.max(-0.999999, Math.min(0.999999, xi)); const a = 0.147; const ln1 = Math.log(1 - xc * xc); const t1 = 2 / (Math.PI * a) + 0.5 * ln1; const inner = Math.sqrt(Math.max(t1 * t1 - ln1 / a, 0)) - t1; return Math.sign(xc) * Math.sqrt(Math.max(inner, 0)); }; const ss = Math.max(s, 1e-3); const u = Math.max(1e-4, Math.min(1 - 1e-4, sig(ss * x))); const v = Math.max(1e-4, Math.min(1 - 1e-4, sig(ss * y))); const zx = 1.4142135 * erfinv(2 * u - 1); const zy = 1.4142135 * erfinv(2 * v - 1); const r = Math.max(-0.95, Math.min(0.95, rho)); const zyp = r * zx + Math.sqrt(Math.max(1 - r * r, 0)) * zy; return [x, zyp / ss]; },
+  },
+  {
+    idx: V.copula_clayton,
+    name: 'copula_clayton',
+    source: 'novel',
+    formula: "h(v\\,|\\,u) = u^{-\\theta-1}\\big[u^{-\\theta}+v^{-\\theta}-1\\big]^{-1-1/\\theta},\\quad u=\\sigma(sx)",
+    blurb: 'The Clayton copula — asymmetric LOWER-tail dependence, the sibling that breaks the Gaussian copula’s symmetry. Coordinates are mapped to uniforms by the logistic sigmoid, then the Clayton conditional value h(v|u) couples them and y′ is read back through the logit. θ sets the dependence strength: walkers cluster tightly when both coordinates are small (origin-ward) and stay loose when large — a one-cornered density no rotationally-symmetric radial warp can produce, and the visible asymmetry against the symmetric Gaussian copula. θ is hard-capped at 8 because u⁻θ races toward f32 overflow at the clamped uniform endpoint — a load-bearing boundedness cap, not a tuning knob.',
+    params: [
+      { name: 'strength', default: 1.0, min: 0.1, max: 4, step: 0.05 },
+      { name: 'theta', default: 2.0, min: 0.05, max: 8, step: 0.05 },
+    ],
+    defaultWeight: 0.5,
+    warpFn: (x, y) => { const s = 1.0, theta = 2.0; const sig = (t: number) => 1 / (1 + Math.exp(-t)); const ss = Math.max(s, 1e-3); const u = Math.max(1e-4, Math.min(1 - 1e-4, sig(ss * x))); const v = Math.max(1e-4, Math.min(1 - 1e-4, sig(ss * y))); const th = Math.max(0.05, Math.min(8, theta)); const ua = Math.pow(u, -th); const va = Math.pow(v, -th); const base = Math.max(ua + va - 1, 1e-6); const h = Math.pow(u, -th - 1) * Math.pow(base, -1 - 1 / th); const up = Math.max(1e-4, Math.min(1 - 1e-4, h)); const yp = Math.max(-12, Math.min(12, Math.log(up / (1 - up)))) / ss; return [x, yp]; },
   },
   // #137 — Special-function radial profiles
   {

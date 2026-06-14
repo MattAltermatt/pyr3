@@ -618,6 +618,9 @@ export const V = {
   halley: 313,          // #145 — Halley step on z³−1:  z − 2ff'/(2f'²−ff'') + c
   // #219 — stateless electrical-breakdown filament warp (ridge-attraction)
   lichtenberg: 314,
+  // #217 — statistical copula warps (cross-axis dependence, genuine 2D coupling)
+  copula_gaussian: 315,   // symmetric elliptical correlation shear (probit + Cholesky)
+  copula_clayton: 316,    // asymmetric lower-tail dependence (θ-capped at 8)
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -626,10 +629,10 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
 
-/** Convert an internal variation index (0..313) to its user-facing display label
+/** Convert an internal variation index (0..316) to its user-facing display label
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
- *  and P0..P93 (Pyre originals, incl. the #16 marathon families V271..V303 and
- *  the escape-time family V310..V313 → P90..P93). */
+ *  and P0..P96 (Pyre originals, incl. the #16 marathon families V271..V303, the
+ *  escape-time family V310..V313 → P90..P93, and the copula warps V315..V316 → P95..P96). */
 export function getDisplayLabel(idx: number): string {
   if (idx <= 98) {
     return `V${idx}`;

@@ -6914,6 +6914,51 @@ fn var_lichtenberg(p: vec2f, w: f32, freq_in: f32, branches_in: f32,
   return w * (p + strength * step);
 }
 
+// --- #217 statistical copula warps (cross-axis dependence) ---
+// Copulas impose a DEPENDENCE structure between x and y: x passes through and
+// y' is recomputed from BOTH coords. The catalog's first ANISOTROPIC statistical
+// warp (the radial CDF family V292.. are all rotationally-symmetric r'=f(r)).
+// Shared envelope: coords→uniform via logistic sigmoid (bounded (0,1)), couple,
+// map back. Endpoints clamped off 0/1 so the logit/erfinv args stay finite.
+fn cop_sigmoid(t: f32) -> f32 { return 1.0 / (1.0 + exp(-t)); }
+fn cop_logit(u: f32) -> f32 { return log(u / (1.0 - u)); }
+
+// V315 — copula_gaussian. Exact Gaussian-copula Cholesky correlation shear in
+// normal-score space: u,v = σ(s·x),σ(s·y) → z = √2·erfinv(2u−1) (probit) →
+// z_y' = ρ·z_x + √(1−ρ²)·z_y → y' = z_y'/s. x passes through. The COUPLING is the
+// exact Gaussian copula; the logistic sigmoid (NOT the exact normal CDF) sets the
+// coord↔uniform map — chosen for boundedness. Do not "restore" an exact normal CDF.
+fn var_copula_gaussian(p: vec2f, w: f32, strength: f32, rho_in: f32) -> vec2f {
+  let s = max(strength, 1.0e-3);
+  let u = clamp(cop_sigmoid(s * p.x), 1.0e-4, 1.0 - 1.0e-4);
+  let v = clamp(cop_sigmoid(s * p.y), 1.0e-4, 1.0 - 1.0e-4);
+  let zx = 1.4142135 * erfinv_eval(2.0 * u - 1.0);
+  let zy = 1.4142135 * erfinv_eval(2.0 * v - 1.0);
+  let rho = clamp(rho_in, -0.95, 0.95);
+  let zyp = rho * zx + sqrt(max(1.0 - rho * rho, 0.0)) * zy;
+  return w * vec2f(p.x, zyp / s);
+}
+
+// V316 — copula_clayton. Asymmetric LOWER-tail dependence via the Clayton
+// conditional value h(v|u) = u^(−θ−1)·[u^−θ+v^−θ−1]^(−1−1/θ) ∈ (0,1), then logit
+// back to coordinate scale. x passes through. θ HARD-CAPPED to 8: u^−θ = 10^(4θ)
+// at the u=1e-4 endpoint overflows f32 above θ≈9.5, and an inf here does NOT
+// self-heal via the chaos bad-value retry (inf·0→NaN / silent clamp-saturation).
+// do-not-loosen: this is a boundedness guard, not a tuning knob.
+fn var_copula_clayton(p: vec2f, w: f32, strength: f32, theta_in: f32) -> vec2f {
+  let s = max(strength, 1.0e-3);
+  let u = clamp(cop_sigmoid(s * p.x), 1.0e-4, 1.0 - 1.0e-4);
+  let v = clamp(cop_sigmoid(s * p.y), 1.0e-4, 1.0 - 1.0e-4);
+  let th = clamp(theta_in, 0.05, 8.0);
+  let ua = pow(u, -th);
+  let va = pow(v, -th);
+  let base = max(ua + va - 1.0, 1.0e-6); // Clayton constraint u^−θ+v^−θ−1 ≥ 0 (analytically ≥1)
+  let h = pow(u, -th - 1.0) * pow(base, -1.0 - 1.0 / th);
+  let up = clamp(h, 1.0e-4, 1.0 - 1.0e-4);
+  let yp = clamp(cop_logit(up), -12.0, 12.0) / s;
+  return w * vec2f(p.x, yp);
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -7816,6 +7861,8 @@ fn apply_variation(
     case 312u: { return var_nova(p, w, p0, p1, p2); }           // #145 escape-time
     case 313u: { return var_halley(p, w, p0, p1); }             // #145 escape-time
     case 314u: { return var_lichtenberg(p, w, p0, p1, p2, p3, p4); }   // #219
+    case 315u: { return var_copula_gaussian(p, w, p0, p1); }    // #217 copula (cross-axis)
+    case 316u: { return var_copula_clayton(p, w, p0, p1); }     // #217 copula (cross-axis)
     default:  { return vec2f(0.0, 0.0); }
   }
 }

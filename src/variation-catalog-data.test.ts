@@ -100,12 +100,12 @@ describe('CATALOG_DATA shape invariants', () => {
     }
   });
 
-  it('has a complete entry for every registered variation V0..halley (#253)', () => {
-    // The V registry is contiguous 0..V.halley (314 entries). Guard the FULL
-    // range, not just V0..crackle — a future variation added to V + the WGSL
-    // switch but omitted from CATALOG_DATA would otherwise render a stub
-    // (mount.ts) labelled with a raw idx and ship silently.
-    for (let idx = 0; idx <= V.halley; idx++) {
+  it('has a complete entry for every registered variation V0..copula_clayton (#253)', () => {
+    // The V registry is contiguous 0..V.copula_clayton. Guard the FULL range, not
+    // just V0..crackle — a future variation added to V + the WGSL switch but
+    // omitted from CATALOG_DATA would otherwise render a stub (mount.ts) labelled
+    // with a raw idx and ship silently.
+    for (let idx = 0; idx <= V.copula_clayton; idx++) {
       const doc = getCatalogDoc(idx);
       expect(doc, `V${idx} missing`).toBeDefined();
       expect(doc!.formula, `V${idx} formula empty`).toBeTruthy();
