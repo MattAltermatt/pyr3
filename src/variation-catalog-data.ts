@@ -74,6 +74,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx === V.copula_gaussian || idx === V.copula_clayton) return 'novel'; // #217 — copula warps (P95/P96)
   if (idx === V.schwarz_christoffel || idx === V.doyle) return 'novel'; // #154 — conformal pair (P97/P98)
   if (idx === V.quasicrystal || idx === V.penrose) return 'novel'; // #143 — aperiodic-tiling pair (P99/P100)
+  if (idx === V.collatz || idx === V.digamma) return 'novel'; // #142 — number-theoretic pair (P101/P102)
   return 'jwf';
 }
 
@@ -5404,6 +5405,66 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
         vx += kk * c; vy += kk * s;
       }
       return [vx / scale, vy / scale];
+    },
+  },
+  // #142 — number-theoretic dynamics. collatz is the smooth complex 3n+1 map
+  // (parity interpolation); digamma is ψ(z) via asymptotic series + recurrence.
+  // Both novel (no JWF / flam3-C reference).
+  {
+    idx: V.collatz,
+    name: 'collatz',
+    source: 'novel',
+    formula: "f(z) = \\tfrac{z}{2}\\cos^2\\!\\tfrac{\\pi z}{2} + \\tfrac{3z+1}{2}\\sin^2\\!\\tfrac{\\pi z}{2}",
+    blurb: 'The Collatz map — the famous 3n+1 conjecture’s step, extended to a smooth complex-analytic function. The two integer branches (halve the evens, triple-plus-one the odds) are interpolated by cos²(πz/2) and sin²(πz/2), which are exactly 1 and 0 at even integers and swap at odd integers, so f agrees with the arithmetic Collatz step on the integers and flows smoothly between them across the complex plane. Treating each point as a complex number, the warp folds the plane through this parity dynamic — col_scale sets how many integer cells the pattern spans and col_shift slides the even/odd grid. A genuine arithmetic-dynamics warp no analytic function in the catalog reproduces.',
+    params: [
+      { name: 'col_scale', default: 0.65, min: 0.1, max: 4, step: 0.05 },
+      { name: 'col_shift', default: 0.3, min: -2, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.21,
+    warpFn: (x, y) => {
+      const scale = 0.65, shift = 0.3;
+      const zx = x * scale + shift, zy = y * scale;
+      const ax = zx * Math.PI / 2, ay = zy * Math.PI / 2;   // π z / 2
+      const csin = (rx: number, ry: number): [number, number] => {
+        const yy = Math.max(-20, Math.min(20, ry));
+        return [Math.sin(rx) * Math.cosh(yy), Math.cos(rx) * Math.sinh(yy)];
+      };
+      const cmul = (a: [number, number], b: [number, number]): [number, number] =>
+        [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+      const sn = csin(ax, ay), cs = csin(ax + Math.PI / 2, ay);
+      const s2 = cmul(sn, sn), c2 = cmul(cs, cs);
+      const even = cmul([0.5 * zx, 0.5 * zy], c2);
+      const odd = cmul([0.5 * (3 * zx + 1), 0.5 * (3 * zy)], s2);
+      return [even[0] + odd[0], even[1] + odd[1]];
+    },
+  },
+  {
+    idx: V.digamma,
+    name: 'digamma',
+    source: 'novel',
+    formula: "\\psi(z) = \\psi(z{+}N) - \\sum_{k=0}^{N-1}\\frac{1}{z+k},\\;\\; \\psi(z') \\approx \\ln z' - \\tfrac{1}{2z'} - \\tfrac{1}{12 z'^2} + \\tfrac{1}{120 z'^4}",
+    blurb: 'The digamma function ψ(z) = Γ′(z)/Γ(z), the logarithmic derivative of the gamma function. It is evaluated the standard way: a recurrence shifts the argument up by six to reach the regime where the asymptotic series ln z − 1/2z − 1/12z² + 1/120z⁴ converges quickly, then the shift is undone by subtracting the harmonic tail. As a warp, each point flows along the complex digamma field, whose simple poles at the non-positive integers (0, −1, −2, …) create a lattice of singular wells that sculpt the attractor. dig_scale sets the scale and dig_shift slides the pole lattice. Real-axis sanity: ψ(1) = −γ, the Euler–Mascheroni constant. A special-function warp distinct from the radial gamma-family members.',
+    params: [
+      { name: 'dig_scale', default: 2.3, min: 0.1, max: 4, step: 0.05 },
+      { name: 'dig_shift', default: 1.35, min: -2, max: 2, step: 0.05 },
+    ],
+    defaultWeight: 0.19,
+    warpFn: (x, y) => {
+      const scale = 2.3, shift = 1.35;
+      let zx = x * scale + shift, zy = y * scale;
+      const crecip = (rx: number, ry: number): [number, number] => {
+        const m2 = Math.max(rx * rx + ry * ry, 1e-100);
+        return [rx / m2, -ry / m2];
+      };
+      const cmul = (a: [number, number], b: [number, number]): [number, number] =>
+        [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]];
+      let sx = 0, sy = 0;
+      for (let k = 0; k < 6; k++) { const r = crecip(zx, zy); sx += r[0]; sy += r[1]; zx += 1; }
+      const lz: [number, number] = [0.5 * Math.log(zx * zx + zy * zy + 1e-20), Math.atan2(zy, zx)];
+      const zi = crecip(zx, zy), zi2 = cmul(zi, zi), zi4 = cmul(zi2, zi2);
+      const px = lz[0] - 0.5 * zi[0] - (1 / 12) * zi2[0] + (1 / 120) * zi4[0] - sx;
+      const py = lz[1] - 0.5 * zi[1] - (1 / 12) * zi2[1] + (1 / 120) * zi4[1] - sy;
+      return [px, py];
     },
   },
   // #137 — Special-function radial profiles

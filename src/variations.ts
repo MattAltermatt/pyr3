@@ -627,6 +627,9 @@ export const V = {
   // #143 — aperiodic-tiling warps (quasicrystal & Penrose pentagrid)
   quasicrystal: 319,          // n-fold plane-wave interference (ridge-attraction)
   penrose: 320,               // de Bruijn pentagrid cut-and-project
+  // #142 — number-theoretic dynamics (smooth Collatz & digamma)
+  collatz: 321,               // smooth complex 3n+1 map (parity interpolation)
+  digamma: 322,               // digamma ψ(z) (asymptotic series + recurrence)
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -639,8 +642,8 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
  *  and P0..P96 (Pyre originals, incl. the #16 marathon families V271..V303, the
  *  escape-time family V310..V313 → P90..P93, the copula warps V315..V316 → P95..P96,
- *  the conformal pair V317..V318 → P97..P98, and the aperiodic-tiling pair
- *  V319..V320 → P99..P100). */
+ *  the conformal pair V317..V318 → P97..P98, the aperiodic-tiling pair
+ *  V319..V320 → P99..P100, and the number-theoretic pair V321..V322 → P101..P102). */
 export function getDisplayLabel(idx: number): string {
   if (idx <= 98) {
     return `V${idx}`;

@@ -7053,6 +7053,53 @@ fn var_penrose(p: vec2f, w: f32, scale_in: f32, offset_in: f32) -> vec2f {
   return w * v / scale;
 }
 
+// --- #142 number-theoretic dynamics (smooth Collatz & digamma) ---
+// V321 — collatz. The Collatz (3n+1) map extended to a smooth complex-analytic
+// function that interpolates the two parity branches:
+//   f(z) = (z/2)·cos²(πz/2) + ((3z+1)/2)·sin²(πz/2)
+// At even integers cos²=1 → z/2; at odd integers sin²=1 → (3z+1)/2. The point is
+// a complex number z=x+iy (after scale/shift). cos is computed as sin(·+π/2)
+// (no complex_cos helper). complex_sin already clamps Im to ±20 and uses
+// safe_sin/safe_cos for the real part → cliff-safe; large-|y| growth self-heals
+// via the chaos bad-value retry. Novel construction (no flam3-C / JWF reference).
+fn var_collatz(p: vec2f, w: f32, scale_in: f32, shift_in: f32) -> vec2f {
+  let scale = max(abs(scale_in), 1.0e-3);
+  let z = vec2f(p.x * scale + shift_in, p.y * scale);
+  let arg = z * (PI * 0.5);                               // π z / 2
+  let sn = complex_sin(arg);
+  let cs = complex_sin(arg + vec2f(PI * 0.5, 0.0));       // cos(w) = sin(w + π/2)
+  let s2 = complex_mul(sn, sn);
+  let c2 = complex_mul(cs, cs);
+  let even_branch = complex_mul(0.5 * z, c2);             // (z/2)·cos²
+  let odd_branch = complex_mul(0.5 * (3.0 * z + vec2f(1.0, 0.0)), s2); // ((3z+1)/2)·sin²
+  return w * (even_branch + odd_branch);
+}
+
+// V322 — digamma. The digamma ψ(z)=Γ'/Γ via the asymptotic series after a
+// recurrence shift into the large-|z| regime:
+//   ψ(z) = ψ(z+N) − Σ_{k<N} 1/(z+k),  N=6
+//   ψ(z+N) ≈ ln(z+N) − 1/(2z') − 1/(12 z'²) + 1/(120 z'⁴),  z'=z+N
+// complex_recip floors |z|² at 1e-100, so off-pole inputs stay finite; AT a pole
+// (z'≈0) zi²/zi⁴ overflow to Inf and −Inf+Inf→NaN, which self-heals via the chaos
+// bad-value retry (the `pv != pv` NaN branch reseeds) — a domain singularity, not
+// a value-corruption bug, so no safe_* wrapper. Real-axis oracle: ψ(1) = −γ ≈
+// −0.5772. Novel construction (no flam3-C / JWF reference).
+fn var_digamma(p: vec2f, w: f32, scale_in: f32, shift_in: f32) -> vec2f {
+  let scale = max(abs(scale_in), 1.0e-3);
+  var z = vec2f(p.x * scale + shift_in, p.y * scale);
+  var sum = vec2f(0.0, 0.0);
+  for (var k: i32 = 0; k < 6; k = k + 1) {
+    sum = sum + complex_recip(z);                         // Σ 1/(z+k)
+    z = z + vec2f(1.0, 0.0);
+  }
+  let lz = complex_log(z);                                // z is now z₀+6
+  let zi = complex_recip(z);                              // 1/z'
+  let zi2 = complex_mul(zi, zi);                          // 1/z'²
+  let zi4 = complex_mul(zi2, zi2);                        // 1/z'⁴
+  let psi_shifted = lz - 0.5 * zi - (1.0 / 12.0) * zi2 + (1.0 / 120.0) * zi4;
+  return w * (psi_shifted - sum);
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -7961,6 +8008,8 @@ fn apply_variation(
     case 318u: { return var_doyle(p, w, p0, p1); }              // #154 conformal (spiral)
     case 319u: { return var_quasicrystal(p, w, p0, p1); }       // #143 aperiodic (n-fold)
     case 320u: { return var_penrose(p, w, p0, p1); }            // #143 aperiodic (pentagrid)
+    case 321u: { return var_collatz(p, w, p0, p1); }            // #142 number-theoretic (3n+1)
+    case 322u: { return var_digamma(p, w, p0, p1); }            // #142 number-theoretic (ψ)
     default:  { return vec2f(0.0, 0.0); }
   }
 }

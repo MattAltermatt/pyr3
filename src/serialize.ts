@@ -398,6 +398,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #143 — aperiodic-tiling warps
   quasicrystal: ['qc_symmetry', 'qc_freq'],
   penrose: ['pen_scale', 'pen_offset'],
+  // #142 — number-theoretic dynamics
+  collatz: ['col_scale', 'col_shift'],
+  digamma: ['dig_scale', 'dig_shift'],
   // #137 — Special-function radial profiles
   bessel_j0: ['freq'],
   airy_radial: ['scale', 'shift'],
@@ -743,6 +746,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #143 — aperiodic-tiling warps
   quasicrystal: [5, 3],
   penrose: [0.8, 0.3],
+  // #142 — number-theoretic dynamics
+  collatz: [0.65, 0.3],
+  digamma: [2.3, 1.35],
   // #137 — Special-function radial profiles
   bessel_j0: [8.1],
   airy_radial: [5.3, 0.85],
