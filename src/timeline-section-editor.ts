@@ -79,12 +79,23 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     root.style.display = 'block';
     root.appendChild(header(`▸ Evolve section: flame ${index + 1} → flame ${index + 2}`));
 
+    // #283 — 2-column: evolve + linger (left) | xform pairing (right).
+    const split = document.createElement('div');
+    split.setAttribute('data-section-2col', '1');
+    Object.assign(split.style, { display: 'flex', gap: '26px', alignItems: 'flex-start' });
+    const colL = document.createElement('div');
+    Object.assign(colL.style, { flex: '0 0 auto', minWidth: '300px' });
+    const colR = document.createElement('div');
+    Object.assign(colR.style, { flex: '1 1 auto', borderLeft: '1px solid #2a3540', paddingLeft: '22px' });
+    split.append(colL, colR);
+    root.appendChild(split);
+
     const evolveRow = row('evolve time', 'Seconds to morph from this flame into the next.');
     const evolve = timeline.clips[index]!.transitionDuration;
     evolveRow.add(numberField(evolve, (n) => opts.onEvolveChange(index, n)));
     const unit = document.createElement('span'); unit.textContent = 's'; unit.style.color = '#888';
     evolveRow.add(unit);
-    root.appendChild(evolveRow.row);
+    colL.appendChild(evolveRow.row);
 
     const lingerRow = row(
       'linger',
@@ -117,9 +128,9 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
       c.textContent = 'custom'; c.style.color = '#9cd'; c.style.fontSize = '11px';
       lingerRow.add(c);
     }
-    root.appendChild(lingerRow.row);
+    colL.appendChild(lingerRow.row);
 
-    pairingHandle = mountXformPairing(root, {
+    pairingHandle = mountXformPairing(colR, {
       flameA: timeline.clips[index]!.flame.genome,
       flameB: timeline.clips[index + 1]!.flame.genome,
       permutation: timeline.clips[index]!.permutation,

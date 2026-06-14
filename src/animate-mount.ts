@@ -37,6 +37,7 @@ import {
 } from './timeline-edit';
 import { mountSectionTrack, type SectionTrackHandle, type Selection } from './timeline-sections';
 import { mountSectionEditor, type SectionEditorHandle } from './timeline-section-editor';
+import { mountContextPanel, type ContextPanelHandle } from './timeline-context-panel';
 import { openAddAnimationDialog } from './timeline-add-dialog';
 
 export interface MountAnimateOpts {
@@ -409,6 +410,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // clip-strip `mountTimelineTrack` is retired from this path.)
   let sectionTrack: SectionTrackHandle | null = null;
   let sectionEditor: SectionEditorHandle | null = null;
+  let contextPanel: ContextPanelHandle | null = null; // #283
   let selection: Selection = null;
   // P7 (#212) — keep the source XML around so the Export button can POST
   // it verbatim. The /api/animate route re-parses server-side; we don't
@@ -741,18 +743,32 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         selection = { kind: 'node', index: i };
         sectionTrack?.setSelection(selection);
         if (timeline) sectionEditor?.showNode(timeline, i);
+        contextPanel?.open(); // #283
       },
       onSelectSection: (i) => {
         selection = { kind: 'section', index: i };
         sectionTrack?.setSelection(selection);
         if (timeline) sectionEditor?.showSection(timeline, i);
+        contextPanel?.open(); // #283
       },
       onAdd: () => addInput.click(),
       onSeek: (t) => { stopPlayback(); playbackBar?.setTime(t); void renderAtTime(t); }, // #276
     });
 
+    // #283 — the selection editor lives in a slide-up panel over the flame, not
+    // inline in the bottom strip. Dismissing clears the selection + highlight.
+    contextPanel?.destroy();
+    contextPanel = mountContextPanel(canvasZone, {
+      onDismiss: () => {
+        selection = null;
+        sectionEditor?.clear();
+        sectionTrack?.setSelection(null);
+        contextPanel?.close();
+      },
+    });
+
     sectionEditor?.destroy();
-    sectionEditor = mountSectionEditor(scrubHost, {
+    sectionEditor = mountSectionEditor(contextPanel.contentHost, {
       onEvolveChange: (i, s) => applyEdit(setEvolve(timeline!, i, s)),
       onLingerChange: (i, l) => applyEdit(setLinger(timeline!, i, l)),
       onPermutationChange: (i, perm) => applyEdit(setPermutation(timeline!, i, perm)),
@@ -760,6 +776,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       onRemoveNode: (i) => {
         selection = null;
         sectionEditor?.clear();
+        contextPanel?.close(); // #283
         applyEdit(removeNode(timeline!, i), { structural: true });
       },
     });
@@ -783,6 +800,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       timeline = null;
       timelinePreview = null;
       sectionEditor?.clear();
+      contextPanel?.close(); // #283
       empty.style.display = 'flex';
       setStatus('no timeline');
       refreshSaveButton();
@@ -794,7 +812,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     // (append never shifts indices, but this guards future insert/reorder).
     if (selection) {
       const maxIdx = selection.kind === 'section' ? timeline.clips.length - 2 : timeline.clips.length - 1;
-      if (selection.index > maxIdx) { selection = null; sectionEditor?.clear(); }
+      if (selection.index > maxIdx) { selection = null; sectionEditor?.clear(); contextPanel?.close(); }
     }
     sectionTrack?.rebuild(timeline);
     if (selection) sectionTrack?.setSelection(selection);
@@ -920,6 +938,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       sectionTrack = null;
       sectionEditor?.destroy();
       sectionEditor = null;
+      contextPanel?.destroy(); // #283
+      contextPanel = null;
       animation = parsed.animation;
       loadedFlameXml = text;
       if (easingPanel) { easingPanel.remove(); easingPanel = null; }
@@ -1168,6 +1188,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       sectionTrack = null;
       sectionEditor?.destroy();
       sectionEditor = null;
+      contextPanel?.destroy(); // #283
+      contextPanel = null;
       renderer?.destroy();
       renderer = null;
       if (easingPanel) { easingPanel.remove(); easingPanel = null; }
