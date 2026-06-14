@@ -73,6 +73,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx === V.lichtenberg) return 'novel';                     // #219 — stateless filament warp (P94)
   if (idx === V.copula_gaussian || idx === V.copula_clayton) return 'novel'; // #217 — copula warps (P95/P96)
   if (idx === V.schwarz_christoffel || idx === V.doyle) return 'novel'; // #154 — conformal pair (P97/P98)
+  if (idx === V.quasicrystal || idx === V.penrose) return 'novel'; // #143 — aperiodic-tiling pair (P99/P100)
   return 'jwf';
 }
 
@@ -5354,6 +5355,55 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       const vs = v + pitch * ripple;
       const ex = Math.exp(Math.max(-20, Math.min(20, us + ripple)));
       return [ex * Math.cos(vs), ex * Math.sin(vs)];
+    },
+  },
+  // #143 — aperiodic-tiling warps. quasicrystal sums n symmetric plane waves into
+  // an interference field and displaces along its gradient (ridge-attraction);
+  // penrose is the de Bruijn pentagrid cut-and-project that snaps points to
+  // Penrose tile vertices. Both novel (no JWF / flam3-C reference).
+  {
+    idx: V.quasicrystal,
+    name: 'quasicrystal',
+    source: 'novel',
+    formula: "s(\\mathbf{x}) = \\sum_{k=0}^{n-1}\\cos\\!\\big(f\\,\\mathbf{x}\\cdot(\\cos\\theta_k,\\sin\\theta_k)\\big),\\;\\theta_k=\\tfrac{\\pi k}{n};\\quad \\mathbf{x}' = \\mathbf{x} + s\\,\\nabla s",
+    blurb: 'The quasicrystal — n-fold plane-wave interference, the pattern that tiles the plane with perfect rotational symmetry but never repeats. n plane waves at evenly-spaced angles θₖ = πk/n are summed into an interference field, and each point is displaced along that field’s gradient (ridge-attraction), so walkers accumulate on the bright fringes and trace out the quasicrystalline lattice. qc_symmetry sets the fold: 5 gives the iconic Penrose-like five-fold star, 7 and 12 give other forbidden crystallographic symmetries, and qc_freq sets the spatial scale of the fringes. The gradient is computed in closed form (no finite differences), so the warp is cheap — just n cosines and a sum. A genuinely aperiodic structure no lattice-based warp can produce.',
+    params: [
+      { name: 'qc_symmetry', default: 5, min: 2, max: 12, step: 1 },
+      { name: 'qc_freq', default: 3, min: 0.5, max: 12, step: 0.1 },
+    ],
+    defaultWeight: 0.6,
+    warpFn: (x, y) => {
+      const n = 5, freq = 3, QC_STEP = 0.4;
+      let gx = 0, gy = 0;
+      for (let k = 0; k < n; k++) {
+        const th = Math.PI * k / n; const c = Math.cos(th), s = Math.sin(th);
+        const d = freq * (x * c + y * s); const sw = Math.sin(d);
+        gx -= sw * c; gy -= sw * s;
+      }
+      gx /= n; gy /= n;
+      return [x + QC_STEP * gx, y + QC_STEP * gy];
+    },
+  },
+  {
+    idx: V.penrose,
+    name: 'penrose',
+    source: 'novel',
+    formula: "K_j=\\lfloor s\\,\\mathbf{x}\\cdot(\\cos\\theta_j,\\sin\\theta_j)+\\gamma\\rfloor,\\;\\theta_j=\\tfrac{2\\pi j}{5};\\quad \\mathbf{x}'=\\tfrac{1}{s}\\sum_j K_j(\\cos\\theta_j,\\sin\\theta_j)",
+    blurb: 'The Penrose tiling — built by de Bruijn’s pentagrid cut-and-project, the classic route from five families of parallel lines to the famous aperiodic rhombus tiling. Each point is projected onto five directions at 2πj/5, floored to an integer index per family, and the index five-tuple is mapped back to its Penrose tile vertex. The result snaps every walker to the tiling’s vertices, so the attractor becomes the Penrose lattice itself. pen_scale sets the tiling frequency and pen_offset the pentagrid phase γ. This ships the generalized constant-offset pentagrid (a true Penrose tiling additionally requires the offsets to sum to zero); the constant-γ form is the common shader variant and is still genuinely aperiodic.',
+    params: [
+      { name: 'pen_scale', default: 0.8, min: 0.1, max: 6, step: 0.1 },
+      { name: 'pen_offset', default: 0.3, min: -1, max: 1, step: 0.05 },
+    ],
+    defaultWeight: 0.12,
+    warpFn: (x, y) => {
+      const scale = 0.8, gamma = 0.3;
+      let vx = 0, vy = 0;
+      for (let j = 0; j < 5; j++) {
+        const th = 2 * Math.PI * j / 5; const c = Math.cos(th), s = Math.sin(th);
+        const kk = Math.floor(scale * (x * c + y * s) + gamma);
+        vx += kk * c; vy += kk * s;
+      }
+      return [vx / scale, vy / scale];
     },
   },
   // #137 — Special-function radial profiles

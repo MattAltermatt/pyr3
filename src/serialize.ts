@@ -395,6 +395,9 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #154 — conformal-geometry warps
   schwarz_christoffel: ['sc_sides'],
   doyle: ['doyle_p', 'doyle_q'],
+  // #143 — aperiodic-tiling warps
+  quasicrystal: ['qc_symmetry', 'qc_freq'],
+  penrose: ['pen_scale', 'pen_offset'],
   // #137 — Special-function radial profiles
   bessel_j0: ['freq'],
   airy_radial: ['scale', 'shift'],
@@ -737,6 +740,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #154 — conformal-geometry warps
   schwarz_christoffel: [5],
   doyle: [2, 1],
+  // #143 — aperiodic-tiling warps
+  quasicrystal: [5, 3],
+  penrose: [0.8, 0.3],
   // #137 — Special-function radial profiles
   bessel_j0: [8.1],
   airy_radial: [5.3, 0.85],

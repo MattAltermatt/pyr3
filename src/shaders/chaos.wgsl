@@ -7008,6 +7008,51 @@ fn var_doyle(p: vec2f, w: f32, dp: f32, dq: f32) -> vec2f {
   return w * complex_exp(vec2f(us + ripple, vs));
 }
 
+// --- #143 aperiodic-tiling warps (quasicrystal & Penrose pentagrid) ---
+// V319 — quasicrystal. n-fold plane-wave interference field
+// s(x,y)=Σ_{k<n} cos(freq·(x·cosθₖ + y·sinθₖ)), θₖ=π·k/n, rendered as gradient
+// ridge-attraction (the lichtenberg idiom, but with the CLOSED-FORM gradient —
+// ∇s has an analytic sum, no finite differences). Walkers displace along ∇s and
+// accumulate on the interference fringes. n=5 → iconic Penrose-like 5-fold.
+// θₖ∈[0,π) is angle-bounded (native cos/sin); the freq-scaled dₖ is NOT → its
+// sin routes through safe_sin (#72 trig cliff). Output bounded by QC_STEP·|ĝ| ≤
+// QC_STEP. Novel construction (no flam3-C / JWF reference).
+fn var_quasicrystal(p: vec2f, w: f32, sym_in: f32, freq_in: f32) -> vec2f {
+  let QC_STEP: f32 = 0.4;  // fixed displacement scale (local: self-contained for extractWgslFn)
+  let n = i32(clamp(round(sym_in), 2.0, 12.0));
+  let freq = max(freq_in, 1.0e-3);
+  var g = vec2f(0.0, 0.0);
+  for (var k: i32 = 0; k < n; k = k + 1) {
+    let th = PI * f32(k) / f32(n);            // [0, π) — angle-bounded
+    let dir = vec2f(cos(th), sin(th));
+    let d = freq * dot(p, dir);               // NOT angle-bounded → safe_sin
+    g = g - safe_sin(d) * dir;                // ∇s direction (freq folded into QC_STEP)
+  }
+  g = g / f32(n);
+  return w * (p + QC_STEP * g);
+}
+
+// V320 — penrose. de Bruijn pentagrid cut-and-project: 5 line families at
+// θⱼ=2πj/5 with constant offset γ; each input gets index Kⱼ=floor(scale·(x·cosθⱼ
+// + y·sinθⱼ)+γ), and the cut-and-project maps the index 5-tuple to the Penrose
+// tile vertex V=Σⱼ Kⱼ·(cosθⱼ, sinθⱼ). Snaps every walker to its Penrose vertex →
+// the attractor becomes the rhombus-tiling vertex set. θⱼ angle-bounded (native
+// trig); proj feeds floor (no trig cliff). GENERALIZED constant-offset pentagrid
+// (true Penrose needs Σγⱼ=0; the constant-γ form is the common shader variant,
+// still aperiodic) — do not "fix" to per-family offsets without intent. Novel.
+fn var_penrose(p: vec2f, w: f32, scale_in: f32, offset_in: f32) -> vec2f {
+  let scale = max(scale_in, 1.0e-3);
+  let gamma = offset_in;
+  var v = vec2f(0.0, 0.0);
+  for (var j: i32 = 0; j < 5; j = j + 1) {
+    let th = TAU * f32(j) / 5.0;              // [0, 2π) — angle-bounded
+    let dir = vec2f(cos(th), sin(th));
+    let kk = floor(scale * dot(p, dir) + gamma);
+    v = v + kk * dir;
+  }
+  return w * v / scale;
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -7914,6 +7959,8 @@ fn apply_variation(
     case 316u: { return var_copula_clayton(p, w, p0, p1); }     // #217 copula (cross-axis)
     case 317u: { return var_schwarz_christoffel(p, w, p0); }    // #154 conformal (n-gon)
     case 318u: { return var_doyle(p, w, p0, p1); }              // #154 conformal (spiral)
+    case 319u: { return var_quasicrystal(p, w, p0, p1); }       // #143 aperiodic (n-fold)
+    case 320u: { return var_penrose(p, w, p0, p1); }            // #143 aperiodic (pentagrid)
     default:  { return vec2f(0.0, 0.0); }
   }
 }
