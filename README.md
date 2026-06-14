@@ -118,7 +118,7 @@ route — the headless companion to the browser's `/v1/animate` editor. The
 editor's timeline mode (build a sequence of key flames, then 📤 Export sequence)
 renders the whole timeline to a PNG frame sequence through the same backend (#227).
 
-**Platform status (as of v1.7):**
+**Platform status (as of v1.9):**
 
 ```text
 darwin-arm64    verified end-to-end
@@ -171,10 +171,10 @@ Open work and ship history live on GitHub (since the 2026-05-30 pivot):
 - [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry, labelled by
   type (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
 - [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — themed arcs; the
-  `v1.0` → `v1.7` line shipped (latest `v1.7.0`, the More Variations Marathon — 33 novel
-  variations across 11 families, growing the catalog to 310). Active themed work groups around
-  **Apophysis and JWildfire** (gradient editor #115), **More variations** (larger novel families),
-  **Binary distribution** (cross-platform verify #126), **Animation** (follow-ons), and
+  `v1.0` → `v1.9` line shipped (latest `v1.9.0`, the Animation milestone — the timeline
+  sequencer plus keyframe interpolation, motion, easing, and frame export). Active themed work
+  groups around **Apophysis and JWildfire** (gradient editor #115), **More variations** (larger
+  novel families), **Binary distribution** (cross-platform verify #126, Windows `.exe` #287), and
   **Mobile rework** (#66)
 - [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward
 - [HISTORY.md](HISTORY.md) — frozen pre-1.0 ship log (v0.0 → v0.36)

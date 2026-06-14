@@ -68,15 +68,16 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.8
-  have all shipped** (latest: `v1.8.0` on 2026-06-11 — the bug-sweep cluster: 12 fixes from the
-  2026-06-10 adversarial review; `v1.7.0` on 2026-06-10 was the More Variations Marathon, #16
-  follow-ons V304–V309 brought the catalog to 310). Active themed
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.9
+  have all shipped** (latest: `v1.9.0` on 2026-06-14 — the **Animation** milestone closed: the
+  timeline sequencer (#227) plus keyframe interp / motion / easing / frame export, 29 issues;
+  `v1.8.0` on 2026-06-11 was the bug-sweep cluster, `v1.7.0` the More Variations Marathon that
+  grew the catalog to 310). Active themed
   milestones: **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
   and Color Curves #116 all shipped; gradient editor #115 still open), **Binary
   distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
-  verify #126 still open), **More variations** (#16 — larger novel families; escape-time family #145 shipped V310–V313, ~4 open), **Animation**
-  (keyframe interp / motion / motion-blur / scrubber shipped v1.6.0; follow-ons open), and
+  verify #126 + Windows `.exe` support #287 still open), **More variations** (#16 — larger novel
+  families; escape-time family #145 shipped V310–V313, ~6 open), and
   **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
