@@ -413,13 +413,6 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // Track the most-recently-rendered time so an easing change re-renders the
   // frame the user is currently looking at.
   let lastRenderedTime = 0;
-  // #226 — throughput anchor for the up-front export ETA: this machine's
-  // measured chaos samples/sec, smoothed (EMA) from the preview renders that
-  // already run on load / scrub. null until the first preview frame times out.
-  // The browser-GPU preview is a rough proxy for the backend Dawn-node export
-  // path (same silicon, different driver), and the during-render ETA re-anchors
-  // it per frame — so a cold approximation is fine.
-  let previewSamplesPerSec: number | null = null;
 
   // #274 — output-size control in the chrome (before the Export button). Drives
   // both the live preview aspect and the export request. Initialised to defaults;
@@ -514,11 +507,10 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       // samples and freezes the GPU + display compositor. CLI / pyr3 serve
       // are the unrestricted paths (see #210, P4). The timeline path applies
       // the same cap via previewTimeline() (built once on load).
-      const gpuStart = performance.now();
+      //
       // #274 — rescale genomes to the preview canvas dims (= chosen output size
       // capped uniformly), so the preview is a true WYSIWYG of the export framing.
       const previewTarget: OutputSize = { width: renderer.width, height: renderer.height };
-      let previewResult;
       if (timeline && timelinePreview) {
         const tlScaled: Timeline = {
           ...timelinePreview,
@@ -527,7 +519,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
             flame: { ...c.flame, genome: rescaleGenomeToOutput(c.flame.genome, previewTarget) },
           })),
         };
-        previewResult = renderTimelineFrame(renderer, tlScaled, t, {
+        renderTimelineFrame(renderer, tlScaled, t, {
           outputView: context.getCurrentTexture().createView(),
           walkerJitter: DEFAULT_WALKER_JITTER,
         });
@@ -542,22 +534,14 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
               : PREVIEW_MAX_SPP,
           }, previewTarget)),
         };
-        previewResult = renderAnimationFrame(renderer, previewAnim, t, {
+        renderAnimationFrame(renderer, previewAnim, t, {
           outputView: context.getCurrentTexture().createView(),
           walkerJitter: DEFAULT_WALKER_JITTER,
         });
       }
+      // Flush GPU work before the rAF yield below so the just-rendered frame is
+      // composited before the next swap-chain texture is acquired (#211).
       await device.queue.onSubmittedWorkDone();
-      // #226 — sample this machine's throughput from the preview render so the
-      // export modal can show a real up-front ETA. EMA-smooth so the first
-      // (pipeline-warmup-inflated) frame doesn't dominate.
-      const gpuMs = performance.now() - gpuStart;
-      if (gpuMs > 0 && previewResult.totalSamples > 0) {
-        const sps = previewResult.totalSamples / (gpuMs / 1000);
-        previewSamplesPerSec = previewSamplesPerSec === null
-          ? sps
-          : previewSamplesPerSec * 0.6 + sps * 0.4;
-      }
       // #227c — keep the timeline track's playhead in sync with auto-play /
       // scrub (no-op in animation mode where the section track is null).
       sectionTrack?.setPlayhead(t);
@@ -869,11 +853,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       outputSize: exportOut,
       defaults: { begin, end, dtime: 1, qs: 1.0, prefix: '' },
       // #226 — live up-front ETA, recomputed as the user edits begin/end/dtime/qs.
-      // Closes over the loaded animation + this machine's measured throughput.
-      // #274 — fold the chosen output dims into the cost range.
+      // #274 — fold the chosen output dims into the cost range. #278 — the ETA is
+      // a two-term backend cost model (samples + per-pixel); no live anchor needed.
       estimate: (range) =>
         animation
-          ? estimateExport(animation, { ...range, outputSize: exportOut }, previewSamplesPerSec)
+          ? estimateExport(animation, { ...range, outputSize: exportOut })
           : { frames: 0, totalSamples: 0, seconds: null },
       // Only wire the Browse button when running under pyr3 serve —
       // can_write_files is the right capability bit (true on the backend
@@ -921,7 +905,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       durationSeconds,
       outputSize: exportOut,
       defaults: { fps: 30, quality: 200, prefix: '' },
-      estimate: (range) => estimateTimelineExport(tl, { ...range, outputSize: exportOut }, previewSamplesPerSec),
+      estimate: (range) => estimateTimelineExport(tl, { ...range, outputSize: exportOut }),
       ...(getCapability().can_write_files ? { pickDirectory: pickDirectoryViaBackend } : {}),
       onStart: (values) => {
         if (!exportModal) return;

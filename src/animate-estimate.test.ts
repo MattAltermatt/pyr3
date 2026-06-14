@@ -3,6 +3,8 @@ import {
   countFrames,
   totalSampleBudget,
   estimateSeconds,
+  SEC_PER_SAMPLE,
+  SEC_PER_PIXEL,
   formatCount,
   formatEstTime,
   estimateExport,
@@ -106,15 +108,25 @@ describe('totalSampleBudget', () => {
 
 // ── estimateSeconds ──────────────────────────────────────────────────────────
 
-describe('estimateSeconds', () => {
-  it('divides samples by throughput', () => {
-    expect(estimateSeconds(1000, 500)).toBe(2);
+describe('estimateSeconds (two-term backend model, #278)', () => {
+  it('sums the chaos-sample term and the per-pixel term', () => {
+    expect(estimateSeconds(1_000_000, 0)).toBeCloseTo(1_000_000 * SEC_PER_SAMPLE, 9);
+    expect(estimateSeconds(0, 1_000_000)).toBeCloseTo(1_000_000 * SEC_PER_PIXEL, 9);
+    expect(estimateSeconds(1_000_000, 2_000_000)).toBeCloseTo(
+      1_000_000 * SEC_PER_SAMPLE + 2_000_000 * SEC_PER_PIXEL, 9,
+    );
   });
-  it('returns null without a throughput anchor', () => {
-    expect(estimateSeconds(1000, null)).toBeNull();
+  it('the per-pixel term is non-trivial — it is what the old samples-only model missed', () => {
+    // A 4K frame at quality 200: budget = 200·w·h, pixels = w·h. The pixel term
+    // must contribute meaningfully (the #278 bug was ignoring it entirely).
+    const px = 3840 * 2160;
+    const pixelTerm = px * SEC_PER_PIXEL;
+    expect(pixelTerm).toBeGreaterThan(1); // > 1 second per 4K frame from readback/encode alone
   });
-  it('returns null for a non-positive throughput', () => {
-    expect(estimateSeconds(1000, 0)).toBeNull();
+  it('is monotonic and clamps negatives to 0', () => {
+    expect(estimateSeconds(0, 0)).toBe(0);
+    expect(estimateSeconds(NaN, NaN)).toBe(0);
+    expect(estimateSeconds(2_000_000, 0)).toBeGreaterThan(estimateSeconds(1_000_000, 0));
   });
 });
 
@@ -148,30 +160,41 @@ describe('formatEstTime', () => {
 // ── estimateExport + formatExportEstimate ────────────────────────────────────
 
 describe('estimateExport', () => {
-  it('bundles frames, totalSamples, and seconds', () => {
+  it('bundles frames, totalSamples, and modelled seconds', () => {
     const anim = constAnim();
     const perFrame = computeDispatch(16, 100, 100).actualSamples;
-    const est = estimateExport(anim, { begin: 0, end: 9, dtime: 1, qs: 1 }, perFrame);
+    const est = estimateExport(anim, { begin: 0, end: 9, dtime: 1, qs: 1 });
     expect(est.frames).toBe(10);
     expect(est.totalSamples).toBe(perFrame * 10);
-    expect(est.seconds).toBe(10); // perFrame*10 samples / perFrame per sec
+    // seconds = samples·SEC_PER_SAMPLE + pixels·SEC_PER_PIXEL (10 frames @ 100×100)
+    const expected = perFrame * 10 * SEC_PER_SAMPLE + 100 * 100 * 10 * SEC_PER_PIXEL;
+    expect(est.seconds).toBeCloseTo(expected, 6);
   });
-  it('reports null seconds without a throughput anchor', () => {
-    const est = estimateExport(constAnim(), { begin: 0, end: 9, dtime: 1, qs: 1 }, null);
+  it('#278 — seconds grows with output dimensions (per-pixel term), not just samples', () => {
+    const anim = constAnim({ width: 100, height: 100 });
+    const range = { begin: 0, end: 9, dtime: 1, qs: 1 };
+    const native = estimateExport(anim, range).seconds!;
+    const at4x = estimateExport(anim, { ...range, outputSize: { width: 200, height: 200 } }).seconds!;
+    // 4× the pixels (and 4× the samples) ⇒ ~4× the time — the per-pixel cost is
+    // present, so a 4K export can no longer read as "20s".
+    expect(at4x).toBeGreaterThan(native * 3.5);
+  });
+  it('reports null seconds for an empty range', () => {
+    const est = estimateExport(constAnim(), { begin: 10, end: 0, dtime: 1, qs: 1 });
+    expect(est.frames).toBe(0);
     expect(est.seconds).toBeNull();
   });
 });
 
 describe('formatExportEstimate', () => {
-  it('spells out "est. time" and tags the machine when an anchor exists', () => {
+  it('spells out "est. time" with no bare tilde', () => {
     const s = formatExportEstimate({ frames: 120, totalSamples: 101e9, seconds: 228 });
     expect(s).toContain('120 frames');
     expect(s).toContain('101B samples');
     expect(s).toContain('est. time 3:48');
-    expect(s).toContain('this machine');
     expect(s).not.toContain('~'); // no bare tilde — spelled out
   });
-  it('falls back to a post-first-frame note without an anchor', () => {
+  it('falls back to a post-first-frame note when seconds is null', () => {
     const s = formatExportEstimate({ frames: 120, totalSamples: 101e9, seconds: null });
     expect(s).toContain('120 frames');
     expect(s).toContain('est. time after first frame');
@@ -224,14 +247,18 @@ describe('timelineSampleBudget', () => {
 });
 
 describe('estimateTimelineExport', () => {
-  it('returns frames + budget + null seconds when no anchor', () => {
-    const est = estimateTimelineExport(oneClipTl(200, 1), { fps: 30, quality: 200 }, null);
+  it('returns frames + budget + modelled seconds', () => {
+    const est = estimateTimelineExport(oneClipTl(200, 1), { fps: 30, quality: 200 });
     expect(est.frames).toBe(30);
     expect(est.totalSamples).toBeGreaterThan(0);
-    expect(est.seconds).toBeNull();
-  });
-  it('returns seconds when an anchor exists', () => {
-    const est = estimateTimelineExport(oneClipTl(200, 1), { fps: 30, quality: 200 }, 1e6);
     expect(est.seconds).toBeGreaterThan(0);
+  });
+  it('#278 — seconds grows with output dimensions, not just samples', () => {
+    const tl = oneClipTl(200, 1);
+    const native = estimateTimelineExport(tl, { fps: 30, quality: 200 }).seconds!;
+    const at4x = estimateTimelineExport(tl, {
+      fps: 30, quality: 200, outputSize: { width: 200, height: 200 },
+    }).seconds!;
+    expect(at4x).toBeGreaterThan(native * 3.5);
   });
 });

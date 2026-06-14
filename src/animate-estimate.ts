@@ -57,19 +57,40 @@ export function countFrames(begin: number, end: number, dtime: number): number {
 // the modal's input handler (interpolate() builds a full Genome per call).
 const BUDGET_SAMPLE_CAP = 64;
 
-/** Total chaos-sample budget (walkers × iters, summed over frames) for an
- *  export. Per-frame cost = computeDispatch(quality·qs, w, h).actualSamples —
- *  the SAME dispatch math the real render uses. */
-export function totalSampleBudget(animation: Animation, range: ExportRange): number {
+// ── Backend per-frame cost model (#278) ──────────────────────────────────────
+// The up-front export ETA used to divide the chaos-sample budget by a throughput
+// anchor measured from the BROWSER preview render. That undershot 4K exports by
+// ~30–100×: the preview renders to a canvas (no GPU→CPU readback, no PNG encode),
+// while a backend export frame is dominated by a PER-PIXEL cost (readback + JS
+// PNG encode + density/tonemap/visualize) that grows with resolution and is
+// absent from the preview measurement. A pure samples/sec model structurally
+// cannot represent it — effective seconds/sample then varies with both quality
+// AND dimensions, so no single throughput anchor fits.
+//
+// Replacement: a two-term model  seconds = samples·SEC_PER_SAMPLE + pixels·SEC_PER_PIXEL.
+// Constants calibrated from headless `npm run animate` timings (Dawn-node, Apple
+// Silicon) across native/HD/4K × q=20/200/2000: fits native+HD within ~1% and is
+// conservative (a safe ~38% OVER-estimate) at 4K, where the chaos game amortizes
+// fixed GPU cost better than the linear model assumes. These are a COLD reference
+// — the during-render ETA (animate-export.ts) re-anchors to wall-clock, so the
+// up-front number self-corrects within one frame on any machine.
+export const SEC_PER_SAMPLE = 2.5e-8; // backend chaos throughput ≈ 40M samples/s
+export const SEC_PER_PIXEL = 1.3e-6;  // readback + PNG-encode + tonemap, per output px
+
+/** Sample + pixel budget for an export, summed over frames. Probes up to
+ *  BUDGET_SAMPLE_CAP frame times spread evenly across the range, averages the
+ *  per-frame cost, and scales by the true frame count. Per-frame samples =
+ *  computeDispatch(quality·qs, w, h).actualSamples (the SAME dispatch math the
+ *  real render uses); per-frame pixels = w × h (drives the readback/encode term). */
+function animationBudget(animation: Animation, range: ExportRange): { samples: number; pixels: number } {
   const frames = countFrames(range.begin, range.end, range.dtime);
-  if (frames === 0) return 0;
+  if (frames === 0) return { samples: 0, pixels: 0 };
   const step = Math.max(1, Math.floor(range.dtime));
   const qs = range.qs > 0 ? range.qs : 1;
 
-  // Probe up to BUDGET_SAMPLE_CAP frame indices spread evenly across the range,
-  // average their per-frame budget, and scale by the true frame count.
   const probes = Math.min(frames, BUDGET_SAMPLE_CAP);
-  let sum = 0;
+  let sampleSum = 0;
+  let pixelSum = 0;
   for (let i = 0; i < probes; i++) {
     const frameIdx = probes === 1 ? 0 : Math.round((i * (frames - 1)) / (probes - 1));
     const t = range.begin + frameIdx * step;
@@ -77,33 +98,34 @@ export function totalSampleBudget(animation: Animation, range: ExportRange): num
     const w = range.outputSize?.width ?? g.size?.width ?? 1024;
     const h = range.outputSize?.height ?? g.size?.height ?? 1024;
     const spp = (g.quality ?? 16) * qs;
-    sum += computeDispatch(spp, w, h).actualSamples;
+    sampleSum += computeDispatch(spp, w, h).actualSamples;
+    pixelSum += w * h;
   }
-  const avgPerFrame = sum / probes;
-  return Math.round(avgPerFrame * frames);
+  return {
+    samples: Math.round((sampleSum / probes) * frames),
+    pixels: Math.round((pixelSum / probes) * frames),
+  };
 }
 
-/** Seconds to render `totalSamples` at a measured throughput. Returns null when
- *  no throughput anchor is available yet. */
-export function estimateSeconds(
-  totalSamples: number,
-  samplesPerSec: number | null,
-): number | null {
-  if (samplesPerSec === null || !(samplesPerSec > 0) || !Number.isFinite(totalSamples)) {
-    return null;
-  }
-  return totalSamples / samplesPerSec;
+/** Total chaos-sample budget (walkers × iters, summed over frames) for an
+ *  export — the headline "N samples" figure. */
+export function totalSampleBudget(animation: Animation, range: ExportRange): number {
+  return animationBudget(animation, range).samples;
 }
 
-/** Bundle frame count, sample budget, and (when an anchor exists) seconds. */
-export function estimateExport(
-  animation: Animation,
-  range: ExportRange,
-  samplesPerSec: number | null,
-): ExportEstimate {
+/** Wall-clock seconds for the two-term backend cost model (#278). Always returns
+ *  a number (the model needs no live anchor); the during-render ETA refines it. */
+export function estimateSeconds(totalSamples: number, totalPixels: number): number {
+  const s = (Number.isFinite(totalSamples) ? totalSamples : 0) * SEC_PER_SAMPLE
+    + (Number.isFinite(totalPixels) ? totalPixels : 0) * SEC_PER_PIXEL;
+  return Math.max(0, s);
+}
+
+/** Bundle frame count, sample budget, and modelled seconds. */
+export function estimateExport(animation: Animation, range: ExportRange): ExportEstimate {
   const frames = countFrames(range.begin, range.end, range.dtime);
-  const totalSamples = totalSampleBudget(animation, range);
-  return { frames, totalSamples, seconds: estimateSeconds(totalSamples, samplesPerSec) };
+  const { samples, pixels } = animationBudget(animation, range);
+  return { frames, totalSamples: samples, seconds: frames === 0 ? null : estimateSeconds(samples, pixels) };
 }
 
 /** Compact count: 850, 12k, 4.2M, 101B. "B" for billions reads clearer to a
@@ -150,47 +172,54 @@ export function countTimelineFrames(durationSeconds: number, fps: number): numbe
   return Math.max(1, Math.round(durationSeconds * fps));
 }
 
-/** Total chaos-sample budget for a timeline export. Per-frame cost =
- *  computeDispatch(absoluteQuality, w, h).actualSamples — the same dispatch math
- *  the real render uses, with the absolute quality (no qs multiply). */
-export function timelineSampleBudget(tl: Timeline, range: TimelineExportRange): number {
+/** Sample + pixel budget for a timeline export, summed over frames. Per-frame
+ *  samples = computeDispatch(absoluteQuality, w, h).actualSamples (no qs multiply);
+ *  per-frame pixels = w × h (drives the readback/encode term, #278). */
+function timelineBudget(tl: Timeline, range: TimelineExportRange): { samples: number; pixels: number } {
   const total = timelineDuration(tl);
   const frames = countTimelineFrames(total, range.fps);
-  if (frames === 0) return 0;
+  if (frames === 0) return { samples: 0, pixels: 0 };
   const quality = range.quality > 0 ? range.quality : 16;
   const probes = Math.min(frames, BUDGET_SAMPLE_CAP);
-  let sum = 0;
+  let sampleSum = 0;
+  let pixelSum = 0;
   for (let i = 0; i < probes; i++) {
     const frameIdx = probes === 1 ? 0 : Math.round((i * (frames - 1)) / (probes - 1));
     const t = frameIdx / range.fps;
     const g = timelineGenomeAt(tl, t);
     const w = range.outputSize?.width ?? g.size?.width ?? 1024;
     const h = range.outputSize?.height ?? g.size?.height ?? 1024;
-    sum += computeDispatch(quality, w, h).actualSamples;
+    sampleSum += computeDispatch(quality, w, h).actualSamples;
+    pixelSum += w * h;
   }
-  return Math.round((sum / probes) * frames);
+  return {
+    samples: Math.round((sampleSum / probes) * frames),
+    pixels: Math.round((pixelSum / probes) * frames),
+  };
 }
 
-/** Bundle frame count + sample budget + (when an anchor exists) seconds for a
- *  timeline export. Reuses estimateSeconds + the ExportEstimate shape so the
- *  modal's formatExportEstimate renders it unchanged. */
-export function estimateTimelineExport(
-  tl: Timeline,
-  range: TimelineExportRange,
-  samplesPerSec: number | null,
-): ExportEstimate {
+/** Total chaos-sample budget for a timeline export — the headline "N samples". */
+export function timelineSampleBudget(tl: Timeline, range: TimelineExportRange): number {
+  return timelineBudget(tl, range).samples;
+}
+
+/** Bundle frame count + sample budget + modelled seconds for a timeline export.
+ *  Reuses estimateSeconds + the ExportEstimate shape so the modal's
+ *  formatExportEstimate renders it unchanged. */
+export function estimateTimelineExport(tl: Timeline, range: TimelineExportRange): ExportEstimate {
   const frames = countTimelineFrames(timelineDuration(tl), range.fps);
-  const totalSamples = timelineSampleBudget(tl, range);
-  return { frames, totalSamples, seconds: estimateSeconds(totalSamples, samplesPerSec) };
+  const { samples, pixels } = timelineBudget(tl, range);
+  return { frames, totalSamples: samples, seconds: frames === 0 ? null : estimateSeconds(samples, pixels) };
 }
 
 /** Render the up-front estimate as one human line. Spells out "est. time" with
- *  no bare ~ — the estimate-ness is in words, not a glyph (#226 UX). */
+ *  no bare ~ — the estimate-ness is in words, not a glyph (#226 UX). The number
+ *  is a cold model estimate (#278) that the during-render ETA refines live. */
 export function formatExportEstimate(est: ExportEstimate): string {
   if (est.frames === 0) return 'no frames in range';
   const head = `${est.frames} frame${est.frames === 1 ? '' : 's'} · ${formatCount(est.totalSamples)} samples`;
   if (est.seconds === null) {
     return `${head} · est. time after first frame`;
   }
-  return `${head} · est. time ${formatEstTime(est.seconds)} (this machine)`;
+  return `${head} · est. time ${formatEstTime(est.seconds)}`;
 }

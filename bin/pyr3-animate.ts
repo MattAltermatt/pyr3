@@ -32,7 +32,7 @@ import {
 } from '../src/animate-render';
 import { type Timeline, timelineDuration, timelineGenomeAt } from '../src/timeline';
 import { timelineFromJson, TIMELINE_FORMAT } from '../src/timeline-serialize';
-import { totalSampleBudget, formatCount, formatEstTime, estimateSeconds } from '../src/animate-estimate';
+import { totalSampleBudget, formatCount, formatEstTime } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
 import { parseEasingFlag, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
 import { rescaleGenomeToOutput } from '../src/output-size';
@@ -285,8 +285,7 @@ async function main(): Promise<void> {
   let texture: GPUTexture | null = null;
   let cached: { width: number; height: number; oversample: number; filterRadius: number } | null = null;
 
-  // #226 — running ETA accumulators.
-  let doneSamples = 0;
+  // #226 — running ETA accumulator (wall-clock per-frame average drives the ETA).
   let doneSeconds = 0;
   let frameNum = 0;
 
@@ -377,7 +376,6 @@ async function main(): Promise<void> {
 
     const frameSeconds = (Date.now() - t0) / 1000;
     frameNum++;
-    doneSamples += frameResult.totalSamples;
     doneSeconds += frameSeconds;
 
     if (verbose) {
@@ -385,12 +383,11 @@ async function main(): Promise<void> {
       const framesLeft = plan.jobs.length - frameNum;
       let etaSuffix = '';
       if (framesLeft > 0) {
-        const samplesPerSec = doneSamples / Math.max(1e-6, doneSeconds);
-        const avgPerFrame = doneSamples / frameNum;
-        const remSec = estimateSeconds(avgPerFrame * framesLeft, samplesPerSec);
-        if (remSec !== null) {
-          etaSuffix = ` · est. time remaining ${formatEstTime(remSec)} (${framesLeft} left)`;
-        }
+        // Wall-clock per-frame average × frames remaining — a self-correcting
+        // measured ETA, independent of the up-front cost model (#278). The
+        // model is for the FE's BEFORE-render gauge; here we have real timings.
+        const remSec = (doneSeconds / frameNum) * framesLeft;
+        etaSuffix = ` · est. time remaining ${formatEstTime(remSec)} (${framesLeft} left)`;
       }
       console.log(
         `[pyr3-animate] wrote ${outName} (${width}×${height}) in ${elapsed}s${etaSuffix}`,

@@ -29,7 +29,6 @@ describe('animate export modal — up-front estimate (#226)', () => {
     expect(estimate).toHaveBeenCalledTimes(1);
     expect(line!.textContent).toContain('10 frames');
     expect(line!.textContent).toContain('est. time 0:04');
-    expect(line!.textContent).toContain('this machine');
     handle.close();
   });
 
