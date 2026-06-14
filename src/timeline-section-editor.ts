@@ -5,12 +5,14 @@
 
 import { type Timeline } from './timeline';
 import { type Linger, easingToLinger } from './timeline-edit';
+import { mountXformPairing, type XformPairingHandle } from './timeline-xform-pairing';
 
 export interface SectionEditorOpts {
   onEvolveChange: (sectionIndex: number, seconds: number) => void;
   onLingerChange: (sectionIndex: number, linger: Linger) => void;
   onPauseChange: (nodeIndex: number, seconds: number) => void;
   onRemoveNode: (nodeIndex: number) => void;
+  onPermutationChange: (sectionIndex: number, perm: number[] | undefined) => void;
 }
 
 export interface SectionEditorHandle {
@@ -60,6 +62,10 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
   });
   host.appendChild(root);
 
+  // #282 — the pairing widget owns drag listeners; destroy it on every reselect.
+  let pairingHandle: XformPairingHandle | undefined;
+  function clearPairing(): void { pairingHandle?.destroy(); pairingHandle = undefined; }
+
   function header(text: string): HTMLDivElement {
     const h = document.createElement('div');
     h.textContent = text;
@@ -67,19 +73,8 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     return h;
   }
 
-  function disabledTeaser(text: string): HTMLDivElement {
-    const { row: r, add } = row('');
-    const span = document.createElement('span');
-    span.textContent = text;
-    Object.assign(span.style, {
-      opacity: '0.45', border: '1px dashed #3a3a44', borderRadius: '13px',
-      padding: '3px 10px', fontSize: '11px', color: '#cdd',
-    });
-    add(span);
-    return r;
-  }
-
   function showSection(timeline: Timeline, index: number): void {
+    clearPairing();
     root.replaceChildren();
     root.style.display = 'block';
     root.appendChild(header(`▸ Evolve section: flame ${index + 1} → flame ${index + 2}`));
@@ -124,10 +119,16 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     }
     root.appendChild(lingerRow.row);
 
-    root.appendChild(disabledTeaser('edit xform pairing… (#227e, later)'));
+    pairingHandle = mountXformPairing(root, {
+      flameA: timeline.clips[index]!.flame.genome,
+      flameB: timeline.clips[index + 1]!.flame.genome,
+      permutation: timeline.clips[index]!.permutation,
+      onChange: (perm) => opts.onPermutationChange(index, perm),
+    });
   }
 
   function showNode(timeline: Timeline, index: number): void {
+    clearPairing();
     root.replaceChildren();
     root.style.display = 'block';
     root.appendChild(header(`▸ Key flame ${index + 1}`));
@@ -163,7 +164,7 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
   return {
     showSection,
     showNode,
-    clear(): void { root.replaceChildren(); root.style.display = 'none'; },
-    destroy(): void { root.remove(); },
+    clear(): void { clearPairing(); root.replaceChildren(); root.style.display = 'none'; },
+    destroy(): void { clearPairing(); root.remove(); },
   };
 }

@@ -33,7 +33,7 @@ import { renderClipThumbnails } from './timeline-thumbnails';
 // #227d — section-model authoring.
 import { genomeFromJson } from './serialize';
 import {
-  createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, removeNode,
+  createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, setPermutation, removeNode,
 } from './timeline-edit';
 import { mountSectionTrack, type SectionTrackHandle, type Selection } from './timeline-sections';
 import { mountSectionEditor, type SectionEditorHandle } from './timeline-section-editor';
@@ -755,6 +755,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     sectionEditor = mountSectionEditor(scrubHost, {
       onEvolveChange: (i, s) => applyEdit(setEvolve(timeline!, i, s)),
       onLingerChange: (i, l) => applyEdit(setLinger(timeline!, i, l)),
+      onPermutationChange: (i, perm) => applyEdit(setPermutation(timeline!, i, perm)),
       onPauseChange: (i, s) => applyEdit(setPause(timeline!, i, s)),
       onRemoveNode: (i) => {
         selection = null;

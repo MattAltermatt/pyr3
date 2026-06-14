@@ -116,6 +116,19 @@ export function setLinger(tl: Timeline, i: number, linger: Linger): Timeline {
   return { ...tl, clips };
 }
 
+/** Set section `i`'s xform-correspondence permutation (#282). `undefined` (or an
+ *  identity perm normalized upstream) clears the field ⇒ positional-by-index. The
+ *  permutation itself is consumed by interpolate.ts:103 (#225). */
+export function setPermutation(tl: Timeline, i: number, perm: number[] | undefined): Timeline {
+  const clips = tl.clips.map((c, idx) => {
+    if (idx !== i) return c;
+    if (perm) return { ...c, permutation: perm };
+    const { permutation: _drop, ...rest } = c;
+    return rest;
+  });
+  return { ...tl, clips };
+}
+
 /** Remove key flame `i`. Re-terminalizes; removing the last node ⇒ empty. */
 export function removeNode(tl: Timeline, i: number): Timeline {
   const clips = terminalize(tl.clips.filter((_, idx) => idx !== i));

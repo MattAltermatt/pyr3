@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, removeNode,
+  createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, setPermutation, removeNode,
   lingerToEasing, easingToLinger,
   DEFAULT_EVOLVE, DEFAULT_FINAL_HOLD, type Linger,
 } from './timeline-edit';
@@ -148,5 +148,28 @@ describe('appendAnimationAll', () => {
     const last = tl.clips[tl.clips.length - 1]!;
     expect(last.transitionDuration).toBe(0);
     expect(last.duration).toBe(DEFAULT_FINAL_HOLD);
+  });
+});
+
+describe('setPermutation', () => {
+  // Two-clip timeline: section 0 is the evolve gA → gB.
+  const twoClip = () => appendFlame(appendFlame(createTimeline(), gA), gB);
+
+  it('writes a non-identity permutation onto the section clip only', () => {
+    const out = setPermutation(twoClip(), 0, [1, 0, 2]);
+    expect(out.clips[0]!.permutation).toEqual([1, 0, 2]);
+    expect(out.clips[1]!.permutation).toBeUndefined();
+  });
+
+  it('clears the field when given undefined (reset to positional)', () => {
+    const withPerm = setPermutation(twoClip(), 0, [1, 0]);
+    const cleared = setPermutation(withPerm, 0, undefined);
+    expect('permutation' in cleared.clips[0]!).toBe(false);
+  });
+
+  it('does not mutate the input timeline', () => {
+    const base = twoClip();
+    setPermutation(base, 0, [2, 1, 0]);
+    expect(base.clips[0]!.permutation).toBeUndefined();
   });
 });

@@ -104,6 +104,7 @@ const SEAM_EXEMPT = new Set<string>([
   'timeline-section-editor.ts',// /v1/animate clip/section inspector — DOM-mounting (#227d)
   'timeline-add-dialog.ts',    // /v1/animate animation-import modal — DOM-mounting (#227d)
   'timeline-scale.ts',         // /v1/animate shared ruler — renderTicks/attachScrub touch DOM (#276)
+  'timeline-xform-pairing.ts', // /v1/animate xform-pairing widget — DOM-mounting (#282)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
