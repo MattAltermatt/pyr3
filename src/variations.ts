@@ -616,6 +616,8 @@ export const V = {
   magnet1: 311,         // #145 — Magnet I:  ((z²+c−1)/(2z+c−2))²
   nova: 312,            // #145 — relaxed Newton on z³−1:  z − R·f/f' + c
   halley: 313,          // #145 — Halley step on z³−1:  z − 2ff'/(2f'²−ff'') + c
+  // #219 — stateless electrical-breakdown filament warp (ridge-attraction)
+  lichtenberg: 314,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];

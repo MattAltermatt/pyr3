@@ -70,6 +70,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx === V.newton) return 'novel';                          // #133 — novel conformal (P0)
   if (idx >= V.blaschke && idx <= 309) return 'novel'; // #133/#134/#130/#129/#140/#135/#139/#149/#136/#150/#138/#131 + #16 marathon V271–V303 + follow-ons V304–V309 (#216/#218/#220/#221)
   if (idx >= V.burning_ship && idx <= V.halley) return 'novel';  // #145 — novel escape-time fractals (P90..P93)
+  if (idx === V.lichtenberg) return 'novel';                     // #219 — stateless filament warp (P94)
   return 'jwf';
 }
 
@@ -5232,6 +5233,39 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       { name: 'amp', default: 0.3, min: 0, max: 1.5, step: 0.05 },
     ],
     warpFn: (x, y) => { const hash01 = (n: number) => { let h = n >>> 0; h = (h ^ (h >>> 17)) >>> 0; h = Math.imul(h, 0xed5ad4bb) >>> 0; h = (h ^ (h >>> 11)) >>> 0; h = Math.imul(h, 0xac4c1b51) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return h / 4294967296; }; const corner = (ix: number, iy: number) => { const ux = Math.imul(ix >>> 0, 0x9e3779b1) >>> 0; const uy = Math.imul(iy >>> 0, 0x85ebca77) >>> 0; return hash01((ux ^ uy) >>> 0) * 2 - 1; }; const vn = (px: number, py: number) => { const fx = Math.floor(px), fy = Math.floor(py); const ix = fx | 0, iy = fy | 0; const tx = px - fx, ty = py - fy; const ux = tx*tx*(3-2*tx), uy = ty*ty*(3-2*ty); const c00 = corner(ix, iy), c10 = corner(ix+1, iy), c01 = corner(ix, iy+1), c11 = corner(ix+1, iy+1); const bottom = c00 + (c10-c00)*ux, top = c01 + (c11-c01)*ux; return bottom + (top-bottom)*uy; }; const f = Math.max(2.5, 1e-3), amp = 0.3; const sx = x*f, sy = y*f, h = 1e-2; const ddx = (vn(sx+h,sy)-vn(sx-h,sy))/(2*h); const ddy = (vn(sx,sy+h)-vn(sx,sy-h))/(2*h); let dx = ddy, dy = -ddx; dx = Math.max(-8, Math.min(8, dx)); dy = Math.max(-8, Math.min(8, dy)); return [x + amp*dx, y + amp*dy]; },
+  },
+  // #219 — stateless electrical-breakdown filament warp
+  {
+    idx: V.lichtenberg,
+    name: 'lichtenberg',
+    source: 'novel',
+    formula: "p' = p - s\\,\\frac{f}{\\lVert\\nabla f\\rVert^{2}}\\,\\nabla f,\\quad f=\\mathrm{noise}_{\\text{radial}}(p)",
+    blurb: 'Fakes a Lichtenberg / dielectric-breakdown figure with no per-walker tree state: one clamped Newton step pulls the walker onto the zero-set of a radially-biased multi-octave value-noise field, so chaos-game density collapses onto a branching web of thin filaments radiating from the center. `branches` sets the primary trunk count (a periodic angular lattice keeps it seam-free); `radial` blends isotropic crackle into the radial dendrite; `detail` adds self-similar tendrils. A stateless approximation of true stochastic breakdown — a procedural-graphics technique, not a flame idiom.',
+    params: [
+      { name: 'freq', default: 1.5, min: 0.2, max: 6, step: 0.1 },
+      { name: 'branches', default: 5, min: 1, max: 16, step: 1 },
+      { name: 'radial', default: 0.8, min: 0, max: 1, step: 0.05 },
+      { name: 'detail', default: 3, min: 1, max: 4, step: 1 },
+      { name: 'strength', default: 0.5, min: 0, max: 1.5, step: 0.05 },
+    ],
+    warpFn: (x, y) => {
+      const hash01 = (n: number) => { let h = n >>> 0; h = (h ^ (h >>> 17)) >>> 0; h = Math.imul(h, 0xed5ad4bb) >>> 0; h = (h ^ (h >>> 11)) >>> 0; h = Math.imul(h, 0xac4c1b51) >>> 0; h = (h ^ (h >>> 15)) >>> 0; return h / 4294967296; };
+      const corner = (ix: number, iy: number) => { const ux = Math.imul(ix >>> 0, 0x9e3779b1) >>> 0; const uy = Math.imul(iy >>> 0, 0x85ebca77) >>> 0; return hash01((ux ^ uy) >>> 0) * 2 - 1; };
+      const wrap = (i: number, period: number) => { const m = i % period; return m < 0 ? m + period : m; };
+      const vnP = (px: number, py: number, period: number) => { const fx = Math.floor(px), fy = Math.floor(py); const ix = fx | 0, iy = fy | 0; const tx = px - fx, ty = py - fy; const ux = tx*tx*(3-2*tx), uy = ty*ty*(3-2*ty); const ix0 = wrap(ix, period), ix1 = wrap(ix+1, period); const c00 = corner(ix0, iy), c10 = corner(ix1, iy), c01 = corner(ix0, iy+1), c11 = corner(ix1, iy+1); const bottom = c00 + (c10-c00)*ux, top = c01 + (c11-c01)*ux; return bottom + (top-bottom)*uy; };
+      const TAU = 6.28318530717958647692;
+      const freq = 1.5, branches = 5, radial = 0.8, octaves = 3, strength = 0.5;
+      const field = (px: number, py: number) => { const r = Math.hypot(px, py); const ang = Math.atan2(py, px) / TAU; const uP = (ang + 0.5) * branches, vP = r * freq; const uI = px * freq, vI = py * freq; let u = uI + (uP - uI) * radial, v = vI + (vP - vI) * radial; let period = Math.max(Math.round(branches), 1); let sum = 0, amp = 1, tot = 0; for (let k = 0; k < octaves; k++) { sum += amp * vnP(u, v, period); tot += amp; amp *= 0.5; u *= 2; v *= 2; period *= 2; } return sum / tot; };
+      if (Math.hypot(x, y) < 1e-4) return [x, y];
+      const H = 1e-2;
+      const f0 = field(x, y), fxp = field(x+H, y), fxm = field(x-H, y), fyp = field(x, y+H), fym = field(x, y-H);
+      const gx = (fxp - fxm) / (2*H), gy = (fyp - fym) / (2*H);
+      const g2 = Math.max(gx*gx + gy*gy, 1e-3);
+      let sx = -(f0 / g2) * gx, sy = -(f0 / g2) * gy;
+      const slen = Math.hypot(sx, sy);
+      if (slen > 2.0) { sx *= 2.0/slen; sy *= 2.0/slen; }
+      return [x + strength*sx, y + strength*sy];
+    },
   },
   // #137 — Special-function radial profiles
   {

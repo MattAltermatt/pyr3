@@ -387,6 +387,8 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // #132 — Exotic warps
   nbody_lensing: ['c1x', 'c1y', 'c2x', 'c2y', 'm1', 'm2', 'g', 'eps'],
   curl_noise: ['freq', 'amp'],
+  // #219 — lichtenberg
+  lichtenberg: ['freq', 'branches', 'radial', 'detail', 'strength'],
   // #137 — Special-function radial profiles
   bessel_j0: ['freq'],
   airy_radial: ['scale', 'shift'],
@@ -721,6 +723,8 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   // #132 — Exotic warps
   nbody_lensing: [-0.4, 0.0, 0.4, 0.0, 0.06, 0.06, 1.0, 0.05],
   curl_noise: [2.5, 0.3],
+  // #219 — lichtenberg
+  lichtenberg: [1.5, 5, 0.8, 3, 0.5],
   // #137 — Special-function radial profiles
   bessel_j0: [8.1],
   airy_radial: [5.3, 0.85],

@@ -6488,6 +6488,64 @@ fn value_noise2(px: f32, py: f32) -> f32 {
   return mix(bottom, top, uy);                // [-1,1]
 }
 
+// --- #219 lichtenberg: periodic-angular value noise (seam-free at radial=1) ---
+const LICH_MAX_STEP: f32 = 2.0;
+const LICH_H: f32 = 1.0e-2;
+const LICH_R_EPS: f32 = 1.0e-4;
+const LICH_G_EPS: f32 = 1.0e-3;
+
+// Positive modulo so the angular lattice wraps cleanly across the atan2 seam.
+fn lich_wrap(i: i32, period: i32) -> i32 {
+  let m = i % period;
+  return select(m, m + period, m < 0);
+}
+
+// value_noise2 with the x-axis lattice periodic with `period` (reuses vnoise_corner).
+fn value_noise2_periodic(px: f32, py: f32, period: i32) -> f32 {
+  let fx = floor(px);
+  let fy = floor(py);
+  let ix = i32(fx);
+  let iy = i32(fy);
+  let tx = px - fx;
+  let ty = py - fy;
+  let ux = tx * tx * (3.0 - 2.0 * tx);
+  let uy = ty * ty * (3.0 - 2.0 * ty);
+  let ix0 = lich_wrap(ix, period);
+  let ix1 = lich_wrap(ix + 1, period);
+  let c00 = vnoise_corner(ix0, iy);
+  let c10 = vnoise_corner(ix1, iy);
+  let c01 = vnoise_corner(ix0, iy + 1);
+  let c11 = vnoise_corner(ix1, iy + 1);
+  let bottom = mix(c00, c10, ux);
+  let top    = mix(c01, c11, ux);
+  return mix(bottom, top, uy);
+}
+
+// Multi-octave radial-biased ridge field, normalized to ~[-1,1].
+fn lich_field(p: vec2f, freq: f32, branches_n: f32, radial: f32, octaves: i32) -> f32 {
+  let r = length(p);
+  let ang = atan2(p.y, p.x) / TAU;            // [-0.5, 0.5]
+  let u_polar = (ang + 0.5) * branches_n;     // [0, branches)
+  let v_polar = r * freq;
+  let u_iso = p.x * freq;
+  let v_iso = p.y * freq;
+  var u = mix(u_iso, u_polar, radial);
+  var v = mix(v_iso, v_polar, radial);
+  var period = max(i32(round(branches_n)), 1);
+  var sum = 0.0;
+  var amp = 1.0;
+  var tot = 0.0;
+  for (var k = 0; k < octaves; k = k + 1) {
+    sum = sum + amp * value_noise2_periodic(u, v, period);
+    tot = tot + amp;
+    amp = amp * 0.5;
+    u = u * 2.0;
+    v = v * 2.0;
+    period = period * 2;
+  }
+  return sum / tot;
+}
+
 // --- #137 Bessel J0 (A&S 9.4.1 / 9.4.3), |J0|<=1 ---
 fn bessel_j0_eval(x: f32) -> f32 {
   let ax = abs(x);
@@ -6825,6 +6883,35 @@ fn var_curl_noise(p: vec2f, w: f32, freq: f32, amp: f32) -> vec2f {
   let disp = vec2f(dpsi_dy, -dpsi_dx);
   let dispc = clamp(disp, vec2f(-8.0), vec2f(8.0));
   return w * (p + amp * dispc);
+}
+
+// V314 — lichtenberg (#219). Stateless electrical-breakdown filament warp:
+// one clamped Newton step toward the zero-set of a radially-biased multi-octave
+// value-noise field. Density piles onto f=0 contours → branching filaments.
+// branches = primary trunk count (periodic angular lattice). Bounded by
+// strength·LICH_MAX_STEP; pure function, no per-walker state. atan2 is the only
+// trig and is already in [-pi,pi] → no safe_* needed.
+fn var_lichtenberg(p: vec2f, w: f32, freq_in: f32, branches_in: f32,
+                   radial_in: f32, detail_in: f32, strength_in: f32) -> vec2f {
+  let freq = max(freq_in, 1.0e-3);
+  let branches_n = clamp(round(branches_in), 1.0, 16.0);
+  let radial = clamp(radial_in, 0.0, 1.0);
+  let octaves = i32(clamp(round(detail_in), 1.0, 4.0));
+  let strength = max(strength_in, 0.0);
+
+  if (length(p) < LICH_R_EPS) { return w * p; }
+
+  let f0  = lich_field(p, freq, branches_n, radial, octaves);
+  let fxp = lich_field(p + vec2f(LICH_H, 0.0), freq, branches_n, radial, octaves);
+  let fxm = lich_field(p - vec2f(LICH_H, 0.0), freq, branches_n, radial, octaves);
+  let fyp = lich_field(p + vec2f(0.0, LICH_H), freq, branches_n, radial, octaves);
+  let fym = lich_field(p - vec2f(0.0, LICH_H), freq, branches_n, radial, octaves);
+  let g = vec2f(fxp - fxm, fyp - fym) / (2.0 * LICH_H);
+  let g2 = max(dot(g, g), LICH_G_EPS);
+  var step = -(f0 / g2) * g;
+  let slen = length(step);
+  if (slen > LICH_MAX_STEP) { step = step * (LICH_MAX_STEP / slen); }
+  return w * (p + strength * step);
 }
 
 // --- #144 orthogonal-polynomial & harmonic warps ---
@@ -7728,6 +7815,7 @@ fn apply_variation(
     case 311u: { return var_magnet1(p, w, p0, p1); }            // #145 escape-time
     case 312u: { return var_nova(p, w, p0, p1, p2); }           // #145 escape-time
     case 313u: { return var_halley(p, w, p0, p1); }             // #145 escape-time
+    case 314u: { return var_lichtenberg(p, w, p0, p1, p2, p3, p4); }   // #219
     default:  { return vec2f(0.0, 0.0); }
   }
 }

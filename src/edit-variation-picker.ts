@@ -89,7 +89,7 @@ export const CATEGORY_MAP: Record<string, readonly number[]> = (() => {
     'Modular / number-theory': [V.jacobi_theta, V.modular_lambda, V.klein_j, V.weierstrass_p, V.gauss_map],
     // ── More Variations Marathon (#16) — novel families ──
     // #132 — exotic warps (gravitational lensing, divergence-free curl noise)
-    'Physics / exotic': [V.nbody_lensing, V.curl_noise],
+    'Physics / exotic': [V.nbody_lensing, V.curl_noise, V.lichtenberg],
     // #137 — special-function radial profiles (Bessel J0, Airy, Cornu clothoid, Struve H1)
     'Special functions': [V.bessel_j0, V.airy_radial, V.cornu_spiral, V.struve_h1],
     // #141 — quasi-random & digit-scramble warps
