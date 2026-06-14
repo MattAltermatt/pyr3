@@ -13,11 +13,15 @@ import { type EasingCurve } from './easing';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from './animation';
 import { type Timeline, type Clip, type FlameSource, animationToTimeline } from './timeline';
 
-/** Default evolve time (s) given to a freshly-joined section. UX default for a
- *  new feature — tunable, not existing balance. */
-export const DEFAULT_EVOLVE = 2.0;
-/** Default hold (s) on the terminal node so a lone/last flame has visible range. */
-export const DEFAULT_FINAL_HOLD = 2.0;
+/** #280 — SEED evolve time (s) for the FIRST joined section, used only when
+ *  there is no prior section to inherit from. Long by default so a fresh
+ *  sequence reads at movie cadence rather than a 2 s cut. Tunable, not balance. */
+export const DEFAULT_EVOLVE = 20.0;
+/** #280 — SEED hold (s) for the very first flame; inherited forward thereafter
+ *  (every later add copies the previous flame's hold). */
+export const DEFAULT_HOLD = 0.1;
+/** #280 — SEED linger for the first joined section ("soft"); inherited after. */
+export const DEFAULT_LINGER: Linger = 'gentle';
 
 export type Linger = 'none' | 'gentle' | 'strong' | 'custom';
 
@@ -59,17 +63,50 @@ export function createTimeline(): Timeline {
   };
 }
 
+/** #280 — settings a newly-joined section/flame inherits from the existing tail.
+ *  Adding a flame turns the current terminal into a section and creates a fresh
+ *  terminal; both copy the tail's values so authoring keeps its cadence:
+ *   • evolve + linger come from the PREVIOUS section (the last section before the
+ *     terminal), or the seed defaults when none exists yet (first join);
+ *   • the new flame's hold copies the current terminal flame's hold.
+ *  `clips` must be non-empty. */
+function inheritedJoin(clips: Clip[]): { evolve: number; easing: EasingCurve | undefined; hold: number } {
+  const term = clips[clips.length - 1]!;                 // the flame we join FROM
+  const termHold = Math.max(0, term.duration - term.transitionDuration);
+  const prevSection = clips.length >= 2 ? clips[clips.length - 2]! : undefined;
+  return {
+    evolve: prevSection ? prevSection.transitionDuration : DEFAULT_EVOLVE,
+    easing: prevSection ? prevSection.easing : lingerToEasing(DEFAULT_LINGER),
+    hold: termHold,
+  };
+}
+
+/** Turn `clips`' terminal node into an evolving section carrying `evolve`/`easing`,
+ *  preserving its own hold. Returns a new array (input untouched). */
+function joinTerminal(clips: Clip[], evolve: number, easing: EasingCurve | undefined): Clip[] {
+  const last = clips.length - 1;
+  return clips.map((c, i) => {
+    if (i !== last) return c;
+    const pause = Math.max(0, c.duration - c.transitionDuration);
+    const { easing: _drop, ...rest } = c;
+    const updated: Clip = { ...rest, transitionDuration: evolve, duration: pause + evolve };
+    if (easing) updated.easing = easing;
+    return updated;
+  });
+}
+
 /** Append a key flame as a new terminal node. The prior terminal node (if any)
- *  becomes an evolving node (pause 0, evolve DEFAULT_EVOLVE). */
+ *  becomes an evolving section; #280 — the new section inherits the previous
+ *  section's evolve + linger and the new flame copies the prior flame's hold,
+ *  falling back to the seed defaults when there's nothing to inherit. */
 export function appendFlame(tl: Timeline, genome: Genome, source?: FlameSource): Timeline {
   const flame = source ? { genome, source } : { genome };
-  const newClip: Clip = { flame, duration: DEFAULT_FINAL_HOLD, transitionDuration: 0 };
-  if (tl.clips.length === 0) return { ...tl, clips: [newClip] };
-  const last = tl.clips.length - 1;
-  const clips = tl.clips.map((c, i) =>
-    i === last ? { ...c, duration: DEFAULT_EVOLVE, transitionDuration: DEFAULT_EVOLVE } : c,
-  );
-  clips.push(newClip);
+  if (tl.clips.length === 0) {
+    return { ...tl, clips: [{ flame, duration: DEFAULT_HOLD, transitionDuration: 0 }] };
+  }
+  const j = inheritedJoin(tl.clips);
+  const clips = joinTerminal(tl.clips, j.evolve, j.easing);
+  clips.push({ flame, duration: j.hold, transitionDuration: 0 });
   return { ...tl, clips };
 }
 
@@ -136,26 +173,27 @@ export function removeNode(tl: Timeline, i: number): Timeline {
 }
 
 /** Append all keyframes of an imported Animation as clips, preserving their
- *  internal timing. A non-empty base is joined with a DEFAULT_EVOLVE so the
- *  prior flame morphs into (rather than hard-cuts to) the imported sequence.
+ *  internal timing. #280 — a non-empty base is bridged into the import with the
+ *  inherited evolve + linger from the existing tail's section (or the seed
+ *  DEFAULT_EVOLVE/DEFAULT_LINGER when there's no prior section), so the prior
+ *  flame morphs into (rather than hard-cuts to) the imported sequence.
  *  animationToTimeline terminates the sequence with a 0-duration marker clip;
  *  we give that final node a real hold so the last flame is visible/scrubbable. */
 export function appendAnimationAll(tl: Timeline, anim: Animation): Timeline {
   const sub = animationToTimeline(anim);
-  const joined = tl.clips.length === 0
-    ? sub.clips
-    : [
-        ...tl.clips.map((c, idx) =>
-          idx === tl.clips.length - 1
-            ? { ...c, duration: DEFAULT_EVOLVE, transitionDuration: DEFAULT_EVOLVE }
-            : c,
-        ),
-        ...sub.clips,
-      ];
+  let joined: Clip[];
+  if (tl.clips.length === 0) {
+    joined = sub.clips;
+  } else {
+    // #280 — the bridge into the imported sequence inherits evolve + linger from
+    // the existing tail (the imported clips keep their own internal timing).
+    const j = inheritedJoin(tl.clips);
+    joined = [...joinTerminal(tl.clips, j.evolve, j.easing), ...sub.clips];
+  }
   const clips = [...joined];
   const li = clips.length - 1;
   const lc = clips[li]!;
   const pause = Math.max(0, lc.duration - lc.transitionDuration);
-  clips[li] = { ...lc, transitionDuration: 0, duration: Math.max(pause, DEFAULT_FINAL_HOLD) };
+  clips[li] = { ...lc, transitionDuration: 0, duration: Math.max(pause, DEFAULT_HOLD) };
   return { ...tl, clips };
 }

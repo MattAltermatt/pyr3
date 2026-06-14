@@ -1,14 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { sectionLayout, playheadX, type SectionLayoutOpts } from './timeline-sections';
-import { appendFlame, createTimeline } from './timeline-edit';
+import { createTimeline } from './timeline-edit';
+import type { Timeline } from './timeline';
 import type { Genome } from './genome';
 
 const g = {} as Genome;
 const OPTS: SectionLayoutOpts = { nodeW: 60, edgeMinW: 30, edgePxPerSec: 40 };
 
+// Build the geometry inputs explicitly so these tests exercise sectionLayout's
+// math, not the (UX-tunable) edit defaults: pause0=0, evolve0=2, final hold=2.
+function twoFlame(): Timeline {
+  return {
+    ...createTimeline(),
+    clips: [
+      { flame: { genome: g }, duration: 2, transitionDuration: 2 }, // pause 0, evolve 2
+      { flame: { genome: g }, duration: 2, transitionDuration: 0 }, // terminal hold 2
+    ],
+  };
+}
+function oneFlame(): Timeline {
+  return { ...createTimeline(), clips: [{ flame: { genome: g }, duration: 2, transitionDuration: 0 }] };
+}
+
 describe('sectionLayout', () => {
   it('lays out node / edge / node for a 2-flame timeline', () => {
-    const tl = appendFlame(appendFlame(createTimeline(), g), g); // clip0 evolve 2, clip1 terminal
+    const tl = twoFlame();
     const segs = sectionLayout(tl, OPTS);
     // node0, edge0, node1
     expect(segs.map((s) => s.kind)).toEqual(['node', 'edge', 'node']);
@@ -19,14 +35,14 @@ describe('sectionLayout', () => {
   });
 
   it('a single flame is one node, no edge', () => {
-    const tl = appendFlame(createTimeline(), g);
+    const tl = oneFlame();
     const segs = sectionLayout(tl, OPTS);
     expect(segs).toHaveLength(1);
     expect(segs[0]).toMatchObject({ kind: 'node', index: 0 });
   });
 
   it('time spans: node0 covers pause, edge0 covers evolve', () => {
-    const tl = appendFlame(appendFlame(createTimeline(), g), g); // pause0=0, evolve0=2, finalhold=2
+    const tl = twoFlame();
     const segs = sectionLayout(tl, OPTS);
     expect(segs[0]).toMatchObject({ tStart: 0, tEnd: 0 });   // pause 0
     expect(segs[1]).toMatchObject({ tStart: 0, tEnd: 2 });   // evolve [0,2]
@@ -36,7 +52,7 @@ describe('sectionLayout', () => {
 
 describe('playheadX', () => {
   it('interpolates x within the segment containing t', () => {
-    const tl = appendFlame(appendFlame(createTimeline(), g), g);
+    const tl = twoFlame();
     const segs = sectionLayout(tl, OPTS);
     // t=1 is halfway through edge0 (time [0,2], x [60,140]) → x=100.
     expect(playheadX(segs, 1)).toBeCloseTo(100, 6);
@@ -44,7 +60,7 @@ describe('playheadX', () => {
     expect(playheadX(segs, 3)).toBeCloseTo(170, 6);
   });
   it('clamps out-of-range t to the chain ends', () => {
-    const tl = appendFlame(appendFlame(createTimeline(), g), g);
+    const tl = twoFlame();
     const segs = sectionLayout(tl, OPTS);
     expect(playheadX(segs, -5)).toBe(0);
     expect(playheadX(segs, 999)).toBeCloseTo(200, 6); // last seg x+w

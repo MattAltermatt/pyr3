@@ -144,17 +144,15 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     root.style.display = 'block';
     root.appendChild(header(`▸ Key flame ${index + 1}`));
 
-    const isLast = index === timeline.clips.length - 1;
-    const pauseRow = row(isLast ? 'end hold' : 'pause');
+    // #280 — every node's hold is just a "pause" (the terminal's old "end hold"
+    // special-case is gone): a pause is remembered and inherited as flames are
+    // added, so it reads identically whether or not the flame evolves onward.
+    const pauseRow = row('pause');
     const c = timeline.clips[index]!;
     const pause = Math.max(0, c.duration - c.transitionDuration);
     pauseRow.add(numberField(pause, (n) => opts.onPauseChange(index, n)));
     const unit = document.createElement('span');
-    // The terminal flame has nothing to evolve into — its pause is a static
-    // freeze at the END of the animation (the "why is it stuck?" case).
-    unit.textContent = isLast
-      ? 's · freezes on this final flame at the end'
-      : 's (hold before evolving)';
+    unit.textContent = 's (hold before evolving)';
     unit.style.color = '#888';
     pauseRow.add(unit);
     root.appendChild(pauseRow.row);

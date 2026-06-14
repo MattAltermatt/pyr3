@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, setPermutation, removeNode,
   lingerToEasing, easingToLinger,
-  DEFAULT_EVOLVE, DEFAULT_FINAL_HOLD, type Linger,
+  DEFAULT_EVOLVE, DEFAULT_HOLD, DEFAULT_LINGER, type Linger,
 } from './timeline-edit';
 import type { Genome } from './genome';
 import type { Animation } from './animation';
@@ -22,24 +22,61 @@ describe('createTimeline', () => {
 });
 
 describe('appendFlame', () => {
-  it('first append → a single terminal clip', () => {
+  it('first append → a single terminal clip holding the seed default', () => {
     const tl = appendFlame(createTimeline(), gA);
     expect(tl.clips).toHaveLength(1);
     expect(tl.clips[0]!.flame.genome).toBe(gA);
-    expect(tl.clips[0]!.duration).toBe(DEFAULT_FINAL_HOLD);
+    expect(tl.clips[0]!.duration).toBe(DEFAULT_HOLD); // #280 seed hold
     expect(tl.clips[0]!.transitionDuration).toBe(0);
   });
 
-  it('second append → prior node evolves (pause 0), new node terminal', () => {
+  it('second append seeds the first section (no prior section to inherit)', () => {
     const tl = appendFlame(appendFlame(createTimeline(), gA), gB);
     expect(tl.clips).toHaveLength(2);
-    // node 0 is now an evolving node: pause 0, evolve DEFAULT_EVOLVE.
+    // #280 — node 0 becomes a section with the SEED evolve + linger; its own
+    // hold (the seed 0.1) is preserved, not flattened to 0.
     expect(tl.clips[0]!.transitionDuration).toBe(DEFAULT_EVOLVE);
-    expect(tl.clips[0]!.duration).toBe(DEFAULT_EVOLVE); // pause 0 + evolve
-    // node 1 terminal.
+    expect(tl.clips[0]!.duration).toBe(DEFAULT_HOLD + DEFAULT_EVOLVE);
+    expect(tl.clips[0]!.easing).toEqual(lingerToEasing(DEFAULT_LINGER));
+    // node 1 terminal, hold copied from the prior flame (the seed 0.1).
     expect(tl.clips[1]!.flame.genome).toBe(gB);
     expect(tl.clips[1]!.transitionDuration).toBe(0);
-    expect(tl.clips[1]!.duration).toBe(DEFAULT_FINAL_HOLD);
+    expect(tl.clips[1]!.duration).toBe(DEFAULT_HOLD);
+  });
+
+  it('#280 — a later add inherits the previous section + previous flame hold', () => {
+    // flame 1 → flame 2 with a hand-set evolve 12s, strong linger, pause 0.4.
+    let tl = appendFlame(appendFlame(createTimeline(), gA), gB);
+    tl = setEvolve(tl, 0, 12);
+    tl = setLinger(tl, 0, 'strong');
+    tl = setPause(tl, 1, 0.4); // flame 2's hold
+    // add flame 3.
+    tl = appendFlame(tl, gA);
+    expect(tl.clips).toHaveLength(3);
+    // new section (flame 2 → flame 3) copies the previous section's evolve+linger.
+    expect(tl.clips[1]!.transitionDuration).toBe(12);
+    expect(tl.clips[1]!.easing).toEqual(lingerToEasing('strong'));
+    // flame 2 keeps its own 0.4 hold (duration = hold + evolve).
+    expect(tl.clips[1]!.duration).toBe(0.4 + 12);
+    // flame 3 terminal, hold copied from flame 2 (0.4).
+    expect(tl.clips[2]!.transitionDuration).toBe(0);
+    expect(tl.clips[2]!.duration).toBe(0.4);
+    // section 0 (flame 1 → flame 2) is untouched by the add.
+    expect(tl.clips[0]!.transitionDuration).toBe(12);
+  });
+
+  it('#280 — inherits linger "none" (no easing) when the prior section had none', () => {
+    let tl = appendFlame(appendFlame(createTimeline(), gA), gB);
+    tl = setLinger(tl, 0, 'none'); // clears easing
+    tl = appendFlame(tl, gA);
+    expect(tl.clips[1]!.easing).toBeUndefined();
+  });
+
+  it('does not mutate the input timeline', () => {
+    const base = appendFlame(createTimeline(), gA);
+    appendFlame(base, gB);
+    expect(base.clips).toHaveLength(1);
+    expect(base.clips[0]!.transitionDuration).toBe(0);
   });
 
   it('carries an optional FlameSource onto the clip', () => {
@@ -137,6 +174,15 @@ describe('appendAnimationAll', () => {
     // the prior terminal now evolves into the imported sequence.
     expect(tl.clips[0]!.transitionDuration).toBe(DEFAULT_EVOLVE);
   });
+  it('#280 — a multi-clip base bridges into the import with the prior section timing', () => {
+    let base = appendFlame(appendFlame(createTimeline(), gA), gB); // clips [section0, terminal]
+    base = setEvolve(base, 0, 8);
+    base = setLinger(base, 0, 'strong');
+    const tl = appendAnimationAll(base, anim2());
+    // The former terminal (clip 1) becomes the bridge, inheriting section 0's timing.
+    expect(tl.clips[1]!.transitionDuration).toBe(8);
+    expect(tl.clips[1]!.easing).toEqual(lingerToEasing('strong'));
+  });
   it('appending into an empty timeline is just the imported clips', () => {
     const tl = appendAnimationAll(createTimeline(), anim2());
     expect(tl.clips).toHaveLength(animationToTimeline(anim2()).clips.length);
@@ -147,7 +193,7 @@ describe('appendAnimationAll', () => {
     const tl = appendAnimationAll(appendFlame(createTimeline(), gA), anim2());
     const last = tl.clips[tl.clips.length - 1]!;
     expect(last.transitionDuration).toBe(0);
-    expect(last.duration).toBe(DEFAULT_FINAL_HOLD);
+    expect(last.duration).toBe(DEFAULT_HOLD);
   });
 });
 
