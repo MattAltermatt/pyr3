@@ -78,17 +78,17 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.9
-  have all shipped** (latest: `v1.9.0` on 2026-06-14 — the **Animation** milestone closed: the
-  timeline sequencer (#227) plus keyframe interp / motion / easing / frame export, 29 issues;
-  `v1.8.0` on 2026-06-11 was the bug-sweep cluster, `v1.7.0` the More Variations Marathon that
-  grew the catalog to 310). Active themed
-  milestones: **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
-  and Color Curves #116 all shipped; gradient editor #115 still open), **Binary
-  distribution** (#15 — `npm run build:cli render` shipped 2026-06-06; cross-platform
-  verify #126 + Windows `.exe` support #287 still open), **More variations** (#16 — larger novel
-  families; escape-time family #145 shipped V310–V313, ~6 open), and
-  **Mobile rework** (#13 — #66 mobile overhaul). No Project
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.10
+  have all shipped** (latest: `v1.10.0` on 2026-06-14 — the **More variations** milestone (#16)
+  closed: novel warp families V317–V322 growing the catalog to **323** (V0..V322); `v1.9.0` was
+  the **Animation** milestone — the timeline sequencer (#227) plus keyframe interp / motion /
+  easing / frame export, 29 issues; `v1.8.0` the bug-sweep cluster; `v1.7.0` the More Variations
+  Marathon). **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
+  Color Curves #116, gradient editor #115) and **More variations** (#16) are both now **closed**.
+  Active themed milestones: **Binary distribution** (#15 — `npm run build:cli render` shipped
+  2026-06-06; cross-platform verify #126 + Windows `.exe` support #287 still open),
+  **Viewer / editor UX & presets**, **Color grading & scopes**, **evolving flame creation**,
+  **future research**, and **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
 - **Ship history → [GitHub Releases](https://github.com/MattAltermatt/pyr3/releases)** (v1.0
   onward). Pre-1.0 history is frozen in `HISTORY.md` (kept in-repo for provenance).
