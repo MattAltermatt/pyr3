@@ -283,9 +283,22 @@ export function openAnimateExportModal(
     qualityIn = makeNumberInput('quality', opts.defaults.quality, 1, 1);
   }
   const prefixIn = makeTextInput('prefix', opts.defaults.prefix, 'optional filename prefix');
-  const outDirIn = makeTextInput('output dir', '', 'absolute or relative to pyr3 serve cwd');
+  const outDirIn = makeTextInput('output dir *', '', 'required — absolute or relative to pyr3 serve cwd');
   outDirIn.input.required = true;
   outDirIn.input.dataset['outDir'] = '';
+
+  // #277 — advisory shown when the typed path is relative. A relative (or
+  // blank) path resolves against the `pyr3 serve` cwd, which is usually the
+  // repo — a careless export then dumps thousands of PNGs into the project
+  // folder. Non-blocking: relative paths are legal if the user knows their cwd.
+  const outDirWarn = document.createElement('div');
+  outDirWarn.setAttribute('data-out-dir-warn', '');
+  Object.assign(outDirWarn.style, {
+    fontSize: '11px',
+    color: '#db9',
+    marginTop: '-2px',
+    minHeight: '0',
+  });
 
   // #274 — read-only echo of the output resolution chosen in the viewer chrome.
   const dimsEcho = document.createElement('div');
@@ -316,6 +329,7 @@ export function openAnimateExportModal(
         if (picked) {
           outDirIn.input.value = picked;
           validationMsg.textContent = '';
+          syncOutDir();
         }
       } catch (err) {
         validationMsg.textContent =
@@ -329,9 +343,9 @@ export function openAnimateExportModal(
   }
 
   if (opts.mode === 'animation') {
-    form.append(dimsEcho, beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row, resumeRow);
+    form.append(dimsEcho, beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row, outDirWarn, resumeRow);
   } else {
-    form.append(dimsEcho, framesReadout!, fpsIn.row, qualityIn.row, prefixIn.row, outDirIn.row, resumeRow);
+    form.append(dimsEcho, framesReadout!, fpsIn.row, qualityIn.row, prefixIn.row, outDirIn.row, outDirWarn, resumeRow);
   }
 
   // #226 — live up-front estimate line. Recomputed whenever a cost-affecting
@@ -387,6 +401,31 @@ export function openAnimateExportModal(
   function refreshForm(): void {
     refreshEstimate();
     refreshFileNote();
+  }
+
+  // #277 — true if the path is absolute (POSIX `/…` or Windows `C:\…` / `C:/…`).
+  // A relative path resolves against the `pyr3 serve` cwd, so warn on it.
+  function isAbsolutePath(p: string): boolean {
+    return p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p);
+  }
+
+  // #277 — gate Start on a non-empty output dir (disabled+dim over post-click
+  // error, per the no-jump UX convention) and surface the relative-path
+  // advisory. Called on every outDir input, after Browse, and at init.
+  function syncOutDir(): void {
+    const dir = outDirIn.input.value.trim();
+    const ready = dir.length > 0;
+    action.disabled = !ready;
+    action.style.opacity = ready ? '1' : '0.5';
+    action.style.cursor = ready ? 'pointer' : 'not-allowed';
+    action.title = ready ? '' : 'Set an output directory to enable export';
+    // Empty → explain *why* Start is blocked (the required destination).
+    // Non-empty relative → foot-gun advisory. Absolute → no message.
+    outDirWarn.textContent = !ready
+      ? '⚠ Output directory required — set a destination to enable Start'
+      : !isAbsolutePath(dir)
+        ? '⚠ relative path — resolves against the pyr3 serve working directory'
+        : '';
   }
 
   const costInputs = opts.mode === 'animation' ? [beginIn, endIn, dtimeIn, qsIn] : [fpsIn, qualityIn];
@@ -508,6 +547,11 @@ export function openAnimateExportModal(
 
   buttons.append(dismiss, action);
   opts.host.appendChild(root);
+
+  // #277 — live-sync the Start gate + relative-path advisory as the user types,
+  // and set the initial disabled state (outDir starts blank).
+  outDirIn.input.addEventListener('input', syncOutDir);
+  syncOutDir();
 
   // ── helpers ────────────────────────────────────────────────────────────
   function readForm(): AnimateExportFormValues {

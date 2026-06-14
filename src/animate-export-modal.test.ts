@@ -107,7 +107,9 @@ describe('animate export modal — timeline mode (#227)', () => {
       defaults: { fps: 30, quality: 200, prefix: 'tl_' },
       onStart: (v) => { started = v; }, onCancel: () => {}, onClose: () => {},
     });
-    (host.querySelector('input[required]') as HTMLInputElement).value = '/tmp/out';
+    const outDirInput = host.querySelector('input[required]') as HTMLInputElement;
+    outDirInput.value = '/tmp/out';
+    outDirInput.dispatchEvent(new Event('input'));
     (host.querySelector('[data-action]') as HTMLButtonElement).click();
     expect(started).toMatchObject({ mode: 'timeline', fps: 30, quality: 200, prefix: 'tl_', outDir: '/tmp/out' });
     handle.close();
@@ -134,6 +136,7 @@ describe('animate export modal — output dims + resume (#274/#275)', () => {
     expect(resume.checked).toBe(true);
     const outDir = host.querySelector('input[data-out-dir]') as HTMLInputElement;
     outDir.value = '/tmp/x';
+    outDir.dispatchEvent(new Event('input'));
     (host.querySelector('[data-action]') as HTMLButtonElement).click();
     expect(started!.resume).toBe(true);
     handle.close();
@@ -157,6 +160,76 @@ describe('animate export modal — output dims + resume (#274/#275)', () => {
     resume.checked = false;
     resume.dispatchEvent(new Event('change'));
     expect(host.textContent).toContain('overwritten');
+    handle.close();
+  });
+});
+
+describe('animate export modal — Start gated on output dir (#277)', () => {
+  it('disables + dims Start while output dir is empty, enables once typed', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({ host, ...baseOpts });
+    const action = host.querySelector('[data-action]') as HTMLButtonElement;
+    const outDir = host.querySelector('input[data-out-dir]') as HTMLInputElement;
+    const warn = host.querySelector('[data-out-dir-warn]') as HTMLElement;
+    // Empty on open → blocked, with a clear "required" reason tied to the dir.
+    expect(action.disabled).toBe(true);
+    expect(Number(action.style.opacity)).toBeLessThan(1);
+    expect((warn.textContent ?? '').toLowerCase()).toContain('required');
+    // Type an absolute path → enabled, advisory clears.
+    outDir.value = '/tmp/out';
+    outDir.dispatchEvent(new Event('input'));
+    expect(action.disabled).toBe(false);
+    expect(action.style.opacity).toBe('1');
+    expect(warn.textContent).toBe('');
+    // Clear again → blocked + required message returns (whitespace = empty).
+    outDir.value = '   ';
+    outDir.dispatchEvent(new Event('input'));
+    expect(action.disabled).toBe(true);
+    expect((warn.textContent ?? '').toLowerCase()).toContain('required');
+    handle.close();
+  });
+
+  it('does not fire onStart while Start is disabled (empty dir)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let started = false;
+    const handle = openAnimateExportModal({ host, ...baseOpts, onStart: () => { started = true; } });
+    (host.querySelector('[data-action]') as HTMLButtonElement).click();
+    expect(started).toBe(false);
+    handle.close();
+  });
+
+  it('Browse picking a directory enables Start', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({
+      host, ...baseOpts, pickDirectory: async () => '/picked/dir',
+    });
+    const action = host.querySelector('[data-action]') as HTMLButtonElement;
+    expect(action.disabled).toBe(true);
+    const browse = host.querySelector('[data-pick-dir]') as HTMLButtonElement;
+    browse.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((host.querySelector('input[data-out-dir]') as HTMLInputElement).value).toBe('/picked/dir');
+    expect(action.disabled).toBe(false);
+    handle.close();
+  });
+
+  it('warns when the path is relative (resolves against the serve cwd)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({ host, ...baseOpts });
+    const outDir = host.querySelector('input[data-out-dir]') as HTMLInputElement;
+    outDir.value = 'frames';
+    outDir.dispatchEvent(new Event('input'));
+    const warn = host.querySelector('[data-out-dir-warn]') as HTMLElement;
+    expect(warn.textContent ?? '').toMatch(/relative/i);
+    // Absolute path clears the warning.
+    outDir.value = '/tmp/frames';
+    outDir.dispatchEvent(new Event('input'));
+    expect(warn.textContent).toBe('');
     handle.close();
   });
 });
