@@ -35,6 +35,9 @@ export interface AnimationFramePng {
   /** The genome used to seed renderer.reset — written into the PNG's `pyr3`
    *  metadata chunk. Matches pyr3-animate behaviour. */
   centerGenome: Genome;
+  /** #279 — tight RGBA (width*height*4) for cheap preview thumbnailing on the
+   *  server (no PNG decode). The route downscales this; never written to disk. */
+  rgba: Uint8Array;
 }
 
 interface RendererBundle {
@@ -259,7 +262,7 @@ export class FrameSequenceRenderContext {
       metadataJson,
     );
 
-    return { png, width, height, centerGenome };
+    return { png, width, height, centerGenome, rgba: tight };
   }
 
   /** Render one frame end-to-end (submit + finish). Backward-compatible serial

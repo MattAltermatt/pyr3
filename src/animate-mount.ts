@@ -946,6 +946,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
             exportModal.setProgress({
               frame: info.frame, total: info.total, percent: info.percent,
               written: info.written, elapsedSeconds: info.elapsedSeconds, etaSeconds: info.etaSeconds,
+              thumb: info.thumb,
             });
           }
         },
@@ -1011,6 +1012,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
               written: info.written,
               elapsedSeconds: info.elapsedSeconds,
               etaSeconds: info.etaSeconds,
+              thumb: info.thumb,
             });
           }
         },

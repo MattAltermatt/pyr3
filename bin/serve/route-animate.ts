@@ -27,6 +27,7 @@ import { timelineDuration } from '../../src/timeline';
 
 import { createJob, clearJob } from './jobs';
 import { frameOutPath, shouldSkipFrame, writeFrameAtomic } from './resume-skip';
+import { thumbnailDataUri, shouldEmitThumb } from './frame-thumbnail';
 import {
   FrameSequenceRenderContext,
   animationFrameSource,
@@ -339,6 +340,9 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     // Hoisted so the `finally` can drain whatever frame is still in flight on
     // any exit path (abort, path-traversal, finishFrame throw, normal done).
     let inflight: InFlightFrame | null = null;
+    // #279 — throttle preview thumbnails to ≤1 per 500ms (the final frame always
+    // gets one). Frame/path/percent still update on every progress event.
+    let lastThumbAt: number | null = null;
     try {
       // Prime the pipeline with the first render-job's GPU work already in flight.
       inflight = renderJobs.length > 0 ? ctx.submitFrame(reqFor(0)) : null;
@@ -375,11 +379,19 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
           `[pyr3-serve]   frame ${completed}/${total} label=${label} ${result.width}×${result.height} → ${outPath.slice(outDir.length + 1)} (${(elapsedMs / 1000).toFixed(1)}s)`,
         );
 
+        const isFinalFrame = i === renderJobs.length - 1;
+        const nowMs = Date.now();
+        let thumb: string | undefined;
+        if (isFinalFrame || shouldEmitThumb(lastThumbAt, nowMs)) {
+          thumb = thumbnailDataUri(result.rgba, result.width, result.height);
+          lastThumbAt = nowMs;
+        }
         writeSseEvent(res, 'progress', {
           frame: completed,
           total,
           percent: completed / total,
           written: outPath,
+          ...(thumb ? { thumb } : {}),
         });
       }
 

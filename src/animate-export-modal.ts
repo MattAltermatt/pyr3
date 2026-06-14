@@ -14,6 +14,7 @@
 // default — the user must type a path before Start lights up.
 
 import { type ExportRange, type ExportEstimate, formatExportEstimate } from './animate-estimate';
+import { formatDuration, formatFinishTime } from './format-duration';
 
 export type AnimateExportFormValues =
   | { mode: 'animation'; begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string; resume: boolean }
@@ -62,6 +63,8 @@ export interface AnimateExportProgressInfo {
   written?: string;
   elapsedSeconds: number;
   etaSeconds: number;
+  /** #279 — base64 data-URI of the latest rendered frame, when present. */
+  thumb?: string;
 }
 
 export interface AnimateExportModalHandle {
@@ -74,16 +77,6 @@ export interface AnimateExportModalHandle {
   showResult(label: string, tone: 'info' | 'success' | 'error'): void;
   /** Remove the modal DOM. Idempotent. */
   close(): void;
-}
-
-function formatEta(s: number): string {
-  if (!Number.isFinite(s) || s < 0) return '';
-  if (s < 1) return '<1s';
-  const secs = Math.round(s);
-  if (secs < 60) return `${secs}s`;
-  const m = Math.floor(secs / 60);
-  const sec = secs % 60;
-  return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
 /** Concrete example filename(s) for the current form — actual prefix, actual
@@ -446,6 +439,29 @@ export function openAnimateExportModal(
   });
   panel.appendChild(progress);
 
+  // #279 — fixed-aspect preview box for the most-recently-rendered frame. Sized
+  // from the export's output aspect (capped at 240px wide) and reserved up-front
+  // so the modal never jumps when the first thumbnail lands.
+  const previewW = 240;
+  const previewAspect = opts.outputSize.height / opts.outputSize.width;
+  const previewBox = document.createElement('div');
+  Object.assign(previewBox.style, {
+    width: `${previewW}px`,
+    height: `${Math.round(previewW * previewAspect)}px`,
+    background: '#000',
+    border: '1px solid #333',
+    borderRadius: '3px',
+    overflow: 'hidden',
+    alignSelf: 'center',
+  });
+  const previewImg = document.createElement('img');
+  previewImg.setAttribute('data-progress-preview', '');
+  Object.assign(previewImg.style, {
+    width: '100%', height: '100%', objectFit: 'contain', display: 'block',
+  });
+  previewBox.appendChild(previewImg);
+  progress.appendChild(previewBox);
+
   const progressLine = document.createElement('div');
   progressLine.setAttribute('data-progress-line', '');
   progressLine.style.fontSize = '12px';
@@ -610,11 +626,15 @@ export function openAnimateExportModal(
       const pct = Math.round(info.percent * 100);
       fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
       progressLine.textContent = `frame ${info.frame} / ${info.total} (${pct}%)`;
-      const eta = formatEta(info.etaSeconds);
-      const elapsed = formatEta(info.elapsedSeconds);
-      etaLine.textContent = eta !== ''
-        ? `~${eta} remaining · elapsed ${elapsed}`
-        : `elapsed ${elapsed}`;
+      if (info.thumb) previewImg.src = info.thumb;
+      const dur = formatDuration(info.etaSeconds);
+      const elapsed = formatDuration(info.elapsedSeconds);
+      if (dur !== '') {
+        const finishAt = formatFinishTime(Date.now() + info.etaSeconds * 1000);
+        etaLine.textContent = `${dur} remaining · finishes ~${finishAt} · elapsed ${elapsed}`;
+      } else {
+        etaLine.textContent = `elapsed ${elapsed}`;
+      }
     },
     showResult(label: string, tone: 'info' | 'success' | 'error'): void {
       if (closed) return;

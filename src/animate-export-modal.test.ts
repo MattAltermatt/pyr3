@@ -232,3 +232,31 @@ describe('animate export modal — Start gated on output dir (#277)', () => {
     handle.close();
   });
 });
+
+describe('animate export modal — readable ETA + preview (#279)', () => {
+  it('renders D/H/M/S remaining + a finish clock time', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({ host, ...baseOpts });
+    handle.showProgress();
+    handle.setProgress({ frame: 13, total: 603, percent: 0.02, elapsedSeconds: 341, etaSeconds: 15455 });
+    const eta = host.querySelector('[data-progress-eta]')!.textContent!;
+    expect(eta).toContain('4h 17m 35s remaining');
+    expect(eta).toContain('finishes ~');
+    expect(eta).toContain('elapsed 5m 41s');
+    handle.close();
+  });
+
+  it('shows the last-frame thumbnail when a thumb is provided', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({ host, ...baseOpts });
+    handle.showProgress();
+    const dataUri = 'data:image/png;base64,iVBORw0KGgo=';
+    handle.setProgress({ frame: 1, total: 10, percent: 0.1, elapsedSeconds: 1, etaSeconds: 9, thumb: dataUri });
+    const img = host.querySelector('[data-progress-preview]') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    expect(img.src).toBe(dataUri);
+    handle.close();
+  });
+});

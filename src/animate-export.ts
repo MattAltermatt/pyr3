@@ -50,6 +50,9 @@ export interface ExportAnimateProgress {
   elapsedSeconds: number;
   /** Naive ETA (elapsed / percent - elapsed). 0 before the first event. */
   etaSeconds: number;
+  /** #279 — base64 data-URI of the latest rendered frame, when the backend
+   *  sends one (throttled ≤2/sec; absent on skipped/resume frames). */
+  thumb?: string;
 }
 
 export type ExportAnimateOutcome =
@@ -76,6 +79,8 @@ interface BackendProgressEvent {
   total: number;
   percent: number;
   written: string;
+  /** #279 — base64 data-URI of the latest frame, throttled server-side. */
+  thumb?: string;
 }
 
 interface DoneEvent {
@@ -192,6 +197,7 @@ export async function exportAnimate(opts: ExportAnimateOpts): Promise<ExportAnim
               written: p.written,
               elapsedSeconds,
               etaSeconds: estimateEta(p.percent, elapsedSeconds),
+              ...(p.thumb ? { thumb: p.thumb } : {}),
             });
           } catch { /* ignore malformed progress event */ }
         } else if (event === 'done') {
