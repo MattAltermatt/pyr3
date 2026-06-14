@@ -92,6 +92,16 @@ describe('totalSampleBudget', () => {
     const range = { begin: 0, end: 9, dtime: 1, qs: 1 };
     expect(totalSampleBudget(blurred, range)).toBe(totalSampleBudget(single, range));
   });
+  it('#274 — outputSize overrides the genome dims in the per-frame budget', () => {
+    const anim = constAnim({ width: 100, height: 100 });
+    const native = totalSampleBudget(anim, { begin: 0, end: 9, dtime: 1, qs: 1 });
+    const at4x = totalSampleBudget(anim, {
+      begin: 0, end: 9, dtime: 1, qs: 1, outputSize: { width: 200, height: 200 },
+    });
+    const perFrame4x = computeDispatch(16, 200, 200).actualSamples;
+    expect(at4x).toBe(perFrame4x * 10);
+    expect(at4x).toBeGreaterThan(native); // 4× the pixels ⇒ larger budget
+  });
 });
 
 // ── estimateSeconds ──────────────────────────────────────────────────────────

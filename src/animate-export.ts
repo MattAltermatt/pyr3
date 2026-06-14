@@ -27,6 +27,12 @@ export interface ExportAnimateParams {
   prefix?: string;
   /** Absolute path or path relative to `pyr3 serve`'s cwd. Required. */
   outDir: string;
+  /** #274 — absolute output dimensions (long-edge rescale on the server). Both
+   *  must be set to take effect; sent as `out_width` / `out_height`. */
+  outWidth?: number;
+  outHeight?: number;
+  /** #275 — skip frames whose PNG already exists (resume a partial export). */
+  resume?: boolean;
   walkerJitter?: number;
   seed?: number;
 }
@@ -94,6 +100,13 @@ export async function exportAnimate(opts: ExportAnimateOpts): Promise<ExportAnim
   // Exactly one of timelineJson | flameXml is set (caller guarantees). The
   // timeline body carries fps + absolute quality; the animation body carries
   // the begin/end/dtime/qs frame controls.
+  // #274/#275 — output dims (both required) + resume apply to BOTH paths.
+  const dimsAndResume = {
+    ...(p.outWidth !== undefined && p.outHeight !== undefined
+      ? { out_width: p.outWidth, out_height: p.outHeight }
+      : {}),
+    ...(p.resume !== undefined ? { resume: p.resume } : {}),
+  };
   const body = p.timelineJson !== undefined
     ? {
         timeline_json: p.timelineJson,
@@ -103,6 +116,7 @@ export async function exportAnimate(opts: ExportAnimateOpts): Promise<ExportAnim
         ...(p.prefix !== undefined ? { prefix: p.prefix } : {}),
         ...(p.walkerJitter !== undefined ? { walker_jitter: p.walkerJitter } : {}),
         ...(p.seed !== undefined ? { seed: p.seed } : {}),
+        ...dimsAndResume,
       }
     : {
         flame_xml: p.flameXml,
@@ -116,6 +130,7 @@ export async function exportAnimate(opts: ExportAnimateOpts): Promise<ExportAnim
         ...(p.walkerJitter !== undefined ? { walker_jitter: p.walkerJitter } : {}),
         ...(p.seed !== undefined ? { seed: p.seed } : {}),
         ...(p.segmentEasing ? { segment_easing: p.segmentEasing } : {}),
+        ...dimsAndResume,
       };
 
   let jobId: string | null = null;

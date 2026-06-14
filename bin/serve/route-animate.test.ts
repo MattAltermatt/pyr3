@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 
 import { DOMParser } from 'linkedom';
 
-import { applyExportOverrides, applyTimelineExportOverrides } from './render-animation-png';
+import { applyExportOverrides, applyTimelineExportOverrides, applyOutputSizeToAnimation, applyOutputSizeToTimeline } from './render-animation-png';
 import { makeAnimateRoute, applySegmentEasing, computeTimelineFrames } from './route-animate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from '../../src/animation';
 import { type Genome, type Xform } from '../../src/genome';
@@ -306,5 +306,44 @@ describe('makeAnimateRoute — timeline input validation', () => {
     const res = fakeRes();
     await handle(fakeReq({ timeline_json: 'not json', out_dir: tmpdir() }), res);
     expect(res.statusCode).toBe(400);
+  });
+});
+
+// ── output-size override (#274 — absolute output dims, long-edge rescale) ─────
+
+describe('applyOutputSizeToAnimation', () => {
+  it('rescales each keyframe to the output dims (long-edge anchored)', () => {
+    const a = anim({
+      keyframes: [
+        baseGenome({ time: 0, size: { width: 1920, height: 1080 }, scale: 100 }),
+        baseGenome({ time: 1, size: { width: 1920, height: 1080 }, scale: 100 }),
+      ],
+    });
+    const out = applyOutputSizeToAnimation(a, { width: 3840, height: 2160 });
+    expect(out.keyframes[0]!.size).toEqual({ width: 3840, height: 2160 });
+    expect(out.keyframes[0]!.scale).toBeCloseTo(200); // long-edge ratio 2×
+    expect(out.keyframes[1]!.scale).toBeCloseTo(200);
+  });
+  it('is identity (same reference) when no output size is given', () => {
+    const a = anim();
+    expect(applyOutputSizeToAnimation(a, undefined)).toBe(a);
+  });
+});
+
+describe('applyOutputSizeToTimeline', () => {
+  it('rescales every clip genome to the output dims', () => {
+    const tl: Timeline = {
+      ...FLAM3_ANIMATION_DEFAULTS,
+      clips: [
+        { flame: { genome: baseGenome({ time: 0, size: { width: 1920, height: 1080 }, scale: 100 }) }, duration: 1, transitionDuration: 0 },
+      ],
+    };
+    const out = applyOutputSizeToTimeline(tl, { width: 3840, height: 2160 });
+    expect(out.clips[0]!.flame.genome.size).toEqual({ width: 3840, height: 2160 });
+    expect(out.clips[0]!.flame.genome.scale).toBeCloseTo(200);
+  });
+  it('is identity (same reference) when no output size is given', () => {
+    const tl = twoClipTimeline(50, 50);
+    expect(applyOutputSizeToTimeline(tl, undefined)).toBe(tl);
   });
 });

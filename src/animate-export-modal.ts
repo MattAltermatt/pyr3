@@ -16,11 +16,14 @@
 import { type ExportRange, type ExportEstimate, formatExportEstimate } from './animate-estimate';
 
 export type AnimateExportFormValues =
-  | { mode: 'animation'; begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string }
-  | { mode: 'timeline'; fps: number; quality: number; prefix: string; outDir: string };
+  | { mode: 'animation'; begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string; resume: boolean }
+  | { mode: 'timeline'; fps: number; quality: number; prefix: string; outDir: string; resume: boolean };
 
 interface BaseModalOpts {
   host: HTMLElement;
+  /** #274 — output dimensions chosen in the viewer chrome. Echoed read-only so
+   *  the user confirms the export resolution before Start. */
+  outputSize: { width: number; height: number };
   onCancel(): void;
   onClose(): void;
   /** Pop a native OS folder picker. Resolves to the absolute path the
@@ -282,6 +285,25 @@ export function openAnimateExportModal(
   const prefixIn = makeTextInput('prefix', opts.defaults.prefix, 'optional filename prefix');
   const outDirIn = makeTextInput('output dir', '', 'absolute or relative to pyr3 serve cwd');
   outDirIn.input.required = true;
+  outDirIn.input.dataset['outDir'] = '';
+
+  // #274 — read-only echo of the output resolution chosen in the viewer chrome.
+  const dimsEcho = document.createElement('div');
+  Object.assign(dimsEcho.style, { fontSize: '12px', color: '#bbb', marginBottom: '2px' });
+  dimsEcho.textContent = `Output: ${opts.outputSize.width}×${opts.outputSize.height}`;
+
+  // #275 — resume / skip-existing. Default ON; uncheck = overwrite/re-render all.
+  const resumeRow = document.createElement('label');
+  Object.assign(resumeRow.style, {
+    display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#ccc',
+  });
+  const resumeIn = document.createElement('input');
+  resumeIn.type = 'checkbox';
+  resumeIn.checked = true;
+  resumeIn.dataset['resume'] = '';
+  const resumeLabel = document.createElement('span');
+  resumeLabel.textContent = 'Skip frames already rendered';
+  resumeRow.append(resumeIn, resumeLabel);
   // Tuck a Browse button into the out_dir row when the caller provides a
   // pickDirectory hook (only does on pyr3 serve, where /api/pick-dir is wired).
   if (opts.pickDirectory) {
@@ -307,9 +329,9 @@ export function openAnimateExportModal(
   }
 
   if (opts.mode === 'animation') {
-    form.append(beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row);
+    form.append(dimsEcho, beginIn.row, endIn.row, dtimeIn.row, qsIn.row, prefixIn.row, outDirIn.row, resumeRow);
   } else {
-    form.append(framesReadout!, fpsIn.row, qualityIn.row, prefixIn.row, outDirIn.row);
+    form.append(dimsEcho, framesReadout!, fpsIn.row, qualityIn.row, prefixIn.row, outDirIn.row, resumeRow);
   }
 
   // #226 — live up-front estimate line. Recomputed whenever a cost-affecting
@@ -357,7 +379,9 @@ export function openAnimateExportModal(
     const dur = opts.mode === 'timeline' ? (opts as TimelineModalOpts).durationSeconds : 0;
     formNote.textContent =
       `Files: <prefix><frame:05>.png — e.g. ${frameNameExample(v, dur)}. `
-      + 'Existing files in the directory are overwritten.';
+      + (v.resume
+        ? 'Existing frames skipped (resume).'
+        : 'Existing files in the directory are overwritten.');
   }
 
   function refreshForm(): void {
@@ -369,6 +393,7 @@ export function openAnimateExportModal(
   for (const f of [...costInputs, prefixIn]) {
     f.input.addEventListener('input', refreshForm);
   }
+  resumeIn.addEventListener('change', refreshForm);
   refreshForm();
 
   panel.appendChild(validationMsg);
@@ -488,6 +513,7 @@ export function openAnimateExportModal(
   function readForm(): AnimateExportFormValues {
     const prefix = prefixIn.input.value;
     const outDir = outDirIn.input.value.trim();
+    const resume = resumeIn.checked;
     if (opts.mode === 'animation') {
       return {
         mode: 'animation',
@@ -497,6 +523,7 @@ export function openAnimateExportModal(
         qs: Math.max(0.01, Number(qsIn.input.value) || 1),
         prefix,
         outDir,
+        resume,
       };
     }
     return {
@@ -505,6 +532,7 @@ export function openAnimateExportModal(
       quality: Math.max(1, Math.floor(Number(qualityIn.input.value) || 200)),
       prefix,
       outDir,
+      resume,
     };
   }
 

@@ -6,6 +6,7 @@ import { type ExportEstimate } from './animate-estimate';
 const baseOpts = {
   mode: 'animation' as const,
   defaults: { begin: 0, end: 9, dtime: 1, qs: 1, prefix: '' },
+  outputSize: { width: 800, height: 600 },
   onStart: () => {},
   onCancel: () => {},
   onClose: () => {},
@@ -69,6 +70,7 @@ describe('animate export modal — timeline mode (#227)', () => {
     document.body.appendChild(host);
     const handle = openAnimateExportModal({
       host, mode: 'timeline', durationSeconds: 7.5,
+      outputSize: { width: 800, height: 600 },
       defaults: { fps: 30, quality: 200, prefix: '' },
       onStart: () => {}, onCancel: () => {}, onClose: () => {},
     });
@@ -85,6 +87,7 @@ describe('animate export modal — timeline mode (#227)', () => {
     document.body.appendChild(host);
     const handle = openAnimateExportModal({
       host, mode: 'timeline', durationSeconds: 7.5,
+      outputSize: { width: 800, height: 600 },
       defaults: { fps: 30, quality: 200, prefix: 'tl_' },
       onStart: () => {}, onCancel: () => {}, onClose: () => {},
     });
@@ -100,12 +103,60 @@ describe('animate export modal — timeline mode (#227)', () => {
     let started: unknown = null;
     const handle = openAnimateExportModal({
       host, mode: 'timeline', durationSeconds: 1,
+      outputSize: { width: 800, height: 600 },
       defaults: { fps: 30, quality: 200, prefix: 'tl_' },
       onStart: (v) => { started = v; }, onCancel: () => {}, onClose: () => {},
     });
     (host.querySelector('input[required]') as HTMLInputElement).value = '/tmp/out';
     (host.querySelector('[data-action]') as HTMLButtonElement).click();
     expect(started).toMatchObject({ mode: 'timeline', fps: 30, quality: 200, prefix: 'tl_', outDir: '/tmp/out' });
+    handle.close();
+  });
+});
+
+describe('animate export modal — output dims + resume (#274/#275)', () => {
+  it('echoes the output dimensions and defaults resume ON in form values', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let started: { resume?: boolean } | null = null;
+    const handle = openAnimateExportModal({
+      host,
+      mode: 'timeline',
+      durationSeconds: 2,
+      outputSize: { width: 3840, height: 2160 },
+      defaults: { fps: 30, quality: 200, prefix: '' },
+      onStart: (v) => { started = v; },
+      onCancel: () => {},
+      onClose: () => {},
+    });
+    expect(host.textContent).toContain('3840×2160');
+    const resume = host.querySelector('input[data-resume]') as HTMLInputElement;
+    expect(resume.checked).toBe(true);
+    const outDir = host.querySelector('input[data-out-dir]') as HTMLInputElement;
+    outDir.value = '/tmp/x';
+    (host.querySelector('[data-action]') as HTMLButtonElement).click();
+    expect(started!.resume).toBe(true);
+    handle.close();
+  });
+
+  it('file-note copy reflects resume vs overwrite', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const handle = openAnimateExportModal({
+      host,
+      mode: 'timeline',
+      durationSeconds: 2,
+      outputSize: { width: 800, height: 600 },
+      defaults: { fps: 30, quality: 200, prefix: '' },
+      onStart: () => {},
+      onCancel: () => {},
+      onClose: () => {},
+    });
+    const resume = host.querySelector('input[data-resume]') as HTMLInputElement;
+    expect(host.textContent).toContain('frames skipped (resume)');
+    resume.checked = false;
+    resume.dispatchEvent(new Event('change'));
+    expect(host.textContent).toContain('overwritten');
     handle.close();
   });
 });

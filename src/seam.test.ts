@@ -88,6 +88,7 @@ const SEAM_EXEMPT = new Set<string>([
   'variation-catalog-section.ts', // /v1/variations per-section component (#119)
   'render-progress-modal.ts',  // Save Render progress modal — owns DOM (#176)
   'render-mode-bar.ts',        // shared PREVIEW/RENDER bar — owns DOM (#176 Task 3)
+  'size-preset-control.ts',    // shared SIZE_PRESETS dropdown widget — owns DOM (#274)
   'render-save.ts',            // shared Save Render helper — anchor download (#201 P0)
   'animate-mount.ts',          // /v1/animate page body — DOM-mounting (#211 P6)
   'animate-export-modal.ts',   // /v1/animate export modal — DOM-mounting (#212 P7)

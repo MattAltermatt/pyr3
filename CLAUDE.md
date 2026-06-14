@@ -20,6 +20,7 @@ npm run smoke:cli                                   # end-to-end smoke for the b
 npm run build:cli render                            # produce ./build/pyr3-render — standalone SEA binary (~155 MB)
 npm run serve                                       # `pyr3 serve` — local CLI host w/ Dawn-node backend rendering (lifts the 200-q browser cap; #201)
 npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /v1/animate viewer (#209)
+npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275)
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 
@@ -30,6 +31,11 @@ streamed) for renders past the browser's quality cap. `/api/animate` accepts
 **either** a `.flam3` multi-keyframe animation (`flame_xml`) **or** a built
 timeline (`timeline_json`, the `/v1/animate` 📤 Export sequence button in
 timeline mode — fps × duration framing, absolute quality, index-named frames; #227).
+Both export paths accept absolute output dimensions via the `/v1/animate` chrome's
+`SIZE_PRESETS` dropdown (HD/2K/4K/square/portrait + Custom W×H) → `out_width`/
+`out_height` (long-edge rescale, drives the live preview + export; #274), and
+`resume` to skip frames already on disk (default-on FE checkbox / CLI `resume=1`;
+crash-safe temp-rename writes; #275).
 
 Before commit: `npm run typecheck && npm test`. The BE↔flam3-C parity rig
 (`npm run test:parity`, 91s) is optional but recommended when the render

@@ -17,7 +17,7 @@
 // on disk; user sees a 'cancelled at frame N' toast").
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { resolve as resolvePath, isAbsolute, sep } from 'node:path';
 
 import { parseFlame } from '../../src/flame-import';
@@ -26,12 +26,15 @@ import { timelineFromJson } from '../../src/timeline-serialize';
 import { timelineDuration } from '../../src/timeline';
 
 import { createJob, clearJob } from './jobs';
+import { frameOutPath, shouldSkipFrame, writeFrameAtomic } from './resume-skip';
 import {
   FrameSequenceRenderContext,
   animationFrameSource,
   timelineFrameSource,
   applyExportOverrides,
   applyTimelineExportOverrides,
+  applyOutputSizeToAnimation,
+  applyOutputSizeToTimeline,
   type FrameSource,
   type AnimationFrameRequest,
   type InFlightFrame,
@@ -54,6 +57,11 @@ interface AnimateRequestBody {
   prefix?: string;
   /** Output directory. Absolute or relative to `pyr3 serve`'s cwd. Required. */
   out_dir: string;
+  /** #274 — absolute output dimensions (long-edge rescale). Both must be set. */
+  out_width?: number;
+  out_height?: number;
+  /** #275 — skip frames whose PNG already exists (resume a partial export). */
+  resume?: boolean;
   /** Override the animation's ntemporal_samples (motion blur sub-frames). */
   nsteps?: number;
   /** Override temporal_filter_width. */
@@ -173,6 +181,12 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     let source: FrameSource;
     let frameJobs: { label: number; time: number }[];
 
+    // #274 — absolute output dims (both required); applied per-keyframe/clip via
+    // the long-edge rescale. Distinct from `ss` (which scales the source).
+    const outputSize = (body.out_width !== undefined && body.out_height !== undefined)
+      ? { width: body.out_width, height: body.out_height }
+      : undefined;
+
     if (hasTimeline) {
       let timeline;
       try {
@@ -191,6 +205,7 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
         ...(body.quality !== undefined ? { quality: body.quality } : {}),
         nsteps: body.nsteps ?? 1,
       });
+      timeline = applyOutputSizeToTimeline(timeline, outputSize);
       const tlFrames = computeTimelineFrames(timelineDuration(timeline), body.fps ?? 30);
       frameJobs = tlFrames.map((fr) => ({ label: fr.index, time: fr.time }));
       source = timelineFrameSource(timeline);
@@ -216,12 +231,15 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       // static-render path already force-collapses ntemporal_samples to 1;
       // we mirror that here. Callers can opt into motion blur explicitly
       // via the `nsteps` body field.
-      const animation = applyExportOverrides(parsed.animation, {
-        qs: body.qs,
-        ss: body.ss,
-        nsteps: body.nsteps ?? 1,
-        ...(body.blur_width !== undefined ? { blurWidth: body.blur_width } : {}),
-      });
+      const animation = applyOutputSizeToAnimation(
+        applyExportOverrides(parsed.animation, {
+          qs: body.qs,
+          ss: body.ss,
+          nsteps: body.nsteps ?? 1,
+          ...(body.blur_width !== undefined ? { blurWidth: body.blur_width } : {}),
+        }),
+        outputSize,
+      );
 
       const firstKfTime = animation.keyframes[0]!.time ?? 0;
       const lastKfTime = animation.keyframes[animation.keyframes.length - 1]!.time ?? 0;
@@ -276,15 +294,43 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     // the largest frame label needs more (a >99999-frame timeline ≈ 55min@30fps).
     const padWidth = Math.max(5, String(frameJobs[frameJobs.length - 1]!.label).length);
 
-    console.log(`[pyr3-serve] /api/animate job ${job.id.slice(0, 8)} — ${frameJobs.length} frame(s) → ${outDir}`);
+    // #275 — resume: precompute each frame's final path; skip ones already on
+    // disk (don't re-render). Progress is reported against ALL frames (skipped +
+    // rendered) so the bar reflects true position; skipped frames tick instantly.
+    const resume = body.resume ?? false;
+    const total = frameJobs.length;
+    const annotated = frameJobs.map((j) => ({
+      label: j.label,
+      time: j.time,
+      outPath: frameOutPath(outDir, prefix, j.label, padWidth),
+    }));
+    const renderJobs = annotated.filter((j) => !shouldSkipFrame(j.outPath, resume));
+    let completed = 0;
+
+    console.log(
+      `[pyr3-serve] /api/animate job ${job.id.slice(0, 8)} — ${total} frame(s) → ${outDir}`
+      + (resume ? ` (resume: ${total - renderJobs.length} already on disk)` : ''),
+    );
+
+    // Tick skipped frames up-front (they cost ~0).
+    for (const j of annotated) {
+      if (shouldSkipFrame(j.outPath, resume)) {
+        completed++;
+        written.push(j.outPath);
+        writeSseEvent(res, 'progress', {
+          frame: completed, total, percent: completed / total, written: j.outPath,
+        });
+      }
+    }
 
     // #214 — depth-1 pipeline: submit frame N+1's GPU work before encoding
     // frame N on the CPU, so the host PNG encode + writeFileSync overlaps with
     // the next frame's GPU iterate (the GPU was previously idle during encode).
+    // Indexes renderJobs (skipped frames never enter the GPU pipeline).
     const reqFor = (i: number): AnimationFrameRequest => {
       const frameSeed = body.seed !== undefined ? body.seed + i : undefined;
       return {
-        time: frameJobs[i]!.time,
+        time: renderJobs[i]!.time,
         ...(body.walker_jitter !== undefined ? { walkerJitter: body.walker_jitter } : {}),
         ...(frameSeed !== undefined ? { seed: frameSeed } : {}),
       };
@@ -294,25 +340,23 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
     // any exit path (abort, path-traversal, finishFrame throw, normal done).
     let inflight: InFlightFrame | null = null;
     try {
-      // Prime the pipeline with frame 0's GPU work already in flight.
-      inflight = frameJobs.length > 0 ? ctx.submitFrame(reqFor(0)) : null;
+      // Prime the pipeline with the first render-job's GPU work already in flight.
+      inflight = renderJobs.length > 0 ? ctx.submitFrame(reqFor(0)) : null;
 
-      for (let i = 0; i < frameJobs.length; i++) {
+      for (let i = 0; i < renderJobs.length; i++) {
         if (job.controller.signal.aborted) {
           writeSseEvent(res, 'cancelled', { jobId: job.id, written });
           res.end();
           return;
         }
-        const label = frameJobs[i]!.label;
+        const label = renderJobs[i]!.label;
+        const outPath = renderJobs[i]!.outPath;
         const t0 = Date.now();
         const cur = inflight!;
         // Kick off the next frame's GPU work before we await + encode this one.
-        inflight = i + 1 < frameJobs.length ? ctx.submitFrame(reqFor(i + 1)) : null;
+        inflight = i + 1 < renderJobs.length ? ctx.submitFrame(reqFor(i + 1)) : null;
         const result = await ctx.finishFrame(cur);
 
-        const frameStr = String(label).padStart(padWidth, '0');
-        const filename = `${prefix}${frameStr}.png`;
-        const outPath = resolvePath(outDir, filename);
         // Belt-and-suspenders: confirm the resolved path stays under out_dir.
         // The prefix regex above already blocks separators / .., and `outDir`
         // is realpath-resolved (so this is a real containment check, not the
@@ -322,18 +366,19 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
           res.end();
           return;
         }
-        writeFileSync(outPath, result.png);
+        writeFrameAtomic(outPath, result.png);
         written.push(outPath);
+        completed++;
 
         const elapsedMs = Date.now() - t0;
         console.log(
-          `[pyr3-serve]   frame ${i + 1}/${frameJobs.length} label=${label} ${result.width}×${result.height} → ${filename} (${(elapsedMs / 1000).toFixed(1)}s)`,
+          `[pyr3-serve]   frame ${completed}/${total} label=${label} ${result.width}×${result.height} → ${outPath.slice(outDir.length + 1)} (${(elapsedMs / 1000).toFixed(1)}s)`,
         );
 
         writeSseEvent(res, 'progress', {
-          frame: i + 1,
-          total: frameJobs.length,
-          percent: (i + 1) / frameJobs.length,
+          frame: completed,
+          total,
+          percent: completed / total,
           written: outPath,
         });
       }

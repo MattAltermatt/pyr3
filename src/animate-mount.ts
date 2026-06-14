@@ -25,6 +25,8 @@ import { estimateExport, estimateTimelineExport } from './animate-estimate';
 import { buildEasingPanel } from './animate-easing-panel';
 import { type EasingCurve } from './easing';
 import { type Timeline, timelineDuration } from './timeline';
+import { rescaleGenomeToOutput, type OutputSize } from './output-size';
+import { createSizePresetControl, type SizePresetControlHandle } from './size-preset-control';
 import { timelineFromJson, timelineToJson } from './timeline-serialize';
 import { renderTimelineFrame } from './animate-render';
 import { renderClipThumbnails } from './timeline-thumbnails';
@@ -57,6 +59,23 @@ const CANVAS_MAX_W = 1280;
 const CANVAS_MAX_H = 720;
 const CANVAS_DEFAULT_W = 800;
 const CANVAS_DEFAULT_H = 600;
+
+/** Preview canvas dims = the chosen output size capped to (maxW, maxH), aspect
+ *  preserved, never upscaled. The preview is a scaled-down WYSIWYG of the export:
+ *  the genome is rescaled to these dims (long-edge anchored) so framing matches. */
+export function computeOutputAwarePreviewDims(
+  out: OutputSize,
+  maxW: number,
+  maxH: number,
+): { width: number; height: number } {
+  const sw = out.width > maxW ? maxW / out.width : 1;
+  const sh = out.height > maxH ? maxH / out.height : 1;
+  const s = Math.min(sw, sh);
+  return {
+    width: Math.max(1, Math.round(out.width * s)),
+    height: Math.max(1, Math.round(out.height * s)),
+  };
+}
 
 // Hard cap on samples-per-pixel for browser-side animate playback. ESF flames
 // authored for offline rendering carry `quality=2000` (single offline render
@@ -366,6 +385,12 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // `animation` / `timeline` is non-null at a time.
   let timeline: Timeline | null = null;
   let timelinePreview: Timeline | null = null;
+  // #274 — output dimensions for preview + export. Sticky once initialised from
+  // the first loaded flame's native size (per the bar-state-independent-of-genome
+  // convention — flame loads do NOT override a user pick). The size control in
+  // the chrome drives both the live preview aspect and the export request.
+  let outputSize: OutputSize | null = null;
+  let sizeControl: SizePresetControlHandle | null = null;
   // #227d — authoring uses the editable section track + inspector. (The #227c
   // clip-strip `mountTimelineTrack` is retired from this path.)
   let sectionTrack: SectionTrackHandle | null = null;
@@ -395,6 +420,36 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // path (same silicon, different driver), and the during-render ETA re-anchors
   // it per frame — so a cold approximation is fine.
   let previewSamplesPerSec: number | null = null;
+
+  // #274 — output-size control in the chrome (before the Export button). Drives
+  // both the live preview aspect and the export request. Initialised to defaults;
+  // setSize is called to the first flame's native size when a source loads.
+  sizeControl = createSizePresetControl({
+    initial: { width: CANVAS_DEFAULT_W, height: CANVAS_DEFAULT_H },
+    onChange: (s) => {
+      outputSize = s;
+      rebuildAndRender();
+    },
+  });
+  topRow.insertBefore(sizeControl.el, exportBtn);
+
+  /** Rebuild the renderer at the current output size + re-render the current
+   *  frame. Called when the user changes the output dimensions. */
+  function rebuildAndRender(): void {
+    if (animation) buildRenderer();
+    else if (timeline) buildTimelineRenderer();
+    else return;
+    void renderAtTime(lastRenderedTime);
+  }
+
+  /** Default the sticky output size to a freshly-loaded source's native dims
+   *  (only when never set — a user pick persists across loads). Syncs the control. */
+  function initOutputSize(native: OutputSize): void {
+    if (outputSize === null) {
+      outputSize = native;
+      sizeControl?.setSize(native);
+    }
+  }
 
   function setStatus(msg: string, tone: 'info' | 'error' = 'info'): void {
     status.textContent = msg;
@@ -460,9 +515,19 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       // are the unrestricted paths (see #210, P4). The timeline path applies
       // the same cap via previewTimeline() (built once on load).
       const gpuStart = performance.now();
+      // #274 — rescale genomes to the preview canvas dims (= chosen output size
+      // capped uniformly), so the preview is a true WYSIWYG of the export framing.
+      const previewTarget: OutputSize = { width: renderer.width, height: renderer.height };
       let previewResult;
       if (timeline && timelinePreview) {
-        previewResult = renderTimelineFrame(renderer, timelinePreview, t, {
+        const tlScaled: Timeline = {
+          ...timelinePreview,
+          clips: timelinePreview.clips.map((c) => ({
+            ...c,
+            flame: { ...c.flame, genome: rescaleGenomeToOutput(c.flame.genome, previewTarget) },
+          })),
+        };
+        previewResult = renderTimelineFrame(renderer, tlScaled, t, {
           outputView: context.getCurrentTexture().createView(),
           walkerJitter: DEFAULT_WALKER_JITTER,
         });
@@ -470,12 +535,12 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         const previewAnim: Animation = {
           ...animation!,
           ntemporal_samples: 1,
-          keyframes: animation!.keyframes.map((g) => ({
+          keyframes: animation!.keyframes.map((g) => rescaleGenomeToOutput({
             ...g,
             quality: g.quality !== undefined
               ? Math.min(g.quality, PREVIEW_MAX_SPP)
               : PREVIEW_MAX_SPP,
-          })),
+          }, previewTarget)),
         };
         previewResult = renderAnimationFrame(renderer, previewAnim, t, {
           outputView: context.getCurrentTexture().createView(),
@@ -514,15 +579,14 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   }
 
   function buildRenderer(): void {
-    // Use first keyframe's dims as the source of truth; cap to CANVAS_MAX_*.
+    // #274 — the chosen output size (sticky; defaults to the first keyframe's
+    // native dims) drives the framing; the preview canvas caps it to CANVAS_MAX_*.
     const firstKf = animation!.keyframes[0]!;
-    const declW = firstKf.size?.width ?? CANVAS_DEFAULT_W;
-    const declH = firstKf.size?.height ?? CANVAS_DEFAULT_H;
-    const scaleW = declW > CANVAS_MAX_W ? CANVAS_MAX_W / declW : 1;
-    const scaleH = declH > CANVAS_MAX_H ? CANVAS_MAX_H / declH : 1;
-    const scale = Math.min(scaleW, scaleH);
-    const width = Math.max(1, Math.round(declW * scale));
-    const height = Math.max(1, Math.round(declH * scale));
+    initOutputSize({
+      width: firstKf.size?.width ?? CANVAS_DEFAULT_W,
+      height: firstKf.size?.height ?? CANVAS_DEFAULT_H,
+    });
+    const { width, height } = computeOutputAwarePreviewDims(outputSize!, CANVAS_MAX_W, CANVAS_MAX_H);
     canvas.width = width;
     canvas.height = height;
     // Re-acquire the WebGPU canvas context on (re)build.
@@ -543,13 +607,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // the canvas WebGPU context. Mirrors buildRenderer() for the timeline path.
   function buildTimelineRenderer(): void {
     const firstG = timeline!.clips[0]!.flame.genome;
-    const declW = firstG.size?.width ?? CANVAS_DEFAULT_W;
-    const declH = firstG.size?.height ?? CANVAS_DEFAULT_H;
-    const scaleW = declW > CANVAS_MAX_W ? CANVAS_MAX_W / declW : 1;
-    const scaleH = declH > CANVAS_MAX_H ? CANVAS_MAX_H / declH : 1;
-    const scale = Math.min(scaleW, scaleH);
-    const width = Math.max(1, Math.round(declW * scale));
-    const height = Math.max(1, Math.round(declH * scale));
+    initOutputSize({
+      width: firstG.size?.width ?? CANVAS_DEFAULT_W,
+      height: firstG.size?.height ?? CANVAS_DEFAULT_H,
+    });
+    const { width, height } = computeOutputAwarePreviewDims(outputSize!, CANVAS_MAX_W, CANVAS_MAX_H);
     canvas.width = width;
     canvas.height = height;
     context = canvas.getContext('webgpu') as GPUCanvasContext | null;
@@ -799,16 +861,19 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     const end = Math.max(begin, Math.floor(lastKfTime) - 1);
     const flameXmlAtOpen = loadedFlameXml;
 
+    const exportOut: OutputSize = outputSize ?? { width: CANVAS_DEFAULT_W, height: CANVAS_DEFAULT_H };
     exportAbort = new AbortController();
     exportModal = openAnimateExportModal({
       host: root,
       mode: 'animation',
+      outputSize: exportOut,
       defaults: { begin, end, dtime: 1, qs: 1.0, prefix: '' },
       // #226 — live up-front ETA, recomputed as the user edits begin/end/dtime/qs.
       // Closes over the loaded animation + this machine's measured throughput.
+      // #274 — fold the chosen output dims into the cost range.
       estimate: (range) =>
         animation
-          ? estimateExport(animation, range, previewSamplesPerSec)
+          ? estimateExport(animation, { ...range, outputSize: exportOut }, previewSamplesPerSec)
           : { frames: 0, totalSamples: 0, seconds: null },
       // Only wire the Browse button when running under pyr3 serve —
       // can_write_files is the right capability bit (true on the backend
@@ -848,13 +913,15 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     stopPlayback();
     const tl = timeline;
     const durationSeconds = timelineDuration(tl);
+    const exportOut: OutputSize = outputSize ?? { width: CANVAS_DEFAULT_W, height: CANVAS_DEFAULT_H };
     exportAbort = new AbortController();
     exportModal = openAnimateExportModal({
       host: root,
       mode: 'timeline',
       durationSeconds,
+      outputSize: exportOut,
       defaults: { fps: 30, quality: 200, prefix: '' },
-      estimate: (range) => estimateTimelineExport(tl, range, previewSamplesPerSec),
+      estimate: (range) => estimateTimelineExport(tl, { ...range, outputSize: exportOut }, previewSamplesPerSec),
       ...(getCapability().can_write_files ? { pickDirectory: pickDirectoryViaBackend } : {}),
       onStart: (values) => {
         if (!exportModal) return;
@@ -875,7 +942,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   async function runTimelineExport(
     timelineJson: string,
-    values: { fps: number; quality: number; prefix: string; outDir: string },
+    values: { fps: number; quality: number; prefix: string; outDir: string; resume: boolean },
   ): Promise<void> {
     if (!exportAbort || !exportModal) return;
     const signal = exportAbort.signal;
@@ -887,6 +954,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           quality: values.quality,
           prefix: values.prefix,
           outDir: values.outDir,
+          resume: values.resume,
+          ...(outputSize ? { outWidth: outputSize.width, outHeight: outputSize.height } : {}),
         },
         onProgress: (info: ExportAnimateProgress) => {
           if (exportModal) {
@@ -929,7 +998,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   async function runExport(
     flameXml: string,
-    values: { begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string },
+    values: { begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string; resume: boolean },
   ): Promise<void> {
     if (!exportAbort || !exportModal) return;
     const signal = exportAbort.signal;
@@ -943,6 +1012,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           qs: values.qs,
           prefix: values.prefix,
           outDir: values.outDir,
+          resume: values.resume,
+          ...(outputSize ? { outWidth: outputSize.width, outHeight: outputSize.height } : {}),
           // #224 — carry the in-memory per-segment easing into the backend
           // export so the rendered sequence matches the scrubber preview.
           ...(animation?.segmentEasing ? { segmentEasing: animation.segmentEasing } : {}),

@@ -13,3 +13,25 @@ export function parseEasingFlag(args: string[]): (EasingCurve | undefined)[] | u
   }
   return JSON.parse(raw) as (EasingCurve | undefined)[];
 }
+
+/** #274 — parse `width` / `height` env into an absolute output size. BOTH must
+ *  be present and finite > 0; otherwise undefined (no override). Distinct from
+ *  the `ss` multiplier — these are absolute target dims. */
+export function parseOutputSizeEnv(
+  env: Record<string, string | undefined>,
+): { width: number; height: number } | undefined {
+  if (env['width'] === undefined || env['height'] === undefined) return undefined;
+  const width = Number(env['width']);
+  const height = Number(env['height']);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return { width: Math.round(width), height: Math.round(height) };
+}
+
+/** #275 — `resume=1` / `resume=true` (case-insensitive) ⇒ skip existing frames.
+ *  Default off — scripted CLI runs conventionally expect deterministic overwrite. */
+export function parseResumeEnv(env: Record<string, string | undefined>): boolean {
+  const v = env['resume'];
+  return v === '1' || v?.toLowerCase() === 'true';
+}

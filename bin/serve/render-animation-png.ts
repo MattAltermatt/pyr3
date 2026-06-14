@@ -13,6 +13,7 @@ import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from '../../src/
 import { type Animation } from '../../src/animation';
 import { type Genome } from '../../src/genome';
 import { type Timeline, timelineGenomeAt } from '../../src/timeline';
+import { rescaleGenomeToOutput } from '../../src/output-size';
 import { interpolate } from '../../src/interpolate';
 import { renderAnimationFrame, renderTimelineFrame } from '../../src/animate-render';
 import { DEFAULT_WALKER_JITTER } from '../../src/chaos';
@@ -110,6 +111,33 @@ export function applyTimelineExportOverrides(
           ...c,
           flame: { ...c.flame, genome: { ...c.flame.genome, quality } },
         })),
+  };
+}
+
+/** #274 — rescale every animation keyframe to absolute output dimensions
+ *  (long-edge anchored, matching the viewer/editor). `undefined` ⇒ identity
+ *  (same reference, no behavior change). Distinct from the `ss` multiplier in
+ *  applyExportOverrides: `ss` scales the source; this sets absolute dims. */
+export function applyOutputSizeToAnimation(
+  source: Animation,
+  outputSize?: { width: number; height: number },
+): Animation {
+  if (!outputSize) return source;
+  return { ...source, keyframes: source.keyframes.map((k) => rescaleGenomeToOutput(k, outputSize)) };
+}
+
+/** #274 — rescale every timeline clip genome to absolute output dimensions. */
+export function applyOutputSizeToTimeline(
+  source: Timeline,
+  outputSize?: { width: number; height: number },
+): Timeline {
+  if (!outputSize) return source;
+  return {
+    ...source,
+    clips: source.clips.map((c) => ({
+      ...c,
+      flame: { ...c.flame, genome: rescaleGenomeToOutput(c.flame.genome, outputSize) },
+    })),
   };
 }
 

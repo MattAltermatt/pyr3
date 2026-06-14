@@ -27,6 +27,9 @@ export interface ExportRange {
   /** Quality scale applied to each keyframe's quality (matches the CLI/backend
    *  `qs` semantics). */
   qs: number;
+  /** #274 — absolute output dimensions. When set, the per-frame cost uses these
+   *  pixel dims instead of each genome's native size. */
+  outputSize?: { width: number; height: number };
 }
 
 export interface ExportEstimate {
@@ -71,8 +74,8 @@ export function totalSampleBudget(animation: Animation, range: ExportRange): num
     const frameIdx = probes === 1 ? 0 : Math.round((i * (frames - 1)) / (probes - 1));
     const t = range.begin + frameIdx * step;
     const g = interpolate(animation, t);
-    const w = g.size?.width ?? 1024;
-    const h = g.size?.height ?? 1024;
+    const w = range.outputSize?.width ?? g.size?.width ?? 1024;
+    const h = range.outputSize?.height ?? g.size?.height ?? 1024;
     const spp = (g.quality ?? 16) * qs;
     sum += computeDispatch(spp, w, h).actualSamples;
   }
@@ -133,6 +136,9 @@ export interface TimelineExportRange {
   fps: number;
   /** Absolute quality (samples/px) applied to every clip — NOT a scale. */
   quality: number;
+  /** #274 — absolute output dimensions. When set, the per-frame cost uses these
+   *  pixel dims instead of each clip genome's native size. */
+  outputSize?: { width: number; height: number };
 }
 
 /** Frame count for a timeline export. Mirrors the CLI buildTimelinePlan:
@@ -158,8 +164,8 @@ export function timelineSampleBudget(tl: Timeline, range: TimelineExportRange): 
     const frameIdx = probes === 1 ? 0 : Math.round((i * (frames - 1)) / (probes - 1));
     const t = frameIdx / range.fps;
     const g = timelineGenomeAt(tl, t);
-    const w = g.size?.width ?? 1024;
-    const h = g.size?.height ?? 1024;
+    const w = range.outputSize?.width ?? g.size?.width ?? 1024;
+    const h = range.outputSize?.height ?? g.size?.height ?? 1024;
     sum += computeDispatch(quality, w, h).actualSamples;
   }
   return Math.round((sum / probes) * frames);

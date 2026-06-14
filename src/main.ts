@@ -53,6 +53,7 @@ import { writePendingTransfer } from './edit-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { createLoadSequencer } from './load-sequencer';
 import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, type QualityRequest } from './presets';
+import { longEdgeScaleAdjust, rescaleGenomeToOutput } from './output-size';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
 import { saveRenderToPng } from './render-save';
@@ -874,17 +875,13 @@ async function main(): Promise<void> {
     const filterRadius = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
     const qualityLabel = String(targetQuality);
     // Rescale genome.scale: flame was authored for activeGenome.size; now
-    // rendering at viewerRenderCfg's dims. Match the long-edge fraction.
-    const declSize = activeGenome.size ?? { width: targetW, height: targetH };
-    const declMax = Math.max(declSize.width, declSize.height);
-    const targetMax = Math.max(targetW, targetH);
-    const scaleAdjust = targetMax / declMax;
+    // rendering at viewerRenderCfg's dims. Match the long-edge fraction
+    // (applyPreset semantics — shared with the animate preview/export via
+    // rescaleGenomeToOutput).
     const renderGenome: Genome = {
-      ...activeGenome,
-      size: { width: targetW, height: targetH },
+      ...rescaleGenomeToOutput(activeGenome, { width: targetW, height: targetH }),
       oversample,
       quality: targetQuality,
-      scale: activeGenome.scale * scaleAdjust,
     };
 
     // Cancel any in-flight viewer render before we resize / re-iterate.
@@ -1217,12 +1214,16 @@ async function main(): Promise<void> {
     // which (since scale_save = scale_authored * save_dim_max / authored_dim_max)
     // simplifies to: scale_preview = scale_authored * preview_dim_max /
     // authored_dim_max.
-    const authoredMaxEdge = Math.max(
-      activeGenome.size?.width ?? renderCfgMaxEdge,
-      activeGenome.size?.height ?? renderCfgMaxEdge,
+    // Shared long-edge arithmetic (rescaleGenomeToOutput's factor); this site
+    // keeps activeGenome.size intact (preview-tier two-step), so it uses just
+    // the scale factor rather than the full genome rescale.
+    const sizeScale = longEdgeScaleAdjust(
+      {
+        width: activeGenome.size?.width ?? renderCfgMaxEdge,
+        height: activeGenome.size?.height ?? renderCfgMaxEdge,
+      },
+      { width: targetW, height: targetH },
     );
-    const previewMaxEdge = Math.max(targetW, targetH);
-    const sizeScale = previewMaxEdge / authoredMaxEdge;
 
     if (
       targetW !== renderer.width

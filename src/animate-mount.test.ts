@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { mountAnimatePage, wrapPlaybackTime } from './animate-mount';
+import { mountAnimatePage, wrapPlaybackTime, computeOutputAwarePreviewDims } from './animate-mount';
 import { _resetCapabilityForTest, fetchCapability, GHPAGES_DEFAULT } from './capability';
 
 function fakeDevice(): GPUDevice {
@@ -121,5 +121,22 @@ describe('mountAnimatePage — Export button capability gate', () => {
     const exportBtn = buttons.find((b) => b.hasAttribute('data-export-sequence'));
     expect(load).toBeTruthy();
     expect(exportBtn).toBeTruthy();
+  });
+});
+
+describe('computeOutputAwarePreviewDims', () => {
+  it('caps the chosen output size to the preview max, preserving aspect', () => {
+    // square 2000 output, preview cap 800×600 → min(800/2000, 600/2000)=0.3 → 600×600
+    expect(computeOutputAwarePreviewDims({ width: 2000, height: 2000 }, 800, 600))
+      .toEqual({ width: 600, height: 600 });
+  });
+  it('caps a 16:9 4K output to the preview width', () => {
+    // 3840×2160 into 1280×720 → 0.333 → 1280×720
+    expect(computeOutputAwarePreviewDims({ width: 3840, height: 2160 }, 1280, 720))
+      .toEqual({ width: 1280, height: 720 });
+  });
+  it('keeps a small output unchanged (never upscales)', () => {
+    expect(computeOutputAwarePreviewDims({ width: 400, height: 300 }, 800, 600))
+      .toEqual({ width: 400, height: 300 });
   });
 });

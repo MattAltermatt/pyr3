@@ -13,7 +13,7 @@
 // `timelineGenomeAt(timeline, T)` (reuses interpolate per clip pair).
 // Output filename: `<prefix><frame-zero-padded>.png`.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PNG } from 'pngjs';
 
@@ -34,7 +34,9 @@ import { type Timeline, timelineDuration, timelineGenomeAt } from '../src/timeli
 import { timelineFromJson, TIMELINE_FORMAT } from '../src/timeline-serialize';
 import { totalSampleBudget, formatCount, formatEstTime, estimateSeconds } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
-import { parseEasingFlag } from './pyr3-animate-args';
+import { parseEasingFlag, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
+import { rescaleGenomeToOutput } from '../src/output-size';
+import { frameOutPath, shouldSkipFrame, writeFrameAtomic } from './serve/resume-skip';
 
 installWebGPUHost();
 
@@ -233,7 +235,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length < 1) {
     console.error('usage: pyr3-animate <input.flam3 | input.timeline.json> [out-dir]');
-    console.error('  env: begin end time dtime qs ss prefix verbose fps nsteps blur');
+    console.error('  env: begin end time dtime qs ss width height resume prefix verbose fps nsteps blur');
     process.exit(1);
   }
   const inputPath = resolve(args[0]!);
@@ -244,6 +246,11 @@ async function main(): Promise<void> {
   const dtime = envInt('dtime', 1);
   const qs = envFloat('qs', 1.0);
   const ss = envFloat('ss', 1.0);
+  // #274 — absolute output dims (width=/height=, both required). Distinct from
+  // ss (which scales the source); applied per-frame via the long-edge rescale.
+  const outputSize = parseOutputSizeEnv(process.env);
+  // #275 — resume=1 skips frames already on disk (default off for scripted runs).
+  const resume = parseResumeEnv(process.env);
   const verbose = envInt('verbose', 1);
   // pyr3-specific motion-blur overrides (flam3-animate has no equivalents):
   //   nsteps=N — override ntemporal_samples (default = imported).
@@ -283,8 +290,19 @@ async function main(): Promise<void> {
   let doneSeconds = 0;
   let frameNum = 0;
 
+  // 5-digit zero-pad (ffmpeg %05d convention), widened to fit the largest label.
+  const padWidth = Math.max(5, String(plan.jobs[plan.jobs.length - 1]?.label ?? 0).length);
+
   for (const job of plan.jobs) {
-    const centerGenome: Genome = plan.centerGenomeAt(job.time);
+    const outPath = frameOutPath(outDir, prefix, job.label, padWidth);
+    // #275 — resume: skip frames already on disk before any GPU work.
+    if (shouldSkipFrame(outPath, resume)) {
+      if (verbose) console.log(`[pyr3-animate] skip ${outPath.slice(outDir.length + 1)} (exists)`);
+      continue;
+    }
+    let centerGenome: Genome = plan.centerGenomeAt(job.time);
+    // #274 — rescale to absolute output dims (long-edge anchored) when set.
+    if (outputSize) centerGenome = rescaleGenomeToOutput(centerGenome, outputSize);
 
     const width = centerGenome.size?.width ?? 1024;
     const height = centerGenome.size?.height ?? 1024;
@@ -354,10 +372,8 @@ async function main(): Promise<void> {
       pyr3Json,
     );
 
-    const frameStr = String(job.label).padStart(5, '0');
-    const outName = `${prefix}${frameStr}.png`;
-    const outPath = resolve(outDir, outName);
-    writeFileSync(outPath, withMetadata);
+    const outName = outPath.slice(outDir.length + 1);
+    writeFrameAtomic(outPath, withMetadata);
 
     const frameSeconds = (Date.now() - t0) / 1000;
     frameNum++;
