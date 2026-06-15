@@ -20,7 +20,7 @@ describe('audit-live-pages checkHtml', () => {
     expect(findings).toHaveLength(0);
   });
 
-  it('flags stale variation counts', () => {
+  it('flags stale variation counts but not the legit flam3-99 core reference', () => {
     const html = `
       <html>
         <body>
@@ -31,12 +31,13 @@ describe('audit-live-pages checkHtml', () => {
     `;
     const findings = checkHtml(html, version, varCount, hero);
     const varFindings = findings.filter(f => f.type === 'variations');
-    expect(varFindings).toHaveLength(2);
     const foundValues = varFindings.map(f => f.found);
-    expect(foundValues).toContain('99');
+    // "the 99 in pyr3's core set" is the correct count of flam3 core
+    // variations, not a stale catalog total — must NOT be flagged.
+    expect(foundValues).not.toContain('99');
+    // 220 is a genuinely stale catalog total — must be flagged.
     expect(foundValues).toContain('220');
-    expect(varFindings[0]?.expected).toBe('258');
-    expect(varFindings[1]?.expected).toBe('258');
+    expect(varFindings.every(f => f.expected === '258')).toBe(true);
   });
 
   it('flags stale versions if current version is absent', () => {
@@ -70,13 +71,23 @@ describe('audit-live-pages checkHtml', () => {
   it('flags stale hero references', () => {
     const html = `
       <div>
-        <p>Featured sheep: electricsheep.248.31324</p>
+        <p>Featured sheep: electricsheep.244.00617</p>
       </div>
     `;
     const findings = checkHtml(html, version, varCount, hero);
     const heroFindings = findings.filter(f => f.type === 'hero');
     expect(heroFindings).toHaveLength(1);
-    expect(heroFindings[0]?.found).toBe('electricsheep.248.31324');
+    expect(heroFindings[0]?.found).toBe('electricsheep.244.00617');
     expect(heroFindings[0]?.expected).toBe(hero);
+  });
+
+  it('does not flag electricsheep.248.31324 — a legit /showcase gallery card', () => {
+    const html = `
+      <div class="card">
+        <a class="idlink" href="../esf/gen/248/id/31324">electricsheep.248.31324</a>
+      </div>
+    `;
+    const findings = checkHtml(html, version, varCount, hero);
+    expect(findings.filter(f => f.type === 'hero')).toHaveLength(0);
   });
 });

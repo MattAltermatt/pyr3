@@ -45,8 +45,12 @@ export function checkHtml(
     }
   }
 
-  // Fallback: search for known stale numbers near "variation"
-  const knownStaleCounts = [99, 166, 220, 225];
+  // Fallback: search for known stale numbers near "variation".
+  // NOTE: 99 is deliberately NOT in this list. "the 99 in pyr3's core set"
+  // on /help/direct-color-variations.html is a permanent, correct reference
+  // to the 99 numbered flam3 core variations (VAR_0..VAR_98) — not a stale
+  // catalog total. Flagging it was a false positive; do not re-add 99.
+  const knownStaleCounts = [166, 220, 225];
   for (const stale of knownStaleCounts) {
     const staleStr = String(stale);
     if (stale !== expectedVariationCount && !seenVariations.has(staleStr) && html.includes(staleStr)) {
@@ -80,9 +84,13 @@ export function checkHtml(
     }
   }
 
-  // Audit hero references
-  // If the page mentions electricsheep references like "247" or "19679" but not the active ones, or old ones like "244" or "248"
-  const oldHeroes = ['electricsheep.248.31324', 'electricsheep.244.00617'];
+  // Audit hero references — blocklist of former default heroes that, if still
+  // present, signal a stale page.
+  // NOTE: electricsheep.248.31324 is deliberately NOT in this list. It is a
+  // permanent curated card in the /showcase gallery (one of the 54 fixtures),
+  // so it appears on that page by design — flagging it was a false positive.
+  // Only list former heroes that should NOT appear anywhere once superseded.
+  const oldHeroes = ['electricsheep.244.00617'];
   for (const oldHero of oldHeroes) {
     if (html.includes(oldHero)) {
       findings.push({
