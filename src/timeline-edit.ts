@@ -115,10 +115,13 @@ export function appendFlame(tl: Timeline, genome: Genome, source?: FlameSource):
 function terminalize(clips: Clip[]): Clip[] {
   if (clips.length === 0) return clips;
   const i = clips.length - 1;
-  const c = clips[i]!;
-  const pause = Math.max(0, c.duration - c.transitionDuration);
-  clips[i] = { ...c, transitionDuration: 0, duration: pause };
-  return clips;
+  // Rebuild via map() so the input array is never mutated — upholds the file's
+  // 'input untouched' convention even if a future caller passes tl.clips directly (#288).
+  return clips.map((clip, idx) => {
+    if (idx !== i) return clip;
+    const pause = Math.max(0, clip.duration - clip.transitionDuration);
+    return { ...clip, transitionDuration: 0, duration: pause };
+  });
 }
 
 /** Set section `i`'s evolve time (s), preserving node `i`'s pause. */

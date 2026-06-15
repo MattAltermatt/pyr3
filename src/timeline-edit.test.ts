@@ -164,6 +164,17 @@ describe('removeNode', () => {
     const tl = removeNode(appendFlame(createTimeline(), gA), 0);
     expect(tl.clips).toHaveLength(0);
   });
+  it('#288 — leaves the input timeline untouched (re-terminalize is non-mutating)', () => {
+    const base = appendFlame(appendFlame(appendFlame(createTimeline(), gA), gB), gA); // 3 nodes
+    // Deep-freeze the input: any in-place write in removeNode's pipeline (incl.
+    // terminalize's old `clips[i] = …`) would throw under ESM strict mode.
+    base.clips.forEach((c) => Object.freeze(c));
+    Object.freeze(base.clips);
+    Object.freeze(base);
+    const snapshot = JSON.stringify(base);
+    expect(() => removeNode(base, 1)).not.toThrow();
+    expect(JSON.stringify(base)).toBe(snapshot); // original is byte-for-byte intact
+  });
 });
 
 describe('appendAnimationAll', () => {
