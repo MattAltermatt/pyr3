@@ -172,6 +172,89 @@ export function removeNode(tl: Timeline, i: number): Timeline {
   return { ...tl, clips };
 }
 
+/** #286 — Reorder by SWAP: exchange the flame content of slots `i` and `j` while
+ *  every slot's authored cadence (duration / transitionDuration / easing) stays
+ *  pinned to its index. The xform-correspondence permutation is content-relative,
+ *  so it is cleared on every clip whose outgoing morph now points at a swapped
+ *  flame — indices {i-1, i, j-1, j} (clamped to range). No-op on i === j or an
+ *  out-of-range index. Terminal invariant is preserved automatically (no timing
+ *  moves). Returns a new Timeline; input untouched. */
+export function swapClipFlames(tl: Timeline, i: number, j: number): Timeline {
+  const n = tl.clips.length;
+  if (i === j || i < 0 || j < 0 || i >= n || j >= n) return tl;
+  const flameAt = (idx: number) =>
+    idx === i ? tl.clips[j]!.flame : idx === j ? tl.clips[i]!.flame : tl.clips[idx]!.flame;
+  const touched = new Set([i - 1, i, j - 1, j].filter((k) => k >= 0 && k < n));
+  const clips = tl.clips.map((c, idx) => {
+    const flame = flameAt(idx);
+    if (touched.has(idx) && c.permutation !== undefined) {
+      const { permutation: _drop, ...rest } = c;
+      return { ...rest, flame };
+    }
+    return { ...c, flame };
+  });
+  return { ...tl, clips };
+}
+
+/** #286 — Insert a key flame at `index`, GROWING the timeline. The new clip
+ *  inherits the cadence of the section it splits (the preceding clip's evolve +
+ *  linger) and the preceding flame's hold; the split clip keeps its own fields,
+ *  so it now morphs into the new flame with the same feel. `index >= length`
+ *  (or an empty timeline) delegates to appendFlame; `index <= 0` prepends,
+ *  inheriting the right neighbour's outgoing cadence. Interior/prepend never
+ *  touch the terminal clip, so its transitionDuration 0 is preserved. */
+export function insertFlame(tl: Timeline, index: number, genome: Genome, source?: FlameSource): Timeline {
+  const n = tl.clips.length;
+  if (n === 0 || index >= n) return appendFlame(tl, genome, source);
+  const flame = source ? { genome, source } : { genome };
+  const donor = index <= 0 ? tl.clips[0]! : tl.clips[index - 1]!;
+  const holdX = Math.max(0, donor.duration - donor.transitionDuration);
+  // Donor's outgoing evolve. A terminal donor (td 0 — only reachable on a 1-clip
+  // prepend) has no section to inherit, so seed DEFAULT_EVOLVE like appendFlame
+  // does; otherwise the new clip would be section-less (invisible between scrubs).
+  const evolveX = donor.transitionDuration > 0 ? donor.transitionDuration : DEFAULT_EVOLVE;
+  const xClip: Clip = { flame, duration: holdX + evolveX, transitionDuration: evolveX };
+  if (donor.easing) xClip.easing = donor.easing;
+  if (index <= 0) {
+    return { ...tl, clips: [xClip, ...tl.clips] };
+  }
+  // Interior: the split clip's outgoing morph now targets X ⇒ clear stale permutation.
+  const clips = tl.clips.map((c, idx) => {
+    if (idx !== index - 1 || c.permutation === undefined) return c;
+    const { permutation: _drop, ...rest } = c;
+    return rest;
+  });
+  clips.splice(index, 0, xClip);
+  return { ...tl, clips };
+}
+
+/** #286 — Replace the flame at slot `i` in place with a different flame, keeping
+ *  the slot's cadence (duration / transitionDuration / easing). This is the
+ *  "audition a different flame, keep the rhythm" operation — distinct from
+ *  swapClipFlames (which reorders two existing slots). The content-relative xform
+ *  permutation is cleared on every clip whose morph touches the replaced flame
+ *  ({i-1, i}). No-op on an out-of-range index. Terminal invariant preserved
+ *  (no timing moves). Returns a new Timeline; input untouched. */
+export function replaceClipFlame(tl: Timeline, i: number, genome: Genome, source?: FlameSource): Timeline {
+  const n = tl.clips.length;
+  if (i < 0 || i >= n) return tl;
+  const flame = source ? { genome, source } : { genome };
+  const touched = new Set([i - 1, i].filter((k) => k >= 0 && k < n));
+  const clips = tl.clips.map((c, idx) => {
+    if (idx === i) {
+      // New flame at this slot; its outgoing permutation is now stale ⇒ drop.
+      const { permutation: _drop, ...rest } = c;
+      return { ...rest, flame };
+    }
+    if (touched.has(idx) && c.permutation !== undefined) {
+      const { permutation: _drop, ...rest } = c;
+      return rest;
+    }
+    return c;
+  });
+  return { ...tl, clips };
+}
+
 /** Append all keyframes of an imported Animation as clips, preserving their
  *  internal timing. #280 — a non-empty base is bridged into the import with the
  *  inherited evolve + linger from the existing tail's section (or the seed

@@ -34,6 +34,7 @@ import { renderClipThumbnails } from './timeline-thumbnails';
 import { genomeFromJson } from './serialize';
 import {
   createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, setPermutation, removeNode,
+  swapClipFlames, insertFlame, replaceClipFlame,
 } from './timeline-edit';
 import { mountSectionTrack, type SectionTrackHandle, type Selection } from './timeline-sections';
 import { mountSectionEditor, type SectionEditorHandle } from './timeline-section-editor';
@@ -262,10 +263,16 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   addInput.accept = '.flame,.flam3,.json';
   addInput.style.display = 'none';
   root.appendChild(addInput);
-  addBtn.addEventListener('click', () => addInput.click());
+  // #286 — interior insert AND in-place replace ("swap key flame") route through
+  // the same file picker; the pending target is stashed here and consumed (then
+  // cleared) by handleAddFlame. `undefined` ⇒ append (the ＋add tile / Add button).
+  let pendingTarget: { mode: 'insert' | 'replace'; index: number } | undefined;
+  addBtn.addEventListener('click', () => { pendingTarget = undefined; addInput.click(); });
   addInput.addEventListener('change', () => {
     const f = addInput.files?.[0];
-    if (f) void handleAddFlame(f);
+    const target = pendingTarget;
+    pendingTarget = undefined;
+    if (f) void handleAddFlame(f, target);
     addInput.value = '';
   });
 
@@ -709,7 +716,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       timeline: createTimeline(),
       onSelectNode: () => {},
       onSelectSection: () => {},
-      onAdd: () => addInput.click(),
+      onAdd: () => { pendingTarget = undefined; addInput.click(); },
+      onInsert: () => {}, // empty scaffold — nothing to insert between
       onSeek: () => {}, // empty scaffold — nothing to scrub
     });
     playbackBar?.destroy();
@@ -751,7 +759,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         if (timeline) sectionEditor?.showSection(timeline, i);
         contextPanel?.open(); // #283
       },
-      onAdd: () => addInput.click(),
+      onAdd: () => { pendingTarget = undefined; addInput.click(); },
+      onInsert: (i) => { pendingTarget = { mode: 'insert', index: i }; addInput.click(); }, // #286
       onSeek: (t) => { stopPlayback(); playbackBar?.setTime(t); void renderAtTime(t); }, // #276
     });
 
@@ -773,6 +782,14 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       onLingerChange: (i, l) => applyEdit(setLinger(timeline!, i, l)),
       onPermutationChange: (i, perm) => applyEdit(setPermutation(timeline!, i, perm)),
       onPauseChange: (i, s) => applyEdit(setPause(timeline!, i, s)),
+      onMoveNode: (i, dir) => {
+        // #286 — swap with the neighbour; follow the flame to its new slot.
+        // Structural: flame content moved, so thumbnails must refresh.
+        const j = i + dir;
+        selection = { kind: 'node', index: j };
+        applyEdit(swapClipFlames(timeline!, i, j), { structural: true });
+      },
+      onReplaceNode: (i) => { pendingTarget = { mode: 'replace', index: i }; addInput.click(); }, // #286
       onRemoveNode: (i) => {
         selection = null;
         sectionEditor?.clear();
@@ -839,11 +856,18 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
 
   // #227d — add a key flame to the timeline from a file. Single flame → one
   // node; multi-keyframe animation → import-all / pick-one dialog.
-  async function handleAddFlame(file: File): Promise<void> {
-    setStatus(`adding ${file.name} …`);
+  async function handleAddFlame(file: File, target?: { mode: 'insert' | 'replace'; index: number }): Promise<void> {
+    const verb = target === undefined ? 'adding' : target.mode === 'replace' ? 'swapping in' : 'inserting';
+    setStatus(`${verb} ${file.name} …`);
     try {
       const text = await file.text();
       const base = timeline ?? createTimeline();
+      // #286 — one builder: append (no target), insert mid-timeline, or replace
+      // a slot's flame in place ("swap key flame").
+      const addOne = (genome: Parameters<typeof appendFlame>[1], source: Parameters<typeof appendFlame>[2]): Timeline =>
+        target === undefined ? appendFlame(base, genome, source)
+          : target.mode === 'replace' ? replaceClipFlame(base, target.index, genome, source)
+            : insertFlame(base, target.index, genome, source);
       let next: Timeline;
       if (/\.json$/i.test(file.name)) {
         const doc = JSON.parse(text) as Record<string, unknown>;
@@ -851,17 +875,21 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           setStatus('that’s a timeline — use Load, not Add', 'error');
           return;
         }
-        next = appendFlame(base, genomeFromJson(doc), { kind: 'json' });
+        next = addOne(genomeFromJson(doc), { kind: 'json' });
       } else {
         const parsed = parseFlame(text);
         if (parsed.animation && parsed.animation.keyframes.length > 1) {
           const choice = await openAddAnimationDialog(root, parsed.animation.keyframes.length);
           if (!choice) { setStatus('add cancelled'); return; }
+          // "all" appends the whole sequence; insert/replace of a full sequence
+          // isn't supported, so use the first keyframe (single waypoint) there.
           next = choice.kind === 'all'
-            ? appendAnimationAll(base, parsed.animation)
-            : appendFlame(base, parsed.animation.keyframes[choice.keyframeIndex]!, { kind: 'upload', filename: file.name });
+            ? (target === undefined
+                ? appendAnimationAll(base, parsed.animation)
+                : addOne(parsed.animation.keyframes[0]!, { kind: 'upload', filename: file.name }))
+            : addOne(parsed.animation.keyframes[choice.keyframeIndex]!, { kind: 'upload', filename: file.name });
         } else {
-          next = appendFlame(base, parsed.genome, { kind: 'upload', filename: file.name });
+          next = addOne(parsed.genome, { kind: 'upload', filename: file.name });
         }
       }
       const wasEmpty = !timeline;

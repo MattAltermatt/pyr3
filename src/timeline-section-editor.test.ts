@@ -10,7 +10,7 @@ const genome = (): Genome => ({ xforms: [xf(), xf()] } as Genome);
 
 const NOOP = {
   onEvolveChange() {}, onLingerChange() {}, onPauseChange() {},
-  onRemoveNode() {}, onPermutationChange() {},
+  onRemoveNode() {}, onPermutationChange() {}, onMoveNode() {}, onReplaceNode() {},
 };
 
 function host(): HTMLElement {

@@ -13,6 +13,12 @@ export interface SectionEditorOpts {
   onPauseChange: (nodeIndex: number, seconds: number) => void;
   onRemoveNode: (nodeIndex: number) => void;
   onPermutationChange: (sectionIndex: number, perm: number[] | undefined) => void;
+  /** #286 — reorder by swap: move key flame `nodeIndex` one slot in `dir` (-1/+1),
+   *  swapping flame content with the neighbour (per-slot timing stays put). */
+  onMoveNode: (nodeIndex: number, dir: -1 | 1) => void;
+  /** #286 — replace key flame `nodeIndex` in place with a newly-picked flame,
+   *  keeping the slot's cadence (the "swap key flame" button). */
+  onReplaceNode: (nodeIndex: number) => void;
 }
 
 export interface SectionEditorHandle {
@@ -157,7 +163,41 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     pauseRow.add(unit);
     root.appendChild(pauseRow.row);
 
+    // #286 — reorder by swap. ◀/▶ exchange this flame with its neighbour; the
+    // per-slot cadence stays pinned (the rhythm holds, only the flame moves).
+    const n = timeline.clips.length;
+    const moveRow = row('reorder', 'Swap this key flame with a neighbour — the slot timing stays put, only the flame moves.');
+    const moveBtn = (txt: string, title: string, dir: -1 | 1, disabled: boolean): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = txt;
+      b.title = title;
+      b.disabled = disabled;
+      Object.assign(b.style, {
+        background: '#0c0c0e', border: '1px solid #3a3a44', color: disabled ? '#555' : '#cdd',
+        padding: '3px 12px', borderRadius: '3px', fontSize: '12px',
+        cursor: disabled ? 'default' : 'pointer', opacity: disabled ? '0.5' : '1', fontFamily: 'inherit',
+      });
+      if (!disabled) b.addEventListener('click', () => opts.onMoveNode(index, dir));
+      return b;
+    };
+    moveRow.add(moveBtn('◀ earlier', 'Move this key flame one slot earlier.', -1, index === 0));
+    moveRow.add(moveBtn('later ▶', 'Move this key flame one slot later.', 1, index === n - 1));
+    root.appendChild(moveRow.row);
+
     const actions = row('');
+    // #286 — swap (replace) this flame with a freshly-picked one, keeping the
+    // slot's cadence. Distinct from the ◀/▶ reorder above.
+    const swap = document.createElement('button');
+    swap.type = 'button';
+    swap.textContent = '🔄 swap key flame';
+    swap.title = 'Replace this key flame with a different one — the slot timing stays put.';
+    Object.assign(swap.style, {
+      background: '#0c0c0e', border: '1px solid #3a6b7a', color: '#bcdde9',
+      padding: '3px 10px', borderRadius: '3px', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit',
+    });
+    swap.addEventListener('click', () => opts.onReplaceNode(index));
+    actions.add(swap);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '🗑 remove key flame';

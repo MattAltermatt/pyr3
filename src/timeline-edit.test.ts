@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createTimeline, appendFlame, appendAnimationAll, setEvolve, setPause, setLinger, setPermutation, removeNode,
+  swapClipFlames, insertFlame, replaceClipFlame,
   lingerToEasing, easingToLinger,
   DEFAULT_EVOLVE, DEFAULT_HOLD, DEFAULT_LINGER, type Linger,
 } from './timeline-edit';
@@ -217,5 +218,177 @@ describe('setPermutation', () => {
     const base = twoClip();
     setPermutation(base, 0, [2, 1, 0]);
     expect(base.clips[0]!.permutation).toBeUndefined();
+  });
+});
+
+describe('swapClipFlames', () => {
+  // Build A→B→C: section evolves 12/8s, distinct flames.
+  const build3 = () => {
+    let tl = appendFlame(appendFlame(appendFlame(createTimeline(), gA), gB), gA);
+    tl = setEvolve(tl, 0, 12);
+    tl = setEvolve(tl, 1, 8);
+    tl = setLinger(tl, 0, 'strong');
+    return tl;
+  };
+
+  it('swaps flame content but leaves per-slot timing in place', () => {
+    const tl = swapClipFlames(build3(), 0, 1);
+    // flames swapped...
+    expect(tl.clips[0]!.flame.genome).toBe(gB);
+    expect(tl.clips[1]!.flame.genome).toBe(gA);
+    // ...but slot-0 keeps its evolve 12 + strong linger, slot-1 keeps evolve 8.
+    expect(tl.clips[0]!.transitionDuration).toBe(12);
+    expect(tl.clips[0]!.easing).toEqual(lingerToEasing('strong'));
+    expect(tl.clips[1]!.transitionDuration).toBe(8);
+    // terminal invariant held.
+    expect(tl.clips[2]!.transitionDuration).toBe(0);
+  });
+
+  it('resets permutation only on clips whose outgoing morph touches a swapped slot', () => {
+    let tl = build3();
+    tl = setPermutation(tl, 0, [1, 0]); // slot 0 → slot 1 pairing
+    tl = setPermutation(tl, 1, [1, 0]); // slot 1 → slot 2 pairing
+    tl = swapClipFlames(tl, 0, 1);
+    // touched set for swap(0,1) = {-1,0,1} ∩ valid = {0,1}: both cleared.
+    expect(tl.clips[0]!.permutation).toBeUndefined();
+    expect(tl.clips[1]!.permutation).toBeUndefined();
+  });
+
+  it('non-adjacent swap leaves an untouched middle permutation intact', () => {
+    // A→B→C→D, swap 0 and 3. touched = {-1,0,2,3} ∩ valid = {0,2,3}; slot 1 untouched.
+    let tl = appendFlame(appendFlame(appendFlame(appendFlame(createTimeline(), gA), gB), gA), gB);
+    tl = setPermutation(tl, 1, [1, 0]);
+    tl = swapClipFlames(tl, 0, 3);
+    expect(tl.clips[0]!.flame.genome).toBe(gB); // was D's genome (gB)
+    expect(tl.clips[3]!.flame.genome).toBe(gA); // was A's genome (gA)
+    expect(tl.clips[1]!.permutation).toEqual([1, 0]); // untouched
+  });
+
+  it('is a no-op on i === j or out-of-range indices', () => {
+    const tl = build3();
+    expect(swapClipFlames(tl, 1, 1)).toBe(tl);
+    expect(swapClipFlames(tl, -1, 0)).toBe(tl);
+    expect(swapClipFlames(tl, 0, 99)).toBe(tl);
+  });
+});
+
+describe('insertFlame', () => {
+  // A→B→C with section 0 = 12s/strong, section 1 = 8s/gentle, flame holds via setPause.
+  const build3 = () => {
+    let tl = appendFlame(appendFlame(appendFlame(createTimeline(), gA), gB), gA);
+    tl = setEvolve(tl, 0, 12);
+    tl = setLinger(tl, 0, 'strong');
+    tl = setPause(tl, 0, 0.5); // flame-0 hold
+    tl = setEvolve(tl, 1, 8);
+    return tl;
+  };
+
+  it('interior insert inherits the split section cadence and grows the timeline', () => {
+    // insert X between slot 0 (A) and slot 1 (B): index 1. split section = clips[0].
+    const tl = insertFlame(build3(), 1, gB);
+    expect(tl.clips).toHaveLength(4);
+    expect(tl.clips[1]!.flame.genome).toBe(gB); // X landed at index 1
+    // X inherits the split section's evolve (12) + linger (strong)...
+    expect(tl.clips[1]!.transitionDuration).toBe(12);
+    expect(tl.clips[1]!.easing).toEqual(lingerToEasing('strong'));
+    // ...and X's hold = the preceding flame's pause (0.5) ⇒ duration = 0.5 + 12.
+    expect(tl.clips[1]!.duration).toBe(0.5 + 12);
+    // slot 0 (A) is unchanged — it now morphs into X with the SAME 12/strong.
+    expect(tl.clips[0]!.transitionDuration).toBe(12);
+    expect(tl.clips[0]!.easing).toEqual(lingerToEasing('strong'));
+    // old B (now slot 2) keeps its 8s outgoing evolve; terminal still 0.
+    expect(tl.clips[2]!.transitionDuration).toBe(8);
+    expect(tl.clips[3]!.transitionDuration).toBe(0);
+  });
+
+  it("clears the preceding clip's stale permutation on interior insert", () => {
+    let tl = build3();
+    tl = setPermutation(tl, 0, [1, 0]); // A → B pairing, now stale (A → X)
+    tl = setPermutation(tl, 1, [1, 0]); // B → C pairing, still valid
+    tl = insertFlame(tl, 1, gB);
+    expect(tl.clips[0]!.permutation).toBeUndefined();      // cleared
+    expect(tl.clips[2]!.permutation).toEqual([1, 0]);      // old slot-1, shifted, intact
+  });
+
+  it('prepend (index 0) inherits the right neighbour cadence as the new first flame', () => {
+    const tl = insertFlame(build3(), 0, gB);
+    expect(tl.clips).toHaveLength(4);
+    expect(tl.clips[0]!.flame.genome).toBe(gB);            // X is the new first
+    expect(tl.clips[0]!.transitionDuration).toBe(12);      // old-first's outgoing evolve
+    expect(tl.clips[0]!.easing).toEqual(lingerToEasing('strong'));
+    expect(tl.clips[1]!.flame.genome).toBe(gA);            // old first, unchanged
+  });
+
+  it('index ≥ length behaves exactly like appendFlame', () => {
+    const base = build3();
+    expect(insertFlame(base, 99, gB)).toEqual(appendFlame(base, gB));
+  });
+
+  it('insert into an empty timeline → a single terminal clip', () => {
+    const tl = insertFlame(createTimeline(), 0, gA);
+    expect(tl.clips).toHaveLength(1);
+    expect(tl.clips[0]!.transitionDuration).toBe(0);
+    expect(tl.clips[0]!.duration).toBe(DEFAULT_HOLD);
+  });
+
+  it('prepend into a 1-clip timeline seeds DEFAULT_EVOLVE (no section-less clip)', () => {
+    const one = appendFlame(createTimeline(), gA); // single terminal clip (td 0)
+    const tl = insertFlame(one, 0, gB);
+    expect(tl.clips).toHaveLength(2);
+    expect(tl.clips[0]!.flame.genome).toBe(gB);
+    expect(tl.clips[0]!.transitionDuration).toBe(DEFAULT_EVOLVE); // real section, not 0
+    expect(tl.clips[1]!.transitionDuration).toBe(0); // terminal preserved
+  });
+});
+
+describe('replaceClipFlame', () => {
+  // A→B→C with section 0 = 12s/strong, flame-0 hold 0.5, section 1 = 8s.
+  const build3 = () => {
+    let tl = appendFlame(appendFlame(appendFlame(createTimeline(), gA), gB), gA);
+    tl = setEvolve(tl, 0, 12);
+    tl = setLinger(tl, 0, 'strong');
+    tl = setPause(tl, 0, 0.5);
+    tl = setEvolve(tl, 1, 8);
+    return tl;
+  };
+
+  it('swaps in a new flame at the slot but keeps all per-slot cadence', () => {
+    const tl = replaceClipFlame(build3(), 1, gA);
+    expect(tl.clips).toHaveLength(3); // no growth — in-place
+    expect(tl.clips[1]!.flame.genome).toBe(gA); // slot-1 flame replaced (was gB)
+    // slot 0 keeps 12s/strong/0.5-hold; slot 1 keeps 8s; terminal stays 0.
+    expect(tl.clips[0]!.transitionDuration).toBe(12);
+    expect(tl.clips[0]!.easing).toEqual(lingerToEasing('strong'));
+    expect(tl.clips[0]!.duration).toBe(0.5 + 12);
+    expect(tl.clips[1]!.transitionDuration).toBe(8);
+    expect(tl.clips[2]!.transitionDuration).toBe(0);
+  });
+
+  it('resets permutation on the touched pairs {i-1, i} only', () => {
+    let tl = build3();
+    tl = setPermutation(tl, 0, [1, 0]); // slot 0 → slot 1 (into the replaced flame)
+    tl = setPermutation(tl, 1, [1, 0]); // slot 1 → slot 2 (out of the replaced flame)
+    tl = replaceClipFlame(tl, 1, gA);
+    expect(tl.clips[0]!.permutation).toBeUndefined(); // i-1 cleared
+    expect(tl.clips[1]!.permutation).toBeUndefined(); // i cleared
+  });
+
+  it('leaves an unrelated permutation intact', () => {
+    let tl = appendFlame(appendFlame(appendFlame(appendFlame(createTimeline(), gA), gB), gA), gB);
+    tl = setPermutation(tl, 2, [1, 0]); // slot 2 → slot 3, untouched by replacing slot 0
+    tl = replaceClipFlame(tl, 0, gB);
+    expect(tl.clips[2]!.permutation).toEqual([1, 0]);
+  });
+
+  it('replacing the terminal flame preserves transitionDuration 0', () => {
+    const tl = replaceClipFlame(build3(), 2, gB);
+    expect(tl.clips[2]!.flame.genome).toBe(gB);
+    expect(tl.clips[2]!.transitionDuration).toBe(0);
+  });
+
+  it('is a no-op on an out-of-range index', () => {
+    const tl = build3();
+    expect(replaceClipFlame(tl, -1, gB)).toBe(tl);
+    expect(replaceClipFlame(tl, 99, gB)).toBe(tl);
   });
 });

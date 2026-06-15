@@ -87,6 +87,9 @@ export interface SectionTrackOpts {
   onSelectNode: (index: number) => void;
   onSelectSection: (index: number) => void;
   onAdd: () => void;
+  /** #286 — insert a key flame at clip `index` (between two existing clips),
+   *  growing the timeline. The trailing `onAdd` still appends. */
+  onInsert: (index: number) => void;
   /** #276 — fires when the user clicks/drags the track background to scrub. */
   onSeek: (t: number, final: boolean) => void;
 }
@@ -261,6 +264,21 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
         edge.addEventListener('pointerdown', (e) => e.stopPropagation()); // #276 — click=select, not seek
         edge.addEventListener('click', () => opts.onSelectSection(s.index));
         lane.appendChild(edge);
+
+        // #286 — interior insert marker: a small ＋ over this gap inserts a key
+        // flame between clip s.index and s.index+1 (insert index = s.index + 1).
+        const ins = document.createElement('div');
+        ins.textContent = '＋';
+        ins.title = 'Insert a key flame here';
+        Object.assign(ins.style, {
+          position: 'absolute', top: '0px', left: `${s.x + s.w / 2 - 9}px`,
+          width: '18px', height: '18px', borderRadius: '9px', border: '1px dashed #3a6',
+          background: '#0c0c0e', color: '#bfe9cf', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', fontSize: '11px', lineHeight: '1', cursor: 'pointer', zIndex: '3',
+        });
+        ins.addEventListener('pointerdown', (e) => e.stopPropagation()); // click=insert, not seek
+        ins.addEventListener('click', (e) => { e.stopPropagation(); opts.onInsert(s.index + 1); });
+        lane.appendChild(ins);
       }
     }
     // ＋ add affordance after the chain.
