@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { generateSurpriseBatch } from './surprise-seed';
+import { PRIMARY_ELIGIBLE } from './surprise-seed-pool';
+
+function seededRng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+describe('generateSurpriseBatch', () => {
+  it('returns n genomes', () => {
+    expect(generateSurpriseBatch(seededRng(1), 16)).toHaveLength(16);
+  });
+  it('is deterministic for the same rng seed', () => {
+    expect(generateSurpriseBatch(seededRng(5), 8)).toEqual(generateSurpriseBatch(seededRng(5), 8));
+  });
+  it('each genome has 4 xforms and a non-empty palette', () => {
+    for (const g of generateSurpriseBatch(seededRng(2), 8)) {
+      expect(g.xforms).toHaveLength(4);
+      expect(g.palette.stops.length).toBeGreaterThan(0);
+      expect(Number.isFinite(g.scale)).toBe(true);
+    }
+  });
+  it('leads each genome with an eligible primary variation', () => {
+    for (const g of generateSurpriseBatch(seededRng(4), 12)) {
+      const shapeXform = g.xforms.find((x) => x.variations[0] && x.variations[0].weight >= 0.99);
+      expect(shapeXform).toBeDefined();
+      expect(PRIMARY_ELIGIBLE).toContain(shapeXform!.variations[0]!.index);
+    }
+  });
+});

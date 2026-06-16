@@ -7,7 +7,7 @@
 
 export type NavSubKey =
   | 'editor' | 'gradient' | 'animate' | 'screensaver'
-  | 'esf' | 'gallery' | 'variations' | 'about' | 'showcase'
+  | 'esf' | 'gallery' | 'variations' | 'surprise' | 'about' | 'showcase'
   | 'help-color' | 'help-ifs' | 'help-names' | 'help-webgpu';
 
 export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover';
@@ -36,6 +36,7 @@ export const NAV_MODEL: NavTop[] = [
     { key: 'gallery', label: 'Gallery',    route: '/esf/gallery' },
   ]},
   { key: 'discover', label: 'Discover', items: [
+    { key: 'surprise',    label: 'Surprise',        route: '/surprise' },
     { key: 'variations',  label: 'Variations',      route: '/variations' },
     { key: 'about',       label: 'About',           route: '/about' },
     { key: 'help-color',  label: 'Color',           route: '/help/direct-color-variations.html', newTab: true },

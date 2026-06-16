@@ -28,6 +28,7 @@ describe('nav-menu structure (#264)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     const subs = [...el.querySelectorAll('[data-nav-top="discover"] [data-nav-sub]')]
       .map((s) => s.getAttribute('data-nav-sub'));
+    expect(subs).toContain('surprise');
     expect(subs).toContain('variations');
     expect(subs).toContain('about');
     expect(subs).toContain('showcase');

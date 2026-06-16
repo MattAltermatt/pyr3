@@ -18,6 +18,7 @@ describe('redirectLegacyPath (#264)', () => {
   it('/v1/animate → /animate', () => expect(redirectLegacyPath('/v1/animate', '')).toBe('/animate'));
   it('/v1/screensaver → /screensaver', () => expect(redirectLegacyPath('/v1/screensaver', '')).toBe('/screensaver'));
   it('/v1/variations → /variations', () => expect(redirectLegacyPath('/v1/variations', '')).toBe('/variations'));
+  it('/v1/surprise → /surprise', () => expect(redirectLegacyPath('/v1/surprise', '')).toBe('/surprise'));
   it('already-new path → null', () => expect(redirectLegacyPath('/editor', '')).toBeNull());
   it('/about (unchanged) → null', () => expect(redirectLegacyPath('/about', '')).toBeNull());
   it('bare / → null', () => expect(redirectLegacyPath('/', '')).toBeNull());

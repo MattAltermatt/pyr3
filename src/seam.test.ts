@@ -84,6 +84,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-tooltip.ts',           // /v1/edit info-icon + anchored popover (#103 Phase 7)
   'palette-picker.ts',         // /v1/edit docked palette picker (#103 Phase 9)
   'edit-slow-render-nudge.ts', // /v1/edit slow-render UX nudge — owns toast DOM (#118)
+  'surprise-mount.ts',            // /surprise wall page mount — owns DOM (#186)
   'variation-catalog-mount.ts',   // /v1/variations page mount — owns DOM (#119)
   'variation-catalog-sidebar.ts', // /v1/variations sidebar — DOM-mounting (#119)
   'variation-catalog-section.ts', // /v1/variations per-section component (#119)

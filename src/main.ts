@@ -665,6 +665,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  // #186 — /surprise wall. Same early-dispatch pattern as the catalog: acquire a
+  // device for the thumbnail queue, mount the wall root, hide the viewer chrome,
+  // and return before viewer setup.
+  if (initialIntent?.kind === 'surprise') {
+    const { device: spDevice, format: spFormat } = await acquireGpu();
+    const spRoot = document.getElementById('pyr3-surprise');
+    if (!spRoot) {
+      console.error('pyr3: #pyr3-surprise missing from index.html — surprise wall cannot mount');
+      return;
+    }
+    spRoot.hidden = false;
+    document.body.classList.add('pyr3-surprise-mode');
+    setDocTitle('surprise');
+    const { mountSurprisePage } = await import('./surprise-mount');
+    const handle = mountSurprisePage(spRoot, { device: spDevice, format: spFormat });
+    window.addEventListener('pagehide', () => handle.destroy(), { once: true });
+    return;
+  }
+
   const { device, context, format, canvas } = await initDevice('pyr3-canvas');
   canvas.width = RENDER_SIZE;
   canvas.height = RENDER_SIZE;
@@ -2243,11 +2262,12 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
     case 'edit':
     case 'catalog-entry':
     case 'variations':
+    case 'surprise':
       // /v1/edit (and the /v1/edit?from=catalog catalog-handoff variant) +
-      // /v1/variations all dispatch via their own mount() BEFORE this function
-      // is called (see the early-dispatch block at the top of main()).
-      // Reaching here is a routing bug — log + paint welcome as a safe fallback
-      // so the page isn't blank.
+      // /v1/variations + /surprise all dispatch via their own mount() BEFORE
+      // this function is called (see the early-dispatch block at the top of
+      // main()). Reaching here is a routing bug — log + paint welcome as a safe
+      // fallback so the page isn't blank.
       console.error(`pyr3: ${intent.kind} intent reached resolveLoadIntent — dispatch order broken`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'viewer':

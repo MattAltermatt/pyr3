@@ -23,6 +23,7 @@ export function redirectLegacyPath(pathname: string, search: string): string | n
   else if (sub === 'animate') dest = '/animate';
   else if (sub === 'screensaver') dest = '/screensaver';
   else if (sub === 'variations') dest = '/variations';
+  else if (sub === 'surprise') dest = '/surprise';
 
   if (dest === null) return null;
   return search ? dest + search : dest;

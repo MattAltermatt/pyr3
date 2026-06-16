@@ -36,6 +36,7 @@ export type LoadIntent =
   | { kind: 'edit' }
   | { kind: 'catalog-entry'; entry: CatalogEntry }
   | { kind: 'variations' }
+  | { kind: 'surprise' }
   | { kind: 'viewer' }
   | { kind: 'gradient' }
   | { kind: 'animate' }
@@ -189,6 +190,7 @@ export function parseLoadIntent(input: string): LoadIntent | null {
   if (head === 'animate' && parts.length === 1) return { kind: 'animate' };
   if (head === 'screensaver' && parts.length === 1) return { kind: 'screensaver' };
   if (head === 'variations' && parts.length === 1) return { kind: 'variations' };
+  if (head === 'surprise' && parts.length === 1) return { kind: 'surprise' };
   if (head === 'esf') {
     if (parts.length === 1) return { kind: 'esf' };
     if (

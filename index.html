@@ -863,6 +863,184 @@
       #pyr3-error.visible {
         display: flex;
       }
+
+      /* ── Surprise Wall (/surprise) ───────────────────────────────────── */
+      #pyr3-surprise[hidden] { display: none; }
+      body.pyr3-surprise-mode #pyr3-canvas,
+      body.pyr3-surprise-mode #pyr3-firstpaint,
+      body.pyr3-surprise-mode #pyr3-gallery,
+      body.pyr3-surprise-mode #pyr3-fallback,
+      body.pyr3-surprise-mode #pyr3-missing { display: none !important; }
+      body.pyr3-surprise-mode .pyr3-bar-info,
+      body.pyr3-surprise-mode .pyr3-bar-action { display: none !important; }
+
+      #pyr3-surprise {
+        position: absolute;
+        inset: 0;
+        overflow: auto;
+      }
+      .pyr3-surprise-root {
+        display: grid;
+        grid-template-columns: 1fr 280px;
+        grid-template-rows: auto 1fr;
+        grid-template-areas: "controls tray" "wall tray";
+        height: 100%;
+        width: 100%;
+      }
+      .pyr3-surprise-controls {
+        grid-area: controls;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.85rem 1.1rem;
+        border-bottom: 1px solid var(--bar-border);
+        background: var(--bar-bg-2);
+      }
+      .pyr3-surprise-more {
+        background: var(--accent, #c97);
+        color: #1a1a1a;
+        border: none;
+        border-radius: 4px;
+        padding: 0.5rem 0.95rem;
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: filter 0.12s;
+      }
+      .pyr3-surprise-more:hover { filter: brightness(1.12); }
+      .pyr3-surprise-status {
+        font-family: ui-monospace, monospace;
+        font-size: 0.78rem;
+        color: var(--text-dim);
+        letter-spacing: 0.02em;
+      }
+      .pyr3-surprise-wall {
+        grid-area: wall;
+        display: grid;
+        /* Fixed 320px columns = the thumbnail's native render size (THUMB_DIM),
+           so tiles never stretch/shrink with the window — they stay 1:1 with the
+           rendered pixels regardless of viewport width. */
+        grid-template-columns: repeat(auto-fill, 320px);
+        grid-auto-rows: min-content;
+        gap: 0.6rem;
+        padding: 0.9rem 1.1rem;
+        align-content: start;
+        justify-content: start;
+        overflow-y: auto;
+      }
+      .pyr3-surprise-tile {
+        position: relative;
+        width: 320px;
+        height: 320px;
+        background: #000;
+        border: 1px solid var(--bar-border);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .pyr3-surprise-tile canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        image-rendering: auto;
+      }
+      .pyr3-surprise-tile.pending::after {
+        content: "…";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-dim);
+        font-family: ui-monospace, monospace;
+        font-size: 1.4rem;
+      }
+      .pyr3-surprise-tile .pyr3-tile-open,
+      .pyr3-surprise-tile .pyr3-tile-keep,
+      .pyr3-surprise-tile .pyr3-tile-reroll {
+        position: absolute;
+        top: 4px;
+        background: rgba(0, 0, 0, 0.55);
+        border: none;
+        border-radius: 3px;
+        color: #fff;
+        font-size: 0.85rem;
+        line-height: 1;
+        padding: 3px 5px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      /* ↗ link-out sits in the upper-right corner; ⭐ keep + ✕ reroll to its left. */
+      .pyr3-surprise-tile .pyr3-tile-open { right: 4px; font-weight: 700; }
+      .pyr3-surprise-tile .pyr3-tile-keep { right: 30px; }
+      .pyr3-surprise-tile .pyr3-tile-reroll { right: 56px; }
+      .pyr3-surprise-tile .pyr3-tile-open:hover { background: var(--accent, #c97); color: #1a1a1a; }
+      .pyr3-surprise-tile:hover .pyr3-tile-open,
+      .pyr3-surprise-tile:hover .pyr3-tile-keep,
+      .pyr3-surprise-tile:hover .pyr3-tile-reroll { opacity: 1; }
+      .pyr3-surprise-tile .pyr3-tile-label {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        padding: 3px 6px;
+        font-family: ui-monospace, monospace;
+        font-size: 0.68rem;
+        color: #eee;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pyr3-surprise-tray {
+        grid-area: tray;
+        border-left: 1px solid var(--bar-border);
+        background: var(--bar-bg-1);
+        padding: 0.85rem 0.9rem;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+      }
+      .pyr3-surprise-tray h2 {
+        font-family: ui-monospace, monospace;
+        font-size: 0.74rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin: 0 0 0.3rem;
+      }
+      .pyr3-tray-empty {
+        font-family: ui-monospace, monospace;
+        font-size: 0.74rem;
+        color: var(--text-muted);
+        font-style: italic;
+        line-height: 1.5;
+      }
+      .pyr3-kept {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.5rem;
+        background: var(--bar-bg-3);
+        border: 1px solid var(--bar-border);
+        border-radius: 3px;
+      }
+      .pyr3-kept-label {
+        flex: 1;
+        font-family: ui-monospace, monospace;
+        font-size: 0.74rem;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pyr3-kept button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.85rem;
+        padding: 2px 3px;
+      }
     </style>
   </head>
   <body>
@@ -875,6 +1053,7 @@
         <div id="pyr3-gallery" hidden></div>
         <div id="pyr3-edit" hidden></div>
         <div id="pyr3-variations" hidden></div>
+        <div id="pyr3-surprise" hidden></div>
       </main>
     </div>
     <div id="pyr3-error" role="alert"></div>

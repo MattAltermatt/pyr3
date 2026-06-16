@@ -119,7 +119,17 @@ function isPaletteVibrant(stops: ColorStop[]): boolean {
 
 type XformRole = 'shape' | 'detail' | 'duplicator';
 
-export function generateRandomGenome(rng: () => number = Math.random): Genome {
+/** Options for {@link generateRandomGenome}. The default (no opts) path is
+ *  byte-identical to the original signature — only the Surprise Wall passes
+ *  `primaryOverride` to inject a specific lead variation per genome. */
+export interface SeedOptions {
+  primaryOverride?: VariationIndex;
+}
+
+export function generateRandomGenome(
+  rng: () => number = Math.random,
+  opts: SeedOptions = {},
+): Genome {
   // 1. Symmetry Injection (50% probability)
   let symmetry: Genome['symmetry'] = undefined;
   if (rng() < 0.5) {
@@ -128,19 +138,27 @@ export function generateRandomGenome(rng: () => number = Math.random): Genome {
     symmetry = { kind, n };
   }
 
-  // 2. Variation Homogeneity & Theme Pools
-  const themeVal = rng();
-  let themePool: Variation['index'][];
-  if (themeVal < 0.4) {
-    themePool = FAMILY_CLASSICAL_FLAM3;
-  } else if (themeVal < 0.6) {
-    themePool = FAMILY_PYRE_COMPLEX_ANALYTIC;
-  } else if (themeVal < 0.8) {
-    themePool = FAMILY_PYRE_CARTOGRAPHIC;
+  // 2. Variation Homogeneity & Theme Pools.
+  //    Surprise Wall path: an explicit primaryOverride skips the theme-pool roll
+  //    entirely (and does NOT consume rng), so the editor's default sequence is
+  //    untouched while the wall drives its own stratified primary per genome.
+  let primaryVar: Variation['index'];
+  if (opts.primaryOverride !== undefined) {
+    primaryVar = opts.primaryOverride;
   } else {
-    themePool = FAMILY_PYRE_ATTRACTORS_TORAL_FOLDS;
+    const themeVal = rng();
+    let themePool: Variation['index'][];
+    if (themeVal < 0.4) {
+      themePool = FAMILY_CLASSICAL_FLAM3;
+    } else if (themeVal < 0.6) {
+      themePool = FAMILY_PYRE_COMPLEX_ANALYTIC;
+    } else if (themeVal < 0.8) {
+      themePool = FAMILY_PYRE_CARTOGRAPHIC;
+    } else {
+      themePool = FAMILY_PYRE_ATTRACTORS_TORAL_FOLDS;
+    }
+    primaryVar = pickFromSet(rng, themePool);
   }
-  const primaryVar = pickFromSet(rng, themePool);
 
   // 3. Structured Xform Roles (Archetypes) & 4. Variable Color Speeds
   let roles: XformRole[];
@@ -245,7 +263,18 @@ export function generateRandomGenome(rng: () => number = Math.random): Genome {
   }
 
   const fitSeed = Math.floor(rng() * 0x100000000) >>> 0;
-  const fit = computeFitViewport(genome, FIT_REF_W, FIT_REF_H, { seed: fitSeed });
+  // computeFitViewport runs a CPU chaos oracle for framing. Most variations are
+  // handled, but a few exotic ones (e.g. separation) throw if their named params
+  // aren't populated. The editor's curated pools never hit this; the Surprise
+  // Wall's broadened primary pool can. Treat any oracle failure as "no fit" and
+  // fall back to the default scale — the GPU render path defaults missing params
+  // to 0 and still produces a (possibly cull-able) thumbnail.
+  let fit: ReturnType<typeof computeFitViewport> = null;
+  try {
+    fit = computeFitViewport(genome, FIT_REF_W, FIT_REF_H, { seed: fitSeed });
+  } catch {
+    fit = null;
+  }
   if (fit) {
     genome.scale = fit.scale;
     genome.cx = fit.cx;
