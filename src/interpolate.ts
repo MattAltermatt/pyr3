@@ -159,8 +159,9 @@ export function interpolate(animation: Animation, time: number): Genome {
   if (k0.nick !== undefined) out.nick = k0.nick;
   if (finalxform) out.finalxform = finalxform;
 
-  // Tonemap: both undefined → undefined. Otherwise interp using flam3 defaults
-  // (matches what each keyframe would render as in standalone static-render).
+  // Tonemap: both undefined → undefined. Otherwise interp, filling a
+  // missing-keyframe side with INTERP_TONEMAP_FALLBACK (the FLAM3_PARTIAL_FILL
+  // defaults that flame-import would have stamped on it).
   if (k0.tonemap || k1.tonemap) {
     out.tonemap = interpolateTonemap(k0.tonemap, k1.tonemap, c0, c1);
   }
@@ -785,18 +786,25 @@ function hsv2rgbFlam3(h: number, s: number, v: number): { r: number; g: number; 
 // linearly. Use FLAM3_PARTIAL_FILL defaults (matches flame-import) for the
 // missing-keyframe side.
 
+// #314 — shared fallback for the missing-keyframe side of a tonemap interp.
+// These are the FLAM3_PARTIAL_FILL defaults (gamma/brightness 4.0), matching
+// what flame-import stamps when a keyframe omits tonemap — NOT the standalone
+// DEFAULT_TONEMAP (2.4/1.0). In practice every imported flame carries a full
+// tonemap, so this fallback only affects hand-built genomes; hoisted here so the
+// 2-keyframe and N-keyframe paths can never drift.
+const INTERP_TONEMAP_FALLBACK: Tonemap = {
+  gamma: 4.0, brightness: 4.0, vibrancy: 1.0,
+  highlightPower: -1.0, gammaThreshold: 0.01,
+};
+
 function interpolateTonemap(
   t0: Tonemap | undefined,
   t1: Tonemap | undefined,
   c0: number,
   c1: number,
 ): Tonemap {
-  const FALLBACK: Tonemap = {
-    gamma: 4.0, brightness: 4.0, vibrancy: 1.0,
-    highlightPower: -1.0, gammaThreshold: 0.01,
-  };
-  const a = t0 ?? FALLBACK;
-  const b = t1 ?? FALLBACK;
+  const a = t0 ?? INTERP_TONEMAP_FALLBACK;
+  const b = t1 ?? INTERP_TONEMAP_FALLBACK;
   return {
     gamma: blend(a.gamma, b.gamma, c0, c1),
     brightness: blend(a.brightness, b.brightness, c0, c1),
@@ -1270,11 +1278,7 @@ function interpolatePaletteN(animation: Animation, kfs: Genome[], cmc: number[])
 }
 
 function interpolateTonemapN(ts: (Tonemap | undefined)[], cmc: number[]): Tonemap {
-  const FALLBACK: Tonemap = {
-    gamma: 4.0, brightness: 4.0, vibrancy: 1.0,
-    highlightPower: -1.0, gammaThreshold: 0.01,
-  };
-  const a = ts.map((t) => t ?? FALLBACK);
+  const a = ts.map((t) => t ?? INTERP_TONEMAP_FALLBACK);
   return {
     gamma: blendN(a.map((t) => t.gamma), cmc),
     brightness: blendN(a.map((t) => t.brightness), cmc),

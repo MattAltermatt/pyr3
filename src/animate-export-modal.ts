@@ -391,7 +391,7 @@ export function openAnimateExportModal(
     const v = readForm();
     const dur = opts.mode === 'timeline' ? (opts as TimelineModalOpts).durationSeconds : 0;
     formNote.textContent =
-      `Files: <prefix><frame:05>.png — e.g. ${frameNameExample(v, dur)}. `
+      `Files: <prefix><frame>.png — e.g. ${frameNameExample(v, dur)}. `
       + (v.resume
         ? 'Existing frames skipped (resume).'
         : 'Existing files in the directory are overwritten.');

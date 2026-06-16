@@ -638,9 +638,9 @@ export const VARIATION_NAMES: Record<number, string> = Object.fromEntries(
   Object.entries(V).map(([name, idx]) => [idx, name]),
 );
 
-/** Convert an internal variation index (0..316) to its user-facing display label
+/** Convert an internal variation index (0..322) to its user-facing display label
  *  under segmented namespaces: V0..V98 (flam3), JWF0..JWF120 (JWildfire),
- *  and P0..P96 (Pyre originals, incl. the #16 marathon families V271..V303, the
+ *  and P0..P102 (Pyre originals, incl. the #16 marathon families V271..V303, the
  *  escape-time family V310..V313 → P90..P93, the copula warps V315..V316 → P95..P96,
  *  the conformal pair V317..V318 → P97..P98, the aperiodic-tiling pair
  *  V319..V320 → P99..P100, and the number-theoretic pair V321..V322 → P101..P102). */

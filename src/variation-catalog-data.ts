@@ -5339,7 +5339,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.doyle,
     name: 'doyle',
     source: 'novel',
-    formula: "L=\\log z,\\; u'=u+\\tfrac{q}{p}v,\\; z'=\\exp\\!\\big(u'+\\rho,\\; v+\\tfrac{q}{p}\\rho\\big)",
+    formula: "u=\\ln r,\\; v=\\theta,\\; \\kappa=\\tfrac{q}{p};\\quad \\rho=0.12\\big(\\sin pv+\\cos(pv-2\\pi(u+\\kappa v))\\big);\\quad z'=e^{\\,u+\\kappa v+\\rho}(\\cos v',\\sin v'),\\; v'=v+\\kappa\\rho",
     blurb: 'The Doyle spiral — a conformal hexagonal packing of mutually-tangent circles spiralling to the origin. Taking the complex logarithm sends that log-spiral lattice to a regular triangular lattice, so the whole construction becomes a shear of the (ln r, θ) strip: doyle_p sets the number of spiral arms, doyle_q the secondary winding, and their ratio is the spiral pitch (how fast angle bleeds into radius). A triangular ripple along the arms places the tangent-circle nodes, then the exponential maps everything back to the plane. The (p,q) basis is evaluated continuously, so animating between integer keyframes morphs the spiral smoothly rather than snapping. Where the Schwarz-Christoffel map fills a polygon, the Doyle warp winds the plane into self-similar spiral arms.',
     params: [
       { name: 'doyle_p', default: 2, min: 1, max: 8, step: 1 },
@@ -5366,7 +5366,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.quasicrystal,
     name: 'quasicrystal',
     source: 'novel',
-    formula: "s(\\mathbf{x}) = \\sum_{k=0}^{n-1}\\cos\\!\\big(f\\,\\mathbf{x}\\cdot(\\cos\\theta_k,\\sin\\theta_k)\\big),\\;\\theta_k=\\tfrac{\\pi k}{n};\\quad \\mathbf{x}' = \\mathbf{x} + s\\,\\nabla s",
+    formula: "s(\\mathbf{x})=\\sum_{k=0}^{n-1}\\cos\\!\\big(f\\,\\mathbf{x}\\cdot\\hat{u}_k\\big),\\;\\hat{u}_k=(\\cos\\theta_k,\\sin\\theta_k),\\;\\theta_k=\\tfrac{\\pi k}{n};\\quad \\mathbf{x}'=\\mathbf{x}-\\tfrac{\\sigma}{n}\\sum_{k}\\sin\\!\\big(f\\,\\mathbf{x}\\cdot\\hat{u}_k\\big)\\,\\hat{u}_k",
     blurb: 'The quasicrystal — n-fold plane-wave interference, the pattern that tiles the plane with perfect rotational symmetry but never repeats. n plane waves at evenly-spaced angles θₖ = πk/n are summed into an interference field, and each point is displaced along that field’s gradient (ridge-attraction), so walkers accumulate on the bright fringes and trace out the quasicrystalline lattice. qc_symmetry sets the fold: 5 gives the iconic Penrose-like five-fold star, 7 and 12 give other forbidden crystallographic symmetries, and qc_freq sets the spatial scale of the fringes. The gradient is computed in closed form (no finite differences), so the warp is cheap — just n cosines and a sum. A genuinely aperiodic structure no lattice-based warp can produce.',
     params: [
       { name: 'qc_symmetry', default: 5, min: 2, max: 12, step: 1 },
