@@ -42,20 +42,36 @@ export function expandGenomeForGPU(genome: Genome): Genome {
     };
   }
 
-  if (!working.symmetry) return working;
-  const extras = generateSymmetryXforms(working.symmetry);
-  if (extras.length === 0) return working;
-  const total = working.xforms.length + extras.length;
+  return bakeSymmetryXforms(working);
+}
+
+/** Expand a genome's declarative `symmetry` into explicit rotation/reflection
+ *  xforms (appended to `xforms`) and clear the field. Returns the same `genome`
+ *  reference when there is no symmetry to expand. The input is never mutated.
+ *
+ *  Split out from `expandGenomeForGPU` (#291) so interpolation can bake symmetry
+ *  into xforms BEFORE blending keyframes — flam3 bakes symmetry up front
+ *  (`flam3_add_symmetry`) and then interpolates, so the symmetry fades in/out
+ *  with the morph instead of being copied from the first keyframe only. Baking
+ *  here keeps the GPU packer's `expandGenomeForGPU` a no-op on already-baked
+ *  genomes (the field is cleared), so symmetry is never double-applied. */
+export function bakeSymmetryXforms(genome: Genome): Genome {
+  if (!genome.symmetry) return genome;
+  const extras = generateSymmetryXforms(genome.symmetry);
+  // n=1 rotational generates no xforms — keep the same-reference no-op fast path
+  // (the harmless degenerate field is dropped later by interpolation anyway).
+  if (extras.length === 0) return genome;
+  const total = genome.xforms.length + extras.length;
   if (total > MAX_XFORMS) {
     throw new Error(
       `pyr3: symmetry expansion exceeds MAX_XFORMS (${MAX_XFORMS}): ` +
-        `${working.xforms.length} source + ${extras.length} generated = ${total}. ` +
+        `${genome.xforms.length} source + ${extras.length} generated = ${total}. ` +
         `Reduce source xforms or symmetry n.`,
     );
   }
   return {
-    ...working,
-    xforms: [...working.xforms, ...extras],
+    ...genome,
+    xforms: [...genome.xforms, ...extras],
     symmetry: undefined,
   };
 }

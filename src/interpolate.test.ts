@@ -4,6 +4,7 @@ import { type Animation, FLAM3_ANIMATION_DEFAULTS } from './animation';
 import { type Genome, type Xform } from './genome';
 import { linear as linearVar, julian, V, type VariationIndex } from './variations';
 import { PYRE_PALETTE } from './palette';
+import { expandGenomeForGPU } from './symmetry';
 
 // ── test helpers ───────────────────────────────────────────────────────────
 
@@ -762,5 +763,32 @@ describe('interpolate — Catmull-Rom smooth (#213)', () => {
     const sm = interpolate(anim(ks()[0]!, ks()[1]!, smooth()), 1.5).cx;
     expect(sm).toBeCloseTo(22.5); // cmc(0.5)·[0,10,40,90]
     expect(sm).not.toBeCloseTo(lin, 2);
+  });
+});
+
+// ── #291: symmetry must blend with the morph, not be carried from k0 only ────
+describe('#291 symmetry is baked before interpolation (direction-symmetric)', () => {
+  // A flame with 4-fold rotational symmetry and one whose only difference is
+  // that it has none. Morphing between them must behave the SAME in either
+  // direction — today symmetry is copied from k0 only, so the result depends
+  // on which flame is first (the spiral→flower "black frame" bug).
+  const plain = (time: number): Genome => baseGenome({ name: 'plain', time });
+  const symm = (time: number): Genome =>
+    baseGenome({ name: 'symm', time, symmetry: { kind: 'rotational', n: 4 } });
+
+  it('carries symmetry into the mid-morph regardless of direction', () => {
+    const ab = expandGenomeForGPU(interpolate(anim(plain(0), symm(1)), 0.5));
+    const ba = expandGenomeForGPU(interpolate(anim(symm(0), plain(1)), 0.5));
+    // Same geometry at the symmetric midpoint → same packed xform count both ways.
+    expect(ab.xforms.length).toBe(ba.xforms.length);
+    // And the n=4 rotation xforms must actually be present mid-morph (not dropped).
+    expect(ab.xforms.length).toBeGreaterThan(plain(0).xforms.length);
+  });
+
+  it('clears the symmetry field on the interpolated genome (baked, not carried)', () => {
+    const mid = interpolate(anim(symm(0), plain(1)), 0.5);
+    // Symmetry is expanded into xforms during interpolation; the declarative
+    // field must not survive (else the packer would double-apply it).
+    expect(mid.symmetry).toBeUndefined();
   });
 });

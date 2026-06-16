@@ -38,6 +38,7 @@ import { type ColorStop, type Palette, bakeLUT, PALETTE_SIZE } from './palette';
 import { type Tonemap } from './tonemap';
 import { applyMotionParameters } from './motion';
 import { evalEasing } from './easing';
+import { bakeSymmetryXforms } from './symmetry';
 
 /** flam3 EPS (interpolation.c:312). Guards against the ±π wrap discontinuity. */
 const EPS = 1e-9;
@@ -60,8 +61,14 @@ export function interpolate(animation: Animation, time: number): Genome {
   }
 
   const { i1, i2, c0: rawC0, c1: rawC1 } = pickKeyframes(keyframes, time);
-  const k0 = keyframes[i1]!;
-  const k1 = keyframes[i2]!;
+  // #291 — bake each keyframe's rotational/dihedral symmetry into explicit
+  // xforms BEFORE blending (flam3's flam3_add_symmetry order). The generated
+  // rotation xforms then interpolate against the other keyframe's (weight-0)
+  // alignment padding, so symmetry fades in/out WITH the morph and is identical
+  // in either direction — instead of being copied from the first keyframe only,
+  // which thinned a morph TO a symmetric flame to a near-empty mid-frame.
+  const k0 = bakeSymmetryXforms(keyframes[i1]!);
+  const k1 = bakeSymmetryXforms(keyframes[i2]!);
 
   // #224 easing: reshape the linear blend weight through this segment's curve.
   // Only ease in-range — pickKeyframes endpoint-extrapolates (rawC1 outside
@@ -84,7 +91,11 @@ export function interpolate(animation: Animation, time: number): Genome {
   // Easing (if present) composes as a time-warp on the cubic parameter `t`.
   if (animation.interpolation === 'smooth' && i1 !== 0 && i2 !== keyframes.length - 1) {
     const cmc = catmullRomWeights(c1);
-    const kfs = [keyframes[i1 - 1]!, keyframes[i1]!, keyframes[i1 + 1]!, keyframes[i1 + 2]!];
+    // #291 — bake symmetry before the 4-keyframe cubic blend, same as the
+    // 2-keyframe path, so symmetry fades with the morph in either direction.
+    const kfs = [
+      keyframes[i1 - 1]!, keyframes[i1]!, keyframes[i1 + 1]!, keyframes[i1 + 2]!,
+    ].map(bakeSymmetryXforms);
     return interpolateCatmullRom(kfs, cmc, animation, time, rawC1);
   }
 
@@ -200,9 +211,11 @@ export function interpolate(animation: Animation, time: number): Genome {
   else out.oversample = k0.oversample ?? k1.oversample;
 
   // Categorical fields — flam3 carries these forward identically
-  // (interpolation.c:464-471): palette_mode, symmetry.
+  // (interpolation.c:464-471): palette_mode.
   if (k0.paletteMode) out.paletteMode = k0.paletteMode;
-  if (k0.symmetry) out.symmetry = k0.symmetry;
+  // #291 — symmetry is NOT carried here: it was baked into xforms before this
+  // blend (see top of interpolate / interpolateCatmullRom), so k0.symmetry is
+  // already undefined and the result genome stays unsymmetried-as-a-field.
 
   return out;
 }
@@ -906,7 +919,8 @@ function interpolateCatmullRom(
 
   // Categorical fields — carry from the dominant inner keyframe (kfs[1] = i1).
   if (kfs[1]!.paletteMode) out.paletteMode = kfs[1]!.paletteMode;
-  if (kfs[1]!.symmetry) out.symmetry = kfs[1]!.symmetry;
+  // #291 — symmetry baked into xforms before this blend (callers pass
+  // symmetry-baked kfs), so it is not carried as a field here.
 
   return out;
 }
