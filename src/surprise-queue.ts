@@ -28,6 +28,13 @@ export interface SurpriseQueue {
 export function createSurpriseQueue(opts: SurpriseQueueOpts): SurpriseQueue {
   const pending: Genome[] = [];
   let draining = false;
+  // Monotonic batch epoch — bumped by clear(). A render that began under an
+  // older epoch belongs to a discarded batch, so its result is dropped after
+  // the await rather than reported. Without this, a render in flight when the
+  // caller swaps batches (🎲 Surprise more) resolves and consumes the NEW
+  // batch's slot-mapping entry, painting stale pixels/label into the wrong
+  // slot — the thumbnail, ⭐-kept genome, and ↗-opened genome then disagree. (#295)
+  let epoch = 0;
   let drainedResolvers: Array<() => void> = [];
 
   async function drain(): Promise<void> {
@@ -35,10 +42,17 @@ export function createSurpriseQueue(opts: SurpriseQueueOpts): SurpriseQueue {
     draining = true;
     while (pending.length) {
       const genome = pending.shift()!;
-      let res: ThumbResult;
+      const startEpoch = epoch;
+      let res: ThumbResult | null = null;
       try {
         res = await opts.renderThumb(genome);
       } catch {
+        res = null;
+      }
+      // Batch was cleared mid-render — discard so its slot mapping survives
+      // intact for the new batch. (#295)
+      if (epoch !== startEpoch) continue;
+      if (!res) {
         opts.onCulled(genome, { ok: false, reason: 'black', stats: { meanLuma: 0, occupiedFraction: 0, edgeEnergy: 0, contrast: 0 } });
         continue;
       }
@@ -52,7 +66,7 @@ export function createSurpriseQueue(opts: SurpriseQueueOpts): SurpriseQueue {
 
   return {
     enqueue(genomes) { pending.push(...genomes); void drain(); },
-    clear() { pending.length = 0; },
+    clear() { pending.length = 0; epoch++; },
     enqueueAndDrain(genomes) {
       pending.push(...genomes);
       const done = new Promise<void>((resolve) => drainedResolvers.push(resolve));
