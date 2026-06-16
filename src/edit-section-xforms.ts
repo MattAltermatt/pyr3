@@ -648,6 +648,14 @@ function buildXformCard(
   const dupBtn = makeIconButton('⎘', () => {
     const clone: Xform = JSON.parse(JSON.stringify(xform));
     state.genome.xforms.splice(xformIndex + 1, 0, clone);
+    // xaos arrays index by destination, so inserting a new destination at
+    // xformIndex+1 needs a matching column on every xform (mirror of the
+    // remove path's column splice). The clone inherits the original's
+    // incoming weights — and, via the clone's own copied row, its self-weight.
+    // Without this, survivors' xaos beyond xformIndex silently mis-index. (#293)
+    for (const x of state.genome.xforms) {
+      if (x.xaos) x.xaos.splice(xformIndex + 1, 0, x.xaos[xformIndex] ?? 1);
+    }
     onChange(`xforms.${xformIndex}.duplicated`);
     rebuildSection();
   });

@@ -525,6 +525,48 @@ describe('xformsSection — xaos row', () => {
   });
 });
 
+describe('xformsSection — duplicate xform (#293 xaos alignment)', () => {
+  // A 3-xform genome carrying non-trivial xaos. Each xaos[j] is the weight
+  // FROM this xform TO destination j, so the array indexes by destination and
+  // must stay length === xforms.length. Duplicating must insert a matching
+  // destination column on every survivor (mirroring the remove path), or the
+  // surviving weights silently mis-index their destinations.
+  function genomeWith3Xaos(): Genome {
+    const mk = (xaos: number[]): Genome['xforms'][number] => ({
+      a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+      variations: [{ index: V.linear, weight: 1 }],
+      xaos,
+    });
+    return {
+      name: 'k',
+      xforms: [mk([11, 12, 13]), mk([21, 22, 23]), mk([31, 32, 33])],
+      scale: 100, cx: 0, cy: 0, palette: PYRE_PALETTE,
+    };
+  }
+
+  it('inserts a matching xaos column on every xform when duplicating', () => {
+    const { host, state, onChange } = mount(genomeWith3Xaos());
+    // Duplicate the xform at index 1 → clone lands at index 2.
+    const card1 = cards(host)[1]!;
+    const dup = card1.querySelector('.pyr3-edit-xform-dup') as HTMLElement;
+    dup.click();
+
+    const xf = state.genome.xforms;
+    expect(xf.length).toBe(4);
+    // Every xform's xaos stays length === xform count (no mis-indexing).
+    for (const x of xf) expect(x.xaos!.length).toBe(4);
+
+    // The new destination column (index 2) mirrors the duplicated source's
+    // own column (index 1) on every survivor.
+    expect(xf[0]!.xaos).toEqual([11, 12, 12, 13]);
+    expect(xf[1]!.xaos).toEqual([21, 22, 22, 23]);
+    expect(xf[2]!.xaos).toEqual([21, 22, 22, 23]); // the clone
+    expect(xf[3]!.xaos).toEqual([31, 32, 32, 33]);
+
+    expect(onChange).toHaveBeenCalledWith('xforms.1.duplicated');
+  });
+});
+
 describe('xformsSection — per-xform collapse', () => {
   it('clicking the card header toggles xformCollapse[i]', () => {
     const { host, state } = mount(1);
