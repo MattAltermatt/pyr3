@@ -122,6 +122,11 @@ function makeIdentityOpXform(
     weight: 1,
     color,
     colorSpeed: 0,
+    // #301 — flam3_add_symmetry sets animate=0 on every generated symmetry xform
+    // (flam3.c:2701,2729). interpolate.ts establishWind() keys the wind/short-arc
+    // decision on xf.animate===0 (since #291 bakes symmetry before interpolation),
+    // so omitting it (→ defaults animate=1) can wind a log-polar morph the wrong way.
+    animate: 0,
     variations: [linear(1)],
   };
 }

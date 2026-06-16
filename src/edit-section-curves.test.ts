@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { curvesSection } from './edit-section-curves';
 import { SPIRAL_GALAXY } from './genome';
 import { createEditState, type EditState } from './edit-state';
@@ -14,6 +14,40 @@ function buildHost(): { host: HTMLElement; state: EditState; calls: string[] } {
   curvesSection.build(host, state, (p) => calls.push(p));
   return { host, state, calls };
 }
+
+describe('curvesSection: #300 teardown disposer', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('build() returns a disposer that unregisters the settledPixels listener', () => {
+    const host = document.createElement('div'); document.body.appendChild(host);
+    const state = createEditState({ ...SPIRAL_GALAXY }, 0);
+    const dispose = curvesSection.build(host, state, () => {});
+    expect(typeof dispose).toBe('function');
+    expect(state.settledPixelsListeners?.length).toBe(1);
+    (dispose as () => void)();
+    expect(state.settledPixelsListeners?.length).toBe(0);
+  });
+
+  it('repeated build+dispose does not leak settledPixels listeners', () => {
+    const state = createEditState({ ...SPIRAL_GALAXY }, 0);
+    for (let i = 0; i < 5; i++) {
+      const host = document.createElement('div'); document.body.appendChild(host);
+      const dispose = curvesSection.build(host, state, () => {});
+      (dispose as () => void)();
+    }
+    expect(state.settledPixelsListeners?.length ?? 0).toBe(0);
+  });
+
+  it('disposer removes the document.body keydown listener', () => {
+    const host = document.createElement('div'); document.body.appendChild(host);
+    const state = createEditState({ ...SPIRAL_GALAXY }, 0);
+    const spy = vi.spyOn(document.body, 'removeEventListener');
+    const dispose = curvesSection.build(host, state, () => {});
+    (dispose as () => void)();
+    expect(spy).toHaveBeenCalledWith('keydown', expect.any(Function));
+    spy.mockRestore();
+  });
+});
 
 describe('curvesSection: shell + tabs', () => {
   beforeEach(() => {

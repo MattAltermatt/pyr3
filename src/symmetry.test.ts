@@ -12,6 +12,18 @@ describe('generateSymmetryXforms', () => {
     expect(out).toHaveLength(4);
   });
 
+  // #301 — flam3_add_symmetry sets animate=0 on every generated symmetry xform.
+  // interpolate.ts establishWind() keys on xf.animate===0 (since #291 bakes
+  // symmetry before interpolation), so omitting it would default animate=1 and
+  // wind a log-polar morph the wrong way.
+  it('stamps animate=0 on every generated xform (rotational + dihedral)', () => {
+    for (const sym of [{ kind: 'rotational', n: 6 }, { kind: 'dihedral', n: 4 }] as const) {
+      const out = generateSymmetryXforms(sym);
+      expect(out.length).toBeGreaterThan(0);
+      expect(out.every((xf) => xf.animate === 0)).toBe(true);
+    }
+  });
+
   it('dihedral n=5 produces 5 xforms (1 reflection + 4 rotations)', () => {
     const out = generateSymmetryXforms({ kind: 'dihedral', n: 5 });
     expect(out).toHaveLength(5);

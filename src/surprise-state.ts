@@ -10,10 +10,21 @@ export interface TileLabel { variation: string; symmetry: string }
 export interface WallTile { genome: Genome; rgba: Uint8ClampedArray; w: number; h: number; label: TileLabel }
 export interface KeptFlame { genome: Genome }
 
+/** #304 — hard cap on the keep-tray. Each entry is a full genome (~25 KB, a
+ *  256-stop palette dominates); 100 keeps ≈ 2.5 MB, comfortably under the ~5 MB
+ *  localStorage budget. Capping prevents the silent-loss bug where an unbounded
+ *  in-memory tray overflows quota, writeKeepTray swallows the error, and the
+ *  next reload returns the smaller last-successfully-written set. */
+export const MAX_KEEP_TRAY = 100;
+
+/** Why a keep() failed, for the mount layer's toast. */
+export type KeepFailure = 'no-tile' | 'tray-full' | 'persist-failed';
+
 export interface SurpriseState {
   setTile(slot: number, tile: WallTile): void;
   getTile(slot: number): WallTile | null;
-  keep(slot: number): KeptFlame | null;
+  /** Star the tile at `slot`. Returns the kept flame, or a failure reason. */
+  keep(slot: number): KeptFlame | KeepFailure;
   tray(): KeptFlame[];
   removeFromTray(idx: number): void;
 }
@@ -22,15 +33,17 @@ export function createSurpriseState(): SurpriseState {
   const tiles: (WallTile | null)[] = [];
   const kept: KeptFlame[] = readKeepTray().map((genome) => ({ genome }));
 
-  function persist(): void { writeKeepTray(kept.map((k) => k.genome)); }
+  function persist(): boolean { return writeKeepTray(kept.map((k) => k.genome)); }
 
   return {
     setTile(slot, tile) { tiles[slot] = tile; },
     getTile(slot) { return tiles[slot] ?? null; },
     keep(slot) {
-      const t = tiles[slot]; if (!t) return null;
+      const t = tiles[slot]; if (!t) return 'no-tile';
+      if (kept.length >= MAX_KEEP_TRAY) return 'tray-full';
       const entry: KeptFlame = { genome: t.genome };
-      kept.unshift(entry); persist();
+      kept.unshift(entry);
+      if (!persist()) { kept.shift(); return 'persist-failed'; } // atomic: roll back on quota fail
       return entry;
     },
     tray() { return kept.slice(); },

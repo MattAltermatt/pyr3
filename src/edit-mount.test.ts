@@ -252,6 +252,22 @@ describe('applyGradientReturn (#266)', () => {
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     expect(applyGradientReturn(state)).toBe(false);
   });
+
+  // #316 — a mode change made in the gradient editor must survive the round-trip.
+  it('carries the returned palette mode (does not discard it for the prior mode)', () => {
+    const g = generateRandomGenome(seededRng(1));
+    g.palette = {
+      name: 'old', mode: 'linear',
+      stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }],
+    };
+    const state = createEditState(g, 1);
+    writeGradientReturn({
+      name: 'mine', mode: 'smooth',
+      stops: [{ t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 1, b: 0 }],
+    });
+    expect(applyGradientReturn(state)).toBe(true);
+    expect(state.genome.palette.mode).toBe('smooth'); // edited mode wins, not 'linear'
+  });
 });
 
 function seededRng(seed: number): () => number {

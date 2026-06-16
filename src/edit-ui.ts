@@ -16,7 +16,11 @@ import { COLORS } from './ui-tokens';
 export interface SectionMount {
   key: SectionKey;
   title: string;
-  build(host: HTMLElement, state: EditState, onChange: (path: string) => void): void;
+  /** Build the section into `host`. May return a disposer (#300) — called by
+   *  the EditUiHandle.destroy() before the DOM is torn down, to release
+   *  cross-DOM subscriptions (state.settledPixelsListeners, document-level
+   *  listeners) that removing the section's own nodes would otherwise leak. */
+  build(host: HTMLElement, state: EditState, onChange: (path: string) => void): void | (() => void);
 }
 
 export interface EditUiHandle {
@@ -87,6 +91,7 @@ export function mountEditUi(
 
   // ── Section accordion ─────────────────────────────────────────────────
   const sectionEls: HTMLElement[] = [];
+  const sectionDisposers: Array<() => void> = [];
   for (const sec of sections) {
     const wrap = document.createElement('div');
     wrap.className = 'pyr3-edit-section';
@@ -116,7 +121,8 @@ export function mountEditUi(
       persistSectionCollapse(state.sectionCollapse);
     });
 
-    sec.build(body, state, callbacks.onChange);
+    const disposer = sec.build(body, state, callbacks.onChange);
+    if (disposer) sectionDisposers.push(disposer);
     wrap.append(header, body);
     host.appendChild(wrap);
     sectionEls.push(wrap);
@@ -124,6 +130,10 @@ export function mountEditUi(
 
   return {
     destroy(): void {
+      // #300 — release section subscriptions BEFORE detaching the DOM, so a
+      // rebuild (reroll/open/undo/setSize/…) can't leak settledPixels +
+      // document keydown listeners across the editor's lifetime.
+      for (const dispose of sectionDisposers) dispose();
       for (const el of sectionEls) el.remove();
       topbar.remove();
     },

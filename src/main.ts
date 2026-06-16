@@ -134,7 +134,9 @@ async function main(): Promise<void> {
     if (prefix && (relPath === prefix || relPath.startsWith(prefix + '/'))) {
       relPath = relPath.slice(prefix.length) || '/';
     }
-    const dest = redirectLegacyPath(relPath, window.location.search);
+    // #299 — carry the deep-link hash through the rewrite so a legacy anchor
+    // (e.g. /v1/variations#julia) survives to the catalog mount.
+    const dest = redirectLegacyPath(relPath, window.location.search, window.location.hash);
     if (dest) history.replaceState(null, '', prefix + dest);
   }
 

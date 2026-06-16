@@ -22,4 +22,12 @@ describe('redirectLegacyPath (#264)', () => {
   it('already-new path → null', () => expect(redirectLegacyPath('/editor', '')).toBeNull());
   it('/about (unchanged) → null', () => expect(redirectLegacyPath('/about', '')).toBeNull());
   it('bare / → null', () => expect(redirectLegacyPath('/', '')).toBeNull());
+
+  // #299 — the deep-link hash must survive the rewrite (variation catalog anchor).
+  it('preserves the hash anchor', () =>
+    expect(redirectLegacyPath('/v1/variations', '', '#julia')).toBe('/variations#julia'));
+  it('preserves search AND hash together', () =>
+    expect(redirectLegacyPath('/v1/edit', '?gen=1', '#x')).toBe('/editor?gen=1#x'));
+  it('empty hash appends nothing', () =>
+    expect(redirectLegacyPath('/v1/variations', '')).toBe('/variations'));
 });

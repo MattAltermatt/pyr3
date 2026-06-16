@@ -676,6 +676,20 @@ export const curvesSection: SectionMount = {
 
     redrawCanvas();
     syncSelectionUI();
+
+    // #300 — disposer: release the cross-DOM subscriptions this build()
+    // registered. Without it, every panel rebuild (reroll/open/undo/setSize/
+    // setQuality) leaked a fresh settledPixels listener (→ N redundant
+    // binChannels/redraw per settle against detached canvases) and a stacked
+    // document keydown handler (→ arrow-nudge moved a point N steps per press).
+    return () => {
+      const listeners = state.settledPixelsListeners;
+      if (listeners) {
+        const i = listeners.indexOf(onSettledPixels);
+        if (i >= 0) listeners.splice(i, 1);
+      }
+      document.body.removeEventListener('keydown', keyHandler);
+    };
   },
 };
 

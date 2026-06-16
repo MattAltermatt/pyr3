@@ -9,7 +9,7 @@ import { VARIATION_NAMES } from './variations';
 import { generateSurpriseBatch } from './surprise-seed';
 import { createSurpriseQueue } from './surprise-queue';
 import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
-import { createSurpriseState, type WallTile } from './surprise-state';
+import { createSurpriseState, MAX_KEEP_TRAY, type WallTile } from './surprise-state';
 import { readWall, writeWall } from './surprise-prefs';
 import { writePendingTransfer } from './edit-state';
 
@@ -74,7 +74,13 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
     open.onclick = () => openInEditor(i);
     const keep = document.createElement('button'); keep.className = 'pyr3-tile-keep'; keep.textContent = '⭐';
     keep.title = 'Keep this flame';
-    keep.onclick = () => { state.keep(i); renderTray(); };
+    keep.onclick = () => {
+      const r = state.keep(i);
+      // #304 — surface a non-fatal warning instead of silently losing the star.
+      if (r === 'tray-full') status.textContent = `keep tray full (max ${MAX_KEEP_TRAY}) — remove some to keep more`;
+      else if (r === 'persist-failed') status.textContent = 'could not save keep — browser storage full';
+      renderTray();
+    };
     const reroll = document.createElement('button'); reroll.className = 'pyr3-tile-reroll'; reroll.textContent = '✕';
     reroll.title = 'Reroll this tile';
     reroll.onclick = () => fillSlot(i);

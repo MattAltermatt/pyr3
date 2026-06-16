@@ -4,10 +4,12 @@
 // the gh-pages 404-shell already serves the SPA for arbitrary paths, so the
 // redirect is a client-side replaceState, not server config.
 //
-// Returns the new "pathname+search" string, or null when `pathname` is not a
-// legacy /v1 path (caller leaves the URL untouched).
+// Returns the new "pathname+search+hash" string, or null when `pathname` is not
+// a legacy /v1 path (caller leaves the URL untouched). `hash` (#299) carries the
+// deep-link anchor (e.g. /v1/variations#julia) through the rewrite, including
+// the leading '#'; pass '' when there is none.
 
-export function redirectLegacyPath(pathname: string, search: string): string | null {
+export function redirectLegacyPath(pathname: string, search: string, hash = ''): string | null {
   const stripped = pathname.replace(/^\//, '').replace(/\/$/, '');
   const parts = stripped.length === 0 ? [] : stripped.split('/');
   if (parts[0] !== 'v1') return null;
@@ -26,5 +28,5 @@ export function redirectLegacyPath(pathname: string, search: string): string | n
   else if (sub === 'surprise') dest = '/surprise';
 
   if (dest === null) return null;
-  return search ? dest + search : dest;
+  return dest + search + hash;
 }

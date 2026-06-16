@@ -16,6 +16,30 @@ import { interpolate } from './interpolate';
 import { createTemporalFilter } from './temporal-filter';
 import { DEFAULT_WALKER_JITTER } from './chaos';
 
+/**
+ * #302 — apportion an integer `total` walker budget across per-sub-frame
+ * `weights` using largest-remainder (Hamilton) apportionment. The returned
+ * counts sum EXACTLY to `total` (when total ≤ a representable integer), and
+ * low-weight tails are allowed to receive 0 — unlike a per-entry `max(1, …)`
+ * floor, which inflates the total toward `weights.length`. Pure + exported for
+ * unit test.
+ */
+export function apportionWalkers(total: number, weights: number[]): number[] {
+  const n = weights.length;
+  if (n === 0) return [];
+  const sumW = weights.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+  if (sumW <= 0 || total <= 0) return new Array(n).fill(0);
+  const quotas = weights.map((w) => (total * Math.max(0, w)) / sumW);
+  const out = quotas.map((q) => Math.floor(q));
+  let deficit = total - out.reduce((a, b) => a + b, 0);
+  // Hand the remaining units to the largest fractional remainders.
+  const order = quotas
+    .map((q, i) => ({ i, rem: q - Math.floor(q) }))
+    .sort((a, b) => b.rem - a.rem);
+  for (let k = 0; k < deficit && k < n; k++) out[order[k]!.i]!++;
+  return out;
+}
+
 export interface AnimationFrameRenderOpts {
   /** Output texture view (offscreen render target or canvas swap chain). */
   outputView: GPUTextureView;
@@ -94,7 +118,7 @@ export function renderAnimationFrame(
   }
 
   // N > 1: build the filter, distribute walkers, sub-render N times.
-  const { deltas, filter, sumfilt } = createTemporalFilter(
+  const { deltas, filter } = createTemporalFilter(
     N,
     animation.temporal_filter_type,
     animation.temporal_filter_width,
@@ -107,11 +131,21 @@ export function renderAnimationFrame(
   // Scale: sum_i (walkers_i) = dispatchWalkers * (sum(filter) / (N * sumfilt))
   //                          = dispatchWalkers * (N * sumfilt / (N * sumfilt))
   //                          = dispatchWalkers.
+  // #302 — distribute the integer dispatchWalkers budget across the N filter
+  // weights with largest-remainder (Hamilton) apportionment. The old
+  // `max(1, round(...))` floored every tail to ≥1, so for N ≳ dispatchWalkers
+  // the total ballooned toward N (cost grew ~linearly with N, and a peaked
+  // gaussian/exp filter flattened as its tails all rounded up to 1). Hamilton
+  // keeps the sum exactly == dispatchWalkers and lets low-weight tails go to 0,
+  // restoring the ntemporal-neutral cost the estimate (animate-estimate.ts)
+  // assumes.
+  const walkerCounts = apportionWalkers(dispatchWalkers, filter);
   let totalWalkers = 0;
   for (let i = 0; i < N; i++) {
+    const walkers = walkerCounts[i]!;
+    if (walkers === 0) continue; // zero-weight tail — contributes nothing
     const subTime = time + deltas[i]!;
     const subGenome = interpolate(animation, subTime);
-    const walkers = Math.max(1, Math.round((dispatchWalkers * filter[i]!) / (N * sumfilt)));
     // Per-sub-frame seed derived from base + i, so a fixed --seed still
     // produces deterministic temporal output.
     const subSeed = (baseSeed + i * 0x9e3779b1) >>> 0;

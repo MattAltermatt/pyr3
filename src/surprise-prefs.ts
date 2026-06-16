@@ -26,13 +26,17 @@ function readFlames(key: string): Genome[] {
   return out;
 }
 
-function writeFlames(key: string, flames: Genome[]): void {
+/** Persist `flames` under `key`. Returns false when the write throws (quota
+ *  exceeded / storage disabled) so callers can surface a non-fatal warning
+ *  instead of silently losing data (#304). */
+function writeFlames(key: string, flames: Genome[]): boolean {
   const payload = { version: VERSION, flames: flames.map((g) => genomeToJson(g)) };
-  try { globalThis.localStorage?.setItem(key, JSON.stringify(payload)); } catch { /* quota/private — swallow */ }
+  try { globalThis.localStorage?.setItem(key, JSON.stringify(payload)); return true; }
+  catch { return false; }
 }
 
 export function readKeepTray(): Genome[] { return readFlames(KEEP_TRAY_KEY); }
-export function writeKeepTray(flames: Genome[]): void { writeFlames(KEEP_TRAY_KEY, flames); }
+export function writeKeepTray(flames: Genome[]): boolean { return writeFlames(KEEP_TRAY_KEY, flames); }
 
 /** The wall's current batch — restored on page load so the user returns to the
  *  same flames. Thumbnails are NOT stored (re-rendered on load); only genomes. */

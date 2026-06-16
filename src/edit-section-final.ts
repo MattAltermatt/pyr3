@@ -549,6 +549,15 @@ function buildFinalxformCard(
           rebuildCard();
         }
       },
+      // #315 — revert means "undo the add" (matching ✕ cancel), not "reset the
+      // new slot to linear". The picker stays open, so reset `inserted` too.
+      onRevert: () => {
+        if (inserted) {
+          fx.variations.pop();
+          inserted = false;
+          rebuildCard();
+        }
+      },
     });
   });
   addVarBtn.classList.add('pyr3-edit-var-add');

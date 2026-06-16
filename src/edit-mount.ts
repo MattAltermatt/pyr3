@@ -51,18 +51,22 @@ import { peekIndex, bumpIndex } from './flame-name-counter';
 
 /** Apply a pending gradient-return onto the editor state, if one is queued.
  *  Patches only the palette: stops + name from the return, hue forced to 0
- *  (the returned stops are the literal final colors), mode preserved from the
- *  prior genome palette. Marks the source as a custom gradient. Returns true
- *  when a return was consumed. (#266) */
+ *  (the returned stops are the literal final colors). The interpolation mode
+ *  comes from the edited palette when set, falling back to the prior genome's
+ *  mode (#316) — a mode change made in the gradient editor must survive the
+ *  round-trip. Marks the source as a custom gradient. Returns true when a
+ *  return was consumed. (#266) */
 export function applyGradientReturn(state: EditState): boolean {
   const ret = consumeGradientReturn();
   if (!ret) return false;
-  const prevMode = state.genome.palette.mode;
+  // #316 — prefer the returned palette's mode; only fall back to the prior
+  // genome mode when the edit didn't carry one.
+  const mode = ret.mode ?? state.genome.palette.mode;
   state.genome.palette = {
     name: ret.name || 'custom gradient',
     stops: ret.stops,
     hue: 0, // edited stops are the literal final colors — no re-rotation (#266)
-    ...(prevMode ? { mode: prevMode } : {}),
+    ...(mode ? { mode } : {}),
   };
   state.paletteSource = { kind: 'custom' };
   return true;

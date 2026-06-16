@@ -78,7 +78,13 @@ function evalCubicBezier(curve: { x1: number; y1: number; x2: number; y2: number
 }
 
 /** Remap t ∈ [0,1] through an easing curve. Output clamped to [0,1].
- *  Unknown kind → identity (forward-compat for future #227 arms). */
+ *  Unknown kind → identity (forward-compat for future #227 arms).
+ *
+ *  #317 — the OUTPUT clamp deliberately disables overshoot/anticipation. All
+ *  shipped presets + the current bezier curves stay within [0,1], so the clamp
+ *  is a no-op today; it is NOT a solver bug. When a bezier-handle editor lands
+ *  that can author handles past the unit box, clamp only the input `t` (domain)
+ *  here and let the output range past [0,1] for overshoot. */
 export function evalEasing(curve: EasingCurve, t: number): number {
   const x = clamp01(t);
   if (curve.kind === 'preset') return clamp01(evalPreset(curve.name, x));
