@@ -1194,6 +1194,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     setRenderSize: (size) => {
       applyRenderSizeWithScale(size);
       schedulePersist(state.genome);
+      // Size is a sticky render pref — persist so the next flame load (incl. a
+      // Surprise Wall handoff) opens at this size, not defaults. The ui-bar 📐
+      // dropdown persists via onPathChange('size.*'); the RENDER-section preset
+      // dropdown lands here and must do the same (#186 follow-up).
+      persistRenderSettings();
       // Aspect may have changed — preview canvas reshapes via rebuild lane.
       scheduler.schedule({ lane: 'rebuild', path: 'size' });
     },
@@ -1207,6 +1212,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     setRenderQuality: (q) => {
       state.genome.quality = Math.max(1, q);
       schedulePersist(state.genome);
+      // Quality is a sticky render pref — persist so the next flame load (incl.
+      // a Surprise Wall handoff) opens at this quality, not defaults. The ui-bar
+      // QUALITY ladder persists via onPathChange('quality'); the RENDER-section
+      // ladder + custom input land here and must do the same (#186 follow-up).
+      persistRenderSettings();
       // Render-side quality only matters at Save Render time; no re-iterate
       // needed for the live preview (it uses previewCfg.quality, not this).
     },
