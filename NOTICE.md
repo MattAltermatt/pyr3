@@ -103,7 +103,9 @@ deployed viewer) is `brotli-dec-wasm`; the rest are dev/build-time only.
 - **[`tsx`](https://www.npmjs.com/package/tsx)** (MIT) — TypeScript execution for Node.
 - **[`pngjs`](https://www.npmjs.com/package/pngjs)** (MIT) — PNG encoding for the CLI output
   path.
-- **[`happy-dom`](https://www.npmjs.com/package/happy-dom)** (MIT) — `DOMParser` shim for
-  parsing `.flame` XML in the Node CLI.
+- **[`linkedom`](https://www.npmjs.com/package/linkedom)** (ISC) — `DOMParser` shim for
+  parsing `.flame` XML in the Node CLI (production host; replaced happy-dom in #125).
+- **[`happy-dom`](https://www.npmjs.com/package/happy-dom)** (MIT) — test-only DOM
+  environment for the vitest browser-module suites.
 - **[`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types)** (BSD-3-Clause) —
   TypeScript type definitions for the WebGPU spec.

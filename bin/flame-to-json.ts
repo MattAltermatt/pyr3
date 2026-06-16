@@ -12,12 +12,12 @@
 // → reference/<id>/pyr3.json). Standalone CLI; no browser, no GPU.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { Window } from 'happy-dom';
+import { DOMParser } from 'linkedom';
 import { parseFlame } from '../src/flame-import';
 import { genomeToJson } from '../src/serialize';
 
-const win = new Window();
-(globalThis as { DOMParser: unknown }).DOMParser = win.DOMParser;
+// #320 — linkedom DOMParser shim, matching the production host (bin/host.ts).
+(globalThis as { DOMParser: unknown }).DOMParser = DOMParser;
 
 const [inPath, outPath] = process.argv.slice(2);
 if (!inPath || !outPath) {

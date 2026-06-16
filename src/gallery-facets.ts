@@ -129,13 +129,16 @@ export function computeFacetCounts(
   let total = 0;
 
   index.forEachRecord((rec) => {
+    // #329 — the all-filters-pass predicate drives both the variations axis and
+    // the total; evaluate it once per record.
+    const allPass = passesFilters(rec, spec, {});
     // Variations axis: include rec iff ALL filters pass (the candidate
     // variation logically extends spec.vars by one; for any v already in
     // spec.vars the count equals the post-filter subset size, and for any
     // v outside spec.vars it counts how many of the current subset also
     // have v — both fall out of "walk the fully-filtered subset and bump
     // each rec's variations").
-    if (passesFilters(rec, spec, {})) {
+    if (allPass) {
       for (const v of rec.variations) {
         variations.set(v, (variations.get(v) ?? 0) + 1);
       }
@@ -166,7 +169,7 @@ export function computeFacetCounts(
       meanLum.set(k, (meanLum.get(k) ?? 0) + 1);
     }
     // Total: respect ALL filters.
-    if (passesFilters(rec, spec, {})) total++;
+    if (allPass) total++;
   });
 
   return { variations, xforms, coverage, entropy, colorVar, meanLum, total };

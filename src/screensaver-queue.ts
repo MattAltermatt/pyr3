@@ -23,8 +23,6 @@ export interface ScreensaverQueue {
   /** Step back one entry; returns the new current ref, or null when we've
    *  walked past the start of history (cursor parks at -1). */
   prev(): SheepRef | null;
-  /** Look at the next ref without advancing. Returns null on empty corpus. */
-  peek(): SheepRef | null;
 }
 
 export const HISTORY_MAX = 50;
@@ -49,7 +47,6 @@ export function createScreensaverQueue(
   const rng = mulberry32(seed);
   const history: SheepRef[] = [];
   let cursor = -1;
-  let peekCache: SheepRef | null = null;
 
   function pick(): SheepRef | null {
     if (refs.length === 0) return null;
@@ -72,12 +69,10 @@ export function createScreensaverQueue(
       // Replay forward through history before generating new.
       if (cursor < history.length - 1) {
         cursor++;
-        peekCache = null;
         return history[cursor] ?? null;
       }
-      // At end of history — consume cached peek if present, else generate.
-      const r = peekCache ?? pick();
-      peekCache = null;
+      // At end of history — generate a fresh random.
+      const r = pick();
       if (!r) return null;
       appendAndAdvance(r);
       return r;
@@ -88,16 +83,7 @@ export function createScreensaverQueue(
         return null;
       }
       cursor--;
-      peekCache = null;
       return history[cursor] ?? null;
-    },
-    peek() {
-      if (refs.length === 0) return null;
-      if (cursor < history.length - 1) return history[cursor + 1] ?? null;
-      if (peekCache) return peekCache;
-      const r = pick();
-      peekCache = r;
-      return r;
     },
   };
 }

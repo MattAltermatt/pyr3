@@ -224,7 +224,7 @@ export const WIP_KEY = 'pyr3.editor.wip';
  *  swallowed so the editor stays interactive. */
 export function persistWip(genome: Genome): void {
   try {
-    localStorage.setItem(WIP_KEY, JSON.stringify(genome));
+    globalThis.localStorage?.setItem(WIP_KEY, JSON.stringify(genome));
   } catch {
     // localStorage disabled (private browsing) or quota exceeded — no-op.
   }
@@ -239,7 +239,7 @@ export function persistWip(genome: Genome): void {
  *  falls back to the random-reroll path. */
 export function restoreWip(): Genome | null {
   try {
-    const raw = localStorage.getItem(WIP_KEY);
+    const raw = globalThis.localStorage?.getItem(WIP_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as Genome;
   } catch {
@@ -274,7 +274,7 @@ export const DEFAULT_EDIT_RENDER_SETTINGS: EditRenderSettings = {
  *  missing / malformed field. Always returns a usable object. */
 export function loadEditRenderSettings(): EditRenderSettings {
   try {
-    const raw = localStorage.getItem(EDIT_RENDER_SETTINGS_KEY);
+    const raw = globalThis.localStorage?.getItem(EDIT_RENDER_SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_EDIT_RENDER_SETTINGS };
     const p = JSON.parse(raw) as Partial<EditRenderSettings> & { _v?: number };
     const sz = p.size;
@@ -291,7 +291,7 @@ export function loadEditRenderSettings(): EditRenderSettings {
 /** Persist the sticky editor render settings. Best-effort (private mode/quota). */
 export function saveEditRenderSettings(s: EditRenderSettings): void {
   try {
-    localStorage.setItem(EDIT_RENDER_SETTINGS_KEY, JSON.stringify({ _v: 1, ...s }));
+    globalThis.localStorage?.setItem(EDIT_RENDER_SETTINGS_KEY, JSON.stringify({ _v: 1, ...s }));
   } catch {
     // localStorage disabled / full — no-op.
   }
@@ -323,7 +323,7 @@ export interface PendingTransfer {
 /** Stash a pending-transfer payload. Best-effort (private mode / quota). */
 export function writePendingTransfer(payload: PendingTransfer): void {
   try {
-    localStorage.setItem(PENDING_TRANSFER_KEY, JSON.stringify(payload));
+    globalThis.localStorage?.setItem(PENDING_TRANSFER_KEY, JSON.stringify(payload));
   } catch {
     // localStorage disabled / full — silently no-op; the editor falls back
     // to the normal WIP/random cold-start path.
@@ -336,10 +336,10 @@ export function writePendingTransfer(payload: PendingTransfer): void {
  *  doesn't keep replaying it. */
 export function consumePendingTransfer(): PendingTransfer | null {
   try {
-    const raw = localStorage.getItem(PENDING_TRANSFER_KEY);
+    const raw = globalThis.localStorage?.getItem(PENDING_TRANSFER_KEY);
     if (!raw) return null;
     // Remove first so a malformed / stale slot still clears.
-    localStorage.removeItem(PENDING_TRANSFER_KEY);
+    globalThis.localStorage?.removeItem(PENDING_TRANSFER_KEY);
     const parsed = JSON.parse(raw) as Partial<PendingTransfer>;
     if (!parsed || typeof parsed !== 'object') return null;
     if (typeof parsed.timestamp !== 'number') return null;
@@ -393,7 +393,7 @@ export interface GradientHandoff {
 
 function writeSlot(key: string, payload: Omit<GradientSlot, 'timestamp'>): void {
   try {
-    localStorage.setItem(key, JSON.stringify({ ...payload, timestamp: Date.now() }));
+    globalThis.localStorage?.setItem(key, JSON.stringify({ ...payload, timestamp: Date.now() }));
   } catch {
     // localStorage disabled / full — silently no-op.
   }
@@ -401,9 +401,9 @@ function writeSlot(key: string, payload: Omit<GradientSlot, 'timestamp'>): void 
 
 function readSlot(key: string): GradientSlot | null {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = globalThis.localStorage?.getItem(key);
     if (!raw) return null;
-    localStorage.removeItem(key); // remove first so a stale/bad slot still clears
+    globalThis.localStorage?.removeItem(key); // remove first so a stale/bad slot still clears
     const parsed = JSON.parse(raw) as Partial<GradientSlot>;
     if (!parsed || typeof parsed !== 'object') return null;
     if (typeof parsed.timestamp !== 'number') return null;
@@ -476,7 +476,7 @@ const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
  *  any localStorage failure. */
 export function persistSectionCollapse(map: Record<SectionKey, boolean>): void {
   try {
-    localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
+    globalThis.localStorage?.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
   } catch {
     // localStorage disabled or full — no-op; the in-memory map continues
     // to drive this session.
@@ -488,7 +488,7 @@ export function persistSectionCollapse(map: Record<SectionKey, boolean>): void {
  *  localStorage throws. Always returns a fresh copy so callers can mutate. */
 export function restoreSectionCollapse(): Record<SectionKey, boolean> {
   try {
-    const raw = localStorage.getItem(SECTION_COLLAPSE_KEY);
+    const raw = globalThis.localStorage?.getItem(SECTION_COLLAPSE_KEY);
     if (!raw) return { ...DEFAULT_SECTION_COLLAPSE };
     const parsed = JSON.parse(raw) as Record<SectionKey, boolean>;
     // Merge over the default so a partial / older shape still produces all

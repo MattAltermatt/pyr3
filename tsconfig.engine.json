@@ -54,6 +54,15 @@
     "src/tonemap.ts",
     "src/variations.ts",
     "src/visualize.ts",
-    "src/wgsl-modules.d.ts"
+    "src/wgsl-modules.d.ts",
+    // #312 — CLI-shared animation engine (imported by bin/pyr3-animate.ts).
+    // flame-import.ts / loader.ts stay excluded (DOMParser / File API).
+    "src/interpolate.ts",
+    "src/animation.ts",
+    "src/timeline.ts",
+    "src/timeline-serialize.ts",
+    "src/easing.ts",
+    "src/animate-estimate.ts",
+    "src/output-size.ts"
   ]
 }

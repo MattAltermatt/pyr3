@@ -2,6 +2,8 @@
 // the GPU is baked on demand via `bakeLUT(stops)` at upload time. Phase 4b
 // substrate: this shape JSON-serializes losslessly and lives on `Genome`.
 
+import { rgbToHsv, hsvToRgb } from './color-math';
+
 export const PALETTE_SIZE = 256;
 export const PALETTE_BYTES = PALETTE_SIZE * 16; // 256 × vec4f
 
@@ -107,35 +109,11 @@ export function rotateHueRGB(
   b: number,
   deg: number,
 ): { r: number; g: number; b: number } {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const v = max;
-  const d = max - min;
-  const s = max !== 0 ? d / max : 0;
-
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
-    if (h < 0) h += 360;
-  }
-  h = (((h + deg) % 360) + 360) % 360;
-
-  const c = v * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = v - c;
-  let rp = 0;
-  let gp = 0;
-  let bp = 0;
-  if (h < 60) { rp = c; gp = x; bp = 0; }
-  else if (h < 120) { rp = x; gp = c; bp = 0; }
-  else if (h < 180) { rp = 0; gp = c; bp = x; }
-  else if (h < 240) { rp = 0; gp = x; bp = c; }
-  else if (h < 300) { rp = x; gp = 0; bp = c; }
-  else { rp = c; gp = 0; bp = x; }
-  return { r: rp + m, g: gp + m, b: bp + m };
+  // #333 — reuse the shared sRGB↔HSV conversions (color-math.ts) rather than
+  // reimplementing them. Byte-identical: hsvToRgb normalizes h mod 360 itself,
+  // and grey inputs (s=0) pass through since hue is undefined for them.
+  const { h, s, v } = rgbToHsv(r, g, b);
+  return hsvToRgb(h + deg, s, v);
 }
 
 /** Construct a Palette from gradient stops. The stops are kept verbatim as

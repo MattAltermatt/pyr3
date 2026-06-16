@@ -109,7 +109,7 @@ describe('#306 M11 — forward scan: no NEW variation feeds raw trig a cliff-pro
   // here demands the same per-function justification — otherwise wrap the trig
   // in safe_*.
   const RAW_TRIG_OK = new Set<string>([
-    'var_circus', 'var_cardioid', 'var_chrysanthemum', 'var_bcollide', 'var_bsplit',
+    'var_circus', 'var_cardioid', 'var_chrysanthemum', 'var_bsplit',
     'var_circular', 'var_circular2', 'var_circleblur', 'var_hypertile', 'var_hypertile1',
     'var_hypertile2', 'var_idisc', 'var_kaleidoscope', 'var_lace_js', 'var_fourth',
     'var_cannabis_curve_wf', 'var_e_collide', 'var_e_mod', 'var_b_mod', 'var_waves4',

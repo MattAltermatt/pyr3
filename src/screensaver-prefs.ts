@@ -93,7 +93,7 @@ function applyClamps(p: ScreensaverPrefs): ScreensaverPrefs {
 export function readScreensaverPrefs(): ScreensaverPrefs {
   let raw: string | null = null;
   try {
-    raw = localStorage.getItem(PREFS_KEY);
+    raw = globalThis.localStorage?.getItem(PREFS_KEY);
   } catch {
     return { ...DEFAULTS };
   }
@@ -126,7 +126,7 @@ export function writeScreensaverPrefs(p: ScreensaverPrefs): void {
   const clamped = applyClamps(p);
   const payload: StoredPrefs = { version: PREFS_VERSION, ...clamped };
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(payload));
+    globalThis.localStorage?.setItem(PREFS_KEY, JSON.stringify(payload));
   } catch {
     // best-effort; quota or private mode — swallow.
   }
@@ -134,7 +134,7 @@ export function writeScreensaverPrefs(p: ScreensaverPrefs): void {
 
 export function _clearScreensaverPrefs(): void {
   try {
-    localStorage.removeItem(PREFS_KEY);
+    globalThis.localStorage?.removeItem(PREFS_KEY);
   } catch {
     // best-effort.
   }

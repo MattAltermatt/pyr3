@@ -134,6 +134,13 @@ const BANNED_PATTERNS: ReadonlyArray<{ pattern: RegExp; description: string }> =
   { pattern: /from\s+['"](pngjs|happy-dom|webgpu)['"]/, description: 'node-only npm import' },
   { pattern: /\bdocument\.[a-zA-Z_$]/, description: 'raw document.* (browser-only)' },
   { pattern: /\bwindow\.[a-zA-Z_$]/, description: 'raw window.* (browser-only)' },
+  // #309 — bare browser storage / rAF globals. The convention is the defensive
+  // `globalThis.localStorage?.` form (works no-op in Node); a bare access
+  // hard-couples the module to the browser. The lookbehind skips the
+  // `globalThis.`-prefixed form; the trailing `.`/`[`/`(` skips prose mentions.
+  { pattern: /(?<![.\w])localStorage(\.[a-zA-Z_$]|\[)/, description: 'bare localStorage (use globalThis.localStorage?.)' },
+  { pattern: /(?<![.\w])sessionStorage(\.[a-zA-Z_$]|\[)/, description: 'bare sessionStorage (use globalThis.sessionStorage?.)' },
+  { pattern: /(?<![.\w])requestAnimationFrame\s*\(/, description: 'bare requestAnimationFrame (use globalThis.requestAnimationFrame?.)' },
 ];
 
 // #322 — recurse into subdirectories so an engine module placed under e.g.

@@ -3894,9 +3894,12 @@ fn var_bcollide(p: vec2f, w: f32, num_p: f32, a: f32) -> vec2f {
   // WGSL has no `%` for f32 — use the (a - floor(a/b)·b) idiom.
   let folded = sigma_raw + offset - floor((sigma_raw + offset) / pi_bcn) * pi_bcn;
   let sigma = f32(alt) * pi_bcn + folded;
-  let temp = cosh(tau) - cos(sigma);
+  // #326 — sigma is wedge-folded (bounded) so raw trig is correct here, but
+  // route through safe_* to match the V60 bipolar sibling. Zero behavioral
+  // change below SIN_SAFE_MAX; consistency only.
+  let temp = cosh(tau) - safe_cos(sigma);
   let temp_safe = select(temp, 1e-30, abs(temp) < 1e-30);
-  return vec2f(w * sinh(tau) / temp_safe, w * sin(sigma) / temp_safe);
+  return vec2f(w * sinh(tau) / temp_safe, w * safe_sin(sigma) / temp_safe);
 }
 
 // bsplit — Raykoid666's tan/sin shift (transcribed by Nic Anderson).

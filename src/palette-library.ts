@@ -11,7 +11,7 @@ export interface SavedPalette {
 
 export function listMine(): SavedPalette[] {
   try {
-    const raw = localStorage.getItem(MINE_KEY);
+    const raw = globalThis.localStorage?.getItem(MINE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -27,12 +27,12 @@ export function saveMine(p: SavedPalette): void {
   try {
     const all = listMine().filter((x) => x.name !== p.name);
     all.push(p);
-    localStorage.setItem(MINE_KEY, JSON.stringify(all));
+    globalThis.localStorage?.setItem(MINE_KEY, JSON.stringify(all));
   } catch { /* storage disabled — no-op */ }
 }
 
 export function deleteMine(name: string): void {
   try {
-    localStorage.setItem(MINE_KEY, JSON.stringify(listMine().filter((x) => x.name !== name)));
+    globalThis.localStorage?.setItem(MINE_KEY, JSON.stringify(listMine().filter((x) => x.name !== name)));
   } catch { /* no-op */ }
 }

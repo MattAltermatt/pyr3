@@ -46,15 +46,8 @@ describe('createScreensaverQueue', () => {
     expect(back).toBe(50);
   });
 
-  it('peek does not advance', () => {
-    const q = createScreensaverQueue(refs, 1);
-    const p = q.peek();
-    expect(q.next()).toEqual(p);
-  });
-
-  it('empty corpus returns null from next/peek/prev', () => {
+  it('empty corpus returns null from next/prev', () => {
     const q = createScreensaverQueue([], 1);
-    expect(q.peek()).toBeNull();
     expect(q.next()).toBeNull();
     expect(q.prev()).toBeNull();
   });

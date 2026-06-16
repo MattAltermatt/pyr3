@@ -16,7 +16,7 @@ type CounterMap = Record<string, number>;
 
 function readMap(): CounterMap {
   try {
-    const raw = localStorage.getItem(COUNTER_KEY);
+    const raw = globalThis.localStorage?.getItem(COUNTER_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
@@ -35,7 +35,7 @@ function readMap(): CounterMap {
 
 function writeMap(map: CounterMap): void {
   try {
-    localStorage.setItem(COUNTER_KEY, JSON.stringify(map));
+    globalThis.localStorage?.setItem(COUNTER_KEY, JSON.stringify(map));
   } catch {
     // best-effort — quota or private-mode.
   }
@@ -57,7 +57,7 @@ export function bumpIndex(template: string): void {
 /** Test-only — clear all counters. */
 export function _clearCounters(): void {
   try {
-    localStorage.removeItem(COUNTER_KEY);
+    globalThis.localStorage?.removeItem(COUNTER_KEY);
   } catch {
     // best-effort.
   }
