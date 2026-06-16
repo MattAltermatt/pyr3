@@ -20,8 +20,8 @@
 // environment branching" invariant.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRenderer } from './renderer';
 import { applyPreset, QUALITY_TIERS, tierToSpec } from './presets';
@@ -136,10 +136,30 @@ const BANNED_PATTERNS: ReadonlyArray<{ pattern: RegExp; description: string }> =
   { pattern: /\bwindow\.[a-zA-Z_$]/, description: 'raw window.* (browser-only)' },
 ];
 
+// #322 — recurse into subdirectories so an engine module placed under e.g.
+// src/shaders/ can't escape the seam invariant. Returns paths RELATIVE to
+// SRC_DIR with posix separators, so SEAM_EXEMPT keys on the repo-relative path
+// (a root file's relative path is just its basename — existing entries match).
+function collectSrcFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      out.push(...collectSrcFiles(full));
+      continue;
+    }
+    if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) out.push(full);
+  }
+  return out;
+}
+
+/** Engine .ts files (recursive), as SRC_DIR-relative posix paths. */
+function listAllEngineFiles(): string[] {
+  return collectSrcFiles(SRC_DIR).map((p) => p.slice(SRC_DIR.length + 1).split(sep).join('/'));
+}
+
 function listEngineFiles(): string[] {
-  return readdirSync(SRC_DIR)
-    .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
-    .filter((name) => !SEAM_EXEMPT.has(name));
+  return listAllEngineFiles().filter((rel) => !SEAM_EXEMPT.has(rel));
 }
 
 describe('seam invariant — engine modules are environment-agnostic', () => {
@@ -174,7 +194,9 @@ describe('seam invariant — engine modules are environment-agnostic', () => {
   });
 
   it('the SEAM_EXEMPT list points at real files (catches stale entries)', () => {
-    const present = new Set(readdirSync(SRC_DIR));
+    // Keyed on SRC_DIR-relative posix paths (matches listEngineFiles); the test
+    // files allowed in SEAM_EXEMPT are added explicitly since the scan skips them.
+    const present = new Set([...listAllEngineFiles(), 'no-innerhtml.test.ts', 'parity.test.ts', 'parity-fe-be.test.ts']);
     const stale: string[] = [];
     for (const name of SEAM_EXEMPT) {
       if (!present.has(name)) stale.push(name);

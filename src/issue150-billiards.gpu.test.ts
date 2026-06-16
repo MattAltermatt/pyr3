@@ -2,6 +2,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import {
   ts_var_billiard_circle,
@@ -74,7 +75,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let r = ins[i];
   outs[i] = ${fnName}(r.xy, 1.0, ${paramsCall});
 }`;
-  const mod = dev.createShaderModule({ code });
+  const mod = await compileChecked(dev, code);
   // Explicit pipeline layout — `layout: 'auto'` silently strips bindings the
   // shader doesn't statically reference, producing all-zero output without
   // an error if a future edit short-circuits a write path.

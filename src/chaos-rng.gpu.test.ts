@@ -9,6 +9,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { ISAAC_STATE_U32, packIsaacStates } from './isaac';
 
@@ -103,7 +104,7 @@ fn main() {
     dev.queue.writeBuffer(stateBuf, 0, packed);
 
     dev.pushErrorScope('validation');
-    const mod = dev.createShaderModule({ code });
+    const mod = await compileChecked(dev, code);
     const ci = await (mod as { getCompilationInfo?: () => Promise<GPUCompilationInfo> }).getCompilationInfo?.();
     if (ci) {
       for (const m of ci.messages) {
@@ -189,7 +190,7 @@ fn main() {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bindGroup = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -273,7 +274,7 @@ fn main() {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bindGroup = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -386,7 +387,7 @@ fn main() {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bindGroup = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),

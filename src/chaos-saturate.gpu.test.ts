@@ -13,6 +13,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 
 Object.assign(globalThis, globals);
@@ -77,7 +78,7 @@ fn main() {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bindGroup = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),

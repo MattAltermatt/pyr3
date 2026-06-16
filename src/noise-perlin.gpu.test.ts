@@ -18,6 +18,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { perlin2d, perlinFbm } from './noise-perlin-oracle';
 
 Object.assign(globalThis, globals);
@@ -101,7 +102,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bg = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -182,7 +183,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bg = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),

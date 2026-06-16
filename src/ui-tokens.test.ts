@@ -1,28 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { COLORS } from './ui-tokens';
 
+// #332 — a real invariant, not a snapshot-of-self: every leaf token must be a
+// well-formed lowercase #rrggbb hex string. Catches a malformed/typo'd color
+// (e.g. a 3-digit shorthand, a stray named color, an uppercase or 8-digit value)
+// that the type system — which only knows these are `string` literals — cannot.
+const HEX6 = /^#[0-9a-f]{6}$/;
+
+function leafColors(node: unknown, path = 'COLORS'): Array<[string, unknown]> {
+  if (typeof node === 'string') return [[path, node]];
+  if (node && typeof node === 'object') {
+    return Object.entries(node).flatMap(([k, v]) => leafColors(v, `${path}.${k}`));
+  }
+  return [[path, node]];
+}
+
 describe('ui-tokens', () => {
-  it('exposes the flame gradient stops matching the favicon', () => {
-    expect(COLORS.flame.top).toBe('#ffbe3e');
-    expect(COLORS.flame.mid).toBe('#e87c1a');
-    expect(COLORS.flame.bot).toBe('#bf2408');
+  const leaves = leafColors(COLORS);
+
+  it('exposes a non-trivial set of tokens', () => {
+    expect(leaves.length).toBeGreaterThan(10);
   });
 
-  it('exposes background tiers used across surfaces', () => {
-    expect(COLORS.bg.page).toBe('#0a0a0c');
-    expect(COLORS.bg.bar).toBe('#0e0e10');
-    expect(COLORS.bg.info).toBe('#131316');
-    expect(COLORS.bg.action).toBe('#15110d');
-    expect(COLORS.bg.panel).toBe('#141417');
-    expect(COLORS.bg.input).toBe('#0a0a0c');
-  });
-
-  it('exposes text tiers and named accents', () => {
-    expect(COLORS.text.primary).toBe('#d8d8de');
-    expect(COLORS.text.muted).toBe('#8a8a92');
-    expect(COLORS.text.dim).toBe('#5a5a60');
-    expect(COLORS.border).toBe('#26262c');
-    expect(COLORS.webgpu).toBe('#6cd16c');
-    expect(COLORS.danger).toBe('#e85a4a');
+  it.each(leaves)('%s is a valid lowercase #rrggbb color', (_path, value) => {
+    expect(value).toMatch(HEX6);
   });
 });

@@ -266,26 +266,6 @@ describe('finalxform round-trip', () => {
     };
     expect(() => genomeFromJson(bad)).toThrow(/finalxform\.affine/);
   });
-
-  // skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
-  it.skip('matches the committed examples/spiral-galaxy-julia-final.pyr3.json fixture', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const path = join(here, '..', 'examples', 'spiral-galaxy-julia-final.pyr3.json');
-    const raw = readFileSync(path, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    const loaded = genomeFromJson(parsed);
-    expect(loaded.finalxform).toBeDefined();
-    expect(loaded.finalxform!.variations[0]!.index).toBe(V.julia);
-    expect(loaded.finalxform!.color).toBe(0.7);
-    expect(loaded.finalxform!.colorSpeed).toBe(0.3);
-    expect(loaded.finalxform!.a).toBe(1);
-    expect(loaded.finalxform!.e).toBe(1);
-    expect(loaded.finalxform!.b).toBe(0);
-    expect(loaded.finalxform!.d).toBe(0);
-    // Stronger: round-trip through genomeToJson should produce the same on-disk text.
-    const expected = JSON.stringify(genomeToJson(loaded), null, 2);
-    expect(raw.trimEnd()).toBe(expected);
-  });
 });
 
 describe('symmetry round-trip', () => {
@@ -319,40 +299,6 @@ describe('symmetry round-trip', () => {
   it('throws on non-integer n', () => {
     const bad = { ...genomeToJson(SPIRAL_GALAXY), symmetry: { kind: 'rotational', n: 2.5 } };
     expect(() => genomeFromJson(bad)).toThrow(/symmetry\.n/);
-  });
-
-  // skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
-  it.skip('matches the committed examples/spiral-galaxy-d5.pyr3.json fixture', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const path = join(here, '..', 'examples', 'spiral-galaxy-d5.pyr3.json');
-    const raw = readFileSync(path, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    const loaded = genomeFromJson(parsed);
-    expect(loaded.symmetry).toEqual({ kind: 'dihedral', n: 5 });
-    expect(loaded.xforms).toHaveLength(3);
-    // Round-trip should match the file byte-for-byte.
-    const expected = JSON.stringify(genomeToJson(loaded), null, 2);
-    expect(raw.trimEnd()).toBe(expected);
-  });
-});
-
-// skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
-describe.skip('examples/spiral-galaxy.pyr3.json fixture', () => {
-  it('matches genomeToJson(SPIRAL_GALAXY) byte-for-byte (modulo trailing newline)', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const path = join(here, '..', 'examples', 'spiral-galaxy.pyr3.json');
-    const raw = readFileSync(path, 'utf8').trimEnd();
-    const expected = JSON.stringify(genomeToJson(SPIRAL_GALAXY), null, 2);
-    expect(raw).toBe(expected);
-  });
-
-  it('parses to a Genome that deep-equals SPIRAL_GALAXY', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const path = join(here, '..', 'examples', 'spiral-galaxy.pyr3.json');
-    const raw = readFileSync(path, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    const genome = genomeFromJson(parsed);
-    expect(genome).toEqual(SPIRAL_GALAXY);
   });
 });
 
@@ -746,22 +692,6 @@ describe('Phase 9-bg-palmode round-trip', () => {
     const back = genomeFromJson(genomeToJson(g));
     expect(back.background).toEqual([0.05, 0.1, 0.2]);
     expect(back.paletteMode).toBe('linear');
-  });
-});
-
-// skipped: examples/*.pyr3.json fixtures intentionally not lifted in Phase 0 (see ROADMAP)
-describe.skip('examples/spiral-galaxy-de.pyr3.json fixture', () => {
-  it('parses and contains DEFAULT_DENSITY', () => {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const path = join(here, '..', 'examples', 'spiral-galaxy-de.pyr3.json');
-    const raw = readFileSync(path, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    const loaded = genomeFromJson(parsed);
-    expect(loaded.name).toBe('Spiral Galaxy (DE)');
-    expect(loaded.density).toEqual(DEFAULT_DENSITY);
-    // Round-trip should match the file byte-for-byte.
-    const expected = JSON.stringify(genomeToJson(loaded), null, 2);
-    expect(raw.trimEnd()).toBe(expected);
   });
 });
 

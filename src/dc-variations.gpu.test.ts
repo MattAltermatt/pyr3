@@ -11,6 +11,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { create, globals } from 'webgpu';
+import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { perlinFbm } from './noise-perlin-oracle';
 
@@ -90,7 +91,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bg = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -183,7 +184,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     });
     const pipeline = dev.createComputePipeline({
       layout: 'auto',
-      compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' },
+      compute: { module: await compileChecked(dev, code), entryPoint: 'main' },
     });
     const bg = dev.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
@@ -279,7 +280,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     const inBuf = dev.createBuffer({ size: flat.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     dev.queue.writeBuffer(inBuf, 0, flat);
     const outBuf = dev.createBuffer({ size: N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const pipeline = dev.createComputePipeline({ layout: 'auto', compute: { module: await compileChecked(dev, code), entryPoint: 'main' } });
     const bg = dev.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: inBuf } }, { binding: 1, resource: { buffer: outBuf } }] });
     const enc = dev.createCommandEncoder();
     const pass = enc.beginComputePass();

@@ -95,6 +95,78 @@ describe('#262 audit — raw sin/cos of cliff-prone args routed through safe_* (
   });
 });
 
+describe('#306 M11 — forward scan: no NEW variation feeds raw trig a cliff-prone arg', () => {
+  // The pre-#306 safe-trig invariants above check a HARDCODED variation list, so
+  // a brand-new variation feeding raw sin/cos/tan/tanh a coord/radius/coef-scaled
+  // value (the Dawn f32 cliff hazard) slips through. This scans EVERY `fn var_*`
+  // and flags any raw trig outside the audited allowlist below.
+  //
+  // Allowlist = var_ functions that legitimately contain raw trig: the arg is a
+  // freshly-atan2'd angle (already in [-π,π]), a bounded loop/constant angle
+  // (TAU·k/n, π/sides, cos(45.0)), a deterministic GLSL spatial-hash where raw
+  // sin IS the algorithm (var_circular family), or the var_bsplit doHide guard.
+  // Audited exhaustively via pyr3-shader-reviewer for #306. Adding a NEW name
+  // here demands the same per-function justification — otherwise wrap the trig
+  // in safe_*.
+  const RAW_TRIG_OK = new Set<string>([
+    'var_circus', 'var_cardioid', 'var_chrysanthemum', 'var_bcollide', 'var_bsplit',
+    'var_circular', 'var_circular2', 'var_circleblur', 'var_hypertile', 'var_hypertile1',
+    'var_hypertile2', 'var_idisc', 'var_kaleidoscope', 'var_lace_js', 'var_fourth',
+    'var_cannabis_curve_wf', 'var_e_collide', 'var_e_mod', 'var_b_mod', 'var_waves4',
+    'var_circlecrop', 'var_newton_color', 'var_billiard_sinai', 'var_billiard_polygon',
+    'var_quasicrystal', 'var_penrose',
+    // theta = 2π·rand01 ∈ [0,2π] — bounded blur angle, not coord-scaled.
+    'var_crackle',
+    // raw cos/sin(alpha) with alpha = atan2(p.y,p.x) ∈ [-π,π]; the d-scaled
+    // theta branches already route through safe_*.
+    'var_hole',
+  ]);
+
+  // raw trig = sin(/cos(/tan(/tanh( NOT prefixed by `safe_` and not part of
+  // atan/asin/acos/sinh/cosh/complex_sin/etc. (lookbehind rejects a word-char
+  // before the token; the optional safe_ group classifies the wrapped form).
+  const RAW_TRIG = /(?<![A-Za-z0-9_])(safe_)?(sin|cos|tan|tanh)\(/g;
+  const stripComments = (s: string): string => s.replace(/\/\/[^\n]*/g, '');
+  function hasRawTrig(body: string): boolean {
+    for (const m of stripComments(body).matchAll(RAW_TRIG)) {
+      if (m[1] === undefined) return true; // no safe_ prefix → raw
+    }
+    return false;
+  }
+
+  const varFnNames = [...SHADER_SRC.matchAll(/\bfn (var_\w+)\s*\(/g)].map((m) => m[1]!);
+
+  it('finds the full var_ catalog (sanity: the scan actually ran)', () => {
+    expect(varFnNames.length).toBeGreaterThan(300);
+  });
+
+  it('every var_ fn with raw trig is on the audited allowlist', () => {
+    const offenders = varFnNames.filter(
+      (n) => !RAW_TRIG_OK.has(n) && hasRawTrig(extractWgslFn(SHADER_SRC, n)),
+    );
+    expect(
+      offenders,
+      `Un-allowlisted raw trig found in:\n  ${offenders.join('\n  ')}\n` +
+        `Route the arg through safe_sin/safe_cos/safe_tan/safe_tanh (Dawn f32 trig ` +
+        `cliffs to 0 for |arg|≳1e7 / tanh NaNs for |arg|≳1e3). If the arg is ` +
+        `provably angle-bounded (freshly atan2'd, or TAU·k/n), add the fn to ` +
+        `RAW_TRIG_OK with a one-line reason.`,
+    ).toEqual([]);
+  });
+
+  it('the allowlist has no stale entries (each listed fn still uses raw trig)', () => {
+    const stale = [...RAW_TRIG_OK].filter(
+      (n) => varFnNames.includes(n) && !hasRawTrig(extractWgslFn(SHADER_SRC, n)),
+    );
+    expect(stale, `RAW_TRIG_OK entries that no longer use raw trig — remove them: ${stale.join(', ')}`).toEqual([]);
+  });
+
+  it('the allowlist names only real functions', () => {
+    const missing = [...RAW_TRIG_OK].filter((n) => !varFnNames.includes(n));
+    expect(missing, `RAW_TRIG_OK names that do not exist: ${missing.join(', ')}`).toEqual([]);
+  });
+});
+
 describe.skipIf(!device)('#72 — safe_sin/safe_cos tame Dawn f32 trig cliff (real GPU)', () => {
   it('Dawn sin/cos cliff to 0 at 1e10, but safe_* stay bounded and non-zero', async () => {
     const dev = device!;
