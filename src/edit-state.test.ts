@@ -8,6 +8,10 @@ import {
   restoreWip,
   schedulePersist,
   WIP_KEY,
+  loadEditRenderSettings,
+  saveEditRenderSettings,
+  DEFAULT_EDIT_RENDER_SETTINGS,
+  EDIT_RENDER_SETTINGS_KEY,
   type Clock,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
@@ -225,6 +229,31 @@ describe('createEditState', () => {
     expect(st.preview.width).toBeGreaterThan(0);
     expect(st.preview.height).toBeGreaterThan(0);
     expect(st.genome).toBe(g);
+  });
+});
+
+describe('editor render settings (sticky pref)', () => {
+  beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('returns defaults when nothing is stored', () => {
+    expect(loadEditRenderSettings()).toEqual(DEFAULT_EDIT_RENDER_SETTINGS);
+  });
+  it('round-trips size / quality / settle under its own key', () => {
+    saveEditRenderSettings({ size: { width: 2048, height: 2048 }, quality: 200, settleMs: 3000 });
+    expect(localStorage.getItem(EDIT_RENDER_SETTINGS_KEY)).not.toBeNull();
+    expect(loadEditRenderSettings()).toEqual({ size: { width: 2048, height: 2048 }, quality: 200, settleMs: 3000 });
+  });
+  it('falls back per-field on malformed / partial data', () => {
+    localStorage.setItem(EDIT_RENDER_SETTINGS_KEY, JSON.stringify({ quality: -5, settleMs: 1200 }));
+    const s = loadEditRenderSettings();
+    expect(s.quality).toBe(DEFAULT_EDIT_RENDER_SETTINGS.quality); // invalid → default
+    expect(s.settleMs).toBe(1200);                                // valid → kept
+    expect(s.size).toEqual(DEFAULT_EDIT_RENDER_SETTINGS.size);    // missing → default
+  });
+  it('survives corrupt JSON', () => {
+    localStorage.setItem(EDIT_RENDER_SETTINGS_KEY, '{not json');
+    expect(loadEditRenderSettings()).toEqual(DEFAULT_EDIT_RENDER_SETTINGS);
   });
 });
 

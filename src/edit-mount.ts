@@ -17,6 +17,8 @@ import {
   resolveColdStartGenomeWithSource,
   schedulePersist,
   persistWip,
+  loadEditRenderSettings,
+  saveEditRenderSettings,
   consumeGradientReturn,
   type EditState,
   type LaneScheduler,
@@ -216,11 +218,18 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     }
   }
 
+  // Sticky editor render settings (Size / Quality / Settle) — a per-browser
+  // workstation pref, NOT part of the flame. Loaded here so a flame that doesn't
+  // carry its own size/quality (Surprise Wall flame, reroll) opens at the values
+  // the user last chose instead of a hardcoded default. See edit-state.ts.
+  let renderSettings = loadEditRenderSettings();
+
   // Apply editor defaults to fields the user hasn't set yet. Files opened
-  // with their own values keep them.
+  // with their own values keep them; flames without size/quality inherit the
+  // user's sticky render settings (so the editor "remembers" them across loads).
   function applyEditorDefaults(genome: Genome): void {
-    if (genome.size === undefined) genome.size = { width: 1920, height: 1080 };
-    if (genome.quality === undefined) genome.quality = 50;
+    if (genome.size === undefined) genome.size = { ...renderSettings.size };
+    if (genome.quality === undefined) genome.quality = renderSettings.quality;
   }
 
   // Initial genome + state.
@@ -432,8 +441,21 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // the canvas briefly). With 200 ms, single clicks reliably show their
   // live frame; user can tune lower for a snappier settled, higher for a
   // longer-lived live preview.
-  let settleDelayMs = 500;
+  let settleDelayMs = renderSettings.settleMs;
   const BAR_DELAY_MS = 500;
+
+  // Persist the sticky render settings (Size / Quality / Settle) from the
+  // current genome + live settle value. Called whenever the user changes any of
+  // them via the bar or the panel's Render section.
+  function persistRenderSettings(): void {
+    const sz = state.genome.size ?? renderSettings.size;
+    renderSettings = {
+      size: { width: sz.width, height: sz.height },
+      quality: state.genome.quality ?? renderSettings.quality,
+      settleMs: settleDelayMs,
+    };
+    saveEditRenderSettings(renderSettings);
+  }
 
   function liveDimsFor(full: { width: number; height: number }): { width: number; height: number } {
     const longEdge = Math.max(full.width, full.height);
@@ -726,6 +748,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // onPathChange entirely via their dedicated mutators.
     if (path !== 'quality' && !path.startsWith('size.')) {
       scheduleHistoryCommit();
+    } else {
+      // Size / Quality are sticky render prefs — persist so the next flame load
+      // (incl. a Surprise Wall handoff) opens at these values, not defaults.
+      persistRenderSettings();
     }
     const lane = pathLane(path);
     if (lane === 'slow' || lane === 'rebuild' || lane === 'fast') {
@@ -749,6 +775,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       settleDelayMs,
       onSettleDelayChange: (ms) => {
         settleDelayMs = ms;
+        persistRenderSettings();
         // Echo to the host so the editor bar's SETTLE ladder highlight
         // can re-sync when the user types an off-ladder value in the panel.
         opts.onSettleDelayChange?.(ms);
@@ -1140,6 +1167,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const view0 = ctx.getCurrentTexture().createView();
   editRenderer.applyLane('slow', adjustedGenomeFor(initialDims.width, initialDims.height), state.seed, view0, initialDims.width, initialDims.height, { targetSpp: previewCfg.quality });
   notifyStateChange();
+  // Sync the bar's SETTLE ladder to the remembered settle value on mount
+  // (size/quality already echoed via notifyStateChange → onStateChange).
+  opts.onSettleDelayChange?.(settleDelayMs);
   // #175 — fire the curves histogram readback after the first paint settles
   // (cold start never routes through runSettledRender, so wire it here too).
   const coldTicket = inflightTicket;
@@ -1253,6 +1283,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // bar's setSettle highlight itself.
       if (!Number.isFinite(ms) || ms < 0) return;
       settleDelayMs = Math.round(ms);
+      persistRenderSettings();
       ui?.setSettleDelayMs(settleDelayMs);
     },
     computeFilenamePreview(template: string): string | null {

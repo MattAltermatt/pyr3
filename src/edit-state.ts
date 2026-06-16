@@ -247,6 +247,56 @@ export function restoreWip(): Genome | null {
   }
 }
 
+// ── Editor render settings — sticky workstation pref ──────────────────
+// Size / Quality / Settle are the editor's RENDER controls. They used to ride
+// on the genome (size/quality) or default per-mount (settle=500ms), which meant
+// loading a flame that didn't carry them — e.g. a Surprise Wall flame — reset
+// them to defaults. Per the #176 "render config is a workstation pref, not part
+// of the flame artifact" principle, persist them per-browser and re-apply on
+// every load so the editor keeps the values the user last chose, regardless of
+// which flame opens.
+
+export const EDIT_RENDER_SETTINGS_KEY = 'pyr3.edit.render-settings';
+
+export interface EditRenderSettings {
+  size: { width: number; height: number };
+  quality: number;
+  settleMs: number;
+}
+
+export const DEFAULT_EDIT_RENDER_SETTINGS: EditRenderSettings = {
+  size: { width: 1920, height: 1080 },
+  quality: 50,
+  settleMs: 500,
+};
+
+/** Read the sticky editor render settings, falling back to defaults for any
+ *  missing / malformed field. Always returns a usable object. */
+export function loadEditRenderSettings(): EditRenderSettings {
+  try {
+    const raw = localStorage.getItem(EDIT_RENDER_SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_EDIT_RENDER_SETTINGS };
+    const p = JSON.parse(raw) as Partial<EditRenderSettings> & { _v?: number };
+    const sz = p.size;
+    const width = sz && Number.isFinite(sz.width) && sz.width > 0 ? Math.round(sz.width) : DEFAULT_EDIT_RENDER_SETTINGS.size.width;
+    const height = sz && Number.isFinite(sz.height) && sz.height > 0 ? Math.round(sz.height) : DEFAULT_EDIT_RENDER_SETTINGS.size.height;
+    const quality = Number.isFinite(p.quality) && (p.quality as number) > 0 ? (p.quality as number) : DEFAULT_EDIT_RENDER_SETTINGS.quality;
+    const settleMs = Number.isFinite(p.settleMs) && (p.settleMs as number) >= 0 ? Math.round(p.settleMs as number) : DEFAULT_EDIT_RENDER_SETTINGS.settleMs;
+    return { size: { width, height }, quality, settleMs };
+  } catch {
+    return { ...DEFAULT_EDIT_RENDER_SETTINGS };
+  }
+}
+
+/** Persist the sticky editor render settings. Best-effort (private mode/quota). */
+export function saveEditRenderSettings(s: EditRenderSettings): void {
+  try {
+    localStorage.setItem(EDIT_RENDER_SETTINGS_KEY, JSON.stringify({ _v: 1, ...s }));
+  } catch {
+    // localStorage disabled / full — no-op.
+  }
+}
+
 // ── Viewer → Editor pending-transfer ──────────────────────────────────
 // When the user clicks the editor tab from the viewer with a file-opened (not
 // corpus) genome loaded, we need to carry that genome across the navigation.
