@@ -1025,9 +1025,9 @@ export function genomeFromJson(j: unknown): Genome {
   }
   if (paletteObj['mode'] !== undefined) {
     const mode = paletteObj['mode'];
-    if (mode !== 'linear' && mode !== 'step') {
+    if (mode !== 'linear' && mode !== 'step' && mode !== 'smooth') {
       throw new Error(
-        `pyr3: palette.mode must be 'linear' or 'step', got: ${String(mode)}`,
+        `pyr3: palette.mode must be 'linear', 'step', or 'smooth', got: ${String(mode)}`,
       );
     }
     palette.mode = mode;
@@ -1162,8 +1162,8 @@ export function genomeFromJson(j: unknown): Genome {
   }
   if (root['paletteMode'] !== undefined) {
     const pm = root['paletteMode'];
-    if (pm !== 'step' && pm !== 'linear') {
-      throw new Error(`pyr3: paletteMode must be 'step' or 'linear', got: ${String(pm)}`);
+    if (pm !== 'step' && pm !== 'linear' && pm !== 'smooth') {
+      throw new Error(`pyr3: paletteMode must be 'step', 'linear', or 'smooth', got: ${String(pm)}`);
     }
     base.paletteMode = pm;
   }

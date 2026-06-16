@@ -124,6 +124,18 @@ describe('genomeFromJson', () => {
     expect(reparsed.palette.mode).toBe('step');
   });
 
+  it("round-trips palette.mode='smooth' when set (#296)", () => {
+    // The gradient editor lets users pick 'smooth'; genomeToJson wrote it but
+    // genomeFromJson threw on reload, so smooth-gradient flames couldn't reopen.
+    const json = genomeToJson({
+      ...SPIRAL_GALAXY,
+      palette: { ...SPIRAL_GALAXY.palette, mode: 'smooth' },
+    });
+    expect(json.palette.mode).toBe('smooth');
+    const reparsed = genomeFromJson(json);
+    expect(reparsed.palette.mode).toBe('smooth');
+  });
+
   it('round-trips hslAdjust', () => {
     const json = genomeToJson({
       ...SPIRAL_GALAXY,
@@ -702,6 +714,15 @@ describe('Phase 9-bg-palmode round-trip', () => {
     };
     const back = genomeFromJson(genomeToJson(g));
     expect(back.paletteMode).toBe('linear');
+  });
+
+  it("round-trips paletteMode='smooth' (#296)", () => {
+    const g: Genome = {
+      ...SPIRAL_GALAXY,
+      paletteMode: 'smooth',
+    };
+    const back = genomeFromJson(genomeToJson(g));
+    expect(back.paletteMode).toBe('smooth');
   });
 
   it('omits both fields from JSON when undefined', () => {
