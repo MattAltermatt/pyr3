@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mountScreensaverPage } from './screensaver-mount';
+import { mountScreensaverPage, resolveDimOverride } from './screensaver-mount';
 import { _clearScreensaverPrefs } from './screensaver-prefs';
 
 // happy-dom v20 doesn't expose localStorage globally; provide a Map-backed
@@ -56,5 +56,22 @@ describe('mountScreensaverPage', () => {
       document.querySelector('.pyr3-screensaver-card')?.classList.contains('hidden'),
     ).toBe(false);
     expect(document.querySelector('.pyr3-screensaver-pill')).toBeFalsy();
+  });
+});
+
+// #321 — junk ?w=/?h= overrides must fall back to the screen dim, not NaN.
+describe('resolveDimOverride', () => {
+  it('returns the fallback for a null/empty override', () => {
+    expect(resolveDimOverride(null, 1920)).toBe(1920);
+    expect(resolveDimOverride('', 1080)).toBe(1080);
+  });
+  it('returns the fallback for non-numeric / non-positive junk', () => {
+    expect(resolveDimOverride('abc', 1920)).toBe(1920);
+    expect(resolveDimOverride('-5', 1920)).toBe(1920);
+    expect(resolveDimOverride('0', 1920)).toBe(1920);
+    expect(resolveDimOverride('NaN', 1920)).toBe(1920);
+  });
+  it('accepts a finite positive override', () => {
+    expect(resolveDimOverride('2560', 1920)).toBe(2560);
   });
 });

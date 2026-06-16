@@ -118,7 +118,10 @@ async function main(): Promise<void> {
   });
 
   const port = await listenWithAutoBump(server, args.port);
-  const url = `http://localhost:${port}`;
+  // #318 — advertise the literal bind address. The server binds IPv4-only
+  // 127.0.0.1 (below); on hosts where `localhost` resolves to ::1 first, an
+  // advertised `http://localhost` URL can fail to connect.
+  const url = `http://127.0.0.1:${port}`;
   console.log(`[pyr3-serve] listening on ${url}`);
   if (args.open) openBrowser(url);
 

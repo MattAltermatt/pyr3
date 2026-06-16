@@ -184,9 +184,25 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
 
     // #274 — absolute output dims (both required); applied per-keyframe/clip via
     // the long-edge rescale. Distinct from `ss` (which scales the source).
-    const outputSize = (body.out_width !== undefined && body.out_height !== undefined)
-      ? { width: body.out_width, height: body.out_height }
-      : undefined;
+    // #303 — validate: both-or-neither, and finite > 0. An unvalidated NaN/-100
+    // would flow through rescaleGenomeToOutput into device.createTexture and
+    // throw on an already-200 SSE stream.
+    const hasW = body.out_width !== undefined;
+    const hasH = body.out_height !== undefined;
+    if (hasW !== hasH) {
+      jsonError(res, 400, 'out_width and out_height must both be provided (or neither)');
+      return;
+    }
+    let outputSize: { width: number; height: number } | undefined;
+    if (hasW && hasH) {
+      const ow = Number(body.out_width);
+      const oh = Number(body.out_height);
+      if (!Number.isFinite(ow) || !Number.isFinite(oh) || ow <= 0 || oh <= 0) {
+        jsonError(res, 400, 'out_width / out_height must be finite numbers > 0');
+        return;
+      }
+      outputSize = { width: Math.round(ow), height: Math.round(oh) };
+    }
 
     if (hasTimeline) {
       let timeline;

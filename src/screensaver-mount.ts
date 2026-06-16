@@ -337,18 +337,25 @@ function clampDim(n: number, max: number): number {
   return Math.max(CANVAS_MIN_DIM, Math.min(max, Math.floor(n)));
 }
 
+// #321 — a `?w=`/`?h=` URL override is untrusted: a junk value (`?w=abc`, `?w=-5`)
+// must fall back to the screen dimension rather than propagate NaN/≤0 into
+// canvas.width. Exported for unit test.
+export function resolveDimOverride(override: string | null, fallback: number): number {
+  if (override === null || override === '') return fallback;
+  const n = Number(override);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
   const canvas = el('canvas', 'pyr3-screensaver-canvas');
   // Render at the user's screen resolution (capped at 4K) so fullscreen
   // looks pixel-native. CSS scales 100% in the windowed view; the browser
   // downsamples cleanly. URL overrides: ?w=NNNN&h=NNNN.
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const overrideW = params?.get('w');
-  const overrideH = params?.get('h');
-  const sw = overrideW ? Number(overrideW)
-    : (typeof window !== 'undefined' && window.screen?.width)  ? window.screen.width  : 1920;
-  const sh = overrideH ? Number(overrideH)
-    : (typeof window !== 'undefined' && window.screen?.height) ? window.screen.height : 1080;
+  const screenW = (typeof window !== 'undefined' && window.screen?.width)  ? window.screen.width  : 1920;
+  const screenH = (typeof window !== 'undefined' && window.screen?.height) ? window.screen.height : 1080;
+  const sw = resolveDimOverride(params?.get('w') ?? null, screenW);
+  const sh = resolveDimOverride(params?.get('h') ?? null, screenH);
   canvas.width = clampDim(sw, CANVAS_MAX_W);
   canvas.height = clampDim(sh, CANVAS_MAX_H);
   Object.assign(canvas.style, {

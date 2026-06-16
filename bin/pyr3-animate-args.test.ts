@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseEasingFlag, parseNstepsEnv, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
 
 describe('parseEasingFlag', () => {
@@ -32,6 +32,21 @@ describe('parseOutputSizeEnv (#274)', () => {
   });
   it('returns undefined when neither is set', () => {
     expect(parseOutputSizeEnv({})).toBeUndefined();
+  });
+  it('#303 N9 — warns (naming the missing partner) on a partial size', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    parseOutputSizeEnv({ width: '3840' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('height='));
+    warn.mockClear();
+    parseOutputSizeEnv({ height: '2160' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('width='));
+    warn.mockRestore();
+  });
+  it('#303 N9 — does NOT warn when neither is set', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    parseOutputSizeEnv({});
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

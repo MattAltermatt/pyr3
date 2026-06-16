@@ -221,6 +221,58 @@ describe('saveRenderToPng', () => {
     document.createElement = origCreate;
   });
 
+  it('#324 — surfaces a clean error on a malformed backend "done" event', async () => {
+    const cap = await import('./capability');
+    cap._resetCapabilityForTest();
+    const capFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        backend: 'dawn-node',
+        max_quality: null,
+        can_write_files: false,
+        can_render_animation: false,
+      }),
+    });
+    globalThis.fetch = capFetch as never;
+    await cap.fetchCapability();
+
+    // A `done` event whose data is not valid JSON.
+    const sse = [
+      'event: open\ndata: {"jobId":"j"}\n\n',
+      'event: done\ndata: {not valid json\n\n',
+    ].join('');
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) { controller.enqueue(encoder.encode(sse)); controller.close(); },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'X-Job-ID': 'j' }),
+      body,
+    }) as never;
+
+    const ctrl = new AbortController();
+    const canvas = mockCanvas();
+    canvas.width = 10; canvas.height = 10;
+    await expect(saveRenderToPng({
+      renderer: FAKE_RENDERER,
+      genome: { quality: 50, oversample: 1, palette: { name: 't', stops: [{ t: 0, r: 0, g: 0, b: 0 }] }, xforms: [] } as never,
+      canvas,
+      ctx: FAKE_CTX,
+      device: mockDevice(),
+      abortSignal: ctrl.signal,
+      onProgress: () => {},
+      filename: 'bad.pyr3.png',
+      metadataJson: '{}',
+      targetSamples: 1,
+      seedBase: 0,
+    })).rejects.toThrow(/malformed "done"/);
+
+    cap._resetCapabilityForTest();
+  });
+
   it('bridges the AbortSignal to renderHandle.cancel', async () => {
     // Stub a promise that never resolves so we can observe the cancel path.
     let resolve!: (v: 'completed' | 'cancelled') => void;

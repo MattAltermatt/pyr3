@@ -20,20 +20,27 @@ import { inflateBrotliBytes } from './brotli';
  * Each varint is encoded as 7 bits per byte (little-endian groups);
  * the high bit (0x80) is set on every byte except the last.
  */
-function readVarints(buf: Uint8Array): number[] {
+export function readVarints(buf: Uint8Array): number[] {
   const values: number[] = [];
   let i = 0;
   while (i < buf.length) {
     let value = 0;
     let shift = 0;
-    while (true) {
+    let complete = false;
+    // #325 — bound the inner loop on buf.length. A truncated buffer whose last
+    // byte still has the 0x80 continuation bit set would otherwise read
+    // `buf[i++]` past the end (undefined → NaN value); treat it as corrupt.
+    while (i < buf.length) {
       const byte = buf[i++] as number;
       // Multiply (not `|= << shift`): JS bitwise ops are 32-bit signed, which
       // would corrupt ids >= 2^28. Multiplication stays exact to ~2^53, so the
       // decoder matches Python's arbitrary-precision encoder for any real id.
       value += (byte & 0x7f) * 2 ** shift;
       shift += 7;
-      if ((byte & 0x80) === 0) break;
+      if ((byte & 0x80) === 0) { complete = true; break; }
+    }
+    if (!complete) {
+      throw new Error('avail manifest truncated: dangling varint continuation byte');
     }
     values.push(value);
   }

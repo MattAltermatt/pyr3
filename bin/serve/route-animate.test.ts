@@ -199,6 +199,26 @@ describe('makeAnimateRoute — body validation', () => {
     await handle(req, res);
     expect(res.statusCode).toBe(400);
   });
+
+  // #303 — out_width/out_height must be both-or-neither and finite > 0; an
+  // unvalidated value would reach device.createTexture and throw on a 200 SSE.
+  it('rejects a partial output size (only out_width) with 400', async () => {
+    const handle = makeAnimateRoute(fakeDevice);
+    const res = fakeRes();
+    await handle(fakeReq({ flame_xml: '<flames><flame/></flames>', out_dir: tmpdir(), out_width: 3840 }), res);
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res._ended).error).toMatch(/both/);
+  });
+
+  it('rejects a non-finite / non-positive output size with 400', async () => {
+    const handle = makeAnimateRoute(fakeDevice);
+    for (const dims of [{ out_width: -100, out_height: 100 }, { out_width: 'x', out_height: 100 }]) {
+      const res = fakeRes();
+      await handle(fakeReq({ flame_xml: '<flames><flame/></flames>', out_dir: tmpdir(), ...dims }), res);
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res._ended).error).toMatch(/finite/);
+    }
+  });
 });
 
 describe('makeAnimateRoute — SSE handshake', () => {

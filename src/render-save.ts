@@ -182,13 +182,26 @@ async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRend
             // ignore malformed event — server is the authority
           }
         } else if (event === 'done') {
-          const d = JSON.parse(dataStr) as BackendDone;
+          // #324 — a malformed `done` payload must surface a clean error, not a
+          // raw SyntaxError from JSON.parse.
+          let d: BackendDone;
+          try {
+            d = JSON.parse(dataStr) as BackendDone;
+          } catch {
+            throw new Error('pyr3 serve render failed: malformed "done" server event');
+          }
           pngBytes = base64ToBytes(d.png_base64);
           outcome = 'completed';
         } else if (event === 'cancelled') {
           outcome = 'cancelled';
         } else if (event === 'error') {
-          const e = JSON.parse(dataStr) as { message?: string };
+          // #324 — same guard on the error payload itself.
+          let e: { message?: string };
+          try {
+            e = JSON.parse(dataStr) as { message?: string };
+          } catch {
+            throw new Error('pyr3 serve render failed: malformed "error" server event');
+          }
           throw new Error(`pyr3 serve render failed: ${e.message ?? 'unknown error'}`);
         } else if (event === 'open') {
           // jobId already in the X-Job-ID header; nothing to do.

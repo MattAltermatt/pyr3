@@ -49,8 +49,15 @@ function isLoopbackHost(hostname: string | null): boolean {
   return hostname !== null && LOOPBACK_HOSTS.has(hostname.toLowerCase());
 }
 
-/** Decide whether an /api request is same-origin (loopback) and therefore
- *  trustworthy. See the module header for the threat model. */
+/** Decide whether an /api request is same-host (loopback) and therefore
+ *  trustworthy. See the module header for the threat model.
+ *
+ *  #328 — this validates the loopback *host* of Host/Origin, NOT the port: a
+ *  co-resident page on another loopback port passes the Origin/Host checks.
+ *  That residual is covered by the stronger Sec-Fetch-Site signal for modern
+ *  browsers; the port is deliberately not compared because pyr3 serve
+ *  auto-bumps its bound port, so the "expected" port isn't fixed. Hence
+ *  "same-host (loopback)", not literally "same-origin". */
 export function checkSameOrigin(headers: IncomingHttpHeaders): GuardVerdict {
   // Host: present-and-non-loopback ⇒ reject (DNS-rebinding sends the
   // attacker's Host). Absent Host ⇒ non-browser client, allow.

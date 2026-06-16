@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decodeAvail, exists } from './avail';
+import { decodeAvail, exists, readVarints } from './avail';
 
 // base64 of REAL output from the ESF Python encode_avail(ids) — DO NOT CHANGE.
 const FIX = {
@@ -18,6 +18,20 @@ describe('decodeAvail (ESF-conformant)', () => {
       expect(await decodeAvail(ab(b64))).toEqual(ids);
     });
   }
+});
+
+describe('readVarints (#325 truncation guard)', () => {
+  it('decodes well-formed multi-byte varints', () => {
+    // 300 = 0xAC 0x02 (LEB128); 5 = 0x05.
+    expect(readVarints(Uint8Array.from([0x05, 0xac, 0x02]))).toEqual([5, 300]);
+  });
+  it('throws on a buffer ending mid-varint (continuation bit set on last byte)', () => {
+    // 0xac has the 0x80 continuation bit set but no following byte.
+    expect(() => readVarints(Uint8Array.from([0x05, 0xac]))).toThrow(/truncated/);
+  });
+  it('decodes an empty buffer to []', () => {
+    expect(readVarints(new Uint8Array(0))).toEqual([]);
+  });
 });
 
 describe('exists', () => {

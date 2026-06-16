@@ -1,6 +1,15 @@
-import { type Palette } from './palette';
+import { type Palette, type PaletteMode } from './palette';
 
 export interface PyrePaletteFile { format: 'pyre-palette'; version: 1; palette: Palette; }
+
+const PALETTE_MODES: ReadonlySet<string> = new Set(['linear', 'step', 'smooth']);
+
+function finiteAt(v: unknown, where: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`${where} must be a finite number.`);
+  }
+  return v;
+}
 
 export function serializePalette(p: Palette): string {
   const file: PyrePaletteFile = { format: 'pyre-palette', version: 1, palette: p };
@@ -14,7 +23,25 @@ export function parsePaletteFile(text: string): Palette {
   if (!f || f.format !== 'pyre-palette') throw new Error('Not a pyre-palette file.');
   const p = f.palette as Palette | undefined;
   if (!p || !Array.isArray(p.stops) || p.stops.length < 2) throw new Error('Palette has no stops.');
-  return { name: p.name ?? 'imported', stops: p.stops, hue: p.hue, mode: p.mode };
+  // #308 — validate every stop's numeric fields are finite (a NaN would reach
+  // the 256-entry Float32 GPU LUT via bakeLUT and corrupt the render), and that
+  // optional hue/mode are well-formed. Mirrors serialize.ts's per-stop checks.
+  const stops = p.stops.map((s, i) => {
+    const so = (s ?? {}) as unknown as Record<string, unknown>;
+    return {
+      t: finiteAt(so['t'], `Palette stop ${i} (t)`),
+      r: finiteAt(so['r'], `Palette stop ${i} (r)`),
+      g: finiteAt(so['g'], `Palette stop ${i} (g)`),
+      b: finiteAt(so['b'], `Palette stop ${i} (b)`),
+    };
+  });
+  let mode: PaletteMode | undefined;
+  if (p.mode !== undefined) {
+    if (!PALETTE_MODES.has(p.mode)) throw new Error(`Palette mode "${p.mode}" is not valid.`);
+    mode = p.mode;
+  }
+  const hue = p.hue !== undefined ? finiteAt(p.hue, 'Palette hue') : undefined;
+  return { name: p.name ?? 'imported', stops, hue, mode };
 }
 
 function sanitize(name: string): string {

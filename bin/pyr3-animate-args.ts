@@ -20,7 +20,17 @@ export function parseEasingFlag(args: string[]): (EasingCurve | undefined)[] | u
 export function parseOutputSizeEnv(
   env: Record<string, string | undefined>,
 ): { width: number; height: number } | undefined {
-  if (env['width'] === undefined || env['height'] === undefined) return undefined;
+  const hasW = env['width'] !== undefined;
+  const hasH = env['height'] !== undefined;
+  if (hasW !== hasH) {
+    // #303 N9 — a partial size was silently dropped before; name the missing partner.
+    console.warn(
+      'pyr3 animate: ignoring output size — both width= and height= are required '
+        + `(got only ${hasW ? 'width' : 'height'}=)`,
+    );
+    return undefined;
+  }
+  if (!hasW) return undefined;
   const width = Number(env['width']);
   const height = Number(env['height']);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
