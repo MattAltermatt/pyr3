@@ -35,7 +35,7 @@ import { timelineFromJson, TIMELINE_FORMAT } from '../src/timeline-serialize';
 import { totalSampleBudget, formatCount, formatEstTime } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
 import { parseEasingFlag, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
-import { rescaleGenomeToOutput } from '../src/output-size';
+import { rescaleGenomeToOutput, type OutputSize } from '../src/output-size';
 import { frameOutPath, shouldSkipFrame, writeFrameAtomic } from './serve/resume-skip';
 
 installWebGPUHost();
@@ -116,25 +116,33 @@ function buildTimelinePlan(
   qs: number,
   nstepsOverride: number | null,
   blurWidthOverride: number | null,
+  outputSize: OutputSize | undefined,
 ): FramePlan {
   let timeline: Timeline = timelineFromJson(text);
-  if (
-    ss !== 1.0 ||
-    qs !== 1.0 ||
-    nstepsOverride !== null ||
-    blurWidthOverride !== null
-  ) {
+  // Per-clip genome prep: ss/qs source-scale first, THEN the #274 absolute
+  // output-dims rescale (long-edge anchored). Applying it to the clips up-front
+  // — instead of only to the per-frame `centerGenome` used for sizing — keeps
+  // `centerGenomeAt` and `renderFrame` on the SAME rescaled timeline. Without
+  // this, renderTimelineFrame rendered the native-scale genome into a renderer
+  // sized for the rescaled dims → attractor projected off-frame → black (#290).
+  // Mirrors the FE preview's `tlScaled` (animate-mount.ts).
+  const remapClips = ss !== 1.0 || qs !== 1.0 || outputSize !== undefined;
+  const prepGenome = (g: Genome): Genome => {
+    let x = ss !== 1.0 || qs !== 1.0 ? scaleGenome(g, ss, qs) : g;
+    if (outputSize) x = rescaleGenomeToOutput(x, outputSize);
+    return x;
+  };
+  if (remapClips || nstepsOverride !== null || blurWidthOverride !== null) {
     timeline = {
       ...timeline,
       ...(nstepsOverride !== null ? { ntemporal_samples: nstepsOverride } : {}),
       ...(blurWidthOverride !== null ? { temporal_filter_width: blurWidthOverride } : {}),
-      clips:
-        ss === 1.0 && qs === 1.0
-          ? timeline.clips
-          : timeline.clips.map((c) => ({
-              ...c,
-              flame: { ...c.flame, genome: scaleGenome(c.flame.genome, ss, qs) },
-            })),
+      clips: remapClips
+        ? timeline.clips.map((c) => ({
+            ...c,
+            flame: { ...c.flame, genome: prepGenome(c.flame.genome) },
+          }))
+        : timeline.clips,
     };
   }
 
@@ -167,6 +175,7 @@ function buildFlamePlan(
   nstepsOverride: number | null,
   blurWidthOverride: number | null,
   dtime: number,
+  outputSize: OutputSize | undefined,
 ): FramePlan {
   const parsed = parseGenomeText(text, inputPath);
   if (!parsed.animation) {
@@ -176,15 +185,26 @@ function buildFlamePlan(
     );
     process.exit(1);
   }
-  // Apply ss/qs/nsteps to the animation by scaling each keyframe up-front.
+  // Apply ss/qs/nsteps to the animation by scaling each keyframe up-front, then
+  // the #274 absolute output-dims rescale — keeping `centerGenomeAt` and
+  // `renderFrame` on the same rescaled keyframes (see #290 note in
+  // buildTimelinePlan).
+  const remapKfs = ss !== 1.0 || qs !== 1.0 || outputSize !== undefined;
+  const prepGenome = (g: Genome): Genome => {
+    let x = ss !== 1.0 || qs !== 1.0 ? scaleGenome(g, ss, qs) : g;
+    if (outputSize) x = rescaleGenomeToOutput(x, outputSize);
+    return x;
+  };
   const animation: Animation =
-    ss === 1.0 && qs === 1.0 && nstepsOverride === null && blurWidthOverride === null
+    !remapKfs && nstepsOverride === null && blurWidthOverride === null
       ? parsed.animation
       : {
           ...parsed.animation,
           ...(nstepsOverride !== null ? { ntemporal_samples: nstepsOverride } : {}),
           ...(blurWidthOverride !== null ? { temporal_filter_width: blurWidthOverride } : {}),
-          keyframes: parsed.animation.keyframes.map((k) => scaleGenome(k, ss, qs)),
+          keyframes: remapKfs
+            ? parsed.animation.keyframes.map((k) => prepGenome(k))
+            : parsed.animation.keyframes,
         };
 
   // #224 — optional per-segment easing override (`--easing <json EasingCurve[]>`).
@@ -265,8 +285,8 @@ async function main(): Promise<void> {
 
   const text = readFileSync(inputPath, 'utf8');
   const plan = isTimelineInput(inputPath, text)
-    ? buildTimelinePlan(text, ss, qs, nstepsOverride, blurWidthOverride)
-    : buildFlamePlan(text, inputPath, args, ss, qs, nstepsOverride, blurWidthOverride, dtime);
+    ? buildTimelinePlan(text, ss, qs, nstepsOverride, blurWidthOverride, outputSize)
+    : buildFlamePlan(text, inputPath, args, ss, qs, nstepsOverride, blurWidthOverride, dtime, outputSize);
 
   if (verbose) {
     for (const line of plan.describeLines) console.log(line);
@@ -299,9 +319,12 @@ async function main(): Promise<void> {
       if (verbose) console.log(`[pyr3-animate] skip ${outPath.slice(outDir.length + 1)} (exists)`);
       continue;
     }
-    let centerGenome: Genome = plan.centerGenomeAt(job.time);
-    // #274 — rescale to absolute output dims (long-edge anchored) when set.
-    if (outputSize) centerGenome = rescaleGenomeToOutput(centerGenome, outputSize);
+    // #290 — the output-dims rescale is applied to the plan's clips/keyframes
+    // up-front (see buildTimelinePlan), so `centerGenome` here is ALREADY at the
+    // target dims and matches what `renderFrame` renders. (Previously the rescale
+    // happened only here, sizing the renderer for output dims while renderFrame
+    // drew the native-scale genome → off-frame → black.)
+    const centerGenome: Genome = plan.centerGenomeAt(job.time);
 
     const width = centerGenome.size?.width ?? 1024;
     const height = centerGenome.size?.height ?? 1024;
