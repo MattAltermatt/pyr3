@@ -117,6 +117,9 @@ render`. Animation shipped in v1.6.0: render frames headlessly with
 route — the headless companion to the browser's `/animate` editor. The
 editor's timeline mode (build a sequence of key flames, then 📤 Export sequence)
 renders the whole timeline to a PNG frame sequence through the same backend (#227).
+`npm run animate` defaults to one temporal sample per frame (`nsteps=1`); pass
+`nsteps=N` to opt into motion blur (ESF/timeline genomes carry up to 1000, which
+would sub-render each frame that many times — #294).
 
 **Platform status (as of v1.10):**
 

@@ -34,7 +34,7 @@ import { type Timeline, timelineDuration, timelineGenomeAt } from '../src/timeli
 import { timelineFromJson, TIMELINE_FORMAT } from '../src/timeline-serialize';
 import { totalSampleBudget, formatCount, formatEstTime } from '../src/animate-estimate';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
-import { parseEasingFlag, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
+import { parseEasingFlag, parseNstepsEnv, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
 import { rescaleGenomeToOutput, type OutputSize } from '../src/output-size';
 import { frameOutPath, shouldSkipFrame, writeFrameAtomic } from './serve/resume-skip';
 
@@ -273,9 +273,11 @@ async function main(): Promise<void> {
   const resume = parseResumeEnv(process.env);
   const verbose = envInt('verbose', 1);
   // pyr3-specific motion-blur overrides (flam3-animate has no equivalents):
-  //   nsteps=N — override ntemporal_samples (default = imported).
+  //   nsteps=N — override ntemporal_samples (default = 1; see parseNstepsEnv —
+  //              forces single-sample to dodge the ESF/timeline 1000-subframe
+  //              trap, mirroring the /api/animate route. nsteps=N opts into blur).
   //   blur=W   — override temporal_filter_width.
-  const nstepsOverride = process.env['nsteps'] !== undefined ? envInt('nsteps', 1) : null;
+  const nstepsOverride = parseNstepsEnv(process.env);
   const blurWidthOverride = process.env['blur'] !== undefined ? envFloat('blur', 1.0) : null;
 
   if (dtime < 1) {

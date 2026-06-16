@@ -20,7 +20,7 @@ npm run smoke:cli                                   # end-to-end smoke for the b
 npm run build:cli render                            # produce ./build/pyr3-render — standalone SEA binary (~155 MB)
 npm run serve                                       # `pyr3 serve` — local CLI host w/ Dawn-node backend rendering (lifts the 200-q browser cap; #201)
 npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /animate viewer (#209)
-npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275)
+npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275) · nsteps=N (motion-blur sub-frames/frame; DEFAULT 1 — NOT the imported ntemporal_samples, which is up-to-1000 for ESF/timeline; #294)
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 

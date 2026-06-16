@@ -35,3 +35,16 @@ export function parseResumeEnv(env: Record<string, string | undefined>): boolean
   const v = env['resume'];
   return v === '1' || v?.toLowerCase() === 'true';
 }
+
+/** #294 — `nsteps=N` overrides ntemporal_samples (motion-blur sub-frames per
+ *  frame). Default is **1**, NOT the imported value: this CLI is the companion
+ *  to the /animate 📤 export, and ESF/timeline genomes carry ntemporal_samples
+ *  up to 1000. Inheriting that sub-renders each frame up to 1000× (minutes-to-
+ *  hours/frame). The /api/animate server route defaults nsteps=1 for the same
+ *  reason; this mirrors it. An explicit `nsteps=N` opts back into motion blur. */
+export function parseNstepsEnv(env: Record<string, string | undefined>): number {
+  const v = env['nsteps'];
+  if (v === undefined) return 1;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : 1;
+}

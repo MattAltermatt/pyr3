@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseEasingFlag, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
+import { parseEasingFlag, parseNstepsEnv, parseOutputSizeEnv, parseResumeEnv } from './pyr3-animate-args';
 
 describe('parseEasingFlag', () => {
   it('returns undefined when --easing is absent', () => {
@@ -32,6 +32,19 @@ describe('parseOutputSizeEnv (#274)', () => {
   });
   it('returns undefined when neither is set', () => {
     expect(parseOutputSizeEnv({})).toBeUndefined();
+  });
+});
+
+describe('parseNstepsEnv (#294)', () => {
+  it('defaults to 1 when nsteps is unset (forces single-sample, not imported)', () => {
+    expect(parseNstepsEnv({})).toBe(1);
+  });
+  it('uses an explicit nsteps=N to opt back into motion blur', () => {
+    expect(parseNstepsEnv({ nsteps: '8' })).toBe(8);
+    expect(parseNstepsEnv({ nsteps: '1000' })).toBe(1000);
+  });
+  it('falls back to 1 for a non-numeric nsteps', () => {
+    expect(parseNstepsEnv({ nsteps: 'abc' })).toBe(1);
   });
 });
 
