@@ -31,7 +31,7 @@ export interface GradientPageHandle { destroy(): void }
 
 // Overridable for tests — real nav returns to the editor page.
 export const gradReturnNav = {
-  go(): void { window.location.href = '/v1/edit'; },
+  go(): void { window.location.href = '/editor'; },
 };
 
 const ROUNDTRIP_RESAMPLE_N = 16;

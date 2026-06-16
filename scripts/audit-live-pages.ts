@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 // Define the audit findings interface
 export interface AuditFinding {
-  type: 'version' | 'variations' | 'hero' | 'error';
+  type: 'version' | 'variations' | 'hero' | 'legacy-route' | 'error';
   message: string;
   found?: string;
   expected?: string;
@@ -100,6 +100,25 @@ export function checkHtml(
         expected: expectedHeroString,
       });
     }
+  }
+
+  // Audit legacy /v1/* routes — the #264 migration dropped the /v1/ prefix for
+  // flat routes (redirect map in src/route-redirects.ts). Any live href/src/text
+  // still pointing at /v1/* (or ../v1/*) is stale: on gh-pages it bounces through
+  // the 404 SPA shell, and on a stricter static host it hard-404s.
+  const legacyRouteRegex = /\.{0,2}\/v1\/[^\s"'<>)]*/g;
+  const seenLegacy = new Set<string>();
+  let legacyMatch;
+  while ((legacyMatch = legacyRouteRegex.exec(html)) !== null) {
+    const token = legacyMatch[0];
+    if (seenLegacy.has(token)) continue;
+    seenLegacy.add(token);
+    findings.push({
+      type: 'legacy-route',
+      message: `Legacy /v1/ route reference found: "${token}"`,
+      found: token,
+      expected: 'flat route (e.g. /editor, /esf/gen/.../id/...)',
+    });
   }
 
   return findings;

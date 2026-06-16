@@ -8,14 +8,19 @@
 
 ## What pyr3 must do (short-term scope)
 
-A shareable URL like `https://pyr3.app/v1/gen/247/id/12345` opens pyr3 and
+A shareable URL like `https://pyr3.app/esf/gen/247/id/12345` opens pyr3 and
 loads that exact corpus flame.
 
-1. **URL router** — parse `location.pathname` under `/v1/`:
-   - `/v1/gen` → browse landing (list gens from `/chunks/gens.json`).
-   - `/v1/gen/{gen}` → reserved; render a "browse coming soon — N available"
+> **Routing note (#264):** the original `/v1/` prefix was dropped — routes are
+> now flat (`/esf/...`). Old `/v1/*` links still resolve via the boot redirect
+> map in `src/route-redirects.ts`. The `/v1/`-prefixed paths below are the
+> historical design record; substitute the flat equivalent.
+
+1. **URL router** — parse `location.pathname`:
+   - `/esf` → browse landing (list gens from `/chunks/gens.json`).
+   - `/esf/gen/{gen}` → reserved; render a "browse coming soon — N available"
      placeholder fed by the availability manifest (visual gallery is deferred).
-   - `/v1/gen/{gen}/id/{id}` → load & render the corpus flame.
+   - `/esf/gen/{gen}/id/{id}` → load & render the corpus flame.
    - `/v1/flame/{token}` → reserved (future custom flame); "not yet supported".
    - (The legacy inline `?flame=v1:<gzip+base64url>` codec was removed in v0.32
      — superseded by this corpus URL.)

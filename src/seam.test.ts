@@ -4,7 +4,7 @@
 // (`src/*.ts` + `src/shaders/*.wgsl`) drive BOTH the browser viewer
 // (`src/main.ts`) and the headless CLI (`bin/pyr3-render.ts` +
 // `bin/pyr3-bake-features.ts`). The CLI hosts stamp WebGPU globals +
-// happy-dom's DOMParser onto `globalThis` before importing engine code;
+// linkedom's DOMParser onto `globalThis` before importing engine code;
 // engine code is supposed to be ENVIRONMENT-AGNOSTIC — never checking
 // `typeof window`, `process`, `isNode`, etc.
 //
@@ -52,8 +52,8 @@ const SEAM_EXEMPT = new Set<string>([
   'nav-menu.ts',          // top-nav menus — DOM-mounting + document dismiss listeners (#264)
   'about-mount.ts',       // /about page body — DOM-mounting (#103 visual overhaul)
   'variation-picker.ts',  // DOM-mounting variation picker (#79)
-  'screensaver-mount.ts', // /v1/screensaver page body — DOM-mounting (#109)
-  'screensaver-ui.ts',    // /v1/screensaver landing card — DOM-mounting (#109)
+  'screensaver-mount.ts', // /screensaver page body — DOM-mounting (#109)
+  'screensaver-ui.ts',    // /screensaver landing card — DOM-mounting (#109)
   'screensaver-record.ts', // MediaRecorder wrapper — URL.createObjectURL + anchor download (#111)
   'webgpu-check.ts',      // probes navigator.gpu — checking is its job
   'brotli.ts',            // platform-aware decoder probe (native vs wasm)
@@ -64,50 +64,50 @@ const SEAM_EXEMPT = new Set<string>([
   'parity.test.ts',       // test file
   'parity-fe-be.test.ts', // test file
   'render-orchestrator.ts', // orchestrator pulls rAF when available — see below
-  'edit-mount.ts',        // /v1/edit page mount — owns canvas + DOM
-  'edit-ui.ts',           // /v1/edit panel shell — DOM-mounting
-  'edit-section-palette.ts',  // /v1/edit section — DOM-mounting
-  'edit-section-viewport.ts', // /v1/edit section — DOM-mounting
-  'edit-section-xforms.ts',   // /v1/edit section — DOM-mounting
-  'edit-section-final.ts',    // /v1/edit section — DOM-mounting
-  'edit-section-global.ts',   // /v1/edit section — DOM-mounting
-  'edit-section-density.ts',  // /v1/edit section — DOM-mounting
-  'edit-section-render.ts',   // /v1/edit section — DOM-mounting
-  'edit-section-curves.ts',   // /v1/edit Color Curves section — DOM-mounting (#116)
-  'edit-section-hsl.ts',      // /v1/edit HSL Adjust section — DOM-mounting (#172)
-  'edit-canvas-nav.ts',   // /v1/edit pan + zoom — owns mouse/wheel listeners on window
-  'edit-xform-viz.ts',    // /v1/edit affine viz — owns a 2D canvas
-  'edit-variation-picker.ts',  // /v1/edit variation picker — owns a modal, document keydown listener
-  'edit-variation-kind.ts',    // /v1/edit variation-kind helpers — opens the picker on document.body (#236/#237)
-  'edit-scrubby-input.ts',     // /v1/edit drag-to-scrub numeric cell — owns DOM + pointer lock
-  'edit-primitives.ts',        // /v1/edit shared row/input/dropdown/swatch/pair builders (#103 Phase 7)
-  'edit-tooltip.ts',           // /v1/edit info-icon + anchored popover (#103 Phase 7)
-  'palette-picker.ts',         // /v1/edit docked palette picker (#103 Phase 9)
-  'edit-slow-render-nudge.ts', // /v1/edit slow-render UX nudge — owns toast DOM (#118)
+  'edit-mount.ts',        // /editor page mount — owns canvas + DOM
+  'edit-ui.ts',           // /editor panel shell — DOM-mounting
+  'edit-section-palette.ts',  // /editor section — DOM-mounting
+  'edit-section-viewport.ts', // /editor section — DOM-mounting
+  'edit-section-xforms.ts',   // /editor section — DOM-mounting
+  'edit-section-final.ts',    // /editor section — DOM-mounting
+  'edit-section-global.ts',   // /editor section — DOM-mounting
+  'edit-section-density.ts',  // /editor section — DOM-mounting
+  'edit-section-render.ts',   // /editor section — DOM-mounting
+  'edit-section-curves.ts',   // /editor Color Curves section — DOM-mounting (#116)
+  'edit-section-hsl.ts',      // /editor HSL Adjust section — DOM-mounting (#172)
+  'edit-canvas-nav.ts',   // /editor pan + zoom — owns mouse/wheel listeners on window
+  'edit-xform-viz.ts',    // /editor affine viz — owns a 2D canvas
+  'edit-variation-picker.ts',  // /editor variation picker — owns a modal, document keydown listener
+  'edit-variation-kind.ts',    // /editor variation-kind helpers — opens the picker on document.body (#236/#237)
+  'edit-scrubby-input.ts',     // /editor drag-to-scrub numeric cell — owns DOM + pointer lock
+  'edit-primitives.ts',        // /editor shared row/input/dropdown/swatch/pair builders (#103 Phase 7)
+  'edit-tooltip.ts',           // /editor info-icon + anchored popover (#103 Phase 7)
+  'palette-picker.ts',         // /editor docked palette picker (#103 Phase 9)
+  'edit-slow-render-nudge.ts', // /editor slow-render UX nudge — owns toast DOM (#118)
   'surprise-mount.ts',            // /surprise wall page mount — owns DOM (#186)
-  'variation-catalog-mount.ts',   // /v1/variations page mount — owns DOM (#119)
-  'variation-catalog-sidebar.ts', // /v1/variations sidebar — DOM-mounting (#119)
-  'variation-catalog-section.ts', // /v1/variations per-section component (#119)
+  'variation-catalog-mount.ts',   // /variations page mount — owns DOM (#119)
+  'variation-catalog-sidebar.ts', // /variations sidebar — DOM-mounting (#119)
+  'variation-catalog-section.ts', // /variations per-section component (#119)
   'render-progress-modal.ts',  // Save Render progress modal — owns DOM (#176)
   'render-mode-bar.ts',        // shared PREVIEW/RENDER bar — owns DOM (#176 Task 3)
   'size-preset-control.ts',    // shared SIZE_PRESETS dropdown widget — owns DOM (#274)
   'render-save.ts',            // shared Save Render helper — anchor download (#201 P0)
-  'animate-mount.ts',          // /v1/animate page body — DOM-mounting (#211 P6)
-  'animate-export-modal.ts',   // /v1/animate export modal — DOM-mounting (#212 P7)
-  'animate-easing-panel.ts',   // /v1/animate per-segment easing panel — DOM-mounting (#224)
-  'playback-bar.ts',           // /v1/animate scrubber — DOM-mounting (#211 P6)
-  'palette-editor.ts',         // /v1/gradient stop-bar editor — DOM-mounting (#115)
-  'color-picker.ts',           // /v1/gradient HSV picker popover — owns DOM (#115)
-  'gradient-page.ts',          // /v1/gradient page shell — DOM-mounting (#115)
-  'palette-file.ts',           // /v1/gradient .pyre-palette.json import/export — anchor download (#115)
-  'timeline-track.ts',         // /v1/animate timeline lane — DOM-mounting (clip blocks, draggable playhead) (#227c)
-  'timeline-thumbnails.ts',    // /v1/animate clip thumbnails — creates offscreen canvases via document (#227c)
-  'timeline-sections.ts',      // /v1/animate section-model authoring track — DOM-mounting (#227d)
-  'timeline-section-editor.ts',// /v1/animate clip/section inspector — DOM-mounting (#227d)
-  'timeline-context-panel.ts', // /v1/animate selection-editor overlay — DOM-mounting (#283)
-  'timeline-add-dialog.ts',    // /v1/animate animation-import modal — DOM-mounting (#227d)
-  'timeline-scale.ts',         // /v1/animate shared ruler — renderTicks/attachScrub touch DOM (#276)
-  'timeline-xform-pairing.ts', // /v1/animate xform-pairing widget — DOM-mounting (#282)
+  'animate-mount.ts',          // /animate page body — DOM-mounting (#211 P6)
+  'animate-export-modal.ts',   // /animate export modal — DOM-mounting (#212 P7)
+  'animate-easing-panel.ts',   // /animate per-segment easing panel — DOM-mounting (#224)
+  'playback-bar.ts',           // /animate scrubber — DOM-mounting (#211 P6)
+  'palette-editor.ts',         // /gradient stop-bar editor — DOM-mounting (#115)
+  'color-picker.ts',           // /gradient HSV picker popover — owns DOM (#115)
+  'gradient-page.ts',          // /gradient page shell — DOM-mounting (#115)
+  'palette-file.ts',           // /gradient .pyre-palette.json import/export — anchor download (#115)
+  'timeline-track.ts',         // /animate timeline lane — DOM-mounting (clip blocks, draggable playhead) (#227c)
+  'timeline-thumbnails.ts',    // /animate clip thumbnails — creates offscreen canvases via document (#227c)
+  'timeline-sections.ts',      // /animate section-model authoring track — DOM-mounting (#227d)
+  'timeline-section-editor.ts',// /animate clip/section inspector — DOM-mounting (#227d)
+  'timeline-context-panel.ts', // /animate selection-editor overlay — DOM-mounting (#283)
+  'timeline-add-dialog.ts',    // /animate animation-import modal — DOM-mounting (#227d)
+  'timeline-scale.ts',         // /animate shared ruler — renderTicks/attachScrub touch DOM (#276)
+  'timeline-xform-pairing.ts', // /animate xform-pairing widget — DOM-mounting (#282)
 ]);
 
 // Banned patterns — direct runtime checks for the host environment AND
@@ -206,7 +206,7 @@ describe('seam invariant — engine module surface is stable', () => {
 
   it('parseFlame is exported + accepts an XML string (smoke contract — no real flame parse)', () => {
     expect(typeof parseFlame).toBe('function');
-    // Don't call it — happy-dom not stamped in this env. The exported
+    // Don't call it — linkedom not stamped in this env. The exported
     // identity is the contract that matters for the seam.
   });
 

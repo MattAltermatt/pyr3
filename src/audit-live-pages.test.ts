@@ -12,7 +12,7 @@ describe('audit-live-pages checkHtml', () => {
         <body>
           <h1>pyr3 version ${version}</h1>
           <p>We support ${varCount} different variations!</p>
-          <a href="/v1/gen/247/id/19679">Open ${hero}</a>
+          <a href="/esf/gen/247/id/19679">Open ${hero}</a>
         </body>
       </html>
     `;
@@ -89,5 +89,35 @@ describe('audit-live-pages checkHtml', () => {
     `;
     const findings = checkHtml(html, version, varCount, hero);
     expect(findings.filter(f => f.type === 'hero')).toHaveLength(0);
+  });
+
+  it('flags legacy /v1/ route links (#264 dropped the prefix)', () => {
+    const html = `
+      <html>
+        <body>
+          <a href="/v1/edit">editor</a>
+          <a href="../v1/variations">catalog</a>
+        </body>
+      </html>
+    `;
+    const findings = checkHtml(html, version, varCount, hero);
+    const legacy = findings.filter(f => f.type === 'legacy-route');
+    expect(legacy.map(f => f.found)).toEqual(
+      expect.arrayContaining(['/v1/edit', '../v1/variations']),
+    );
+  });
+
+  it('does not flag a fully-migrated flat-route page', () => {
+    const html = `
+      <html>
+        <body>
+          <a href="/editor">editor</a>
+          <a href="../variations">catalog</a>
+          <a href="/esf/gen/247/id/19679">hero</a>
+        </body>
+      </html>
+    `;
+    const findings = checkHtml(html, version, varCount, hero);
+    expect(findings.filter(f => f.type === 'legacy-route')).toHaveLength(0);
   });
 });

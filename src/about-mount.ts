@@ -82,8 +82,8 @@ function buildExplore(): HTMLElement {
   const li = document.createElement('li');
   applyStyle(li, { margin: '6px 0' });
   // makeExternalLink opens in a new tab; reuse it even for the internal
-  // /v1/variations URL so the about page stays put as a reference surface.
-  li.appendChild(makeExternalLink('/v1/variations', 'Variation catalog'));
+  // /variations URL so the about page stays put as a reference surface.
+  li.appendChild(makeExternalLink('/variations', 'Variation catalog'));
   const detail = document.createElement('span');
   detail.textContent = ' · live demo of every variation in the engine — formula, warp diagram, real-time flame, weight + param scrubbies';
   applyStyle(detail, { color: COLORS.text.muted });

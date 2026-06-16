@@ -5,14 +5,14 @@ designed but not yet shipped, the **status** column says `planned`; it
 flips to `shipped` when the code lands. Update this file in the same PR
 as any new binding.
 
-## /v1/edit — canvas
+## /editor — canvas
 
 | Binding                  | Behavior                                                    | Status   |
 | ------------------------ | ----------------------------------------------------------- | -------- |
 | left-drag on flame       | Pan — cx / cy follow the cursor                             | shipped  |
 | wheel on flame           | Zoom — cursor-anchored; up = in, down = out                 | shipped  |
 
-## /v1/edit — xforms section
+## /editor — xforms section
 
 | Binding                       | Behavior                                                | Status   |
 | ----------------------------- | ------------------------------------------------------- | -------- |
@@ -25,7 +25,7 @@ as any new binding.
 | click `+ var` button          | Opens the picker; row appended on first preview        | shipped  |
 | click `⎘` (duplicate)         | Clone this xform inline below                          | shipped  |
 
-## /v1/edit — scrubby number inputs ([#105](https://github.com/MattAltermatt/pyr3/issues/105))
+## /editor — scrubby number inputs ([#105](https://github.com/MattAltermatt/pyr3/issues/105))
 
 Applies to every numeric cell in the editor panel EXCEPT the render
 section's width / height (those stay native — exact pixel typing).
@@ -42,20 +42,20 @@ Sensitivity is magnitude-relative: `delta_per_pixel = max(MIN_STEP_kind, |value|
 > Note: `ctrl` is NOT a modifier for fine-scrub. On macOS ctrl-click is
 > the OS context-menu gesture and pre-empts any drag. Use `alt/option`.
 
-## /v1/edit — global ([#108](https://github.com/MattAltermatt/pyr3/issues/108))
+## /editor — global ([#108](https://github.com/MattAltermatt/pyr3/issues/108))
 
 | Binding              | Behavior                                                   | Status   |
 | -------------------- | ---------------------------------------------------------- | -------- |
 | **Cmd/Ctrl-Z**       | Undo last editor edit                                      | shipped  |
 | **Cmd/Ctrl-Shift-Z** | Redo                                                       | shipped  |
 
-## /v1/viewer (corpus)
+## /esf (corpus)
 
 | Binding              | Behavior                                                   | Status   |
 | -------------------- | ---------------------------------------------------------- | -------- |
 | **← / →**            | Previous / next flame in the corpus                        | shipped  |
 
-## /v1/screensaver ([#111](https://github.com/MattAltermatt/pyr3/issues/111))
+## /screensaver ([#111](https://github.com/MattAltermatt/pyr3/issues/111))
 
 | Binding              | Behavior                                                   | Status   |
 | -------------------- | ---------------------------------------------------------- | -------- |

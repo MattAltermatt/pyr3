@@ -92,6 +92,38 @@ describe('makeAssetHandler — corpus proxy fallback', () => {
   });
 });
 
+// #319 — a bare proxy-root request (no trailing slash) must redirect to its
+// trailing-slash form so it proxies to pyr3.app like `/showcase/` does, rather
+// than falling through the extensionless SPA fallback and serving the shell.
+describe('makeAssetHandler — bare proxy-root redirect (#319)', () => {
+  it('301-redirects bare /showcase to /showcase/ instead of serving the SPA shell', () => {
+    // index.html present — the bug served THIS for /showcase; assert we don't.
+    const handler = makeAssetHandler(stubSource('index.html'));
+    const res = fakeRes();
+    handler(fakeReq('/showcase'), res);
+    expect(res._status).toBe(301);
+    expect(res._headers['location']).toBe('/showcase/');
+  });
+
+  it('redirects bare /chunks and /variation-thumbs the same way', () => {
+    const handler = makeAssetHandler(stubSource('index.html'));
+    for (const root of ['chunks', 'variation-thumbs']) {
+      const res = fakeRes();
+      handler(fakeReq(`/${root}`), res);
+      expect(res._status).toBe(301);
+      expect(res._headers['location']).toBe(`/${root}/`);
+    }
+  });
+
+  it('still serves index.html for a genuine extensionless app route', () => {
+    const handler = makeAssetHandler(stubSource('index.html'));
+    const res = fakeRes();
+    handler(fakeReq('/editor'), res);
+    expect(res._status).toBe(200);
+    expect(res._headers['location']).toBeUndefined();
+  });
+});
+
 // #258 — FsAssetSource path-traversal guard must use the separator boundary,
 // or a sibling directory sharing the root's name prefix (`/abs/dist-secret`
 // vs root `/abs/dist`) leaks through `..`.

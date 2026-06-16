@@ -362,7 +362,7 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   catalogLink.style.marginLeft = 'auto';
   function updateCatalogLink(idx: number): void {
     const name = VARIATION_NAMES[idx];
-    catalogLink.href = name ? `/v1/variations#${catalogAnchorSlug(idx, name)}` : '/v1/variations';
+    catalogLink.href = name ? `/variations#${catalogAnchorSlug(idx, name)}` : '/variations';
   }
   updateCatalogLink(currentIndex);
 

@@ -143,17 +143,32 @@ export function makeAssetHandler(
     }
     const url = req.url ?? '/';
     const pathname = url.split('?')[0] ?? '/';
-    // SPA fallback: serve index.html for / and any non-file path
-    // (Vite multi-page entries are `/v1/*` paths with explicit .html files;
-    // a bare path with no extension falls back to index).
+    // SPA fallback: the dist is a single index.html plus static help/showcase
+    // artifacts. Flat app routes (/editor, /esf/gen/.../id/..., etc.) have no
+    // standalone .html file, so a bare extensionless path falls back to index.
     let assetPath = pathname.replace(/^\/+/, '');
+    // A bare proxy-root request (`/showcase`, `/chunks`, `/variation-thumbs`)
+    // must redirect to its trailing-slash form so it proxies to pyr3.app like
+    // `/showcase/` already does — otherwise it falls through to the extensionless
+    // SPA fallback below and wrongly serves the viewer shell (#319).
+    if (
+      assetPath !== ''
+      && !assetPath.endsWith('/')
+      && PROXY_PREFIXES.some((p) => p === `${assetPath}/`)
+    ) {
+      res.statusCode = 301;
+      res.setHeader('Location', `/${assetPath}/`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.end();
+      return;
+    }
     if (assetPath === '' || assetPath.endsWith('/')) {
       assetPath = `${assetPath}index.html`;
     }
     let bytes = src.read(assetPath);
     let mimePath = assetPath;
     if (!bytes && !extname(assetPath)) {
-      // SPA fallback — clean URLs like /v1/gen/247/id/19679 resolve to
+      // SPA fallback — clean URLs like /esf/gen/247/id/19679 resolve to
       // index.html and must carry text/html, not octet-stream.
       bytes = src.read('index.html');
       mimePath = 'index.html';

@@ -810,7 +810,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     }
     // Footer — deflects explicit non-preset sizing to the editor.
     const footer = el('a', 'pyr3-size-footer') as HTMLAnchorElement;
-    footer.href = '/v1/edit';
+    footer.href = '/editor';
     footer.textContent = '⚙ Custom size & quality → open in Editor';
     menu.append(footer);
     return menu;

@@ -220,16 +220,20 @@ async function main(): Promise<void> {
   // consumer left is the viewer-mode pick (basic /viewer vs ESF /esf) below.
   function currentTabSurface(): TabSurface {
     const p = window.location.pathname;
-    if (p === '/esf/gallery' || p.startsWith('/esf/gallery')) return 'gallery';
-    if (p === '/editor' || p.startsWith('/editor')) return 'editor';
-    if (p === '/gradient') return 'gradient';
-    if (p === '/animate') return 'animate';
-    if (p === '/about' || p.startsWith('/about/')) return 'about';
-    if (p === '/screensaver') return 'screensaver';
-    if (p === '/viewer') return 'viewer';
-    // /esf and /esf/gen/<gen>/id/<id> deep-links are the ESF corpus surface;
+    // Uniform rule: a surface matches its exact root OR a deep-link beneath it
+    // (`root + '/'`). Only ESF actually owns sub-paths today (/esf/gen/.../id/...,
+    // /esf/gallery); the rest are flat singletons, but the same form keeps the
+    // classifier consistent and avoids `startsWith('/editor')` matching `/editorz`.
+    const is = (root: string): boolean => p === root || p.startsWith(root + '/');
+    if (is('/esf/gallery')) return 'gallery';
+    if (is('/editor')) return 'editor';
+    if (is('/gradient')) return 'gradient';
+    if (is('/animate')) return 'animate';
+    if (is('/about')) return 'about';
+    if (is('/screensaver')) return 'screensaver';
+    if (is('/viewer')) return 'viewer';
     // bare `/` and any unrecognized path resolve to the basic viewer.
-    if (p === '/esf' || p.startsWith('/esf/')) return 'esf';
+    if (is('/esf')) return 'esf';
     return 'viewer';
   }
 

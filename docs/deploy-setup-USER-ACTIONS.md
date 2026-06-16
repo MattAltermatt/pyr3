@@ -77,7 +77,7 @@ CNAME  www    <your-github-username>.github.io.
 ## 4. Verify
 
 - `https://pyr3.app/` loads the renderer over HTTPS.
-- `https://pyr3.app/v1/gen/247/id/<known-id>` loads that flame.
+- `https://pyr3.app/esf/gen/247/id/<known-id>` loads that flame.
 - (Optional) `dig pyr3.app +short` shows the four A records above.
 
 ---

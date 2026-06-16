@@ -40,7 +40,7 @@ import { type Genome } from './genome';
 
 // Overridable for tests — real nav is a full page load to the gradient page.
 export const gradientNav = {
-  go(): void { window.location.href = '/v1/gradient'; },
+  go(): void { window.location.href = '/gradient'; },
 };
 
 // Parse `flame #N` → N. Returns null when the name doesn't match.
