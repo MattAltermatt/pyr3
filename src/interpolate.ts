@@ -27,7 +27,8 @@
 //   flam3.c:797-882            flam3_interpolate         -> pickKeyframes + interpolate
 
 import { type Animation, type InterpolationType } from './animation';
-import { type Genome, type Xform } from './genome';
+import { type Genome, type Xform, type ChannelCurves, type CurvePoint } from './genome';
+import { IDENTITY_POINTS, evalCurve } from './channel-curves';
 import {
   type Variation,
   type VariationIndex,
@@ -216,6 +217,16 @@ export function interpolate(animation: Animation, time: number): Genome {
   // #291 — symmetry is NOT carried here: it was baked into xforms before this
   // blend (see top of interpolate / interpolateCatmullRom), so k0.symmetry is
   // already undefined and the result genome stays unsymmetried-as-a-field.
+
+  // #292 — post-tonemap color grading. UNLIKE the categorical carry-forward
+  // above, grading FADES from/to identity when only one keyframe carries it, so
+  // an HSL shift or color curve ramps in/out across the morph instead of
+  // popping at the boundary. Same bug class as #291 (a structured field that
+  // was silently dropped by interpolate()).
+  const hsl = interpolateHslAdjust(k0.hslAdjust, k1.hslAdjust, c0, c1);
+  if (hsl) out.hslAdjust = hsl;
+  const curves = interpolateChannelCurves(k0.channelCurves, k1.channelCurves, c0, c1);
+  if (curves) out.channelCurves = curves;
 
   return out;
 }
@@ -796,6 +807,122 @@ function interpolateTonemap(
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// #292 Color grading interp — post-tonemap HSL adjust + channel curves. Both
+// FADE from/to identity when only one keyframe carries them (NOT carry-forward
+// like the categorical fields), so the grade ramps across the morph. The render
+// path treats the identity values ({hue:0,sat:100,light:0} / the straight 0→1
+// curve) as no-ops, so this is a true cross-fade.
+
+/** flam3 has no HSL-adjust; identity = no change (hue 0°, sat 100%, light 0%). */
+const IDENTITY_HSL_ADJUST = { hue: 0, sat: 100, light: 0 } as const;
+type HslAdjust = { hue: number; sat: number; light: number };
+
+function interpolateHslAdjust(
+  a: HslAdjust | undefined, b: HslAdjust | undefined, c0: number, c1: number,
+): HslAdjust | undefined {
+  if (!a && !b) return undefined;
+  const x = a ?? IDENTITY_HSL_ADJUST;
+  const y = b ?? IDENTITY_HSL_ADJUST;
+  return {
+    hue: blendHueShortArc([x.hue, y.hue], [c0, c1]),
+    sat: blend(x.sat, y.sat, c0, c1),
+    light: blend(x.light, y.light, c0, c1),
+  };
+}
+
+function interpolateHslAdjustN(
+  adjs: (HslAdjust | undefined)[], cmc: number[],
+): HslAdjust | undefined {
+  if (adjs.every((a) => !a)) return undefined;
+  const filled = adjs.map((a) => a ?? IDENTITY_HSL_ADJUST);
+  return {
+    hue: blendHueShortArc(filled.map((a) => a.hue), cmc),
+    sat: blendN(filled.map((a) => a.sat), cmc),
+    light: blendN(filled.map((a) => a.light), cmc),
+  };
+}
+
+/** Weighted blend of hues (degrees) on the shorter arc. Sequentially unwraps
+ *  each hue into the prior one's ±180 window (same trick as the affine angle
+ *  unwrap) so the blend never sweeps the long way around the wheel, then
+ *  normalizes the result back into [−180, 180) (an exact 180 maps to −180 — the
+ *  same angle, so the boundary choice is cosmetic). */
+function blendHueShortArc(hues: number[], weights: number[]): number {
+  const h = hues.slice();
+  for (let k = 1; k < h.length; k++) {
+    const d = h[k]! - h[k - 1]!;
+    if (d > 180) h[k] = h[k]! - 360;
+    else if (d < -180) h[k] = h[k]! + 360;
+  }
+  const blended = blendN(h, weights);
+  return ((blended + 180) % 360 + 360) % 360 - 180;
+}
+
+const CURVE_CHANNELS = ['composite', 'r', 'g', 'b', 'luma'] as const;
+/** Max control points per channel curve — mirrors MAX_POINTS in channel-curves.ts. */
+const MAX_CURVE_POINTS = 8;
+
+function identityCurves(): ChannelCurves {
+  return {
+    composite: IDENTITY_POINTS, r: IDENTITY_POINTS, g: IDENTITY_POINTS,
+    b: IDENTITY_POINTS, luma: IDENTITY_POINTS,
+  };
+}
+
+function interpolateChannelCurves(
+  a: ChannelCurves | undefined, b: ChannelCurves | undefined, c0: number, c1: number,
+): ChannelCurves | undefined {
+  if (!a && !b) return undefined;
+  const x = a ?? identityCurves();
+  const y = b ?? identityCurves();
+  const out = {} as ChannelCurves;
+  for (const ch of CURVE_CHANNELS) out[ch] = blendCurve([x[ch], y[ch]], [c0, c1]);
+  return out;
+}
+
+function interpolateChannelCurvesN(
+  curves: (ChannelCurves | undefined)[], cmc: number[],
+): ChannelCurves | undefined {
+  if (curves.every((c) => !c)) return undefined;
+  const filled = curves.map((c) => c ?? identityCurves());
+  const out = {} as ChannelCurves;
+  for (const ch of CURVE_CHANNELS) out[ch] = blendCurve(filled.map((c) => c[ch]), cmc);
+  return out;
+}
+
+/** Blend N channel curves into one. Each curve defines y=f(x) over [0,1]; the
+ *  blend is the weighted sum of those functions, sampled at the UNION of the
+ *  inputs' control x's (deduped, capped at MAX_CURVE_POINTS). Exact when the
+ *  inputs share x positions (Catmull-Rom is linear in the control y's at fixed
+ *  x); a smooth approximation otherwise. */
+function blendCurve(points: CurvePoint[][], weights: number[]): CurvePoint[] {
+  const EPS_X = 1e-6;
+  const sorted = points.flat().map((p) => p.x).sort((p, q) => p - q);
+  const xs: number[] = [];
+  for (const x of sorted) {
+    if (xs.length === 0 || x - xs[xs.length - 1]! > EPS_X) xs.push(x);
+  }
+  const sampleXs = xs.length <= MAX_CURVE_POINTS ? xs : downsampleKeepingEnds(xs, MAX_CURVE_POINTS);
+  return sampleXs.map((x) => ({
+    x,
+    y: clamp01(blendN(points.map((p) => evalCurve(p, x)), weights)),
+  }));
+}
+
+/** Pick `k` x-values evenly across `xs`, always keeping the two endpoints. Used
+ *  only when two curves' combined distinct x's exceed the 8-point cap (rare). */
+function downsampleKeepingEnds(xs: number[], k: number): number[] {
+  const n = xs.length;
+  const out: number[] = [];
+  for (let i = 0; i < k; i++) {
+    const idx = Math.round((i * (n - 1)) / (k - 1));
+    const x = xs[idx]!;
+    if (out.length === 0 || x !== out[out.length - 1]) out.push(x);
+  }
+  return out;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // #213 Catmull-Rom smooth interp — the only N-keyframe (n=4) blend path. The
 // 2-keyframe linear path above stays untouched / byte-identical; this contained
 // path mirrors flam3's flam3_interpolate_n(result, 4, cpi, cmc) (the smooth
@@ -921,6 +1048,14 @@ function interpolateCatmullRom(
   if (kfs[1]!.paletteMode) out.paletteMode = kfs[1]!.paletteMode;
   // #291 — symmetry baked into xforms before this blend (callers pass
   // symmetry-baked kfs), so it is not carried as a field here.
+
+  // #292 — color grading, N-keyframe generalization of the 2-keyframe blend.
+  // Same fade-from-identity rule (absent side = identity), so grading ramps
+  // across a smooth multi-keyframe morph instead of popping.
+  const hsl = interpolateHslAdjustN(kfs.map((k) => k.hslAdjust), cmc);
+  if (hsl) out.hslAdjust = hsl;
+  const curves = interpolateChannelCurvesN(kfs.map((k) => k.channelCurves), cmc);
+  if (curves) out.channelCurves = curves;
 
   return out;
 }

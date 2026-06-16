@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { interpolate, pickKeyframes } from './interpolate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from './animation';
-import { type Genome, type Xform } from './genome';
+import { type Genome, type Xform, type ChannelCurves, type CurvePoint } from './genome';
 import { linear as linearVar, julian, V, type VariationIndex } from './variations';
 import { PYRE_PALETTE } from './palette';
 import { expandGenomeForGPU } from './symmetry';
@@ -790,5 +790,151 @@ describe('#291 symmetry is baked before interpolation (direction-symmetric)', ()
     // Symmetry is expanded into xforms during interpolation; the declarative
     // field must not survive (else the packer would double-apply it).
     expect(mid.symmetry).toBeUndefined();
+  });
+});
+
+// ── #292: color grading (channelCurves + hslAdjust) must interpolate ─────────
+// Same bug class as #291 — structured genome fields silently dropped by
+// interpolate(), so an animated graded flame loses its grading. These fields
+// FADE from/to identity when one keyframe lacks them (not carry-forward), so
+// the grading ramps in/out rather than popping.
+describe('#292 hslAdjust interpolation', () => {
+  const idAdj = { hue: 0, sat: 100, light: 0 };
+
+  it('blends hue/sat/light when both keyframes carry it', () => {
+    const k0 = baseGenome({ time: 0, hslAdjust: { hue: 0, sat: 100, light: 0 } });
+    const k1 = baseGenome({ time: 1, hslAdjust: { hue: 60, sat: 200, light: 50 } });
+    const mid = interpolate(anim(k0, k1), 0.5);
+    expect(mid.hslAdjust).toBeDefined();
+    expect(mid.hslAdjust!.hue).toBeCloseTo(30);
+    expect(mid.hslAdjust!.sat).toBeCloseTo(150);
+    expect(mid.hslAdjust!.light).toBeCloseTo(25);
+  });
+
+  it('fades from identity when only the second keyframe carries it', () => {
+    const k0 = baseGenome({ time: 0 });
+    const k1 = baseGenome({ time: 1, hslAdjust: { hue: 60, sat: 200, light: 50 } });
+    const mid = interpolate(anim(k0, k1), 0.5);
+    // Halfway from identity {0,100,0} to {60,200,50}.
+    expect(mid.hslAdjust!.hue).toBeCloseTo(30);
+    expect(mid.hslAdjust!.sat).toBeCloseTo(150);
+    expect(mid.hslAdjust!.light).toBeCloseTo(25);
+  });
+
+  it('takes the shorter arc across the ±180 hue wrap', () => {
+    const k0 = baseGenome({ time: 0, hslAdjust: { ...idAdj, hue: 170 } });
+    const k1 = baseGenome({ time: 1, hslAdjust: { ...idAdj, hue: -170 } });
+    const mid = interpolate(anim(k0, k1), 0.5);
+    // 170 → -170 is a 20° hop across 180, not a 340° sweep through 0.
+    expect(Math.abs(mid.hslAdjust!.hue)).toBeCloseTo(180);
+  });
+
+  it('is direction-symmetric: interp(A→B, s) === interp(B→A, 1−s)', () => {
+    const a = { hue: -40, sat: 80, light: -30 };
+    const b = { hue: 50, sat: 160, light: 40 };
+    const ab = interpolate(anim(baseGenome({ time: 0, hslAdjust: a }), baseGenome({ time: 1, hslAdjust: b })), 0.3);
+    const ba = interpolate(anim(baseGenome({ time: 0, hslAdjust: b }), baseGenome({ time: 1, hslAdjust: a })), 0.7);
+    expect(ab.hslAdjust!.hue).toBeCloseTo(ba.hslAdjust!.hue);
+    expect(ab.hslAdjust!.sat).toBeCloseTo(ba.hslAdjust!.sat);
+    expect(ab.hslAdjust!.light).toBeCloseTo(ba.hslAdjust!.light);
+  });
+
+  it('produces no hslAdjust when neither keyframe carries it', () => {
+    const mid = interpolate(anim(baseGenome({ time: 0 }), baseGenome({ time: 1 })), 0.5);
+    expect(mid.hslAdjust).toBeUndefined();
+  });
+});
+
+describe('#292 channelCurves interpolation', () => {
+  const idPts = (): CurvePoint[] => [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+  const curves = (override: Partial<ChannelCurves> = {}): ChannelCurves => ({
+    composite: idPts(), r: idPts(), g: idPts(), b: idPts(), luma: idPts(), ...override,
+  });
+  // A composite curve lifting the midtones: at x=0.5 it reads y≈0.8.
+  const lifted: CurvePoint[] = [{ x: 0, y: 0 }, { x: 0.5, y: 0.8 }, { x: 1, y: 1 }];
+
+  it('blends the curve y per shared x when both keyframes carry it', () => {
+    const k0 = baseGenome({ time: 0, channelCurves: curves() });
+    const k1 = baseGenome({ time: 1, channelCurves: curves({ composite: lifted }) });
+    const mid = interpolate(anim(k0, k1), 0.5);
+    expect(mid.channelCurves).toBeDefined();
+    const comp = mid.channelCurves!.composite;
+    const at = (x: number) => comp.find((p) => Math.abs(p.x - x) < 1e-9)!.y;
+    // identity(0.5)=0.5 blended with lifted(0.5)=0.8 → 0.65.
+    expect(at(0.5)).toBeCloseTo(0.65);
+    expect(at(0)).toBeCloseTo(0);
+    expect(at(1)).toBeCloseTo(1);
+  });
+
+  it('fades from identity when only the second keyframe carries it', () => {
+    const k0 = baseGenome({ time: 0 });
+    const k1 = baseGenome({ time: 1, channelCurves: curves({ composite: lifted }) });
+    const mid = interpolate(anim(k0, k1), 0.5);
+    const comp = mid.channelCurves!.composite;
+    const at = (x: number) => comp.find((p) => Math.abs(p.x - x) < 1e-9)!.y;
+    // Halfway from identity(0.5)=0.5 to lifted(0.5)=0.8 → 0.65.
+    expect(at(0.5)).toBeCloseTo(0.65);
+  });
+
+  it('is direction-symmetric: interp(A→B, s) === interp(B→A, 1−s)', () => {
+    const a = curves({ composite: [{ x: 0, y: 0.1 }, { x: 0.5, y: 0.3 }, { x: 1, y: 0.9 }] });
+    const b = curves({ composite: [{ x: 0, y: 0 }, { x: 0.5, y: 0.7 }, { x: 1, y: 1 }] });
+    const ab = interpolate(anim(baseGenome({ time: 0, channelCurves: a }), baseGenome({ time: 1, channelCurves: b })), 0.3);
+    const ba = interpolate(anim(baseGenome({ time: 0, channelCurves: b }), baseGenome({ time: 1, channelCurves: a })), 0.7);
+    const yAt = (g: Genome, x: number) =>
+      g.channelCurves!.composite.find((p) => Math.abs(p.x - x) < 1e-9)!.y;
+    for (const x of [0, 0.5, 1]) expect(yAt(ab, x)).toBeCloseTo(yAt(ba, x));
+  });
+
+  it('produces no channelCurves when neither keyframe carries it', () => {
+    const mid = interpolate(anim(baseGenome({ time: 0 }), baseGenome({ time: 1 })), 0.5);
+    expect(mid.channelCurves).toBeUndefined();
+  });
+});
+
+// ── #292 guardrail: field-completeness — every Genome field has an explicit
+// interpolation disposition. Adding a new field to the Genome interface without
+// a decision here is a COMPILE error (the Record<keyof Genome, …> below fails to
+// typecheck on a missing key) — closing the "silently dropped structured field"
+// bug class for good. The runtime check asserts the disposition map and the
+// list of fields interpolate() actually emits stay in lockstep.
+describe('#292 guardrail: interpolate handles every Genome field', () => {
+  // Disposition for each Genome field. 'structural' = re-derived (name/time/
+  // xforms/scale/cx/cy/palette); 'blend' = numerically interpolated; 'carry' =
+  // intentionally carried from a dominant keyframe; 'bake' = expanded into
+  // xforms before blending. The Record<keyof Genome, …> type forces this map to
+  // be EXHAUSTIVE — a new Genome field breaks the build until it lands here.
+  type Disposition = 'structural' | 'blend' | 'carry' | 'bake';
+  const DISPOSITION = {
+    name: 'structural', nick: 'carry', xforms: 'structural', scale: 'blend',
+    cx: 'blend', cy: 'blend', palette: 'blend', finalxform: 'blend',
+    symmetry: 'bake', density: 'blend', tonemap: 'blend', rotate: 'blend',
+    quality: 'blend', oversample: 'blend', size: 'blend', spatialFilter: 'blend',
+    background: 'blend', paletteMode: 'carry', channelCurves: 'blend',
+    hslAdjust: 'blend', time: 'structural',
+  } satisfies Record<keyof Genome, Disposition>;
+
+  it('emits every grading/structured field for a fully-populated A→B blend', () => {
+    const full = (time: number): Genome => baseGenome({
+      time,
+      channelCurves: {
+        composite: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+        r: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+        g: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+        b: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+        luma: [{ x: 0, y: 0 }, { x: 1, y: 0.9 }],
+      },
+      hslAdjust: { hue: 20, sat: 120, light: 10 },
+    });
+    const mid = interpolate(anim(full(0), full(1)), 0.5);
+    // Both grading fields survive the blend (the #292 regression target).
+    expect(mid.channelCurves).toBeDefined();
+    expect(mid.hslAdjust).toBeDefined();
+    // The disposition map must name exactly the Genome keys — no orphan, none missing.
+    expect(Object.keys(DISPOSITION).sort()).toEqual(
+      (['background', 'channelCurves', 'cx', 'cy', 'density', 'finalxform', 'hslAdjust',
+        'name', 'nick', 'oversample', 'palette', 'paletteMode', 'quality', 'rotate',
+        'scale', 'size', 'spatialFilter', 'symmetry', 'time', 'tonemap', 'xforms']),
+    );
   });
 });

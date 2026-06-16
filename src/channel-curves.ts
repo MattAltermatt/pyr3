@@ -78,7 +78,7 @@ function evalSpline(u: number, xa: number, xb: number, xc: number, xd: number): 
   return c + xb;
 }
 
-function evalCurve(points: CurvePoint[], x: number): number {
+export function evalCurve(points: CurvePoint[], x: number): number {
   const first = points[0]!;
   const last = points[points.length - 1]!;
   // Edge clamp — JWF Envelope.evaluate convention.
