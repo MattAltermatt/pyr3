@@ -26,6 +26,8 @@ export interface VisualizePass {
     background: [number, number, number],
     channelCurves?: ChannelCurves,
     hslAdjust?: { hue: number; sat: number; light: number },
+    /** #334 — transparent-background export: output alpha + skip bg blend. */
+    transparent?: boolean,
   ): void;
   /** Phase 9-size: release owned GPU buffers. */
   destroy(): void;
@@ -163,6 +165,7 @@ export function createVisualizePass(
       background: [number, number, number],
       channelCurves?: ChannelCurves,
       hslAdjust?: { hue: number; sat: number; light: number },
+      transparent: boolean = false,
     ): void {
       const mask = channelCurves ? activeMask(channelCurves) : 0;
       if (channelCurves && mask !== 0) {
@@ -196,6 +199,8 @@ export function createVisualizePass(
       } else {
         u32[17] = 0;
       }
+      // #334 — transparent-background export (slot 21 = the former _pad7).
+      u32[21] = transparent ? 1 : 0;
       device.queue.writeBuffer(uniforms, 0, u32.buffer);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.viz.encoder' });

@@ -55,6 +55,8 @@ export interface OrchestratorOpts {
   /** #65 Tier 1 — walker-jitter forwarded to renderer.iterate. Default
    *  DEFAULT_WALKER_JITTER (a scale-relative proportional factor since #43). */
   walkerJitter?: number;
+  /** #334 — transparent-background export, forwarded to present(). */
+  transparent?: boolean;
 }
 
 export interface ProgressInfo {
@@ -238,6 +240,7 @@ export function startChunkedRender(opts: OrchestratorOpts): RunHandle {
           genome: opts.genome,
           outputView: opts.outputViewProvider(),
           totalSamples: samplesAccumulated,
+          transparent: opts.transparent,
         });
       }
       const elapsed = (performance.now() - startTime) / 1000;
@@ -263,6 +266,7 @@ export function startChunkedRender(opts: OrchestratorOpts): RunHandle {
         genome: opts.genome,
         outputView: opts.outputViewProvider(),
         totalSamples: samplesAccumulated,
+        transparent: opts.transparent,
       });
     }
     return 'completed';

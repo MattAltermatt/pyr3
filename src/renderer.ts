@@ -94,6 +94,8 @@ export interface RenderRequest {
   seed?: number;
   /** Forces DE off regardless of genome.density. */
   forceDeOff?: boolean;
+  /** #334 — transparent-background export (passed through to present()). */
+  transparent?: boolean;
   /** #65 Tier 1 — override walker-jitter for this render. Defaults to
    *  DEFAULT_WALKER_JITTER (`src/chaos.ts`); since #43 a scale-relative
    *  proportional factor, not an absolute amplitude. */
@@ -116,6 +118,9 @@ export interface PresentRequest {
    *  since the last `reset()`. Drives the log-density calibration. */
   totalSamples: number;
   forceDeOff?: boolean;
+  /** #334 — when true, output accumulated alpha + skip the background blend
+   *  (transparent-background PNG export). Default false ⇒ opaque composite. */
+  transparent?: boolean;
 }
 
 // Canvas-repoint contract (relied on by the gallery wave-fill orchestrator):
@@ -174,6 +179,11 @@ export interface Renderer {
    *  promise resolves. */
   readIndexMap(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }>;
 
+  /** #334 — read back the raw RGBA accumulation histogram (super-res, 4 u32
+   *  per super-pixel) for linear-HDR EXR export. Collapse to output dims with
+   *  export-linear's histogramToLinearRgba. Call after the render completes. */
+  readHistogram(): Promise<{ rgba: Uint32Array; superW: number; superH: number }>;
+
   destroy(): void;
 }
 
@@ -218,7 +228,7 @@ export function createRenderer(
       // Phase 9-bg-palmode: default applied at this consumer boundary so
       // the genome stays a faithful echo of source XML. flam3 default = [0,0,0].
       const background = genome.background ?? [0, 0, 0];
-      pipelines.viz.draw(tonemap, k1, k2, useDE, req.outputView, background, genome.channelCurves, genome.hslAdjust);
+      pipelines.viz.draw(tonemap, k1, k2, useDE, req.outputView, background, genome.channelCurves, genome.hslAdjust, req.transparent ?? false);
     },
 
     render(req: RenderRequest): void {
@@ -234,7 +244,7 @@ export function createRenderer(
 
       renderer.reset(genome);
       renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter: req.walkerJitter });
-      renderer.present({ genome, outputView: req.outputView, totalSamples: actualSamples, forceDeOff: req.forceDeOff });
+      renderer.present({ genome, outputView: req.outputView, totalSamples: actualSamples, forceDeOff: req.forceDeOff, transparent: req.transparent });
     },
 
     resize(opts: RendererOptions): void {
@@ -265,6 +275,9 @@ export function createRenderer(
 
     readIndexMap(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }> {
       return pipelines.chaos.readIndexAndCount();
+    },
+    readHistogram(): Promise<{ rgba: Uint32Array; superW: number; superH: number }> {
+      return pipelines.chaos.readHistogramRgba();
     },
 
     destroy(): void {

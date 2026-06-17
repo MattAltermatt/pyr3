@@ -13,6 +13,51 @@
 
 export type PreviewTier = 'fast' | 'balanced' | 'sharp';
 
+// #334 — Save Render output-format preference. Sticky per-browser, like the
+// preview config; not part of the genome. `ExportFormat` is re-declared here
+// (kept in sync with render-save.ts) to keep this low-level config module free
+// of render-save's heavy import graph.
+export type ExportFormat = 'png8' | 'png16' | 'exr';
+
+export interface ExportConfig {
+  format: ExportFormat;
+  transparent: boolean;
+}
+
+export const DEFAULT_EXPORT_CONFIG: ExportConfig = { format: 'png8', transparent: false };
+
+const EXPORT_STORAGE_KEY = 'pyr3-export-config';
+const VALID_FORMATS: ReadonlyArray<ExportFormat> = ['png8', 'png16', 'exr'];
+
+/** Read ExportConfig from localStorage; DEFAULT on any failure. */
+export function loadExportConfig(): ExportConfig {
+  try {
+    const raw = globalThis.localStorage?.getItem(EXPORT_STORAGE_KEY);
+    if (raw === null || raw === undefined) return { ...DEFAULT_EXPORT_CONFIG };
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return { ...DEFAULT_EXPORT_CONFIG };
+    const obj = parsed as Record<string, unknown>;
+    if (obj._v !== SCHEMA_VERSION) return { ...DEFAULT_EXPORT_CONFIG };
+    const format = VALID_FORMATS.includes(obj.format as ExportFormat)
+      ? (obj.format as ExportFormat)
+      : DEFAULT_EXPORT_CONFIG.format;
+    return { format, transparent: obj.transparent === true };
+  } catch (err) {
+    console.warn('pyr3: loadExportConfig failed; falling back to defaults', err);
+    return { ...DEFAULT_EXPORT_CONFIG };
+  }
+}
+
+/** Persist ExportConfig to localStorage. Silent on quota failure. */
+export function saveExportConfig(cfg: ExportConfig): void {
+  try {
+    const payload = { format: cfg.format, transparent: cfg.transparent, _v: SCHEMA_VERSION };
+    globalThis.localStorage?.setItem(EXPORT_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('pyr3: saveExportConfig failed (localStorage quota?)', err);
+  }
+}
+
 export interface PreviewRenderConfig {
   tier: PreviewTier;
   quality: number; // iter density target; clamped to [10, 50]

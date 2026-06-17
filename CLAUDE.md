@@ -15,6 +15,8 @@ npm run typecheck:engine        # no-DOM kernel typecheck — enforces the FE/BE
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims (tsx ESM)
 npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
 npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (reference SHOWCASE_4K)
+npm run render -- --format png8|png16|exr|exr-linear <in> <out>  # output format (default png8): png8/png16=display-referred PNG (what you see) · exr=display image stored as linear-light 32f OpenEXR → opens looking like the editor in any viewer (sRGB_to_linear of the display pixels; uncompressed) · exr-linear=ADVANCED raw scene-referred linear HDR (pre-log/pre-gamma, huge range — tonemap in post) (#334)
+npm run render -- --transparent <in> <out>         # transparent background for png8/png16 (no effect on exr) (#334)
 npm run bundle:cli render                           # produce build/.tmp/pyr3-render.cjs (esbuild bundle)
 npm run smoke:cli                                   # end-to-end smoke for the bundled CJS
 npm run build:cli render                            # produce ./build/pyr3-render — standalone SEA binary (~155 MB)

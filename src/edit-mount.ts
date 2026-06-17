@@ -28,7 +28,7 @@ import {
 import { generateRandomGenome } from './edit-seed';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
-import { saveRenderToPng } from './render-save';
+import { saveRenderToPng, type ExportFormat } from './render-save';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import {
   type PreviewRenderConfig,
@@ -1008,7 +1008,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // #176 — gates the Save Render button + lane-conflict assertions in tests.
   let renderInFlight = false;
 
-  async function handleRenderPng(): Promise<void> {
+  async function handleRenderPng(
+    exportOpts: { format: ExportFormat; transparent: boolean } = { format: 'png8', transparent: false },
+  ): Promise<void> {
     if (renderInFlight) return;
     renderInFlight = true;
     const targetW = state.genome.size?.width ?? 1024;
@@ -1072,6 +1074,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         metadataJson: JSON.stringify(genomeToJson(genomeForSerialize())),
         targetSamples,
         seedBase: state.seed,
+        format: exportOpts.format,
+        transparent: exportOpts.transparent,
       });
       if (outcome === 'cancelled') {
         // User-cancelled — silent (modal close + restore is enough signal).
@@ -1085,7 +1089,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
           notifyStateChange();
         }
         // #176 — post-save toast confirms filename + Downloads landing.
-        showToast(panelHost, `💾 Saved ${filename}.pyr3.png to Downloads`);
+        // #334 — reflect the chosen format's extension.
+        const savedExt = exportOpts.format === 'exr' ? 'exr' : 'png';
+        showToast(panelHost, `💾 Saved ${filename}.pyr3.${savedExt} to Downloads`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1224,7 +1230,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // Render-side quality only matters at Save Render time; no re-iterate
       // needed for the live preview (it uses previewCfg.quality, not this).
     },
-    onSaveRender: () => handleRenderPng(),
+    onSaveRender: (exp) => handleRenderPng(exp),
     canSave: () => !renderInFlight,
     showToast: (msg) => showToast(panelHost, msg),
   });

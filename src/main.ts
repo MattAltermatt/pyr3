@@ -55,7 +55,7 @@ import { applyPreset, DEFAULT_TIER, QUALITY_TIERS, tierToSpec, type PresetSpec, 
 import { longEdgeScaleAdjust, rescaleGenomeToOutput } from './output-size';
 import { pickSurpriseFlame } from './viewer-dice';
 import { startChunkedRender, startDecoupledRender, type RunHandle } from './render-orchestrator';
-import { saveRenderToPng } from './render-save';
+import { saveRenderToPng, type ExportFormat } from './render-save';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { createEditRenderer } from './edit-render';
 import {
@@ -813,7 +813,9 @@ async function main(): Promise<void> {
   // (now duplicated by render-mode-bar). CSS selector in index.html.
   document.body.classList.add('pyr3-has-render-mode-bar');
 
-  async function viewerSaveRender(): Promise<void> {
+  async function viewerSaveRender(
+    exportOpts: { format: ExportFormat; transparent: boolean } = { format: 'png8', transparent: false },
+  ): Promise<void> {
     if (viewerRenderInFlight) return;
     viewerRenderInFlight = true;
     // #176 — render dims + quality come from viewerRenderCfg (workstation
@@ -898,11 +900,15 @@ async function main(): Promise<void> {
         targetSamples,
         seedBase: seed,
         walkerJitter: currentWalkerJitter,
+        format: exportOpts.format,
+        transparent: exportOpts.transparent,
       });
       if (outcome === 'cancelled') {
         cancelled = true;
       } else {
-        bar.showToast(`💾 Saved ${filename} to Downloads`);
+        // #334 — reflect the chosen format's extension in the toast.
+        const savedName = exportOpts.format === 'exr' ? filename.replace(/\.[^.]+$/, '') + '.exr' : filename;
+        bar.showToast(`💾 Saved ${savedName} to Downloads`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -956,7 +962,7 @@ async function main(): Promise<void> {
       viewerRenderCfg = { ...viewerRenderCfg, quality: Math.max(1, q) };
       saveViewerRenderConfig(viewerRenderCfg);
     },
-    onSaveRender: () => viewerSaveRender(),
+    onSaveRender: (exp) => viewerSaveRender(exp),
     canSave: () => !viewerRenderInFlight,
     showToast: (msg) => bar.showToast(msg),
   });

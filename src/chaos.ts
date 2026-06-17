@@ -93,6 +93,11 @@ export interface ChaosPass {
    *  super-pixel. Caller downsamples to output dims (see color-index-map.ts).
    *  Call after the render's iteration completes. */
   readIndexAndCount(): Promise<{ idxSum: Uint32Array; count: Uint32Array; width: number; height: number }>;
+  /** #334 — read back the full raw RGBA accumulation histogram (R, G, B, count
+   *  u32 per super-pixel) for linear-HDR EXR export. The caller collapses
+   *  oversample blocks to output dims (see export-linear.ts). Call after the
+   *  render's iteration completes. */
+  readHistogramRgba(): Promise<{ rgba: Uint32Array; superW: number; superH: number }>;
   /** Phase 9-size: release owned GPU buffers. Caller is responsible for not
    *  using the pass after destroy(). */
   destroy(): void;
@@ -255,6 +260,22 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       const count = new Uint32Array(w * h);
       for (let i = 0; i < w * h; i++) count[i] = histArr[i * HIST_CHANNELS + 3]!;
       return { idxSum: idxArr, count, width: w, height: h };
+    },
+
+    async readHistogramRgba(): Promise<{ rgba: Uint32Array; superW: number; superH: number }> {
+      const histStaging = device.createBuffer({
+        label: 'pyr3.chaos.histRgba.read',
+        size: histogramBytes,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const enc = device.createCommandEncoder({ label: 'pyr3.chaos.histRgbaRead' });
+      enc.copyBufferToBuffer(histogram, 0, histStaging, 0, histogramBytes);
+      device.queue.submit([enc.finish()]);
+      await histStaging.mapAsync(GPUMapMode.READ);
+      const rgba = new Uint32Array(histStaging.getMappedRange().slice(0));
+      histStaging.unmap();
+      histStaging.destroy();
+      return { rgba, superW: config.width, superH: config.height };
     },
 
     reset(): void {

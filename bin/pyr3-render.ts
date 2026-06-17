@@ -12,11 +12,19 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, basename, extname } from 'node:path';
 import { PNG } from 'pngjs';
 
-import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch } from '../src/renderer';
+import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch, DEFAULT_SPP } from '../src/renderer';
+import { deriveCalibration } from '../src/calibration';
 import { type Genome } from '../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../src/chaos';
 import { genomeToJson } from '../src/serialize';
 import { injectPngTextChunk } from '../src/png-text-chunk';
+import { encodeExr } from '../src/exr-encode';
+import { encodePng16 } from '../src/png16-encode';
+import { histogramToLinearRgba } from '../src/export-linear';
+import { srgbToLinear } from '../src/srgb';
+import { halfToFloat } from '../src/half-float';
+import { DEFAULT_TONEMAP } from '../src/tonemap';
+import { deflateSync } from 'node:zlib';
 import {
   applyPreset,
   customSpec,
@@ -40,6 +48,8 @@ async function main(): Promise<void> {
   let seedOverride: number | null = null;
   let walkerJitter: number = DEFAULT_WALKER_JITTER;
   let walkersOverride: number | null = null;
+  let outFormat: 'png8' | 'png16' | 'exr' | 'exr-linear' = 'png8';
+  let transparent = false;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -92,6 +102,20 @@ async function main(): Promise<void> {
       // Smaller iters_per_walker = re-fuse-like behavior (each walker has a
       // bounded lifetime, can't get trapped on a singular f32 orbit).
       walkersOverride = parsePositiveInt(rawArgs[++i], '--walkers');
+    } else if (a === '--format') {
+      // #334 — output format. png8 = legacy 8-bit display-referred PNG;
+      // png16 = 16-bit display-referred PNG (rgba16float readback); exr =
+      // true linear scene-referred 32f EXR (raw histogram, pre-log/gamma).
+      const v = rawArgs[++i];
+      if (v !== 'png8' && v !== 'png16' && v !== 'exr' && v !== 'exr-linear') {
+        console.error('--format requires one of: png8, png16, exr, exr-linear');
+        process.exit(1);
+      }
+      outFormat = v;
+    } else if (a === '--transparent') {
+      // #334 — transparent background for png8/png16 (no effect on exr, which
+      // is inherently background-free linear data).
+      transparent = true;
     } else if (a.startsWith('--sample-inflate=')) {
       // PYR3-029 probe: multiplies the `totalSamples` passed to
       // deriveCalibration, shrinking k2 by the same factor. Use to
@@ -121,9 +145,15 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const inputPath = resolve(args[0]!);
-  const outPath = args[1]
+  const isExr = outFormat === 'exr' || outFormat === 'exr-linear';
+  const defaultExt = isExr ? 'exr' : 'png';
+  let outPath = args[1]
     ? resolve(args[1])
-    : resolve(`${basename(inputPath, extname(inputPath))}.png`);
+    : resolve(`${basename(inputPath, extname(inputPath))}.${defaultExt}`);
+  // #334 — honor the chosen format's extension even if a mismatched path is given.
+  if (isExr && extname(outPath).toLowerCase() !== '.exr') {
+    outPath = outPath.slice(0, outPath.length - extname(outPath).length) + '.exr';
+  }
 
   // 1. Load genome.
   const text = readFileSync(inputPath, 'utf8');
@@ -178,16 +208,21 @@ async function main(): Promise<void> {
   const device = await acquireDawnDevice('pyr3-render');
 
   // 3. Build renderer + offscreen texture.
-  // Use rgba8unorm (no sRGB conversion in the pipeline — pyr3's fragment
-  // shader writes already-encoded values, so we want the bytes to land in
-  // the buffer unchanged. PNG viewers interpret bytes as sRGB by default.)
-  const format = 'rgba8unorm' as const;
-  const renderer = createRenderer(device, format, { width, height, oversample, filterRadius });
+  // png8/exr use rgba8unorm (no sRGB conversion — pyr3's fragment shader writes
+  // already-encoded values; PNG viewers interpret bytes as sRGB). png16 renders
+  // through rgba16float to capture sub-8-bit display-referred precision (#334).
+  // exr ignores the presented texture entirely — it reads the linear histogram.
+  // png16 + the default (looks-like-editor) exr render the display tonemap to
+  // rgba16float; png8 + exr-linear use rgba8unorm (exr-linear reads the
+  // histogram, ignoring the presented texture). (#334)
+  const gpuFormat: GPUTextureFormat =
+    outFormat === 'png16' || outFormat === 'exr' ? 'rgba16float' : 'rgba8unorm';
+  const renderer = createRenderer(device, gpuFormat, { width, height, oversample, filterRadius });
 
   const texture = device.createTexture({
     label: 'pyr3-render.output',
     size: { width, height },
-    format,
+    format: gpuFormat,
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
 
@@ -200,6 +235,7 @@ async function main(): Promise<void> {
       forceDeOff,
       seed: seedOverride ?? undefined,
       walkerJitter,
+      transparent,
     });
   } else {
     // Probe path: manual walker-sizing for #43 re-fuse probe (--walkers) and/or
@@ -222,54 +258,106 @@ async function main(): Promise<void> {
       outputView: texture.createView(),
       totalSamples: actualSamples * sampleInflate,
       forceDeOff,
+      transparent,
     });
   }
 
-  // 5. Copy texture → buffer. Bytes-per-row must be 256-aligned.
-  const bytesPerPixel = 4;
-  const unpaddedBytesPerRow = width * bytesPerPixel;
-  const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-  const readBufSize = bytesPerRow * height;
-  const readBuf = device.createBuffer({
-    label: 'pyr3-render.readback',
-    size: readBufSize,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  });
-  const encoder = device.createCommandEncoder({ label: 'pyr3-render.encoder' });
-  encoder.copyTextureToBuffer(
-    { texture },
-    { buffer: readBuf, bytesPerRow, rowsPerImage: height },
-    { width, height },
-  );
-  device.queue.submit([encoder.finish()]);
+  // 5–7. Read back + encode per format (#334). The source genome rides along
+  // as a `pyr3`-keyed PNG tEXt chunk (#123) so PNG output is self-describing.
+  const pyr3Json = JSON.stringify(genomeToJson(genome));
+  let outBytes: Uint8Array;
 
-  await readBuf.mapAsync(GPUMapMode.READ);
-  const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-  readBuf.unmap();
+  if (outFormat === 'exr-linear') {
+    // Advanced: TRUE scene-referred linear EXR — read the raw accumulation
+    // histogram (pre-log, pre-gamma), collapse, normalize. Huge dynamic range;
+    // needs tonemapping in an HDR tool (the default `exr` is the looks-right one).
+    const { rgba: superRgba } = await renderer.readHistogram();
+    const tonemap = genome.tonemap ?? DEFAULT_TONEMAP;
+    // Calibrate the linear exposure with the SAME sample count renderer.render
+    // used (computeDispatch with the genome's quality), so the EXR matches the
+    // tone curve's linear regime and is not blown out (#334).
+    const calibSamples = computeDispatch(genome.quality ?? DEFAULT_SPP, width, height).actualSamples;
+    const { k1, k2 } = deriveCalibration({
+      scale: genome.scale,
+      sampleCount: calibSamples,
+      brightness: tonemap.brightness,
+      oversample,
+    });
+    const linear = histogramToLinearRgba({ superRgba, width, height, oversample, k1, k2 });
+    outBytes = encodeExr({ width, height, rgba: linear });
+  } else {
+    // Display-referred PNG: read the presented texture. Bytes-per-row must be
+    // 256-aligned. png16 = rgba16float (8 B/px half), png8 = rgba8unorm (4 B/px).
+    const bytesPerPixel = gpuFormat === 'rgba16float' ? 8 : 4;
+    const unpaddedBytesPerRow = width * bytesPerPixel;
+    const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
+    const readBuf = device.createBuffer({
+      label: 'pyr3-render.readback',
+      size: bytesPerRow * height,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const encoder = device.createCommandEncoder({ label: 'pyr3-render.encoder' });
+    encoder.copyTextureToBuffer(
+      { texture },
+      { buffer: readBuf, bytesPerRow, rowsPerImage: height },
+      { width, height },
+    );
+    device.queue.submit([encoder.finish()]);
+    await readBuf.mapAsync(GPUMapMode.READ);
+    const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
+    readBuf.unmap();
 
-  // 6. Strip row padding into a tight RGBA buffer for PNG.
-  const tight = new Uint8Array(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const srcOff = y * bytesPerRow;
-    const dstOff = y * unpaddedBytesPerRow;
-    tight.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
+    // Strip row padding into a tight buffer.
+    const tight = new Uint8Array(width * height * bytesPerPixel);
+    for (let y = 0; y < height; y++) {
+      tight.set(
+        padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow),
+        y * unpaddedBytesPerRow,
+      );
+    }
+
+    if (outFormat === 'exr') {
+      // Default EXR — the LINEAR LIGHT of the display image. The display texels
+      // are sRGB-encoded; EXR viewers assume linear + apply sRGB on view, so we
+      // store sRGB_to_linear(display) and the viewer round-trips to the editor
+      // look. Looks like the flame on open everywhere; no double-gamma. (#334)
+      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
+      const rgba = new Float32Array(width * height * 4);
+      for (let i = 0; i < width * height; i++) {
+        const o = i * 4;
+        rgba[o] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o]!))));
+        rgba[o + 1] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 1]!))));
+        rgba[o + 2] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 2]!))));
+        rgba[o + 3] = Math.max(0, Math.min(1, halfToFloat(halfView[o + 3]!))); // alpha = coverage
+      }
+      outBytes = encodeExr({ width, height, rgba });
+    } else if (outFormat === 'png16') {
+      // Decode the half-float texels → clamp [0,1] → 16-bit samples.
+      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
+      const rgba16 = new Uint16Array(width * height * 4);
+      for (let i = 0; i < rgba16.length; i++) {
+        const f = halfToFloat(halfView[i]!);
+        rgba16[i] = Math.round(Math.max(0, Math.min(1, f)) * 65535);
+      }
+      const pngBytes = await encodePng16(
+        { width, height, rgba16 },
+        (b) => new Uint8Array(deflateSync(b)),
+      );
+      outBytes = injectPngTextChunk(pngBytes, 'pyr3', pyr3Json);
+    } else {
+      // png8 — pngjs path (genomeFromJson can round-trip the embedded JSON).
+      const png = new PNG({ width, height });
+      png.data = Buffer.from(tight.buffer, tight.byteOffset, tight.byteLength);
+      const pngBuf = PNG.sync.write(png);
+      outBytes = injectPngTextChunk(
+        new Uint8Array(pngBuf.buffer, pngBuf.byteOffset, pngBuf.byteLength),
+        'pyr3',
+        pyr3Json,
+      );
+    }
   }
 
-  // 7. Encode PNG. Embed the source genome as a `pyr3`-keyed tEXt chunk
-  // (#123) so the output is self-describing — a future PNG-import reader
-  // can pull the JSON straight back out and round-trip to a Genome via
-  // genomeFromJson(). Source XML is NOT embedded (pyr3 has no Genome→XML
-  // serializer; only the JSON path is canonical).
-  const png = new PNG({ width, height });
-  png.data = Buffer.from(tight.buffer, tight.byteOffset, tight.byteLength);
-  const pngBuf = PNG.sync.write(png);
-  const pyr3Json = JSON.stringify(genomeToJson(genome));
-  const withMetadata = injectPngTextChunk(
-    new Uint8Array(pngBuf.buffer, pngBuf.byteOffset, pngBuf.byteLength),
-    'pyr3',
-    pyr3Json,
-  );
-  writeFileSync(outPath, withMetadata);
+  writeFileSync(outPath, outBytes);
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
   console.log(`[pyr3-render] wrote ${outPath} in ${elapsed}s`);

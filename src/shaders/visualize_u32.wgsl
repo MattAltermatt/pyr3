@@ -31,7 +31,10 @@ struct VizUniforms {
   hslHue: f32,    // in degrees (-180 to 180)
   hslSat: f32,    // multiplier (0.0 to 2.0)
   hslLight: f32,  // addend (-1.0 to 1.0)
-  _pad7: u32,
+  // #334 — when != 0, output the accumulated alpha and skip the background
+  // blend (transparent-background export). Default 0 ⇒ byte-identical to the
+  // opaque composite the parity rig measures.
+  transparent: u32,
   _pad8: u32,
   _pad9: u32,
 };
@@ -186,6 +189,8 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   if (c.a <= 0.0) {
     // Phase 9-bg-palmode: empty pixels show the genome's background color.
     // alpha=0 limit of `(1-alpha) * 256 * background / 256` is bg itself.
+    // #334 — transparent export emits a fully transparent texel instead.
+    if (u.transparent != 0u) { return vec4f(0.0, 0.0, 0.0, 0.0); }
     return vec4f(u.background.xyz, 1.0);
   }
 
@@ -200,7 +205,10 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   // Phase 9-bg-palmode: blend background under partial-alpha (rect.c:1138/1210
   // simplified for vib_gam_n=1 — see spec non-goals). Empty regions and
   // partial-coverage edges fall toward the bg color.
-  let composed = newrgb + perch + (1.0 - alpha) * 256.0 * u.background.xyz;
+  // #334 — transparent export drops the background blend so partial-coverage
+  // edges keep their own alpha instead of falling toward the bg color.
+  let bg_term = select((1.0 - alpha) * 256.0 * u.background.xyz, vec3f(0.0), u.transparent != 0u);
+  let composed = newrgb + perch + bg_term;
 
   var out = clamp(composed / 256.0, vec3f(0.0), vec3f(1.0));
   // Issue #116 — Color Curves block. curvesActive == 0 ⇒ branch skipped
@@ -234,5 +242,7 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     out = hsv2rgb(hsv);
   }
 
-  return vec4f(clamp(out, vec3f(0.0), vec3f(1.0)), 1.0);
+  // #334 — emit accumulated alpha in transparent mode; opaque otherwise.
+  let out_a = select(1.0, alpha, u.transparent != 0u);
+  return vec4f(clamp(out, vec3f(0.0), vec3f(1.0)), out_a);
 }

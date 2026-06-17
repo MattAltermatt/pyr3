@@ -8,7 +8,7 @@ import { genomeFromJson } from '../../src/serialize';
 import { type Genome } from '../../src/genome';
 
 import { createJob, clearJob } from './jobs';
-import { AbortedError, renderGenomeToPng, type RenderProgress } from './render-png';
+import { AbortedError, renderGenomeToPng, type RenderProgress, type RenderFormat } from './render-png';
 
 interface RenderRequestBody {
   genome: unknown;
@@ -19,6 +19,10 @@ interface RenderRequestBody {
   oversample?: number;
   walkerJitter?: number;
   seed?: number;
+  /** #334 — output format (default png8). */
+  format?: string;
+  /** #334 — transparent background for png8/png16. */
+  transparent?: boolean;
 }
 
 function readJsonBody(req: IncomingMessage, limitBytes: number): Promise<unknown> {
@@ -77,6 +81,12 @@ export function makeRenderRoute(deviceProvider: () => GPUDevice) {
     const width = Math.max(1, Math.floor(body.dim?.width ?? 1024));
     const height = Math.max(1, Math.floor(body.dim?.height ?? 1024));
     const quality = Math.max(1, Math.round(body.quality ?? genome.quality ?? 50));
+    // #334 — validate format; unknown values fall back to png8.
+    const format: RenderFormat =
+      body.format === 'png16' || body.format === 'exr' ? body.format : 'png8';
+    const transparent = body.transparent === true;
+    const ext = format === 'exr' ? 'exr' : 'png';
+    const mime = format === 'exr' ? 'image/x-exr' : 'image/png';
 
     const job = createJob();
 
@@ -104,13 +114,21 @@ export function makeRenderRoute(deviceProvider: () => GPUDevice) {
           oversample: body.oversample,
           walkerJitter: body.walkerJitter,
           seed: body.seed,
+          format,
+          transparent,
         },
         (p: RenderProgress) => {
           writeSseEvent(res, 'progress', p);
         },
         job.controller.signal,
       );
-      writeSseEvent(res, 'done', { png_base64: Buffer.from(png).toString('base64') });
+      // `png_base64` carries the raw bytes for any format (kept for back-compat);
+      // `ext`/`mime` let the client name + type the download (#334).
+      writeSseEvent(res, 'done', {
+        png_base64: Buffer.from(png).toString('base64'),
+        ext,
+        mime,
+      });
       res.end();
     } catch (err) {
       if (err instanceof AbortedError) {

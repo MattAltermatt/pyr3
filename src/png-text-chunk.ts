@@ -50,7 +50,7 @@ function crcTable(): Uint32Array {
   _crcTable = t;
   return t;
 }
-function crc32(bytes: Uint8Array): number {
+export function crc32(bytes: Uint8Array): number {
   const t = crcTable();
   let c = 0xffffffff;
   for (let i = 0; i < bytes.length; i++) {

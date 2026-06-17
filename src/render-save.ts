@@ -1,9 +1,16 @@
 import type { Genome } from './genome';
-import type { Renderer } from './renderer';
+import { createRenderer, type Renderer } from './renderer';
 import { startChunkedRender, type ProgressInfo } from './render-orchestrator';
 import { injectPngTextChunk } from './png-text-chunk';
 import { getCapability } from './capability';
 import { genomeToJson } from './serialize';
+import { encodePng, type Deflate } from './png16-encode';
+import { encodeExr } from './exr-encode';
+import { halfToFloat } from './half-float';
+import { srgbToLinear } from './srgb';
+
+/** Output format for Save Render (#334). */
+export type ExportFormat = 'png8' | 'png16' | 'exr';
 
 export interface SaveRenderToPngOpts {
   renderer: Renderer;
@@ -23,6 +30,11 @@ export interface SaveRenderToPngOpts {
   seedBase: number;
   /** Optional walker-jitter override; defaults inside the orchestrator. */
   walkerJitter?: number;
+  /** #334 — output format (default 'png8'). png8/png16 are display-referred;
+   *  exr is true linear scene-referred 32f. */
+  format?: ExportFormat;
+  /** #334 — transparent background for png8/png16 (no effect on exr). */
+  transparent?: boolean;
 }
 
 export type SaveRenderResult = 'completed' | 'cancelled';
@@ -42,8 +54,99 @@ export async function saveRenderToPng(opts: SaveRenderToPngOpts): Promise<SaveRe
   return saveRenderInBrowser(opts);
 }
 
+/** Run a chunked-render handle under the abort signal; returns its outcome. */
+async function runWithAbort(
+  handle: { promise: Promise<SaveRenderResult>; cancel: () => void },
+  abortSignal: AbortSignal,
+): Promise<SaveRenderResult> {
+  const onAbort = () => handle.cancel();
+  abortSignal.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await handle.promise;
+  } finally {
+    abortSignal.removeEventListener('abort', onAbort);
+  }
+}
+
+/** Trigger a browser download of raw bytes. */
+function triggerDownload(bytes: Uint8Array, filename: string, mime: string): void {
+  const blob = new Blob([bytes as BlobPart], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Swap (or append) a file extension. `electricsheep.pyr3.png` + `exr`
+ *  → `electricsheep.pyr3.exr`. */
+function withExt(filename: string, ext: string): string {
+  return filename.replace(/\.[^.]+$/, '') + '.' + ext;
+}
+
+/** zlib (RFC1950) deflate via the browser's CompressionStream — the format
+ *  PNG IDAT requires. Async; the pure-TS PNG encoder awaits it. */
+const browserDeflate: Deflate = async (raw: Uint8Array): Promise<Uint8Array> => {
+  const cs = new CompressionStream('deflate');
+  const writer = cs.writable.getWriter();
+  void writer.write(raw as BufferSource);
+  void writer.close();
+  const buf = await new Response(cs.readable).arrayBuffer();
+  return new Uint8Array(buf);
+};
+
+/** Read an offscreen texture back into a tight RGBA byte buffer (256-aligned
+ *  copy, padding stripped). `bytesPerPixel` = 4 (rgba8unorm) or 8 (rgba16float). */
+async function readbackTexture(
+  device: GPUDevice,
+  texture: GPUTexture,
+  width: number,
+  height: number,
+  bytesPerPixel: number,
+): Promise<Uint8Array> {
+  const unpaddedBytesPerRow = width * bytesPerPixel;
+  const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
+  const readBuf = device.createBuffer({
+    label: 'pyr3.export.readback',
+    size: bytesPerRow * height,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  const encoder = device.createCommandEncoder({ label: 'pyr3.export.encoder' });
+  encoder.copyTextureToBuffer(
+    { texture },
+    { buffer: readBuf, bytesPerRow, rowsPerImage: height },
+    { width, height },
+  );
+  device.queue.submit([encoder.finish()]);
+  await readBuf.mapAsync(GPUMapMode.READ);
+  const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
+  readBuf.unmap();
+  readBuf.destroy();
+  const tight = new Uint8Array(width * height * bytesPerPixel);
+  for (let y = 0; y < height; y++) {
+    tight.set(padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow), y * unpaddedBytesPerRow);
+  }
+  return tight;
+}
+
 async function saveRenderInBrowser(opts: SaveRenderToPngOpts): Promise<SaveRenderResult> {
-  const renderHandle = startChunkedRender({
+  const format = opts.format ?? 'png8';
+  const transparent = opts.transparent ?? false;
+
+  // png8 opaque → the fast live-canvas path (watch it refine, toBlob).
+  if (format === 'png8' && !transparent) {
+    return saveViaCanvas(opts);
+  }
+  // png16 / exr / png8+transparent → offscreen render at the right format.
+  return saveViaOffscreen(opts, format, transparent);
+}
+
+/** png8 opaque — the original live-canvas → toBlob path. */
+async function saveViaCanvas(opts: SaveRenderToPngOpts): Promise<SaveRenderResult> {
+  const handle = startChunkedRender({
     renderer: opts.renderer,
     genome: opts.genome,
     outputViewProvider: () => opts.ctx.getCurrentTexture().createView(),
@@ -54,45 +157,107 @@ async function saveRenderInBrowser(opts: SaveRenderToPngOpts): Promise<SaveRende
     samplesPerChunk: 4_000_000,
     yieldEveryNChunks: 4,
   });
+  const outcome = await runWithAbort(handle, opts.abortSignal);
+  if (outcome === 'cancelled') return 'cancelled';
+  await opts.device.queue.onSubmittedWorkDone();
 
-  const onAbort = () => renderHandle.cancel();
-  opts.abortSignal.addEventListener('abort', onAbort, { once: true });
+  await new Promise<void>((resolve, reject) => {
+    opts.canvas.toBlob(async (blob) => {
+      if (!blob) {
+        reject(new Error('toBlob returned null — canvas was not snapshottable'));
+        return;
+      }
+      try {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const withMetadata = injectPngTextChunk(bytes, 'pyr3', opts.metadataJson);
+        triggerDownload(withMetadata, opts.filename, 'image/png');
+      } catch (err) {
+        console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
+        triggerDownload(new Uint8Array(await blob.arrayBuffer()), opts.filename, 'image/png');
+      }
+      resolve();
+    }, 'image/png');
+  });
+  return 'completed';
+}
 
+/** png16 / exr / png8-transparent — render to an offscreen texture at the
+ *  needed format (the canvas renderer's format can't be retargeted), then
+ *  encode. exr stores the linear light of the display image (#334). */
+async function saveViaOffscreen(
+  opts: SaveRenderToPngOpts,
+  format: ExportFormat,
+  transparent: boolean,
+): Promise<SaveRenderResult> {
+  const width = opts.canvas.width;
+  const height = opts.canvas.height;
+  const gpuFormat: GPUTextureFormat =
+    format === 'png16' || format === 'exr' ? 'rgba16float' : 'rgba8unorm';
+  const offRenderer = createRenderer(opts.device, gpuFormat, {
+    width, height, oversample: opts.renderer.oversample, filterRadius: opts.renderer.filterRadius,
+  });
+  const offTex = opts.device.createTexture({
+    label: 'pyr3.export.offscreen',
+    size: { width, height },
+    format: gpuFormat,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  });
   try {
-    const outcome = await renderHandle.promise;
+    const handle = startChunkedRender({
+      renderer: offRenderer,
+      genome: opts.genome,
+      outputViewProvider: () => offTex.createView(),
+      targetSamples: opts.targetSamples,
+      seedBase: opts.seedBase,
+      onProgress: opts.onProgress,
+      walkerJitter: opts.walkerJitter,
+      presentAfterEachChunk: false,
+      transparent,
+      samplesPerChunk: 4_000_000,
+      yieldEveryNChunks: 4,
+    });
+    const outcome = await runWithAbort(handle, opts.abortSignal);
     if (outcome === 'cancelled') return 'cancelled';
-
     await opts.device.queue.onSubmittedWorkDone();
 
-    await new Promise<void>((resolve, reject) => {
-      opts.canvas.toBlob(async (blob) => {
-        if (!blob) {
-          reject(new Error('toBlob returned null — canvas was not snapshottable'));
-          return;
-        }
-        let finalBlob: Blob = blob;
-        try {
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          const withMetadata = injectPngTextChunk(bytes, 'pyr3', opts.metadataJson);
-          finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
-        } catch (err) {
-          console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
-        }
-        const url = URL.createObjectURL(finalBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = opts.filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        resolve();
-      }, 'image/png');
-    });
+    const bytesPerPixel = gpuFormat === 'rgba16float' ? 8 : 4;
+    const tight = await readbackTexture(opts.device, offTex, width, height, bytesPerPixel);
 
+    if (format === 'exr') {
+      // Store the LINEAR LIGHT of the display image so EXR viewers (which apply
+      // sRGB on view) reproduce the editor look on open. See src/srgb.ts. (#334)
+      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
+      const rgba = new Float32Array(width * height * 4);
+      for (let i = 0; i < width * height; i++) {
+        const o = i * 4;
+        rgba[o] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o]!))));
+        rgba[o + 1] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 1]!))));
+        rgba[o + 2] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 2]!))));
+        rgba[o + 3] = Math.max(0, Math.min(1, halfToFloat(halfView[o + 3]!)));
+      }
+      triggerDownload(encodeExr({ width, height, rgba }), withExt(opts.filename, 'exr'), 'image/x-exr');
+      return 'completed';
+    }
+
+    let png: Uint8Array;
+    if (format === 'png16') {
+      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
+      const rgba16 = new Uint16Array(width * height * 4);
+      for (let i = 0; i < rgba16.length; i++) {
+        const f = halfToFloat(halfView[i]!);
+        rgba16[i] = Math.round(Math.max(0, Math.min(1, f)) * 65535);
+      }
+      png = await encodePng({ width, height, bitDepth: 16, data: rgba16 }, browserDeflate);
+    } else {
+      // png8 + transparent — tight is already 8-bit RGBA.
+      png = await encodePng({ width, height, bitDepth: 8, data: tight }, browserDeflate);
+    }
+    const withMetadata = injectPngTextChunk(png, 'pyr3', opts.metadataJson);
+    triggerDownload(withMetadata, opts.filename, 'image/png');
     return 'completed';
   } finally {
-    opts.abortSignal.removeEventListener('abort', onAbort);
+    offRenderer.destroy();
+    offTex.destroy();
   }
 }
 
@@ -105,6 +270,9 @@ interface BackendProgress {
 
 interface BackendDone {
   png_base64: string;
+  /** #334 — file extension + MIME for the chosen format ('png' | 'exr'). */
+  ext?: string;
+  mime?: string;
 }
 
 /** POST genome + render spec to `pyr3 serve`'s `/api/render`. Consumes the
@@ -121,6 +289,8 @@ async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRend
     oversample: opts.genome.oversample ?? 1,
     walkerJitter: opts.walkerJitter,
     seed: opts.seedBase,
+    format: opts.format ?? 'png8',
+    transparent: opts.transparent ?? false,
   };
 
   let jobId: string | null = null;
@@ -149,6 +319,8 @@ async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRend
     let buffer = '';
     let pngBytes: Uint8Array | null = null;
     let outcome: SaveRenderResult | null = null;
+    let outExt = 'png';
+    let outMime = 'image/png';
 
     while (outcome === null && pngBytes === null) {
       const { value, done } = await reader.read();
@@ -191,6 +363,8 @@ async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRend
             throw new Error('pyr3 serve render failed: malformed "done" server event');
           }
           pngBytes = base64ToBytes(d.png_base64);
+          if (d.ext) outExt = d.ext;
+          if (d.mime) outMime = d.mime;
           outcome = 'completed';
         } else if (event === 'cancelled') {
           outcome = 'cancelled';
@@ -213,22 +387,17 @@ async function saveRenderViaBackend(opts: SaveRenderToPngOpts): Promise<SaveRend
       return outcome ?? 'cancelled';
     }
 
-    // Inject metadata client-side (server returns just pixels).
+    // Inject metadata client-side for PNG (server returns just pixels). EXR
+    // is not a PNG container, so the `pyr3` tEXt chunk doesn't apply (#334).
     let finalBytes: Uint8Array = pngBytes;
-    try {
-      finalBytes = injectPngTextChunk(pngBytes, 'pyr3', opts.metadataJson);
-    } catch (err) {
-      console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
+    if (outExt !== 'exr') {
+      try {
+        finalBytes = injectPngTextChunk(pngBytes, 'pyr3', opts.metadataJson);
+      } catch (err) {
+        console.warn('pyr3: PNG metadata injection failed; saving without metadata', err);
+      }
     }
-    const blob = new Blob([finalBytes as BlobPart], { type: 'image/png' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = opts.filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    triggerDownload(finalBytes, outExt === 'exr' ? withExt(opts.filename, 'exr') : opts.filename, outMime);
     return 'completed';
   } catch (err) {
     if (opts.abortSignal.aborted) return 'cancelled';

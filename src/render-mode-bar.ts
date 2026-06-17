@@ -26,7 +26,10 @@ import { SIZE_PRESETS } from './load-intent';
 import {
   type PreviewRenderConfig,
   type PreviewTier,
+  type ExportFormat,
   savePreviewConfig,
+  loadExportConfig,
+  saveExportConfig,
 } from './render-mode-config';
 import { getCapability } from './capability';
 
@@ -62,7 +65,8 @@ export interface RenderModeBarOpts {
   setRenderSize(size: { width: number; height: number }): void;
   getRenderQuality(): number;
   setRenderQuality(q: number): void;
-  onSaveRender(): Promise<void>;
+  /** #334 — invoked with the bar's current output-format selection. */
+  onSaveRender(exportOpts: { format: ExportFormat; transparent: boolean }): Promise<void>;
   canSave(): boolean;
   showToast?(message: string): void;
   onChange?(): void;
@@ -320,6 +324,61 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   qInput.addEventListener('change', qHandler);
   renderSide.appendChild(qInput);
 
+  // #334 — output format selector + transparent toggle. Sticky per-browser.
+  const exportCfg = loadExportConfig();
+  const FORMAT_OPTIONS: ReadonlyArray<{ value: ExportFormat; label: string }> = [
+    { value: 'png8', label: 'PNG 8-bit' },
+    { value: 'png16', label: 'PNG 16-bit' },
+    { value: 'exr', label: 'EXR (HDR)' },
+  ];
+  const formatSelect = document.createElement('select');
+  formatSelect.dataset['renderFormat'] = '';
+  formatSelect.className = 'pyr3-render-mode-bar-format';
+  formatSelect.title = 'Output format: 8/16-bit PNG (what you see) or linear-HDR EXR (regrade in post)';
+  for (const o of FORMAT_OPTIONS) {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    if (o.value === exportCfg.format) opt.selected = true;
+    formatSelect.appendChild(opt);
+  }
+  renderSide.appendChild(formatSelect);
+
+  // Transparent-background toggle (disabled for EXR — linear data is already
+  // background-free). Render disabled-not-hidden so the row never reflows.
+  const transparentLabel = document.createElement('label');
+  transparentLabel.className = 'pyr3-render-mode-bar-transparent';
+  transparentLabel.title = 'Export with a transparent background (PNG only)';
+  const transparentCb = document.createElement('input');
+  transparentCb.type = 'checkbox';
+  transparentCb.dataset['renderTransparent'] = '';
+  transparentCb.checked = exportCfg.transparent;
+  const transparentText = document.createElement('span');
+  transparentText.textContent = 'Transparent';
+  transparentLabel.append(transparentCb, transparentText);
+  renderSide.appendChild(transparentLabel);
+
+  function paintExportControls(): void {
+    // EXR carries no background → the toggle is N/A. Disable + dim, don't hide.
+    const isExr = formatSelect.value === 'exr';
+    transparentCb.disabled = isExr;
+    transparentLabel.classList.toggle('disabled', isExr);
+    transparentLabel.title = isExr
+      ? 'EXR is always background-free (linear scene-referred data)'
+      : 'Export with a transparent background (PNG only)';
+  }
+  paintExportControls();
+
+  formatSelect.addEventListener('change', () => {
+    saveExportConfig({ format: formatSelect.value as ExportFormat, transparent: transparentCb.checked });
+    paintExportControls();
+    opts.onChange?.();
+  });
+  transparentCb.addEventListener('change', () => {
+    saveExportConfig({ format: formatSelect.value as ExportFormat, transparent: transparentCb.checked });
+    opts.onChange?.();
+  });
+
   // Save Render button
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
@@ -328,7 +387,8 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   saveBtn.textContent = '💾 Save Render';
   saveBtn.addEventListener('click', () => {
     if (saveBtn.disabled) return;
-    void opts.onSaveRender();
+    const format = formatSelect.value as ExportFormat;
+    void opts.onSaveRender({ format, transparent: format !== 'exr' && transparentCb.checked });
   });
   renderSide.appendChild(saveBtn);
 

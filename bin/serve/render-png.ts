@@ -3,11 +3,19 @@
 // and accepts an AbortSignal so /api/cancel/:id can stop mid-render.
 
 import { PNG } from 'pngjs';
+import { deflateSync } from 'node:zlib';
 
 import { createRenderer, computeDispatch, DEFAULT_FILTER_RADIUS, type Renderer } from '../../src/renderer';
 import { type Genome } from '../../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../../src/chaos';
+import { encodeExr } from '../../src/exr-encode';
+import { encodePng16 } from '../../src/png16-encode';
+import { halfToFloat } from '../../src/half-float';
+import { srgbToLinear } from '../../src/srgb';
 import { AsyncMutex } from './async-mutex';
+
+/** #334 — output format. png8/png16 are display-referred; exr is true linear. */
+export type RenderFormat = 'png8' | 'png16' | 'exr';
 
 export interface RenderRequestSpec {
   genome: Genome;
@@ -20,6 +28,10 @@ export interface RenderRequestSpec {
   walkerJitter?: number;
   /** Override seed for determinism (parity tests, replay). */
   seed?: number;
+  /** #334 — output format (default png8). */
+  format?: RenderFormat;
+  /** #334 — transparent background for png8/png16 (no effect on exr). */
+  transparent?: boolean;
 }
 
 export interface RenderProgress {
@@ -56,9 +68,28 @@ interface RendererBundle {
   height: number;
   oversample: number;
   filterRadius: number;
+  format: GPUTextureFormat;
 }
 
 let cached: RendererBundle | null = null;
+
+function makeBundle(
+  device: GPUDevice,
+  width: number,
+  height: number,
+  oversample: number,
+  filterRadius: number,
+  format: GPUTextureFormat,
+): RendererBundle {
+  const renderer = createRenderer(device, format, { width, height, oversample, filterRadius });
+  const texture = device.createTexture({
+    label: 'pyr3-serve.output',
+    size: { width, height },
+    format,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  });
+  return { renderer, texture, width, height, oversample, filterRadius, format };
+}
 
 function ensureRenderer(
   device: GPUDevice,
@@ -66,17 +97,19 @@ function ensureRenderer(
   height: number,
   oversample: number,
   filterRadius: number,
+  format: GPUTextureFormat,
 ): RendererBundle {
-  const format = 'rgba8unorm' as const;
+  // #334 — the GPU target format is fixed at createRenderer time and cannot be
+  // changed by resize(), so a format switch (png16 ⇄ png8/exr) rebuilds the
+  // bundle. Format switches are rare (deliberate exports); dim-only changes
+  // keep the warm renderer via resize().
+  if (cached && cached.format !== format) {
+    cached.renderer.destroy();
+    cached.texture.destroy();
+    cached = null;
+  }
   if (!cached) {
-    const renderer = createRenderer(device, format, { width, height, oversample, filterRadius });
-    const texture = device.createTexture({
-      label: 'pyr3-serve.output',
-      size: { width, height },
-      format,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-    });
-    cached = { renderer, texture, width, height, oversample, filterRadius };
+    cached = makeBundle(device, width, height, oversample, filterRadius, format);
     return cached;
   }
   // Re-resize the renderer if any dim changes; re-create the texture if w/h shift.
@@ -142,8 +175,14 @@ async function renderGenomeToPngInner(
   const filterRadius = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
   const walkerJitter = spec.walkerJitter ?? DEFAULT_WALKER_JITTER;
   const seedBase = spec.seed ?? ((Math.random() * 0xffffffff) >>> 0);
+  const outFormat: RenderFormat = spec.format ?? 'png8';
+  // png16 needs an rgba16float target; png8/exr use rgba8unorm (exr reads the
+  // linear histogram, which is independent of the presented texture format).
+  // png16 + exr render the display tonemap to rgba16float; png8 uses rgba8unorm.
+  const gpuFormat: GPUTextureFormat =
+    outFormat === 'png16' || outFormat === 'exr' ? 'rgba16float' : 'rgba8unorm';
 
-  const { renderer, texture } = ensureRenderer(device, width, height, oversample, filterRadius);
+  const { renderer, texture } = ensureRenderer(device, width, height, oversample, filterRadius, gpuFormat);
 
   const dispatch = computeDispatch(spec.quality, width, height);
   // Split work over a small number of chunks by reducing iters per
@@ -187,11 +226,12 @@ async function renderGenomeToPngInner(
     genome,
     outputView: texture.createView(),
     totalSamples: targetSamples,
+    transparent: spec.transparent,
   });
   await device.queue.onSubmittedWorkDone();
 
-  // Copy texture → buffer, 256-aligned row stride.
-  const bytesPerPixel = 4;
+  // Copy texture → buffer, 256-aligned row stride. png16 = 8 B/px (4×f16).
+  const bytesPerPixel = gpuFormat === 'rgba16float' ? 8 : 4;
   const unpaddedBytesPerRow = width * bytesPerPixel;
   const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
   const readBufSize = bytesPerRow * height;
@@ -213,11 +253,37 @@ async function renderGenomeToPngInner(
   readBuf.unmap();
   readBuf.destroy();
 
-  const tight = new Uint8Array(width * height * 4);
+  const tight = new Uint8Array(width * height * bytesPerPixel);
   for (let y = 0; y < height; y++) {
-    const srcOff = y * bytesPerRow;
-    const dstOff = y * unpaddedBytesPerRow;
-    tight.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
+    tight.set(
+      padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow),
+      y * unpaddedBytesPerRow,
+    );
+  }
+
+  if (outFormat === 'exr') {
+    // #334 — store the LINEAR LIGHT of the display image so EXR viewers (which
+    // apply sRGB on view) reproduce the editor look on open. See src/srgb.ts.
+    const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
+    const rgba = new Float32Array(width * height * 4);
+    for (let i = 0; i < width * height; i++) {
+      const o = i * 4;
+      rgba[o] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o]!))));
+      rgba[o + 1] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 1]!))));
+      rgba[o + 2] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 2]!))));
+      rgba[o + 3] = Math.max(0, Math.min(1, halfToFloat(halfView[o + 3]!)));
+    }
+    return encodeExr({ width, height, rgba });
+  }
+
+  if (outFormat === 'png16') {
+    const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
+    const rgba16 = new Uint16Array(width * height * 4);
+    for (let i = 0; i < rgba16.length; i++) {
+      const f = halfToFloat(halfView[i]!);
+      rgba16[i] = Math.round(Math.max(0, Math.min(1, f)) * 65535);
+    }
+    return encodePng16({ width, height, rgba16 }, (b) => new Uint8Array(deflateSync(b)));
   }
 
   const png = new PNG({ width, height });

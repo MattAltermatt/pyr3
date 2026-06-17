@@ -45,6 +45,9 @@ function recordingRenderer(): {
     readIndexMap() {
       return Promise.resolve({ idxSum: new Uint32Array(0), count: new Uint32Array(0), width: 512, height: 512 });
     },
+    readHistogram() {
+      return Promise.resolve({ rgba: new Uint32Array(0), superW: 512, superH: 512 });
+    },
     destroy() {},
     get width() { return 512; },
     get height() { return 512; },
