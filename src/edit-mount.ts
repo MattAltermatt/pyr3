@@ -571,43 +571,63 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     void captureSettledPixels(myTicket, spp);
   }
 
-  // #175 — re-present the just-settled histogram into an offscreen COPY_SRC
-  // texture with channelCurves stripped (the INPUT-referred image the curves
-  // grade against), read it back, and hand TRUE-RGBA bytes to listeners. The
-  // pre-curve image is curve-invariant (curves are a present-pass op), so the
-  // overlay stays still while the user drags spline points.
+  // #175/#174 — re-present the just-settled image into an offscreen COPY_SRC
+  // texture, read it back, and hand TRUE-RGBA bytes to listeners. Two feeds:
+  //  • settledPixelsListeners — PRE-curve (channelCurves stripped). The Color
+  //    Curves histogram wants the INPUT-referred image so its backdrop stays
+  //    still while the user drags spline points (curves are a present-pass op).
+  //  • gradedPixelsListeners — fully GRADED (the genome as displayed). The
+  //    Scopes panel wants exactly what's on screen, so it responds to grading.
   //
-  // Cost note: the swap-chain texture isn't readable (WebGPU), so an offscreen
-  // re-present is mandatory for ANY readback; stripping channelCurves here is
-  // ~free over reading the graded canvas. applyLane('fast') reuses the
-  // existing histogram (no chaos re-iterate).
+  // The swap-chain texture isn't readable (WebGPU), so an offscreen re-present
+  // is mandatory for ANY readback; applyLane('fast') reuses the existing
+  // histogram (no chaos re-iterate). Each feed is only read back when it has a
+  // listener, so the second readback is skipped when nothing consumes it.
   async function captureSettledPixels(myTicket: number, spp: number): Promise<void> {
-    const listeners = state.settledPixelsListeners;
-    if (!listeners || listeners.length === 0) return;
+    const preListeners = state.settledPixelsListeners;
+    const gradedListeners = state.gradedPixelsListeners;
     const W = canvas.width;
     const H = canvas.height;
     if (W <= 0 || H <= 0) return;
 
+    const base = adjustedGenomeFor(W, H);
+    if (preListeners && preListeners.length > 0) {
+      const preCurve = base.channelCurves ? { ...base, channelCurves: undefined } : base;
+      await readbackAndNotify(preCurve, W, H, myTicket, spp, preListeners);
+    }
+    if (gradedListeners && gradedListeners.length > 0) {
+      await readbackAndNotify(base, W, H, myTicket, spp, gradedListeners);
+    }
+  }
+
+  // Re-present `genome` into an offscreen texture at W×H, copy it back to the
+  // CPU as tight TRUE-RGBA, and fan it out to `listeners`. Best-effort: any
+  // GPU/mapping failure is swallowed (this is a non-critical overlay feed).
+  async function readbackAndNotify(
+    genome: Genome,
+    W: number,
+    H: number,
+    myTicket: number,
+    spp: number,
+    listeners: Array<(pixels: SettledPixels) => void>,
+  ): Promise<void> {
     let tex: GPUTexture | undefined;
     let buf: GPUBuffer | undefined;
     try {
       tex = opts.device.createTexture({
-        label: 'pyr3.edit.histogram-readback',
+        label: 'pyr3.edit.settled-readback',
         size: { width: W, height: H },
         format: opts.format,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
       });
-      // Strip channelCurves for the pre-curve (input-referred) readback.
-      const base = adjustedGenomeFor(W, H);
-      const preCurve = base.channelCurves ? { ...base, channelCurves: undefined } : base;
-      editRenderer.applyLane('fast', preCurve, state.seed, tex.createView(), W, H, { targetSpp: spp });
+      editRenderer.applyLane('fast', genome, state.seed, tex.createView(), W, H, { targetSpp: spp });
 
       const bytesPerPixel = 4;
       const unpaddedBytesPerRow = W * bytesPerPixel;
       // copyTextureToBuffer requires bytesPerRow aligned to 256.
       const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
       buf = opts.device.createBuffer({
-        label: 'pyr3.edit.histogram-readback.buf',
+        label: 'pyr3.edit.settled-readback.buf',
         size: bytesPerRow * H,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
       });
@@ -830,6 +850,19 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // compositor a slot per render, so each click produces a visible
       // frame.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+      // #174 — keep the Scopes panel real-time. Read back THIS live frame for
+      // the graded feed so scopes track during interaction, not just after the
+      // settle render fires (settleDelayMs later). Gated on !liveDirty so a
+      // continuous drag (which keeps liveDirty true) doesn't pay a readback per
+      // frame — it refreshes whenever the live loop drains (i.e. the moment the
+      // user pauses). The settle render still feeds BOTH the graded + pre-curve
+      // (histogram) feeds at full quality. Pre-curve histogram stays settle-only
+      // (curve-invariant — a curve drag doesn't move it).
+      const gradedListeners = state.gradedPixelsListeners;
+      if (!liveDirty && gradedListeners && gradedListeners.length > 0) {
+        await readbackAndNotify(genome, w, h, inflightTicket, previewCfg.quality, gradedListeners);
+      }
     } while (liveDirty);
     liveInFlight = false;
   }

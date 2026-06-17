@@ -549,6 +549,7 @@ async function main(): Promise<void> {
     const { paletteSection } = await import('./edit-section-palette');
     const { hslSection } = await import('./edit-section-hsl');
     const { curvesSection } = await import('./edit-section-curves');
+    const { scopesSection } = await import('./edit-section-scopes');
     const { viewportSection } = await import('./edit-section-viewport');
     const { xformsSection } = await import('./edit-section-xforms');
     const { finalSection } = await import('./edit-section-final');
@@ -577,6 +578,7 @@ async function main(): Promise<void> {
         paletteSection,
         hslSection,
         curvesSection,
+        scopesSection,
         viewportSection,
         xformsSection,
         finalSection,

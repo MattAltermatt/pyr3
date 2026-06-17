@@ -378,7 +378,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('persistSectionCollapse writes JSON under pyr3.editor.sectionCollapse', () => {
     expect(SECTION_COLLAPSE_KEY).toBe('pyr3.editor.sectionCollapse');
     const map = {
-      palette: false, curves: true, hsl: false, viewport: true, xforms: false, final: true,
+      palette: false, curves: true, scopes: true, hsl: false, viewport: true, xforms: false, final: true,
       global: false, density: true, render: true,
     };
     persistSectionCollapse(map);
@@ -388,13 +388,13 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   });
 
     it('leaves localStorage empty when writing defaults', () => {
-      persistSectionCollapse({ palette: true, curves: true, hsl: true, viewport: true, xforms: true, final: true, global: true, density: true, render: true });
+      persistSectionCollapse({ palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true, global: true, density: true, render: true });
       expect(localStorage.getItem('pyr3.edit.sectionCollapse')).toBeNull();
     });
 
   it('restoreSectionCollapse returns the persisted map', () => {
     const map = {
-      palette: false, curves: true, hsl: true, viewport: true, xforms: false, final: true,
+      palette: false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false, final: true,
       global: false, density: true, render: true,
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
@@ -404,7 +404,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('restoreSectionCollapse returns default all-collapsed when absent', () => {
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: true, curves: true, hsl: true, viewport: true, xforms: true, final: true,
+      palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true,
       global: true, density: true, render: true,
     });
   });
@@ -413,13 +413,13 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
     localStorage.setItem(SECTION_COLLAPSE_KEY, '{not valid');
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: true, curves: true, hsl: true, viewport: true, xforms: true, final: true,
+      palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true,
       global: true, density: true, render: true,
     });
   });
 
-  it('round-trip integrity preserves all 8 keys', () => {
-      const oldSections = { palette: false, curves: false, hsl: false, viewport: false, xforms: false, final: false, global: false, density: false, render: false };
+  it('round-trip integrity preserves all keys', () => {
+      const oldSections = { palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false, final: false, global: false, density: false, render: false };
       persistSectionCollapse(oldSections);
       expect(restoreSectionCollapse()).toEqual(oldSections);
   });

@@ -56,6 +56,7 @@ export interface StateChange {
 export type SectionKey =
   | 'palette'
   | 'curves'
+  | 'scopes'
   | 'hsl'
   | 'viewport'
   | 'xforms'
@@ -94,15 +95,24 @@ export interface EditState {
   /** #175 — sections push a listener here in build(); the editor host
    *  (edit-mount) invokes them after each settled render with the post-
    *  tonemap, PRE-curve canvas pixels (true RGBA, channel-swap undone). The
-   *  Color Curves histogram overlay is the first consumer; the Scopes panel
-   *  (#174) and targeted Color Curves (#173) reuse the same readback. UI-only;
-   *  never serialized. */
+   *  Color Curves histogram overlay is the consumer — it wants the INPUT-
+   *  referred (pre-curve) distribution so its backdrop stays still while the
+   *  user drags spline points. UI-only; never serialized. */
   settledPixelsListeners?: Array<(pixels: SettledPixels) => void>;
+  /** #174 — like settledPixelsListeners, but fed the fully-GRADED canvas
+   *  pixels (channelCurves + all adjustments applied) — i.e. exactly what the
+   *  user sees on screen. The Scopes panel consumes this: a grading scope must
+   *  reflect the graded output, so it responds live to curve/HSL edits. Costs
+   *  a second offscreen re-present + readback per settle (settle-only). Only
+   *  fired when at least one listener is registered. UI-only; never serialized. */
+  gradedPixelsListeners?: Array<(pixels: SettledPixels) => void>;
 }
 
-/** Post-tonemap, PRE-curve canvas pixels emitted on render-settle (#175).
- *  `rgba` is tightly packed (4 bytes/pixel, no row padding) and in TRUE RGBA
- *  order regardless of the swap-chain's bgra8unorm/rgba8unorm format. */
+/** Post-tonemap canvas pixels emitted on render-settle (#175). `rgba` is
+ *  tightly packed (4 bytes/pixel, no row padding) and in TRUE RGBA order
+ *  regardless of the swap-chain's bgra8unorm/rgba8unorm format. Whether the
+ *  pixels are PRE-curve (settledPixelsListeners) or fully GRADED
+ *  (gradedPixelsListeners) depends on which feed delivered them. */
 export interface SettledPixels {
   width: number;
   height: number;
@@ -117,6 +127,7 @@ export function createEditState(genome: Genome, seed: number): EditState {
     sectionCollapse: {
       palette: true,
       curves: true,
+      scopes: true,
       hsl: true,
       viewport: true,
       xforms: true,
@@ -462,6 +473,7 @@ export const SECTION_COLLAPSE_KEY = 'pyr3.editor.sectionCollapse';
 const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
   palette: true,
   curves: true,
+  scopes: true,
   hsl: true,
   viewport: true,
   xforms: true,
