@@ -7,9 +7,11 @@ import {
   mountBarChrome,
   mountEditBar,
   mountGalleryBar,
+  mountGradientBar,
   type BarOpts,
   type EditBarOpts,
   type GalleryBarOpts,
+  type GradientBarOpts,
   type TabSurface,
 } from './ui-bar';
 import type { WebGPUStatus } from './webgpu-check';
@@ -73,6 +75,83 @@ function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
     ...over,
   };
 }
+
+function makeGradientOpts(over: Partial<GradientBarOpts> = {}): GradientBarOpts {
+  return {
+    webgpu: STUB_WEBGPU,
+    onLoadFlame: vi.fn(),
+    onBrowse: vi.fn(),
+    onSave: vi.fn(),
+    onExport: vi.fn(),
+    onImport: vi.fn(),
+    onReset: vi.fn(),
+    onTabClick: vi.fn(),
+    ...over,
+  };
+}
+
+describe('mountGradientBar (#353)', () => {
+  it('mounts shared chrome (Gradient surface) + action verbs, NO editable name input', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const h = mountGradientBar(root, makeGradientOpts());
+    // shared chrome with Gradient lit (under the Editor dropdown)
+    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="gradient"].active')).toBeTruthy();
+    // action verbs present
+    for (const r of ['load-flame', 'browse', 'save', 'export', 'import', 'reset']) {
+      expect(root.querySelector(`[data-role="${r}"]`)).toBeTruthy();
+    }
+    // name-free: no editable name input (naming lives in the #346 save dialog)
+    expect(root.querySelector('.pyr3-bar-name-input')).toBeNull();
+    // page body mounts into the middle slot
+    expect(h.middleSlot.classList.contains('pyr3-middle-slot')).toBe(true);
+    h.destroy();
+  });
+
+  it('action buttons fire their callbacks', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onBrowse = vi.fn(); const onReset = vi.fn();
+    const h = mountGradientBar(root, makeGradientOpts({ onBrowse, onReset }));
+    (root.querySelector('[data-role="browse"]') as HTMLElement).click();
+    (root.querySelector('[data-role="reset"]') as HTMLElement).click();
+    expect(onBrowse).toHaveBeenCalledTimes(1);
+    expect(onReset).toHaveBeenCalledTimes(1);
+    h.destroy();
+  });
+
+  it('round-trip mode adds Apply + Cancel CTAs leading the action row', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const h = mountGradientBar(root, makeGradientOpts({ roundTrip: true }));
+    expect(root.querySelector('[data-role="apply"]')).toBeTruthy();
+    expect(root.querySelector('[data-role="cancel-return"]')).toBeTruthy();
+    h.destroy();
+  });
+
+  it('non-round-trip mode has no Apply / Cancel CTAs', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const h = mountGradientBar(root, makeGradientOpts());
+    expect(root.querySelector('[data-role="apply"]')).toBeNull();
+    expect(root.querySelector('[data-role="cancel-return"]')).toBeNull();
+    h.destroy();
+  });
+
+  it('setIdentity shows a read-only "🎨 name" chip; empty hides it', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const h = mountGradientBar(root, makeGradientOpts());
+    const chip = root.querySelector('[data-role="palette-identity"]') as HTMLElement;
+    expect(chip.style.display).toBe('none');
+    h.setIdentity('ember');
+    expect(chip.textContent).toContain('ember');
+    expect(chip.style.display).not.toBe('none');
+    h.setIdentity('');
+    expect(chip.style.display).toBe('none');
+    h.destroy();
+  });
+});
 
 describe('gallery info row — three-column with centered page-nav (#103 Phase 4 Task 4.1)', () => {
   it('info row is a 3-column grid (1fr | auto | 1fr) keeping the page-nav cluster centered', () => {

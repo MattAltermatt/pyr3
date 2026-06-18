@@ -7,6 +7,8 @@ import { getMine, saveMine } from './palette-library';
 import { exportPalette, importPalette } from './palette-file';
 import { openNamingDialog } from './naming-dialog';
 import { buildButton } from './edit-primitives';
+import { mountGradientBar } from './ui-bar';
+import { type WebGPUStatus } from './webgpu-check';
 import { COLORS } from './ui-tokens';
 import { consumeGradientHandoff, writeGradientReturn } from './edit-state';
 import { resampleToN } from './palette-transforms';
@@ -20,7 +22,12 @@ import {
 } from './color-index-map';
 
 export interface GradientPageOpts {
-  root: HTMLElement;
+  /** #353 — the shared top-bar root (`#pyr3-bar`). The page mounts
+   *  `mountGradientBar` here and owns it; the editor + flame body mount into
+   *  the bar's `middleSlot`. */
+  barRoot: HTMLElement;
+  /** #353 — WebGPU status threaded to the bar chrome (drives the WebGPU pill). */
+  webgpu: WebGPUStatus;
   initialPalette?: Palette;
   /** #269 — optional GPU device/format. When present (passed from main.ts), the
    *  page renders the flame below the bar; absent (unit tests / no WebGPU) it
@@ -54,15 +61,11 @@ function gradientCssFromStops(stops: ColorStop[]): string {
 }
 
 export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
+  // #353 — the editor + flame body lives in the shared bar's middleSlot.
   const wrap = document.createElement('div');
   Object.assign(wrap.style, {
     maxWidth: '760px', margin: '0 auto', padding: '24px 16px', color: COLORS.text.primary,
   });
-
-  const title = document.createElement('h1');
-  title.textContent = 'Gradient editor';
-  Object.assign(title.style, { fontSize: '18px', margin: '0 0 8px', color: COLORS.flame.top });
-  wrap.appendChild(title);
 
   // basic instructions (collapsible, open by default)
   const help = document.createElement('details');
@@ -96,23 +99,6 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   help.append(summary, helpBody);
   wrap.appendChild(help);
 
-  // name row
-  const nameRow = document.createElement('div');
-  Object.assign(nameRow.style, { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' });
-  const nameLabel = document.createElement('span');
-  nameLabel.textContent = 'name';
-  Object.assign(nameLabel.style, { fontSize: '12px', color: COLORS.text.muted, width: '48px' });
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.dataset['role'] = 'name';
-  nameInput.placeholder = 'palette name';
-  Object.assign(nameInput.style, {
-    flex: '1 1 0', background: COLORS.bg.input, color: COLORS.text.primary,
-    border: `1px solid ${COLORS.border}`, borderRadius: '3px', padding: '4px 8px',
-  });
-  nameRow.append(nameLabel, nameInput);
-  wrap.appendChild(nameRow);
-
   // editor — `seed` is the palette the page opened with; Reset restores it.
   // #266 — if a flame's palette was handed off from /v1/edit, enter round-trip
   // mode: the flame's palette opens read-only behind a "Modify gradient" gate
@@ -135,6 +121,27 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     && (handoff.editable || seed.stops.length <= ROUNDTRIP_RESAMPLE_N)
     && seed.stops.length <= ROUNDTRIP_DENSE_CAP;
 
+  // #353 — mount the shared top bar. It owns the chrome + the load/library/file
+  // action verbs (+ Apply/Cancel in round-trip mode) + the read-only palette
+  // identity chip + transient status. The editor + flame body mount into its
+  // middleSlot below. Callbacks are forward refs to functions declared further
+  // down (only invoked on click, never at mount time).
+  const bar = mountGradientBar(opts.barRoot, {
+    webgpu: opts.webgpu,
+    roundTrip,
+    onLoadFlame: () => loadFlameInput.click(),
+    onBrowse: () => openBrowse(),
+    onSave: () => { void doSave(); },
+    onExport: () => { void doExport(); },
+    onImport: () => fileInput.click(),
+    onReset: () => doReset(),
+    // Round-trip CTAs — write the (possibly untouched) palette back + return,
+    // or return without writing (flame keeps its palette). (#266)
+    onApply: () => { writeGradientReturn(currentPalette()); gradReturnNav.go(); },
+    onCancelReturn: () => { gradReturnNav.go(); },
+  });
+  function setStatus(msg: string): void { bar.setStatus(msg); }
+
   const editorHost = document.createElement('div');
   wrap.appendChild(editorHost);
 
@@ -145,7 +152,7 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
       initial: { name, stops },
       onChange: () => scheduleFlameRender(),   // #269 — live-update the flame
     });
-    nameInput.value = name;
+    bar.setIdentity(currentPalette().name);   // #353 — sync the read-only chip
     wireBarOverlay();   // #269 Phase 2 — (re)attach the point-to-paint overlay
   }
 
@@ -211,18 +218,17 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   if (!roundTrip) {
     // Standalone mode (unchanged): the seed palette is immediately editable.
     mountEditor(seed.stops, seed.name);
-    if (opts.initialPalette?.name) nameInput.value = opts.initialPalette.name;
   } else if (openInPlace) {
     // #266 — the handed palette is the user's OWN custom gradient (flagged
     // `editable`, or sparse enough to be one). No dense→sparse lossy conversion
     // to protect against, so skip the Modify gate and open it directly editable
     // — "the custom gradient I saved is right here, ready to keep editing."
-    nameInput.value = seed.name;
     mountEditor(seed.stops, seed.name);
   } else {
     // Dense flame palette (256-stop LUT): read-only strip + "Modify gradient"
-    // gate — explicit opt-in to the lossy resample.
-    nameInput.value = seed.name;
+    // gate — explicit opt-in to the lossy resample. The editor isn't mounted
+    // yet; surface the seed name on the bar's read-only identity chip. (#353)
+    bar.setIdentity(seed.name);
     const strip = document.createElement('div');
     strip.className = 'pyr3-gradient-readonly-strip';
     Object.assign(strip.style, {
@@ -273,31 +279,29 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     editorHost.append(modifyRow, notice, confirmRow);
   }
 
-  // status line
-  const status = document.createElement('div');
-  Object.assign(status.style, { fontSize: '12px', color: COLORS.text.muted, minHeight: '16px', margin: '8px 0' });
-  function setStatus(msg: string): void { status.textContent = msg; }
-
-  // current palette = editor stops + the name field. In round-trip mode the
-  // editor may not be mounted yet (Modify not pressed) — fall back to the seed
-  // so Apply-without-Modify sends the original untouched palette (#266).
+  // current palette = the editor's palette. #353 — the name comes from the
+  // editor's palette (set via the #346 naming dialog on Save/Export); there is
+  // no bar name input. In round-trip mode the editor may not be mounted yet
+  // (Modify not pressed) — fall back to the seed so Apply-without-Modify sends
+  // the original untouched palette (#266).
   function currentPalette(): Palette {
     if (editor) {
       const p = editor.getPalette();
-      return { ...p, name: nameInput.value.trim() || p.name || 'untitled' };
+      return { ...p, name: p.name?.trim() || seed.name || 'untitled' };
     }
-    return { ...seed, name: nameInput.value.trim() || seed.name };
+    return { ...seed, name: seed.name || 'untitled' };
   }
 
   // Set a palette into the live editor, mounting it first if it isn't up yet
   // (round-trip mode before Modify — Browse / Import replace the read-only
-  // strip with an editable editor). #266
+  // strip with an editable editor). #266 — and refresh the bar identity chip.
   function setPaletteOrMount(p: Palette): void {
-    if (editor) { editor.setPalette(p); nameInput.value = p.name; }
+    if (editor) { editor.setPalette(p); }
     else { mountEditor(p.stops, p.name); }
+    bar.setIdentity(currentPalette().name);
   }
 
-  // actions
+  // action handlers — wired into the bar's verb callbacks (#353).
   let picker: PalettePickerHandle | null = null;
   function closePicker(): void { if (picker) { picker.destroy(); picker = null; } }
   function openBrowse(): void {
@@ -337,15 +341,14 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     closePicker();
     // Round-trip mode, still behind the Modify gate (editor not mounted): Reset
     // must NOT mount a live editor — that would silently bypass the lossy-
-    // conversion notice. Only the name field is mutable pre-Modify, so restore
-    // it and leave the read-only strip + gate intact. (#266 review fix)
+    // conversion notice. Leave the read-only strip + gate intact; only restore
+    // the bar's identity chip to the seed name. (#266 review fix / #353)
     if (roundTrip && editor === null) {
-      nameInput.value = seed.name;
+      bar.setIdentity(seed.name);
       setStatus('Reset to the starting palette');
       return;
     }
     setPaletteOrMount(seed);
-    nameInput.value = roundTrip ? seed.name : (opts.initialPalette?.name ?? '');
     setStatus('Reset to the starting palette');
   }
 
@@ -362,19 +365,9 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
       .finally(() => { fileInput.value = ''; });
   });
 
-  const actions = document.createElement('div');
-  Object.assign(actions.style, { display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' });
-  const browse = buildButton({ variant: 'primary', label: 'Browse library…', onClick: openBrowse });
-  browse.dataset['role'] = 'browse';
-  const save = buildButton({ variant: 'accent', label: 'Save to library', onClick: doSave });
-  save.dataset['role'] = 'save';
-  const exportBtn = buildButton({ variant: 'plain', label: 'Export .json', onClick: doExport });
-  exportBtn.dataset['role'] = 'export';
-  const importBtn = buildButton({ variant: 'plain', label: 'Import…', onClick: () => fileInput.click() });
-  importBtn.dataset['role'] = 'import';
-  const resetBtn = buildButton({ variant: 'plain', label: '↺ Reset', onClick: doReset });
-  resetBtn.dataset['role'] = 'reset';
-  resetBtn.style.marginLeft = 'auto'; // push Reset to the far end, away from constructive actions
+  // #353 — the load/library/file action verbs (+ Apply/Cancel round-trip CTAs)
+  // now live in the shared bar (mountGradientBar). The page keeps only the
+  // hidden file <input>s the bar's onLoadFlame / onImport callbacks trigger.
 
   // #269 — "Load flame…" — open a flame file, render it, adopt its palette.
   const loadFlameInput = document.createElement('input');
@@ -387,42 +380,16 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     loadFlameFile(f)
       .then((res) => {
         currentFlame = res.genome;                 // adopt + render
-        setPaletteOrMount(res.genome.palette);     // override the bar
-        nameInput.value = res.genome.palette.name;
+        setPaletteOrMount(res.genome.palette);     // override the bar (sets identity)
         renderFlame();
         setStatus(`Loaded flame "${f.name}"`);
       })
       .catch((err: Error) => setStatus(err.message))
       .finally(() => { loadFlameInput.value = ''; });
   });
-  const loadFlameBtn = buildButton({ variant: 'primary', label: 'Load flame…', icon: '🔥', onClick: () => loadFlameInput.click() });
-  loadFlameBtn.dataset['role'] = 'load-flame';
 
-  actions.append(loadFlameBtn, browse, save, exportBtn, importBtn, resetBtn, fileInput, loadFlameInput);
-
-  // #266 — round-trip mode adds an "Apply to flame" CTA that leads the row;
-  // it writes the (possibly untouched) palette back for /v1/edit to consume.
-  if (roundTrip) {
-    // "Cancel, return to flame" — navigate back WITHOUT writing a return, so
-    // the flame keeps its current palette untouched. (#266)
-    const cancelBtn = buildButton({
-      variant: 'plain', label: 'Cancel, return to flame', icon: '✕',
-      onClick: () => { gradReturnNav.go(); },
-    });
-    cancelBtn.dataset['role'] = 'cancel-return';
-    actions.insertBefore(cancelBtn, actions.firstChild);
-
-    const applyBtn = buildButton({
-      variant: 'primary', label: 'Apply to flame', icon: '✓',
-      onClick: () => { writeGradientReturn(currentPalette()); gradReturnNav.go(); },
-    });
-    applyBtn.dataset['role'] = 'apply';
-    actions.insertBefore(applyBtn, actions.firstChild);  // lead the row
-  }
-
-  // #269 — three-zone layout: [ editor | actions ] on top, flame below.
-  // nameRow + editorHost were appended to `wrap` earlier; re-parent them into
-  // the editor column (appendChild moves existing nodes).
+  // #269 — flame body below the editor; editorHost was appended to `wrap`
+  // earlier — re-parent it into the editor column (appendChild moves nodes).
   const topZone = document.createElement('div');
   topZone.dataset['zone'] = 'top';
   Object.assign(topZone.style, { display: 'flex', gap: '16px', alignItems: 'flex-start' });
@@ -445,19 +412,12 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     + 'hover the bar to highlight those flame regions · '
     + 'click a flame spot to select its stop · double-click to add one.',
   );
-  editorCol.append(nameRow, editorHost, status, barHint);
+  // #353 — the actions column moved to the shared bar; the body is now just
+  // the editor column (editor + point-to-paint hint) with the hidden file
+  // <input>s parked in the subtree so the bar's callbacks can trigger them.
+  editorCol.append(editorHost, barHint, fileInput, loadFlameInput);
 
-  const actionsCol = document.createElement('div');
-  actionsCol.dataset['zone'] = 'actions';
-  Object.assign(actionsCol.style, {
-    display: 'flex', flexDirection: 'column', gap: '8px', flex: '0 0 auto', minWidth: '150px',
-  });
-  // `actions` already holds the buttons; restyle from a wrap-row to a column.
-  Object.assign(actions.style, { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '0' });
-  resetBtn.style.marginLeft = '0'; // no longer pushing to the far end of a row
-  actionsCol.appendChild(actions);
-
-  topZone.append(editorCol, actionsCol);
+  topZone.append(editorCol);
 
   // #269 — flame zone: render the flame below the bar (device-optional).
   const flameZone = document.createElement('div');
@@ -691,7 +651,8 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
 
   wrap.append(topZone, flameZone);
 
-  opts.root.appendChild(wrap);
+  // #353 — the body mounts into the shared bar's middleSlot (below the bar rows).
+  bar.middleSlot.appendChild(wrap);
   renderFlame();   // paint the flame (or placeholder) once mounted
 
   return {
@@ -704,6 +665,7 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
       if (editor) editor.destroy();
       indexMap = null; indexMapGenome = null;   // #269 Phase 2 — drop the cache
       wrap.remove();
+      bar.destroy();              // #353 — tear down the shared bar chrome
     },
   };
 }

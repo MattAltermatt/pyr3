@@ -32,29 +32,28 @@ function installLocalStorageStub(): void {
 describe('gradient-page (#115 T11)', () => {
   beforeEach(() => installLocalStorageStub());
 
-  it('mounts editor + the four actions', () => {
+  it('mounts editor + the action verbs in the shared bar (#353)', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('[data-role="strip"]')).toBeTruthy();
+    // #353 — the action verbs moved into mountGradientBar (still under `root`).
     for (const r of ['browse', 'save', 'export', 'import'])
       expect(root.querySelector(`[data-role="${r}"]`)).toBeTruthy();
     h.destroy();
   });
 
-  it('lays out actions in a right column and reserves a flame zone (#269)', () => {
+  it('reserves a flame zone (#269)', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
-    expect(root.querySelector('[data-zone="top"]')).toBeTruthy();
-    const actionsZone = root.querySelector('[data-zone="actions"]') as HTMLElement;
-    expect(actionsZone).toBeTruthy();
-    expect(actionsZone.querySelector('[data-role="browse"]')).toBeTruthy(); // actions live in the right column
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
+    // #353 — the action verbs live in the bar now, not a body actions column.
+    expect(root.querySelector('[data-role="browse"]')).toBeTruthy();
     expect(root.querySelector('[data-zone="flame"]')).toBeTruthy();
     h.destroy();
   });
 
   it('shows a flame-zone placeholder when no device/flame is present (#269)', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });                  // no device, no handoff
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });  // no device, no handoff
     const zone = root.querySelector('[data-zone="flame"]') as HTMLElement;
     const ph = zone.querySelector('[data-role="flame-placeholder"]') as HTMLElement;
     expect(ph).toBeTruthy();
@@ -66,23 +65,26 @@ describe('gradient-page (#115 T11)', () => {
     h.destroy();
   });
 
-  it('has a "Load flame…" button in the actions column (#269)', () => {
+  it('has a "Load flame…" button in the bar (#269 / #353)', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
-    const actionsZone = root.querySelector('[data-zone="actions"]') as HTMLElement;
-    expect(actionsZone.querySelector('[data-role="load-flame"]')).toBeTruthy();
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
+    expect(root.querySelector('[data-role="load-flame"]')).toBeTruthy();
     h.destroy();
   });
 
   it('saves the current palette to the mine library via the naming dialog (#346)', async () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
-    (root.querySelector('[data-role="name"]') as HTMLInputElement).value = 'mypal';
+    // #353 — no bar name input; the editor's palette name seeds the dialog,
+    // which is the rename surface. seed name flows through to the dialog field.
+    const seed = { name: 'mypal', stops: [
+      { t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 },
+    ] };
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any, initialPalette: seed });
     // Click Save → the naming dialog mounts (palette-library kind → name only).
     (root.querySelector('[data-role="save"]') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
     const dialog = document.querySelector('.pyr3-naming-dialog') as HTMLElement;
     expect(dialog).toBeTruthy();
-    // Seeded from the name field; override + commit through the dialog.
+    // Seeded from the editor's palette name; override + commit through the dialog.
     const nameField = dialog.querySelector('[data-role="name"]') as HTMLInputElement;
     expect(nameField.value).toBe('mypal');
     nameField.value = 'dialognamed';
@@ -97,16 +99,17 @@ describe('gradient-page (#115 T11)', () => {
     const seed = { name: 'seedpal', stops: [
       { t: 0, r: 0, g: 0, b: 0 }, { t: 0.5, r: 0.5, g: 0.5, b: 0.5 }, { t: 1, r: 1, g: 1, b: 1 },
     ] };
-    const h = mountGradientPage({ root, initialPalette: seed });
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any, initialPalette: seed });
     expect(root.querySelectorAll('[data-role="handle"]').length).toBe(3);
     // mutate: resample to 8 handles
     (root.querySelector('[data-role="resample-n"]') as HTMLInputElement).value = '8';
     (root.querySelector('[data-role="resample"]') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(root.querySelectorAll('[data-role="handle"]').length).toBe(8);
-    // reset
+    // reset restores the original 3-stop seed
     (root.querySelector('[data-role="reset"]') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(root.querySelectorAll('[data-role="handle"]').length).toBe(3);
-    expect((root.querySelector('[data-role="name"]') as HTMLInputElement).value).toBe('seedpal');
+    // #353 — the bar's read-only identity chip reflects the restored seed name.
+    expect((root.querySelector('[data-role="palette-identity"]') as HTMLElement).textContent).toContain('seedpal');
     h.destroy();
   });
 });
@@ -117,7 +120,7 @@ describe('gradient page round-trip mode', () => {
   it('shows read-only strip + Modify + Apply when a handoff is present', () => {
     writeGradientHandoff(genomeWithStops(256));
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeTruthy();
     expect(root.querySelector('[data-role="modify"]')).toBeTruthy();
     expect(root.querySelector('[data-role="apply"]')).toBeTruthy();
@@ -125,14 +128,14 @@ describe('gradient page round-trip mode', () => {
 
   it('no Apply button in standalone mode', () => {
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('[data-role="apply"]')).toBeNull();
   });
 
   it('Modify → confirm resamples to ~16 editable stops', () => {
     writeGradientHandoff(genomeWithStops(256));
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     (root.querySelector('[data-role="modify"]') as HTMLElement).click();
     (root.querySelector('[data-role="modify-confirm"]') as HTMLElement).click();
     // the live editor is now mounted (read-only strip gone)
@@ -144,7 +147,7 @@ describe('gradient page round-trip mode', () => {
     let navd = false;
     gradReturnNav.go = () => { navd = true; };
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     (root.querySelector('[data-role="apply"]') as HTMLElement).click();
     expect(consumeGradientReturn()).toBeTruthy();
     expect(navd).toBe(true);
@@ -155,7 +158,7 @@ describe('gradient page round-trip mode', () => {
     // before the user opts into the lossy conversion via Modify + confirm.
     writeGradientHandoff(genomeWithStops(256));
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     (root.querySelector('[data-role="reset"]') as HTMLElement).click();
     // Gate intact: read-only strip + Modify button still present, no editor.
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeTruthy();
@@ -168,7 +171,7 @@ describe('gradient page round-trip mode', () => {
     // (durable fallback that survives a reload losing custom provenance).
     writeGradientHandoff(genomeWithStops(16));
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeNull();
     expect(root.querySelector('[data-role="modify"]')).toBeNull();
     expect(root.querySelectorAll('[data-role="handle"]').length).toBe(16); // live editor
@@ -181,7 +184,7 @@ describe('gradient page round-trip mode', () => {
     // provenance flag wins over stop-count: opens editable, no Modify gate.
     writeGradientHandoff(genomeWithStops(30), true);
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeNull();
     expect(root.querySelector('[data-role="modify"]')).toBeNull();
     expect(root.querySelectorAll('[data-role="handle"]').length).toBe(30);
@@ -192,7 +195,7 @@ describe('gradient page round-trip mode', () => {
     // too dense to render handle-per-stop → still goes behind the Modify gate.
     writeGradientHandoff(genomeWithStops(256), true);
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('.pyr3-gradient-readonly-strip')).toBeTruthy();
     expect(root.querySelector('[data-role="modify"]')).toBeTruthy();
   });
@@ -202,7 +205,7 @@ describe('gradient page round-trip mode', () => {
     let navd = false;
     gradReturnNav.go = () => { navd = true; };
     const root = document.createElement('div');
-    mountGradientPage({ root });
+    mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     (root.querySelector('[data-role="cancel-return"]') as HTMLElement).click();
     expect(navd).toBe(true);
     expect(consumeGradientReturn()).toBeNull(); // flame keeps its palette
@@ -214,7 +217,7 @@ describe('gradient page point-to-paint (#269 Phase 2)', () => {
 
   it('overlays the point-to-paint hint on the gradient bar', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });   // GPU-free path (editor mounts → strip exists)
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });   // GPU-free path (editor mounts → strip exists)
     const strip = root.querySelector('[data-role="strip"]') as HTMLElement;
     expect(strip).not.toBeNull();
     // wireBarOverlay appends the hint canvas INTO the editor's gradient bar.
@@ -224,21 +227,21 @@ describe('gradient page point-to-paint (#269 Phase 2)', () => {
 
   it('mounts the flame overlay canvas', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.querySelector('[data-role="flame-overlay"]')).not.toBeNull();
     h.destroy();
   });
 
   it('help mentions point-to-paint', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     expect(root.textContent).toContain('Point-to-paint');
     h.destroy();
   });
 
   it('shows a persistent point-to-paint hint caption under the bar', () => {
     const root = document.createElement('div'); document.body.appendChild(root);
-    const h = mountGradientPage({ root });
+    const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
     const hint = root.querySelector('[data-role="point-to-paint-hint"]');
     expect(hint).not.toBeNull();
     expect(hint!.textContent).toContain('click a flame spot to select its stop');

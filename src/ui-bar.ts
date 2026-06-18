@@ -533,6 +533,115 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   };
 }
 
+// ─── mountGradientBar (#353) ────────────────────────────────────────────────
+// The /gradient top-bar variant. Parallel to mountEditBar: shared chrome
+// (surface: 'gradient') + a `.pyr3-bar-info` row (read-only palette identity +
+// status) + a `.pyr3-bar-action` row (Load flame · Browse · Save · Export ·
+// Import · Reset, plus Apply/Cancel CTAs in round-trip mode). Naming is NOT a
+// bar input — the palette name is set in the #346 save-time dialog (Save /
+// Export route through it); the bar just shows a read-only "🎨 <name>" identity
+// (consistent with the editor/viewer bars). The palette editor + flame zone
+// mount into chrome.middleSlot below the rows. Action behavior lives in
+// gradient-page.ts — the bar carries the controls + their callbacks.
+
+export interface GradientBarOpts {
+  webgpu: WebGPUStatus;
+  /** Round-trip mode (a flame's palette handed off from /editor): the action
+   *  row leads with Apply-to-flame + Cancel-return CTAs. */
+  roundTrip?: boolean;
+  onLoadFlame: () => void;
+  onBrowse: () => void;
+  onSave: () => void;
+  onExport: () => void;
+  onImport: () => void;
+  onReset: () => void;
+  /** Round-trip only — write the (possibly untouched) palette back + return. */
+  onApply?: () => void;
+  /** Round-trip only — return to the flame without writing a palette back. */
+  onCancelReturn?: () => void;
+  /** #264 — vestigial (nav self-navigates); kept for back-compat parity. */
+  onTabClick?: (surface: TabSurface) => void;
+}
+
+export interface GradientBarHandle {
+  /** The palette editor + flame zone mount here, below the bar rows. */
+  middleSlot: HTMLElement;
+  /** Transient status text in the info row. */
+  setStatus(msg: string): void;
+  /** Read-only "🎨 <name>" palette identity in the info row (empty → hidden). */
+  setIdentity(name: string): void;
+  destroy(): void;
+}
+
+export function mountGradientBar(root: HTMLElement, opts: GradientBarOpts): GradientBarHandle {
+  injectStylesOnce();
+  root.replaceChildren();
+  root.classList.add('pyr3-bar-root');
+
+  const chrome = mountBarChrome(root, {
+    surface: 'gradient',
+    webgpu: opts.webgpu,
+    onTabClick: opts.onTabClick,
+  });
+
+  // Info row — read-only palette identity (reuses the loaded-source chip style)
+  // + a status chip the page writes through setStatus.
+  const infoRow = el('div', 'pyr3-bar-info');
+  const infoLeft = el('div', 'pyr3-zone-left');
+  const identity = el('span', 'pyr3-bar-loaded-source');
+  identity.dataset['role'] = 'palette-identity';
+  identity.style.display = 'none';
+  const statusEl = el('span', 'pyr3-bar-gradient-status');
+  statusEl.dataset['role'] = 'status';
+  statusEl.style.fontSize = '11px';
+  statusEl.style.opacity = '0.7';
+  statusEl.style.marginLeft = '8px';
+  statusEl.style.fontStyle = 'italic';
+  infoLeft.append(identity, statusEl);
+  infoRow.append(infoLeft);
+
+  // Action row — the load/library/file verbs the page used to bury in a body
+  // flex-wrap row, promoted to the shared action bar.
+  const actionRow = el('div', 'pyr3-bar-action');
+  const actionLeft = el('div', 'pyr3-zone-actleft');
+  const mk = (label: string, role: string, cls: string, cb: () => void): HTMLButtonElement => {
+    const b = button(label, cls, cb);
+    b.dataset['role'] = role;
+    return b;
+  };
+  const loadFlameBtn = mk('🔥 Load flame…', 'load-flame', 'pyr3-bar-btn', () => opts.onLoadFlame());
+  loadFlameBtn.title = 'Open a flame file, render it, and paint with its palette';
+  const browseBtn = mk('Browse library…', 'browse', 'pyr3-bar-btn', () => opts.onBrowse());
+  const saveBtn = mk('Save to library', 'save', 'pyr3-bar-btn', () => opts.onSave());
+  const exportBtn = mk('Export .json', 'export', 'pyr3-bar-btn', () => opts.onExport());
+  const importBtn = mk('Import…', 'import', 'pyr3-bar-btn', () => opts.onImport());
+  const resetBtn = mk('↺ Reset', 'reset', 'pyr3-bar-btn', () => opts.onReset());
+  actionLeft.append(loadFlameBtn, browseBtn, saveBtn, exportBtn, importBtn, resetBtn);
+
+  if (opts.roundTrip) {
+    const applyBtn = mk('✓ Apply to flame', 'apply', 'pyr3-btn-primary', () => opts.onApply?.());
+    const cancelBtn = mk('✕ Cancel, return to flame', 'cancel-return', 'pyr3-bar-btn', () => opts.onCancelReturn?.());
+    actionLeft.prepend(applyBtn, cancelBtn);
+  }
+  actionRow.append(actionLeft);
+
+  chrome.middleSlot.append(infoRow, actionRow);
+
+  return {
+    middleSlot: chrome.middleSlot,
+    setStatus(msg) { statusEl.textContent = msg; },
+    setIdentity(name) {
+      const n = name.trim();
+      identity.textContent = n ? `🎨 ${n}` : '';
+      identity.style.display = n ? '' : 'none';
+    },
+    destroy(): void {
+      chrome.destroy();
+      root.classList.remove('pyr3-bar-root');
+    },
+  };
+}
+
 export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   injectStylesOnce();
   root.replaceChildren();

@@ -303,20 +303,13 @@ async function main(): Promise<void> {
       console.error('pyr3: /v1/gradient — required DOM nodes missing');
       return;
     }
-    const { mountBarChrome } = await import('./ui-bar');
-    const chrome = mountBarChrome(barRoot, { surface: 'gradient', webgpu });
+    // #353 — the page now OWNS the bar (mountGradientBar) so the action verbs
+    // live in the shared chrome. main only hides the viewer canvas + drops the
+    // first-paint cue, acquires GPU best-effort, and hands #pyr3-bar to the page.
     const canvas = document.getElementById('pyr3-canvas');
     if (canvas) canvas.hidden = true;
     const firstPaint = document.getElementById('pyr3-firstpaint');
     if (firstPaint) firstPaint.remove();
-    const gradContainer = document.createElement('div');
-    gradContainer.id = 'pyr3-gradient';
-    Object.assign(gradContainer.style, {
-      position: 'relative',
-      height: 'calc(100vh - 44px)',
-      overflow: 'auto',
-    });
-    chrome.middleSlot.appendChild(gradContainer);
     // #269 — acquire a GPU device so the gradient editor can render the flame.
     // Best-effort: if WebGPU is unavailable the page still works palette-only.
     let gradGpu: { device: GPUDevice; format: GPUTextureFormat } | undefined;
@@ -327,7 +320,7 @@ async function main(): Promise<void> {
       console.warn('pyr3: /v1/gradient — GPU unavailable, palette-only mode', err);
     }
     const { mountGradientPage } = await import('./gradient-page');
-    const gradientHandle = mountGradientPage({ root: gradContainer, ...(gradGpu ?? {}) });
+    const gradientHandle = mountGradientPage({ barRoot, webgpu, ...(gradGpu ?? {}) });
     window.addEventListener('pagehide', () => { gradientHandle.destroy(); }, { once: true });
     setDocTitle('gradient');
     return;
