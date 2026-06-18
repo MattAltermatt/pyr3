@@ -91,6 +91,15 @@ const WELCOME_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/electricsheep.${H
 
 const RENDER_SIZE = 1024;
 
+/** #346 — strip a known download extension off a composed filename so it can
+ *  seed the naming dialog's (extension-less) filename field. Handles the two
+ *  viewer-save extensions (`.png`, `.pyr3.json`) plus a generic single ext. */
+function stripExt(filename: string): string {
+  return filename
+    .replace(/\.pyr3\.json$/i, '')
+    .replace(/\.png$/i, '');
+}
+
 // Quick-preview render caps. Many .flam3 files (especially Electric
 // Sheep / JWildfire pieces) ship with offline-rendering presets:
 // `size="4096 4096"`, `quality="1000"`, `oversample="4"` are common.
@@ -213,7 +222,7 @@ async function main(): Promise<void> {
   };
   // Forwarding ref: #22 — the canvas isn't bound until initDevice resolves, so
   // the Save click routes through this shim until the real downloader replaces it.
-  let saveCanvas: (filename: string) => void = () => {
+  let saveCanvas: (filename: string, metaOverride?: { name?: string; nick?: string }) => void = () => {
     console.warn('pyr3: save invoked before canvas init');
   };
 
@@ -455,15 +464,47 @@ async function main(): Promise<void> {
     onRenderQuality: (req) => renderQualityFn(req),
     onNavigate: (gen, id) => navigateCorpus(gen, id),
     estimateCost: (longEdge, spp) => estimateCostFn(longEdge, spp),
-    onSave: (filename) => saveCanvas(filename),
+    // #346 — Save Render opens the naming dialog (name · nick · filename),
+    // seeded from the current flame + the bar's auto-composed filename. The
+    // dialog hands back the chosen values; saveCanvas embeds name/nick into the
+    // PNG metadata and downloads under the chosen filename. Cancel bails.
+    onSave: (filename) => {
+      const current = getCurrentFlame();
+      void import('./naming-dialog').then(async ({ openNamingDialog }) => {
+        const res = await openNamingDialog({
+          kind: 'render',
+          seed: {
+            name: viewerCurrentFlameName ?? current?.genome.name ?? '',
+            nick: current?.genome.nick ?? '',
+            filename: stripExt(filename),
+          },
+          ext: 'png',
+        });
+        if (!res) return;
+        saveCanvas(`${res.filename}.png`, { name: res.name, nick: res.nick });
+      });
+    },
     // #103 Phase 3 Task 3.3: 🧬 Save Flame exports the current genome as
     // `.pyr3.json`. `getCurrentFlame()` carries the genome the viewer is
     // displaying — set during every corpus load / file open / surprise pick.
+    // #346 — gated on the naming dialog; the chosen name/nick override the
+    // serialized genome's identity.
     onSaveFlame: (filename) => {
       const current = getCurrentFlame();
       if (!current) return;
-      void import('./save-flame').then(({ saveFlame }) => {
-        saveFlame(current.genome, filename);
+      void import('./naming-dialog').then(async ({ openNamingDialog }) => {
+        const res = await openNamingDialog({
+          kind: 'flame',
+          seed: {
+            name: current.genome.name ?? '',
+            nick: current.genome.nick ?? '',
+            filename: stripExt(filename),
+          },
+          ext: 'pyr3.json',
+        });
+        if (!res) return;
+        const { saveFlame } = await import('./save-flame');
+        saveFlame({ ...current.genome, name: res.name, nick: res.nick }, `${res.filename}.pyr3.json`);
       });
     },
     // #264 — explicit "✏️ Edit this flame": carry the current flame into the
@@ -570,10 +611,11 @@ async function main(): Promise<void> {
     const barRoot = document.getElementById('pyr3-bar')!;
     const editBar = mountEditBar(barRoot, {
       webgpu,
-      onNameChange: (name) => editorRef?.setName(name),
-      onNickChange: (nick) => editorRef?.setNick(nick),
-      initialName: initialSaveDefaults.flameName,
-      initialNick: initialSaveDefaults.flameNick,
+      // #346 — editable naming (name/nick inputs + template preview) moved out
+      // of the bar into the save-time naming dialog. The bar keeps only its
+      // read-only loaded-source chip (driven by setMeta below). The editor
+      // still exposes setName/setNick/computeFilenamePreview on editorRef so
+      // the dialog (Task 4) can seed + commit save-defaults through them.
       // #103 Phase 6 Task 6.2 — action row callbacks. Each one routes into an
       // existing editor handler (handleReroll / handleOpenFile /
       // handleSaveFile / handleRenderPng) or a new setter exposed on
@@ -582,7 +624,6 @@ async function main(): Promise<void> {
       onReroll: () => editorRef?.reroll(),
       onUndo: () => editorRef?.undo(),
       onRedo: () => editorRef?.redo(),
-      computePreview: (template) => editorRef?.computeFilenamePreview(template) ?? null,
       onSizeChange: (w, h) => editorRef?.setSize(w, h),
       onQualityChange: (q) => editorRef?.setQuality(q),
       onSettleChange: (ms) => {
@@ -728,7 +769,7 @@ async function main(): Promise<void> {
   // #123 — the resulting PNG carries a `pyr3`-keyed tEXt chunk with the
   // current genome serialized as JSON. Self-describing output; round-trips
   // via a future PNG-import reader.
-  saveCanvas = (filename) => {
+  saveCanvas = (filename, metaOverride) => {
     canvas.toBlob(async (blob) => {
       if (!blob) {
         bar.showToast('Save failed — canvas was not snapshottable');
@@ -737,7 +778,13 @@ async function main(): Promise<void> {
       let finalBlob: Blob = blob;
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer());
-        const pyr3Json = JSON.stringify(genomeToJson(activeGenome));
+        // #346 — apply the naming dialog's chosen name/nick to the embedded
+        // genome metadata so the saved PNG is self-describing with the user's
+        // chosen identity (not the loaded flame's).
+        const metaGenome: Genome = metaOverride
+          ? { ...activeGenome, name: metaOverride.name ?? activeGenome.name, nick: metaOverride.nick ?? activeGenome.nick }
+          : activeGenome;
+        const pyr3Json = JSON.stringify(genomeToJson(metaGenome));
         const withMetadata = injectPngTextChunk(bytes, 'pyr3', pyr3Json);
         finalBlob = new Blob([withMetadata as BlobPart], { type: 'image/png' });
       } catch (err) {
@@ -834,6 +881,22 @@ async function main(): Promise<void> {
     exportOpts: { format: ExportFormat; transparent: boolean } = { format: 'png8', transparent: false },
   ): Promise<void> {
     if (viewerRenderInFlight) return;
+    // #346 — save-time naming dialog for the viewer's render-mode-bar 💾 Save
+    // Render. Seeds from the current flame; the chosen name/nick override the
+    // embedded PNG metadata and the chosen filename drives the download.
+    // Cancel/Escape bails with no render.
+    const cur = getCurrentFlame();
+    const seedName = viewerCurrentFlameName || cur?.genome.name || activeGenome.name || '';
+    const naming = await (await import('./naming-dialog')).openNamingDialog({
+      kind: 'render',
+      seed: {
+        name: seedName,
+        nick: cur?.genome.nick ?? activeGenome.nick ?? '',
+        filename: (seedName.trim().replace(/[^A-Za-z0-9._-]/g, '_') || 'pyr3-render'),
+      },
+      ext: exportOpts.format === 'exr' ? 'exr' : 'png',
+    });
+    if (!naming) return;
     viewerRenderInFlight = true;
     // #176 — render dims + quality come from viewerRenderCfg (workstation
     // pref), NOT activeGenome (which carries the flame's declared values
@@ -893,13 +956,12 @@ async function main(): Promise<void> {
       canvas.width = targetW;
       canvas.height = targetH;
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
-      // Filename: use the SAME source the chrome bar's existing 🧬 Save uses
-      // (viewerCurrentFlameName = result.genome.name || sourceBase) — keyed
-      // to the corpus path (electricsheep.{gen}.{id}) when the genome.name
-      // is missing. Falls back through genome.name → 'pyr3-render'.
-      const rawName = viewerCurrentFlameName || renderGenome.name || 'pyr3-render';
-      const baseName = rawName.trim().replace(/[^A-Za-z0-9._-]/g, '_') || 'pyr3-render';
-      const filename = `${baseName}.pyr3.png`;
+      // #346 — filename + identity come from the naming dialog. The chosen
+      // name/nick override the embedded genome metadata so the saved PNG is
+      // self-describing with the user's chosen identity.
+      const baseName = naming.filename.trim().replace(/[^A-Za-z0-9._-]/g, '_') || 'pyr3-render';
+      const filename = `${baseName}.png`;
+      const metaGenome: Genome = { ...renderGenome, name: naming.name, nick: naming.nick };
       // #201 P0 Task 2 — single Save Render fork point shared with the
       // editor. Helper handles startChunkedRender + AbortSignal bridge +
       // GPU drain + toBlob + injectPngTextChunk + anchor download. Task 7
@@ -913,7 +975,7 @@ async function main(): Promise<void> {
         abortSignal: abortCtrl.signal,
         onProgress: (info) => modal.setProgress(info),
         filename,
-        metadataJson: JSON.stringify(genomeToJson(renderGenome)),
+        metadataJson: JSON.stringify(genomeToJson(metaGenome)),
         targetSamples,
         seedBase: seed,
         walkerJitter: currentWalkerJitter,

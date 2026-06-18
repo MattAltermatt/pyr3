@@ -56,9 +56,13 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function exportPalette(p: Palette): void {
+/** Export a palette as a `.pyre-palette.json` download.
+ *  #346 — `filename` (optional, no extension) overrides the auto-composed
+ *  name from `p.name`; the `.pyre-palette.json` suffix is always appended. */
+export function exportPalette(p: Palette, filename?: string): void {
+  const base = filename !== undefined && filename.trim() !== '' ? sanitize(filename) : sanitize(p.name);
   downloadBlob(new Blob([serializePalette(p)], { type: 'application/json' }),
-    `${sanitize(p.name)}.pyre-palette.json`);
+    `${base}.pyre-palette.json`);
 }
 
 export function importPalette(file: File): Promise<Palette> {

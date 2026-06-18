@@ -5,6 +5,7 @@ import { type PaletteSource } from './flam3-palette-names';
 import { getLibraryStops } from './flam3-palettes';
 import { getMine, saveMine } from './palette-library';
 import { exportPalette, importPalette } from './palette-file';
+import { openNamingDialog } from './naming-dialog';
 import { buildButton } from './edit-primitives';
 import { COLORS } from './ui-tokens';
 import { consumeGradientHandoff, writeGradientReturn } from './edit-state';
@@ -312,12 +313,26 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
       onClose: () => { closePicker(); },
     });
   }
-  function doSave(): void {
+  async function doSave(): Promise<void> {
+    // #346 — save-time naming dialog. Library palettes have no file, so the
+    // dialog shows only the palette-name field; its name becomes the library key.
     const p = currentPalette();
-    saveMine({ name: p.name, stops: p.stops, hue: p.hue, mode: p.mode });
-    setStatus(`Saved "${p.name}" to your library`);
+    const res = await openNamingDialog({ kind: 'palette-library', seed: { name: p.name } });
+    if (!res) return;
+    saveMine({ name: res.name, stops: p.stops, hue: p.hue, mode: p.mode });
+    setStatus(`Saved "${res.name}" to your library`);
   }
-  function doExport(): void { exportPalette(currentPalette()); }
+  async function doExport(): Promise<void> {
+    // #346 — palette-export dialog: palette name + filename (no nick).
+    const p = currentPalette();
+    const res = await openNamingDialog({
+      kind: 'palette-export',
+      seed: { name: p.name, filename: p.name },
+      ext: 'pyre-palette.json',
+    });
+    if (!res) return;
+    exportPalette({ ...p, name: res.name }, res.filename);
+  }
   function doReset(): void {
     closePicker();
     // Round-trip mode, still behind the Modify gate (editor not mounted): Reset

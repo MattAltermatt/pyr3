@@ -74,12 +74,21 @@ describe('gradient-page (#115 T11)', () => {
     h.destroy();
   });
 
-  it('saves the current palette to the mine library', () => {
+  it('saves the current palette to the mine library via the naming dialog (#346)', async () => {
     const root = document.createElement('div'); document.body.appendChild(root);
     const h = mountGradientPage({ root });
     (root.querySelector('[data-role="name"]') as HTMLInputElement).value = 'mypal';
+    // Click Save → the naming dialog mounts (palette-library kind → name only).
     (root.querySelector('[data-role="save"]') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(listMine().map((p) => p.name)).toContain('mypal');
+    const dialog = document.querySelector('.pyr3-naming-dialog') as HTMLElement;
+    expect(dialog).toBeTruthy();
+    // Seeded from the name field; override + commit through the dialog.
+    const nameField = dialog.querySelector('[data-role="name"]') as HTMLInputElement;
+    expect(nameField.value).toBe('mypal');
+    nameField.value = 'dialognamed';
+    (dialog.querySelector('[data-role="save"]') as HTMLElement).click();
+    await Promise.resolve();
+    expect(listMine().map((p) => p.name)).toContain('dialognamed');
     h.destroy();
   });
 

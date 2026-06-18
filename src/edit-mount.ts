@@ -39,6 +39,7 @@ import {
 } from './render-mode-config';
 import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
 import { openRenderProgressModal } from './render-progress-modal';
+import { openNamingDialog } from './naming-dialog';
 import { parsePreviewOverride } from './load-intent';
 import { genomeToJson } from './serialize';
 import { load } from './loader';
@@ -1074,10 +1075,37 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // #176 — gates the Save Render button + lane-conflict assertions in tests.
   let renderInFlight = false;
 
+  /** #346 — extension shown in the naming dialog's filename preview, derived
+   *  from the chosen export format. png8/png16 → png; exr → exr. */
+  function extForFormat(format: ExportFormat): string {
+    return format === 'exr' ? 'exr' : 'png';
+  }
+
   async function handleRenderPng(
     exportOpts: { format: ExportFormat; transparent: boolean } = { format: 'png8', transparent: false },
   ): Promise<void> {
     if (renderInFlight) return;
+    // #346 — save-time naming dialog. Seeds name/nick from the sticky save
+    // defaults (+ loaded-flame fallback), filename from the resolved template;
+    // computePreview drives the live `→ resolved.ext` tail. Cancel/Escape bails
+    // with no render. On commit the chosen name/nick are written back to the
+    // sticky save defaults so genomeForSerialize() embeds them.
+    const naming = await openNamingDialog({
+      kind: 'render',
+      seed: {
+        name: effectiveSaveName(),
+        nick: effectiveSaveNick() ?? '',
+        filename: resolveCurrentFilename(),
+      },
+      template: effectiveSaveName(),
+      computePreview: computeFilenamePreview,
+      ext: extForFormat(exportOpts.format),
+    });
+    if (!naming) return;
+    saveDefaults.flameName = naming.name;
+    saveDefaults.flameNick = naming.nick;
+    persistSaveDefaults();
+    notifyStateChange();
     renderInFlight = true;
     const targetW = state.genome.size?.width ?? 1024;
     const targetH = state.genome.size?.height ?? 1024;
@@ -1117,7 +1145,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       canvas.width = targetW;
       canvas.height = targetH;
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
-      const filename = resolveCurrentFilename();
+      // #346 — the user-chosen filename from the naming dialog (no extension).
+      const filename = naming.filename;
       const template = effectiveSaveName();
       // #201 P0 Task 2 — single Save Render fork point shared with the
       // viewer. Helper handles startChunkedRender + AbortSignal bridge +
@@ -1201,18 +1230,37 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     };
   }
 
-  function handleSaveFile(): void {
+  async function handleSaveFile(): Promise<void> {
+    // #346 — save-time naming dialog (Save Flame). Same seed shape as the
+    // render path; commits the chosen name/nick to the sticky save defaults
+    // before serialize so genomeForSerialize() embeds them. Cancel bails.
+    const naming = await openNamingDialog({
+      kind: 'flame',
+      seed: {
+        name: effectiveSaveName(),
+        nick: effectiveSaveNick() ?? '',
+        filename: resolveCurrentFilename(),
+      },
+      template: effectiveSaveName(),
+      computePreview: computeFilenamePreview,
+      ext: 'pyr3.json',
+    });
+    if (!naming) return;
+    saveDefaults.flameName = naming.name;
+    saveDefaults.flameNick = naming.nick;
+    persistSaveDefaults();
+    notifyStateChange();
     try {
       // #104 — note: genomeToJson writes the effective save name unchanged
       // (the literal template), so re-opens preserve editability. The
-      // filename uses the resolved form.
+      // filename uses the user-chosen form from the dialog.
       const json = JSON.stringify(genomeToJson(genomeForSerialize()), null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       const template = effectiveSaveName();
-      a.download = `${resolveCurrentFilename()}.pyr3.json`;
+      a.download = `${naming.filename}.pyr3.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1336,7 +1384,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       handleOpenFile();
     },
     saveFlame(): void {
-      handleSaveFile();
+      void handleSaveFile();
     },
     async saveRender(): Promise<void> {
       await handleRenderPng();

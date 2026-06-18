@@ -184,21 +184,6 @@ let stylesInjected = false;
  *  the version chip moved to /about; no longer shown in the top bar.) */
 export interface EditBarOpts {
   webgpu: WebGPUStatus;
-  /** Fires when the user edits the flame-name input.
-   *  #192 — the name input is save-only metadata: typing here updates the
-   *  editor's sticky save defaults, NOT the loaded flame's `state.genome.name`
-   *  (which is shown read-only in the loaded-source chip). */
-  onNameChange: (name: string) => void;
-  /** Fires when the user edits the nick input. Empty string → clear.
-   *  #192 — same save-only semantics as onNameChange above. */
-  onNickChange: (nick: string) => void;
-  /** #192 — initial values for the name/by inputs at mount time. The editor
-   *  reads its persisted save defaults from localStorage and passes them
-   *  here. Inputs are sticky across reroll / file open / viewer transfer; the
-   *  loaded flame's metadata flows through `setMeta` into the read-only chip
-   *  instead. */
-  initialName?: string;
-  initialNick?: string;
   /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
   /** #264 — vestigial: the nav menu self-navigates via window.location now, so
    *  this callback is no longer invoked. Kept optional for back-compat. */
@@ -215,11 +200,6 @@ export interface EditBarOpts {
   onUndo: () => void;
   /** #108 — redo the next entry in the history stack. */
   onRedo: () => void;
-  /** #104 — caller resolves the current name template against live genome
-   *  state (returning the slugified filename preview) or returns `null` when
-   *  there's no template. Bar shows the result as `→ <preview>` next to the
-   *  name input. Called on every input event + every setMeta echo. */
-  computePreview?: (template: string) => string | null;
   onSizeChange: (width: number, height: number) => void;
   onQualityChange: (quality: number) => void;
   /** Fires when the user clicks a SETTLE ladder button. ms = quiet time
@@ -275,90 +255,25 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const infoRow = el('div', 'pyr3-bar-info');
   const infoLeft = el('div', 'pyr3-zone-left');
 
-  // Flame name — editable text input styled to feel like the viewer's bold
-  // metaName label. width:auto so it grows with the typed name.
-  // #192 — save-only metadata: seeded from the editor's persisted save
-  // defaults at mount time; sticky across reroll / file open / viewer
-  // transfer. setMeta no longer overwrites this — the loaded flame's name
-  // surfaces in the read-only loaded-source chip below.
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.className = 'pyr3-bar-name-input';
-  // Spec default: empty value reads as 'untitled' via the placeholder. Hover
-  // and focus expand the dashed underline to a solid amber line (CSS).
-  nameInput.placeholder = 'untitled';
-  nameInput.value = opts.initialName ?? '';
-
-  // #104 — template preview tail. Hidden by default; shown when the input
-  // contains a {placeholder}. computePreview is owned by main.ts (it holds
-  // the genome + seed + counter peek); the bar just renders whatever
-  // string it returns.
-  const previewEl = el('span', 'pyr3-bar-name-preview');
-  previewEl.style.display = 'none';
-  function updatePreview(): void {
-    const text = opts.computePreview?.(nameInput.value) ?? null;
-    if (text === null) {
-      previewEl.style.display = 'none';
-      previewEl.textContent = '';
-    } else {
-      previewEl.style.display = '';
-      previewEl.textContent = `→ ${text}`;
-    }
-  }
-  nameInput.addEventListener('input', () => {
-    opts.onNameChange(nameInput.value);
-    updatePreview();
-  });
-
-  // Nick — small, after the name with "by" prefix. Always rendered; empty
-  // value reads as 'you' via the placeholder. Same #192 save-only semantics
-  // as nameInput above.
-  const nickPrefix = el('span', 'pyr3-bar-meta-author');
-  nickPrefix.textContent = 'by';
-  const nickInput = document.createElement('input');
-  nickInput.type = 'text';
-  nickInput.className = 'pyr3-bar-nick-input';
-  nickInput.placeholder = 'you';
-  nickInput.value = opts.initialNick ?? '';
-  nickInput.addEventListener('input', () => opts.onNickChange(nickInput.value));
-
-  // #192 — read-only loaded-source chip. Shows the LOADED flame's
-  // metadata as visible context — separate from the save-only inputs
-  // above. Hidden when there's no loaded source identity (cold start +
-  // fresh reroll with no name/nick yet).
+  // #192 / #346 — read-only loaded-source chip. Shows the LOADED flame's
+  // metadata as visible context. The editable naming (name/nick inputs +
+  // template preview + "templates ↗" link) moved to the save-time naming
+  // dialog (#346); this chip is the bar's only identity affordance now.
+  // Hidden when there's no loaded source identity (cold start + fresh reroll
+  // with no name/nick yet).
   const loadedSourceChip = el('span', 'pyr3-bar-loaded-source');
   loadedSourceChip.style.display = 'none';
   loadedSourceChip.style.fontSize = '11px';
   loadedSourceChip.style.opacity = '0.7';
   loadedSourceChip.style.marginLeft = '6px';
   loadedSourceChip.style.fontStyle = 'italic';
-  loadedSourceChip.title = 'The currently loaded flame — typing in the name/by fields above does NOT overwrite this; those edits become the save-time metadata.';
+  loadedSourceChip.title = 'The currently loaded flame. Save Render / Save Flame opens a dialog to name your output.';
 
   // Dimensions — read-only label · `1920×1080` or `auto`.
   const dimsSep = sep();
   const dims = el('span', 'pyr3-bar-quality');
 
-  // #104 — discoverability link for the template syntax. Always visible
-  // (subtle styling); opens the full reference in a new tab so the editor
-  // state isn't lost. ↗ arrow matches the bar's other external-link
-  // affordances (about, fork-it, more-flames).
-  const templatesLink = document.createElement('a');
-  templatesLink.className = 'pyr3-bar-templates-link';
-  templatesLink.href = '/help/name-templates.html';
-  templatesLink.target = '_blank';
-  templatesLink.rel = 'noopener noreferrer';
-  templatesLink.title = 'Use {placeholders} in the name — opens the full reference';
-  const templatesLabel = el('span');
-  templatesLabel.textContent = 'templates';
-  const templatesArrow = el('span', 'pyr3-bar-templates-arrow');
-  templatesArrow.textContent = '↗';
-  templatesLink.append(templatesLabel, templatesArrow);
-
   infoLeft.append(
-    nameInput,
-    previewEl,
-    templatesLink,
-    nickPrefix, nickInput,
     loadedSourceChip,
     dimsSep, dims,
   );
@@ -544,10 +459,9 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
 
   return {
     setMeta(meta) {
-      // #192 — the loaded flame's name/by surface in the read-only chip
-      // below the inputs. The save-only inputs themselves (nameInput +
-      // nickInput) are NOT touched here — they're sticky across reroll /
-      // file open / viewer transfer per the new save-only contract.
+      // #192 / #346 — the loaded flame's name/by surface in the read-only
+      // chip. The editable naming moved to the save-time dialog (#346); this
+      // chip is the editor bar's only identity affordance now.
       const loadedName = meta.flameName?.trim() ?? '';
       const loadedNick = meta.authorNick?.trim() ?? '';
       if (loadedName === '' && loadedNick === '') {
@@ -560,9 +474,6 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
         if (loadedNick !== '') parts.push(`by ${loadedNick}`);
         loadedSourceChip.textContent = `📂 ${parts.join(' · ')}`;
       }
-      // #104 — genome state change (open / reroll / panel edit / etc.) can
-      // alter what a template resolves to, so re-tick the preview.
-      updatePreview();
     },
     setDimensions(d) {
       dims.textContent = d ? `${d.width}×${d.height}` : 'auto';
@@ -1682,84 +1593,6 @@ const BAR_CSS = `
    the grid columns, and the right cluster right-aligns its contents so the
    filter pill hugs the page edge. */
 .pyr3-bar-info-gallery .pyr3-zone-right { justify-content: flex-end; }
-/* /v1/edit bar: editable flame name. Styled to match the viewer's bold
-   metaName but accepts focus + typing. Auto-sizes via field-sizing where
-   supported; falls back to a fixed character width.
-   #103 Phase 6 Task 6.1: dashed-underline edit affordance at rest; the
-   underline expands to a solid amber line on hover/focus to signal that
-   the field is editable. */
-.pyr3-bar-name-input {
-  background: transparent;
-  border: 0;
-  border-radius: 3px;
-  color: var(--text);
-  font: 600 13px ui-sans-serif, system-ui, -apple-system, sans-serif;
-  padding: 2px 6px;
-  min-width: 12ch;
-  field-sizing: content;
-  text-decoration: underline dashed var(--text-dim);
-  text-underline-offset: 4px;
-  text-decoration-thickness: 1px;
-}
-.pyr3-bar-name-input:hover {
-  text-decoration: underline solid var(--accent);
-  text-decoration-thickness: 1.5px;
-}
-.pyr3-bar-name-input:focus {
-  outline: none;
-  background: var(--bar-bg-3);
-  text-decoration: underline solid var(--accent);
-  text-decoration-thickness: 1.5px;
-}
-.pyr3-bar-name-preview {
-  color: var(--text-dim);
-  font: 400 11px ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding: 2px 6px;
-  white-space: nowrap;
-  user-select: text;
-}
-.pyr3-bar-templates-link {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-  color: var(--text-dim);
-  text-decoration: none;
-  font: 400 11px ui-sans-serif, system-ui, -apple-system, sans-serif;
-  padding: 2px 6px;
-  white-space: nowrap;
-}
-.pyr3-bar-templates-link:hover {
-  color: var(--accent);
-  text-decoration: underline;
-}
-.pyr3-bar-templates-arrow {
-  font-size: 9px;
-  opacity: 0.8;
-}
-.pyr3-bar-nick-input {
-  background: transparent;
-  border: 0;
-  border-radius: 3px;
-  color: var(--text-muted);
-  font: 400 11px ui-sans-serif, system-ui, -apple-system, sans-serif;
-  padding: 1px 5px;
-  min-width: 6ch;
-  field-sizing: content;
-  text-decoration: underline dashed var(--text-dim);
-  text-underline-offset: 4px;
-  text-decoration-thickness: 1px;
-}
-.pyr3-bar-nick-input:hover {
-  text-decoration: underline solid var(--accent);
-  text-decoration-thickness: 1.5px;
-}
-.pyr3-bar-nick-input:focus {
-  outline: none;
-  background: var(--bar-bg-3);
-  color: var(--text);
-  text-decoration: underline solid var(--accent);
-  text-decoration-thickness: 1.5px;
-}
 .pyr3-bar-variations {
   /* #103 Phase 3 Task 3.1: all variations expanded — no +N collapse.
      Muted gray for the variation tokens; separators inherit the row's
