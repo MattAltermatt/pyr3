@@ -342,10 +342,38 @@ describe('mountBarChrome', () => {
     handle.destroy();
   });
 
-  it('TabSurface type accepts all four surfaces', () => {
+  it('surface: "variations" highlights the Discover menu (Variations lives under Discover)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountBarChrome(root, {
+      surface: 'variations',
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="variations"].active')).toBeTruthy();
+    handle.destroy();
+  });
+
+  it('surface: "surprise" highlights the Discover menu (Surprise lives under Discover)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const handle = mountBarChrome(root, {
+      surface: 'surprise',
+      webgpu: { available: true } as WebGPUStatus,
+      onTabClick: vi.fn(),
+    });
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="surprise"].active')).toBeTruthy();
+    handle.destroy();
+  });
+
+  it('TabSurface type accepts every nav surface', () => {
     // Compile-time assertion — purely for the type re-export contract.
-    const surfaces: TabSurface[] = ['viewer', 'gallery', 'editor', 'about'];
-    expect(surfaces).toHaveLength(4);
+    const surfaces: TabSurface[] = [
+      'viewer', 'gallery', 'editor', 'about', 'variations', 'surprise',
+    ];
+    expect(surfaces).toHaveLength(6);
   });
 
   it('renders a run offline CTA button in the right cluster instead of fork it', () => {

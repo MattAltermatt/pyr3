@@ -397,6 +397,54 @@ async function main(): Promise<void> {
     return;
   }
 
+  // #119 / #354 — /variations catalog surface. Dispatched here (before the
+  // viewer mountBar below) alongside gradient/animate/screensaver so it never
+  // mounts a viewer bar: it gets its own shared chrome (Discover ▸ Variations
+  // lit) and reparents the catalog body into chrome.middleSlot. The catalog
+  // needs a WebGPU device for its live flame previews; acquired on entry.
+  if (window.location.pathname === '/variations') {
+    const barRoot = document.getElementById('pyr3-bar');
+    const catRoot = document.getElementById('pyr3-variations');
+    if (!barRoot || !catRoot) {
+      console.error('pyr3: /variations — required DOM nodes missing');
+      return;
+    }
+    const { device: catDevice, format: catFormat } = await acquireGpu();
+    const { mountBarChrome } = await import('./ui-bar');
+    const chrome = mountBarChrome(barRoot, { surface: 'variations', webgpu });
+    document.body.classList.add('pyr3-variations-mode');
+    catRoot.hidden = false;
+    chrome.middleSlot.appendChild(catRoot);
+    setDocTitle('variations');
+    const { mountVariationCatalog } = await import('./variation-catalog-mount');
+    const handle = mountVariationCatalog(catRoot, { device: catDevice, format: catFormat });
+    window.addEventListener('pagehide', () => { handle.destroy(); chrome.destroy(); }, { once: true });
+    return;
+  }
+
+  // #186 / #354 — /surprise wall. Sibling of /variations above: own shared
+  // chrome (Discover ▸ Surprise lit), wall body reparented into
+  // chrome.middleSlot. A device is acquired here for the thumbnail queue.
+  if (window.location.pathname === '/surprise') {
+    const barRoot = document.getElementById('pyr3-bar');
+    const spRoot = document.getElementById('pyr3-surprise');
+    if (!barRoot || !spRoot) {
+      console.error('pyr3: /surprise — required DOM nodes missing');
+      return;
+    }
+    const { device: spDevice, format: spFormat } = await acquireGpu();
+    const { mountBarChrome } = await import('./ui-bar');
+    const chrome = mountBarChrome(barRoot, { surface: 'surprise', webgpu });
+    document.body.classList.add('pyr3-surprise-mode');
+    spRoot.hidden = false;
+    chrome.middleSlot.appendChild(spRoot);
+    setDocTitle('surprise');
+    const { mountSurprisePage } = await import('./surprise-mount');
+    const handle = mountSurprisePage(spRoot, { device: spDevice, format: spFormat });
+    window.addEventListener('pagehide', () => { handle.destroy(); chrome.destroy(); }, { once: true });
+    return;
+  }
+
   // #264 — pick the viewer mode from the current surface: /esf (+ corpus
   // deep-links) is the ESF browser; bare / and /viewer are the basic viewer.
   const viewerMode: 'basic' | 'esf' = currentTabSurface() === 'esf' ? 'esf' : 'basic';
@@ -655,42 +703,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  // #119 — /v1/variations catalog surface. Same early-dispatch pattern as
-  // the editor: mount the variations root, hide the viewer chrome, return
-  // before the viewer setup runs. The catalog needs a WebGPU device for
-  // its live flame previews; acquired here on entry.
-  if (initialIntent?.kind === 'variations') {
-    const { device: catDevice, format: catFormat } = await acquireGpu();
-    const catRoot = document.getElementById('pyr3-variations');
-    if (!catRoot) {
-      console.error('pyr3: #pyr3-variations missing from index.html — catalog cannot mount');
-      return;
-    }
-    catRoot.hidden = false;
-    document.body.classList.add('pyr3-variations-mode');
-    const { mountVariationCatalog } = await import('./variation-catalog-mount');
-    mountVariationCatalog(catRoot, { device: catDevice, format: catFormat });
-    return;
-  }
-
-  // #186 — /surprise wall. Same early-dispatch pattern as the catalog: acquire a
-  // device for the thumbnail queue, mount the wall root, hide the viewer chrome,
-  // and return before viewer setup.
-  if (initialIntent?.kind === 'surprise') {
-    const { device: spDevice, format: spFormat } = await acquireGpu();
-    const spRoot = document.getElementById('pyr3-surprise');
-    if (!spRoot) {
-      console.error('pyr3: #pyr3-surprise missing from index.html — surprise wall cannot mount');
-      return;
-    }
-    spRoot.hidden = false;
-    document.body.classList.add('pyr3-surprise-mode');
-    setDocTitle('surprise');
-    const { mountSurprisePage } = await import('./surprise-mount');
-    const handle = mountSurprisePage(spRoot, { device: spDevice, format: spFormat });
-    window.addEventListener('pagehide', () => handle.destroy(), { once: true });
-    return;
-  }
+  // #354 — /variations + /surprise are dispatched earlier (before mountBar),
+  // alongside gradient/animate/screensaver, so they never mount a viewer bar.
+  // Their `initialIntent` branches are intentionally unreachable here.
 
   const { device, context, format, canvas } = await initDevice('pyr3-canvas');
   canvas.width = RENDER_SIZE;

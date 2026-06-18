@@ -274,9 +274,13 @@
       /* #119 — /v1/variations surface. Same sibling-of-canvas pattern as
          #pyr3-edit / #pyr3-gallery. The catalog page mounts a sticky
          sidebar + scrollable catalog column inside this root. */
+      /* #354 — mounted into the shared chrome's middleSlot (under the 44px
+         pyr3 nav bar), so it fills the viewport below the bar rather than
+         absolute-insetting over the whole canvas-zone. */
       #pyr3-variations {
-        position: absolute;
-        inset: 0;
+        position: relative;
+        height: calc(100vh - 44px);
+        width: 100%;
         overflow: hidden;
         background: var(--bg);
         color: var(--text);
@@ -874,9 +878,12 @@
       body.pyr3-surprise-mode .pyr3-bar-info,
       body.pyr3-surprise-mode .pyr3-bar-action { display: none !important; }
 
+      /* #354 — mounted into the shared chrome's middleSlot (under the 44px
+         pyr3 nav bar); fills the viewport below the bar. */
       #pyr3-surprise {
-        position: absolute;
-        inset: 0;
+        position: relative;
+        height: calc(100vh - 44px);
+        width: 100%;
         overflow: auto;
       }
       .pyr3-surprise-root {

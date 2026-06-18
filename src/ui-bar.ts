@@ -1005,8 +1005,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 
 /** Tabs in the top-bar's center cluster. `about` and `screensaver` are
  *  reserved — they live in the left cluster as links, not tabs — so those
- *  surfaces render all three real tabs in their inactive state. */
-export type TabSurface = 'viewer' | 'esf' | 'gallery' | 'editor' | 'gradient' | 'animate' | 'about' | 'screensaver';
+ *  surfaces render all three real tabs in their inactive state. `variations`
+ *  and `surprise` (#354) live under the Discover dropdown — passing either
+ *  surface lights up Discover + its leaf via the shared nav model. */
+export type TabSurface =
+  | 'viewer' | 'esf' | 'gallery' | 'editor' | 'gradient' | 'animate'
+  | 'about' | 'screensaver' | 'variations' | 'surprise';
 
 export interface ChromeOpts {
   surface: TabSurface;
