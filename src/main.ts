@@ -569,7 +569,6 @@ async function main(): Promise<void> {
       setSettleDelayMs(ms: number): void;
       undo(): void;
       redo(): void;
-      computeFilenamePreview(template: string): string | null;
     } | null = null;
 
     // #192 — read the editor's persisted save defaults so the bar's name/by
@@ -604,11 +603,10 @@ async function main(): Promise<void> {
     const barRoot = document.getElementById('pyr3-bar')!;
     const editBar = mountEditBar(barRoot, {
       webgpu,
-      // #346 — editable naming (name/nick inputs + template preview) moved out
-      // of the bar into the save-time naming dialog. The bar keeps only its
-      // read-only loaded-source chip (driven by setMeta below). The editor
-      // still exposes setName/setNick/computeFilenamePreview on editorRef so
-      // the dialog (Task 4) can seed + commit save-defaults through them.
+      // #346 — editable naming (name/nick inputs) moved out of the bar into the
+      // save-time naming dialog. The bar keeps only its read-only loaded-source
+      // chip (driven by setMeta below). The editor still exposes setName/setNick
+      // on editorRef so the dialog can seed + commit save-defaults through them.
       // #103 Phase 6 Task 6.2 — action row callbacks. Each one routes into an
       // existing editor handler (handleReroll / handleOpenFile /
       // handleSaveFile / handleRenderPng) or a new setter exposed on
@@ -668,9 +666,14 @@ async function main(): Promise<void> {
         densitySection,
       ],
       onStateChange: (state) => {
+        // #357 — the loaded-source chip is provenance-only: show the flame's
+        // identity ONLY when it came from a genuine load (file open · transfer ·
+        // corpus deep-link). A cold-start / reroll / catalog scaffold has no
+        // source to attribute, so the chip stays hidden (no "📂 Untitled flame").
+        const loaded = state.loadedSource === true;
         editBar.setMeta({
-          flameName: state.genome.name,
-          authorNick: state.genome.nick,
+          flameName: loaded ? (state.genome.name ?? '') : '',
+          authorNick: loaded ? state.genome.nick : undefined,
         });
         editBar.setDimensions(state.genome.size ?? null);
         // Mirror size + quality back to the bar's action row so the 📐 Size ▾
@@ -698,15 +701,17 @@ async function main(): Promise<void> {
     });
     editorRef = editor;
 
-    // #104 — the editor's first onStateChange echo fires DURING mountEditPage
-    // construction (before this assignment), so the bar's preview tail can't
-    // resolve the template (computeFilenamePreview routes through editorRef,
-    // which was still null). Re-tick setMeta now that editorRef is live so a
-    // cold-start with a templated genome.name shows its preview immediately.
-    editBar.setMeta({
-      flameName: editor.state.genome.name,
-      authorNick: editor.state.genome.nick,
-    });
+    // The editor's first onStateChange echo fires DURING mountEditPage
+    // construction (before this assignment). Re-tick setMeta now that editorRef
+    // is live so the loaded-source chip reflects the initial provenance — shown
+    // only for a genuine load (#357), hidden on cold-start / reroll.
+    {
+      const loaded = editor.state.loadedSource === true;
+      editBar.setMeta({
+        flameName: loaded ? (editor.state.genome.name ?? '') : '',
+        authorNick: loaded ? editor.state.genome.nick : undefined,
+      });
+    }
 
     // #108 — keyboard handler scoped to the editor's lifecycle. Cmd/Ctrl+Z
     // undo, Shift+Cmd/Ctrl+Z or Ctrl+Y redo. metaKey || ctrlKey makes both

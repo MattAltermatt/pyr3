@@ -21,9 +21,8 @@ export interface TemplateContext {
   /** Used by `{date}`, `{time}`, `{datetime}`. Caller supplies so tests can
    *  pin the clock. Production code passes `new Date()` at save time. */
   now: Date;
-  /** Pre-resolved counter for `{index}` — caller looks it up via
-   *  `flame-name-counter.peekIndex` for preview, bumps after a successful
-   *  save. Padded to 4 digits when 1..9999, natural width past 9999. */
+  /** Pre-resolved counter for `{index}` — the caller supplies the value.
+   *  Padded to 4 digits when 1..9999, natural width past 9999. */
   index: number;
   /** Pre-resolved random 4-char lowercase hex for `{random}`. Caller
    *  generates once per resolve so preview + save match if needed. */

@@ -347,7 +347,6 @@ historical entry — superseded by this section.)
 - https://pyr3.app/help/about.html
 - https://pyr3.app/help/direct-color-variations.html
 - https://pyr3.app/help/ifs-and-render-cost.html
-- https://pyr3.app/help/name-templates.html
 - https://pyr3.app/help/webgpu.html
 - https://pyr3.app/showcase/
 

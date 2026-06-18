@@ -64,13 +64,31 @@ describe('openNamingDialog', () => {
     await expect(p).resolves.toBeNull();
   });
 
-  it('filename preview re-runs computePreview on input', () => {
-    void openNamingDialog({
-      kind: 'render', seed: { filename: '{name}' }, ext: 'png',
-      template: '{name}', computePreview: (t) => t.replace('{name}', 'resolved'),
-    });
-    const preview = modal().querySelector('[data-role="filename-preview"]') as HTMLElement;
-    expect(preview.textContent).toContain('resolved');
+  it('filename auto-follows the flame name (slugified) until manually edited', () => {
+    void openNamingDialog({ kind: 'flame', seed: { name: 'ember', filename: 'ember' } });
+    const nameI = field('name')!;
+    const fileI = field('filename')!;
+    nameI.value = 'Crimson Bloom';
+    nameI.dispatchEvent(new Event('input'));
+    expect(fileI.value).toBe('crimson-bloom');
+  });
+
+  it('manual filename edit stops the auto-follow', () => {
+    void openNamingDialog({ kind: 'flame', seed: { name: 'ember', filename: 'ember' } });
+    const nameI = field('name')!;
+    const fileI = field('filename')!;
+    // User overrides the filename → it should stick.
+    fileI.value = 'my-custom-name';
+    fileI.dispatchEvent(new Event('input'));
+    // Subsequent name edits must NOT clobber the override.
+    nameI.value = 'Totally Different';
+    nameI.dispatchEvent(new Event('input'));
+    expect(fileI.value).toBe('my-custom-name');
+  });
+
+  it('no template/preview affordance is rendered', () => {
+    void openNamingDialog({ kind: 'render', seed: { name: 'x', filename: 'x' }, ext: 'png' });
+    expect(modal().querySelector('[data-role="filename-preview"]')).toBeNull();
   });
 
   it('dialog is removed from the DOM after resolve', async () => {

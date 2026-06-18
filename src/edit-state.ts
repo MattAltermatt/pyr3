@@ -68,6 +68,12 @@ export type SectionKey =
 export interface EditState {
   genome: Genome;
   seed: number;
+  /** #357 — true when the live genome arrived from a genuine LOAD (file open ·
+   *  viewer→editor transfer · corpus deep-link), false for a generated source
+   *  (cold-start reroll · 🎲 Reroll · catalog scaffold · restored WIP). Drives
+   *  the editor bar's read-only "📂 loaded from …" provenance chip, which is
+   *  hidden when there's no real load to attribute. UI-only; never serialized. */
+  loadedSource?: boolean;
   preview: { width: number; height: number };
   sectionCollapse: Record<SectionKey, boolean>;
   xformCollapse: Record<number, boolean>;

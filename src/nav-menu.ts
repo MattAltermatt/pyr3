@@ -8,7 +8,7 @@
 export type NavSubKey =
   | 'editor' | 'gradient' | 'animate' | 'screensaver'
   | 'esf' | 'gallery' | 'variations' | 'surprise' | 'about' | 'showcase'
-  | 'help-color' | 'help-ifs' | 'help-names' | 'help-webgpu';
+  | 'help-color' | 'help-ifs' | 'help-webgpu';
 
 export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover';
 
@@ -41,7 +41,6 @@ export const NAV_MODEL: NavTop[] = [
     { key: 'about',       label: 'About',           route: '/about' },
     { key: 'help-color',  label: 'Color',           route: '/help/direct-color-variations.html', newTab: true },
     { key: 'help-ifs',    label: 'How flames work', route: '/help/ifs-and-render-cost.html',      newTab: true },
-    { key: 'help-names',  label: 'Name templates',  route: '/help/name-templates.html',           newTab: true },
     { key: 'help-webgpu', label: 'WebGPU',          route: '/help/webgpu.html',                   newTab: true },
     // #264 — trailing slash: /showcase/ is the deployed static dir (deploy.yml
     // extracts the showcase Release tar there). /showcase 301-redirects to it on

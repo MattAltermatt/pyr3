@@ -48,8 +48,6 @@ import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { createSlowRenderNudge, type SlowRenderNudgeHandle } from './edit-slow-render-nudge';
 import { setCurrentFlame } from './app-state';
 import { createHistory, type History } from './edit-history';
-import { hasTemplate, resolveTemplate } from './flame-name-template';
-import { peekIndex, bumpIndex } from './flame-name-counter';
 
 /** Apply a pending gradient-return onto the editor state, if one is queued.
  *  Patches only the palette: stops + name from the return, hue forced to 0
@@ -161,12 +159,6 @@ export interface EditPageHandle {
   /** Test/inspection hook — exposes the live EditState so a host can grab
    *  the current genome. */
   readonly state: EditState;
-  /** #104 — resolve a template string against the editor's live state
-   *  (genome / seed / counter peek) and return the slugified filename
-   *  preview. Returns `null` when the input has no `{placeholder}`. The
-   *  bar wires this to its `computePreview` so the `→ ...` tail next to
-   *  the name input ticks live. */
-  computeFilenamePreview(template: string): string | null;
   /** #108 — step the editor back one history entry. No-op when the stack
    *  pointer is at the oldest entry. */
   undo(): void;
@@ -298,6 +290,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   persistColdStartIfReroll(initial.source, initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
+  // #357 — provenance for the bar's "📂 loaded from …" chip. Only a genuine
+  // viewer→editor transfer (pending) counts as a load at cold-start; the
+  // catalog scaffold (opts.initialGenome) is generated, and wip/reroll are
+  // cold-start sources with no flame to attribute. handleOpenFile flips this
+  // to true; handleReroll flips it back to false.
+  state.loadedSource = !opts.initialGenome && initial.source === 'pending';
 
   // #266 — if the user round-tripped through the gradient editor, apply the
   // returned palette on top of the restored WIP genome. Patches palette only.
@@ -979,6 +977,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       fresh.quality = prevQuality;
     }
     const freshSeed = (Math.random() * 0xffffffff) >>> 0;
+    // #357 — a fresh reroll has no source flame to attribute; hide the chip.
+    state.loadedSource = false;
     applyNewGenome(fresh, freshSeed);
   }
 
@@ -1013,6 +1013,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         if (genome.quality === undefined && prevQuality !== undefined) {
           genome.quality = prevQuality;
         }
+        // #357 — a file open IS a genuine load; show the provenance chip.
+        state.loadedSource = true;
         applyNewGenome(genome);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -1027,13 +1029,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   }
 
   // #104 — resolve `state.genome.name` against live state if it contains a
-  // {placeholder}. Returns the slugified filename (no extension); falls back
-  // to slugify(state.genome.name) when the name is a plain literal. The
-  // genome.name field itself stays untouched (we want re-opens to show the
-  // editable template, not a frozen resolved string).
   /** #192 — the effective save name: the user's typed save default (sticky)
    *  takes precedence; the loaded flame's name is the fallback when the user
-   *  hasn't overridden. Same fallback shape for the nick. */
+   *  hasn't overridden. */
   function effectiveSaveName(): string {
     return saveDefaults.flameName.trim() !== ''
       ? saveDefaults.flameName
@@ -1044,32 +1042,21 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     return state.genome.nick;
   }
 
-  function resolveCurrentFilename(): string {
-    const template = effectiveSaveName();
-    if (!hasTemplate(template)) return slugify(template);
-    const resolved = resolveTemplate(template, {
-      genome: state.genome,
-      seed: state.seed,
-      now: new Date(),
-      index: peekIndex(template),
-      random: Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0'),
-    });
-    return slugify(resolved);
+  /** #357 — the nick that seeds the naming dialog. The LOADED flame's nick
+   *  wins (attribution preserved by default), falling back to the user's
+   *  sticky save-default when the flame carries no nick. Editable in the
+   *  dialog; overriding is allowed (it's a local save). */
+  function seedNick(): string {
+    const loaded = state.genome.nick?.trim() ?? '';
+    if (loaded !== '') return state.genome.nick!;
+    return saveDefaults.flameNick;
   }
 
-  // #104 — preview helper for the bar. Returns the slugified resolved name
-  // (no extension) when the user's input contains a template; null when
-  // it's a plain literal so the bar can hide the `→ ...` tail.
-  function computeFilenamePreview(template: string): string | null {
-    if (!hasTemplate(template)) return null;
-    const resolved = resolveTemplate(template, {
-      genome: state.genome,
-      seed: state.seed,
-      now: new Date(),
-      index: peekIndex(template),
-      random: Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0'),
-    });
-    return slugify(resolved);
+  // #357 — templates were dropped from the naming flow; the filename is just
+  // the slugified effective save name. The dialog itself live-follows
+  // slug(name) until the user edits the filename field manually.
+  function resolveCurrentFilename(): string {
+    return slugify(effectiveSaveName());
   }
 
   // #176 — gates the Save Render button + lane-conflict assertions in tests.
@@ -1094,11 +1081,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       kind: 'render',
       seed: {
         name: effectiveSaveName(),
-        nick: effectiveSaveNick() ?? '',
+        nick: seedNick(),
         filename: resolveCurrentFilename(),
       },
-      template: effectiveSaveName(),
-      computePreview: computeFilenamePreview,
       ext: extForFormat(exportOpts.format),
     });
     if (!naming) return;
@@ -1147,7 +1132,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       renderer.resize({ width: targetW, height: targetH, oversample, filterRadius });
       // #346 — the user-chosen filename from the naming dialog (no extension).
       const filename = naming.filename;
-      const template = effectiveSaveName();
       // #201 P0 Task 2 — single Save Render fork point shared with the
       // viewer. Helper handles startChunkedRender + AbortSignal bridge +
       // GPU drain + toBlob + injectPngTextChunk + anchor download. Task 7
@@ -1176,13 +1160,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         // User-cancelled — silent (modal close + restore is enough signal).
         cancelled = true;
       } else {
-        // #104 — only bump the counter on a confirmed successful save.
-        // Echo onStateChange so the bar's preview tail re-ticks to the
-        // bumped index.
-        if (hasTemplate(template)) {
-          bumpIndex(template);
-          notifyStateChange();
-        }
         // #176 — post-save toast confirms filename + Downloads landing.
         // #334 — reflect the chosen format's extension.
         const savedExt = exportOpts.format === 'exr' ? 'exr' : 'png';
@@ -1238,11 +1215,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       kind: 'flame',
       seed: {
         name: effectiveSaveName(),
-        nick: effectiveSaveNick() ?? '',
+        nick: seedNick(),
         filename: resolveCurrentFilename(),
       },
-      template: effectiveSaveName(),
-      computePreview: computeFilenamePreview,
       ext: 'pyr3.json',
     });
     if (!naming) return;
@@ -1251,29 +1226,19 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     persistSaveDefaults();
     notifyStateChange();
     try {
-      // #104 — note: genomeToJson writes the effective save name unchanged
-      // (the literal template), so re-opens preserve editability. The
-      // filename uses the user-chosen form from the dialog.
+      // genomeToJson writes the effective save name verbatim; the filename
+      // uses the user-chosen form from the dialog.
       const json = JSON.stringify(genomeToJson(genomeForSerialize()), null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const template = effectiveSaveName();
       a.download = `${naming.filename}.pyr3.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       // Revoke after a tick so the browser has time to start the download.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      // #104 — anchor.click() succeeded; bump the per-template counter so
-      // the next save lands at the next index. Echo onStateChange so the
-      // bar's preview tail re-ticks to the bumped index (the bar's preview
-      // is recomputed inside setMeta).
-      if (hasTemplate(template)) {
-        bumpIndex(template);
-        notifyStateChange();
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`pyr3-edit: save failed — ${msg}`);
@@ -1419,9 +1384,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       settleDelayMs = Math.round(ms);
       persistRenderSettings();
       ui?.setSettleDelayMs(settleDelayMs);
-    },
-    computeFilenamePreview(template: string): string | null {
-      return computeFilenamePreview(template);
     },
     undo(): void {
       // Flush any pending debounce so an in-flight slider drag commits

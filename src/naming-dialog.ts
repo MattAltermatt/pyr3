@@ -8,10 +8,15 @@ export interface NamingFieldSeed { name?: string; nick?: string; filename?: stri
 export interface NamingDialogOpts {
   kind: NamingKind;
   seed: NamingFieldSeed;
-  /** Optional filename template → live "→ resolved.ext" preview under the field. */
-  template?: string;
-  computePreview?: (template: string) => string | null;
   ext?: string;
+}
+
+/** Filename-safe slug — mirrors edit-mount.ts `slugify` (kept local so the
+ *  dialog has no dependency on the heavy editor module). The `filename` field
+ *  auto-follows `slug(flame name)` until the user edits it manually (#357). */
+function slugForFilename(name: string): string {
+  const cleaned = (name || 'flame').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return cleaned || 'flame';
 }
 
 export interface NamingResult { name: string; nick: string; filename: string }
@@ -80,18 +85,13 @@ export function openNamingDialog(opts: NamingDialogOpts): Promise<NamingResult |
     if (cfg.filename) {
       filenameF = labeledInput('filename', 'filename', opts.seed.filename ?? '');
       box.append(filenameF.row);
-      const preview = document.createElement('div');
-      preview.dataset['role'] = 'filename-preview';
-      Object.assign(preview.style, { fontSize: '11px', color: COLORS.text.muted, margin: '-4px 0 10px 92px' });
-      box.append(preview);
-      const ext = opts.ext ? `.${opts.ext}` : '';
-      const renderPreview = (): void => {
-        const resolved = opts.computePreview?.(filenameF!.input.value) ?? null;
-        preview.textContent = resolved !== null ? `→ ${resolved}${ext}` : '';
-        preview.style.display = resolved !== null ? '' : 'none';
-      };
-      filenameF.input.addEventListener('input', renderPreview);
-      renderPreview();
+      // #357 — the filename auto-follows slug(flame name) until the user edits
+      // it manually; once overridden it stops syncing so the override sticks.
+      let filenameDirty = false;
+      filenameF.input.addEventListener('input', () => { filenameDirty = true; });
+      nameF.input.addEventListener('input', () => {
+        if (!filenameDirty) filenameF!.input.value = slugForFilename(nameF.input.value);
+      });
     }
 
     const btnRow = document.createElement('div');
