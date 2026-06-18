@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mountGradientPage, gradReturnNav } from './gradient-page';
 import { writeGradientHandoff, consumeGradientReturn } from './edit-state';
 import { listMine } from './palette-library';
@@ -246,5 +246,76 @@ describe('gradient page point-to-paint (#269 Phase 2)', () => {
     expect(hint).not.toBeNull();
     expect(hint!.textContent).toContain('click a flame spot to select its stop');
     h.destroy();
+  });
+
+  // #265 — undo/redo round-trip + bar-button wiring.
+  it('undo/redo reverts and re-applies a palette edit, driving the ⟲/⟳ buttons (#265)', () => {
+    vi.useFakeTimers();
+    try {
+      // Asymmetric 8-stop custom gradient → opens editable; reverse visibly
+      // changes the strip so we can assert the round-trip by its background CSS.
+      writeGradientHandoff(genomeWithStops(8), true);
+      const root = document.createElement('div'); document.body.appendChild(root);
+      const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
+      const undoBtn = root.querySelector('[data-role="undo"]') as HTMLButtonElement;
+      const redoBtn = root.querySelector('[data-role="redo"]') as HTMLButtonElement;
+      const strip = root.querySelector('[data-role="strip"]') as HTMLElement;
+
+      // Seeded history; nothing to undo/redo yet.
+      expect(undoBtn.disabled).toBe(true);
+      expect(redoBtn.disabled).toBe(true);
+      const seedBg = strip.style.background;
+
+      // Edit: reverse the stops (fires onChange → scheduleCommit).
+      (root.querySelector('[data-role="reverse"]') as HTMLElement).click();
+      const editedBg = strip.style.background;
+      expect(editedBg).not.toBe(seedBg);
+      // Optimistic enable fires immediately, before the debounce.
+      expect(undoBtn.disabled).toBe(false);
+      vi.advanceTimersByTime(300);  // fire the debounced commit
+
+      // Undo → reverts to the seed palette.
+      undoBtn.click();
+      expect(strip.style.background).toBe(seedBg);
+      expect(undoBtn.disabled).toBe(true);
+      expect(redoBtn.disabled).toBe(false);
+
+      // Redo → re-applies the reversed palette.
+      redoBtn.click();
+      expect(strip.style.background).toBe(editedBg);
+      expect(redoBtn.disabled).toBe(true);
+
+      h.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a continuous drag collapses to ONE undo entry (debounced commit) (#265)', () => {
+    vi.useFakeTimers();
+    try {
+      writeGradientHandoff(genomeWithStops(8), true);
+      const root = document.createElement('div'); document.body.appendChild(root);
+      const h = mountGradientPage({ barRoot: root, webgpu: { available: true } as any });
+      const undoBtn = root.querySelector('[data-role="undo"]') as HTMLButtonElement;
+      const redoBtn = root.querySelector('[data-role="redo"]') as HTMLButtonElement;
+      const seedBg = (root.querySelector('[data-role="strip"]') as HTMLElement).style.background;
+
+      // Three rapid transforms within the debounce window = one coalesced entry.
+      (root.querySelector('[data-role="reverse"]') as HTMLElement).click();
+      (root.querySelector('[data-role="reverse"]') as HTMLElement).click();   // back to seed
+      (root.querySelector('[data-role="reverse"]') as HTMLElement).click();   // reversed again
+      vi.advanceTimersByTime(300);  // single trailing commit captures the final state
+
+      // One undo returns to the seed (not three undos).
+      undoBtn.click();
+      expect((root.querySelector('[data-role="strip"]') as HTMLElement).style.background).toBe(seedBg);
+      expect(undoBtn.disabled).toBe(true);   // back at the seed → nothing more to undo
+      expect(redoBtn.disabled).toBe(false);
+
+      h.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

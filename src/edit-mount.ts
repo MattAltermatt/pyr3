@@ -308,7 +308,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // as the settle timer so a slider drag is one entry, not sixty. reset on
   // file-open + reroll (whole-genome replacement, not an edit). undo/redo
   // restore via the no-history-reset branch of applyNewGenome.
-  const history: History = createHistory(initialGenome);
+  const history: History<Genome> = createHistory(initialGenome);
   function notifyHistoryChange(): void {
     opts.onHistoryChange?.(history.canUndo(), history.canRedo());
   }

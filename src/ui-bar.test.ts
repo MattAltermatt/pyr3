@@ -85,6 +85,8 @@ function makeGradientOpts(over: Partial<GradientBarOpts> = {}): GradientBarOpts 
     onExport: vi.fn(),
     onImport: vi.fn(),
     onReset: vi.fn(),
+    onUndo: vi.fn(),
+    onRedo: vi.fn(),
     onTabClick: vi.fn(),
     ...over,
   };
@@ -117,6 +119,30 @@ describe('mountGradientBar (#353)', () => {
     (root.querySelector('[data-role="reset"]') as HTMLElement).click();
     expect(onBrowse).toHaveBeenCalledTimes(1);
     expect(onReset).toHaveBeenCalledTimes(1);
+    h.destroy();
+  });
+
+  it('has ⟲/⟳ undo-redo buttons (start disabled) that fire + toggle (#265)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const onUndo = vi.fn(); const onRedo = vi.fn();
+    const h = mountGradientBar(root, makeGradientOpts({ onUndo, onRedo }));
+    const undo = root.querySelector('[data-role="undo"]') as HTMLButtonElement;
+    const redo = root.querySelector('[data-role="redo"]') as HTMLButtonElement;
+    expect(undo).toBeTruthy();
+    expect(redo).toBeTruthy();
+    // Start disabled (no history yet).
+    expect(undo.disabled).toBe(true);
+    expect(redo.disabled).toBe(true);
+    // The page drives the enabled state.
+    h.setUndoEnabled(true);
+    h.setRedoEnabled(true);
+    expect(undo.disabled).toBe(false);
+    expect(redo.disabled).toBe(false);
+    undo.click();
+    redo.click();
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(onRedo).toHaveBeenCalledTimes(1);
     h.destroy();
   });
 

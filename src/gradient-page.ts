@@ -8,6 +8,7 @@ import { exportPalette, importPalette } from './palette-file';
 import { openNamingDialog } from './naming-dialog';
 import { buildButton } from './edit-primitives';
 import { mountGradientBar } from './ui-bar';
+import { createHistory, type History } from './edit-history';
 import { type WebGPUStatus } from './webgpu-check';
 import { COLORS } from './ui-tokens';
 import { consumeGradientHandoff, writeGradientReturn } from './edit-state';
@@ -135,6 +136,8 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     onExport: () => { void doExport(); },
     onImport: () => fileInput.click(),
     onReset: () => doReset(),
+    onUndo: () => doUndo(),   // #265
+    onRedo: () => doRedo(),
     // Round-trip CTAs — write the (possibly untouched) palette back + return,
     // or return without writing (flame keeps its palette). (#266)
     onApply: () => { writeGradientReturn(currentPalette()); gradReturnNav.go(); },
@@ -146,14 +149,101 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   wrap.appendChild(editorHost);
 
   let editor: ReturnType<typeof mountPaletteEditor> | null = null;
+
+  // #265 — undo / redo. Snapshots the live `Palette` onto a generic
+  // `History<Palette>` (the same stack the /editor uses for Genome). The
+  // palette editor's `onChange` fires continuously during a drag, so in-place
+  // edits commit on a trailing debounce (a drag = one entry, not sixty);
+  // discrete palette swaps (Browse / Import / Reset / paint / round-trip Modify)
+  // commit immediately. `editor.setPalette` does NOT re-fire `onChange`, so
+  // restoring a snapshot can't loop — but an `applyingHistory` guard makes the
+  // no-re-push contract explicit. History seeds on the first editor mount so
+  // the very first edit is undoable back to the starting palette.
+  const COMMIT_DEBOUNCE_MS = 250;
+  let history: History<Palette> | null = null;
+  let applyingHistory = false;
+  let commitTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function syncHistoryButtons(): void {
+    bar.setUndoEnabled(history?.canUndo() ?? false);
+    bar.setRedoEnabled(history?.canRedo() ?? false);
+  }
+  /** Seed the stack on first call, push thereafter. No-op while restoring a
+   *  snapshot or before an editor exists. Identical snapshots coalesce inside
+   *  History.push, so callers can be liberal. */
+  function commitHistory(): void {
+    if (applyingHistory || !editor) return;
+    const snap = currentPalette();
+    if (!history) history = createHistory(snap);
+    else history.push(snap);
+    syncHistoryButtons();
+  }
+  function scheduleCommit(): void {
+    if (commitTimer !== null) clearTimeout(commitTimer);
+    commitTimer = setTimeout(() => { commitTimer = null; commitHistory(); }, COMMIT_DEBOUNCE_MS);
+    // Optimistic button state: an in-flight edit means undo is already available
+    // and the redo tail is about to be dropped — reflect that now rather than
+    // leaving the button dead until the debounce fires. commitHistory() (or a
+    // flush on undo) reconciles to the true stack state.
+    if (history) { bar.setUndoEnabled(true); bar.setRedoEnabled(false); }
+  }
+  function flushCommit(): void {
+    if (commitTimer !== null) { clearTimeout(commitTimer); commitTimer = null; commitHistory(); }
+  }
+  function applySnapshot(p: Palette): void {
+    if (!editor) return;
+    applyingHistory = true;
+    editor.setPalette(p);                  // does NOT fire onChange (palette-editor.ts)
+    bar.setIdentity(currentPalette().name);
+    applyingHistory = false;
+    scheduleFlameRender();                 // re-render the flame with the restored palette
+    syncHistoryButtons();
+  }
+  function doUndo(): void {
+    flushCommit();                         // capture any in-flight edit as the tip first
+    const prev = history?.undo();
+    if (prev) applySnapshot(prev);
+  }
+  function doRedo(): void {
+    flushCommit();
+    const next = history?.redo();
+    if (next) applySnapshot(next);
+  }
+  // Ctrl/Cmd-Z undo · Ctrl/Cmd-Shift-Z (or Ctrl-Y on non-Mac) redo. Scoped to
+  // the page lifecycle; removed in destroy(). Ignored while typing in a field
+  // or while the naming dialog is open (let native text-undo / the modal win).
+  function onHistoryKeyDown(e: KeyboardEvent): void {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    const isUndo = k === 'z' && !e.shiftKey;
+    const isRedo = (k === 'z' && e.shiftKey) || (k === 'y' && !isMacUA);
+    if (!isUndo && !isRedo) return;
+    const el = e.target as HTMLElement | null;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+    if (document.querySelector('.pyr3-naming-dialog')) return;
+    e.preventDefault();
+    if (isRedo) doRedo(); else doUndo();
+  }
+  const isMacUA = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent);
+  document.addEventListener('keydown', onHistoryKeyDown);
   function mountEditor(stops: ColorStop[], name: string): void {
     editorHost.replaceChildren();
     editor = mountPaletteEditor(editorHost, {
       initial: { name, stops },
-      onChange: () => scheduleFlameRender(),   // #269 — live-update the flame
+      onChange: () => {
+        scheduleFlameRender();   // #269 — live-update the flame
+        scheduleCommit();        // #265 — debounced history snapshot (drag = 1 entry)
+      },
     });
     bar.setIdentity(currentPalette().name);   // #353 — sync the read-only chip
     wireBarOverlay();   // #269 Phase 2 — (re)attach the point-to-paint overlay
+    // #265 — seed the history stack the first time an editor mounts (so the very
+    // first edit undoes back to the starting palette); a later (re)mount with a
+    // fresh palette (e.g. Browse/Import before round-trip Modify) is a discrete
+    // commit.
+    if (!history) { history = createHistory(currentPalette()); syncHistoryButtons(); }
+    else commitHistory();
   }
 
   // #269 Phase 2 — point-to-paint hint is painted ON the gradient bar itself
@@ -296,9 +386,19 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   // (round-trip mode before Modify — Browse / Import replace the read-only
   // strip with an editable editor). #266 — and refresh the bar identity chip.
   function setPaletteOrMount(p: Palette): void {
-    if (editor) { editor.setPalette(p); }
-    else { mountEditor(p.stops, p.name); }
-    bar.setIdentity(currentPalette().name);
+    if (editor) {
+      // #265 — a discrete palette swap on a live editor. setPalette doesn't fire
+      // onChange, so flush any pending in-flight edit then record this as its own
+      // undoable entry. (When the editor isn't up yet, mountEditor handles the
+      // history seed/commit itself.)
+      flushCommit();
+      editor.setPalette(p);
+      bar.setIdentity(currentPalette().name);
+      commitHistory();
+    } else {
+      mountEditor(p.stops, p.name);
+      bar.setIdentity(currentPalette().name);
+    }
   }
 
   // action handlers — wired into the bar's verb callbacks (#353).
@@ -642,9 +742,11 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     const rgb = colorAtIndex(pal.stops, pal.hue ?? 0, pal.mode ?? 'linear', t);
     const res = insertStopAtIndex(pal.stops, t, rgb, STOP_DEDUP);
     if (res.selectedExisting) { setStatus(`A stop already maps near here (${(t * 100).toFixed(0)}%).`); return; }
+    flushCommit();
     editor.setPalette({ ...pal, stops: res.stops });
     setStatus(`Added a stop at ${(t * 100).toFixed(0)}% — recolor it to repaint that region.`);
     scheduleFlameRender();   // same genome identity → reuses the cached map
+    commitHistory();         // #265 — paint-add is a discrete undoable entry
   });
   // (bar scrub → flame region highlight is wired in wireBarOverlay, attached to
   // the gradient bar strip on each editor (re)mount.)
@@ -658,6 +760,8 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   return {
     destroy(): void {
       closePicker();
+      document.removeEventListener('keydown', onHistoryKeyDown);   // #265
+      if (commitTimer !== null) clearTimeout(commitTimer);          // #265
       if (_flameTimer) clearTimeout(_flameTimer);
       if (pendingClick) clearTimeout(pendingClick);
       runHandle?.cancel();

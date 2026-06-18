@@ -136,4 +136,21 @@ describe('edit-history', () => {
       expect(undone?.scale).toBe(6);
     });
   });
+
+  // #265 — the stack is generic over any JSON-shaped snapshot; the gradient
+  // page reuses it for `Palette`. Spot-check a non-Genome type round-trips.
+  describe('generic over T (Palette reuse)', () => {
+    interface Pal { name: string; stops: Array<{ t: number; r: number; g: number; b: number }> }
+    const p = (name: string): Pal => ({ name, stops: [{ t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 0, b: 1 }] });
+    it('undo/redo + deep-clone work for a Palette snapshot', () => {
+      const h = createHistory<Pal>(p('a'));
+      h.push(p('b'));
+      const undone = h.undo();
+      expect(undone?.name).toBe('a');
+      if (undone) undone.stops[0]!.r = 0.5; // mutate the returned clone
+      expect(h.redo()?.name).toBe('b');     // stack not poisoned
+      // The original 'b' snapshot's stop is untouched by the clone mutation.
+      expect(h.undo()?.stops[0]?.r).toBe(1);
+    });
+  });
 });

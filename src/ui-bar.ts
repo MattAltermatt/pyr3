@@ -555,6 +555,10 @@ export interface GradientBarOpts {
   onExport: () => void;
   onImport: () => void;
   onReset: () => void;
+  /** #265 — undo / redo the last palette edit. Disabled state driven by
+   *  setUndoEnabled / setRedoEnabled (start disabled until history grows). */
+  onUndo: () => void;
+  onRedo: () => void;
   /** Round-trip only — write the (possibly untouched) palette back + return. */
   onApply?: () => void;
   /** Round-trip only — return to the flame without writing a palette back. */
@@ -570,6 +574,9 @@ export interface GradientBarHandle {
   setStatus(msg: string): void;
   /** Read-only "🎨 <name>" palette identity in the info row (empty → hidden). */
   setIdentity(name: string): void;
+  /** #265 — toggle the ⟲ / ⟳ buttons' enabled state from the page's history. */
+  setUndoEnabled(enabled: boolean): void;
+  setRedoEnabled(enabled: boolean): void;
   destroy(): void;
 }
 
@@ -609,6 +616,16 @@ export function mountGradientBar(root: HTMLElement, opts: GradientBarOpts): Grad
     b.dataset['role'] = role;
     return b;
   };
+  // #265 — undo / redo lead the verb cluster, mirroring the editor bar. Start
+  // disabled (no history until the first edit); the page drives the enabled
+  // state via setUndoEnabled / setRedoEnabled.
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent);
+  const undoBtn = mk('⟲', 'undo', 'pyr3-bar-btn pyr3-edit-undo', () => opts.onUndo());
+  undoBtn.title = `Undo (${isMac ? '⌘Z' : 'Ctrl+Z'})`;
+  undoBtn.disabled = true;
+  const redoBtn = mk('⟳', 'redo', 'pyr3-bar-btn pyr3-edit-redo', () => opts.onRedo());
+  redoBtn.title = `Redo (${isMac ? '⇧⌘Z' : 'Ctrl+Shift+Z'})`;
+  redoBtn.disabled = true;
   const loadFlameBtn = mk('🔥 Load flame…', 'load-flame', 'pyr3-bar-btn', () => opts.onLoadFlame());
   loadFlameBtn.title = 'Open a flame file, render it, and paint with its palette';
   const browseBtn = mk('Browse library…', 'browse', 'pyr3-bar-btn', () => opts.onBrowse());
@@ -616,7 +633,7 @@ export function mountGradientBar(root: HTMLElement, opts: GradientBarOpts): Grad
   const exportBtn = mk('Export .json', 'export', 'pyr3-bar-btn', () => opts.onExport());
   const importBtn = mk('Import…', 'import', 'pyr3-bar-btn', () => opts.onImport());
   const resetBtn = mk('↺ Reset', 'reset', 'pyr3-bar-btn', () => opts.onReset());
-  actionLeft.append(loadFlameBtn, browseBtn, saveBtn, exportBtn, importBtn, resetBtn);
+  actionLeft.append(undoBtn, redoBtn, loadFlameBtn, browseBtn, saveBtn, exportBtn, importBtn, resetBtn);
 
   if (opts.roundTrip) {
     const applyBtn = mk('✓ Apply to flame', 'apply', 'pyr3-btn-primary', () => opts.onApply?.());
@@ -635,6 +652,8 @@ export function mountGradientBar(root: HTMLElement, opts: GradientBarOpts): Grad
       identity.textContent = n ? `🎨 ${n}` : '';
       identity.style.display = n ? '' : 'none';
     },
+    setUndoEnabled(enabled) { undoBtn.disabled = !enabled; },
+    setRedoEnabled(enabled) { redoBtn.disabled = !enabled; },
     destroy(): void {
       chrome.destroy();
       root.classList.remove('pyr3-bar-root');
@@ -1765,6 +1784,13 @@ const BAR_CSS = `
 }
 .pyr3-bar-btn:hover:not(:disabled) { background: #2a2a30; }
 .pyr3-bar-btn:disabled { background: #1a1a1f; color: #555; border-color: #2a2a30; cursor: not-allowed; }
+
+/* #265 — glyph-only undo / redo buttons: the ⟲ / ⟳ should fill most of the
+   button rather than read as a tiny 11px mark. Larger font + tight padding;
+   line-height:1 keeps the button height in line with its text-label siblings. */
+.pyr3-edit-undo, .pyr3-edit-redo {
+  font-size: 19px; line-height: 1; padding: 1px 12px;
+}
 
 /* #103 Phase 3 Task 3.2 — Size dropdown button.
    Current dims rendered in amber; ▾ caret to the right. Hover shifts the bg
