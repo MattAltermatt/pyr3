@@ -239,27 +239,42 @@ export const globalSection: SectionMount = {
     }
 
     // ── background color swatch ──────────────────────────────────────────
-    // Full-width swatch in the control column. Clicking opens a hidden
-    // <input type="color"> that drives the native OS picker. The hidden
-    // input also satisfies legacy tests that select via input[type="color"].
+    // #351 — the native <input type="color"> is the REAL click target, layered
+    // transparently (opacity:0) and full-size ON TOP of the visible swatch.
+    // The previous design hid the input (1px / opacity:0 / pointer-events:none)
+    // and proxied a programmatic `colorInput.click()` from the swatch — but a
+    // programmatic click on a non-interactable color input does NOT reliably
+    // open the OS picker (observed dead in Chrome incognito). An overlaid,
+    // interactable-but-invisible input lets a genuine user click open the
+    // picker directly (real user activation, no proxy). The input stays
+    // discoverable to tests via input[type="color"].
     {
       const initialHex = rgb01ToHex(state.genome.background ?? [0, 0, 0]);
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
       colorInput.className = 'pyr3-edit-color';
       colorInput.value = initialHex;
+      // Full-size transparent overlay — interactable (no pointer-events:none).
       colorInput.style.position = 'absolute';
-      colorInput.style.width = '1px';
-      colorInput.style.height = '1px';
+      colorInput.style.inset = '0';
+      colorInput.style.width = '100%';
+      colorInput.style.height = '100%';
+      colorInput.style.margin = '0';
+      colorInput.style.padding = '0';
+      colorInput.style.border = 'none';
       colorInput.style.opacity = '0';
-      colorInput.style.pointerEvents = 'none';
+      colorInput.style.cursor = 'pointer';
 
       const swatch = buildColorSwatch({
+        // Swatch is purely visual now; the overlaid input catches clicks. Keep
+        // a proxy click as a harmless fallback for any pointer that reaches the
+        // swatch (the input is interactable, so this path works too now).
         color: initialHex,
         onClick: () => colorInput.click(),
       });
       swatch.style.height = '22px';
       swatch.style.minHeight = '22px';
+      swatch.style.pointerEvents = 'none'; // let the overlaid input receive clicks
 
       colorInput.addEventListener('input', () => {
         state.genome.background = hexToRgb01(colorInput.value);
@@ -268,11 +283,13 @@ export const globalSection: SectionMount = {
       });
 
       const ctrlWrap = document.createElement('div');
+      ctrlWrap.style.position = 'relative';
       ctrlWrap.style.display = 'flex';
       ctrlWrap.style.alignItems = 'center';
       ctrlWrap.style.gap = '0';
       ctrlWrap.style.width = '100%';
       ctrlWrap.style.minWidth = '0';
+      ctrlWrap.style.height = '22px';
       ctrlWrap.appendChild(swatch);
       ctrlWrap.appendChild(colorInput);
       host.appendChild(row('background', ctrlWrap, TIPS.background));

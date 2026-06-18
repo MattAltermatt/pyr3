@@ -152,6 +152,24 @@ describe('globalSection — background color', () => {
     expect(input.value.toLowerCase()).toBe('#ff8000');
   });
 
+  it('#351 — the color input is a full-size interactable overlay (not a pointer-events:none 1px proxy)', () => {
+    const { host } = setup();
+    const bgRow = rowByLabel(host, 'background');
+    const input = bgRow.querySelector('input[type="color"]') as HTMLInputElement;
+    // The fix: the input itself catches the click. The old bug-state set
+    // pointer-events:none + width:1px and proxied a programmatic .click(),
+    // which Chrome incognito ignored. Guard against regressing to that.
+    expect(input.style.pointerEvents).not.toBe('none');
+    expect(input.style.width).toBe('100%');
+    expect(input.style.height).toBe('100%');
+    expect(input.style.position).toBe('absolute');
+    expect(input.style.opacity).toBe('0'); // transparent overlay over the swatch
+    // The visible swatch must NOT swallow the click — it's pointer-events:none
+    // so the overlaid input receives it.
+    const swatch = bgRow.querySelector('.pyr3-color-swatch') as HTMLElement;
+    expect(swatch.style.pointerEvents).toBe('none');
+  });
+
   it('hexToRgb01 + rgb01ToHex round-trip', () => {
     expect(hexToRgb01('#000000')).toEqual([0, 0, 0]);
     expect(hexToRgb01('#ffffff')).toEqual([1, 1, 1]);

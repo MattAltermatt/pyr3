@@ -160,13 +160,25 @@ const EDIT_CSS = `
 .pyr3-edit-root {
   display: grid;
   grid-template-rows: auto 1fr;
+  /* #345 — pin the single implicit column to minmax(0,1fr). Without it the
+     column defaults to auto and grows to the body max-content width (the 340px
+     panel + the canvas intrinsic px), overflowing the viewport at narrow widths
+     so the body never shrinks and the canvas crops. This is the OUTER half of
+     the fix; the .pyr3-edit-body minmax(0,1fr) track is the inner half. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   width: 100%;
   overflow: hidden;
 }
 .pyr3-edit-body {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  /* #345 — minmax(0, 1fr) (not bare 1fr) so the canvas track can shrink BELOW
+     the canvas element's intrinsic pixel width. A plain 1fr track defaults to
+     min-width:auto, which pins it to the canvas's min-content size (~1024px) and
+     overflows the viewport at narrow widths → the flame gets cropped instead of
+     fitting. With minmax(0,…) the track collapses and the canvas's
+     object-fit:contain (below) scales the flame to fit. */
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
   overflow: hidden;
@@ -190,6 +202,9 @@ const EDIT_CSS = `
   background: var(--bg, ${COLORS.bg.page});
   overflow: hidden;
   position: relative;
+  /* #345 — pair with the minmax(0,1fr) track so this flex item can shrink below
+     its canvas child's intrinsic width instead of forcing an overflow/crop. */
+  min-width: 0;
 }
 .pyr3-edit-canvas-host canvas {
   /* width:100% + height:100% + object-fit:contain together let the canvas

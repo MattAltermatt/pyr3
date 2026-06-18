@@ -12,7 +12,7 @@ import {
   type SectionKey,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
-import { applyGradientReturn } from './edit-mount';
+import { applyGradientReturn, scalePreviewGenome } from './edit-mount';
 import { writeGradientReturn } from './edit-state';
 
 // Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
@@ -37,6 +37,8 @@ import {
   resolveColdStartGenome,
   resolveColdStartGenomeWithSource,
   resolveColdStartCollapse,
+  persistColdStartIfReroll,
+  restoreWip,
   WIP_KEY,
   PENDING_TRANSFER_KEY,
   PENDING_TRANSFER_TTL_MS,
@@ -107,6 +109,85 @@ describe('resolveColdStartGenome (Task 6.5)', () => {
     result = resolveColdStartGenomeWithSource(() => fresh);
     expect(result.source).toBe('reroll');
     expect(result.genome.name).toBe('fresh-reroll');
+  });
+});
+
+// #344 — a fresh-visit reroll must persist to WIP so a reload restores the SAME
+// flame instead of re-rerolling. The bug was that mountEditPage's cold-start
+// resolved a reroll but never wrote it, so restoreWip() stayed null forever.
+describe('persistColdStartIfReroll (#344 reroll persistence)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('persists on the reroll path so the next cold-start restores it (not a new reroll)', () => {
+    // First visit: no WIP, no pending → reroll.
+    const first = generateRandomGenome(seededRng(1));
+    first.name = 'reroll-1';
+    const r1 = resolveColdStartGenomeWithSource(() => first);
+    expect(r1.source).toBe('reroll');
+    // POLICY under test — the mount persists the reroll.
+    persistColdStartIfReroll(r1.source, r1.genome);
+
+    // Reload: a *different* reroll fn would fire if persistence failed.
+    const r2 = resolveColdStartGenomeWithSource(() => {
+      const g = generateRandomGenome(seededRng(2));
+      g.name = 'reroll-2';
+      return g;
+    });
+    expect(r2.source).toBe('wip');
+    expect(r2.genome.name).toBe('reroll-1');
+  });
+
+  it('does NOT persist on the wip or pending source (no double-write / clobber)', () => {
+    const g = generateRandomGenome(seededRng(3));
+    persistColdStartIfReroll('wip', g);
+    expect(restoreWip()).toBeNull();
+    persistColdStartIfReroll('pending', g);
+    expect(restoreWip()).toBeNull();
+  });
+});
+
+// #352 — the live preview must scale every OUTPUT-PIXEL quantity (scale, spatial
+// filter radius, AND the density-estimator radii) by the resolution ratio so a
+// DE-heavy flame doesn't over-blur into "one color" at 384px and then snap crisp
+// on settle. The DE `curve` is a dimensionless exponent and must stay fixed.
+describe('scalePreviewGenome (#352 representative preview)', () => {
+  it('scales scale, spatial-filter radius, and DE maxRad/minRad — but NOT curve', () => {
+    const g = generateRandomGenome(seededRng(5));
+    g.scale = 100;
+    g.spatialFilter = { ...(g.spatialFilter ?? {}), radius: 2.0 } as typeof g.spatialFilter;
+    g.density = { maxRad: 9, minRad: 3, curve: 0.4 };
+    const ratio = 0.2; // 384 / 1920
+    const out = scalePreviewGenome(g, ratio);
+    expect(out.scale).toBeCloseTo(20, 6);
+    expect(out.spatialFilter!.radius).toBeCloseTo(0.4, 6);
+    expect(out.density!.maxRad).toBeCloseTo(1.8, 6);
+    expect(out.density!.minRad).toBeCloseTo(0.6, 6);
+    expect(out.density!.curve).toBe(0.4); // dimensionless — unchanged
+  });
+
+  it('does not mutate the input genome', () => {
+    const g = generateRandomGenome(seededRng(6));
+    g.scale = 50;
+    g.density = { maxRad: 9, minRad: 0, curve: 0.5 };
+    scalePreviewGenome(g, 0.5);
+    expect(g.scale).toBe(50);
+    expect(g.density!.maxRad).toBe(9);
+  });
+
+  it('is a no-op shape-wise when density / spatialFilter are absent', () => {
+    const g = generateRandomGenome(seededRng(7));
+    g.scale = 80;
+    delete g.density;
+    delete g.spatialFilter;
+    const out = scalePreviewGenome(g, 0.25);
+    expect(out.scale).toBeCloseTo(20, 6);
+    expect(out.density).toBeUndefined();
+    expect(out.spatialFilter).toBeUndefined();
   });
 });
 

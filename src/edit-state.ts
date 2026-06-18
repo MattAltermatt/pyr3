@@ -550,6 +550,19 @@ export function resolveColdStartGenomeWithSource(rerollFn: () => Genome): ColdSt
   return { genome: rerollFn(), source: 'reroll' };
 }
 
+/** #344 — persist the cold-start genome to WIP *only* on the `reroll` path.
+ *  Without this, the first-visit random reroll is never written to localStorage
+ *  (schedulePersist fires only on the next user edit), so a reload re-rerolls a
+ *  brand-new flame and the "remember my last flame" contract silently fails.
+ *  The `pending` and `wip` sources need no persist here: a restored `wip` is
+ *  already in storage, and a `pending` transfer is intentionally single-shot
+ *  (it's consumed on read, then the user's first edit persists it as WIP).
+ *  Call AFTER the mount has applied defaultNick / editor defaults so the
+ *  persisted copy matches what the user sees. */
+export function persistColdStartIfReroll(source: ColdStartGenomeSource, genome: Genome): void {
+  if (source === 'reroll') persistWip(genome);
+}
+
 /** Resolve the initial section-collapse map at editor mount. Wraps
  *  restoreSectionCollapse() — kept as a named cold-start entry point so the
  *  intent at the mountEditPage callsite is obvious. */

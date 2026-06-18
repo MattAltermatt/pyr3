@@ -15,6 +15,7 @@ import {
   pathLane,
   resolveColdStartCollapse,
   resolveColdStartGenomeWithSource,
+  persistColdStartIfReroll,
   schedulePersist,
   persistWip,
   loadEditRenderSettings,
@@ -70,6 +71,41 @@ export function applyGradientReturn(state: EditState): boolean {
   };
   state.paletteSource = { kind: 'custom' };
   return true;
+}
+
+/** #352 — produce a downsized PREVIEW copy of `genome` for the editor's live
+ *  lane, scaling every OUTPUT-PIXEL quantity by `ratio` (= previewLongEdge /
+ *  fullLongEdge) so the 384px live preview is representative of the settled
+ *  full-resolution render.
+ *
+ *  `scale` (px-per-world-unit), the spatial-filter radius, AND the density-
+ *  estimator radii (`maxRad`/`minRad`) are ALL in output-pixel units, so they
+ *  must shrink together — otherwise a radius-11 DE kernel that covers ~0.6% of a
+ *  1920px render covers ~3% of a 384px preview, over-blurring it into "one
+ *  color" until the settled render snaps it crisp (the #352 symptom). The DE
+ *  `curve` is a dimensionless falloff exponent (not px) and is deliberately
+ *  left untouched — scaling it would distort the adaptive falloff.
+ *
+ *  Pure + side-effect-free: returns a shallow copy and never mutates `genome`.
+ *  Caller owns the `ratio === 1` identity short-circuit (so the settled lane
+ *  keeps returning the same genome reference its GPU caches key on). */
+export function scalePreviewGenome(genome: Genome, ratio: number): Genome {
+  const adjusted: Genome = { ...genome, scale: genome.scale * ratio };
+  if (genome.spatialFilter) {
+    adjusted.spatialFilter = {
+      ...genome.spatialFilter,
+      radius: genome.spatialFilter.radius * ratio,
+    };
+  }
+  if (genome.density) {
+    adjusted.density = {
+      ...genome.density,
+      maxRad: genome.density.maxRad * ratio,
+      minRad: genome.density.minRad * ratio,
+      // curve stays as-is — dimensionless exponent, not an output-px length.
+    };
+  }
+  return adjusted;
 }
 
 export interface MountEditPageOpts {
@@ -254,6 +290,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const initialGenome = initial.genome;
   if (initial.source === 'reroll') applyDefaultNick(initialGenome);
   applyEditorDefaults(initialGenome);
+  // #344 — persist a fresh reroll immediately (after nick + defaults are applied)
+  // so a reload restores THIS flame instead of generating a brand-new one. The
+  // wip/pending sources don't need it (wip is already stored; pending is
+  // single-shot and persists on the first edit).
+  persistColdStartIfReroll(initial.source, initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
 
@@ -377,18 +418,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     state.genome.size = next;
   }
 
-  function adjustedGenomeFor(w: number, h: number): Genome {
+  function adjustedGenomeFor(w: number, _h: number): Genome {
     const full = getFullDims();
     if (w === full.width) return state.genome;
-    const ratio = w / full.width;
-    const adjusted: Genome = { ...state.genome, scale: state.genome.scale * ratio };
-    if (state.genome.spatialFilter) {
-      adjusted.spatialFilter = {
-        ...state.genome.spatialFilter,
-        radius: state.genome.spatialFilter.radius * ratio,
-      };
-    }
-    return adjusted;
+    return scalePreviewGenome(state.genome, w / full.width);
   }
 
   // Resolve preview canvas dims from PreviewRenderConfig + render-side aspect.
