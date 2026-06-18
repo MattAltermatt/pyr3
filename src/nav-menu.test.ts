@@ -19,10 +19,21 @@ describe('nav-menu structure (#264)', () => {
     const subs = el.querySelectorAll('[data-nav-top="animate"] [data-nav-sub]');
     expect([...subs].map((s) => s.getAttribute('data-nav-sub'))).toEqual(['animate', 'screensaver']);
   });
-  it('ESF menu has ESF Viewer + Gallery', () => {
+  it('Flame Gallery menu has Browse + Gallery + ESF source link (#340)', () => {
     const el = buildNavMenu('viewer', vi.fn());
-    const subs = el.querySelectorAll('[data-nav-top="esf"] [data-nav-sub]');
-    expect([...subs].map((s) => s.getAttribute('data-nav-sub'))).toEqual(['esf', 'gallery']);
+    const top = el.querySelector('[data-nav-top="esf"]') as HTMLElement;
+    expect((top.querySelector('.pyr3-nav-toptab') as HTMLElement).textContent).toContain('Flame Gallery');
+    const subs = top.querySelectorAll('[data-nav-sub]');
+    expect([...subs].map((s) => s.getAttribute('data-nav-sub'))).toEqual(['esf', 'gallery', 'esf-source']);
+  });
+  it('ESF source leaf is an external new-tab link (#340)', () => {
+    const onNav = vi.fn();
+    const el = buildNavMenu('viewer', onNav);
+    document.body.append(el);
+    (el.querySelector('[data-nav-sub="esf-source"]') as HTMLButtonElement).click();
+    expect(onNav).toHaveBeenLastCalledWith('https://github.com/MattAltermatt/electric-sheep-fold', true);
+    el.dispatchEvent(new Event('pyr3:destroy'));
+    el.remove();
   });
   it('Discover menu includes variations + about + showcase + help pages', () => {
     const el = buildNavMenu('viewer', vi.fn());

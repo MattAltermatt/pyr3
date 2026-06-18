@@ -7,12 +7,20 @@
 
 export type NavSubKey =
   | 'editor' | 'gradient' | 'animate' | 'screensaver'
-  | 'esf' | 'gallery' | 'variations' | 'surprise' | 'about' | 'showcase'
+  | 'esf' | 'gallery' | 'esf-source' | 'variations' | 'surprise' | 'about' | 'showcase'
   | 'help-color' | 'help-ifs' | 'help-webgpu';
 
 export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover';
 
-export interface NavLeaf { key: NavSubKey; label: string; route: string; newTab?: boolean }
+export interface NavLeaf {
+  key: NavSubKey;
+  label: string;
+  route: string;
+  newTab?: boolean;
+  /** #340 — render a thin separator above this leaf (sets off external/provenance
+   *  links from the in-app surfaces). */
+  divider?: boolean;
+}
 export interface NavTop {
   key: NavTopKey;
   label: string;
@@ -31,9 +39,13 @@ export const NAV_MODEL: NavTop[] = [
     { key: 'animate',     label: 'Timeline',    route: '/animate' },
     { key: 'screensaver', label: 'Screensaver', route: '/screensaver' },
   ]},
-  { key: 'esf', label: 'ESF', items: [
-    { key: 'esf',     label: 'ESF Viewer', route: '/esf' },
-    { key: 'gallery', label: 'Gallery',    route: '/esf/gallery' },
+  // #340 — renamed from the opaque "ESF" acronym. The Electric Sheep Fold
+  // name keeps a home via the provenance link at the bottom of the menu.
+  { key: 'esf', label: 'Flame Gallery', items: [
+    { key: 'esf',        label: 'Browse',  route: '/esf' },
+    { key: 'gallery',    label: 'Gallery', route: '/esf/gallery' },
+    { key: 'esf-source', label: 'Electric Sheep Fold ↗',
+      route: 'https://github.com/MattAltermatt/electric-sheep-fold', newTab: true, divider: true },
   ]},
   { key: 'discover', label: 'Discover', items: [
     { key: 'surprise',    label: 'Surprise',        route: '/surprise' },
@@ -82,6 +94,7 @@ function injectNavStylesOnce(): void {
 }
 .pyr3-nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
 .pyr3-nav-item.active { color: #ffbe3e; }
+.pyr3-nav-divider { height: 1px; margin: 4px 6px; background: #2c2c34; }
 `;
   document.head.append(style);
 }
@@ -162,6 +175,11 @@ function buildTop(
   panel.className = 'pyr3-nav-panel';
   panel.hidden = true;
   for (const leaf of top.items!) {
+    if (leaf.divider) {
+      const div = document.createElement('div');
+      div.className = 'pyr3-nav-divider';
+      panel.append(div);
+    }
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'pyr3-nav-item';
