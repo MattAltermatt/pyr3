@@ -812,15 +812,21 @@ async function main(): Promise<void> {
 
   // #176 — viewer's RENDER config is workstation-pref-shaped: independent
   // of activeGenome (loaded flames do NOT reset / override it). Persists to
-  // localStorage so the user's HD/Q50 (or whatever they pick) survives page
-  // reloads + flame nav. Default = HD 1920×1080 + Q50.
+  // localStorage so the user's chosen dims/quality survive page reloads +
+  // flame nav.
+  // #341 — Save Render defaults high: 4K (3840×2160) · q200 (browser cap).
+  // This is the explicit Save Render output only; the live preview defaults
+  // (loadPreviewConfig → Balanced/Q30) are unchanged, so this does not risk
+  // the #211-class compositor freeze. NOTE: a browser with an existing
+  // `pyr3-viewer-render-config` in localStorage keeps its saved value — this
+  // default only applies to a fresh/cleared store.
   interface ViewerRenderConfig {
     width: number;
     height: number;
     quality: number;
   }
   const VIEWER_RENDER_CFG_KEY = 'pyr3-viewer-render-config';
-  const DEFAULT_VIEWER_RENDER_CFG: ViewerRenderConfig = { width: 1920, height: 1080, quality: 50 };
+  const DEFAULT_VIEWER_RENDER_CFG: ViewerRenderConfig = { width: 3840, height: 2160, quality: 200 };
   function loadViewerRenderConfig(): ViewerRenderConfig {
     try {
       const raw = globalThis.localStorage?.getItem(VIEWER_RENDER_CFG_KEY);
@@ -1025,7 +1031,7 @@ async function main(): Promise<void> {
     },
     // #176 — bar reads/writes the workstation-pref ViewerRenderConfig.
     // Decoupled from activeGenome — flame loads do NOT reset the bar.
-    // Default HD + Q50; user picks survive page reloads via localStorage.
+    // #341 default 4K + Q200; user picks survive page reloads via localStorage.
     getRenderSize: () => ({ width: viewerRenderCfg.width, height: viewerRenderCfg.height }),
     setRenderSize: (size) => {
       viewerRenderCfg = { ...viewerRenderCfg, width: size.width, height: size.height };

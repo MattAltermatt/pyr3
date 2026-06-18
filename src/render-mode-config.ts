@@ -24,7 +24,10 @@ export interface ExportConfig {
   transparent: boolean;
 }
 
-export const DEFAULT_EXPORT_CONFIG: ExportConfig = { format: 'png8', transparent: false };
+// #341 — Save Render defaults high (16-bit PNG) as a debugging/quality
+// convenience for the primary user. Preview defaults (DEFAULT_PREVIEW_CONFIG
+// below) are deliberately NOT bumped — only the explicit Save Render output.
+export const DEFAULT_EXPORT_CONFIG: ExportConfig = { format: 'png16', transparent: false };
 
 const EXPORT_STORAGE_KEY = 'pyr3-export-config';
 const VALID_FORMATS: ReadonlyArray<ExportFormat> = ['png8', 'png16', 'exr'];
