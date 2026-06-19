@@ -28,8 +28,9 @@ npm run build:cli:serve                             # produce ./build/pyr3-serve
 
 The nav is **5 top menus** (#264): **Viewer** · **Editor ▾** (Flame `/editor` ·
 Gradient `/gradient`) · **Animate ▾** (Timeline `/animate` · Screensaver
-`/screensaver`) · **ESF ▾** (ESF Viewer `/esf` + `/esf/gen/N/id/M` ·
-Gallery `/esf/gallery`) · **Discover ▾** (Variations `/variations` · About ·
+`/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/esf` +
+`/esf/gen/N/id/M` · Gallery `/esf/gallery` · Electric Sheep Fold ↗ source repo) ·
+**Discover ▾** (Variations `/variations` · About ·
 Showcase · help pages). Routes are **flat** (the `/v1/` prefix was dropped;
 old `/v1/*` URLs redirect at boot via `src/route-redirects.ts`). The basic
 viewer (`/viewer`, also bare `/`) opens/views any flame (📂 Open + Save, no
