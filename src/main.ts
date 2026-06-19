@@ -205,11 +205,16 @@ async function main(): Promise<void> {
       cue.classList.add('hidden');
       setTimeout(() => cue.remove(), 450);
     }
+    mountViewerWelcome(); // #338 — first-load welcome card (basic viewer only)
   };
 
   let openFilePicker: () => void = () => {
     console.warn('pyr3: file picker invoked before canvas init');
   };
+  // #338 — first-load welcome card mount. A no-op until the viewer bar +
+  // handlers wire up (basic mode only); fired once from clearFirstPaintCue on
+  // first paint, so the hero renders behind the card.
+  let mountViewerWelcome: () => void = () => {};
   // Forwarding ref: the quality render closure is defined after the bar mounts
   // (it needs the renderer + device), so the ladder calls through this.
   let renderQualityFn: (req: QualityRequest) => void = () => {
@@ -458,6 +463,21 @@ async function main(): Promise<void> {
   // #264 — pick the viewer mode from the current surface: /esf (+ corpus
   // deep-links) is the ESF browser; bare / and /viewer are the basic viewer.
   const viewerMode: 'basic' | 'esf' = currentTabSurface() === 'esf' ? 'esf' : 'basic';
+
+  // #264/#338 — resolve the editor URL for the current flame (with the
+  // side-effect of stashing a locally-opened genome for the editor's
+  // cold-start). Shared by the bar's ✏️ Edit button (same-tab navigation) and
+  // the #338 welcome card's "Edit this flame" link (new tab). Corpus sheep go
+  // via the shareable /editor?gen=&id= deep-link.
+  const editorUrlForCurrentFlame = (): string => {
+    const cf = getCurrentFlame();
+    if (cf?.corpusId) return editorUrlForFlame(cf.corpusId);
+    if (cf?.genome) {
+      writePendingTransfer({ genome: cf.genome, corpusId: null, timestamp: Date.now() });
+    }
+    return editorUrlForFlame();
+  };
+
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     mode: viewerMode,
@@ -508,21 +528,9 @@ async function main(): Promise<void> {
         saveFlame({ ...current.genome, name: res.name, nick: res.nick }, `${res.filename}.pyr3.json`);
       });
     },
-    // #264 — explicit "✏️ Edit this flame": carry the current flame into the
-    // editor. Corpus sheep go via the shareable /editor?gen=&id= deep-link; a
-    // locally-opened (non-corpus) flame stashes its genome in localStorage for
-    // the editor's cold-start to consume (the same vehicle the old implicit
-    // tab-transfer used — now button-triggered, not surprising).
+    // #264 — explicit "✏️ Edit this flame" → editor in the SAME tab.
     onEditFlame: () => {
-      const cf = getCurrentFlame();
-      if (cf?.corpusId) {
-        window.location.href = editorUrlForFlame(cf.corpusId);
-        return;
-      }
-      if (cf?.genome) {
-        writePendingTransfer({ genome: cf.genome, corpusId: null, timestamp: Date.now() });
-      }
-      window.location.href = editorUrlForFlame();
+      window.location.href = editorUrlForCurrentFlame();
     },
     onSurpriseMe: () => {
       // #23: pick a flame from the corpus weighted by interestingness +
@@ -883,6 +891,43 @@ async function main(): Promise<void> {
   // #176 — body class hides the chrome bar's Size + Quality + Save Render
   // (now duplicated by render-mode-bar). CSS selector in index.html.
   document.body.classList.add('pyr3-has-render-mode-bar');
+
+  // #338 — first-load onboarding: a dismissible welcome card over the canvas,
+  // basic viewer only, shown once per browser. Lazy-loaded + mounted on first
+  // paint (via the mountViewerWelcome forwarding ref) so the hero flame renders
+  // behind it. The card STAYS until ✕ / Escape; its links open in a new tab so
+  // the viewer + card persist:
+  //   - 🖼 gallery → a RANDOM gallery page (new tab)
+  //   - 📂 Open    → the local file picker (this tab — a picker, not a page)
+  //   - ✏️ Edit    → the editor for the current flame (new tab)
+  if (viewerMode === 'basic') {
+    mountViewerWelcome = (): void => {
+      void import('./welcome-card').then(({ mountWelcomeCard }) => {
+        mountWelcomeCard(canvasZone, {
+          onBrowseGallery: () => {
+            // Open a blank tab synchronously (keeps the user-gesture so popup
+            // blockers don't fire), then resolve a random page + set its URL.
+            const tab = window.open('', '_blank');
+            void loadGensManifest().then((manifest) => {
+              let page = 1;
+              if (manifest) {
+                const totalSheep = manifest.gens.reduce((sum, g) => sum + g.count, 0);
+                const totalPages = Math.max(1, Math.ceil(totalSheep / GALLERY_PAGE_SIZE));
+                page = 1 + Math.floor(Math.random() * totalPages);
+              }
+              const url = galleryUrl(page);
+              if (tab) tab.location.href = url;
+              else window.open(url, '_blank');
+            });
+          },
+          onOpen: () => openFilePicker(),
+          onEdit: () => {
+            window.open(editorUrlForCurrentFlame(), '_blank');
+          },
+        });
+      });
+    };
+  }
 
   async function viewerSaveRender(
     exportOpts: { format: ExportFormat; transparent: boolean } = { format: 'png8', transparent: false },

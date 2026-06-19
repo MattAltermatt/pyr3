@@ -90,6 +90,7 @@ const SEAM_EXEMPT = new Set<string>([
   'variation-catalog-mount.ts',   // /variations page mount — owns DOM (#119)
   'variation-catalog-sidebar.ts', // /variations sidebar — DOM-mounting (#119)
   'variation-catalog-section.ts', // /variations per-section component (#119)
+  'welcome-card.ts',           // viewer first-load welcome card — owns DOM (#338)
   'naming-dialog.ts',          // save-time naming dialog — owns DOM (#346)
   'render-progress-modal.ts',  // Save Render progress modal — owns DOM (#176)
   'render-mode-bar.ts',        // shared PREVIEW/RENDER bar — owns DOM (#176 Task 3)
