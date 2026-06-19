@@ -625,10 +625,6 @@ async function main(): Promise<void> {
       onRedo: () => editorRef?.redo(),
       onSizeChange: (w, h) => editorRef?.setSize(w, h),
       onQualityChange: (q) => editorRef?.setQuality(q),
-      onSettleChange: (ms) => {
-        editorRef?.setSettleDelayMs(ms);
-        editBar.setSettle(ms);
-      },
       onSaveFlame: () => editorRef?.saveFlame(),
       onSave: () => { void editorRef?.saveRender(); },
     });
@@ -701,7 +697,6 @@ async function main(): Promise<void> {
       },
       onProgressShow: (label) => editBar.showProgress(label),
       onProgressHide: () => editBar.hideProgress(),
-      onSettleDelayChange: (ms) => editBar.setSettle(ms),
       onHistoryChange: (canUndo, canRedo) => {
         editBar.setUndoEnabled(canUndo);
         editBar.setRedoEnabled(canRedo);

@@ -13,6 +13,7 @@ import {
 import { scrubbyInput } from './edit-scrubby-input';
 import { COLORS } from './ui-tokens';
 import { infoIcon } from './help-text';
+import { SETTLE_PRESETS } from './load-intent';
 
 export interface SectionMount {
   key: SectionKey;
@@ -70,6 +71,18 @@ export function mountEditUi(
   const settleRow = document.createElement('div');
   settleRow.className = 'pyr3-edit-named';
   settleRow.append(document.createTextNode('settle '));
+
+  // SETTLE ladder (#367) — relocated from the editor bar into this panel so
+  // both settle controls live together. Quick presets; the scrubby beside it
+  // still accepts any off-ladder value. Both write the same field via
+  // onSettleDelayChange.
+  const settleLadder = document.createElement('div');
+  settleLadder.className = 'pyr3-bar-quality-group pyr3-bar-settle-group pyr3-edit-settle-ladder';
+  const settleLadderBtns = new Map<number, HTMLButtonElement>();
+  function highlightSettleLadder(ms: number): void {
+    for (const [v, b] of settleLadderBtns) b.classList.toggle('on', v === ms);
+  }
+
   const settleHandle = scrubbyInput({
     value: callbacks.settleDelayMs ?? 200,
     kind: 'generic',
@@ -79,16 +92,35 @@ export function mountEditUi(
     format: (v) => String(Math.round(v)),
     ariaLabel: 'settle delay (ms)',
     onInput: (v) => {
-      callbacks.onSettleDelayChange?.(Math.round(v));
+      const ms = Math.round(v);
+      highlightSettleLadder(ms);
+      callbacks.onSettleDelayChange?.(ms);
     },
   });
   settleHandle.el.classList.add('pyr3-edit-settle-input');
   settleHandle.el.style.width = '64px';
   settleHandle.el.title = 'Quiet time after your last edit before the full-quality render fires (ms). Higher = live preview stays visible longer; lower = settled render arrives sooner.';
-  settleRow.append(settleHandle.el, document.createTextNode(' ms'));
+
+  for (const ms of SETTLE_PRESETS) {
+    const b = document.createElement('button');
+    b.className = 'pyr3-bar-quality-btn pyr3-bar-settle-btn';
+    b.type = 'button';
+    b.textContent = String(ms);
+    b.title = `wait ${ms}ms after the last edit before the full-quality render fires`;
+    b.onclick = () => {
+      settleHandle.setValue(ms); // reflect in the scrubby (no onInput fire)
+      highlightSettleLadder(ms);
+      callbacks.onSettleDelayChange?.(ms);
+    };
+    settleLadderBtns.set(ms, b);
+    settleLadder.append(b);
+  }
+
+  settleRow.append(settleLadder, settleHandle.el, document.createTextNode(' ms'));
   // Visible `?` explainer — the "what is settle?" affordance (#348).
   settleRow.append(infoIcon('render.settle'));
   topbar.appendChild(settleRow);
+  highlightSettleLadder(Math.round(callbacks.settleDelayMs ?? 200));
 
   host.appendChild(topbar);
 
@@ -142,9 +174,10 @@ export function mountEditUi(
     },
     setSettleDelayMs(ms: number): void {
       // setValue updates the scrubby's display + internal state but does
-      // NOT fire onInput, so the bar→panel echo doesn't loop back through
-      // onSettleDelayChange → bar.setSettle → here → onInput.
+      // NOT fire onInput, so an external set doesn't loop back through
+      // onSettleDelayChange → here → onInput.
       settleHandle.setValue(ms);
+      highlightSettleLadder(Math.round(ms));
     },
   };
 }

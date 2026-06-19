@@ -83,7 +83,7 @@
       .pyr3-render-mode-bar-preview {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         padding: 4px 8px;
         border-radius: 4px;
         background: linear-gradient(90deg, rgba(70, 140, 200, 0.10), rgba(70, 140, 200, 0.02));
@@ -92,13 +92,38 @@
       .pyr3-render-mode-bar-render {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         padding: 4px 8px;
         border-radius: 4px;
         background: linear-gradient(90deg, rgba(255, 140, 26, 0.12), rgba(255, 140, 26, 0.02));
         flex-shrink: 0;
         margin-left: auto;  /* push RENDER cluster to the right edge */
       }
+      /* #367 — viewer + editor: stack PREVIEW above RENDER on two left-aligned
+         lines so the (otherwise too-wide) single row never overflows. */
+      .pyr3-render-mode-bar-host .pyr3-render-mode-bar,
+      .pyr3-edit-render-mode-bar-host .pyr3-render-mode-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        height: auto;
+        gap: 4px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        overflow-x: visible;
+      }
+      .pyr3-render-mode-bar-host .pyr3-render-mode-bar-render,
+      .pyr3-edit-render-mode-bar-host .pyr3-render-mode-bar-render {
+        margin-left: 0;  /* RENDER sits on its own line, left-aligned */
+      }
+      /* Cap the preset dropdown — it auto-sized to its longest option
+         ("iPhone 14 Pro Max"); a modest cap trims the dead width. */
+      .pyr3-render-mode-bar-host .pyr3-render-mode-bar-preset,
+      .pyr3-edit-render-mode-bar-host .pyr3-render-mode-bar-preset { max-width: 138px; }
+      /* The vertical divider belongs to the old single-row layout — in the
+         stacked layout it becomes a tall block that wedges the two rows
+         apart, so hide it. */
+      .pyr3-render-mode-bar-host .pyr3-render-mode-bar-divider,
+      .pyr3-edit-render-mode-bar-host .pyr3-render-mode-bar-divider { display: none; }
       .pyr3-render-mode-bar-divider {
         width: 1px;
         height: 32px;
@@ -143,7 +168,7 @@
       }
       .pyr3-render-mode-bar-w,
       .pyr3-render-mode-bar-h {
-        width: 56px;
+        width: 44px;  /* fits up to 5 digits (16K = 15360); 4K = 3840 is typical */
         background: var(--bar-bg-3);
         color: var(--text);
         border: 1px solid var(--bar-border);
@@ -160,7 +185,7 @@
         margin: 0;
       }
       .pyr3-render-mode-bar-q-input {
-        width: 48px;
+        width: 40px;  /* spp value is ≤ 4 digits — trim the dead space */
         background: var(--bar-bg-3);
         color: var(--text);
         border: 1px solid var(--bar-border);

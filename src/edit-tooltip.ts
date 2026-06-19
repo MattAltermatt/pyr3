@@ -13,6 +13,7 @@
 import { COLORS } from './ui-tokens';
 
 const TOOLTIP_WIDTH = 250;
+const SECTION_TOOLTIP_WIDTH = 320;
 const ANCHOR_GAP = 14;
 
 export interface InfoIconOpts {
@@ -21,7 +22,16 @@ export interface InfoIconOpts {
   hint?: string;
 }
 
-export function buildInfoIcon(opts: InfoIconOpts): HTMLElement {
+// A grouped "section" explainer: one `?` opens a single wider popover that
+// covers several related controls at once (e.g. the RENDER row's
+// size/quality/format/transparent), instead of a `?` per control.
+export interface SectionHelpOpts {
+  title: string;
+  sections: ReadonlyArray<{ label: string; body: string }>;
+}
+
+// The styled `?` glyph, shared by both icon builders.
+function makeGlyph(): HTMLElement {
   const icon = document.createElement('span');
   icon.className = 'pyr3-info-icon';
   icon.textContent = '?';
@@ -39,21 +49,36 @@ export function buildInfoIcon(opts: InfoIconOpts): HTMLElement {
   icon.style.userSelect = 'none';
   icon.style.marginLeft = '4px';
   icon.style.flex = '0 0 auto';
+  return icon;
+}
 
+export function buildInfoIcon(opts: InfoIconOpts): HTMLElement {
+  const icon = makeGlyph();
   icon.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    toggleTooltip(icon, opts);
+    togglePopover(icon, () => buildTooltipBody(opts));
   });
   return icon;
 }
 
-function toggleTooltip(anchor: HTMLElement, opts: InfoIconOpts): void {
+export function buildSectionHelpIcon(opts: SectionHelpOpts): HTMLElement {
+  const icon = makeGlyph();
+  icon.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    togglePopover(icon, () => buildSectionBody(opts));
+  });
+  return icon;
+}
+
+// Toggle a popover built lazily by `build()`. Click again (existing popover
+// present) closes it. Shared by the single-control and section icons.
+function togglePopover(anchor: HTMLElement, build: () => HTMLElement): void {
   const existing = document.querySelector('.pyr3-tooltip');
   if (existing) {
     existing.remove();
     return;
   }
-  const tip = buildTooltipBody(opts);
+  const tip = build();
   // Anchor beside the whole section panel when we're inside one (editor
   // accordion), else beside the icon itself (bar / topbar controls).
   const sect = anchor.closest('.pyr3-section') as HTMLElement | null;
@@ -71,6 +96,53 @@ function toggleTooltip(anchor: HTMLElement, opts: InfoIconOpts): void {
     };
     document.addEventListener('click', dismiss, true);
   }, 0);
+}
+
+// A wider popover that lists several titled sub-sections under one heading.
+function buildSectionBody(opts: SectionHelpOpts): HTMLElement {
+  const tip = document.createElement('div');
+  tip.className = 'pyr3-tooltip';
+  tip.style.position = 'fixed';
+  tip.style.zIndex = '200';
+  tip.style.width = `${SECTION_TOOLTIP_WIDTH}px`;
+  tip.style.padding = '10px 12px';
+  tip.style.background = COLORS.bg.panel;
+  tip.style.border = `1px solid ${COLORS.border}`;
+  tip.style.borderRadius = '4px';
+  tip.style.boxShadow = '0 4px 18px rgba(0,0,0,0.6)';
+  tip.style.color = COLORS.text.primary;
+  tip.style.fontSize = '12px';
+  tip.style.lineHeight = '1.4';
+
+  const heading = document.createElement('div');
+  heading.className = 'pyr3-tooltip-title';
+  heading.textContent = opts.title;
+  heading.style.color = COLORS.flame.top;
+  heading.style.fontWeight = '600';
+  heading.style.marginBottom = '6px';
+  tip.appendChild(heading);
+
+  opts.sections.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'pyr3-tooltip-section';
+    if (i > 0) row.style.marginTop = '8px';
+
+    const label = document.createElement('div');
+    label.className = 'pyr3-tooltip-section-label';
+    label.textContent = s.label;
+    label.style.color = COLORS.text.primary;
+    label.style.fontWeight = '600';
+    row.appendChild(label);
+
+    const body = document.createElement('div');
+    body.className = 'pyr3-tooltip-section-body';
+    body.textContent = s.body;
+    body.style.color = COLORS.text.primary;
+    row.appendChild(body);
+
+    tip.appendChild(row);
+  });
+  return tip;
 }
 
 function buildTooltipBody(opts: InfoIconOpts): HTMLElement {

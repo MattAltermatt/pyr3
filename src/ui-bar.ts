@@ -10,7 +10,7 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
-import { corpusUrl, galleryUrl, QUALITY_PRESETS, SETTLE_PRESETS, SIZE_PRESETS } from './load-intent';
+import { corpusUrl, galleryUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
 import { buildNavMenu } from './nav-menu';
 import type { QualityRequest } from './presets';
 import { composeFlameFilename } from './save-flame';
@@ -202,9 +202,6 @@ export interface EditBarOpts {
   onRedo: () => void;
   onSizeChange: (width: number, height: number) => void;
   onQualityChange: (quality: number) => void;
-  /** Fires when the user clicks a SETTLE ladder button. ms = quiet time
-   *  after the last edit before the full-quality render fires. */
-  onSettleChange: (ms: number) => void;
   onSaveFlame: () => void;
   onSave: () => void;
 }
@@ -221,10 +218,6 @@ export interface EditBarHandle {
   /** Update the active QUALITY pick (highlights the matching numeric button
    *  in amber). */
   setQuality(spp: number): void;
-  /** Update the active SETTLE pick (highlights the matching ms button).
-   *  When ms isn't in the SETTLE_PRESETS ladder, no button is highlighted
-   *  — matches the QUALITY pattern for off-ladder values typed in the panel. */
-  setSettle(ms: number): void;
   /** Show the rendering-in-flight tier3 panel under the bar. Mirrors the
    *  viewer's mountBar showProgress; same DOM + CSS classes. The editor's
    *  render is single-dispatch (no incremental progress), so callers pass
@@ -278,16 +271,15 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     dimsSep, dims,
   );
 
-  infoRow.append(infoLeft);
+  // #367 — editor action buttons live on the RIGHT of the identity row; the
+  // standalone action bar is dropped (mirrors the viewer).
+  const infoRight = el('div', 'pyr3-zone-right pyr3-bar-info-actions');
+  infoRow.append(infoLeft, infoRight);
 
-  // #103 Phase 6 Task 6.2 — action row matches the viewer's pattern:
-  //   📂 Open · 🎲 Reroll · 📐 Size ▾ · QUALITY [10·25·50·75·100] · 🧬 Save Flame · 💾 Save Render
-  // The editor has no corpus-browse cluster (no surprise / prev / next pills);
-  // verbs only on the left, no right cluster. The Size dropdown reuses the
-  // viewer's SIZE_PRESETS list but omits the "open in Editor" deflect footer
-  // (we're already in the editor).
-  const actionRow = el('div', 'pyr3-bar-action');
-  const actionLeft = el('div', 'pyr3-zone-actleft');
+  // #367 — the editor's verbs (undo/redo · Open · Reroll · Save Flame) live
+  // in the identity row's right zone (infoRight); there is no separate action
+  // row anymore. The Size dropdown reuses the viewer's SIZE_PRESETS list but
+  // omits the "open in Editor" deflect footer (we're already in the editor).
 
   // #108 — undo/redo pair at the far left. Disabled-not-hidden so the rest
   // of the action row doesn't shift under the cursor when the stack empties
@@ -346,47 +338,14 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const saveRenderBtn = button('💾 Save Render', 'pyr3-btn-primary pyr3-bar-save-render', () => opts.onSave());
   saveRenderBtn.title = 'Download the current render as a PNG';
 
-  // Size / QUALITY / Save Render are hidden here (display:none) — moved to
-  // the shared render-mode-bar in #176. Their `?` help lives on that bar
-  // next to the live controls, NOT here (else the icons orphan beside Open).
-  actionLeft.append(undoBtn, redoBtn, openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
+  // Verbs go into the identity row's right zone. Size / QUALITY / Save Render
+  // stay in the DOM but are hidden by class (`body.pyr3-has-render-mode-bar
+  // .pyr3-bar-size` …) — moved to the shared render-mode-bar in #176 — so the
+  // BarHandle setters keep resolving them.
+  infoRight.append(undoBtn, redoBtn, openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
 
-  // SETTLE ladder (right side) — quiet time after the last edit before
-  // the full-quality render fires. Mirror the QUALITY ladder pattern:
-  // bar drives the panel's `settle` field, panel can still type any
-  // value 0..5000 and the bar will show no highlight for off-ladder ms.
-  const actionRight = el('div', 'pyr3-zone-actright');
-  const SETTLE_TOOLTIP =
-    'Settle delay (ms) — quiet time after your last edit before the full-quality '
-    + 'render fires. Higher = the live (small-canvas) preview stays visible longer; '
-    + 'lower = the settled high-quality render arrives sooner.';
-  const settleLabel = el('span', 'pyr3-bar-quality-label pyr3-bar-settle-label');
-  settleLabel.textContent = 'SETTLE';
-  settleLabel.title = SETTLE_TOOLTIP;
-  const settleGroup = el('div', 'pyr3-bar-quality-group pyr3-bar-settle-group');
-  const settleBtns = new Map<number, HTMLButtonElement>();
-  let currentSettle: number = 500;
-  for (const ms of SETTLE_PRESETS) {
-    const b = document.createElement('button');
-    // Reuse the QUALITY ladder's visual styling but mark the SETTLE-side
-    // button with its own class so test queries can scope `.pyr3-bar-quality-btn`
-    // (now narrowed to the QUALITY group via :not(.pyr3-bar-settle-btn))
-    // OR just select `.pyr3-bar-settle-btn` directly.
-    b.className = 'pyr3-bar-quality-btn pyr3-bar-settle-btn';
-    b.type = 'button';
-    b.textContent = String(ms);
-    b.title = `wait ${ms}ms after the last edit before the full-quality render fires`;
-    b.onclick = () => opts.onSettleChange(ms);
-    settleBtns.set(ms, b);
-    settleGroup.append(b);
-  }
-  const renderSettleHighlight = (): void => {
-    for (const [ms, b] of settleBtns) b.classList.toggle('on', ms === currentSettle);
-  };
-  renderSettleHighlight();
-  actionRight.append(settleLabel, settleGroup);
-
-  actionRow.append(actionLeft, actionRight);
+  // #367 — the SETTLE ladder moved into the editor PANEL's topbar (next to
+  // its `settle` scrubby, edit-ui.ts), so it no longer lives on the bar.
 
   // Size dropdown — same lazy build + outside-click dismiss pattern as the
   // viewer. NO deflect footer in the editor (we are the editor).
@@ -454,7 +413,8 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     }, 0);
   };
 
-  chrome.middleSlot.append(infoRow, actionRow);
+  // #367 — editor folds its verbs into infoRow; there is no separate action row.
+  chrome.middleSlot.append(infoRow);
 
   // Lazy-built tier3 progress panel (same structure as mountBar's). Pinned
   // under the bar via `position: absolute; top: 100%`.
@@ -488,10 +448,6 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
     setQuality(spp) {
       currentSpp = spp;
       renderQualityHighlight();
-    },
-    setSettle(ms) {
-      currentSettle = ms;
-      renderSettleHighlight();
     },
     setUndoEnabled(enabled) {
       undoBtn.disabled = !enabled;
@@ -701,7 +657,11 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const toast = el('span', 'pyr3-bar-toast');
   infoLeft.append(metaName, metaQuality, metaVariations, toast);
 
-  infoRow.append(infoLeft);
+  // #367 — the basic viewer hosts its action buttons on the RIGHT of the
+  // identity row (the standalone action bar below is dropped). Filled in the
+  // mode branch once the buttons are built; stays empty (harmless) in ESF.
+  const infoRight = el('div', 'pyr3-zone-right pyr3-bar-info-actions');
+  infoRow.append(infoLeft, infoRight);
 
   // ══ bar ② — actions (Open · Size ▾ · QUALITY [10·25·50·75·100] · save · nav) ══
   //
@@ -772,11 +732,18 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const editFlameBtn = button('✏️ Edit', 'pyr3-bar-btn pyr3-bar-edit-flame', () => opts.onEditFlame());
   editFlameBtn.title = 'Open the current flame in the editor';
 
-  // #264 — 📂 Open is basic-viewer-only; ESF is corpus-only (no local file load).
-  if (opts.mode === 'basic') actionLeft.append(openBtn);
-  // Size / QUALITY / Save Render are hidden here (display:none) — moved to
-  // the shared render-mode-bar in #176. Their `?` help lives on that bar.
-  actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn, editFlameBtn);
+  // Size / QUALITY / Save Render stay in the DOM but are hidden by class
+  // (`body.pyr3-has-render-mode-bar .pyr3-bar-size` …, index.html) — moved to
+  // the shared render-mode-bar in #176. They remain mounted so the BarHandle
+  // setters keep resolving them regardless of which container holds them.
+  // #264 — 📂 Open is basic-viewer-only; ESF is corpus-only (no local load).
+  if (opts.mode === 'basic') {
+    // #367 — basic viewer: actions live in the identity row's right zone; the
+    // standalone action bar is omitted from middleSlot below.
+    infoRight.append(openBtn, saveFlameBtn, editFlameBtn, sizeBtn, qualityLabel, qualityGroup, saveBtn);
+  } else {
+    actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn, editFlameBtn);
+  }
 
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
   // curated showcase set (sibling of the gallery dice #50, which picks from
@@ -889,7 +856,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     }, 0);
   };
 
-  chrome.middleSlot.append(infoRow, actionRow);
+  // #367 — basic viewer folds its actions into infoRow, so the standalone
+  // action bar is omitted; ESF still needs it (dice + corpus nav).
+  if (opts.mode === 'esf') chrome.middleSlot.append(infoRow, actionRow);
+  else chrome.middleSlot.append(infoRow);
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;

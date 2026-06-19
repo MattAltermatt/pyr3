@@ -9,7 +9,7 @@
 // Interaction is click-to-toggle (reuses buildInfoIcon's anchored popover);
 // the underlying control keeps its native `.title` hover as a free bonus.
 
-import { type InfoIconOpts, buildInfoIcon } from './edit-tooltip';
+import { type InfoIconOpts, buildInfoIcon, buildSectionHelpIcon } from './edit-tooltip';
 
 export type HelpKey = string;
 
@@ -243,4 +243,42 @@ export function infoIcon(key: HelpKey): HTMLElement {
   const opts = HELP[key];
   if (!opts) throw new Error(`help-text: unknown key "${key}"`);
   return buildInfoIcon(opts);
+}
+
+// One consolidated `?` for the whole RENDER row — a single wider popover
+// covering size / quality / format / transparent, sourced from the same
+// registry entries (so the copy stays single-source). Replaces the per-
+// control `?` icons on the render side (#367).
+// Fold a registry entry into a section (label + body, with the hint merged
+// into the body since the section popover has no separate hint slot).
+function pickSection(key: HelpKey): { label: string; body: string } {
+  const o = HELP[key];
+  if (!o) throw new Error(`help-text: unknown key "${key}"`);
+  return { label: o.title, body: o.hint ? `${o.body} ${o.hint}` : o.body };
+}
+
+export function renderSectionHelpIcon(): HTMLElement {
+  return buildSectionHelpIcon({
+    title: 'Render output',
+    sections: [
+      pickSection('render.size'),
+      pickSection('render.quality'),
+      pickSection('render.format'),
+      pickSection('render.transparent'),
+    ],
+  });
+}
+
+// One consolidated `?` for the whole PREVIEW row — mirrors the RENDER
+// section icon: a single wider popover covering the preview-vs-render
+// concept, the preview tier, and the preview quality (#367).
+export function previewSectionHelpIcon(): HTMLElement {
+  return buildSectionHelpIcon({
+    title: 'Live preview',
+    sections: [
+      pickSection('concept.preview-vs-render'),
+      pickSection('preview.tier'),
+      pickSection('preview.quality'),
+    ],
+  });
 }
