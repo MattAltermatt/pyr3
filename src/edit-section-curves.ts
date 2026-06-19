@@ -24,6 +24,7 @@ import {
   type ChannelHistogram,
 } from './channel-histogram';
 import { COLORS } from './ui-tokens';
+import { infoIcon } from './help-text';
 
 // #175 — per-channel histogram tint colors (under the curve spline). RGB
 // triples (CSS rgba body) chosen to read against the dark canvas.
@@ -261,6 +262,7 @@ export const curvesSection: SectionMount = {
       tabButtons.push(el);
       tabsRoot.appendChild(el);
     }
+    tabsRoot.appendChild(infoIcon('curves.channels'));
     host.appendChild(tabsRoot);
 
     // ── Preset row ──────────────────────────────────────────────────────

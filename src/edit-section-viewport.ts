@@ -25,6 +25,7 @@ import { type EditState } from './edit-state';
 import { computeFitViewport } from './edit-fit-viewport';
 import { type FieldKind, type ScrubbyHandle } from './edit-scrubby-input';
 import { buildRow, buildNumberInput, buildButton } from './edit-primitives';
+import { infoIcon } from './help-text';
 
 type ViewportField = 'scale' | 'cx' | 'cy' | 'rotate';
 
@@ -103,6 +104,7 @@ export const viewportSection: SectionMount = {
     fitBtn.classList.add('pyr3-edit-btn', 'pyr3-edit-viewport-fit');
     fitBtn.title = 'Move cx / cy / scale so the entire flame fits inside the render area';
     fitRow.appendChild(fitBtn);
+    fitRow.appendChild(infoIcon('viewport.fit'));
     host.appendChild(fitRow);
 
     // Track each row's scrubby handle so the fit button can sync displayed
@@ -130,6 +132,7 @@ export const viewportSection: SectionMount = {
         'pyr3-edit-viewport-row',
         `pyr3-edit-viewport-${spec.key}`,
       );
+      row.querySelector('.pyr3-ctrl')?.appendChild(infoIcon(`viewport.${spec.key}`));
       host.appendChild(row);
     }
 

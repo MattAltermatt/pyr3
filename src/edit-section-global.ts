@@ -33,6 +33,7 @@ import {
   buildDropdown,
 } from './edit-primitives';
 import { scrubbyInput } from './edit-scrubby-input';
+import { infoIcon } from './help-text';
 
 // Hex `#rrggbb` → [r, g, b] floats in 0..1.
 export function hexToRgb01(hex: string): [number, number, number] {
@@ -121,13 +122,23 @@ export const globalSection: SectionMount = {
     // walk rows by the legacy `.pyr3-edit-row` / `.pyr3-edit-label`
     // selectors keep working without re-asserting against the new
     // `.pyr3-row` / `.pyr3-lbl` classes used by edit-primitives.
-    function row(label: string, control: HTMLElement, title: string): HTMLElement {
+    function row(
+      label: string,
+      control: HTMLElement,
+      title: string,
+      helpKey?: string,
+    ): HTMLElement {
       const r = buildRow(label, control);
       r.classList.add('pyr3-edit-row');
       r.title = title;
       // Add the legacy label class so rowByLabel() helpers keep matching.
       const lbl = r.querySelector('.pyr3-lbl');
       lbl?.classList.add('pyr3-edit-label');
+      // Visible `?` info icon appended into the control cell (the flex
+      // `.pyr3-ctrl`, not the label cell — keeps the label's textContent
+      // clean for rowByLabel matchers). Promotes the otherwise hover-only
+      // `.title` help to an obvious affordance (#348).
+      if (helpKey) r.querySelector('.pyr3-ctrl')?.appendChild(infoIcon(helpKey));
       return r;
     }
 
@@ -142,7 +153,7 @@ export const globalSection: SectionMount = {
           fireTonemap('tonemap.brightness');
         },
       });
-      host.appendChild(row('brightness', num.el, TIPS.brightness));
+      host.appendChild(row('brightness', num.el, TIPS.brightness, 'global.brightness'));
     }
 
     // ── gamma ────────────────────────────────────────────────────────────
@@ -156,7 +167,7 @@ export const globalSection: SectionMount = {
           fireTonemap('tonemap.gamma');
         },
       });
-      host.appendChild(row('gamma', num.el, TIPS.gamma));
+      host.appendChild(row('gamma', num.el, TIPS.gamma, 'global.gamma'));
     }
 
     // ── highlightPower ───────────────────────────────────────────────────
@@ -169,7 +180,7 @@ export const globalSection: SectionMount = {
           fireTonemap('tonemap.highlightPower');
         },
       });
-      host.appendChild(row('highlightPower', num.el, TIPS.highlightPower));
+      host.appendChild(row('highlightPower', num.el, TIPS.highlightPower, 'global.highlightPower'));
     }
 
     // ── gammaThreshold ───────────────────────────────────────────────────
@@ -183,7 +194,7 @@ export const globalSection: SectionMount = {
           fireTonemap('tonemap.gammaThreshold');
         },
       });
-      host.appendChild(row('gammaThreshold', num.el, TIPS.gammaThreshold));
+      host.appendChild(row('gammaThreshold', num.el, TIPS.gammaThreshold, 'global.gammaThreshold'));
     }
 
     // ── vibrancy slider ──────────────────────────────────────────────────
@@ -235,7 +246,7 @@ export const globalSection: SectionMount = {
       ctrlWrap.style.minWidth = '0';
       ctrlWrap.appendChild(sliderEl);
       ctrlWrap.appendChild(rangeMirror);
-      host.appendChild(row('vibrancy', ctrlWrap, TIPS.vibrancy));
+      host.appendChild(row('vibrancy', ctrlWrap, TIPS.vibrancy, 'global.vibrancy'));
     }
 
     // ── background color swatch ──────────────────────────────────────────
@@ -292,7 +303,7 @@ export const globalSection: SectionMount = {
       ctrlWrap.style.height = '22px';
       ctrlWrap.appendChild(swatch);
       ctrlWrap.appendChild(colorInput);
-      host.appendChild(row('background', ctrlWrap, TIPS.background));
+      host.appendChild(row('background', ctrlWrap, TIPS.background, 'global.background'));
     }
 
     // ── symmetry (checkbox + kind dropdown + count) ──────────────────────
@@ -381,7 +392,7 @@ export const globalSection: SectionMount = {
       ctrlWrap.appendChild(symKind);
       ctrlWrap.appendChild(symNHandle.el);
 
-      const symRow = row('symmetry', ctrlWrap, TIPS.symmetry);
+      const symRow = row('symmetry', ctrlWrap, TIPS.symmetry, 'global.symmetry');
       symRow.classList.add('pyr3-edit-symmetry');
       host.appendChild(symRow);
     }

@@ -32,6 +32,7 @@ import {
   saveExportConfig,
 } from './render-mode-config';
 import { getCapability } from './capability';
+import { infoIcon } from './help-text';
 
 const PREVIEW_QUALITY_LADDER = [10, 20, 30, 40, 50] as const;
 const RENDER_QUALITY_LADDER = [50, 75, 100, 200] as const;
@@ -131,6 +132,9 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   previewLabel.className = 'pyr3-render-mode-bar-side-label';
   previewLabel.textContent = 'PREVIEW';
   previewSide.appendChild(previewLabel);
+  // Explain the core preview-vs-render distinction right where both sides
+  // meet the user (#343).
+  previewSide.appendChild(infoIcon('concept.preview-vs-render'));
 
   // Tier pill
   const tierGroup = document.createElement('div');
@@ -154,6 +158,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     tierButtons.set(t.id, btn);
   }
   previewSide.appendChild(tierGroup);
+  previewSide.appendChild(infoIcon('preview.tier'));
 
   // Preview quality
   const previewQGroup = document.createElement('div');
@@ -177,6 +182,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     previewQButtons.set(q, btn);
   }
   previewSide.appendChild(previewQGroup);
+  previewSide.appendChild(infoIcon('preview.quality'));
 
   // ── RENDER side ─────────────────────────────────────────────────────────
   const renderSide = document.createElement('div');
@@ -273,6 +279,8 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   hInput.addEventListener('input', hHandler);
   hInput.addEventListener('change', hHandler);
   renderSide.appendChild(hInput);
+  // Size help sits with the live W×H control (#343).
+  renderSide.appendChild(infoIcon('render.size'));
 
   // Render quality buttons
   const renderQGroup = document.createElement('div');
@@ -323,6 +331,8 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   qInput.addEventListener('input', qHandler);
   qInput.addEventListener('change', qHandler);
   renderSide.appendChild(qInput);
+  // Quality (spp) help sits with the live render-quality control (#343).
+  renderSide.appendChild(infoIcon('render.quality'));
 
   // #334 — output format selector + transparent toggle. Sticky per-browser.
   const exportCfg = loadExportConfig();
@@ -343,6 +353,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     formatSelect.appendChild(opt);
   }
   renderSide.appendChild(formatSelect);
+  renderSide.appendChild(infoIcon('render.format'));
 
   // Transparent-background toggle (disabled for EXR — linear data is already
   // background-free). Render disabled-not-hidden so the row never reflows.
@@ -357,6 +368,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
   transparentText.textContent = 'Transparent';
   transparentLabel.append(transparentCb, transparentText);
   renderSide.appendChild(transparentLabel);
+  renderSide.appendChild(infoIcon('render.transparent'));
 
   function paintExportControls(): void {
     // EXR carries no background → the toggle is N/A. Disable + dim, don't hide.

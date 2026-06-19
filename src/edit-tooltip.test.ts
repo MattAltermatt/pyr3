@@ -137,4 +137,30 @@ describe('buildInfoIcon', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('clamps the popover within the viewport for a right-edge icon with no section (#343)', () => {
+    // An icon hard against the right edge, NOT inside a .pyr3-section (the
+    // render-mode-bar / top-bar case). Without a clamp the popover ran
+    // off-screen — regression guard.
+    vi.stubGlobal('innerWidth', 500);
+    vi.stubGlobal('innerHeight', 400);
+
+    const icon = buildInfoIcon({ title: 't', body: 'b' });
+    icon.getBoundingClientRect = () => ({
+      left: 480, right: 496, top: 20, bottom: 36,
+      x: 480, y: 20, width: 16, height: 16, toJSON: () => ({}),
+    } as DOMRect);
+    document.body.appendChild(icon);
+
+    icon.click();
+    const tip = document.querySelector('.pyr3-tooltip') as HTMLElement;
+    expect(tip).toBeTruthy();
+    const leftPx = parseInt(tip.style.left, 10);
+    // TOOLTIP_WIDTH 250 + 8px margins must fit inside the 500px viewport:
+    // 8 ≤ left ≤ 500 − 250 − 8 (= 242).
+    expect(leftPx).toBeGreaterThanOrEqual(8);
+    expect(leftPx).toBeLessThanOrEqual(242);
+
+    vi.unstubAllGlobals();
+  });
 });

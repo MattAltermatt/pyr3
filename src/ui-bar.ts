@@ -346,6 +346,9 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const saveRenderBtn = button('💾 Save Render', 'pyr3-btn-primary pyr3-bar-save-render', () => opts.onSave());
   saveRenderBtn.title = 'Download the current render as a PNG';
 
+  // Size / QUALITY / Save Render are hidden here (display:none) — moved to
+  // the shared render-mode-bar in #176. Their `?` help lives on that bar
+  // next to the live controls, NOT here (else the icons orphan beside Open).
   actionLeft.append(undoBtn, redoBtn, openBtn, rerollBtn, sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveRenderBtn);
 
   // SETTLE ladder (right side) — quiet time after the last edit before
@@ -771,6 +774,8 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 
   // #264 — 📂 Open is basic-viewer-only; ESF is corpus-only (no local file load).
   if (opts.mode === 'basic') actionLeft.append(openBtn);
+  // Size / QUALITY / Save Render are hidden here (display:none) — moved to
+  // the shared render-mode-bar in #176. Their `?` help lives on that bar.
   actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn, editFlameBtn);
 
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the

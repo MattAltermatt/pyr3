@@ -38,7 +38,7 @@ import {
 } from './edit-preset-density';
 import { COLORS } from './ui-tokens';
 import { buildButton } from './edit-primitives';
-import { buildInfoIcon } from './edit-tooltip';
+import { infoIcon } from './help-text';
 
 // Cross-section event: fired when any tonemap field is edited outside the
 // density section (e.g. brightness in Global). The density section
@@ -150,6 +150,7 @@ export const densitySection: SectionMount = {
       presetButtons.push(handle);
       presetStrip.appendChild(btnEl);
     }
+    presetStrip.appendChild(infoIcon('density.tonemapPresets'));
     host.appendChild(presetStrip);
 
     function applyTonemapPreset(p: TonemapPreset): void {
@@ -189,7 +190,7 @@ export const densitySection: SectionMount = {
       max: number,
       step: number,
       onScrub: (v: number) => void,
-      tooltip: { title: string; body: string; hint?: string },
+      helpKey: string,
     ): SliderPair {
       const row = document.createElement('div');
       row.className = `pyr3-edit-density-row ${cls}-row`;
@@ -224,7 +225,7 @@ export const densitySection: SectionMount = {
       number.classList.add(`${cls}-number`);
       number.style.width = '60px';
 
-      row.append(lab, slider, number, buildInfoIcon(tooltip));
+      row.append(lab, slider, number, infoIcon(helpKey));
       host.appendChild(row);
       return { slider, number, handle };
     }
@@ -234,34 +235,15 @@ export const densitySection: SectionMount = {
     const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 0, 30, 0.5, (v) => {
       maxRadPair.slider.value = String(v);
       setField('maxRad', v);
-    }, {
-      title: 'MAX RADIUS',
-      body:
-        'Maximum blur radius around each scatter point. '
-        + 'Higher = softer, glowier image. Lower = sharper, more granular.',
-      hint: 'At 0, density estimation is off (raw point cloud).',
-    });
+    }, 'density.maxRad');
     const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 0, 30, 0.1, (v) => {
       minRadPair.slider.value = String(v);
       setField('minRad', v);
-    }, {
-      title: 'MIN RADIUS',
-      body:
-        'Minimum blur radius — the floor for dense areas. '
-        + 'Dense regions use this; sparse regions blur up to maxRad.',
-      hint: 'Keep at or below maxRad.',
-    });
+    }, 'density.minRad');
     const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 0.1, 2.0, 0.05, (v) => {
       curvePair.slider.value = String(v);
       setField('curve', v);
-    }, {
-      title: 'CURVE',
-      body:
-        'How density maps to blur radius. '
-        + '< 1 = aggressive (sparse areas reach maxRad quickly). '
-        + '> 1 = gentle (only the sparsest areas get close to maxRad).',
-      hint: 'Default 0.4 works for most flames.',
-    });
+    }, 'density.curve');
 
     // ── Header chip + dirty marker ─────────────────────────────────────────
     // The chip lives in the header sibling (parent's previousElementSibling

@@ -12,6 +12,7 @@ import {
 } from './edit-state';
 import { scrubbyInput } from './edit-scrubby-input';
 import { COLORS } from './ui-tokens';
+import { infoIcon } from './help-text';
 
 export interface SectionMount {
   key: SectionKey;
@@ -85,6 +86,8 @@ export function mountEditUi(
   settleHandle.el.style.width = '64px';
   settleHandle.el.title = 'Quiet time after your last edit before the full-quality render fires (ms). Higher = live preview stays visible longer; lower = settled render arrives sooner.';
   settleRow.append(settleHandle.el, document.createTextNode(' ms'));
+  // Visible `?` explainer — the "what is settle?" affordance (#348).
+  settleRow.append(infoIcon('render.settle'));
   topbar.appendChild(settleRow);
 
   host.appendChild(topbar);

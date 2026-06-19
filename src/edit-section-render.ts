@@ -22,6 +22,7 @@ import {
   buildNumberInput,
   buildDropdown,
 } from './edit-primitives';
+import { infoIcon } from './help-text';
 
 const DEFAULT_OVERSAMPLE = 1;
 const DEFAULT_FILTER_RADIUS = 0.5;
@@ -69,6 +70,7 @@ export const renderSection: SectionMount = {
     osRow.title = 'Render at a larger size internally, then shrink to the final size.\n'
       + 'Higher = smoother edges, less jagged lines — but slower and uses more memory.\n'
       + '1× = render at exact size. 2× / 4× = render 2× / 4× wider+taller internally.';
+    osRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('render.oversample'));
     host.appendChild(osRow);
 
     // ── filter radius row ───────────────────────────────────────────────────
@@ -86,6 +88,7 @@ export const renderSection: SectionMount = {
     frRow.title = 'How much to soften the flame.\n'
       + 'Bigger = softer, more glowy. Smaller = sharper, crisper lines.\n'
       + '0.5 is a balanced default.';
+    frRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('render.filterRadius'));
     host.appendChild(frRow);
 
     // ── filter shape row ────────────────────────────────────────────────────
@@ -101,6 +104,7 @@ export const renderSection: SectionMount = {
       + 'Gaussian is a soft, round glow (best default).\n'
       + 'Other shapes (box, triangle, lanczos…) give slightly different feels —\n'
       + 'mostly invisible at small filter radius, more visible at large radius.';
+    fsRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('render.filterShape'));
     host.appendChild(fsRow);
 
     // ── mutators ────────────────────────────────────────────────────────────

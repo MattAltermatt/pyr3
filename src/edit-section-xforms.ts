@@ -40,6 +40,7 @@ import {
   buildSlider,
   buildNumberInput,
 } from './edit-primitives';
+import { infoIcon } from './help-text';
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -839,7 +840,9 @@ function buildXformCard(
   });
   colorSliderEl.classList.add('pyr3-edit-color-slider');
   colorSliderEl.title = 'Where this xform pulls toward on the palette gradient (0 = left, 1 = right).';
-  body.appendChild(buildRow('color', colorSliderEl));
+  const colorRow = buildRow('color', colorSliderEl);
+  colorRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.color'));
+  body.appendChild(colorRow);
 
   const colorSpeedInput = buildNumberInput({
     value: xform.colorSpeed,
@@ -853,7 +856,9 @@ function buildXformCard(
   });
   colorSpeedInput.el.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
   colorSpeedInput.el.classList.add('pyr3-edit-color-speed');
-  body.appendChild(buildRow('colorSpeed', colorSpeedInput.el));
+  const colorSpeedRow = buildRow('colorSpeed', colorSpeedInput.el);
+  colorSpeedRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.colorSpeed'));
+  body.appendChild(colorSpeedRow);
 
   const opacitySliderEl = buildSlider({
     value: xform.opacity ?? 1,
@@ -867,7 +872,9 @@ function buildXformCard(
   });
   opacitySliderEl.classList.add('pyr3-edit-opacity-slider');
   opacitySliderEl.title = "Visibility of this xform's deposits. 0 = ghostly, 1 = full.";
-  body.appendChild(buildRow('opacity', opacitySliderEl));
+  const opacityRow = buildRow('opacity', opacitySliderEl);
+  opacityRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.opacity'));
+  body.appendChild(opacityRow);
 
   // ── 5. Xaos rows (one buildRow per destination xform). ─────────────
   if (totalXforms > 1) {

@@ -83,6 +83,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-scrubby-input.ts',     // /editor drag-to-scrub numeric cell — owns DOM + pointer lock
   'edit-primitives.ts',        // /editor shared row/input/dropdown/swatch/pair builders (#103 Phase 7)
   'edit-tooltip.ts',           // /editor info-icon + anchored popover (#103 Phase 7)
+  'help-text.ts',              // shared help-text registry — builds info icons via edit-tooltip (#343/#348)
   'palette-picker.ts',         // /editor docked palette picker (#103 Phase 9)
   'edit-slow-render-nudge.ts', // /editor slow-render UX nudge — owns toast DOM (#118)
   'surprise-mount.ts',            // /surprise wall page mount — owns DOM (#186)
