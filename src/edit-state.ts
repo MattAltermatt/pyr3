@@ -282,8 +282,11 @@ export interface EditRenderSettings {
 }
 
 export const DEFAULT_EDIT_RENDER_SETTINGS: EditRenderSettings = {
-  size: { width: 1920, height: 1080 },
-  quality: 50,
+  // #360 — match #341's viewer default (4K · q200). The editor keeps its own
+  // sticky pref (EDIT_RENDER_SETTINGS_KEY); this is only the fresh-browser /
+  // no-stored-pref default, brought in line with the viewer.
+  size: { width: 3840, height: 2160 },
+  quality: 200,
   settleMs: 500,
 };
 
