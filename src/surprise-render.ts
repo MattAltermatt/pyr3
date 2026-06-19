@@ -7,6 +7,7 @@
 
 import { type Genome } from './genome';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
+import { computeFitViewport } from './edit-fit-viewport';
 import { classifyThumbnail } from './surprise-cull';
 import { type ThumbResult } from './surprise-queue';
 
@@ -31,17 +32,30 @@ export function makeGpuRenderThumb(device: GPUDevice, format: GPUTextureFormat):
   const bytesPerRow = Math.ceil((DIM * 4) / 256) * 256;
 
   async function renderThumb(genome: Genome): Promise<ThumbResult> {
+    // #361 — the genome was framed by generateRandomGenome for FIT_REF
+    // (1920×1080, 16:9); rendering it untouched into the square tile keeps that
+    // scale and zoom-crops the attractor. Re-fit to the square tile so the whole
+    // flame frames inside it. Only the local render copy is reframed — the stored
+    // genome keeps its authored framing for click-through to the editor/viewer.
+    // The CPU oracle can throw on exotic variations (mirrors edit-seed's guard)
+    // → fall back to the authored framing.
+    let framed = genome;
+    try {
+      const fit = computeFitViewport(genome, DIM, DIM);
+      if (fit) framed = { ...genome, scale: fit.scale, cx: fit.cx, cy: fit.cy };
+    } catch { /* oracle blew up on an exotic variation → render authored framing */ }
+
     // 1. iterate the chaos game for this genome (screensaver pattern)
     const iters = Math.max(64, Math.ceil((QUALITY * DIM * DIM) / WALKERS));
-    renderer.reset(genome);
-    renderer.iterate({ genome, seed: (Math.random() * 0xffffffff) >>> 0, walkers: WALKERS, itersPerWalker: iters });
+    renderer.reset(framed);
+    renderer.iterate({ genome: framed, seed: (Math.random() * 0xffffffff) >>> 0, walkers: WALKERS, itersPerWalker: iters });
 
     // 2. present into a scratch COPY_SRC texture (swap-chain textures are not readable)
     const tex = device.createTexture({
       size: { width: DIM, height: DIM }, format,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
     });
-    renderer.present({ genome, outputView: tex.createView(), totalSamples: WALKERS * iters, forceDeOff: false });
+    renderer.present({ genome: framed, outputView: tex.createView(), totalSamples: WALKERS * iters, forceDeOff: false });
 
     // 3. copy → mappable buffer → read RGBA (edit-mount.ts scratch-readback pattern)
     const buf = device.createBuffer({ size: bytesPerRow * DIM, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
