@@ -15,6 +15,7 @@ import { consumeGradientHandoff, writeGradientReturn } from './edit-state';
 import { resampleToN } from './palette-transforms';
 import { type Genome } from './genome';
 import { createRenderer, type Renderer } from './renderer';
+import { computeFitViewport } from './edit-fit-viewport';
 import { startChunkedRender, type RunHandle } from './render-orchestrator';
 import { load as loadFlameFile } from './loader';
 import {
@@ -529,6 +530,14 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
   let runHandle: RunHandle | null = null;
   let flameCtx: GPUCanvasContext | null = null;      // configured once (constant dims)
   // (indexMap / indexMapGenome / captureNeeded declared above, before mountEditor.)
+  // #366 — the handoff genome is framed for the editor's render size (16:9);
+  // the preview is a 384² square, so render it untouched and pyr3's uniform-scale
+  // projection zoom-crops the flame (same class as #361). Cache a square-fit
+  // framing per genome identity (geometry, not palette) so palette edits don't
+  // re-run the CPU fit oracle. Oracle can throw on exotic variations → fall back
+  // to the authored framing.
+  let previewFraming: { scale: number; cx: number; cy: number } | null = null;
+  let previewFramingFor: Genome | null = null;
 
   const placeholder = document.createElement('div');
   placeholder.dataset['role'] = 'flame-placeholder';
@@ -601,8 +610,23 @@ export function mountGradientPage(opts: GradientPageOpts): GradientPageHandle {
     }
 
     runHandle?.cancel();
-    // Bake the CURRENT bar palette into the genome so the flame shows it.
-    const g: Genome = { ...currentFlame, palette: currentPalette() };
+    // #366 — recompute the square-preview framing only when the genome changes
+    // (cached by identity; geometry is palette-invariant).
+    if (previewFramingFor !== currentFlame) {
+      previewFramingFor = currentFlame;
+      previewFraming = null;
+      try {
+        const fit = computeFitViewport(currentFlame, FLAME_DIM, FLAME_DIM);
+        if (fit) previewFraming = { scale: fit.scale, cx: fit.cx, cy: fit.cy };
+      } catch { /* exotic variation oracle failure → render authored framing */ }
+    }
+    // Bake the CURRENT bar palette into the genome so the flame shows it, and
+    // re-frame to the square preview so the flame isn't zoom-cropped (#366).
+    const g: Genome = {
+      ...currentFlame,
+      palette: currentPalette(),
+      ...(previewFraming ?? {}),
+    };
     runHandle = startChunkedRender({
       renderer,
       genome: g,
