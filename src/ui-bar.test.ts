@@ -178,6 +178,66 @@ describe('mountGradientBar (#353)', () => {
   });
 });
 
+describe('#356 — bar ethos sweep (verb-heavy surfaces keep a slim 2nd row)', () => {
+  // The #367 restructure folded the few viewer/editor verbs into the identity
+  // row's right gutter and dropped the action bar. The two remaining surfaces on
+  // the old layout — the gradient editor and the ESF corpus viewer — are
+  // verb-heavy (gradient) or nav-primary (esf), so they KEEP a second row;
+  // only the light/secondary controls move up into the identity-row gutter.
+
+  it('gradient: undo/redo live in the identity-row right gutter; file verbs stay on the action row', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const h = mountGradientBar(root, makeGradientOpts());
+    const gutter = root.querySelector('.pyr3-bar-info .pyr3-bar-info-actions');
+    expect(gutter, 'gradient info row should carry a right-gutter zone').not.toBeNull();
+    expect(gutter!.querySelector('[data-role="undo"]')).toBeTruthy();
+    expect(gutter!.querySelector('[data-role="redo"]')).toBeTruthy();
+    const actionRow = root.querySelector('.pyr3-bar-action')!;
+    for (const r of ['load-flame', 'browse', 'save', 'export', 'import', 'reset']) {
+      expect(actionRow.querySelector(`[data-role="${r}"]`), `${r} stays on the action row`).toBeTruthy();
+      expect(gutter!.querySelector(`[data-role="${r}"]`), `${r} is not pulled into the gutter`).toBeNull();
+    }
+    h.destroy();
+  });
+
+  it('gradient: round-trip Apply/Cancel CTAs sit in the identity-row right gutter', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    const h = mountGradientBar(root, makeGradientOpts({ roundTrip: true }));
+    const gutter = root.querySelector('.pyr3-bar-info .pyr3-bar-info-actions')!;
+    expect(gutter.querySelector('[data-role="apply"]')).toBeTruthy();
+    expect(gutter.querySelector('[data-role="cancel-return"]')).toBeTruthy();
+    h.destroy();
+  });
+
+  it('esf: Save Flame + Edit move to the identity-row gutter; corpus nav + dice keep the slim action row', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts({ mode: 'esf' }));
+    const gutter = root.querySelector('.pyr3-bar-info .pyr3-bar-info-actions')!;
+    expect(gutter.querySelector('.pyr3-bar-save-flame'), 'Save Flame in the gutter').toBeTruthy();
+    expect(gutter.querySelector('.pyr3-bar-edit-flame'), 'Edit in the gutter').toBeTruthy();
+    // The corpus walker + 🎲 dice are the surface's primary affordance — they
+    // stay as their own slim strip, not buried among the verbs.
+    const actionRow = root.querySelector('.pyr3-bar-action')!;
+    expect(actionRow.querySelector('.pyr3-bar-viewer-dice'), 'dice stays on the action row').toBeTruthy();
+    expect(actionRow.querySelector('.pyr3-bar-nav'), 'corpus nav stays on the action row').toBeTruthy();
+    expect(gutter.querySelector('.pyr3-bar-viewer-dice'), 'dice not pulled into the gutter').toBeNull();
+    expect(gutter.querySelector('.pyr3-bar-nav'), 'corpus nav not pulled into the gutter').toBeNull();
+  });
+
+  it('esf: the slim action row carries ONLY the corpus strip (no leftover verbs)', () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    const root = document.getElementById('root')!;
+    mountBar(root, makeBarOpts({ mode: 'esf' }));
+    const actionRow = root.querySelector('.pyr3-bar-action')!;
+    // Save Flame + Edit verbs have moved up; they must not also remain on the row.
+    expect(actionRow.querySelector('.pyr3-bar-save-flame')).toBeNull();
+    expect(actionRow.querySelector('.pyr3-bar-edit-flame')).toBeNull();
+  });
+});
+
 describe('gallery info row — three-column with centered page-nav (#103 Phase 4 Task 4.1)', () => {
   it('info row is a 3-column grid (1fr | auto | 1fr) keeping the page-nav cluster centered', () => {
     document.body.innerHTML = '<div id="root"></div>';

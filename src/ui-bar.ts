@@ -564,7 +564,12 @@ export function mountGradientBar(root: HTMLElement, opts: GradientBarOpts): Grad
   statusEl.style.marginLeft = '8px';
   statusEl.style.fontStyle = 'italic';
   infoLeft.append(identity, statusEl);
-  infoRow.append(infoLeft);
+  // #356 — identity-row right gutter. Gradient is verb-heavy (8–10 wide labels)
+  // with no render controls, so it KEEPS its file-verb row; only the light,
+  // secondary controls (undo/redo, and the round-trip Apply/Cancel CTAs) move up
+  // here, mirroring the editor bar's gutter.
+  const infoRight = el('div', 'pyr3-zone-right pyr3-bar-info-actions');
+  infoRow.append(infoLeft, infoRight);
 
   // Action row — the load/library/file verbs the page used to bury in a body
   // flex-wrap row, promoted to the shared action bar.
@@ -592,12 +597,16 @@ export function mountGradientBar(root: HTMLElement, opts: GradientBarOpts): Grad
   const exportBtn = mk('Export .json', 'export', 'pyr3-bar-btn', () => opts.onExport());
   const importBtn = mk('Import…', 'import', 'pyr3-bar-btn', () => opts.onImport());
   const resetBtn = mk('↺ Reset', 'reset', 'pyr3-bar-btn', () => opts.onReset());
-  actionLeft.append(undoBtn, redoBtn, loadFlameBtn, browseBtn, saveBtn, exportBtn, importBtn, resetBtn);
+  // #356 — undo/redo lead the identity-row gutter; the file/library verbs stay
+  // grouped on the action row below.
+  infoRight.append(undoBtn, redoBtn);
+  actionLeft.append(loadFlameBtn, browseBtn, saveBtn, exportBtn, importBtn, resetBtn);
 
   if (opts.roundTrip) {
     const applyBtn = mk('✓ Apply to flame', 'apply', 'pyr3-btn-primary', () => opts.onApply?.());
     const cancelBtn = mk('✕ Cancel, return to flame', 'cancel-return', 'pyr3-bar-btn', () => opts.onCancelReturn?.());
-    actionLeft.prepend(applyBtn, cancelBtn);
+    // #356 — the round-trip CTAs lead the gutter, ahead of undo/redo.
+    infoRight.prepend(applyBtn, cancelBtn);
   }
   actionRow.append(actionLeft);
 
@@ -742,7 +751,14 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     // standalone action bar is omitted from middleSlot below.
     infoRight.append(openBtn, saveFlameBtn, editFlameBtn, sizeBtn, qualityLabel, qualityGroup, saveBtn);
   } else {
-    actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveFlameBtn, saveBtn, editFlameBtn);
+    // #356 — esf: the verbs (🧬 Save Flame + ✏️ Edit) join the identity row's
+    // right gutter, matching the basic viewer. The slim action row below keeps
+    // ONLY the corpus-walk strip (🎲 surprise + prev/next), which is the corpus
+    // browser's primary affordance — not buried among the verbs. The hidden
+    // render-mode-bar placeholders (Size / QUALITY / Save Render) stay in
+    // actionLeft so the BarHandle setters keep resolving them.
+    infoRight.append(saveFlameBtn, editFlameBtn);
+    actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveBtn);
   }
 
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
