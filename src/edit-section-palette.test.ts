@@ -17,6 +17,7 @@ import { createEditState, consumeGradientHandoff } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { rotateHueRGB } from './palette';
 import { FLAM3_PALETTE_COUNT, getLibraryPaletteName } from './flam3-palettes';
+import { saveMine, deleteMine } from './palette-library';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -267,6 +268,48 @@ describe('paletteSection — launcher / ribbon → openPalettePicker', () => {
     state.openPalettePicker = opener;
     paletteSection.build(host, state, vi.fn());
     expect(state.openPalettePicker).toBe(opener);
+  });
+
+  // #365 — applying a "mine" (user-saved) palette via the picker must reach the
+  // genome. Regression guard: the host onApply previously only wired flam3, so a
+  // mine pick was a silent no-op.
+  it('applying a "mine" palette through the picker updates the genome palette (#365)', () => {
+    const pyre = {
+      name: 'pyre-test',
+      stops: [
+        { t: 0, r: 0.05, g: 0, b: 0 },
+        { t: 1, r: 1, g: 0.92, b: 0.5 },
+      ],
+    };
+    vi.stubGlobal('localStorage', makeStorageStub()); // happy-dom v20 has no global localStorage
+    saveMine(pyre);
+    try {
+      const { state, onChange } = mount();
+      expect(state.genome.palette.name).not.toBe('pyre-test'); // precondition
+
+      state.openPalettePicker!(); // default opener mounts the real picker on body
+      const picker = document.querySelector('.pyr3-palette-picker') as HTMLElement;
+      const fire = (el: Element): void => {
+        for (const t of ['mousedown', 'mouseup', 'click']) el.dispatchEvent(new MouseEvent(t, { bubbles: true }));
+      };
+      fire(picker.querySelector('[data-tab="mine"]')!);           // switch to mine tab
+      const cell = picker.querySelector('.pyr3-palette-picker-mine-cell') as HTMLElement;
+      expect(cell?.dataset['mine']).toBe('pyre-test');
+      fire(cell);                                                 // select the mine palette
+      const apply = Array.from(picker.querySelectorAll('*')).find(
+        (e) => e.childElementCount === 0 && /apply\s*&?\s*close/i.test(e.textContent || ''),
+      );
+      fire(apply!);                                               // commit
+
+      expect(state.genome.palette.name).toBe('pyre-test');
+      expect(state.genome.palette.stops).toHaveLength(2);
+      expect(state.paletteSource).toEqual({ kind: 'mine', name: 'pyre-test' });
+      expect(onChange).toHaveBeenCalledWith('palette');
+      document.querySelectorAll('.pyr3-palette-picker').forEach((n) => n.remove());
+    } finally {
+      deleteMine('pyre-test');
+      vi.unstubAllGlobals();
+    }
   });
 });
 

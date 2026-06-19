@@ -35,6 +35,7 @@ import {
 import { COLORS } from './ui-tokens';
 import { buildRow, buildSlider, buildButton } from './edit-primitives';
 import { mountPalettePicker, type PalettePickerHandle } from './palette-picker';
+import { getMine } from './palette-library';
 import { writeGradientHandoff } from './edit-state';
 import { type Genome } from './genome';
 
@@ -362,20 +363,27 @@ export const paletteSection: SectionMount = {
         pickerHandle = mountPalettePicker(document.body, {
           current: currentSource(),
           onApply: (source) => {
-            // Apply a picked palette to the genome — corpus/mine are future
-            // work; for the flam3 catalog we resolve to library stops here.
-            if (source.kind === 'flam3') {
-              const fresh = paletteAtIndex(source.number);
+            // Apply a picked palette to the genome. flam3 resolves to catalog
+            // stops; #365 — "mine" resolves to the user's saved palette stops.
+            // (corpus/custom remain unwired — no reachable UI today.)
+            const applyStops = (name: string, stops: Palette['stops']): void => {
               const existing = state.genome.palette;
               state.genome.palette = {
-                name: fresh.name,
-                stops: fresh.stops,
+                name,
+                stops,
                 ...(existing.mode !== undefined ? { mode: existing.mode } : {}),
               };
               state.paletteSource = source;
               refreshLauncher();
               refreshRibbon();
               onChange('palette');
+            };
+            if (source.kind === 'flam3') {
+              const fresh = paletteAtIndex(source.number);
+              applyStops(fresh.name, fresh.stops);
+            } else if (source.kind === 'mine') {
+              const saved = getMine(source.name);
+              if (saved) applyStops(saved.name, saved.stops);
             }
           },
           onClose: () => {
