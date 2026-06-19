@@ -3,7 +3,7 @@
 > Fractal flames in your browser — and on the command line.
 
 <p align="center">
-  <a href="https://pyr3.app"><img src="docs/assets/hero.jpg" alt="A pyr3-rendered fractal flame — amber and crimson lattice on black" width="100%"></a>
+  <a href="https://pyr3.app"><img src="docs/assets/hero.jpg" alt="A pyr3-rendered fractal flame — a green, white and rose Romanesco-like stereographic bloom on black" width="100%"></a>
 </p>
 
 <p align="center">
@@ -76,8 +76,8 @@ npm run render fixtures/electricsheep.247.19679.flam3 out.png
 # fast preview (1024px long edge, capped quality) — matches the viewer's quick mode
 npm run render -- --preset quick fixtures/electricsheep.247.19679.flam3 preview.png
 
-# full 4K showcase render (3840px long edge)
-npm run render -- --preset 4k fixtures/electricsheep.247.19679.flam3 hero-4k.png
+# full 4K showcase render (3840px long edge) — the pyr3-native hero flame
+npm run render -- --preset 4k fixtures/pyr3-hero.pyr3.json hero-4k.png
 ```
 
 ### Build a standalone binary (optional)
@@ -99,7 +99,7 @@ Same commands, shorter form:
 ```sh
 ./build/pyr3-render fixtures/electricsheep.247.19679.flam3 out.png
 ./build/pyr3-render --preset quick fixtures/electricsheep.247.19679.flam3 preview.png
-./build/pyr3-render --preset 4k    fixtures/electricsheep.247.19679.flam3 hero-4k.png
+./build/pyr3-render --preset 4k    fixtures/pyr3-hero.pyr3.json hero-4k.png
 ```
 
 Or put it on `$PATH`:

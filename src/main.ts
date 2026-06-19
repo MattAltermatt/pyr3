@@ -82,12 +82,20 @@ import { mountAbout } from './about-mount';
 import { checkWebGPU } from './webgpu-check';
 import { fetchCapability } from './capability';
 
-// The "welcome flame" — the bundled fixture `/` paints for an instant,
-// chunk-free first paint. It's the hero sheep (gen HERO_GEN / id HERO_ID); the
-// filename is derived from those constants so the bundled copy can never drift
-// from the corpus URL the bare root forwards to. The specific flame was
-// hand-picked from the Electric Sheep Fold (ESF) corpus.
-const WELCOME_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/electricsheep.${HERO_GEN}.${HERO_ID}.flam3`;
+// #339 — the "welcome flame" is now a pyr3-native hero ("broccoli", a
+// stereographic Romanesco authored in the editor) rather than a borrowed ES
+// corpus sheep. Bundled as a .pyr3.json fixture for an instant, chunk-free
+// first paint; loaded via the existing genomeFromJson open path (loader.ts
+// dispatches `.json` → pyr3-json). Painted on bare `/` + `/viewer` and used as
+// the universal load-failure fallback.
+const WELCOME_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/pyr3-hero.pyr3.json`;
+
+// #339 — the ESF corpus viewer (`/esf`) still lands on a real corpus sheep so
+// the ‹ › nav has neighbours to walk (a pyr3-native flame has no corpus home).
+// `loadHeroFallback` + the corpus-nav fast-path paint this bundled fixture for
+// the HERO_GEN/HERO_ID sheep instead of fetching its chunk (instant + dev-safe,
+// PYR3-048). The filename derives from the constants so it can't drift.
+const ESF_LANDING_FLAME_URL = `${import.meta.env.BASE_URL}fixtures/electricsheep.${HERO_GEN}.${HERO_ID}.flam3`;
 
 const RENDER_SIZE = 1024;
 
@@ -1713,7 +1721,7 @@ async function main(): Promise<void> {
       // dev-safe even when the chunk pipeline is unavailable (PYR3-048). Only the
       // hero gets this — every other id keeps the honest missing-sheep state.
       if (gen === HERO_GEN && id === HERO_ID) {
-        const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
+        const heroFile = await fetchAsFile(ESF_LANDING_FLAME_URL);
         if (heroFile) {
           await loadFromFile(heroFile); // hides the missing panel on success
           // #103 Phase 2 Task 2.3 — tag the bundled hero load with its
@@ -2122,7 +2130,7 @@ async function main(): Promise<void> {
   // is the safety net if the welcome-fixture fetch fails.
   const loadHeroFallback = async (): Promise<void> => {
     history.replaceState({ gen: HERO_GEN, id: HERO_ID }, '', corpusUrl(HERO_GEN, HERO_ID));
-    const heroFile = await fetchAsFile(WELCOME_FLAME_URL);
+    const heroFile = await fetchAsFile(ESF_LANDING_FLAME_URL);
     if (heroFile) {
       await loadFromFile(heroFile);
       await updateCorpusNav(HERO_GEN, HERO_ID); // wire ‹ › (no-ops to empty if avail unavailable)

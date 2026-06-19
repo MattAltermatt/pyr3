@@ -18,13 +18,14 @@ import {
 } from './gallery-filter';
 import { parseCatalogEntry, type CatalogEntry } from './variation-catalog-link';
 
-// The canonical "welcome" hero sheep. Bare root (`/`, the `default` intent)
-// forwards to this corpus leaf so the landing page is a real, shareable,
-// nav-wired corpus URL (PYR3-053-adjacent root-forward) — while still painting
-// the bundled fixture for an instant, chunk-free first paint. corpusUrl(HERO_*)
-// MUST round-trip back through parseLoadIntent to `{kind:'corpus', …}` (guarded
-// in load-intent.test.ts) so a refresh / popstate of the forwarded URL resolves
-// to the same sheep.
+// The ESF corpus viewer's landing sheep. #339 moved the bare-root hero to a
+// pyr3-native flame (see WELCOME_FLAME_URL in main.ts); `/esf` still lands here
+// because the corpus browser needs a real sheep with ‹ › neighbours to walk.
+// `loadHeroFallback` replaceStates to this corpus leaf (a real, shareable,
+// nav-wired URL) while painting the bundled fixture for an instant, chunk-free
+// first paint. corpusUrl(HERO_*) MUST round-trip back through parseLoadIntent to
+// `{kind:'corpus', …}` (guarded in load-intent.test.ts) so a refresh / popstate
+// of the forwarded URL resolves to the same sheep.
 export const HERO_GEN = 247;
 export const HERO_ID = 19679;
 

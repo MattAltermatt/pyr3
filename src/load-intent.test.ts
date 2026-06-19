@@ -156,10 +156,11 @@ describe('parseLoadIntent – under a non-root base (/pyr3/)', () => {
 });
 
 // ── hero-forward round-trip ──────────────────────────────────────────────
-// Bare root forwards to corpusUrl(HERO_GEN, HERO_ID) via replaceState. That URL
-// MUST parse back as the hero corpus leaf so a refresh / popstate of the
-// forwarded address resolves to the same sheep (not a 'default' loop or a
-// malformed fall-through). Guards both the apex and project-Pages base.
+// #339: bare root now lands on the pyr3-native hero (/viewer, no forward). The
+// `/esf` corpus entry still forwards to corpusUrl(HERO_GEN, HERO_ID) via
+// replaceState. That URL MUST parse back as the hero corpus leaf so a refresh /
+// popstate of the forwarded address resolves to the same sheep (not a 'default'
+// loop or a malformed fall-through). Guards both the apex and project-Pages base.
 
 describe('hero-forward target round-trips through the parser', () => {
   afterEach(() => {
