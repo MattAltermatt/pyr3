@@ -21,6 +21,16 @@ function slugForFilename(name: string): string {
 
 export interface NamingResult { name: string; nick: string; filename: string }
 
+/** #362 — a flame with no meaningful user/source name: empty, whitespace, or a
+ *  generated placeholder (`generateRandomGenome` stamps `'Untitled flame'` on
+ *  Surprise / reroll / new flames). These open the naming dialog with a blank
+ *  slate so the user names the flame; flames carrying a real name (loaded files,
+ *  corpus sheep, previously-named saves) preserve their identity fields. */
+export function isPlaceholderName(name: string | null | undefined): boolean {
+  const n = (name ?? '').trim().toLowerCase();
+  return n === '' || n === 'untitled' || n === 'untitled flame';
+}
+
 interface FieldConfig { name: boolean; nick: boolean; filename: boolean; nameLabel: string }
 
 function fieldsFor(kind: NamingKind): FieldConfig {
@@ -76,14 +86,17 @@ export function openNamingDialog(opts: NamingDialogOpts): Promise<NamingResult |
     Object.assign(title.style, { fontSize: '15px', margin: '0 0 14px', color: COLORS.flame.top });
     box.append(title);
 
-    const nameF = labeledInput(cfg.nameLabel, 'name', opts.seed.name ?? '');
+    // #362 — fresh/unnamed flames open with a blank slate; real names preserve
+    // their identity fields (name, nick, filename).
+    const fresh = isPlaceholderName(opts.seed.name);
+    const nameF = labeledInput(cfg.nameLabel, 'name', fresh ? '' : (opts.seed.name ?? ''));
     box.append(nameF.row);
     let nickF: { row: HTMLElement; input: HTMLInputElement } | null = null;
-    if (cfg.nick) { nickF = labeledInput('nick', 'nick', opts.seed.nick ?? ''); box.append(nickF.row); }
+    if (cfg.nick) { nickF = labeledInput('nick', 'nick', fresh ? '' : (opts.seed.nick ?? '')); box.append(nickF.row); }
 
     let filenameF: { row: HTMLElement; input: HTMLInputElement } | null = null;
     if (cfg.filename) {
-      filenameF = labeledInput('filename', 'filename', opts.seed.filename ?? '');
+      filenameF = labeledInput('filename', 'filename', fresh ? '' : (opts.seed.filename ?? ''));
       box.append(filenameF.row);
       // #357 — the filename auto-follows slug(flame name) until the user edits
       // it manually; once overridden it stops syncing so the override sticks.

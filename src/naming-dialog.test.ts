@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { openNamingDialog } from './naming-dialog';
+import { openNamingDialog, isPlaceholderName } from './naming-dialog';
 
 function modal(): HTMLElement {
   const m = document.querySelector('.pyr3-naming-dialog') as HTMLElement;
@@ -13,6 +13,19 @@ function field(role: string): HTMLInputElement | null {
 }
 
 afterEach(() => { document.body.innerHTML = ''; });
+
+describe('isPlaceholderName', () => {
+  it('is true for empty / whitespace / undefined / generated placeholders', () => {
+    for (const n of ['', '   ', undefined, 'Untitled flame', 'untitled flame', 'Untitled', '  Untitled Flame  ']) {
+      expect(isPlaceholderName(n)).toBe(true);
+    }
+  });
+  it('is false for real, user/source names', () => {
+    for (const n of ['ember', 'Spiral Galaxy', 'broccoli', 'Untitled Symphony']) {
+      expect(isPlaceholderName(n)).toBe(false);
+    }
+  });
+});
 
 describe('openNamingDialog', () => {
   it('render kind shows name + nick + filename, name label "flame name"', () => {
@@ -43,6 +56,25 @@ describe('openNamingDialog', () => {
     expect(field('name')!.value).toBe('ember');
     expect(field('nick')!.value).toBe('mu');
     expect(field('filename')!.value).toBe('ember-01');
+  });
+
+  // #362 — a fresh/unnamed flame (placeholder name) opens with a blank slate so
+  // the user names it, instead of pre-filling the "Untitled flame" placeholder.
+  it('clears name + filename for a placeholder-named (fresh) flame', () => {
+    void openNamingDialog({ kind: 'flame', seed: { name: 'Untitled flame', filename: 'untitled-flame' } });
+    expect(field('name')!.value).toBe('');
+    expect(field('filename')!.value).toBe('');
+  });
+
+  it('treats bare "Untitled" as a placeholder too', () => {
+    void openNamingDialog({ kind: 'flame', seed: { name: 'Untitled' } });
+    expect(field('name')!.value).toBe('');
+  });
+
+  it('preserves a real flame name + filename', () => {
+    void openNamingDialog({ kind: 'flame', seed: { name: 'Spiral Galaxy', filename: 'spiral' } });
+    expect(field('name')!.value).toBe('Spiral Galaxy');
+    expect(field('filename')!.value).toBe('spiral');
   });
 
   it('Save resolves the typed values', async () => {
