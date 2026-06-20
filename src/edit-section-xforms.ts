@@ -780,7 +780,7 @@ function buildXformDetail(
     postWrap.appendChild(postBlockHost);
     mountPostBlock();
     body.appendChild(postWrap);
-  }));
+  }, 'xform.affine'));
 
   // ── Variations accordion ────────────────────────────────────────────
   host.appendChild(buildAccordion('Variations', 'variations', state, (body) => {

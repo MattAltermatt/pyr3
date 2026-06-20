@@ -1342,6 +1342,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       notifyHistoryChange();
     }
     rebuildPanel();
+    // #394/#395 — the on-canvas gizmo overlay reads the live affine but is NOT
+    // rebuilt by rebuildPanel, and undo/redo/reset don't change the SELECTION
+    // (which is what otherwise triggers a gizmo redraw). Redraw it here so the
+    // handles track the restored/new genome. (draw() no-ops when edit-on-canvas
+    // is off.) View is already set: 'preserve' keeps it, 'reset' zeroed it above.
+    gizmo?.draw();
     inflightTicket++;
     const myTicket = inflightTicket;
     // Open / reroll always renders at SETTLED dims with the bar gated by

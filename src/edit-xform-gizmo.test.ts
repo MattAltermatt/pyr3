@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { attachXformGizmo } from './edit-xform-gizmo';
-import { worldToScreen, type Camera, type Viewport } from './edit-camera-projection';
-import type { RawAffine } from './edit-xform-gizmo-math';
+import { attachXformGizmo, ROT_HANDLE_PX } from './edit-xform-gizmo';
+import { worldToScreen, worldPerCssPx, type Camera, type Viewport } from './edit-camera-projection';
+import { rotateAnchor, type RawAffine } from './edit-xform-gizmo-math';
 import { GIZMO_PREFS_DEFAULT } from './edit-state';
 
 const CAM: Camera = { cx: 0, cy: 0, scale: 200, rotateDeg: 0 };
 const VP: Viewport = { rectWidth: 400, rectHeight: 400, intrinsicWidth: 256, intrinsicHeight: 256 };
+const IDENT: RawAffine = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 };
 
 // happy-dom: getBoundingClientRect returns zeros; stub a 400×400 rect at origin.
 function stub400(el: HTMLElement): void {
@@ -24,12 +25,25 @@ function makeHostAndCanvas(): { host: HTMLElement; eventCanvas: HTMLCanvasElemen
   return { host, eventCanvas };
 }
 
-// The center handle is the image of (0.5,0.5); project it to confirm the click point.
-const CENTER_SCREEN = worldToScreen({ x: 0.5, y: 0.5 }, CAM, VP); // → (356.25, 356.25)
+const WPP = worldPerCssPx(CAM, VP); // ≈ 0.0032 world units / css px
+// O (position) handle = image of (0,0). Rotate ring = fixed px out the far side of O.
+const O_SCREEN = worldToScreen({ x: 0, y: 0 }, CAM, VP);
+const X_SCREEN = worldToScreen({ x: 1, y: 0 }, CAM, VP);
+const ROT_SCREEN = worldToScreen(rotateAnchor(IDENT, ROT_HANDLE_PX * WPP), CAM, VP);
 
-describe('attachXformGizmo', () => {
+function down(canvas: HTMLCanvasElement, x: number, y: number, shiftKey = false): MouseEvent {
+  const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, shiftKey });
+  canvas.dispatchEvent(ev);
+  return ev;
+}
+function move(x: number, y: number, shiftKey = false): void {
+  window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, shiftKey }));
+}
+function up(): void { window.dispatchEvent(new MouseEvent('mouseup', {})); }
+
+describe('attachXformGizmo (O/X/Y triangle)', () => {
   let affine: RawAffine;
-  beforeEach(() => { affine = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 }; });
+  beforeEach(() => { affine = { ...IDENT }; });
 
   function wire(prefsEdit = true, selected = 0) {
     const onLiveEdit = vi.fn();
@@ -56,32 +70,78 @@ describe('attachXformGizmo', () => {
     expect(host.querySelector('canvas.pyr3-edit-gizmo-overlay')).toBeFalsy();
   });
 
-  it('claims a handle drag and writes the affine live (edit ON)', () => {
+  it('dragging O translates position (c,f); basis untouched', () => {
     const { host, eventCanvas } = makeHostAndCanvas();
     const { cb, onLiveEdit, onCommit } = wire(true, 0);
     attachXformGizmo(host, eventCanvas, cb);
-    eventCanvas.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true, cancelable: true, button: 0, clientX: CENTER_SCREEN.x, clientY: CENTER_SCREEN.y,
-    }));
-    // Drag +0.1 world in x: +0.1 / worldPerCssPx (256/200/400 = 0.0032) = +31.25 px.
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: CENTER_SCREEN.x + 31.25, clientY: CENTER_SCREEN.y }));
-    window.dispatchEvent(new MouseEvent('mouseup', {}));
+    down(eventCanvas, O_SCREEN.x, O_SCREEN.y);
+    // +0.1 world in x = +0.1 / WPP px.
+    move(O_SCREEN.x + 0.1 / WPP, O_SCREEN.y);
+    up();
     expect(onLiveEdit).toHaveBeenCalledWith(0);
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(affine.c).toBeCloseTo(0.1, 6); // moved +0.1 in x
+    expect(affine.c).toBeCloseTo(0.1, 6);
     expect(affine.f).toBeCloseTo(0, 6);
+    expect([affine.a, affine.b, affine.d, affine.e]).toEqual([1, 0, 0, 1]);
+  });
+
+  it('axis-locked X drag is pure scale — no shear (d stays 0)', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const { cb } = wire(true, 0);
+    attachXformGizmo(host, eventCanvas, cb);
+    down(eventCanvas, X_SCREEN.x, X_SCREEN.y);
+    move(X_SCREEN.x, X_SCREEN.y + 40); // drag perpendicular, NO shift → locked
+    up();
+    expect(affine.d).toBeCloseTo(0, 6);
+  });
+
+  it('Shift-drag X frees it → introduces shear (d ≠ 0)', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const { cb } = wire(true, 0);
+    attachXformGizmo(host, eventCanvas, cb);
+    down(eventCanvas, X_SCREEN.x, X_SCREEN.y);
+    move(X_SCREEN.x, X_SCREEN.y + 40, true); // Shift held → free
+    up();
+    expect(Math.abs(affine.d)).toBeGreaterThan(0.05);
+  });
+
+  it('rotating keeps position (c,f) fixed and changes the basis', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const { cb } = wire(true, 0);
+    attachXformGizmo(host, eventCanvas, cb);
+    down(eventCanvas, ROT_SCREEN.x, ROT_SCREEN.y);
+    // grab sits down-left of O; drag the cursor up-right of O → a large angle delta.
+    move(O_SCREEN.x + 90, O_SCREEN.y - 90);
+    up();
+    expect(affine.c).toBeCloseTo(0, 6);
+    expect(affine.f).toBeCloseTo(0, 6);
+    // basis rotated away from identity
+    expect(Math.abs(affine.b) + Math.abs(affine.d)).toBeGreaterThan(0.01);
+  });
+
+  it('rotation does NOT compound: repeating the same cursor pos is idempotent', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const { cb } = wire(true, 0);
+    attachXformGizmo(host, eventCanvas, cb);
+    down(eventCanvas, ROT_SCREEN.x, ROT_SCREEN.y);
+    const tx = ROT_SCREEN.x - 60, ty = ROT_SCREEN.y + 40;
+    move(tx, ty);
+    const after1 = { ...affine };
+    move(tx, ty);
+    move(tx, ty);
+    up();
+    for (const k of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+      expect(affine[k]).toBeCloseTo(after1[k], 9);
+    }
   });
 
   it('does not claim drags when edit is OFF (pan keeps the event)', () => {
     const { host, eventCanvas } = makeHostAndCanvas();
     const { cb, onLiveEdit } = wire(false, 0);
     attachXformGizmo(host, eventCanvas, cb);
-    const ev = new MouseEvent('mousedown', {
-      bubbles: true, cancelable: true, button: 0, clientX: CENTER_SCREEN.x, clientY: CENTER_SCREEN.y,
-    });
+    const ev = down(eventCanvas, O_SCREEN.x, O_SCREEN.y);
     const stop = vi.spyOn(ev, 'stopPropagation');
-    eventCanvas.dispatchEvent(ev);
-    window.dispatchEvent(new MouseEvent('mouseup', {}));
+    up();
     expect(onLiveEdit).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
   });
@@ -90,11 +150,10 @@ describe('attachXformGizmo', () => {
     const { host, eventCanvas } = makeHostAndCanvas();
     const { cb, onLiveEdit } = wire(true, 0);
     attachXformGizmo(host, eventCanvas, cb);
-    const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 });
+    const ev = down(eventCanvas, 6, 6);
     const stop = vi.spyOn(ev, 'stopPropagation');
-    eventCanvas.dispatchEvent(ev);
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 10 }));
-    window.dispatchEvent(new MouseEvent('mouseup', {}));
+    move(40, 6);
+    up();
     expect(onLiveEdit).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
   });
@@ -104,32 +163,16 @@ describe('attachXformGizmo', () => {
     const { cb, onLiveEdit } = wire(true, -1);
     const g = attachXformGizmo(host, eventCanvas, cb);
     g.draw();
-    eventCanvas.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true, cancelable: true, button: 0, clientX: CENTER_SCREEN.x, clientY: CENTER_SCREEN.y,
-    }));
-    window.dispatchEvent(new MouseEvent('mouseup', {}));
+    down(eventCanvas, O_SCREEN.x, O_SCREEN.y);
+    up();
     expect(onLiveEdit).not.toHaveBeenCalled();
   });
 
-  it('rotation does NOT compound: repeating the same cursor pos is idempotent', () => {
+  it('draw() handles a degenerate affine without throwing (rotate ring hidden)', () => {
     const { host, eventCanvas } = makeHostAndCanvas();
+    affine = { a: 0, b: 0, c: 0.1, d: 0, e: 0, f: 0.1 };
     const { cb } = wire(true, 0);
-    attachXformGizmo(host, eventCanvas, cb);
-    // Rotate handle = apply(0.5,-0.5) → screen via projection.
-    const rotScreen = worldToScreen({ x: 0.5, y: -0.5 }, CAM, VP);
-    eventCanvas.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true, cancelable: true, button: 0, clientX: rotScreen.x, clientY: rotScreen.y,
-    }));
-    const target = { clientX: CENTER_SCREEN.x - 150, clientY: CENTER_SCREEN.y };
-    window.dispatchEvent(new MouseEvent('mousemove', target));
-    const after1 = { ...affine };
-    // Move to the SAME point twice more — with the compounding bug these would
-    // keep rotating; the fix makes them identical to a single application.
-    window.dispatchEvent(new MouseEvent('mousemove', target));
-    window.dispatchEvent(new MouseEvent('mousemove', target));
-    window.dispatchEvent(new MouseEvent('mouseup', {}));
-    for (const k of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
-      expect(affine[k]).toBeCloseTo(after1[k], 9);
-    }
+    const g = attachXformGizmo(host, eventCanvas, cb);
+    expect(() => g.draw()).not.toThrow();
   });
 });

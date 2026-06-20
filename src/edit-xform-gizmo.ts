@@ -1,24 +1,27 @@
-// pyr3 — /editor on-canvas affine gizmo overlay (#350 Phase 2.3). SEAM_EXEMPT.
+// pyr3 — /editor on-canvas affine gizmo overlay (#350; O/X/Y triangle redesign #394/#395).
+// SEAM_EXEMPT.
 //
-// A single 2D canvas layered over the WebGPU preview. Draws the selected
-// xform's unit-square handles in WORLD space (projected through the live
-// camera, so it tracks pan/zoom/rotate) and lets the user drag them to edit
-// the affine. One 2D canvas (no per-handle DOM) sidesteps the #283 mid-drag
-// rebuild hazard.
+// A single 2D canvas layered over the WebGPU preview. Draws the selected xform as the
+// flam3-native triangle — O (position) + the two axis tips (X, Y) — in WORLD space
+// (projected through the live camera, so it tracks pan/zoom/rotate), plus a distinct
+// rotation ring. One 2D canvas (no per-handle DOM) sidesteps the #283 mid-drag rebuild
+// hazard.
 //
-// Interaction (§4.6): the mousedown listener attaches to the *preview canvas*
-// (passed as `eventCanvas`) in the CAPTURE phase, so it runs before
-// attachPanZoom's bubble-phase mousedown. A press ON a handle of the selected
-// xform claims the drag (stopPropagation → pan never starts); a press anywhere
-// else does nothing and pan proceeds. The overlay canvas itself stays
-// pointer-events:none so it never steals events. Edits write the raw a..f
-// matrix through onLiveEdit (slow-lane re-iterate); the debounced history
-// commit rides onLiveEdit's onPathChange, so the whole drag is one undo entry.
+// Interaction (§4.6): the mousedown listener attaches to the *preview canvas* (passed as
+// `eventCanvas`) in the CAPTURE phase, so it runs before attachPanZoom's bubble-phase
+// mousedown. A press ON a handle of the selected xform claims the drag (stopPropagation →
+// pan never starts); a press elsewhere does nothing and pan proceeds. The overlay canvas
+// stays pointer-events:none. Edits write the raw a..f matrix through onLiveEdit (slow-lane
+// re-iterate); the debounced history commit rides onLiveEdit's onPathChange.
+//
+// Handles: O = position (drag → translate) · X/Y axis tips (drag → scale along the axis;
+// hold Shift to free-move → shear) · rotate ring (drag → rigid spin about O; position +
+// scale held). The rotate ring sits a FIXED screen-px length out the far side of O.
 
 import { worldToScreen, screenToWorld, worldPerCssPx, type Camera, type Viewport } from './edit-camera-projection';
 import type { GizmoPrefs } from './edit-state';
 import {
-  handleAnchors, hitTestHandle, applyMove, applyCornerDrag, applyRotate, applyEdgeDrag, EDGE_SIDE,
+  handleAnchors, hitTestHandle, isDegenerate, applyMove, applyAxisDrag, applyRotate,
   snapWorld, snapAngleDeg, applyAffine, type RawAffine, type HandleId, type Vec2,
 } from './edit-xform-gizmo-math';
 
@@ -51,27 +54,25 @@ export interface GizmoHandle {
 }
 
 const HIT_RADIUS_PX = 12;
-const EDGE_HIT_PX = 8;
-const COL_ROTATE = '#3ad17a';
-const COL_HANDLE: Record<string, string> = {
-  center: '#ffd23a', rotate: COL_ROTATE,
-  cornerBL: '#ff8c1a', cornerBR: '#ff8c1a', cornerTR: '#ff8c1a', cornerTL: '#ff8c1a',
-  // Edge midpoint dots: X edges (left/right) pink, Y edges (top/bottom) blue.
-  edgeRight: '#ff5fa2', edgeLeft: '#ff5fa2', edgeTop: '#3aa1ff', edgeBottom: '#3aa1ff',
-};
-// Gridlines are drawn as a dark underlay + light overlay so they read on BOTH
-// black and bright-orange flames (a single faint white line vanished on bright
-// areas — #350 follow-up). Origin axes are brighter.
+/** Rotation ring's fixed reach from O, in CSS px (zoom-independent). Exported for tests. */
+export const ROT_HANDLE_PX = 60;
+const TWO_PI = Math.PI * 2;
+
+const COL_O = '#ff8c1a';        // origin = position
+const COL_X = '#ff5fa2';        // x-axis tip
+const COL_Y = '#3aa1ff';        // y-axis tip
+const COL_ROTATE = '#3ad17a';   // rotation ring
+const COL_FOOTPRINT = 'rgba(150,150,160,0.5)';
+const COL_LABEL = 'rgba(255,255,255,0.82)';
+const COL_LABEL_HALO = 'rgba(0,0,0,0.75)';
+
+// Grid (unchanged from #350).
 const GRID_HALO = 'rgba(0,0,0,0.38)';
 const GRID_COL = 'rgba(255,255,255,0.34)';
 const GRID_AXIS_HALO = 'rgba(0,0,0,0.5)';
 const GRID_AXIS = 'rgba(255,255,255,0.62)';
 const GRID_LABEL = 'rgba(255,255,255,0.78)';
 const GRID_LABEL_HALO = 'rgba(0,0,0,0.7)';
-// Squares mirror the panel mini-viz (edit-xform-viz.ts): orange = input unit
-// square, blue = the affine's image (output). The handles sit on the output.
-const COL_OUTPUT_SQUARE = '#3aa1ff';
-const COL_INPUT_SQUARE = '#ff8c1a';
 
 /** Round to a "nice" 1/2/5×10ⁿ step near `raw` — for grid label spacing. */
 function niceStep(raw: number): number {
@@ -99,19 +100,20 @@ export function attachXformGizmo(
   canvas.className = 'pyr3-edit-gizmo-overlay';
   canvas.style.position = 'absolute';
   canvas.style.inset = '0';
-  canvas.style.pointerEvents = 'none'; // never steals events; eventCanvas owns mousedown
+  canvas.style.pointerEvents = 'none';
   host.appendChild(canvas);
   const ctx = canvas.getContext('2d');
 
-  // grabAffine = the affine snapshot at mousedown; ALL drags compute from it
-  // (absolute, not accumulated) so rotation/scale can't compound across frames.
-  let active: { handle: HandleId; grabWorld: Vec2; grabAffine: RawAffine; index: number; pointerWorld?: Vec2 } | null = null;
-  let shiftHeld = false;
+  // grabAffine = the affine snapshot at mousedown; ALL drags compute from it (absolute,
+  // not accumulated) so rotation/scale can't compound across frames.
+  let active: { handle: HandleId; grabWorld: Vec2; grabAffine: RawAffine; index: number } | null = null;
 
   function vp(): Viewport { return cb.getViewport(); }
   function cam(): Camera { return cb.getCamera(); }
   function project(w: Vec2): Vec2 { return worldToScreen(w, cam(), vp()); }
   function unproject(s: Vec2): Vec2 { return screenToWorld(s, cam(), vp()); }
+  /** Rotate-handle reach in world units = fixed CSS px × world-per-px (zoom-independent). */
+  function rotLenWorld(): number { return ROT_HANDLE_PX * worldPerCssPx(cam(), vp()); }
 
   /** Element-relative CSS coords from a mouse event (host == overlay rect). */
   function localPt(ev: MouseEvent): Vec2 {
@@ -119,20 +121,21 @@ export function attachXformGizmo(
     return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
   }
 
-  function snapping(): boolean { return cb.getPrefs().snapEnabled || shiftHeld; }
+  // Snapping is governed by the snap pref ONLY. (Shift now means "free-move an axis →
+  // introduce shear", so it no longer doubles as a snap modifier.)
+  function snapping(): boolean { return cb.getPrefs().snapEnabled; }
   function maybeSnapWorld(p: Vec2): Vec2 {
     return snapping() ? snapWorld(p, cb.getPrefs().snapStep) : p;
   }
 
-  /** Rotate the linear part by `t` rad about the affine's fixed center. */
-  function rotateColumnsAbout(r: RawAffine, t: number): RawAffine {
-    const ctr = applyAffine(r, 0.5, 0.5);
+  /** Rotate the linear part by `t` rad about O (position held). For snap nudges. */
+  function rotateAboutO(r: RawAffine, t: number): RawAffine {
     const cos = Math.cos(t), sin = Math.sin(t);
-    const a = cos * r.a - sin * r.d;
-    const d = sin * r.a + cos * r.d;
-    const b = cos * r.b - sin * r.e;
-    const e = sin * r.b + cos * r.e;
-    return { a, b, d, e, c: ctr.x - (a * 0.5 + b * 0.5), f: ctr.y - (d * 0.5 + e * 0.5) };
+    return {
+      a: cos * r.a - sin * r.d, d: sin * r.a + cos * r.d,
+      b: cos * r.b - sin * r.e, e: sin * r.b + cos * r.e,
+      c: r.c, f: r.f,
+    };
   }
 
   function resize(): void {
@@ -144,7 +147,6 @@ export function attachXformGizmo(
   function drawGrid(): void {
     if (!ctx) return;
     const v = vp();
-    // Adaptive step: aim for a labelled line roughly every ~95 screen px.
     const wpx = worldPerCssPx(cam(), v);
     const step = niceStep(wpx * 95);
     if (!(step > 0)) return;
@@ -154,10 +156,8 @@ export function attachXformGizmo(
     const minY = Math.min(c0.y, c1.y), maxY = Math.max(c0.y, c1.y);
     const kx0 = Math.floor(minX / step), kx1 = Math.ceil(maxX / step);
     const ky0 = Math.floor(minY / step), ky1 = Math.ceil(maxY / step);
-    // Safety cap against a runaway zoom.
     if (kx1 - kx0 > 400 || ky1 - ky0 > 400) return;
 
-    // Each line: thicker dark halo first, then a bright line on top.
     const line = (ax: number, ay: number, bx: number, by: number, axis: boolean): void => {
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
       ctx.lineWidth = axis ? 3 : 2.4;
@@ -187,7 +187,18 @@ export function attachXformGizmo(
       line(a.x, a.y, b.x, b.y, k === 0);
       if (k !== 0) label(fmtCoord(wy, step), 3, Math.round(a.y) - 2);
     }
-    label('0', 3, v.rectHeight - 4); // origin marker, bottom-left
+    label('0', 3, v.rectHeight - 4);
+  }
+
+  function dot(p: Vec2, col: string, rad: number): void {
+    if (!ctx) return;
+    ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, TWO_PI); ctx.fillStyle = col; ctx.fill();
+  }
+  function tagLabel(text: string, p: Vec2, dx: number, dy: number): void {
+    if (!ctx) return;
+    ctx.font = 'bold 12px ui-monospace, monospace';
+    ctx.lineWidth = 3; ctx.strokeStyle = COL_LABEL_HALO; ctx.strokeText(text, p.x + dx, p.y + dy);
+    ctx.fillStyle = COL_LABEL; ctx.fillText(text, p.x + dx, p.y + dy);
   }
 
   function draw(): void {
@@ -195,49 +206,57 @@ export function attachXformGizmo(
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const prefs = cb.getPrefs();
-    // Flame mode: the gizmo + grid are fully hidden (you're composing).
-    if (!prefs.editOnCanvas) return;
+    if (!prefs.editOnCanvas) return; // flame mode: gizmo + grid fully hidden
     if (prefs.showWorldGrid) drawGrid();
     if (index < 0) return; // final xform: no gizmo
     const r = cb.getAffine(index);
     if (!r || !Number.isFinite(r.a + r.b + r.c + r.d + r.e + r.f)) return;
-    const anchors = handleAnchors(r);
-    // INPUT unit square [0,1]² (orange, dashed) — the mini-viz reference.
-    const inSq: Vec2[] = ([[0, 0], [1, 0], [1, 1], [0, 1]] as const).map(([x, y]) => project({ x, y }));
+    const an = handleAnchors(r, rotLenWorld());
+    const O = project(an.O), X = project(an.x), Y = project(an.y);
+
+    // Footprint parallelogram (faint dashed) — the unit square's image: O, X, apply(1,1), Y.
+    const fp = [an.O, an.x, applyAffine(r, 1, 1), an.y].map(project);
     ctx.save();
-    ctx.setLineDash([4, 3]);
-    ctx.strokeStyle = COL_INPUT_SQUARE; ctx.lineWidth = 1.2;
-    ctx.beginPath(); inSq.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = COL_FOOTPRINT; ctx.lineWidth = 1.4;
+    ctx.beginPath(); fp.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
     ctx.closePath(); ctx.stroke();
     ctx.restore();
-    // OUTPUT square = image of the unit square under the affine (blue, solid),
-    // matching the mini-viz's blue output square. The handles sit on this.
-    const sq: Vec2[] = [anchors.cornerBL, anchors.cornerBR, anchors.cornerTR, anchors.cornerTL].map(project);
-    ctx.strokeStyle = COL_OUTPUT_SQUARE; ctx.lineWidth = 1.8;
-    ctx.beginPath(); sq.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-    ctx.closePath(); ctx.stroke();
-    // Rotate stalk. While actively dragging the rotate handle, draw the stalk +
-    // dot UNDER the cursor (so it tracks the pointer, not its far circle).
-    const c = project(anchors.center);
-    const rot = (active?.handle === 'rotate' && active.pointerWorld)
-      ? project(active.pointerWorld) : project(anchors.rotate);
-    ctx.strokeStyle = COL_ROTATE; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
-    // Grab handles (edit-on-canvas guaranteed here — flame mode returned early).
-    (Object.keys(anchors) as HandleId[]).forEach((id) => {
-      const s = (id === 'rotate' && active?.handle === 'rotate' && active.pointerWorld)
-        ? project(active.pointerWorld) : project(anchors[id]);
-      ctx.fillStyle = COL_HANDLE[id] ?? '#fff';
-      ctx.beginPath(); ctx.arc(s.x, s.y, id === 'center' ? 6 : 5, 0, Math.PI * 2); ctx.fill();
-    });
+
+    // Axis arms O→X (pink), O→Y (blue).
+    ctx.strokeStyle = COL_X; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(X.x, X.y); ctx.stroke();
+    ctx.strokeStyle = COL_Y; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(Y.x, Y.y); ctx.stroke();
+
+    // Rotation ring (distinct hollow ring + ⟳), out the far side of O. Hidden when degenerate.
+    if (!isDegenerate(r)) {
+      const RT = project(an.rotate);
+      ctx.save();
+      ctx.setLineDash([4, 3]); ctx.strokeStyle = COL_ROTATE; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(RT.x, RT.y); ctx.stroke();
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(RT.x, RT.y, 9, 0, TWO_PI); ctx.lineWidth = 2.4; ctx.strokeStyle = COL_ROTATE; ctx.stroke();
+      ctx.save();
+      ctx.font = 'bold 13px ui-monospace, monospace'; ctx.fillStyle = COL_ROTATE;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('⟳', RT.x, RT.y + 1);
+      ctx.restore();
+    }
+
+    // Axis tips.
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    dot(X, COL_X, 5); tagLabel('X', X, 9, 4);
+    dot(Y, COL_Y, 5); tagLabel('Y', Y, 9, 4);
+    // O — emphasized white ring + orange fill + label.
+    ctx.beginPath(); ctx.arc(O.x, O.y, 8, 0, TWO_PI); ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff'; ctx.stroke();
+    dot(O, COL_O, 6); tagLabel('O', O, -16, 16);
   }
 
   function readoutFor(r: RawAffine): string {
-    const ctr = applyAffine(r, 0.5, 0.5);
+    const O = applyAffine(r, 0, 0);
     const rotDeg = (Math.atan2(r.d, r.a) * 180 / Math.PI).toFixed(1);
-    const sx = Math.hypot(r.a, r.d).toFixed(3);
-    const sy = Math.hypot(r.b, r.e).toFixed(3);
-    return `pos ${ctr.x.toFixed(3)}, ${ctr.y.toFixed(3)}   rot ${rotDeg}°   scale ${sx}, ${sy}`;
+    const sx = Math.hypot(r.a, r.d);
+    const sy = sx > 1e-12 ? (r.a * r.e - r.b * r.d) / sx : 0;
+    return `pos ${O.x.toFixed(3)}, ${O.y.toFixed(3)}   rot ${rotDeg}°   scale ${sx.toFixed(3)}, ${sy.toFixed(3)}`;
   }
 
   function onMouseDown(ev: MouseEvent): void {
@@ -248,68 +267,38 @@ export function attachXformGizmo(
     const r = cb.getAffine(index);
     if (!r) return;
     const lp = localPt(ev);
-    // Dots take priority; then the edge SEGMENTS (grab anywhere along an edge).
-    const hit = hitTestHandle(lp, r, project, HIT_RADIUS_PX) ?? hitTestEdge(lp, r);
+    const an = handleAnchors(r, rotLenWorld());
+    let hit = hitTestHandle(lp, an, project, HIT_RADIUS_PX);
+    if (hit === 'rotate' && isDegenerate(r)) hit = null; // no orientation → no rotate grab
     if (!hit) return; // not on a handle → let pan have it
-    ev.stopPropagation(); // claim the drag before pan starts
+    ev.stopPropagation();
     ev.preventDefault();
-    shiftHeld = ev.shiftKey;
     active = { handle: hit, grabWorld: unproject(lp), grabAffine: { ...r }, index };
-  }
-
-  /** Distance from a point to a line segment, all in screen px. */
-  function distToSeg(p: Vec2, a: Vec2, b: Vec2): number {
-    const vx = b.x - a.x, vy = b.y - a.y;
-    const wx = p.x - a.x, wy = p.y - a.y;
-    const len2 = vx * vx + vy * vy;
-    const t = len2 > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
-    return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
-  }
-
-  /** Hit-test the four edge segments (screen space); nearest within EDGE_HIT_PX. */
-  function hitTestEdge(screenPt: Vec2, r: RawAffine): HandleId | null {
-    const an = handleAnchors(r);
-    const bl = project(an.cornerBL), br = project(an.cornerBR);
-    const tr = project(an.cornerTR), tl = project(an.cornerTL);
-    const edges: Array<[HandleId, Vec2, Vec2]> = [
-      ['edgeRight', br, tr], ['edgeLeft', bl, tl], ['edgeTop', tl, tr], ['edgeBottom', bl, br],
-    ];
-    let best: HandleId | null = null, bestD = EDGE_HIT_PX;
-    for (const [id, a, b] of edges) {
-      const d = distToSeg(screenPt, a, b);
-      if (d <= bestD) { bestD = d; best = id; }
-    }
-    return best;
   }
 
   function onMouseMove(ev: MouseEvent): void {
     if (!active) return;
-    shiftHeld = ev.shiftKey;
-    // Compute from the GRAB snapshot, not the live (already-mutated) affine, so
-    // each frame applies the absolute transform from the original — no compound.
+    // Compute from the GRAB snapshot, not the live (already-mutated) affine, so each frame
+    // applies the absolute transform from the original — no compounding.
     const r = active.grabAffine;
-    const pointer = maybeSnapWorld(unproject(localPt(ev)));
-    active.pointerWorld = pointer; // for under-cursor rotate drawing
     const prefs = cb.getPrefs();
     const handle = active.handle;
+    // Rotation is snapped by ANGLE (below), not by the world grid — world-snapping
+    // the pointer could quantize it onto O and kill the angle. Other handles use it.
+    const rawPointer = unproject(localPt(ev));
+    const pointer = handle === 'rotate' ? rawPointer : maybeSnapWorld(rawPointer);
     let next: RawAffine;
-    // Direct manipulation: the grabbed handle tracks the cursor.
-    if (handle === 'center') {
+    if (handle === 'O') {
       next = applyMove(r, pointer);
-    } else if (handle === 'rotate') {
-      // The handle rides under the cursor's ANGLE (radius preserved); we draw
-      // it at the cursor so it tracks the pointer instead of whipping around
-      // its far circle (#350 rotate feel).
+    } else if (handle === 'x' || handle === 'y') {
+      next = applyAxisDrag(r, handle, pointer, ev.shiftKey); // Shift = free (shear)
+    } else {
       next = applyRotate(r, active.grabWorld, pointer);
       if (snapping()) {
         const deg = Math.atan2(next.d, next.a) * 180 / Math.PI;
         const snapped = snapAngleDeg(deg, prefs.snapAngleStep);
-        next = rotateColumnsAbout(next, (snapped - deg) * Math.PI / 180);
+        next = rotateAboutO(next, (snapped - deg) * Math.PI / 180);
       }
-    } else if (handle === 'edgeRight' || handle === 'edgeLeft' || handle === 'edgeTop' || handle === 'edgeBottom') {
-      next = applyEdgeDrag(r, EDGE_SIDE[handle], pointer); // axis-constrained
-    } else {
-      next = applyCornerDrag(r, handle, pointer); // corners — free resize
     }
     cb.setAffine(active.index, next);
     cb.onLiveEdit(active.index);

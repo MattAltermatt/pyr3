@@ -6,7 +6,7 @@
 // (pan + zoom layered on the composition camera) so the handle bounding box
 // sits centered in the contained rect with margin. Pure — no DOM/GPU.
 
-import { handleAnchors, type RawAffine } from './edit-xform-gizmo-math';
+import { applyAffine, type RawAffine } from './edit-xform-gizmo-math';
 import {
   containedRect,
   IDENTITY_VIEW,
@@ -29,8 +29,12 @@ export function computeFitView(
   vp: Viewport,
   marginFraction: number = DEFAULT_MARGIN,
 ): WorkspaceView {
-  const anchors = handleAnchors(affine);
-  const pts = Object.values(anchors);
+  // Frame the footprint — the unit square's image (O + the three other corners). The
+  // rotate handle is a fixed-screen-px affordance, so it's excluded from the fit.
+  const pts = [
+    applyAffine(affine, 0, 0), applyAffine(affine, 1, 0),
+    applyAffine(affine, 0, 1), applyAffine(affine, 1, 1),
+  ];
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of pts) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return { ...IDENTITY_VIEW };

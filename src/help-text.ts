@@ -39,6 +39,19 @@ export const HELP: Record<HelpKey, InfoIconOpts> = {
       + '/ sequencing of the fractal, beyond what weights alone can do.',
   },
 
+  'xform.affine': {
+    title: 'Affine (O / X / Y)',
+    body:
+      'The transform shown on the canvas as a triangle. Drag O to move it '
+      + '(position x/y). The X and Y arms are the transform’s two axes — drag a '
+      + 'tip to scale along that axis; hold Shift to free-move a tip and add '
+      + 'shear. The green ⟳ ring rotates the whole thing about O.',
+    hint: 'The fields are an X-anchored breakdown: editing the X axis also shifts '
+      + 'scale y and rotation (they’re measured relative to X), while editing Y '
+      + 'only touches scale y / shear. Rotation always pivots about O, so '
+      + 'position x/y stays put.',
+  },
+
   // ── render controls (viewer bar + editor RENDER section) ─────────────
   'render.quality': {
     title: 'Quality (samples per pixel)',
