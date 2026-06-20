@@ -94,7 +94,8 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   Marathon). **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
   Color Curves #116, gradient editor #115) and **More variations** (#16) are both now **closed**.
   Active themed milestones: **Binary distribution** (#15 — `npm run build:cli render` shipped
-  2026-06-06; cross-platform verify #126 + Windows `.exe` support #287 still open),
+  2026-06-06; Windows from-source render path #287 shipped 2026-06-20; cross-platform verify
+  #126 + standalone Windows `.exe` SEA #399 still open),
   **Viewer / editor UX & presets**, **Color grading & scopes**, **evolving flame creation**,
   **future research**, and **Mobile rework** (#13 — #66 mobile overhaul). No Project
   board — milestone-only planning.
