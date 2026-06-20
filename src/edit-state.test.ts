@@ -21,6 +21,9 @@ import {
   loadGizmoPrefs,
   saveGizmoPrefs,
   GIZMO_PREFS_DEFAULT,
+  loadComposePrefs,
+  saveComposePrefs,
+  COMPOSE_PREFS_DEFAULT,
   type Clock,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
@@ -589,5 +592,40 @@ describe('gizmo prefs persistence', () => {
   it('falls back to defaults on malformed JSON', () => {
     globalThis.localStorage!.setItem('pyr3.edit.gizmo', '{not json');
     expect(loadGizmoPrefs()).toEqual(GIZMO_PREFS_DEFAULT);
+  });
+});
+
+describe('compose prefs persistence (#364)', () => {
+  beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('defaults: master on, all guides off, spokeFold 6', () => {
+    expect(COMPOSE_PREFS_DEFAULT).toEqual({
+      composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: false, spokeFold: 6,
+    });
+    expect(loadComposePrefs()).toEqual(COMPOSE_PREFS_DEFAULT);
+  });
+
+  it('round-trips saved prefs (incl. master off)', () => {
+    const p = { composeOn: false, thirds: true, center: false, grid: false, rings: true, spokes: true, spokeFold: 8 };
+    saveComposePrefs(p);
+    expect(loadComposePrefs()).toEqual(p);
+  });
+
+  it('defaults composeOn to true when absent (legacy prefs)', () => {
+    globalThis.localStorage!.setItem('pyr3.edit.compose', JSON.stringify({ thirds: true, spokeFold: 6 }));
+    expect(loadComposePrefs().composeOn).toBe(true);
+  });
+
+  it('clamps spokeFold to 2..12 on load', () => {
+    saveComposePrefs({ composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: true, spokeFold: 99 });
+    expect(loadComposePrefs().spokeFold).toBe(12);
+    saveComposePrefs({ composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: true, spokeFold: 1 });
+    expect(loadComposePrefs().spokeFold).toBe(2);
+  });
+
+  it('falls back to defaults on malformed JSON', () => {
+    globalThis.localStorage!.setItem('pyr3.edit.compose', '{not json');
+    expect(loadComposePrefs()).toEqual(COMPOSE_PREFS_DEFAULT);
   });
 });

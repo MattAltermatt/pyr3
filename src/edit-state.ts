@@ -103,6 +103,8 @@ export interface EditState {
    *  only meaningful when the selected xform has a post-transform. Transient,
    *  UI-only; NEVER serialized. Resets to 'pre' on selection change. */
   gizmoLens: 'pre' | 'post';
+  /** #364 — compositional overlay prefs (UI-only, per-browser; NOT serialized). */
+  compose: ComposePrefs;
   /** #372 — which on-canvas overlay is live. The affine gizmo (XForm lens) and
    *  the gradient bar (Color lens) are mutually exclusive — only one is ever
    *  attached. UI-only, session-scoped; NOT serialized. */
@@ -200,6 +202,7 @@ export function createEditState(genome: Genome, seed: number): EditState {
     selectedXformIndex: 0,
     gizmo: loadGizmoPrefs(),
     gizmoLens: 'pre',
+    compose: loadComposePrefs(),
     activeCanvasOverlay: 'none',
     view: { ...IDENTITY_VIEW },
     xformDetailCollapse: restoreXformDetailCollapse(),
@@ -615,6 +618,53 @@ export function loadGizmoPrefs(): GizmoPrefs {
 export function saveGizmoPrefs(p: GizmoPrefs): void {
   try {
     globalThis.localStorage?.setItem(GIZMO_PREFS_KEY, JSON.stringify(p));
+  } catch {
+    // localStorage disabled / full — no-op.
+  }
+}
+
+// ── #364 — compositional overlay prefs (UI-only, per-browser) ─────────
+export interface ComposePrefs {
+  /** Master on/off. When false, NO guide draws — but the per-guide selections
+   *  below are preserved, so flipping back on restores the same set. */
+  composeOn: boolean;
+  thirds: boolean;
+  center: boolean;
+  grid: boolean;
+  rings: boolean;
+  spokes: boolean;
+  /** Radial-spokes fold count, clamped 2..12. */
+  spokeFold: number;
+}
+
+export const COMPOSE_PREFS_DEFAULT: ComposePrefs = {
+  composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: false, spokeFold: 6,
+};
+
+const COMPOSE_PREFS_KEY = 'pyr3.edit.compose';
+
+/** Load compose prefs from localStorage; defaults on miss/malformed. spokeFold clamped 2..12. */
+export function loadComposePrefs(): ComposePrefs {
+  try {
+    const raw = globalThis.localStorage?.getItem(COMPOSE_PREFS_KEY);
+    if (!raw) return { ...COMPOSE_PREFS_DEFAULT };
+    const p = JSON.parse(raw) as Partial<ComposePrefs>;
+    const fold = Number(p.spokeFold);
+    return {
+      composeOn: p.composeOn !== false, // default ON (absent in legacy prefs)
+      thirds: !!p.thirds, center: !!p.center, grid: !!p.grid,
+      rings: !!p.rings, spokes: !!p.spokes,
+      spokeFold: Number.isFinite(fold) ? Math.min(12, Math.max(2, Math.round(fold))) : 6,
+    };
+  } catch {
+    return { ...COMPOSE_PREFS_DEFAULT };
+  }
+}
+
+/** Persist compose prefs. Best-effort; swallows localStorage failures. */
+export function saveComposePrefs(p: ComposePrefs): void {
+  try {
+    globalThis.localStorage?.setItem(COMPOSE_PREFS_KEY, JSON.stringify(p));
   } catch {
     // localStorage disabled / full — no-op.
   }

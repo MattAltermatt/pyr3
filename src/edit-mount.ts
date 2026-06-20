@@ -21,6 +21,7 @@ import {
   saveEditRenderSettings,
   persistPanelWidth,
   saveGizmoPrefs,
+  saveComposePrefs,
   PANEL_WIDTH_MIN,
   PANEL_WIDTH_MAX,
   FINAL_SEL,
@@ -49,6 +50,8 @@ import { load } from './loader';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { attachXformGizmo, type GizmoHandle } from './edit-xform-gizmo';
+import { attachComposeOverlay, composeShows, type ComposeOverlayHandle } from './edit-compose-overlay';
+import { attachComposeMenu, type ComposeMenuHandle } from './edit-compose-menu';
 import { attachGradientOverlay, type GradientOverlayHandle } from './edit-gradient-overlay';
 import {
   downsampleIndexMap, paintMapDims, regionMask, brushHistogram,
@@ -1060,6 +1063,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // #350 Phase 2.3 — on-canvas affine gizmo. Declared before panZoom so the
   // viewport callback can redraw it; assigned just below.
   let gizmo: GizmoHandle | null = null;
+  let composeOverlay: ComposeOverlayHandle | null = null;
+  let composeMenu: ComposeMenuHandle | null = null;
   const panZoom: PanZoomHandle = attachPanZoom(canvas, state, {
     onViewportChange: () => {
       // Notify any DOM listeners (the viewport section's inputs) that the
@@ -1123,6 +1128,13 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       const xf = state.selectedXformIndex === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[state.selectedXformIndex];
       return !!xf?.post;
     },
+    // #364 — composition guides split control.
+    onComposeToggle: () => {
+      const next = { ...state.compose, composeOn: !state.compose.composeOn };
+      state.compose = next; saveComposePrefs(next); composeOverlay?.draw(); overlays.sync();
+    },
+    onCompose: (anchor) => composeMenu?.toggle(anchor),
+    composeActive: () => composeShows(state.compose),
   });
   // #350 — set the transient workspace view to frame the selected xform's
   // handles (or identity if no regular xform is selected). NOT routed through
@@ -1229,8 +1241,30 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   };
   document.addEventListener('pyr3:xform-selection-changed', onGizmoSelectionChange);
   // Keep the overlay sized to the canvas host across panel-drag + window resize.
-  const gizmoResizeObs = new ResizeObserver(() => { gizmo?.resize(); positionRegionCanvas(); });
+  const gizmoResizeObs = new ResizeObserver(() => { gizmo?.resize(); composeOverlay?.resize(); positionRegionCanvas(); });
   gizmoResizeObs.observe(canvasHost);
+
+  // #364 — screen-fixed compositional guides (thirds/center/grid/rings/spokes).
+  // Always present + mode-independent (composing happens in flame mode). Drawn
+  // relative to the letterbox-corrected content rect, host-relative coords.
+  composeOverlay = attachComposeOverlay(canvasHost, {
+    getPrefs: () => state.compose,
+    getContentRect: () => {
+      const hostRect = canvasHost.getBoundingClientRect();
+      const c = flameContentRect();
+      return { x: c.left - hostRect.left, y: c.top - hostRect.top, w: c.width, h: c.height };
+    },
+  });
+  composeMenu = attachComposeMenu({
+    getPrefs: () => state.compose,
+    onChange: (next) => {
+      // #364 — enabling a guide via the picker auto-arms the master, so a check
+      // always has a visible effect (no dead picker when master was off).
+      const anyGuide = next.thirds || next.center || next.grid || next.rings || next.spokes;
+      const merged = anyGuide && !next.composeOn ? { ...next, composeOn: true } : next;
+      state.compose = merged; saveComposePrefs(merged); composeOverlay?.draw(); overlays.sync();
+    },
+  });
 
   // #372 — the Color-lens Edit-gradient toggle flips state.activeCanvasOverlay and
   // calls this. Gradient turning ON forces the affine gizmo OFF (mutual
@@ -1886,6 +1920,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       document.removeEventListener('pyr3:xform-selection-changed', onGizmoSelectionChange);
       gizmoResizeObs.disconnect();
       gizmo?.destroy();
+      composeOverlay?.destroy();
+      composeMenu?.destroy();
       gradientOverlay?.destroy();
       canvas.removeEventListener('mousemove', onFlamePaintHover);
       canvas.removeEventListener('mouseleave', onFlamePaintLeave);

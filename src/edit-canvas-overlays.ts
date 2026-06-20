@@ -20,6 +20,12 @@ export interface CanvasOverlaysCallbacks {
   getLens?: () => 'pre' | 'post';
   setLens?: (lens: 'pre' | 'post') => void;
   hasPost?: () => boolean;
+  /** #364 — toggle the master on/off (the `◈ compose` label half of the split). */
+  onComposeToggle?: () => void;
+  /** #364 — open the compose-guides picker popover (the `▾` caret half). */
+  onCompose?: (anchorEl: HTMLElement) => void;
+  /** #364 — whether guides are currently showing (master on + a selection) — drives the dot. */
+  composeActive?: () => boolean;
 }
 export interface CanvasOverlaysHandle {
   /** Set (or clear with null) the live drag readout. */
@@ -119,6 +125,28 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
   const fitBtn = mkAction('⊡', 'fit', 'fit', () => cb.onFit?.());
   const centerBtn = mkAction('⊕', 'center', 'center', () => cb.onCenter?.());
 
+  // #364 — composition guides as a SPLIT control: the `◈ compose` label toggles
+  // the master on/off (selections remembered), the `▾` caret opens the guide
+  // picker. The active-dot reflects whether guides are currently showing.
+  // Mode-independent (works in both flame + xform modes).
+  const composeWrap = document.createElement('div');
+  composeWrap.className = 'pyr3-edit-overlay-split';
+  const composeBtn = document.createElement('button');
+  composeBtn.type = 'button';
+  composeBtn.className = 'pyr3-edit-overlay-btn pyr3-edit-overlay-split-main';
+  composeBtn.dataset.overlay = 'compose';
+  composeBtn.textContent = '◈ compose';
+  composeBtn.title = 'Toggle composition guides on/off (your selection is remembered)';
+  composeBtn.addEventListener('click', () => cb.onComposeToggle?.());
+  const composeCaret = document.createElement('button');
+  composeCaret.type = 'button';
+  composeCaret.className = 'pyr3-edit-overlay-btn pyr3-edit-overlay-split-caret';
+  composeCaret.dataset.overlay = 'compose-menu';
+  composeCaret.textContent = '▾';
+  composeCaret.title = 'Choose which guides (thirds, center, grid, rings, spokes)';
+  composeCaret.addEventListener('click', () => cb.onCompose?.(composeWrap));
+  composeWrap.append(composeBtn, composeCaret);
+
   const stepWrap = document.createElement('label');
   stepWrap.className = 'pyr3-edit-overlay-step';
   stepWrap.textContent = 'step ';
@@ -137,7 +165,7 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
   readout.className = 'pyr3-edit-overlay-readout';
   readout.dataset.overlay = 'readout';
 
-  root.append(modeWrap, lensWrap, fitBtn, centerBtn, gridBtn, snapBtn, stepWrap, readout);
+  root.append(modeWrap, lensWrap, fitBtn, centerBtn, composeWrap, gridBtn, snapBtn, stepWrap, readout);
   host.appendChild(root);
 
   function sync(): void {
@@ -152,6 +180,8 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
     lensWrap.style.display = (!!cb.hasPost?.() && p.editOnCanvas) ? '' : 'none';
     lensPreSeg.setAttribute('aria-pressed', String(lens === 'pre'));
     lensPostSeg.setAttribute('aria-pressed', String(lens === 'post'));
+    // #364 — compose button active-dot.
+    composeBtn.setAttribute('aria-pressed', String(!!cb.composeActive?.()));
     // fit/center only act on the edit-mode gizmo layer — disable + dim when off.
     for (const b of [fitBtn, centerBtn]) {
       b.disabled = !p.editOnCanvas;

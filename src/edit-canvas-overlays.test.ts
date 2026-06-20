@@ -72,4 +72,31 @@ describe('attachCanvasOverlays', () => {
     expect(postSeg.getAttribute('aria-pressed')).toBe('true');
     expect(preSeg.getAttribute('aria-pressed')).toBe('false');
   });
+
+  // ── #364 compose split button ──────────────────────────────────────────
+  it('compose split: label toggles master, caret opens picker, dot reflects active', () => {
+    const host = document.createElement('div');
+    const prefs = { ...GIZMO_PREFS_DEFAULT, editOnCanvas: true };
+    let active = false;
+    const onCompose = vi.fn();
+    const onComposeToggle = vi.fn();
+    const ov = attachCanvasOverlays(host, {
+      getPrefs: () => prefs, onChange: () => {},
+      onCompose, onComposeToggle, composeActive: () => active,
+    });
+    const label = host.querySelector('[data-overlay="compose"]') as HTMLButtonElement;
+    const caret = host.querySelector('[data-overlay="compose-menu"]') as HTMLButtonElement;
+    expect(label).toBeTruthy();
+    expect(caret).toBeTruthy();
+    // dot off, then reflects composeActive after sync
+    expect(label.getAttribute('aria-pressed')).toBe('false');
+    active = true; ov.sync();
+    expect(label.getAttribute('aria-pressed')).toBe('true');
+    // label → master toggle; caret → open picker
+    label.click();
+    expect(onComposeToggle).toHaveBeenCalled();
+    expect(onCompose).not.toHaveBeenCalled();
+    caret.click();
+    expect(onCompose).toHaveBeenCalled();
+  });
 });

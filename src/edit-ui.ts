@@ -632,6 +632,18 @@ export const EDIT_CSS = `
 .pyr3-edit-overlay-readout { font: 11px ui-monospace, monospace; color: #ffd23a; min-height: 14px;
   background: rgba(20,20,24,0.72); padding: 1px 6px; border-radius: 4px; }
 .pyr3-edit-gizmo-overlay { z-index: 4; }
+/* #364 — compose split control: the compose label (toggle) + caret (picker). */
+.pyr3-edit-overlay-split { display: inline-flex; }
+.pyr3-edit-overlay-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.pyr3-edit-overlay-split-caret { border-top-left-radius: 0; border-bottom-left-radius: 0;
+  border-left-color: transparent; margin-left: -1px; padding-left: 5px; padding-right: 5px; }
+/* #364 — compositional guides: above the WebGPU canvas, below the gizmo. */
+.pyr3-edit-compose-overlay { z-index: 3; }
+.pyr3-compose-menu { z-index: 50; background: #16181d; border: 1px solid #2a2e37;
+  border-radius: 6px; padding: 8px 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  font: 12px/1.3 system-ui, sans-serif; color: #ddd; min-width: 168px; }
+.pyr3-compose-menu-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; }
+.pyr3-compose-menu-row input[type="number"] { width: 48px; margin-left: auto; }
 
 /* ── Tier-4 action expander — shared accent-bar (docs/ui-affordance-system.md). ──
    The canonical disclosure/action bar (built by buildExpander in
