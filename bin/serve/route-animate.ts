@@ -95,15 +95,31 @@ export function applySegmentEasing(
   }
 }
 
+/** Hard ceiling on the number of frames any single export may expand to, applied
+ *  BEFORE the work-list array is built. The frame-range and timeline paths both
+ *  derive their length from unvalidated request numbers; without this an absurd
+ *  `end`/`dtime`/`fps`/`duration` would OOM-kill the whole `pyr3 serve` host
+ *  (loopback-only, so self-DoS — but the same file already validates out_width/
+ *  out_height for this class of input, so the cap is parity-consistent). (#391) */
+export const FRAME_CAP = 100_000;
+
 /** Frame list for a timeline export at `fps`. Mirrors the CLI buildTimelinePlan:
  *  frameCount = max(1, round(duration × fps)), frame i renders at time i/fps and
- *  is named by its index (not its fractional time). Non-positive fps → 30. */
+ *  is named by its index (not its fractional time). Non-positive fps → 30.
+ *  Throws if the computed frame count exceeds `frameCap` (#391) — caught upstream
+ *  and surfaced as a 400 before the SSE stream opens. */
 export function computeTimelineFrames(
   durationSeconds: number,
   fps: number,
+  frameCap = Infinity,
 ): { index: number; time: number }[] {
   const f = fps > 0 ? fps : 30;
   const frameCount = Math.max(1, Math.round(Math.max(0, durationSeconds) * f));
+  if (!Number.isFinite(frameCount) || frameCount > frameCap) {
+    throw new Error(
+      `timeline too large (${frameCount} frames exceeds cap ${frameCap}; duration=${durationSeconds}s fps=${fps})`,
+    );
+  }
   return Array.from({ length: frameCount }, (_, i) => ({ index: i, time: i / f }));
 }
 
@@ -223,7 +239,13 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
         nsteps: body.nsteps ?? 1,
       });
       timeline = applyOutputSizeToTimeline(timeline, outputSize);
-      const tlFrames = computeTimelineFrames(timelineDuration(timeline), body.fps ?? 30);
+      let tlFrames;
+      try {
+        tlFrames = computeTimelineFrames(timelineDuration(timeline), body.fps ?? 30, FRAME_CAP);
+      } catch (err) {
+        jsonError(res, 400, (err as Error).message);
+        return;
+      }
       frameJobs = tlFrames.map((fr) => ({ label: fr.index, time: fr.time }));
       source = timelineFrameSource(timeline);
     } else {
@@ -264,6 +286,18 @@ export function makeAnimateRoute(deviceProvider: () => GPUDevice) {
       const endDefault = Math.max(begin, Math.floor(lastKfTime) - 1);
       const end = Math.floor(body.end ?? endDefault);
       const dtime = Math.max(1, Math.floor(body.dtime ?? 1));
+
+      // Cap the span BEFORE expanding — an absurd end/dtime would OOM the host
+      // building `labels`. Loopback-only self-DoS, but cheap + in-convention (#391).
+      const span = (end - begin) / dtime;
+      if (!Number.isFinite(span) || span > FRAME_CAP) {
+        jsonError(
+          res,
+          400,
+          `frame range too large (begin=${begin} end=${end} dtime=${dtime} exceeds cap ${FRAME_CAP})`,
+        );
+        return;
+      }
 
       const labels: number[] = [];
       for (let t = begin; t <= end; t += dtime) labels.push(t);

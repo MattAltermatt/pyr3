@@ -31,6 +31,20 @@ export function makeGpuRenderThumb(device: GPUDevice, format: GPUTextureFormat):
   const swapBR = format === 'bgra8unorm';
   const bytesPerRow = Math.ceil((DIM * 4) / 256) * 256;
 
+  // #389 — per-renderer scratch, reused across every renderThumb call instead of
+  // allocate-per-call. Dims are fixed (DIM², `format`), so one allocation serves
+  // all thumbnails. Destroyed in destroy(); a mid-render mapAsync rejection no
+  // longer leaks a per-call texture+buffer (it was previously freed only on the
+  // success path) — there's simply nothing per-call left to leak.
+  const scratchTex = device.createTexture({
+    size: { width: DIM, height: DIM }, format,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+  });
+  const scratchBuf = device.createBuffer({
+    size: bytesPerRow * DIM,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+
   async function renderThumb(genome: Genome): Promise<ThumbResult> {
     // #361 — the genome was framed by generateRandomGenome for FIT_REF
     // (1920×1080, 16:9); rendering it untouched into the square tile keeps that
@@ -50,33 +64,36 @@ export function makeGpuRenderThumb(device: GPUDevice, format: GPUTextureFormat):
     renderer.reset(framed);
     renderer.iterate({ genome: framed, seed: (Math.random() * 0xffffffff) >>> 0, walkers: WALKERS, itersPerWalker: iters });
 
-    // 2. present into a scratch COPY_SRC texture (swap-chain textures are not readable)
-    const tex = device.createTexture({
-      size: { width: DIM, height: DIM }, format,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-    });
-    renderer.present({ genome: framed, outputView: tex.createView(), totalSamples: WALKERS * iters, forceDeOff: false });
+    // 2. present into the scratch COPY_SRC texture (swap-chain textures are not readable)
+    renderer.present({ genome: framed, outputView: scratchTex.createView(), totalSamples: WALKERS * iters, forceDeOff: false });
 
     // 3. copy → mappable buffer → read RGBA (edit-mount.ts scratch-readback pattern)
-    const buf = device.createBuffer({ size: bytesPerRow * DIM, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     const enc = device.createCommandEncoder();
-    enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow, rowsPerImage: DIM }, { width: DIM, height: DIM });
+    enc.copyTextureToBuffer({ texture: scratchTex }, { buffer: scratchBuf, bytesPerRow, rowsPerImage: DIM }, { width: DIM, height: DIM });
     device.queue.submit([enc.finish()]);
-    await buf.mapAsync(GPUMapMode.READ);
-    const padded = new Uint8Array(buf.getMappedRange());
-    const rgba = new Uint8ClampedArray(DIM * DIM * 4);
-    for (let y = 0; y < DIM; y++) {
-      for (let x = 0; x < DIM; x++) {
-        const s = y * bytesPerRow + x * 4, d = (y * DIM + x) * 4;
-        if (swapBR) { rgba[d] = padded[s + 2]!; rgba[d + 1] = padded[s + 1]!; rgba[d + 2] = padded[s]!; }
-        else { rgba[d] = padded[s]!; rgba[d + 1] = padded[s + 1]!; rgba[d + 2] = padded[s + 2]!; }
-        rgba[d + 3] = 255;
+    await scratchBuf.mapAsync(GPUMapMode.READ);
+    // #389 — always unmap after a successful map so the buffer is reusable next
+    // call (and never left mapped if the copy/classify loop throws). On a mapAsync
+    // rejection we never enter this try, so unmap() always has a mapped buffer.
+    try {
+      const padded = new Uint8Array(scratchBuf.getMappedRange());
+      const rgba = new Uint8ClampedArray(DIM * DIM * 4);
+      for (let y = 0; y < DIM; y++) {
+        for (let x = 0; x < DIM; x++) {
+          const s = y * bytesPerRow + x * 4, d = (y * DIM + x) * 4;
+          if (swapBR) { rgba[d] = padded[s + 2]!; rgba[d + 1] = padded[s + 1]!; rgba[d + 2] = padded[s]!; }
+          else { rgba[d] = padded[s]!; rgba[d + 1] = padded[s + 1]!; rgba[d + 2] = padded[s + 2]!; }
+          rgba[d + 3] = 255;
+        }
       }
+      return { rgba, w: DIM, h: DIM, verdict: classifyThumbnail(rgba, DIM, DIM) };
+    } finally {
+      scratchBuf.unmap();
     }
-    buf.unmap(); buf.destroy(); tex.destroy();
-
-    return { rgba, w: DIM, h: DIM, verdict: classifyThumbnail(rgba, DIM, DIM) };
   }
 
-  return { renderThumb, destroy: () => renderer.destroy() };
+  return {
+    renderThumb,
+    destroy: () => { renderer.destroy(); scratchTex.destroy(); scratchBuf.destroy(); },
+  };
 }

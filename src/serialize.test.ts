@@ -174,6 +174,15 @@ describe('genomeFromJson', () => {
     const ok = { ...json, xforms: Array.from({ length: 128 }, () => JSON.parse(JSON.stringify(one))) };
     expect(() => genomeFromJson(ok)).not.toThrow();
   });
+
+  it('#388: rejects viewport.scale === 0 (collapses the image to one pixel)', () => {
+    const json = genomeToJson(SPIRAL_GALAXY) as { viewport: { scale: number } };
+    const bad = { ...json, viewport: { ...json.viewport, scale: 0 } };
+    expect(() => genomeFromJson(bad)).toThrow(/scale must be non-zero/);
+    // any non-zero scale still loads
+    const ok = { ...json, viewport: { ...json.viewport, scale: 100 } };
+    expect(() => genomeFromJson(ok)).not.toThrow();
+  });
 });
 
 describe('finalxform round-trip', () => {

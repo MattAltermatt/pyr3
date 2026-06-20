@@ -416,6 +416,10 @@ function buildDecomposedAffineBlock(
       kind,
       ariaLabel: label,
       onInput: (n) => {
+        // #388 — drop non-finite input (match the density/render/global sections).
+        // A NaN here defeats rawToDecomposed's singular guard (`NaN < eps` is
+        // false) and would ship a NaN affine to the kernel and into saved JSON.
+        if (!Number.isFinite(n)) return;
         const dec = rawToDecomposed(getRaw());
         const val = field === 'rotation' ? n * RAD : n;
         const next: DecomposedAffine = { ...dec, [field]: val };
@@ -553,6 +557,7 @@ function buildDecomposedAffineBlock(
     kind: 'position',
     ariaLabel: 'shear',
     onInput: (n) => {
+      if (!Number.isFinite(n)) return; // #388 — drop non-finite input
       const dec = rawToDecomposed(getRaw());
       setRaw(decomposedToRaw({ ...dec, shear: n }));
       viz.draw();
@@ -589,6 +594,7 @@ function buildDecomposedAffineBlock(
       kind: 'position',
       ariaLabel: `raw ${key}`,
       onInput: (n) => {
+        if (!Number.isFinite(n)) return; // #388 — drop non-finite input (raw a..f)
         const raw = getRaw();
         raw[key] = n;
         setRaw(raw);

@@ -909,6 +909,13 @@ async function main(): Promise<void> {
     exportOpts: { format: ExportFormat; transparent: boolean } = { format: 'png8', transparent: false },
   ): Promise<void> {
     if (viewerRenderInFlight) return;
+    // #390 — latch SYNCHRONOUSLY, before the first `await`, so a fast double-click
+    // can't both pass the guard above and stack two naming dialogs / launch two
+    // concurrent renders (which would race resize() against an in-flight render →
+    // GPU validation error / corrupt PNG). Every early-return below and the render
+    // region's own try/finally clear it again.
+    viewerRenderInFlight = true;
+    viewerRenderModeBarHandle?.refresh();
     // #346 — save-time naming dialog for the viewer's render-mode-bar 💾 Save
     // Render. Seeds from the current flame; the chosen name/nick override the
     // embedded PNG metadata and the chosen filename drives the download.
@@ -924,8 +931,12 @@ async function main(): Promise<void> {
       },
       ext: exportOpts.format === 'exr' ? 'exr' : 'png',
     });
-    if (!naming) return;
-    viewerRenderInFlight = true;
+    if (!naming) {
+      // Dialog cancelled — release the latch so the button re-enables (#390).
+      viewerRenderInFlight = false;
+      viewerRenderModeBarHandle?.refresh();
+      return;
+    }
     // #176 — render dims + quality come from viewerRenderCfg (workstation
     // pref), NOT activeGenome (which carries the flame's declared values
     // that might be q=2000, dims=800×592, etc). The flame contributes

@@ -323,12 +323,16 @@ async function main(): Promise<void> {
       // look. Looks like the flame on open everywhere; no double-gamma. (#334)
       const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
       const rgba = new Float32Array(width * height * 4);
+      // #388 — clamp to [0,1] AND coerce non-finite to 0. `Math.max(0, Math.min(1,
+      // NaN))` is NaN; the png16 path self-heals (NaN→Uint16 coerces to 0) but the
+      // EXR Float32Array writes NaN verbatim → black/magenta holes in many viewers.
+      const cl = (f: number) => (Number.isFinite(f) ? Math.max(0, Math.min(1, f)) : 0);
       for (let i = 0; i < width * height; i++) {
         const o = i * 4;
-        rgba[o] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o]!))));
-        rgba[o + 1] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 1]!))));
-        rgba[o + 2] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 2]!))));
-        rgba[o + 3] = Math.max(0, Math.min(1, halfToFloat(halfView[o + 3]!))); // alpha = coverage
+        rgba[o] = srgbToLinear(cl(halfToFloat(halfView[o]!)));
+        rgba[o + 1] = srgbToLinear(cl(halfToFloat(halfView[o + 1]!)));
+        rgba[o + 2] = srgbToLinear(cl(halfToFloat(halfView[o + 2]!)));
+        rgba[o + 3] = cl(halfToFloat(halfView[o + 3]!)); // alpha = coverage
       }
       outBytes = encodeExr({ width, height, rgba });
     } else if (outFormat === 'png16') {

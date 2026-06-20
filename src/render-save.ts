@@ -121,15 +121,21 @@ async function readbackTexture(
     { width, height },
   );
   device.queue.submit([encoder.finish()]);
-  await readBuf.mapAsync(GPUMapMode.READ);
-  const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-  readBuf.unmap();
-  readBuf.destroy();
-  const tight = new Uint8Array(width * height * bytesPerPixel);
-  for (let y = 0; y < height; y++) {
-    tight.set(padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow), y * unpaddedBytesPerRow);
+  // #389 — destroy the MAP_READ scratch on EVERY exit, not just the success
+  // path: a mapAsync rejection (device-lost/abort) otherwise leaks it (~128 MB
+  // at 4K), and the caller has no handle to clean it up.
+  try {
+    await readBuf.mapAsync(GPUMapMode.READ);
+    const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
+    readBuf.unmap();
+    const tight = new Uint8Array(width * height * bytesPerPixel);
+    for (let y = 0; y < height; y++) {
+      tight.set(padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow), y * unpaddedBytesPerRow);
+    }
+    return tight;
+  } finally {
+    readBuf.destroy();
   }
-  return tight;
 }
 
 async function saveRenderInBrowser(opts: SaveRenderToPngOpts): Promise<SaveRenderResult> {

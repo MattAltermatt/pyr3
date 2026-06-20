@@ -306,6 +306,13 @@ describe('computeTimelineFrames', () => {
   it('defaults to 30fps for non-positive fps', () => {
     expect(computeTimelineFrames(1, 0).length).toBe(30);
   });
+  it('#391: throws when the computed frame count exceeds frameCap', () => {
+    // 1000s × 1000fps = 1e6 frames, well past a 100k cap → reject before the
+    // Array.from build OOM-kills the host.
+    expect(() => computeTimelineFrames(1000, 1000, 100_000)).toThrow(/too large/);
+    // a count at/under the cap still builds
+    expect(computeTimelineFrames(10, 30, 100_000).length).toBe(300);
+  });
 });
 
 describe('makeAnimateRoute — timeline input validation', () => {

@@ -1004,6 +1004,12 @@ export function genomeFromJson(j: unknown): Genome {
   const name = expectString(root['name'], 'name');
   const viewport = expectObject(root['viewport'], 'viewport');
   const scale = expectNumber(viewport['scale'], 'viewport.scale');
+  // #388 — expectNumber rejects NaN/Infinity but accepts 0, which collapses every
+  // splat to the center pixel (silent blank render). The XML path recovers a
+  // degenerate scale to 50; the JSON path must reject it loudly.
+  if (scale === 0) {
+    throw new Error('pyr3: viewport.scale must be non-zero (0 collapses the image to one pixel)');
+  }
   const cx = expectNumber(viewport['cx'], 'viewport.cx');
   const cy = expectNumber(viewport['cy'], 'viewport.cy');
 
