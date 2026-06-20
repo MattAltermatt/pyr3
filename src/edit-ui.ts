@@ -451,6 +451,13 @@ export const EDIT_CSS = `
    layout-only so a non-boxed scrubby doesn't double up. */
 .pyr3-scrubby:focus { outline: none; }
 .pyr3-scrubby-textmode { cursor: text; text-align: right; }
+/* #396 — a row's trailing help icon (label · value · help) must never be shoved
+   off the panel's right edge by a wide value. Pin the icon (no shrink) and let
+   the scrubby value field yield space instead. The magnitude-aware formatter
+   keeps realistic values short enough to stay fully visible; this is the
+   last-resort guard for pathologically large values. */
+.pyr3-ctrl > [data-help-key] { flex: 0 0 auto; }
+.pyr3-ctrl > .pyr3-scrubby { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .pyr3-edit-section {
   background: var(--bar-bg-1, #15151a);
   border: 1px solid var(--bar-border, #2a2a30);

@@ -259,6 +259,17 @@ describe('scrubbyInput — display formatting', () => {
     });
     expect(el.textContent).toBe('46.48°');
   });
+
+  it('#396: magnitude-aware precision keeps wide values short', () => {
+    // A viewport scale of 2268.0645231 used to render all 7 decimals, overflowing
+    // the panel field and clipping the trailing help icon.
+    expect(scrubbyInput({ value: 2268.0645231, onInput: vi.fn() }).el.textContent).toBe('2268.06'); // >=1000 → 2dp
+    expect(scrubbyInput({ value: 137.123456, onInput: vi.fn() }).el.textContent).toBe('137.123');   // >=100 → 3dp
+    expect(scrubbyInput({ value: 4.987654, onInput: vi.fn() }).el.textContent).toBe('4.9877');       // >=1  → 4dp
+    expect(scrubbyInput({ value: 0.123456789, onInput: vi.fn() }).el.textContent).toBe('0.123457');  // <1   → 6dp
+    // Trailing zeros still strip cleanly across the bands.
+    expect(scrubbyInput({ value: 1200, onInput: vi.fn() }).el.textContent).toBe('1200');
+  });
 });
 
 describe('scrubbyInput — lifecycle', () => {

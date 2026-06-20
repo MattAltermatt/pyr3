@@ -54,7 +54,16 @@ export interface ScrubbyHandle {
 
 function defaultFormat(v: number): string {
   if (!Number.isFinite(v)) return String(v);
-  const s = v.toFixed(6);
+  // #396 — magnitude-aware precision. A flat toFixed(6) renders meaningless
+  // width for large values (e.g. a viewport scale of 2268.0645231), which
+  // overflows the panel field and shoves the trailing help icon off-screen.
+  // Fewer decimals as magnitude grows keeps the displayed string short and
+  // readable while staying well finer than the scrubby per-pixel step (which is
+  // percent-of-value, so it coarsens with magnitude too). Display-only — text
+  // mode still types the full-precision value.
+  const abs = Math.abs(v);
+  const decimals = abs >= 1000 ? 2 : abs >= 100 ? 3 : abs >= 1 ? 4 : 6;
+  const s = v.toFixed(decimals);
   return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
 }
 

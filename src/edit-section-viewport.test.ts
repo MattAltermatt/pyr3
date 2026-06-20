@@ -161,7 +161,10 @@ describe('viewportSection — 🎯 fit button', () => {
     const btn = host.querySelector('.pyr3-edit-viewport-fit') as HTMLButtonElement;
     const scale = host.querySelector('.pyr3-edit-viewport-scale-input') as HTMLElement;
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(scale.textContent).toBe(String(state.genome.scale));
+    // The display is magnitude-aware compact (#396) — not byte-identical to the
+    // raw genome value — so assert the shown value reflects the fitted scale
+    // rather than matching String(scale) exactly.
+    expect(parseFloat(scale.textContent!)).toBeCloseTo(state.genome.scale, 1);
   });
 
   it('does NOT fire onChange when the genome has no xforms (degenerate)', () => {
