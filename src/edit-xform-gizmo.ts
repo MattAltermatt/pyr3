@@ -26,7 +26,7 @@ import {
 } from './edit-xform-gizmo-math';
 
 export interface GizmoCallbacks {
-  /** The selected regular xform index, or -1 for final (gizmo inert). */
+  /** The selected regular xform index, or -1 for the final xform. */
   getSelectedIndex: () => number;
   /** Live raw affine of the selected xform, or null if none. */
   getAffine: (index: number) => RawAffine | null;
@@ -53,6 +53,12 @@ export interface GizmoHandle {
   destroy(): void;
 }
 
+/** Identity label drawn by the gizmo's O handle: `FINAL` for the final xform
+ *  (index < 0), else the 1-based `XFORM N` matching the xform selector (#401). */
+export function gizmoOriginLabel(index: number): string {
+  return index < 0 ? 'FINAL' : 'XFORM ' + (index + 1);
+}
+
 const HIT_RADIUS_PX = 12;
 /** Rotation ring's fixed reach from O, in CSS px (zoom-independent). Exported for tests. */
 export const ROT_HANDLE_PX = 60;
@@ -62,6 +68,7 @@ const COL_O = '#ff8c1a';        // origin = position
 const COL_X = '#ff5fa2';        // x-axis tip
 const COL_Y = '#3aa1ff';        // y-axis tip
 const COL_ROTATE = '#3ad17a';   // rotation ring
+const COL_FINAL = '#b86fff';    // final xform — footprint + arms recolor (#375)
 const COL_FOOTPRINT = 'rgba(150,150,160,0.5)';
 const COL_LABEL = 'rgba(255,255,255,0.82)';
 const COL_LABEL_HALO = 'rgba(0,0,0,0.75)';
@@ -203,12 +210,12 @@ export function attachXformGizmo(
 
   function draw(): void {
     const index = cb.getSelectedIndex();
+    const isFinal = index < 0;
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const prefs = cb.getPrefs();
     if (!prefs.editOnCanvas) return; // flame mode: gizmo + grid fully hidden
     if (prefs.showWorldGrid) drawGrid();
-    if (index < 0) return; // final xform: no gizmo
     const r = cb.getAffine(index);
     if (!r || !Number.isFinite(r.a + r.b + r.c + r.d + r.e + r.f)) return;
     const an = handleAnchors(r, rotLenWorld());
@@ -217,15 +224,15 @@ export function attachXformGizmo(
     // Footprint parallelogram (faint dashed) — the unit square's image: O, X, apply(1,1), Y.
     const fp = [an.O, an.x, applyAffine(r, 1, 1), an.y].map(project);
     ctx.save();
-    ctx.setLineDash([5, 4]); ctx.strokeStyle = COL_FOOTPRINT; ctx.lineWidth = 1.4;
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = isFinal ? COL_FINAL : COL_FOOTPRINT; ctx.lineWidth = 1.4;
     ctx.beginPath(); fp.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
     ctx.closePath(); ctx.stroke();
     ctx.restore();
 
-    // Axis arms O→X (pink), O→Y (blue).
-    ctx.strokeStyle = COL_X; ctx.lineWidth = 2;
+    // Axis arms O→X (pink), O→Y (blue) — both violet when final.
+    ctx.strokeStyle = isFinal ? COL_FINAL : COL_X; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(X.x, X.y); ctx.stroke();
-    ctx.strokeStyle = COL_Y; ctx.lineWidth = 2;
+    ctx.strokeStyle = isFinal ? COL_FINAL : COL_Y; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(Y.x, Y.y); ctx.stroke();
 
     // Rotation ring (distinct hollow ring + ⟳), out the far side of O. Hidden when degenerate.
@@ -249,6 +256,8 @@ export function attachXformGizmo(
     // O — emphasized white ring + orange fill + label.
     ctx.beginPath(); ctx.arc(O.x, O.y, 8, 0, TWO_PI); ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff'; ctx.stroke();
     dot(O, COL_O, 6); tagLabel('O', O, -16, 16);
+    // Identity label by O: XFORM N for regular xforms, FINAL for the final (#401).
+    tagLabel(gizmoOriginLabel(index), O, 12, -10);
   }
 
   function readoutFor(r: RawAffine): string {
@@ -263,7 +272,6 @@ export function attachXformGizmo(
     if (ev.button !== 0) return;
     if (!cb.getPrefs().editOnCanvas) return;
     const index = cb.getSelectedIndex();
-    if (index < 0) return;
     const r = cb.getAffine(index);
     if (!r) return;
     const lp = localPt(ev);

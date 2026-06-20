@@ -75,6 +75,9 @@ export const PANEL_WIDTH_MIN = 280;
 export const PANEL_WIDTH_MAX = 560;
 export const PANEL_WIDTH_DEFAULT = 360;
 
+/** Sentinel `selectedXformIndex` value meaning "the final xform is selected". */
+export const FINAL_SEL = -1;
+
 export interface EditState {
   genome: Genome;
   seed: number;

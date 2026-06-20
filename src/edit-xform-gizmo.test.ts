@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { attachXformGizmo, ROT_HANDLE_PX } from './edit-xform-gizmo';
+import { attachXformGizmo, ROT_HANDLE_PX, gizmoOriginLabel } from './edit-xform-gizmo';
 import { worldToScreen, worldPerCssPx, type Camera, type Viewport } from './edit-camera-projection';
 import { rotateAnchor, type RawAffine } from './edit-xform-gizmo-math';
 import { GIZMO_PREFS_DEFAULT } from './edit-state';
@@ -158,14 +158,63 @@ describe('attachXformGizmo (O/X/Y triangle)', () => {
     expect(stop).not.toHaveBeenCalled();
   });
 
-  it('is inert for the final xform (selected = -1)', () => {
+  it('is active for the final xform when a final affine exists (selected = -1)', () => {
     const { host, eventCanvas } = makeHostAndCanvas();
-    const { cb, onLiveEdit } = wire(true, -1);
+    const getAffine = vi.fn((_i: number) => affine); // returns a valid affine; spy on the index it's called with
+    const onLiveEdit = vi.fn();
+    const onCommit = vi.fn();
+    const cb = {
+      getSelectedIndex: () => -1,
+      getAffine,
+      setAffine: (_i: number, r: RawAffine) => { affine = r; },
+      getCamera: () => CAM,
+      getViewport: () => VP,
+      getPrefs: () => ({ ...GIZMO_PREFS_DEFAULT, editOnCanvas: true }),
+      onLiveEdit,
+      onCommit,
+    };
+    attachXformGizmo(host, eventCanvas, cb);
+    down(eventCanvas, O_SCREEN.x, O_SCREEN.y);
+    move(O_SCREEN.x + 0.1 / WPP, O_SCREEN.y); // drag O +0.1 world in x
+    up();
+    expect(getAffine).toHaveBeenCalledWith(-1); // index routing: the final sentinel reaches getAffine
+    expect(onLiveEdit).toHaveBeenCalledWith(-1);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(affine.c).toBeCloseTo(0.1, 6);
+  });
+
+  it('is inert for the final xform when no final affine exists (getAffine → null)', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const onLiveEdit = vi.fn();
+    const cb = {
+      getSelectedIndex: () => -1,
+      getAffine: () => null,
+      setAffine: () => {},
+      getCamera: () => CAM,
+      getViewport: () => VP,
+      getPrefs: () => ({ ...GIZMO_PREFS_DEFAULT, editOnCanvas: true }),
+      onLiveEdit,
+      onCommit: vi.fn(),
+    };
     const g = attachXformGizmo(host, eventCanvas, cb);
-    g.draw();
+    expect(() => g.draw()).not.toThrow();
     down(eventCanvas, O_SCREEN.x, O_SCREEN.y);
     up();
     expect(onLiveEdit).not.toHaveBeenCalled();
+  });
+
+  it('draw() renders the final gizmo without throwing (selected = -1)', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const { cb } = wire(true, -1);
+    const g = attachXformGizmo(host, eventCanvas, cb);
+    expect(() => g.draw()).not.toThrow();
+  });
+
+  it('gizmoOriginLabel: regular xforms read XFORM N (1-based), final reads FINAL', () => {
+    expect(gizmoOriginLabel(0)).toBe('XFORM 1');
+    expect(gizmoOriginLabel(1)).toBe('XFORM 2');
+    expect(gizmoOriginLabel(5)).toBe('XFORM 6');
+    expect(gizmoOriginLabel(-1)).toBe('FINAL');
   });
 
   it('draw() handles a degenerate affine without throwing (rotate ring hidden)', () => {

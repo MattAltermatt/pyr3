@@ -23,6 +23,7 @@ import {
   saveGizmoPrefs,
   PANEL_WIDTH_MIN,
   PANEL_WIDTH_MAX,
+  FINAL_SEL,
   type EditState,
   type LaneScheduler,
   type Lane,
@@ -1111,7 +1112,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // These only move the gizmo VIEW layer; the flame renders the unchanged
   // composition, so they redraw the gizmo overlay ONLY — no flame re-iterate.
   function fitViewToSelectedXform(): void {
-    const xf = state.genome.xforms[state.selectedXformIndex];
+    const xf = state.selectedXformIndex === FINAL_SEL
+      ? state.genome.finalxform
+      : state.genome.xforms[state.selectedXformIndex];
     if (!xf) { resetWorkspaceView(); return; }
     const affine: RawAffine = { a: xf.a, b: xf.b, c: xf.c, d: xf.d, e: xf.e, f: xf.f };
     const cam: Camera = { cx: state.genome.cx, cy: state.genome.cy, scale: state.genome.scale, rotateDeg: state.genome.rotate ?? 0 };
@@ -1125,7 +1128,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // ⊕ center — pan the gizmo layer to the selected xform at the CURRENT zoom
   // (distinct from ⊡ fit, which also re-zooms). Composition is never touched.
   function centerViewOnSelectedXform(): void {
-    const xf = state.genome.xforms[state.selectedXformIndex];
+    const xf = state.selectedXformIndex === FINAL_SEL
+      ? state.genome.finalxform
+      : state.genome.xforms[state.selectedXformIndex];
     if (!xf) return;
     // Handle-box center in world: midpoint of the xform's image of the unit
     // square plus the rotate stalk — averaging the affine corners + rotate
@@ -1151,11 +1156,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   gizmo = attachXformGizmo(canvasHost, canvas, {
     getSelectedIndex: () => state.selectedXformIndex,
     getAffine: (i): RawAffine | null => {
-      const xf = state.genome.xforms[i];
+      const xf = i === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[i];
       return xf ? { a: xf.a, b: xf.b, c: xf.c, d: xf.d, e: xf.e, f: xf.f } : null;
     },
     setAffine: (i, r: RawAffine): void => {
-      const xf = state.genome.xforms[i];
+      const xf = i === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[i];
       if (!xf) return;
       xf.a = r.a; xf.b = r.b; xf.c = r.c; xf.d = r.d; xf.e = r.e; xf.f = r.f;
     },
@@ -1166,7 +1171,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // history commit, so a whole drag coalesces into one undo entry — no extra
     // commit needed at drag end.
     onLiveEdit: (i) => {
-      onPathChange('xforms.' + i);
+      onPathChange(i === FINAL_SEL ? 'finalxform' : 'xforms.' + i);
       // #350 #1 — refresh the XForm panel's affine fields + mini-viz live so
       // they track the gizmo drag (panel edits self-update; this is gizmo→panel).
       document.dispatchEvent(new CustomEvent('pyr3:xform-affine-changed'));

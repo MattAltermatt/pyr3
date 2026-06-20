@@ -29,6 +29,7 @@ import {
   snapshotForSolo,
   restoreFromSolo,
   persistXformDetailCollapse,
+  FINAL_SEL,
 } from './edit-state';
 import { type Xform } from './genome';
 import { addXform, removeXform, duplicateXform, swapXforms, makeDefaultXform } from './xform-ops';
@@ -60,8 +61,6 @@ import {
 } from './edit-primitives';
 import { infoIcon, type HelpKey } from './help-text';
 
-/** Sentinel `selectedXformIndex` value meaning "the final xform is selected". */
-const FINAL_SEL = -1;
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
