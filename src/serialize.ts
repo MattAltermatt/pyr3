@@ -6,7 +6,7 @@
 // Forward-compat: Phase 5b will add optional `finalxform`; Phase 5c will add
 // optional `symmetry`. Neither requires a version bump (additive optional fields).
 
-import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, type ChannelCurves, isSpatialFilterShape } from './genome';
+import { type Genome, type Symmetry, type Xform, type Pyr3Size, type SpatialFilter, type ChannelCurves, isSpatialFilterShape, MAX_XFORMS } from './genome';
 import { type Tonemap, DEFAULT_TONEMAP } from './tonemap';
 import { type Density, MAX_RAD_CAP, MIN_CURVE, MAX_CURVE } from './density';
 import {
@@ -1041,6 +1041,15 @@ export function genomeFromJson(j: unknown): Genome {
   // genomeFromJson previously accepted it, producing a blank render.
   if (xformsRaw.length === 0) {
     throw new Error('pyr3: xforms must contain at least one xform; cannot render');
+  }
+  // PYR3-033 — mirror the XML loader's loud cap. >MAX_XFORMS overflows the
+  // packed writeBuffer; Dawn silently truncates and the render comes out pure
+  // black. The JSON path previously had no guard (expandGenomeForGPU
+  // early-returns before its own throw for non-symmetric genomes).
+  if (xformsRaw.length > MAX_XFORMS) {
+    throw new Error(
+      `pyr3: xforms count ${xformsRaw.length} exceeds the ${MAX_XFORMS}-xform cap`,
+    );
   }
   const xforms: Xform[] = xformsRaw.map((x, i) => xformFromJson(x, `xforms[${i}]`));
 

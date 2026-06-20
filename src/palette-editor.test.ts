@@ -77,6 +77,25 @@ describe('palette-editor core (#115)', () => {
     h.destroy();
   });
 
+  it('#384: Backspace from a focused text input does NOT delete the selected stop', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const h = mountPaletteEditor(host, { initial: { name: 'x', stops: [
+      { t: 0, r: 0, g: 0, b: 0 }, { t: 0.5, r: 0.5, g: 0.5, b: 0.5 }, { t: 1, r: 1, g: 1, b: 1 },
+    ] }, onChange: () => {} });
+    const strip = host.querySelector('[data-role="strip"]') as HTMLElement;
+    mockRect(strip);
+    // select the middle (interior) stop — the deletable precondition
+    strip.dispatchEvent(new MouseEvent('mousedown', { clientX: 100, clientY: 12, bubbles: true }));
+    // a Backspace whose target is a text input (e.g. the hex field) must be ignored
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    expect(h.getPalette().stops.length).toBe(3); // stop NOT deleted
+    input.remove();
+    h.destroy();
+  });
+
   it('marks the selected handle with data-selected for a clear visual cue', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);

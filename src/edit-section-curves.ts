@@ -585,6 +585,12 @@ export const curvesSection: SectionMount = {
     deleteBtn.addEventListener('click', () => { deleteSelected(); });
 
     const keyHandler = (e: KeyboardEvent) => {
+      // #384 — ignore keystrokes that originate in a text field. The In/Out
+      // numeric fields are enabled exactly when a point is selected, so an
+      // un-guarded Backspace here would splice the point instead of editing a
+      // digit (and ArrowL/R would steal caret navigation).
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       const sel = state.selectedCurvePoint;
       if (!sel) return;
       const ch = currentChannel();

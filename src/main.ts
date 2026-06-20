@@ -935,6 +935,23 @@ async function main(): Promise<void> {
     // (applyPreset semantics — works for any output dim).
     const targetW = viewerRenderCfg.width;
     const targetH = viewerRenderCfg.height;
+    // #387 — capability guard (mirrors renderQuality's). Custom W/H from the
+    // render-mode bar are unbounded; a histogram larger than the GPU can bind
+    // would otherwise surface a raw `Render failed:` GPU validation toast.
+    // Abort cleanly here (before the modal opens / any resize) with a friendly
+    // message and clear the in-flight latch.
+    const guardHistBytes = targetW * targetH * HIST_BYTES_PER_CELL;
+    const guardMaxBind = device.limits.maxStorageBufferBindingSize;
+    if (guardHistBytes > guardMaxBind) {
+      const mb = (n: number): string => `${(n / (1024 * 1024)).toFixed(0)} MB`;
+      console.warn(
+        `pyr3: viewer Save Render skipped — histogram ${mb(guardHistBytes)} exceeds this GPU's max storage buffer ${mb(guardMaxBind)}`,
+      );
+      bar.showToast(`Render too large for this GPU (needs ${mb(guardHistBytes)})`);
+      viewerRenderInFlight = false;
+      viewerRenderModeBarHandle?.refresh();
+      return;
+    }
     const targetQuality = viewerRenderCfg.quality;
     const oversample = 1;
     const filterRadius = activeGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;

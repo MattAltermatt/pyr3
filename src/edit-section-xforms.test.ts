@@ -516,6 +516,20 @@ describe('xformsSection — detail variations chain', () => {
     expect(labels).toEqual(['power', 'dist']);
   });
 
+  it('#385: a 10-param variation (parallel) renders all 10 param fields, each editing its slot', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    genome.xforms[0]!.variations = [{ index: V.parallel, weight: 1 }];
+    const { host, state, onChange } = mount(genome);
+    const params = detail(host).querySelector('.pyr3-edit-var-params') as HTMLElement;
+    expect(params.children.length).toBe(10);
+    // the 10th field (param9) must round-trip to the genome — previously hidden
+    const cells = params.querySelectorAll('.pyr3-edit-num') as NodeListOf<HTMLElement>;
+    expect(cells.length).toBe(10);
+    typeInto(cells[9]!, '3.5');
+    expect(state.genome.xforms[0]!.variations[0]!.param9).toBeCloseTo(3.5, 6);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.variations.0.param9');
+  });
+
   it('param edit writes xforms.0.variations.0.param0', () => {
     const genome = generateRandomGenome(seededRng(1));
     genome.xforms[0]!.variations = [{ index: V.julian, weight: 1, param0: 2, param1: 1 }];

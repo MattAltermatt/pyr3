@@ -257,6 +257,11 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
     emit();
   }
   function onKeyDown(e: KeyboardEvent): void {
+    // #384 — ignore keystrokes from a text field. Clicking an interior stop
+    // opens the HSV picker's hex <input>; an un-guarded Backspace there would
+    // delete the very stop being color-edited.
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     deleteSelected();
   }

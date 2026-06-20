@@ -33,7 +33,7 @@ import {
 import { type Xform } from './genome';
 import { addXform, removeXform, duplicateXform, swapXforms, makeDefaultXform } from './xform-ops';
 import { type Variation, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM, DC_VARIATION_SET } from './variations';
-import { VARIATION_PARAMS, PARAM_KEYS } from './serialize';
+import { VARIATION_PARAMS, PARAM_KEYS, MAX_VARIATION_PARAMS } from './serialize';
 import {
   decomposedToRaw,
   rawToDecomposed,
@@ -292,7 +292,12 @@ function buildVariationRow(
   const renderParams = (): void => {
     paramRow.replaceChildren();
     const names = paramNamesFor(v.index);
-    for (let p = 0; p < names.length && p < MAX_VARIATIONS_PER_XFORM; p++) {
+    // #385 — bound by the param-SLOT cap (MAX_VARIATION_PARAMS = 10), NOT the
+    // variation-COUNT cap (MAX_VARIATIONS_PER_XFORM = 8). They coincided before
+    // #120 grew the seam to 10 slots; using the wrong one hid params 9-10 for
+    // 10-param variations (intersection/parallel) — the genome held them but the
+    // user could never see/edit/reset them.
+    for (let p = 0; p < names.length && p < MAX_VARIATION_PARAMS; p++) {
       const paramKey = PARAM_KEYS[p]!;
       const current = (v as unknown as Record<string, number | undefined>)[paramKey] ?? 0;
       const inp = makeNumberInput(

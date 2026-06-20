@@ -163,6 +163,17 @@ describe('genomeFromJson', () => {
     const bad = { ...json, xforms: [] };
     expect(() => genomeFromJson(bad)).toThrow(/at least one xform/);
   });
+
+  it('#386: rejects a >MAX_XFORMS genome instead of rendering silent black', () => {
+    const json = genomeToJson(SPIRAL_GALAXY);
+    const one = (json as { xforms: unknown[] }).xforms[0];
+    // 129 xforms — one past the 128 cap that overflows the packed buffer.
+    const bad = { ...json, xforms: Array.from({ length: 129 }, () => JSON.parse(JSON.stringify(one))) };
+    expect(() => genomeFromJson(bad)).toThrow(/exceeds the 128-xform cap/);
+    // and exactly at the cap still loads
+    const ok = { ...json, xforms: Array.from({ length: 128 }, () => JSON.parse(JSON.stringify(one))) };
+    expect(() => genomeFromJson(ok)).not.toThrow();
+  });
 });
 
 describe('finalxform round-trip', () => {

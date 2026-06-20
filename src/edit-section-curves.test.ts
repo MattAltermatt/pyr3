@@ -172,6 +172,20 @@ describe('curvesSection: gestures', () => {
     expect(state.genome.channelCurves.composite.length).toBe(2);
   });
 
+  it('#384: Backspace from a focused text field does NOT delete the selected point', () => {
+    const { host, state } = buildHost();
+    state.genome.channelCurves = {
+      composite: [{ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, { x: 1, y: 1 }],
+      r: IDENTITY_POINTS, g: IDENTITY_POINTS, b: IDENTITY_POINTS, luma: IDENTITY_POINTS,
+    };
+    state.selectedCurvePoint = { channel: 'composite', pointIdx: 1 };
+    // A Backspace whose target is the In numeric field must be ignored by the
+    // global handler (the user is erasing a digit, not deleting the point).
+    const inField = host.querySelector('[data-curve-in]') as HTMLInputElement;
+    inField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    expect(state.genome.channelCurves.composite.length).toBe(3);
+  });
+
   it('refuses to delete the last 2 control points', () => {
     const { host, state } = buildHost();
     state.genome.channelCurves = {
