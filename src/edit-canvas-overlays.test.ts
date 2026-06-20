@@ -39,4 +39,37 @@ describe('attachCanvasOverlays', () => {
     expect(readout.textContent).toBe('');
     expect(host.querySelector('[data-overlay="readout"]')).toBe(readout); // same node
   });
+
+  // ── #376 PRE|POST lens pill ────────────────────────────────────────────
+  it('lens pill is hidden when the xform has no post', () => {
+    const host = document.createElement('div');
+    const prefs = { ...GIZMO_PREFS_DEFAULT, editOnCanvas: true };
+    attachCanvasOverlays(host, {
+      getPrefs: () => prefs, onChange: () => {},
+      getLens: () => 'pre', setLens: () => {}, hasPost: () => false,
+    });
+    const pill = host.querySelector('[data-overlay="lens"]') as HTMLElement;
+    expect(pill).toBeTruthy();              // element exists
+    expect(pill.style.display).toBe('none'); // but hidden (no post)
+  });
+
+  it('lens pill shows + switches lens when a post exists', () => {
+    const host = document.createElement('div');
+    const prefs = { ...GIZMO_PREFS_DEFAULT, editOnCanvas: true };
+    let lens: 'pre' | 'post' = 'pre';
+    const ov = attachCanvasOverlays(host, {
+      getPrefs: () => prefs, onChange: () => {},
+      getLens: () => lens, setLens: (l) => { lens = l; }, hasPost: () => true,
+    });
+    ov.sync();
+    const pill = host.querySelector('[data-overlay="lens"]') as HTMLElement;
+    expect(pill.style.display).not.toBe('none');
+    const preSeg = host.querySelector<HTMLButtonElement>('[data-overlay="lens-pre"]')!;
+    const postSeg = host.querySelector<HTMLButtonElement>('[data-overlay="lens-post"]')!;
+    expect(preSeg.getAttribute('aria-pressed')).toBe('true');
+    postSeg.click();
+    expect(lens).toBe('post');
+    expect(postSeg.getAttribute('aria-pressed')).toBe('true');
+    expect(preSeg.getAttribute('aria-pressed')).toBe('false');
+  });
 });

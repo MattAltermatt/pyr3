@@ -32,6 +32,12 @@ export interface GizmoCallbacks {
   getAffine: (index: number) => RawAffine | null;
   /** Commit a new raw affine for the selected xform. */
   setAffine: (index: number, r: RawAffine) => void;
+  /** #376 — active editing lens. Default 'pre' (the only lens) when unset. */
+  getActiveLens?: () => 'pre' | 'post';
+  /** #376 — live raw POST affine of the selected xform, or null when it has none. */
+  getPostAffine?: (index: number) => RawAffine | null;
+  /** #376 — commit a new raw POST affine for the selected xform. */
+  setPostAffine?: (index: number, r: RawAffine) => void;
   /** Camera + viewport snapshot (built from genome + canvas rect). */
   getCamera: () => Camera;
   getViewport: () => Viewport;
@@ -69,6 +75,7 @@ const COL_X = '#ff5fa2';        // x-axis tip
 const COL_Y = '#3aa1ff';        // y-axis tip
 const COL_ROTATE = '#3ad17a';   // rotation ring
 const COL_FINAL = '#b86fff';    // final xform — footprint + arms recolor (#375)
+const COL_GHOST = 'rgba(150,160,170,0.35)'; // #376 inactive-lens ghost: O + arms only
 const COL_FOOTPRINT = 'rgba(150,150,160,0.5)';
 const COL_LABEL = 'rgba(255,255,255,0.82)';
 const COL_LABEL_HALO = 'rgba(0,0,0,0.75)';
@@ -121,6 +128,23 @@ export function attachXformGizmo(
   function unproject(s: Vec2): Vec2 { return screenToWorld(s, cam(), vp()); }
   /** Rotate-handle reach in world units = fixed CSS px × world-per-px (zoom-independent). */
   function rotLenWorld(): number { return ROT_HANDLE_PX * worldPerCssPx(cam(), vp()); }
+
+  // ── #376 lens routing ──────────────────────────────────────────────────
+  function lens(): 'pre' | 'post' { return cb.getActiveLens?.() ?? 'pre'; }
+  function postAffine(i: number): RawAffine | null { return cb.getPostAffine?.(i) ?? null; }
+  /** The affine the active lens edits: post when lens==='post' AND a post exists, else pre. */
+  function activeAffine(i: number): RawAffine | null {
+    if (lens() === 'post') { const p = postAffine(i); if (p) return p; }
+    return cb.getAffine(i);
+  }
+  function writeActive(i: number, r: RawAffine): void {
+    if (lens() === 'post' && postAffine(i) && cb.setPostAffine) cb.setPostAffine(i, r);
+    else cb.setAffine(i, r);
+  }
+  /** The inactive lens's affine for the ghost, or null when there's no second lens. */
+  function ghostAffine(i: number): RawAffine | null {
+    return lens() === 'post' ? cb.getAffine(i) : postAffine(i);
+  }
 
   /** Element-relative CSS coords from a mouse event (host == overlay rect). */
   function localPt(ev: MouseEvent): Vec2 {
@@ -216,7 +240,23 @@ export function attachXformGizmo(
     const prefs = cb.getPrefs();
     if (!prefs.editOnCanvas) return; // flame mode: gizmo + grid fully hidden
     if (prefs.showWorldGrid) drawGrid();
-    const r = cb.getAffine(index);
+
+    // ── Ghost: the inactive lens, drawn minimally (O + axis arms only) for
+    //    spatial orientation. Pointer-inert; only when a second lens exists (#376). ──
+    const gh = ghostAffine(index);
+    if (gh && Number.isFinite(gh.a + gh.b + gh.c + gh.d + gh.e + gh.f)) {
+      const gAn = handleAnchors(gh, rotLenWorld());
+      const gO = project(gAn.O), gX = project(gAn.x), gY = project(gAn.y);
+      ctx.save();
+      ctx.strokeStyle = COL_GHOST; ctx.fillStyle = COL_GHOST; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(gO.x, gO.y); ctx.lineTo(gX.x, gX.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(gO.x, gO.y); ctx.lineTo(gY.x, gY.y); ctx.stroke();
+      ctx.beginPath(); ctx.arc(gO.x, gO.y, 4, 0, TWO_PI); ctx.fill();
+      ctx.restore();
+    }
+
+    // ── Active lens: full treatment. ──
+    const r = activeAffine(index);
     if (!r || !Number.isFinite(r.a + r.b + r.c + r.d + r.e + r.f)) return;
     const an = handleAnchors(r, rotLenWorld());
     const O = project(an.O), X = project(an.x), Y = project(an.y);
@@ -256,8 +296,9 @@ export function attachXformGizmo(
     // O — emphasized white ring + orange fill + label.
     ctx.beginPath(); ctx.arc(O.x, O.y, 8, 0, TWO_PI); ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff'; ctx.stroke();
     dot(O, COL_O, 6); tagLabel('O', O, -16, 16);
-    // Identity label by O: XFORM N for regular xforms, FINAL for the final (#401).
-    tagLabel(gizmoOriginLabel(index), O, 12, -10);
+    // Identity label by O: XFORM N / FINAL (#401), plus a POST tag when the
+    // active lens is the post-transform so the user knows which a drag moves (#376).
+    tagLabel(gizmoOriginLabel(index) + (lens() === 'post' ? ' · POST' : ''), O, 12, -10);
   }
 
   function readoutFor(r: RawAffine): string {
@@ -272,7 +313,7 @@ export function attachXformGizmo(
     if (ev.button !== 0) return;
     if (!cb.getPrefs().editOnCanvas) return;
     const index = cb.getSelectedIndex();
-    const r = cb.getAffine(index);
+    const r = activeAffine(index);
     if (!r) return;
     const lp = localPt(ev);
     const an = handleAnchors(r, rotLenWorld());
@@ -308,7 +349,7 @@ export function attachXformGizmo(
         next = rotateAboutO(next, (snapped - deg) * Math.PI / 180);
       }
     }
-    cb.setAffine(active.index, next);
+    writeActive(active.index, next);
     cb.onLiveEdit(active.index);
     cb.onReadout?.(readoutFor(next));
     draw();

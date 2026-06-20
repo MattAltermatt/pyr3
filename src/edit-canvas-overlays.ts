@@ -15,6 +15,11 @@ export interface CanvasOverlaysCallbacks {
   onFit?: () => void;
   /** ⊕ center — pan the gizmo layer to the selected xform at the current zoom. */
   onCenter?: () => void;
+  /** #376 — active gizmo lens (pre/post) + setter; the pill is shown only when
+   *  hasPost() is true (the selected xform has a post-transform) AND edit is on. */
+  getLens?: () => 'pre' | 'post';
+  setLens?: (lens: 'pre' | 'post') => void;
+  hasPost?: () => boolean;
 }
 export interface CanvasOverlaysHandle {
   /** Set (or clear with null) the live drag readout. */
@@ -71,6 +76,31 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
   const xformSeg = mkSeg('xform', 'mode-xform', true);
   modeWrap.append(modeLabel, flameSeg, xformSeg);
 
+  // #376 — transform-lens pill: pre | post. Visible only when the selected xform
+  // has a post-transform AND we're in edit mode. Mirrors the modify: segmented control.
+  const lensWrap = document.createElement('div');
+  lensWrap.className = 'pyr3-edit-overlay-mode';
+  lensWrap.dataset.overlay = 'lens';
+  const lensLabel = document.createElement('span');
+  lensLabel.className = 'pyr3-edit-overlay-mode-label';
+  lensLabel.textContent = 'transform:';
+  function mkLensSeg(label: string, which: 'pre' | 'post'): HTMLButtonElement {
+    const seg = document.createElement('button');
+    seg.type = 'button';
+    seg.className = 'pyr3-edit-overlay-seg';
+    seg.dataset.overlay = `lens-${which}`;
+    seg.textContent = label;
+    seg.addEventListener('click', () => {
+      if ((cb.getLens?.() ?? 'pre') === which) return;
+      cb.setLens?.(which);
+      sync();
+    });
+    return seg;
+  }
+  const lensPreSeg = mkLensSeg('pre', 'pre');
+  const lensPostSeg = mkLensSeg('post', 'post');
+  lensWrap.append(lensLabel, lensPreSeg, lensPostSeg);
+
   const gridBtn = mkToggle('showWorldGrid', '▦', 'grid');
   const snapBtn = mkToggle('snapEnabled', '☐', 'Snap');
 
@@ -107,7 +137,7 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
   readout.className = 'pyr3-edit-overlay-readout';
   readout.dataset.overlay = 'readout';
 
-  root.append(modeWrap, fitBtn, centerBtn, gridBtn, snapBtn, stepWrap, readout);
+  root.append(modeWrap, lensWrap, fitBtn, centerBtn, gridBtn, snapBtn, stepWrap, readout);
   host.appendChild(root);
 
   function sync(): void {
@@ -117,6 +147,11 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
     gridBtn.setAttribute('aria-pressed', String(p.showWorldGrid));
     snapBtn.setAttribute('aria-pressed', String(p.snapEnabled));
     snapBtn.textContent = `${p.snapEnabled ? '☑' : '☐'} Snap`;
+    // #376 — lens pill: visible only with a post + in edit mode; reflect the active lens.
+    const lens = cb.getLens?.() ?? 'pre';
+    lensWrap.style.display = (!!cb.hasPost?.() && p.editOnCanvas) ? '' : 'none';
+    lensPreSeg.setAttribute('aria-pressed', String(lens === 'pre'));
+    lensPostSeg.setAttribute('aria-pressed', String(lens === 'post'));
     // fit/center only act on the edit-mode gizmo layer — disable + dim when off.
     for (const b of [fitBtn, centerBtn]) {
       b.disabled = !p.editOnCanvas;

@@ -99,6 +99,10 @@ export interface EditState {
   selectedXformIndex: number;
   /** #350 Phase 2.3 — on-canvas gizmo prefs (UI-only, per-browser; NOT serialized). */
   gizmo: GizmoPrefs;
+  /** #376 — active on-canvas gizmo lens: which affine the gizmo edits. 'post' is
+   *  only meaningful when the selected xform has a post-transform. Transient,
+   *  UI-only; NEVER serialized. Resets to 'pre' on selection change. */
+  gizmoLens: 'pre' | 'post';
   /** #372 — which on-canvas overlay is live. The affine gizmo (XForm lens) and
    *  the gradient bar (Color lens) are mutually exclusive — only one is ever
    *  attached. UI-only, session-scoped; NOT serialized. */
@@ -195,6 +199,7 @@ export function createEditState(genome: Genome, seed: number): EditState {
     panelWidth: restorePanelWidth(),
     selectedXformIndex: 0,
     gizmo: loadGizmoPrefs(),
+    gizmoLens: 'pre',
     activeCanvasOverlay: 'none',
     view: { ...IDENTITY_VIEW },
     xformDetailCollapse: restoreXformDetailCollapse(),

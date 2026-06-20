@@ -58,7 +58,7 @@ import {
 import { attachCanvasOverlays, type CanvasOverlaysHandle } from './edit-canvas-overlays';
 import { applyViewToCamera, type Camera, type Viewport, IDENTITY_VIEW } from './edit-camera-projection';
 import { computeFitView } from './edit-fit-handles';
-import { type RawAffine } from './edit-xform-gizmo-math';
+import { pickLensAffine, type RawAffine } from './edit-xform-gizmo-math';
 import { createSlowRenderNudge, type SlowRenderNudgeHandle } from './edit-slow-render-nudge';
 import { setCurrentFlame } from './app-state';
 import { createHistory, type History } from './edit-history';
@@ -848,7 +848,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // #350 Phase 2.3 — keep the on-canvas gizmo square locked to the affine
     // when it's edited from the panel fields (gizmo declared below; this runs
     // at edit time, well after assignment).
-    if (path.startsWith('xforms') || path === 'cx' || path === 'cy' || path === 'scale' || path === 'rotate') {
+    if (path.startsWith('xforms') || path === 'cx' || path === 'cy' || path === 'scale' || path === 'rotate' || path === 'finalxform' || path.startsWith('finalxform.')) {
+      gizmo?.draw();
+    }
+    // #376 — a panel post-toggle (add/remove the post-transform) changes which
+    // lenses exist: snap back to 'pre' if the post was removed, and refresh the
+    // PRE|POST pill visibility + the ghost.
+    if (path.endsWith('.post')) {
+      const xf = state.selectedXformIndex === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[state.selectedXformIndex];
+      if (!xf?.post) state.gizmoLens = 'pre';
+      overlays.sync();
       gizmo?.draw();
     }
     const lane = pathLane(path);
@@ -1104,6 +1113,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     },
     onFit: () => fitViewToSelectedXform(),
     onCenter: () => centerViewOnSelectedXform(),
+    // #376 — PRE|POST lens pill. getLens is defensive (stale 'post' with no post → 'pre').
+    getLens: (): 'pre' | 'post' => {
+      const xf = state.selectedXformIndex === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[state.selectedXformIndex];
+      return state.gizmoLens === 'post' && xf?.post ? 'post' : 'pre';
+    },
+    setLens: (lens): void => { state.gizmoLens = lens; gizmo?.draw(); },
+    hasPost: (): boolean => {
+      const xf = state.selectedXformIndex === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[state.selectedXformIndex];
+      return !!xf?.post;
+    },
   });
   // #350 — set the transient workspace view to frame the selected xform's
   // handles (or identity if no regular xform is selected). NOT routed through
@@ -1116,7 +1135,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       ? state.genome.finalxform
       : state.genome.xforms[state.selectedXformIndex];
     if (!xf) { resetWorkspaceView(); return; }
-    const affine: RawAffine = { a: xf.a, b: xf.b, c: xf.c, d: xf.d, e: xf.e, f: xf.f };
+    const affine: RawAffine = pickLensAffine(xf, state.gizmoLens); // #376 — frame the active lens
     const cam: Camera = { cx: state.genome.cx, cy: state.genome.cy, scale: state.genome.scale, rotateDeg: state.genome.rotate ?? 0 };
     state.view = computeFitView(affine, cam, gizmoViewport());
     gizmo?.draw();
@@ -1135,8 +1154,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // Handle-box center in world: midpoint of the xform's image of the unit
     // square plus the rotate stalk — averaging the affine corners + rotate
     // anchor is overkill; the affine center apply(0.5,0.5) is a good target.
-    const cx = xf.a * 0.5 + xf.b * 0.5 + xf.c;
-    const cy = xf.d * 0.5 + xf.e * 0.5 + xf.f;
+    const src = pickLensAffine(xf, state.gizmoLens); // #376 — center the active lens
+    const cx = src.a * 0.5 + src.b * 0.5 + src.c;
+    const cy = src.d * 0.5 + src.e * 0.5 + src.f;
     const z = state.view.zoom;
     state.view = { zoom: z, panX: (cx - state.genome.cx) * z, panY: (cy - state.genome.cy) * z };
     gizmo?.draw();
@@ -1164,6 +1184,21 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       if (!xf) return;
       xf.a = r.a; xf.b = r.b; xf.c = r.c; xf.d = r.d; xf.e = r.e; xf.f = r.f;
     },
+    // #376 — post-transform lens. getActiveLens is defensive: a stale 'post' lens
+    // on an xform without a post reads as 'pre'.
+    getActiveLens: (): 'pre' | 'post' => {
+      const xf = state.selectedXformIndex === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[state.selectedXformIndex];
+      return state.gizmoLens === 'post' && xf?.post ? 'post' : 'pre';
+    },
+    getPostAffine: (i): RawAffine | null => {
+      const xf = i === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[i];
+      return xf?.post ? { a: xf.post.a, b: xf.post.b, c: xf.post.c, d: xf.post.d, e: xf.post.e, f: xf.post.f } : null;
+    },
+    setPostAffine: (i, r: RawAffine): void => {
+      const xf = i === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[i];
+      if (!xf || !xf.post) return;
+      xf.post.a = r.a; xf.post.b = r.b; xf.post.c = r.c; xf.post.d = r.d; xf.post.e = r.e; xf.post.f = r.f;
+    },
     getCamera: gizmoCamera,
     getViewport: gizmoViewport,
     getPrefs: () => state.gizmo,
@@ -1171,7 +1206,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // history commit, so a whole drag coalesces into one undo entry — no extra
     // commit needed at drag end.
     onLiveEdit: (i) => {
-      onPathChange(i === FINAL_SEL ? 'finalxform' : 'xforms.' + i);
+      // #376 — route the slow-lane re-iterate + debounced history to the
+      // lens-correct path so a post drag lands on the `.post` sub-path.
+      const base = i === FINAL_SEL ? 'finalxform' : 'xforms.' + i;
+      const xf = i === FINAL_SEL ? state.genome.finalxform : state.genome.xforms[i];
+      onPathChange(state.gizmoLens === 'post' && xf?.post ? base + '.post' : base);
       // #350 #1 — refresh the XForm panel's affine fields + mini-viz live so
       // they track the gizmo drag (panel edits self-update; this is gizmo→panel).
       document.dispatchEvent(new CustomEvent('pyr3:xform-affine-changed'));
@@ -1183,6 +1222,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // the XForm-lens selectors (#350 rebuildAll emits this). While editing, also
   // re-frame the workspace view to the newly-selected xform.
   const onGizmoSelectionChange = (): void => {
+    state.gizmoLens = 'pre'; // #376 — the newly-selected xform may have no post
+    overlays.sync();         // refresh the PRE|POST pill visibility
     if (state.gizmo.editOnCanvas) fitViewToSelectedXform();
     else gizmo?.draw();
   };

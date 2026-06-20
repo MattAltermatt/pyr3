@@ -14,6 +14,7 @@ import {
   applyRotate,
   snapWorld,
   snapAngleDeg,
+  pickLensAffine,
   type RawAffine,
 } from './edit-xform-gizmo-math';
 
@@ -118,5 +119,19 @@ describe('snap', () => {
   it('snapAngleDeg rounds to the angle step', () => {
     expect(snapAngleDeg(37, 15)).toBe(30);
     expect(snapAngleDeg(38, 15)).toBe(45);
+  });
+});
+
+describe('pickLensAffine (#376)', () => {
+  const xf = { a: 2, b: 0, c: 1, d: 0, e: 2, f: 1, post: { a: 1, b: 0, c: 9, d: 0, e: 1, f: 9 } };
+  it('returns the pre matrix for lens "pre"', () => {
+    expect(pickLensAffine(xf, 'pre')).toMatchObject({ a: 2, c: 1, e: 2, f: 1 });
+  });
+  it('returns the post matrix for lens "post" when present', () => {
+    expect(pickLensAffine(xf, 'post')).toMatchObject({ c: 9, f: 9 });
+  });
+  it('falls back to pre when lens is "post" but no post exists', () => {
+    const noPost = { a: 2, b: 0, c: 1, d: 0, e: 2, f: 1 };
+    expect(pickLensAffine(noPost, 'post')).toMatchObject({ a: 2, c: 1 });
   });
 });

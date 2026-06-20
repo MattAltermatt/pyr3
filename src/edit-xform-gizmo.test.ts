@@ -224,4 +224,82 @@ describe('attachXformGizmo (O/X/Y triangle)', () => {
     const g = attachXformGizmo(host, eventCanvas, cb);
     expect(() => g.draw()).not.toThrow();
   });
+
+  // ── #376 post-transform lens ───────────────────────────────────────────
+  it('post lens: dragging O writes through setPostAffine, not setAffine', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    let pre: RawAffine = { ...IDENT };
+    let post: RawAffine = { ...IDENT };
+    const setAffine = vi.fn((_i: number, r: RawAffine) => { pre = r; });
+    const setPostAffine = vi.fn((_i: number, r: RawAffine) => { post = r; });
+    const cb = {
+      getSelectedIndex: () => 0,
+      getAffine: () => pre,
+      setAffine,
+      getActiveLens: () => 'post' as const,
+      getPostAffine: () => post,
+      setPostAffine,
+      getCamera: () => CAM,
+      getViewport: () => VP,
+      getPrefs: () => ({ ...GIZMO_PREFS_DEFAULT, editOnCanvas: true }),
+      onLiveEdit: vi.fn(),
+      onCommit: vi.fn(),
+    };
+    attachXformGizmo(host, eventCanvas, cb);
+    down(eventCanvas, O_SCREEN.x, O_SCREEN.y);
+    move(O_SCREEN.x + 0.1 / WPP, O_SCREEN.y);
+    up();
+    expect(setPostAffine).toHaveBeenCalled();
+    expect(setAffine).not.toHaveBeenCalled();
+    expect(post.c).toBeCloseTo(0.1, 6);
+    expect(pre.c).toBeCloseTo(0, 6); // pre untouched
+  });
+
+  it('ghost (inactive) lens is not hit-testable — a press on it does not start a drag', () => {
+    // Active = pre at identity (O at origin). Post translated far away so its O sits
+    // elsewhere; pressing the POST O must NOT claim a drag while pre is active.
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const pre: RawAffine = { ...IDENT };
+    const post: RawAffine = { a: 1, b: 0, c: 0.5, d: 0, e: 1, f: 0 }; // O at world (0.5,0)
+    const onLiveEdit = vi.fn();
+    const cb = {
+      getSelectedIndex: () => 0,
+      getAffine: () => pre,
+      setAffine: () => {},
+      getActiveLens: () => 'pre' as const,
+      getPostAffine: () => post,
+      setPostAffine: vi.fn(),
+      getCamera: () => CAM,
+      getViewport: () => VP,
+      getPrefs: () => ({ ...GIZMO_PREFS_DEFAULT, editOnCanvas: true }),
+      onLiveEdit,
+      onCommit: vi.fn(),
+    };
+    attachXformGizmo(host, eventCanvas, cb);
+    const postO = worldToScreen({ x: 0.5, y: 0 }, CAM, VP); // ghost post O on screen
+    const ev = down(eventCanvas, postO.x, postO.y);
+    const stop = vi.spyOn(ev, 'stopPropagation');
+    up();
+    expect(onLiveEdit).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('draw() with an active post lens + ghost pre does not throw', () => {
+    const { host, eventCanvas } = makeHostAndCanvas();
+    const cb = {
+      getSelectedIndex: () => 0,
+      getAffine: () => ({ ...IDENT }),
+      setAffine: () => {},
+      getActiveLens: () => 'post' as const,
+      getPostAffine: () => ({ a: 1, b: 0, c: 0.3, d: 0, e: 1, f: 0.2 }),
+      setPostAffine: () => {},
+      getCamera: () => CAM,
+      getViewport: () => VP,
+      getPrefs: () => ({ ...GIZMO_PREFS_DEFAULT, editOnCanvas: true }),
+      onLiveEdit: vi.fn(),
+      onCommit: vi.fn(),
+    };
+    const g = attachXformGizmo(host, eventCanvas, cb);
+    expect(() => g.draw()).not.toThrow();
+  });
 });

@@ -122,3 +122,14 @@ export function snapAngleDeg(deg: number, step: number): number {
   if (!(step > 0)) return deg;
   return Math.round(deg / step) * step;
 }
+
+/** Source affine for an editing lens (#376). `xf` carries the pre matrix as {a..f} and
+ *  an optional `post`. Returns the post when lens==='post' AND it exists, else the pre.
+ *  The `&& xf.post` guard makes a stale 'post' lens with no post safely fall back to pre. */
+export function pickLensAffine(
+  xf: { a: number; b: number; c: number; d: number; e: number; f: number; post?: RawAffine },
+  lens: 'pre' | 'post',
+): RawAffine {
+  if (lens === 'post' && xf.post) return { ...xf.post };
+  return { a: xf.a, b: xf.b, c: xf.c, d: xf.d, e: xf.e, f: xf.f };
+}
