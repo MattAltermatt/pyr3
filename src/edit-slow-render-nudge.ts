@@ -1,8 +1,8 @@
 // #118 — soft UX nudge for slow renders at high quality. When the user
 // is actively editing AND the settled-render duration crosses a threshold
-// AND the genome's quality is above a sensible interactive value, surface
-// a dismissible toast suggesting they drop quality for snappier
-// iteration. One-click [Drop to q=50] action; [Dismiss] hides for a
+// AND the PREVIEW quality is above a sensible interactive value, surface
+// a dismissible toast suggesting they drop the preview quality for snappier
+// iteration. One-click [Drop to q=N] action; [Dismiss] hides for a
 // cooldown window. Auto-hides after AUTO_HIDE_MS so the toast doesn't
 // linger forever.
 //
@@ -14,13 +14,18 @@
 //   3. Current quality > QUALITY_THRESHOLD
 //   4. Not currently in cooldown from a prior dismissal
 //
-// Defaults locked during #118 brainstorm:
+// #369 — the nudge measures the live PREVIEW settle render (which iterates at
+// previewCfg.quality, the 10..50 ladder), so getQuality/setQuality are wired to
+// the PREVIEW quality, NOT the 50..500 render-side genome.quality (which only
+// affects Save Render). The thresholds below are calibrated to that 10..50 scale:
+// fire only when there's real headroom to drop (>30), and drop to the snappy end
+// of the ladder (10).
 const SLOW_RENDER_MS = 800;
 const EDIT_WINDOW_MS = 5_000;
 const SLOW_RENDER_WINDOW_MS = 3_000;
 const SLOW_RENDER_COUNT = 2;
-const QUALITY_THRESHOLD = 50;
-const DROP_TO_QUALITY = 50;
+const QUALITY_THRESHOLD = 30;
+const DROP_TO_QUALITY = 10;
 const COOLDOWN_MS = 60_000;
 const AUTO_HIDE_MS = 30_000;
 
@@ -30,11 +35,11 @@ export interface SlowRenderNudgeOpts {
   /** Where the toast mounts. Should be a positioned parent (the editor
    *  canvas wrapper is the natural choice). */
   host: HTMLElement;
-  /** Read the live genome quality. Called each time recordRender fires
-   *  to evaluate the trigger condition. */
+  /** Read the live PREVIEW quality (previewCfg.quality, the 10..50 ladder).
+   *  Called each time recordRender fires to evaluate the trigger condition. */
   getQuality: () => number;
-  /** Apply a quality change on the [Drop to q=50] action. Reuses the
-   *  existing onPathChange-quality path; the host re-renders normally. */
+  /** Apply a PREVIEW-quality change on the [Drop to q=N] action. The host
+   *  re-iterates the preview at the new density and refreshes the bar (#369). */
   setQuality: (q: number) => void;
   /** Optional clock override for tests. Defaults to performance.now. */
   now?: () => number;
@@ -149,8 +154,8 @@ export function createSlowRenderNudge(opts: SlowRenderNudgeOpts): SlowRenderNudg
     state.visible = true;
     const q = opts.getQuality();
     body.textContent =
-      `Quality=${q} is iterating slowly. Drop to ${DROP_TO_QUALITY} for snappier ` +
-      `feedback — bump back up when ready to settle the final image.`;
+      `Preview is iterating slowly at quality ${q}. Drop to ${DROP_TO_QUALITY} for ` +
+      `snappier editing — your Save-Render quality is unaffected.`;
     toast.style.display = 'block';
     if (state.autoHideTimer !== null) clearTimeout(state.autoHideTimer);
     state.autoHideTimer = setTimeout(() => {

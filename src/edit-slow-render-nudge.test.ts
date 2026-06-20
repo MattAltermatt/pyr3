@@ -26,7 +26,7 @@ interface Setup {
   handle: ReturnType<typeof createSlowRenderNudge>;
 }
 
-function setup(initialQuality = 2000): Setup {
+function setup(initialQuality = 50): Setup {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const setQuality = vi.fn();
@@ -128,7 +128,7 @@ describe('#118 — slow-render nudge', () => {
     expect(isVisible(s.host)).toBe(false);
   });
 
-  it('[Drop to q=50] calls setQuality(50) and hides the toast', () => {
+  it('[Drop to q=N] calls setQuality(DROP_TO_QUALITY) and hides the toast', () => {
     const s = setup();
     s.handle.recordEdit();
     feedSlowRenders(s, T.SLOW_RENDER_COUNT);

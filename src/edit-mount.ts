@@ -806,13 +806,19 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // over the render canvas, not the side panel.
   const nudge: SlowRenderNudgeHandle = createSlowRenderNudge({
     host: canvasHost,
-    getQuality: () => state.genome.quality ?? 50,
+    // #369 — the nudge observes the PREVIEW settle render (timed at line ~626,
+    // which iterates at previewCfg.quality, the 10..50 ladder), so it must read
+    // and drop the PREVIEW quality — NOT the 50..500 render-side genome.quality
+    // (which only affects Save Render and would leave editor iteration just as
+    // slow). Mirror the bar's setPreviewConfig path: update + persist + rebuild +
+    // refresh the PREVIEW ladder UI. (renderModeBarHandle is assigned below; this
+    // closure only runs on a user click, well after mount.)
+    getQuality: () => previewCfg.quality,
     setQuality: (q) => {
-      state.genome.quality = q;
-      onPathChange('quality');
-      // The bar's QUALITY ladder re-reads from state.genome via
-      // onStateChange (already called inside onPathChange's downstream
-      // render path), so no separate echo is needed here.
+      previewCfg = { ...previewCfg, quality: q };
+      savePreviewConfig(previewCfg);
+      scheduler.schedule({ lane: 'rebuild', path: 'preview-config' });
+      renderModeBarHandle?.refresh();
     },
   });
 
