@@ -1,15 +1,15 @@
-// pyr3 — DENSITY EMITTER preset list + dirty-state helper (Phase 7).
+// pyr3 — Tonemap preset list + dirty-state helper.
 //
 // Six named visual presets. Each carries the five tonemap fields (gamma,
 // gammaThreshold, vibrancy, brightness, contrast). currentPresetName()
 // detects which preset (if any) the current tonemap state exactly matches.
 
 import { describe, it, expect } from 'vitest';
-import { DENSITY_PRESETS, currentPresetName } from './edit-preset-density';
+import { TONEMAP_PRESETS, currentPresetName } from './edit-preset-tonemap';
 
-describe('DENSITY_PRESETS', () => {
+describe('TONEMAP_PRESETS', () => {
   it('has the six expected named presets in order', () => {
-    expect(DENSITY_PRESETS.map((p) => p.name)).toEqual([
+    expect(TONEMAP_PRESETS.map((p) => p.name)).toEqual([
       'default',
       'soft',
       'vivid',
@@ -20,7 +20,7 @@ describe('DENSITY_PRESETS', () => {
   });
 
   it('every preset carries all five tonemap fields', () => {
-    for (const p of DENSITY_PRESETS) {
+    for (const p of TONEMAP_PRESETS) {
       expect(typeof p.gamma).toBe('number');
       expect(typeof p.gammaThreshold).toBe('number');
       expect(typeof p.vibrancy).toBe('number');
@@ -30,7 +30,7 @@ describe('DENSITY_PRESETS', () => {
   });
 
   it('every preset has a vibe color for the chip', () => {
-    for (const p of DENSITY_PRESETS) {
+    for (const p of TONEMAP_PRESETS) {
       expect(p.vibe).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
   });
@@ -38,7 +38,7 @@ describe('DENSITY_PRESETS', () => {
 
 describe('currentPresetName', () => {
   it('returns {name, dirty: false} when state matches a preset exactly', () => {
-    const def = DENSITY_PRESETS[0]!;
+    const def = TONEMAP_PRESETS[0]!;
     const res = currentPresetName({
       gamma: def.gamma,
       gammaThreshold: def.gammaThreshold,
@@ -50,7 +50,7 @@ describe('currentPresetName', () => {
   });
 
   it('matches each of the six presets at its exact values', () => {
-    for (const p of DENSITY_PRESETS) {
+    for (const p of TONEMAP_PRESETS) {
       const res = currentPresetName({
         gamma: p.gamma,
         gammaThreshold: p.gammaThreshold,
@@ -74,7 +74,7 @@ describe('currentPresetName', () => {
   });
 
   it('returns null when only some fields match the preset', () => {
-    const def = DENSITY_PRESETS[0]!;
+    const def = TONEMAP_PRESETS[0]!;
     const res = currentPresetName({
       gamma: def.gamma,
       gammaThreshold: def.gammaThreshold,

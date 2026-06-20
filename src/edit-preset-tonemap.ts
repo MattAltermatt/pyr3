@@ -1,18 +1,18 @@
-// pyr3 — DENSITY EMITTER preset list + dirty-state helper (Phase 7).
+// pyr3 — Tonemap preset list + dirty-state helper.
 //
-// Surfaces a six-button preset strip at the top of the editor's DENSITY
-// EMITTER section. Picking a preset writes all five tonemap fields
-// (gamma / gammaThreshold / vibrancy / brightness / contrast) at once.
-// The dirty-state helper feeds the section-header chip — "default *" when
-// the user has nudged anything off the preset values.
+// Surfaces a six-button preset strip at the top of the editor's 🌐 Tonemap
+// section (relocated there in #397 — it used to live, misleadingly, under
+// "DENSITY EMITTER"). Picking a preset writes the tonemap stack
+// (gamma / gammaThreshold / vibrancy / brightness; `contrast` is a
+// TUNING-FLAG placeholder with no engine counterpart yet) at once. The
+// dirty-state helper feeds the section-header chip — "default *" when the
+// user has nudged anything off the preset values.
 //
 // Distinct from the engine's adaptive-Gaussian DENSITY_PRESETS in
 // src/density.ts — those govern the DE blur kernel; these govern the
-// post-DE tonemap. Both end up under "DENSITY EMITTER" in the section
-// header for now; the visual-overhaul spec calls the tonemap row "Density
-// Emitter preset strip" because that's the section the user sees.
+// post-DE tonemap. (#397 separated the two surfaces in the UI.)
 
-export interface DensityPreset {
+export interface TonemapPreset {
   name: string;
   vibe: string; // hex color dot for the preset chip
   gamma: number;
@@ -25,7 +25,7 @@ export interface DensityPreset {
 // TUNING-FLAG: placeholder values. To be calibrated against sample flames
 // during Phase 12 chrome-verify before lock. Spec § "OPEN: density preset
 // values" — keep these literal sentinels until the user signs off.
-export const DENSITY_PRESETS: DensityPreset[] = [
+export const TONEMAP_PRESETS: TonemapPreset[] = [
   // TUNING-FLAG: baseline — current-engine defaults; safe "no opinion" pick.
   { name: 'default',   vibe: '#888888', gamma: 2.5, gammaThreshold: 0.01,  vibrancy: 1.0, brightness: 4.0, contrast: 1.0 },
   // TUNING-FLAG: soft glow, lifted blacks, slightly muted colors.
@@ -40,7 +40,7 @@ export const DENSITY_PRESETS: DensityPreset[] = [
   { name: 'crystal',   vibe: '#a0c8ff', gamma: 2.2, gammaThreshold: 0.001, vibrancy: 1.4, brightness: 4.5, contrast: 1.2 },
 ];
 
-export interface DensityPresetMatch {
+export interface TonemapPresetMatch {
   name: string;
   dirty: boolean;
 }
@@ -53,8 +53,8 @@ export interface TonemapState {
   contrast: number;
 }
 
-export function currentPresetName(state: TonemapState): DensityPresetMatch | null {
-  for (const p of DENSITY_PRESETS) {
+export function currentPresetName(state: TonemapState): TonemapPresetMatch | null {
+  for (const p of TONEMAP_PRESETS) {
     if (
       approxEq(p.gamma, state.gamma)
       && approxEq(p.gammaThreshold, state.gammaThreshold)

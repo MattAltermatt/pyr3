@@ -1,12 +1,10 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest';
-import { densitySection, TONEMAP_CHANGED_EVENT } from './edit-section-density';
+import { densitySection } from './edit-section-density';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { DEFAULT_DENSITY } from './density';
-import { DENSITY_PRESETS as TONEMAP_PRESETS } from './edit-preset-density';
-import { DEFAULT_TONEMAP } from './tonemap';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -33,6 +31,25 @@ function mount() {
   document.body.appendChild(wrap);
 
   const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+  const onChange = vi.fn();
+  densitySection.build(host, state, onChange);
+  return { host, state, onChange, header };
+}
+
+// Like mount(), but seeds an explicit genome.density BEFORE building so the
+// DE toggle reflects a known kernel (#397).
+function mountWithDensity(density: { maxRad: number; minRad: number; curve: number }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pyr3-edit-section';
+  const header = document.createElement('div');
+  header.className = 'pyr3-edit-section-header';
+  wrap.appendChild(header);
+  const host = document.createElement('div');
+  wrap.appendChild(host);
+  document.body.appendChild(wrap);
+
+  const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+  state.genome.density = { ...density };
   const onChange = vi.fn();
   densitySection.build(host, state, onChange);
   return { host, state, onChange, header };
@@ -113,77 +130,6 @@ describe('densitySection', () => {
     expect(slider.value).toBe('12.5');
   });
 
-  // ── Phase 7 task 7.10: tonemap preset strip + tooltips + chip ──────────
-
-  it('renders the tonemap preset strip with 6 buttons at top of section body', () => {
-    const { host } = mount();
-    const strip = host.querySelector('.pyr3-edit-density-preset-strip');
-    expect(strip).not.toBeNull();
-    const buttons = strip!.querySelectorAll('.pyr3-edit-density-tonemap-preset');
-    expect(buttons.length).toBe(6);
-    // Strip sits at the top of the section body — first child.
-    expect(host.firstElementChild).toBe(strip);
-    // Buttons cover the six locked preset names.
-    const names = Array.from(buttons).map((b) => b.textContent ?? '');
-    for (const n of ['default', 'soft', 'vivid', 'punchy', 'cinematic', 'crystal']) {
-      expect(names.some((label) => label.includes(n))).toBe(true);
-    }
-  });
-
-  it('clicking a tonemap preset writes gamma/gammaThreshold/vibrancy/brightness at once', () => {
-    const { host, state, onChange } = mount();
-    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
-    const btn = host.querySelector('.pyr3-edit-density-tonemap-preset-vivid') as HTMLElement;
-    btn.click();
-    expect(state.genome.tonemap?.gamma).toBe(vivid.gamma);
-    expect(state.genome.tonemap?.gammaThreshold).toBe(vivid.gammaThreshold);
-    expect(state.genome.tonemap?.vibrancy).toBe(vivid.vibrancy);
-    expect(state.genome.tonemap?.brightness).toBe(vivid.brightness);
-    // All four tonemap paths fire so the lane scheduler triggers a redraw.
-    expect(onChange).toHaveBeenCalledWith('tonemap.gamma');
-    expect(onChange).toHaveBeenCalledWith('tonemap.gammaThreshold');
-    expect(onChange).toHaveBeenCalledWith('tonemap.vibrancy');
-    expect(onChange).toHaveBeenCalledWith('tonemap.brightness');
-  });
-
-  it('section header carries a preset chip after clicking a preset', async () => {
-    const { header, state } = mount();
-    // Apply 'vivid' tonemap values directly + fire the event to refresh.
-    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
-    state.genome.tonemap = {
-      gamma: vivid.gamma,
-      gammaThreshold: vivid.gammaThreshold,
-      vibrancy: vivid.vibrancy,
-      brightness: vivid.brightness,
-      highlightPower: DEFAULT_TONEMAP.highlightPower,
-    };
-    // Wait the microtask used for chip mount.
-    await Promise.resolve();
-    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
-    const chip = header.querySelector('.pyr3-edit-density-chip') as HTMLElement;
-    expect(chip).not.toBeNull();
-    expect(chip.textContent).toBe('vivid');
-  });
-
-  it('chip appends * when user manually nudges any tonemap value off-preset', async () => {
-    const { header, state } = mount();
-    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
-    state.genome.tonemap = {
-      gamma: vivid.gamma,
-      gammaThreshold: vivid.gammaThreshold,
-      vibrancy: vivid.vibrancy,
-      brightness: vivid.brightness,
-      highlightPower: DEFAULT_TONEMAP.highlightPower,
-    };
-    await Promise.resolve();
-    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
-    // Nudge brightness off-preset.
-    state.genome.tonemap.brightness = vivid.brightness + 0.5;
-    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
-    const chip = header.querySelector('.pyr3-edit-density-chip') as HTMLElement;
-    expect(chip.textContent).toBe('vivid*');
-  });
-
   it('renders ? info icons next to every labeled field (maxRad + minRad + curve)', () => {
     const { host } = mount();
     const icons = host.querySelectorAll('.pyr3-info-icon');
@@ -215,5 +161,54 @@ describe('densitySection', () => {
     curve.dispatchEvent(new Event('input'));
     expect(state.genome.density!.curve).toBe(0.85);
     expect(onChange).toHaveBeenCalledWith('density.curve');
+  });
+});
+
+describe('densitySection — DE on/off toggle (#397)', () => {
+  it('renames the section header to DENSITY ESTIMATION', () => {
+    expect(densitySection.title).toContain('DENSITY ESTIMATION');
+  });
+
+  it('renders a DE on/off toggle, on by default for a maxRad>0 kernel', () => {
+    const { host } = mountWithDensity({ maxRad: 9, minRad: 0, curve: 0.4 });
+    const toggle = host.querySelector('.pyr3-edit-de-toggle-row .pyr3-toggle') as HTMLElement;
+    expect(toggle).not.toBeNull();
+    expect(toggle.classList.contains('on')).toBe(true);
+  });
+
+  it('turning DE off writes maxRad 0 and remembers the prior value', () => {
+    const { host, state } = mountWithDensity({ maxRad: 9, minRad: 0, curve: 0.4 });
+    const toggle = host.querySelector('.pyr3-edit-de-toggle-row .pyr3-toggle') as HTMLElement;
+    toggle.click(); // → off
+    expect(state.genome.density?.maxRad).toBe(0);
+    expect(state.deRestoreMaxRad).toBe(9);
+    expect(toggle.classList.contains('on')).toBe(false);
+  });
+
+  it('turning DE back on restores the remembered maxRad', () => {
+    const { host, state } = mountWithDensity({ maxRad: 7, minRad: 0, curve: 0.4 });
+    const toggle = host.querySelector('.pyr3-edit-de-toggle-row .pyr3-toggle') as HTMLElement;
+    toggle.click(); // off → remembers 7
+    toggle.click(); // on → restores 7
+    expect(state.genome.density?.maxRad).toBe(7);
+    expect(toggle.classList.contains('on')).toBe(true);
+  });
+
+  it('dims the slider rows when DE is off', () => {
+    const { host } = mountWithDensity({ maxRad: 9, minRad: 0, curve: 0.4 });
+    const toggle = host.querySelector('.pyr3-edit-de-toggle-row .pyr3-toggle') as HTMLElement;
+    const maxRadRow = host.querySelector<HTMLElement>('.pyr3-edit-density-maxRad-row')!;
+    expect(maxRadRow.style.pointerEvents).not.toBe('none');
+    toggle.click(); // off
+    expect(maxRadRow.style.pointerEvents).toBe('none');
+    expect(parseFloat(maxRadRow.style.opacity)).toBeLessThan(1);
+  });
+
+  it('#370: a density-less flame mounts read-only with the toggle reflecting DEFAULT (on)', () => {
+    const { host, state } = mount(); // random genome, no density field
+    expect(state.genome.density).toBeUndefined();
+    const toggle = host.querySelector('.pyr3-edit-de-toggle-row .pyr3-toggle') as HTMLElement;
+    expect(toggle.classList.contains('on')).toBe(true); // DEFAULT_DENSITY.maxRad 9 > 0
+    expect(state.genome.density).toBeUndefined(); // no materialization on mount
   });
 });

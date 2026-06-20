@@ -27,6 +27,7 @@ import { DEFAULT_TONEMAP, type Tonemap } from './tonemap';
 import { type Symmetry } from './genome';
 import {
   buildRow,
+  buildButton,
   buildNumberInput,
   buildSlider,
   buildDropdown,
@@ -34,6 +35,36 @@ import {
 import { scrubbyInput } from './edit-scrubby-input';
 import { infoIcon } from './help-text';
 import { buildBackgroundControl } from './edit-section-background';
+import { TONEMAP_PRESETS, type TonemapPreset } from './edit-preset-tonemap';
+
+// Cross-section event: fired when any tonemap field is edited (here or
+// elsewhere, e.g. a future surface). The preset strip below subscribes so
+// the header chip + strip highlight stay accurate. (#397 — moved here with
+// the strip from the old density section.)
+export const TONEMAP_CHANGED_EVENT = 'pyr3:tonemap-changed';
+
+// Match the live tonemap against the named-preset list. Only the 4 real
+// tonemap fields (gamma / gammaThreshold / vibrancy / brightness) participate
+// — `contrast` is a TUNING-FLAG placeholder on the preset table with no
+// Tonemap counterpart on this engine, so we skip it.
+function matchTonemapPreset(t: Tonemap | undefined): string | null {
+  const tm = t ?? DEFAULT_TONEMAP;
+  for (const p of TONEMAP_PRESETS) {
+    if (
+      approxEqTonemap(tm.gamma, p.gamma)
+      && approxEqTonemap(tm.gammaThreshold, p.gammaThreshold)
+      && approxEqTonemap(tm.vibrancy, p.vibrancy)
+      && approxEqTonemap(tm.brightness, p.brightness)
+    ) {
+      return p.name;
+    }
+  }
+  return null;
+}
+
+function approxEqTonemap(a: number, b: number, eps = 1e-6): boolean {
+  return Math.abs(a - b) < eps;
+}
 
 // Hex `#rrggbb` → [r, g, b] floats in 0..1.
 export function hexToRgb01(hex: string): [number, number, number] {
@@ -139,14 +170,170 @@ export const globalTonemapSection: SectionMount = {
     const tmGet = <K extends keyof Tonemap>(k: K): Tonemap[K] =>
       state.genome.tonemap?.[k] ?? DEFAULT_TONEMAP[k];
 
-    // Notify the density section's preset chip whenever ANY tonemap
-    // field is edited here — without it the chip won't dirty-mark on
-    // brightness/gamma/vibrancy nudges. The density section listens at
-    // document level.
+    // Widget refreshers — assigned when each field widget is built below, so
+    // applyTonemapPreset() (defined earlier) can push the new values into the
+    // visible controls (#397: the strip now sits next to these fields, so a
+    // preset must update their displayed values, not just the render).
+    let refreshBrightness: ((v: number) => void) | undefined;
+    let refreshGamma: ((v: number) => void) | undefined;
+    let refreshGammaThreshold: ((v: number) => void) | undefined;
+    let refreshVibrancy: ((v: number) => void) | undefined;
+
+    // Notify the preset strip's chip whenever ANY tonemap field is edited
+    // here — without it the chip won't dirty-mark on brightness/gamma/vibrancy
+    // nudges. The strip's listener (below) lives at document level.
     function fireTonemap(path: string): void {
       onChange(path);
-      document.dispatchEvent(new CustomEvent('pyr3:tonemap-changed'));
+      document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
     }
+
+    // ── Tonemap preset strip — top of section body (#397, relocated) ───────
+    // Six buttons; clicking applies four tonemap values (gamma /
+    // gammaThreshold / vibrancy / brightness) at once. Active preset gets
+    // pressed btn-accent styling; clicking again resnaps a dirtied preset
+    // (`vivid*` → `vivid`). A header chip tracks the live preset name.
+    const presetStrip = document.createElement('div');
+    presetStrip.className = 'pyr3-edit-density-preset-strip';
+    presetStrip.style.display = 'flex';
+    presetStrip.style.flexWrap = 'wrap';
+    presetStrip.style.gap = '4px';
+    presetStrip.style.marginBottom = '8px';
+    presetStrip.title =
+      'Tonemap presets — apply four values at once '
+      + '(gamma · gammaThreshold · vibrancy · brightness).\n'
+      + 'Section header chip shows the current preset; * = manually nudged.';
+
+    interface PresetBtnHandle {
+      preset: TonemapPreset;
+      setActive(active: boolean): void;
+    }
+    const presetButtons: PresetBtnHandle[] = [];
+
+    for (const p of TONEMAP_PRESETS) {
+      const btnEl = buildButton({
+        variant: 'plain',
+        label: p.name,
+        onClick: () => applyTonemapPreset(p),
+      });
+      btnEl.classList.add('pyr3-edit-density-tonemap-preset', `pyr3-edit-density-tonemap-preset-${p.name}`);
+      // Tiny coloured "vibe" dot to the left of the label.
+      const dot = document.createElement('span');
+      dot.style.display = 'inline-block';
+      dot.style.width = '6px';
+      dot.style.height = '6px';
+      dot.style.borderRadius = '50%';
+      dot.style.background = p.vibe;
+      dot.style.marginRight = '5px';
+      btnEl.insertBefore(dot, btnEl.firstChild);
+
+      presetButtons.push({
+        preset: p,
+        setActive(active: boolean): void {
+          if (active) {
+            btnEl.classList.add('active');
+            btnEl.style.background = `linear-gradient(180deg, ${COLORS.bg.action}, ${COLORS.bg.bar})`;
+            btnEl.style.borderColor = COLORS.flame.top;
+            btnEl.style.color = COLORS.flame.top;
+          } else {
+            btnEl.classList.remove('active');
+            btnEl.style.background = `linear-gradient(180deg, ${COLORS.bg.panel}, ${COLORS.bg.bar})`;
+            btnEl.style.borderColor = COLORS.border;
+            btnEl.style.color = COLORS.text.primary;
+          }
+        },
+      });
+      presetStrip.appendChild(btnEl);
+    }
+    presetStrip.appendChild(infoIcon('density.tonemapPresets'));
+    host.appendChild(presetStrip);
+
+    function applyTonemapPreset(p: TonemapPreset): void {
+      const tm = ensureTonemap(state);
+      tm.gamma = p.gamma;
+      tm.gammaThreshold = p.gammaThreshold;
+      tm.vibrancy = p.vibrancy;
+      tm.brightness = p.brightness;
+      // contrast is a no-op TUNING-FLAG field — preserved on the preset for
+      // future engine work; not written to Tonemap (which has no contrast
+      // field today).
+      onChange('tonemap.gamma');
+      onChange('tonemap.gammaThreshold');
+      onChange('tonemap.vibrancy');
+      onChange('tonemap.brightness');
+      // Push the new values into the visible field widgets so the displayed
+      // numbers track the preset (not just the render).
+      refreshBrightness?.(p.brightness);
+      refreshGamma?.(p.gamma);
+      refreshGammaThreshold?.(p.gammaThreshold);
+      refreshVibrancy?.(p.vibrancy);
+      document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+      refreshTonemapChip();
+    }
+
+    // ── Header chip + dirty marker ─────────────────────────────────────────
+    // The chip lives in the section header sibling (host.parentElement's
+    // `.pyr3-edit-section-header`). On rebuild the chip re-mounts.
+    function findHeader(): HTMLElement | null {
+      const wrap = host.parentElement;
+      if (!wrap) return null;
+      return wrap.querySelector('.pyr3-edit-section-header') as HTMLElement | null;
+    }
+
+    const chip = document.createElement('span');
+    chip.className = 'pyr3-edit-density-chip';
+    chip.style.marginLeft = 'auto';
+    chip.style.fontSize = '10px';
+    chip.style.fontFamily = 'ui-monospace, monospace';
+    chip.style.color = COLORS.flame.top;
+    chip.style.padding = '1px 6px';
+    chip.style.borderRadius = '3px';
+    chip.style.border = `1px solid ${COLORS.flame.bot}`;
+    chip.style.background = COLORS.bg.action;
+    chip.style.userSelect = 'none';
+    chip.addEventListener('click', (ev) => ev.stopPropagation());
+
+    function refreshTonemapChip(): void {
+      const cleanMatch = matchTonemapPreset(state.genome.tonemap);
+      let name: string | null = null;
+      let dirty = false;
+      if (cleanMatch) {
+        name = cleanMatch;
+        dirty = false;
+        state.lastDensityPreset = name;
+      } else if (state.lastDensityPreset) {
+        name = state.lastDensityPreset;
+        dirty = true;
+      }
+      chip.textContent = name ? (dirty ? `${name}*` : name) : '';
+      chip.style.display = name ? '' : 'none';
+      chip.style.opacity = dirty ? '0.7' : '1';
+      for (const pb of presetButtons) {
+        const isActive = !dirty && pb.preset.name === name;
+        const isDirtyOf = dirty && pb.preset.name === name;
+        pb.setActive(isActive || isDirtyOf);
+      }
+    }
+
+    // Mount chip into the header on a microtask (wrap parent is in the DOM
+    // by then).
+    Promise.resolve().then(() => {
+      const header = findHeader();
+      if (!header) return;
+      header.querySelectorAll('.pyr3-edit-density-chip').forEach((n) => n.remove());
+      header.appendChild(chip);
+      refreshTonemapChip();
+    });
+
+    // Cross-section tonemap-changed event → refresh chip + strip. Self-detaches
+    // when this section's host disconnects.
+    function onTonemapChanged(): void {
+      if (!host.isConnected) {
+        document.removeEventListener(TONEMAP_CHANGED_EVENT, onTonemapChanged as EventListener);
+        return;
+      }
+      refreshTonemapChip();
+    }
+    document.addEventListener(TONEMAP_CHANGED_EVENT, onTonemapChanged as EventListener);
 
     // ── brightness ───────────────────────────────────────────────────────
     {
@@ -159,6 +346,7 @@ export const globalTonemapSection: SectionMount = {
           fireTonemap('tonemap.brightness');
         },
       });
+      refreshBrightness = (v) => num.handle.setValue(v);
       host.appendChild(row('brightness', num.el, TIPS.brightness, 'global.brightness'));
     }
 
@@ -173,6 +361,7 @@ export const globalTonemapSection: SectionMount = {
           fireTonemap('tonemap.gamma');
         },
       });
+      refreshGamma = (v) => num.handle.setValue(v);
       host.appendChild(row('gamma', num.el, TIPS.gamma, 'global.gamma'));
     }
 
@@ -200,6 +389,7 @@ export const globalTonemapSection: SectionMount = {
           fireTonemap('tonemap.gammaThreshold');
         },
       });
+      refreshGammaThreshold = (v) => num.handle.setValue(v);
       host.appendChild(row('gammaThreshold', num.el, TIPS.gammaThreshold, 'global.gammaThreshold'));
     }
 
@@ -244,6 +434,13 @@ export const globalTonemapSection: SectionMount = {
         ensureTonemap(state).vibrancy = v;
         onChange('tonemap.vibrancy');
       });
+      // Preset refresh: sync both the visible slider and the hidden mirror.
+      // (The slider clamps to [0,1]; presets with vibrancy > 1 display at the
+      // cap — the genome still carries the true value.)
+      refreshVibrancy = (v) => {
+        sliderEl.setValue(v);
+        rangeMirror.value = String(v);
+      };
       const ctrlWrap = document.createElement('div');
       ctrlWrap.style.display = 'flex';
       ctrlWrap.style.alignItems = 'center';
@@ -265,7 +462,10 @@ export const globalTonemapSection: SectionMount = {
       host.appendChild(row('background', bg.el, TIPS.background, 'global.background'));
     }
 
-    return backgroundDispose;
+    return () => {
+      backgroundDispose?.();
+      document.removeEventListener(TONEMAP_CHANGED_EVENT, onTonemapChanged as EventListener);
+    };
   },
 };
 

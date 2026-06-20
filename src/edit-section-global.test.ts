@@ -1,10 +1,17 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest';
-import { globalSymmetrySection, globalTonemapSection, hexToRgb01, rgb01ToHex } from './edit-section-global';
+import {
+  globalSymmetrySection,
+  globalTonemapSection,
+  hexToRgb01,
+  rgb01ToHex,
+  TONEMAP_CHANGED_EVENT,
+} from './edit-section-global';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { DEFAULT_TONEMAP } from './tonemap';
+import { TONEMAP_PRESETS } from './edit-preset-tonemap';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -227,6 +234,97 @@ describe('globalSection — row primitive adoption (task 7.8)', () => {
     expect(symRow.querySelector('input[type="checkbox"]')).not.toBeNull();
     expect(symRow.querySelector('select')).not.toBeNull();
     expect(symRow.querySelector('.pyr3-scrubby')).not.toBeNull();
+  });
+});
+
+describe('globalSection — tonemap preset strip (#397, relocated from DENSITY EMITTER)', () => {
+  function mountWithHeader() {
+    const wrap = document.createElement('div');
+    wrap.className = 'pyr3-edit-section';
+    const header = document.createElement('div');
+    header.className = 'pyr3-edit-section-header';
+    const host = document.createElement('div');
+    wrap.append(header, host);
+    document.body.appendChild(wrap);
+    const genome = generateRandomGenome(seededRng(1));
+    delete genome.tonemap;
+    const state = createEditState(genome, 1);
+    const onChange = vi.fn();
+    globalTonemapSection.build(host, state, onChange);
+    return { wrap, header, host, state, onChange };
+  }
+
+  it('renders the 6-button preset strip at the top of the section body', () => {
+    const { host } = mountWithHeader();
+    const strip = host.querySelector('.pyr3-edit-density-preset-strip');
+    expect(strip).not.toBeNull();
+    expect(strip!.querySelectorAll('.pyr3-edit-density-tonemap-preset').length).toBe(6);
+    // Strip sits above the tonemap rows — first child of the section body.
+    expect(host.firstElementChild).toBe(strip);
+    const names = Array.from(strip!.querySelectorAll('.pyr3-edit-density-tonemap-preset')).map(
+      (b) => b.textContent ?? '',
+    );
+    for (const n of ['default', 'soft', 'vivid', 'punchy', 'cinematic', 'crystal']) {
+      expect(names.some((label) => label.includes(n))).toBe(true);
+    }
+  });
+
+  it('clicking a preset writes gamma/gammaThreshold/vibrancy/brightness + fires onChange', () => {
+    const { host, state, onChange } = mountWithHeader();
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    (host.querySelector('.pyr3-edit-density-tonemap-preset-vivid') as HTMLElement).click();
+    expect(state.genome.tonemap?.gamma).toBe(vivid.gamma);
+    expect(state.genome.tonemap?.gammaThreshold).toBe(vivid.gammaThreshold);
+    expect(state.genome.tonemap?.vibrancy).toBe(vivid.vibrancy);
+    expect(state.genome.tonemap?.brightness).toBe(vivid.brightness);
+    expect(onChange).toHaveBeenCalledWith('tonemap.gamma');
+    expect(onChange).toHaveBeenCalledWith('tonemap.brightness');
+  });
+
+  it('applying a preset refreshes the displayed tonemap field values (#397)', () => {
+    const { host } = mountWithHeader();
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    (host.querySelector('.pyr3-edit-density-tonemap-preset-vivid') as HTMLElement).click();
+    // gamma + brightness are unclamped number inputs — they reflect the preset.
+    const gammaScrubby = rowByLabel(host, 'gamma').querySelector('.pyr3-scrubby') as HTMLElement;
+    expect(parseFloat(gammaScrubby.textContent ?? '')).toBeCloseTo(vivid.gamma, 5);
+    const brightnessScrubby = rowByLabel(host, 'brightness').querySelector('.pyr3-scrubby') as HTMLElement;
+    expect(parseFloat(brightnessScrubby.textContent ?? '')).toBeCloseTo(vivid.brightness, 5);
+  });
+
+  it('section header carries the preset chip after a preset is applied', async () => {
+    const { header, state } = mountWithHeader();
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    state.genome.tonemap = {
+      gamma: vivid.gamma,
+      gammaThreshold: vivid.gammaThreshold,
+      vibrancy: vivid.vibrancy,
+      brightness: vivid.brightness,
+      highlightPower: DEFAULT_TONEMAP.highlightPower,
+    };
+    await Promise.resolve(); // chip mounts on a microtask
+    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+    const chip = header.querySelector('.pyr3-edit-density-chip') as HTMLElement;
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toBe('vivid');
+  });
+
+  it('chip appends * when a tonemap value is nudged off-preset', async () => {
+    const { header, state } = mountWithHeader();
+    const vivid = TONEMAP_PRESETS.find((p) => p.name === 'vivid')!;
+    state.genome.tonemap = {
+      gamma: vivid.gamma,
+      gammaThreshold: vivid.gammaThreshold,
+      vibrancy: vivid.vibrancy,
+      brightness: vivid.brightness,
+      highlightPower: DEFAULT_TONEMAP.highlightPower,
+    };
+    await Promise.resolve();
+    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+    state.genome.tonemap.brightness = vivid.brightness + 0.5;
+    document.dispatchEvent(new CustomEvent(TONEMAP_CHANGED_EVENT));
+    const chip = header.querySelector('.pyr3-edit-density-chip') as HTMLElement;
+    expect(chip.textContent).toBe('vivid*');
   });
 });
 

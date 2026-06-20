@@ -122,11 +122,16 @@ export interface EditState {
   soloXformSnapshot?: SoloSnapshot;
   /** Per-xform-index variation solo snapshot. Keyed by xform index. */
   soloVariationSnapshot?: Record<number, SoloSnapshot>;
-  /** Last tonemap preset applied via the Density section's preset strip
-   *  (Phase 7 task 7.10). Used by the header chip to display dirty-state
-   *  (e.g. `vivid*`) when the user manually nudges a tonemap value off
-   *  the preset's exact triple. UI-only; never serialized. */
+  /** Last tonemap preset applied via the Tonemap section's preset strip.
+   *  Used by the header chip to display dirty-state (e.g. `vivid*`) when the
+   *  user manually nudges a tonemap value off the preset's exact triple.
+   *  UI-only; never serialized. (#397 relocated the strip to the Tonemap
+   *  section; field name kept to avoid churn.) */
   lastDensityPreset?: string;
+  /** #397 — remembered `density.maxRad` while DE is toggled off in the
+   *  DENSITY ESTIMATION section. Restored when the toggle is flipped back on.
+   *  UI-transient; never serialized. */
+  deRestoreMaxRad?: number;
   /** Phase 9 — palette subpanel launcher / ribbon-click both invoke this
    *  to open the docked palette picker. Wired by the editor's mount-fn at
    *  build time; sections never construct the picker themselves. UI-only;

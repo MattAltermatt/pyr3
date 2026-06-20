@@ -128,6 +128,14 @@ export const HELP: Record<HelpKey, InfoIconOpts> = {
       + '· brightness). The header chip shows the current preset; * means '
       + 'you have manually nudged it.',
   },
+  'density.deToggle': {
+    title: 'Density estimation',
+    body:
+      'Turn the adaptive-blur density estimator on or off. Off renders the '
+      + 'raw point cloud — sharp and granular (equivalent to maxRad 0). On '
+      + 'restores the previous blur kernel.',
+    hint: 'flam3 and most imported flames assume DE on.',
+  },
   'density.maxRad': {
     title: 'Max radius',
     body:
