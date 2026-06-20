@@ -81,6 +81,16 @@ export const densitySection: SectionMount = {
       return state.genome.density;
     }
 
+    // #370 — READ-ONLY view of the density used by the engine: the genome's own
+    // field if present, else the engine default. syncWidgets() uses this so that
+    // merely mounting the section (Output lens) no longer silently writes
+    // DEFAULT_DENSITY into the genome (a non-undoable mutation that flipped DE on
+    // for density-less flames). The genome is materialized only on a real edit,
+    // via ensureDensity() inside setField().
+    function effectiveDensity(): Density {
+      return state.genome.density ?? DEFAULT_DENSITY;
+    }
+
     function ensureTonemap(): Tonemap {
       if (!state.genome.tonemap) {
         state.genome.tonemap = { ...DEFAULT_TONEMAP };
@@ -331,7 +341,7 @@ export const densitySection: SectionMount = {
     // ── Engine DE state mutators ───────────────────────────────────────────
 
     function syncWidgets(): void {
-      const d = ensureDensity();
+      const d = effectiveDensity();
       maxRadPair.control.setValue(d.maxRad);
       minRadPair.control.setValue(d.minRad);
       curvePair.control.setValue(d.curve);

@@ -70,9 +70,25 @@ describe('densitySection', () => {
     expect(numbers.length).toBe(3);
   });
 
-  it('lazy-inits genome.density from DEFAULT_DENSITY when undefined', () => {
-    const { state } = mount();
-    expect(state.genome.density).toEqual(DEFAULT_DENSITY);
+  it('#370: mounting does NOT materialize genome.density (no silent mutation)', () => {
+    const { state, host } = mount();
+    // Opening the section must NOT write DEFAULT_DENSITY into the genome — that
+    // was a non-undoable mutation that flipped DE on for density-less flames.
+    expect(state.genome.density).toBeUndefined();
+    // ...but the sliders still DISPLAY the effective engine default (maxRad 9).
+    const maxRadScrubby = host.querySelector<HTMLElement>(
+      '.pyr3-edit-density-maxRad-row .pyr3-slider-scrubby',
+    )!;
+    expect(parseFloat(maxRadScrubby.textContent!)).toBeCloseTo(DEFAULT_DENSITY.maxRad, 3);
+  });
+
+  it('#370: genome.density is materialized only on a real edit', () => {
+    const { host, state } = mount();
+    expect(state.genome.density).toBeUndefined();
+    const slider = host.querySelector<HTMLInputElement>('.pyr3-edit-density-maxRad-slider')!;
+    slider.value = '12';
+    slider.dispatchEvent(new Event('input'));
+    expect(state.genome.density).toEqual({ ...DEFAULT_DENSITY, maxRad: 12 });
   });
 
   it('editing maxRad slider mutates state.genome.density.maxRad and fires onChange', () => {
