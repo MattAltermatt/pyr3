@@ -26,23 +26,24 @@
 // stateless wrt picker lifecycle; the editor host owns the docking.
 
 import { type SectionMount } from './edit-ui';
-import { type Palette, type PaletteMode, type ColorStop, rotateHueRGB } from './palette';
+import { type Palette, type PaletteMode, type ColorStop, paletteFromStops } from './palette';
+import { generateRamp, defaultRampMeta } from './palette-generate';
 import { FLAM3_PALETTE_COUNT, getLibraryStops } from './flam3-palettes';
 import {
   type PaletteSource,
   paletteIdentifier,
+  FLAM3_PALETTE_NAMES,
 } from './flam3-palette-names';
 import { COLORS } from './ui-tokens';
+import { infoIcon } from './help-text';
 import { buildRow, buildSlider, buildButton } from './edit-primitives';
+import { buildBackgroundControl } from './edit-section-background';
+import { mountPaletteGenerator } from './edit-palette-generator';
 import { mountPalettePicker, type PalettePickerHandle } from './palette-picker';
-import { getMine } from './palette-library';
-import { writeGradientHandoff } from './edit-state';
-import { type Genome } from './genome';
-
-// Overridable for tests — real nav is a full page load to the gradient page.
-export const gradientNav = {
-  go(): void { window.location.href = '/gradient'; },
-};
+import { getMine, saveMine } from './palette-library';
+import { exportPalette, importPalette } from './palette-file';
+import { openNamingDialog } from './naming-dialog';
+import { setActiveCanvasOverlay } from './edit-state';
 
 // Parse `flame #N` → N. Returns null when the name doesn't match.
 function parseFlameIndex(name: string): number | null {
@@ -58,11 +59,16 @@ function paletteAtIndex(idx: number): Palette {
   return { name: `flame #${idx}`, stops };
 }
 
-// Derive a PaletteSource from the genome's palette.name when state hasn't
-// explicitly set paletteSource yet. `flame #N` → flam3 catalog entry.
+// Derive a PaletteSource from the genome's palette.name. Used when state hasn't
+// explicitly set paletteSource, and after undo/redo (which restore the palette
+// but NOT the editor's transient paletteSource). `flame #N` → flam3 index;
+// otherwise match the name against the catalog so a named library palette keeps
+// its real label instead of falling back to a placeholder (#358).
 function inferPaletteSource(palette: Palette): PaletteSource {
   const idx = parseFlameIndex(palette.name);
   if (idx !== null) return { kind: 'flam3', number: idx };
+  const byName = FLAM3_PALETTE_NAMES.indexOf(palette.name);
+  if (byName >= 0) return { kind: 'flam3', number: byName };
   // Fallback for unknown-source palettes — show as flam3 #0 placeholder.
   return { kind: 'flam3', number: 0 };
 }
@@ -88,7 +94,10 @@ function gradientCss(palette: { stops: ColorStop[] }): string {
 
 export const paletteSection: SectionMount = {
   key: 'palette',
-  title: '🎨 PALETTE',
+  lens: 'color',
+  // Title is just 'Palette' — the Color lens group divider (#358) now carries
+  // the 🎨 emoji + category label, so the section header stays unadorned.
+  title: 'Palette',
   build(host, state, onChange) {
     ensurePaletteStyles();
     host.classList.add('pyr3-edit-section-palette');
@@ -110,42 +119,107 @@ export const paletteSection: SectionMount = {
     ribbon.style.marginBottom = '10px';
     host.appendChild(ribbon);
 
-    // ── "Edit gradient →" — round-trip into /v1/gradient (#266) ─────────────
+    // ── "Edit gradient" toggle — flips the editor into gradient-edit mode and
+    //    attaches the on-canvas overlay (#372). Replaces the old navigate-away
+    //    to /gradient: the bar + stoppers now float over the flame; this section
+    //    hosts the parametric controls + the selected-stop readout. The actual
+    //    overlay attach/detach lives in edit-mount, reacting to
+    //    state.activeCanvasOverlay via state.onCanvasOverlayChange.
     const editGradientBtn = buildButton({
       variant: 'accent',
       label: 'Edit gradient',
       icon: '🎨',
       onClick: () => {
-        const p = state.genome.palette;
-        const hue = p.hue ?? 0;
-        // Bake hue into the stops so the gradient strip shows what the flame
-        // renders; emit with hue omitted (the strip colors are now literal).
-        const stops = (hue === 0 || hue === 360)   // 360° is identity — skip the bake
-          ? p.stops.map((s) => ({ ...s }))
-          : p.stops.map((s) => {
-              const rgb = rotateHueRGB(s.r, s.g, s.b, hue);
-              return { t: s.t, r: rgb.r, g: rgb.g, b: rgb.b };
-            });
-        // Carry the whole genome so /v1/gradient can RENDER the flame; the
-        // palette is the hue-baked form (hue omitted → literal colors). (#269)
-        // Mark as "mine" so /v1/gradient reopens it directly editable (no
-        // read-only Modify gate) when it's a gradient the user crafted here. (#266)
-        const handoffGenome: Genome = {
-          ...state.genome,
-          palette: { name: p.name, stops, ...(p.mode ? { mode: p.mode } : {}) },
-        };
-        const isCustom = state.paletteSource?.kind === 'custom';
-        writeGradientHandoff(handoffGenome, isCustom);
-        gradientNav.go();
+        const on = state.activeCanvasOverlay === 'gradient';
+        setActiveCanvasOverlay(state, on ? 'none' : 'gradient');
+        state.onCanvasOverlayChange?.();
+        refreshGradientToggle();
       },
     });
     editGradientBtn.classList.add('pyr3-edit-gradient-link');
+    editGradientBtn.dataset['role'] = 'edit-gradient-toggle';
+    function refreshGradientToggle(): void {
+      const on = state.activeCanvasOverlay === 'gradient';
+      editGradientBtn.setAttribute('aria-pressed', String(on));
+      editGradientBtn.textContent = on ? '🎨 Editing gradient — done' : '🎨 Edit gradient';
+    }
+    refreshGradientToggle();
     const editGradientRow = document.createElement('div');
     editGradientRow.style.display = 'flex';
     editGradientRow.style.justifyContent = 'flex-end';
     editGradientRow.style.margin = '0 0 8px';
     editGradientRow.appendChild(editGradientBtn);
     host.appendChild(editGradientRow);
+
+    // Selected-stop readout — edit-mount updates this via the overlay's onSelect
+    // while gradient-edit mode is active.
+    const gradientReadout = document.createElement('div');
+    gradientReadout.dataset['role'] = 'gradient-readout';
+    Object.assign(gradientReadout.style, {
+      fontSize: '11px', color: COLORS.text.muted, margin: '0 0 6px', minHeight: '14px',
+    });
+    host.appendChild(gradientReadout);
+
+    // Controls host — edit-mount mounts the overlay's mountPaletteEditor controls
+    // (interpolation / transforms / delete / resample) here, in the subpanel.
+    const gradientControlsHost = document.createElement('div');
+    gradientControlsHost.dataset['role'] = 'gradient-controls-host';
+    host.appendChild(gradientControlsHost);
+
+    // ── Library cluster (#372) — Save / Import / Export the current palette. ──
+    // Re-hosts the former /gradient library chrome; the picker stays a read-only
+    // chooser and surfaces saved palettes in its "mine" tab.
+    const libRow = document.createElement('div');
+    libRow.className = 'pyr3-edit-palette-library';
+    Object.assign(libRow.style, { display: 'flex', gap: '6px', margin: '6px 0 2px' });
+
+    const saveBtn = buildButton({
+      variant: 'plain', label: 'Save', icon: '💾',
+      onClick: () => {
+        const p = state.genome.palette;
+        void openNamingDialog({ kind: 'palette-library', seed: { name: p.name } }).then((res) => {
+          if (!res) return;
+          saveMine({
+            name: res.name,
+            stops: p.stops.map((s) => ({ ...s })),
+            ...(p.hue ? { hue: p.hue } : {}),
+            ...(p.mode ? { mode: p.mode } : {}),
+          });
+        });
+      },
+    });
+    saveBtn.dataset['role'] = 'palette-save';
+
+    const importBtn = buildButton({
+      variant: 'plain', label: 'Import', icon: '📥',
+      onClick: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.addEventListener('change', () => {
+          const f = input.files?.[0];
+          if (!f) return;
+          void importPalette(f).then((p) => {
+            state.genome.palette = p;
+            onChange('palette');   // slow-lane re-iterate
+            refreshRibbon();
+            refreshLauncher();
+            refreshGenConfig();
+          });
+        });
+        input.click();
+      },
+    });
+    importBtn.dataset['role'] = 'palette-import';
+
+    const exportBtn = buildButton({
+      variant: 'plain', label: 'Export', icon: '📤',
+      onClick: () => exportPalette(state.genome.palette),
+    });
+    exportBtn.dataset['role'] = 'palette-export';
+
+    libRow.append(saveBtn, importBtn, exportBtn);
+    host.appendChild(libRow);
 
     // ── palette row (launcher button) ──────────────────────────────────────
     const launcher = document.createElement('div');
@@ -213,6 +287,29 @@ export const paletteSection: SectionMount = {
     resetRow.style.margin = '4px 0 8px';
     resetRow.appendChild(resetBtn);
     host.appendChild(resetRow);
+
+    // ── ✨ Generated-ramp config (#267/#358) ───────────────────────────────
+    // The generator is chosen FROM the palette picker (a "thing that replaces
+    // your palette"), so its config is shown here ONLY while the active palette
+    // is a generated ramp (palette.gen present). Undo/redo restore palette.gen,
+    // and the panel rebuilds on undo → refreshGenConfig() re-derives visibility.
+    const genConfigHost = document.createElement('div');
+    genConfigHost.className = 'pyr3-edit-palette-gen';
+    host.appendChild(genConfigHost);
+    function refreshGenConfig(): void {
+      genConfigHost.replaceChildren();
+      if (!state.genome.palette.gen) return;
+      const header = document.createElement('div');
+      header.className = 'pyr3-edit-palette-gen-header';
+      const genHelp = infoIcon('palette.generate');
+      header.append(document.createTextNode('✨ Ramp settings'), genHelp);
+      genConfigHost.appendChild(header);
+      mountPaletteGenerator(genConfigHost, state, onChange, () => {
+        refreshRibbon();
+        refreshChip();
+        refreshLauncher();
+      });
+    }
 
     // ── Mode row (preserved from pre-Phase-9) ──────────────────────────────
     // Writes genome.paletteMode (top-level, flam3 spec) — controls per-scatter
@@ -303,7 +400,19 @@ export const paletteSection: SectionMount = {
 
     // ── State mutators ─────────────────────────────────────────────────────
     function currentSource(): PaletteSource {
-      return state.paletteSource ?? inferPaletteSource(state.genome.palette);
+      // The source of truth is the GENOME (restored by undo/redo); state.paletteSource
+      // is editor-only and goes stale after undo. So: a generated ramp is identified
+      // by palette.gen; otherwise we trust paletteSource ONLY while it still matches
+      // the current palette, else derive it from the palette name (#358).
+      const pal = state.genome.palette;
+      if (pal.gen) return { kind: 'generate', meta: pal.gen };
+      const ps = state.paletteSource;
+      if (ps?.kind === 'mine' && ps.name === pal.name) return ps;
+      if (ps?.kind === 'flam3'
+        && (FLAM3_PALETTE_NAMES[ps.number] === pal.name || `flame #${ps.number}` === pal.name)) {
+        return ps;
+      }
+      return inferPaletteSource(pal);
     }
 
     function refreshLauncher(): void {
@@ -368,6 +477,8 @@ export const paletteSection: SectionMount = {
             // (corpus/custom remain unwired — no reachable UI today.)
             const applyStops = (name: string, stops: Palette['stops']): void => {
               const existing = state.genome.palette;
+              // No `gen` → switching away from a generated ramp; refreshGenConfig
+              // below hides the generator config.
               state.genome.palette = {
                 name,
                 stops,
@@ -376,6 +487,7 @@ export const paletteSection: SectionMount = {
               state.paletteSource = source;
               refreshLauncher();
               refreshRibbon();
+              refreshGenConfig();
               onChange('palette');
             };
             if (source.kind === 'flam3') {
@@ -384,6 +496,18 @@ export const paletteSection: SectionMount = {
             } else if (source.kind === 'mine') {
               const saved = getMine(source.name);
               if (saved) applyStops(saved.name, saved.stops);
+            } else if (source.kind === 'generate') {
+              // #358 — pick "Generate ramp". `meta` set → revert-on-cancel
+              // restores that exact ramp; absent → a fresh default ramp. Stamps
+              // palette.gen so the config appears + undo restores it.
+              const meta = source.meta ?? defaultRampMeta();
+              state.genome.palette = { ...paletteFromStops('generated', generateRamp(meta)), gen: meta };
+              state.paletteSource = { kind: 'generate', meta };
+              refreshLauncher();
+              refreshRibbon();
+              refreshChip();
+              refreshGenConfig();
+              onChange('palette');
             }
           },
           onClose: () => {
@@ -430,9 +554,19 @@ export const paletteSection: SectionMount = {
     // ── Initial render ─────────────────────────────────────────────────────
     refreshLauncher();
     refreshRibbon();
+    // #358 — show the generator config iff the loaded/undone palette is a ramp.
+    refreshGenConfig();
     const initialMode = state.genome.paletteMode ?? 'step';
     linearRadio.input.checked = initialMode === 'linear';
     stepRadio.input.checked = initialMode === 'step';
+
+    // ── Background (#27) — second mount point of the shared background control;
+    // the Output → Tonemap section is the other. Edits in either stay in sync
+    // via state.backgroundListeners. Palette + background = "the colors."
+    const bg = buildBackgroundControl(state, onChange);
+    host.appendChild(buildRow('background', bg.el));
+
+    return bg.dispose;
   },
 };
 
@@ -461,5 +595,22 @@ const PALETTE_CSS = `
 }
 .pyr3-edit-palette-launcher:hover {
   border-color: var(--accent-border, #884a1a);
+}
+/* ✨ Generated-ramp config (#358) — shown only while the active palette is a
+   generated ramp (chosen from the palette picker). The header marks it as the
+   ramp's own config; the generator controls follow. */
+.pyr3-edit-palette-gen {
+  margin: 8px 0 4px;
+}
+.pyr3-edit-palette-gen-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #ff8c1a);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 `;

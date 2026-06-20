@@ -17,10 +17,12 @@ import {
   resolveColdStartGenomeWithSource,
   persistColdStartIfReroll,
   schedulePersist,
-  persistWip,
   loadEditRenderSettings,
   saveEditRenderSettings,
-  consumeGradientReturn,
+  persistPanelWidth,
+  saveGizmoPrefs,
+  PANEL_WIDTH_MIN,
+  PANEL_WIDTH_MAX,
   type EditState,
   type LaneScheduler,
   type Lane,
@@ -45,32 +47,20 @@ import { genomeToJson } from './serialize';
 import { load } from './loader';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
+import { attachXformGizmo, type GizmoHandle } from './edit-xform-gizmo';
+import { attachGradientOverlay, type GradientOverlayHandle } from './edit-gradient-overlay';
+import {
+  downsampleIndexMap, paintMapDims, regionMask, brushHistogram,
+  clientToPixel, colorAtIndex, insertStopAtIndex,
+  type IndexMap,
+} from './color-index-map';
+import { attachCanvasOverlays, type CanvasOverlaysHandle } from './edit-canvas-overlays';
+import { applyViewToCamera, type Camera, type Viewport, IDENTITY_VIEW } from './edit-camera-projection';
+import { computeFitView } from './edit-fit-handles';
+import { type RawAffine } from './edit-xform-gizmo-math';
 import { createSlowRenderNudge, type SlowRenderNudgeHandle } from './edit-slow-render-nudge';
 import { setCurrentFlame } from './app-state';
 import { createHistory, type History } from './edit-history';
-
-/** Apply a pending gradient-return onto the editor state, if one is queued.
- *  Patches only the palette: stops + name from the return, hue forced to 0
- *  (the returned stops are the literal final colors). The interpolation mode
- *  comes from the edited palette when set, falling back to the prior genome's
- *  mode (#316) — a mode change made in the gradient editor must survive the
- *  round-trip. Marks the source as a custom gradient. Returns true when a
- *  return was consumed. (#266) */
-export function applyGradientReturn(state: EditState): boolean {
-  const ret = consumeGradientReturn();
-  if (!ret) return false;
-  // #316 — prefer the returned palette's mode; only fall back to the prior
-  // genome mode when the edit didn't carry one.
-  const mode = ret.mode ?? state.genome.palette.mode;
-  state.genome.palette = {
-    name: ret.name || 'custom gradient',
-    stops: ret.stops,
-    hue: 0, // edited stops are the literal final colors — no re-rotation (#266)
-    ...(mode ? { mode } : {}),
-  };
-  state.paletteSource = { kind: 'custom' };
-  return true;
-}
 
 /** #352 — produce a downsized PREVIEW copy of `genome` for the editor's live
  *  lane, scaling every OUTPUT-PIXEL quantity by `ratio` (= previewLongEdge /
@@ -219,6 +209,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   const editBody = document.createElement('div');
   editBody.className = 'pyr3-edit-body';
   const panelHost = document.createElement('div');
+  // #27 — drag-resize grip between the panel and the canvas (middle grid track).
+  const resizeGrip = document.createElement('div');
+  resizeGrip.className = 'pyr3-edit-resize-grip';
+  resizeGrip.setAttribute('role', 'separator');
+  resizeGrip.setAttribute('aria-orientation', 'vertical');
   const canvasHost = document.createElement('div');
   canvasHost.className = 'pyr3-edit-canvas-host';
   // #118 — slow-render nudge needs an absolutely-positioned parent.
@@ -227,7 +222,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   canvas.width = preview.width;
   canvas.height = preview.height;
   canvasHost.appendChild(canvas);
-  editBody.append(panelHost, canvasHost);
+  editBody.append(panelHost, resizeGrip, canvasHost);
   opts.root.append(renderModeBarHost, editBody);
 
   // WebGPU context on the editor canvas. Assigned to a non-null local so
@@ -290,18 +285,45 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   persistColdStartIfReroll(initial.source, initialGenome);
   const initialSeed = (Math.random() * 0xffffffff) >>> 0;
   const state = createEditState(initialGenome, initialSeed);
+  // #27 — drag-resize the editor panel. The grid's panel column is the
+  // --pyr3-panel-w custom property on the editor root; the grip updates it
+  // live, clamps to [MIN,MAX], and persists the chosen width on release.
+  opts.root.style.setProperty('--pyr3-panel-w', `${state.panelWidth}px`);
+  const detachResize = ((): (() => void) => {
+    let dragging = false;
+    const onDown = (e: MouseEvent): void => {
+      dragging = true;
+      e.preventDefault();
+      document.body.style.cursor = 'col-resize';
+    };
+    const onMove = (e: MouseEvent): void => {
+      if (!dragging) return;
+      const left = editBody.getBoundingClientRect().left;
+      const w = Math.max(PANEL_WIDTH_MIN, Math.min(PANEL_WIDTH_MAX, e.clientX - left));
+      state.panelWidth = w;
+      opts.root.style.setProperty('--pyr3-panel-w', `${w}px`);
+    };
+    const onUp = (): void => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = '';
+      persistPanelWidth(state.panelWidth);
+    };
+    resizeGrip.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return (): void => {
+      resizeGrip.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  })();
   // #357 — provenance for the bar's "📂 loaded from …" chip. Only a genuine
   // viewer→editor transfer (pending) counts as a load at cold-start; the
   // catalog scaffold (opts.initialGenome) is generated, and wip/reroll are
   // cold-start sources with no flame to attribute. handleOpenFile flips this
   // to true; handleReroll flips it back to false.
   state.loadedSource = !opts.initialGenome && initial.source === 'pending';
-
-  // #266 — if the user round-tripped through the gradient editor, apply the
-  // returned palette on top of the restored WIP genome. Patches palette only.
-  // Persist immediately so a later reload keeps the applied custom gradient
-  // (cold-start otherwise only persists on the next user edit).
-  if (applyGradientReturn(state)) persistWip(state.genome);
 
   // #108 — undo/redo stack, seeded with the cold-start genome. push happens
   // on every commit gesture (onPathChange), debounced via the same window
@@ -417,6 +439,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     state.genome.size = next;
   }
 
+  // #350 two-layer model: the FLAME renders at the composition (state.genome)
+  // ALWAYS — the workspace view is gizmo-only and never touches the flame, so
+  // the composition can never move while editing. (Only gizmoCamera() composes
+  // the view; see below.)
   function adjustedGenomeFor(w: number, _h: number): Genome {
     const full = getFullDims();
     if (w === full.width) return state.genome;
@@ -590,6 +616,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const spp = previewCfg.quality;
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
+    const indexArmed = armIndexCapture();   // #269/#372 — capture idx_sum this render?
     editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
     notifyStateChange();
     // #118 — measure settle-render wall-clock so the slow-render nudge
@@ -597,6 +624,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const renderStart = performance.now();
     await awaitGpuThenMaybeHide(myTicket);
     nudge?.recordRender(performance.now() - renderStart);
+    // #269/#372 — read back the palette-index map for point-to-paint (if armed).
+    await captureIndexMapIfArmed(indexArmed, myTicket);
     // #175 — emit the settled, PRE-curve canvas pixels to any subscribed
     // section (Color Curves histogram overlay; future Scopes #174). Best-
     // effort: failures must never break the render path.
@@ -809,6 +838,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // (incl. a Surprise Wall handoff) opens at these values, not defaults.
       persistRenderSettings();
     }
+    // #350 Phase 2.3 — keep the on-canvas gizmo square locked to the affine
+    // when it's edited from the panel fields (gizmo declared below; this runs
+    // at edit time, well after assignment).
+    if (path.startsWith('xforms') || path === 'cx' || path === 'cy' || path === 'scale' || path === 'rotate') {
+      gizmo?.draw();
+    }
     const lane = pathLane(path);
     if (lane === 'slow' || lane === 'rebuild' || lane === 'fast') {
       void requestLiveRender(lane);
@@ -818,9 +853,102 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     }
   }
 
+  // #372 — on-canvas gradient bar overlay. Declared early (before rebuildPanel)
+  // so the panel-rebuild re-attach can run safely. Mutually exclusive with the
+  // affine gizmo via state.activeCanvasOverlay.
+  let gradientOverlay: GradientOverlayHandle | null = null;
+
+  // #269/#372 — palette-index map for point-to-paint. Captured from the settled
+  // render's idx_sum channel ONCE per genome identity (the index is geometry,
+  // not color — recoloring never moves it). null until a capture lands.
+  let indexMap: IndexMap | null = null;
+  let indexMapGenome: Genome | null = null;
+  const PAINT_LONG_EDGE = 256; // index-map long-edge target; short edge follows the flame aspect
+
+  // Arm the GPU index-capture channel for the upcoming slow render when the
+  // overlay is active and the cached map is stale. The channel costs per-iter,
+  // so it stays OFF whenever we don't need a fresh capture. Returns whether this
+  // render should read the map back afterwards.
+  function armIndexCapture(): boolean {
+    const need = state.activeCanvasOverlay === 'gradient'
+      && (state.genome !== indexMapGenome || indexMap === null);
+    renderer.setCaptureIndex(need);
+    return need;
+  }
+
+  // Read back + downsample the index map after a slow render that was armed.
+  // Best-effort: GPU/mapping failures are swallowed (non-critical overlay feed).
+  async function captureIndexMapIfArmed(armed: boolean, myTicket: number): Promise<void> {
+    if (!armed || inflightTicket !== myTicket) return;
+    try {
+      const { idxSum, count, width, height } = await renderer.readIndexMap();
+      if (inflightTicket !== myTicket) return;
+      // Aspect-true, in-bounds out-dims (see paintMapDims) — a forced square
+      // distorts + reads OOB on a non-square render, leaving the canvas
+      // under-covered. (#372)
+      const { outW, outH } = paintMapDims(width, height, PAINT_LONG_EDGE);
+      indexMap = downsampleIndexMap(idxSum, count, width, height, outW, outH);
+      indexMapGenome = state.genome;
+    } catch { /* non-critical — point-to-paint just stays unavailable this frame */ }
+  }
+
+  /** Build a short #rrggbb for the selected-stop readout. */
+  function rgbHex(s: { r: number; g: number; b: number }): string {
+    const h = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0');
+    return `#${h(s.r)}${h(s.g)}${h(s.b)}`;
+  }
+
+  // Tear down any live gradient overlay, then re-attach if gradient-edit mode is
+  // active. Called by the Color-lens toggle (via state.onCanvasOverlayChange) and
+  // after every rebuildPanel (undo/redo/reroll rebuild the controls host away).
+  function refreshGradientOverlay(): void {
+    gradientOverlay?.destroy();
+    gradientOverlay = null;
+    if (state.activeCanvasOverlay !== 'gradient') return;
+    const controlsHost = panelHost.querySelector('[data-role="gradient-controls-host"]') as HTMLElement | null;
+    const readout = panelHost.querySelector('[data-role="gradient-readout"]') as HTMLElement | null;
+    if (!controlsHost) return;
+    gradientOverlay = attachGradientOverlay(canvasHost, {
+      getPalette: () => state.genome.palette,
+      onChange: (p) => { state.genome.palette = p; onPathChange('palette'); },
+      controlsHost,
+      onSelect: (idx) => {
+        if (!readout) return;
+        const s = state.genome.palette.stops[idx];
+        readout.textContent = s ? `stop #${idx} · ${rgbHex(s)} · pos ${s.t.toFixed(2)}` : '';
+      },
+      // #269 — bar hover → tint the flame regions at that gradient position
+      // (continuous t across the WHOLE bar, not snapped to stoppers).
+      onHoverT: (t) => paintRegion(t),
+    });
+  }
+
+  // Forced-off path: the affine gizmo turning on must close the gradient overlay
+  // (mutual exclusion). Also resets the Color-lens toggle's label/aria so the UI
+  // doesn't read "Editing gradient" while the overlay is gone.
+  function deactivateGradientOverlay(): void {
+    state.activeCanvasOverlay = 'none';
+    gradientOverlay?.destroy();
+    gradientOverlay = null;
+    renderer.setCaptureIndex(false);   // #269/#372 — disarm the index channel
+    indexMap = null;
+    indexMapGenome = null;
+    paintRegion(null);
+    const t = panelHost.querySelector('[data-role="edit-gradient-toggle"]') as HTMLElement | null;
+    if (t) { t.setAttribute('aria-pressed', 'false'); t.textContent = '🎨 Edit gradient'; }
+  }
+
   // Replace the whole panel + force a slow-lane reseed. Used by reroll + open.
   let ui: EditUiHandle;
   function rebuildPanel(): void {
+    // Preserve transient subpanel open-state (<details data-subpanel="…">) across
+    // the destroy+remount, so undo/redo/reroll don't collapse fold-ups the user
+    // opened. Top-level sections already survive via state.sectionCollapse; this
+    // covers the per-section <details> expanders that aren't persisted there.
+    const openSubpanels = new Set<string>();
+    for (const el of panelHost.querySelectorAll<HTMLDetailsElement>('details[data-subpanel]')) {
+      if (el.open && el.dataset.subpanel) openSubpanels.add(el.dataset.subpanel);
+    }
     ui?.destroy();
     ui = mountEditUi(panelHost, state, opts.sections, {
       onChange: onPathChange,
@@ -837,6 +965,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         opts.onSettleDelayChange?.(ms);
       },
     });
+    // Restore the open subpanels captured above. For a lazily-built expander
+    // (e.g. the palette generator) setting `.open` fires its toggle → it mounts.
+    for (const el of panelHost.querySelectorAll<HTMLDetailsElement>('details[data-subpanel]')) {
+      if (el.dataset.subpanel && openSubpanels.has(el.dataset.subpanel)) el.open = true;
+    }
+    // #372 — the rebuilt panel has a fresh gradient-controls host; re-attach the
+    // overlay (if active) so its controls + readout bind to the new nodes and the
+    // bar reflects the restored palette (undo/redo/reroll).
+    refreshGradientOverlay();
   }
 
   // Live render loop for continuous interactions (pan / zoom). The lane
@@ -904,6 +1041,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // displayed cx/cy/scale stay current as the user drags. Live render fires
   // continuously while the user interacts; the settle timer kicks the final
   // full-quality render 150ms after the last input.
+  // #350 Phase 2.3 — on-canvas affine gizmo. Declared before panZoom so the
+  // viewport callback can redraw it; assigned just below.
+  let gizmo: GizmoHandle | null = null;
   const panZoom: PanZoomHandle = attachPanZoom(canvas, state, {
     onViewportChange: () => {
       // Notify any DOM listeners (the viewport section's inputs) that the
@@ -911,10 +1051,260 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       // viewport section listens at document level + self-removes when its
       // host detaches (next rebuildPanel) so this stays leak-free.
       document.dispatchEvent(new CustomEvent('pyr3:viewport-changed'));
-      void requestLiveRender();
-      scheduleSettle();
+      gizmo?.draw(); // keep the world-space gizmo locked to the camera
+      // #350 — in xform mode pan/zoom drives the gizmo VIEW only; the flame
+      // renders the (unchanged) composition, so re-iterating it is wasted work
+      // + a settle flicker. Only re-render when flame mode moved the camera.
+      if (!state.gizmo.editOnCanvas) {
+        void requestLiveRender();
+        scheduleSettle();
+        // #358 — flame-mode pan/zoom mutates the genome (cx/cy/scale), so make
+        // each gesture its own undo step (debounced → one entry per gesture).
+        // In xform mode the genome is untouched, so this no-ops (sameContent).
+        scheduleHistoryCommit();
+      }
     },
   });
+
+  // #350 Phase 2.3 — screen-fixed canvas-chrome overlays menu (edit/grid/snap)
+  // + the world-space affine gizmo. Both host in canvasHost (position:relative).
+  const overlays: CanvasOverlaysHandle = attachCanvasOverlays(canvasHost, {
+    getPrefs: () => state.gizmo,
+    onChange: (next) => {
+      const wasEditing = state.gizmo.editOnCanvas;
+      state.gizmo = next;
+      saveGizmoPrefs(next);
+      if (!wasEditing && next.editOnCanvas) {
+        // #372 — affine-edit and gradient-edit are mutually exclusive: turning
+        // the gizmo on closes any live gradient overlay first.
+        if (state.activeCanvasOverlay === 'gradient') deactivateGradientOverlay();
+        // Enabling edit: the numbered grid is the gizmo's reference frame, so
+        // auto-show it (user can still toggle off), then auto-frame the gizmo
+        // LAYER (never the flame — two-layer model, #350).
+        if (!next.showWorldGrid) {
+          next.showWorldGrid = true;
+          state.gizmo = next;
+          saveGizmoPrefs(next);
+          overlays.sync();
+        }
+        fitViewToSelectedXform();
+      } else if (wasEditing && !next.editOnCanvas) {
+        // Disabling restores the exact composition (view → identity).
+        resetWorkspaceView();
+      } else {
+        gizmo?.draw(); // reflect grid/snap toggles immediately
+      }
+    },
+    onFit: () => fitViewToSelectedXform(),
+    onCenter: () => centerViewOnSelectedXform(),
+  });
+  // #350 — set the transient workspace view to frame the selected xform's
+  // handles (or identity if no regular xform is selected). NOT routed through
+  // onPathChange: this is editor navigation, not a genome edit (no history /
+  // persist). The saved composition (genome.cx/cy/scale) is never touched.
+  // These only move the gizmo VIEW layer; the flame renders the unchanged
+  // composition, so they redraw the gizmo overlay ONLY — no flame re-iterate.
+  function fitViewToSelectedXform(): void {
+    const xf = state.genome.xforms[state.selectedXformIndex];
+    if (!xf) { resetWorkspaceView(); return; }
+    const affine: RawAffine = { a: xf.a, b: xf.b, c: xf.c, d: xf.d, e: xf.e, f: xf.f };
+    const cam: Camera = { cx: state.genome.cx, cy: state.genome.cy, scale: state.genome.scale, rotateDeg: state.genome.rotate ?? 0 };
+    state.view = computeFitView(affine, cam, gizmoViewport());
+    gizmo?.draw();
+  }
+  function resetWorkspaceView(): void {
+    state.view = { ...IDENTITY_VIEW };
+    gizmo?.draw();
+  }
+  // ⊕ center — pan the gizmo layer to the selected xform at the CURRENT zoom
+  // (distinct from ⊡ fit, which also re-zooms). Composition is never touched.
+  function centerViewOnSelectedXform(): void {
+    const xf = state.genome.xforms[state.selectedXformIndex];
+    if (!xf) return;
+    // Handle-box center in world: midpoint of the xform's image of the unit
+    // square plus the rotate stalk — averaging the affine corners + rotate
+    // anchor is overkill; the affine center apply(0.5,0.5) is a good target.
+    const cx = xf.a * 0.5 + xf.b * 0.5 + xf.c;
+    const cy = xf.d * 0.5 + xf.e * 0.5 + xf.f;
+    const z = state.view.zoom;
+    state.view = { zoom: z, panX: (cx - state.genome.cx) * z, panY: (cy - state.genome.cy) * z };
+    gizmo?.draw();
+  }
+  function gizmoCamera(): Camera {
+    // Project handles through the COMPOSED camera so they stay locked to the
+    // xform under any workspace-view pan/zoom (#350 decoupled view).
+    return applyViewToCamera({ cx: state.genome.cx, cy: state.genome.cy, scale: state.genome.scale, rotateDeg: state.genome.rotate ?? 0 }, state.view);
+  }
+  function gizmoViewport(): Viewport {
+    const rect = canvas.getBoundingClientRect();
+    const size = state.genome.size;
+    const iw = size && size.width > 0 ? size.width : Math.max(1, canvas.width);
+    const ih = size && size.height > 0 ? size.height : Math.max(1, canvas.height);
+    return { rectWidth: rect.width, rectHeight: rect.height, intrinsicWidth: iw, intrinsicHeight: ih };
+  }
+  gizmo = attachXformGizmo(canvasHost, canvas, {
+    getSelectedIndex: () => state.selectedXformIndex,
+    getAffine: (i): RawAffine | null => {
+      const xf = state.genome.xforms[i];
+      return xf ? { a: xf.a, b: xf.b, c: xf.c, d: xf.d, e: xf.e, f: xf.f } : null;
+    },
+    setAffine: (i, r: RawAffine): void => {
+      const xf = state.genome.xforms[i];
+      if (!xf) return;
+      xf.a = r.a; xf.b = r.b; xf.c = r.c; xf.d = r.d; xf.e = r.e; xf.f = r.f;
+    },
+    getCamera: gizmoCamera,
+    getViewport: gizmoViewport,
+    getPrefs: () => state.gizmo,
+    // onPathChange routes the slow-lane re-iterate + the debounced (250ms)
+    // history commit, so a whole drag coalesces into one undo entry — no extra
+    // commit needed at drag end.
+    onLiveEdit: (i) => {
+      onPathChange('xforms.' + i);
+      // #350 #1 — refresh the XForm panel's affine fields + mini-viz live so
+      // they track the gizmo drag (panel edits self-update; this is gizmo→panel).
+      document.dispatchEvent(new CustomEvent('pyr3:xform-affine-changed'));
+    },
+    onCommit: () => { /* history rides onLiveEdit's debounce */ },
+    onReadout: (text) => overlays.setReadout(text),
+  });
+  // Redraw the gizmo when the selected xform (or the xform list) changes via
+  // the XForm-lens selectors (#350 rebuildAll emits this). While editing, also
+  // re-frame the workspace view to the newly-selected xform.
+  const onGizmoSelectionChange = (): void => {
+    if (state.gizmo.editOnCanvas) fitViewToSelectedXform();
+    else gizmo?.draw();
+  };
+  document.addEventListener('pyr3:xform-selection-changed', onGizmoSelectionChange);
+  // Keep the overlay sized to the canvas host across panel-drag + window resize.
+  const gizmoResizeObs = new ResizeObserver(() => { gizmo?.resize(); positionRegionCanvas(); });
+  gizmoResizeObs.observe(canvasHost);
+
+  // #372 — the Color-lens Edit-gradient toggle flips state.activeCanvasOverlay and
+  // calls this. Gradient turning ON forces the affine gizmo OFF (mutual
+  // exclusion; leaving affine-edit restores the composition view), then attaches
+  // the bar overlay.
+  function syncCanvasOverlay(): void {
+    if (state.activeCanvasOverlay === 'gradient' && state.gizmo.editOnCanvas) {
+      const next = { ...state.gizmo, editOnCanvas: false };
+      state.gizmo = next;
+      saveGizmoPrefs(next);
+      overlays.sync();
+      resetWorkspaceView();
+      gizmo?.draw();
+    }
+    refreshGradientOverlay();
+    // #269/#372 — (in)validate point-to-paint capture. Turning ON drops any
+    // stale map + kicks a settle so idx_sum is captured; turning OFF disarms the
+    // GPU channel so subsequent renders don't pay the per-iter index cost.
+    indexMap = null;
+    indexMapGenome = null;
+    if (state.activeCanvasOverlay === 'gradient') scheduleSettle();
+    else { renderer.setCaptureIndex(false); paintRegion(null); }
+  }
+  state.onCanvasOverlayChange = syncCanvasOverlay;
+
+  // #269/#372 — point-to-paint. A 2D region-tint canvas layered over the flame
+  // plus flame pointer handlers. Created once; inert unless the gradient overlay
+  // is active and an index map exists. The flame canvas is object-fit:contain
+  // (letterboxed), so map client coords through the CONTENT rect, not the box.
+  const regionCanvas = document.createElement('canvas');
+  regionCanvas.className = 'pyr3-edit-paint-region';
+  // Backing dims are (re)sized to the captured index map's dims in paintRegion —
+  // they follow the flame aspect, NOT a fixed square.
+  Object.assign(regionCanvas.style, {
+    position: 'absolute', pointerEvents: 'none', display: 'block',
+    borderRadius: '4px', imageRendering: 'pixelated', zIndex: '5',
+  });
+  canvasHost.appendChild(regionCanvas);
+  const regionCtx = regionCanvas.getContext('2d');
+  const REGION_EPSILON = 0.03;
+
+  // The flame's displayed (letterbox-corrected) content rect, in viewport coords.
+  function flameContentRect(): { left: number; top: number; width: number; height: number } {
+    const rect = canvas.getBoundingClientRect();
+    const ar = canvas.width / Math.max(1, canvas.height);
+    const boxAr = rect.width / Math.max(1, rect.height);
+    let w = rect.width, h = rect.height, ox = 0, oy = 0;
+    if (boxAr > ar) { w = rect.height * ar; ox = (rect.width - w) / 2; }
+    else { h = rect.width / ar; oy = (rect.height - h) / 2; }
+    return { left: rect.left + ox, top: rect.top + oy, width: w, height: h };
+  }
+
+  // Align the tint canvas over the flame content (relative to canvasHost).
+  function positionRegionCanvas(): void {
+    const host = canvasHost.getBoundingClientRect();
+    const c = flameContentRect();
+    Object.assign(regionCanvas.style, {
+      left: `${c.left - host.left}px`, top: `${c.top - host.top}px`,
+      width: `${c.width}px`, height: `${c.height}px`,
+    });
+  }
+
+  // Bar→flame: tint the pixels whose index sits within ε of stop position `t`.
+  function paintRegion(stopT: number | null): void {
+    if (!regionCtx) return;
+    if (stopT === null || indexMap === null || state.activeCanvasOverlay !== 'gradient') {
+      regionCtx.clearRect(0, 0, regionCanvas.width, regionCanvas.height);
+      return;
+    }
+    const W = indexMap.width, H = indexMap.height;
+    // Match the backing canvas to the index map's aspect (resizing also clears it).
+    if (regionCanvas.width !== W || regionCanvas.height !== H) {
+      regionCanvas.width = W;
+      regionCanvas.height = H;
+    } else {
+      regionCtx.clearRect(0, 0, W, H);
+    }
+    positionRegionCanvas();
+    const mask = regionMask(indexMap, stopT, REGION_EPSILON);
+    const img = regionCtx.createImageData(W, H);
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i]) {
+        img.data[i * 4 + 0] = 80; img.data[i * 4 + 1] = 240; img.data[i * 4 + 2] = 255;
+        img.data[i * 4 + 3] = 150;
+      }
+    }
+    regionCtx.putImageData(img, 0, 0);
+  }
+
+  // Flame→bar: the avg palette index at the cursor, or null off-flame / empty.
+  const PAINT_BRUSH_RADIUS = 10; // index-map pixels — the hover brush size
+  const PAINT_HINT_BINS = 64;    // spotlight resolution along the bar
+  function indexAtEvent(e: MouseEvent): number | null {
+    if (indexMap === null) return null;
+    const px = clientToPixel(flameContentRect(), e.clientX, e.clientY, indexMap.width, indexMap.height);
+    if (!px) return null;
+    const o = px.oy * indexMap.width + px.ox;
+    return indexMap.mask[o] ? indexMap.avg[o]! : null;
+  }
+  // Hovering the flame casts a SPOTLIGHT on the bar: the band of gradient indices
+  // that color the brushed region stays bright, the rest dims. (Old /gradient
+  // paintHint, restored.)
+  function onFlamePaintHover(e: MouseEvent): void {
+    if (state.activeCanvasOverlay !== 'gradient' || !gradientOverlay || indexMap === null) return;
+    const px = clientToPixel(flameContentRect(), e.clientX, e.clientY, indexMap.width, indexMap.height);
+    if (!px) { gradientOverlay.showHint(null); return; }
+    gradientOverlay.showHint(brushHistogram(indexMap, px.ox, px.oy, PAINT_BRUSH_RADIUS, PAINT_HINT_BINS));
+  }
+  function onFlamePaintLeave(): void { gradientOverlay?.showHint(null); }
+  // Double-click the flame → add a stop at that region's index, colored as the
+  // gradient currently is there (same genome identity → reuses the cached map).
+  function onFlamePaintDblClick(e: MouseEvent): void {
+    if (state.activeCanvasOverlay !== 'gradient' || indexMap === null || !gradientOverlay) return;
+    const t = indexAtEvent(e);
+    if (t === null) return;
+    const pal = state.genome.palette;
+    const rgb = colorAtIndex(pal.stops, pal.hue ?? 0, pal.mode ?? 'linear', t);
+    const res = insertStopAtIndex(pal.stops, t, rgb, 0.02);
+    if (res.selectedExisting) return;
+    state.genome.palette = { ...pal, stops: res.stops };
+    gradientOverlay.setPalette(state.genome.palette);
+    onPathChange('palette');
+  }
+  canvas.addEventListener('mousemove', onFlamePaintHover);
+  canvas.addEventListener('mouseleave', onFlamePaintLeave);
+  canvas.addEventListener('dblclick', onFlamePaintDblClick);
 
   async function applyNewGenome(
     genome: Genome,
@@ -936,6 +1326,11 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // an edit). Undo/redo themselves call this with 'preserve' since the
     // pointer move IS the history operation.
     if (historyAction === 'reset') {
+      // #350 — a fresh flame (reroll / open) appears at its authored composition,
+      // not offset by whatever workspace view the user left active on the prior
+      // flame. Undo/redo ('preserve') keep the view: it's transient navigation of
+      // the SAME flame, so an unrelated edit's undo must not reset the zoom (#358).
+      state.view = { ...IDENTITY_VIEW };
       // Cancel any pending edit-commit timer so a debounce in flight when
       // the user hits Reroll doesn't fire AFTER the reset and add a stale
       // entry.
@@ -957,9 +1352,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     const spp = previewCfg.quality;
     scheduleBarShow(`rendering ${d.width}×${d.height} · q${spp}`);
     const view = ctx.getCurrentTexture().createView();
+    const indexArmed = armIndexCapture();   // #269/#372 — new genome → recapture idx_sum
     editRenderer.applyLane('slow', adjustedGenomeFor(d.width, d.height), state.seed, view, d.width, d.height, { targetSpp: spp });
     notifyStateChange();
     await awaitGpuThenMaybeHide(myTicket);
+    // #269/#372 — read back the palette-index map for point-to-paint (if armed).
+    await captureIndexMapIfArmed(indexArmed, myTicket);
     // #175 — refresh the curves histogram for the new flame (reroll / open).
     void captureSettledPixels(myTicket, spp);
   }
@@ -1425,7 +1823,17 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     },
     destroy(): void {
       if (historyCommitTimer !== null) clearTimeout(historyCommitTimer);
+      detachResize();
       panZoom.destroy();
+      document.removeEventListener('pyr3:xform-selection-changed', onGizmoSelectionChange);
+      gizmoResizeObs.disconnect();
+      gizmo?.destroy();
+      gradientOverlay?.destroy();
+      canvas.removeEventListener('mousemove', onFlamePaintHover);
+      canvas.removeEventListener('mouseleave', onFlamePaintLeave);
+      canvas.removeEventListener('dblclick', onFlamePaintDblClick);
+      regionCanvas.remove();
+      overlays.destroy();
       scheduler.cancel();
       ui?.destroy();
       nudge.destroy();

@@ -9,10 +9,9 @@ describe('nav-menu structure (#264)', () => {
     expect([...tops].map((t) => t.getAttribute('data-nav-top')))
       .toEqual(['viewer', 'editor', 'animate', 'esf', 'discover']);
   });
-  it('Editor menu has Flame + Gradient submenu items', () => {
+  it('Editor is a direct link (no submenu — Gradient retired, #372)', () => {
     const el = buildNavMenu('viewer', vi.fn());
-    const subs = el.querySelectorAll('[data-nav-top="editor"] [data-nav-sub]');
-    expect([...subs].map((s) => s.getAttribute('data-nav-sub'))).toEqual(['editor', 'gradient']);
+    expect(el.querySelectorAll('[data-nav-top="editor"] [data-nav-sub]').length).toBe(0);
   });
   it('Animate menu has Timeline + Screensaver', () => {
     const el = buildNavMenu('viewer', vi.fn());
@@ -59,8 +58,8 @@ describe('nav-menu structure (#264)', () => {
     const onNav = vi.fn();
     const el = buildNavMenu('viewer', onNav);
     document.body.append(el);
-    (el.querySelector('[data-nav-sub="gradient"]') as HTMLButtonElement).click();
-    expect(onNav).toHaveBeenLastCalledWith('/gradient', undefined);
+    (el.querySelector('[data-nav-sub="screensaver"]') as HTMLButtonElement).click();
+    expect(onNav).toHaveBeenLastCalledWith('/screensaver', undefined);
     (el.querySelector('[data-nav-sub="help-webgpu"]') as HTMLButtonElement).click();
     expect(onNav).toHaveBeenLastCalledWith('/help/webgpu.html', true);
     el.dispatchEvent(new Event('pyr3:destroy'));
@@ -72,8 +71,7 @@ describe('nav-menu active-state (#264)', () => {
   const cases: [string, string, string][] = [
     // surface,      activeTop,  activeSub
     ['viewer',      'viewer',   ''],
-    ['editor',      'editor',   'editor'],
-    ['gradient',    'editor',   'gradient'],
+    ['editor',      'editor',   ''],
     ['animate',     'animate',  'animate'],
     ['screensaver', 'animate',  'screensaver'],
     ['esf',         'esf',      'esf'],
@@ -106,58 +104,60 @@ describe('nav-menu dropdown (#264)', () => {
   const toptab = (el: HTMLElement, top: string): HTMLButtonElement =>
     el.querySelector(`[data-nav-top="${top}"] .pyr3-nav-toptab`) as HTMLButtonElement;
 
+  // #372 — Editor is now a direct link (Gradient retired), so these dropdown
+  // tests use 'animate' (Timeline + Screensaver) as the example multi-item menu.
   it('clicking a top toggle opens its panel', () => {
     const el = mount();
-    expect(panel(el, 'editor').hidden).toBe(true);
-    toptab(el, 'editor').click();
-    expect(panel(el, 'editor').hidden).toBe(false);
+    expect(panel(el, 'animate').hidden).toBe(true);
+    toptab(el, 'animate').click();
+    expect(panel(el, 'animate').hidden).toBe(false);
     teardown(el);
   });
   it('clicking the same toggle again closes it', () => {
     const el = mount();
-    toptab(el, 'editor').click();
-    toptab(el, 'editor').click();
-    expect(panel(el, 'editor').hidden).toBe(true);
+    toptab(el, 'animate').click();
+    toptab(el, 'animate').click();
+    expect(panel(el, 'animate').hidden).toBe(true);
     teardown(el);
   });
   it('opening one panel closes the previously open one', () => {
     const el = mount();
-    toptab(el, 'editor').click();
     toptab(el, 'animate').click();
-    expect(panel(el, 'editor').hidden).toBe(true);
-    expect(panel(el, 'animate').hidden).toBe(false);
+    toptab(el, 'esf').click();
+    expect(panel(el, 'animate').hidden).toBe(true);
+    expect(panel(el, 'esf').hidden).toBe(false);
     teardown(el);
   });
   it('Escape closes the open panel', () => {
     const el = mount();
-    toptab(el, 'editor').click();
+    toptab(el, 'animate').click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(panel(el, 'editor').hidden).toBe(true);
+    expect(panel(el, 'animate').hidden).toBe(true);
     teardown(el);
   });
   it('outside mousedown closes the open panel', () => {
     const el = mount();
-    toptab(el, 'editor').click();
+    toptab(el, 'animate').click();
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    expect(panel(el, 'editor').hidden).toBe(true);
+    expect(panel(el, 'animate').hidden).toBe(true);
     teardown(el);
   });
   it('mousedown inside the open panel does NOT close it', () => {
     const el = mount();
-    toptab(el, 'editor').click();
-    panel(el, 'editor').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    expect(panel(el, 'editor').hidden).toBe(false);
+    toptab(el, 'animate').click();
+    panel(el, 'animate').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(panel(el, 'animate').hidden).toBe(false);
     teardown(el);
   });
   it('pyr3:destroy removes document listeners (Escape no longer closes)', () => {
     const el = mount();
-    toptab(el, 'editor').click();
+    toptab(el, 'animate').click();
     teardown(el);
     // After teardown the listener is gone; re-mount a fresh nav and confirm the
     // stale listener from the destroyed one does not interfere.
     const el2 = mount();
-    toptab(el2, 'editor').click();
-    expect(panel(el2, 'editor').hidden).toBe(false);
+    toptab(el2, 'animate').click();
+    expect(panel(el2, 'animate').hidden).toBe(false);
     teardown(el2);
   });
 });

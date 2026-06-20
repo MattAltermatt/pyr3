@@ -27,9 +27,6 @@ describe('parseLoadIntent — flat routes (#264)', () => {
   it('/editor → edit', () => {
     expect(p('/editor')).toEqual({ kind: 'edit' });
   });
-  it('/gradient → gradient', () => {
-    expect(p('/gradient')).toEqual({ kind: 'gradient' });
-  });
   it('/animate → animate', () => {
     expect(p('/animate')).toEqual({ kind: 'animate' });
   });

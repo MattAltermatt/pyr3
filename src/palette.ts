@@ -16,11 +16,35 @@ export interface ColorStop {
   b: number;
 }
 
+/** Parameters for the procedural ramp generator (#267/#358). Pure data — the
+ *  generator in `palette-generate.ts` turns these into stops. */
+export interface RampParams {
+  mode: 'rainbow' | 'shades';
+  hue: number;        // start hue, degrees
+  chroma: number;     // 0..1 (normalized → OkLCh C)
+  lightness: number;  // 0..1 (rainbow mode)
+  lightFrom: number;  // 0..1 (shades mode, dark end)
+  lightTo: number;    // 0..1 (shades mode, light end)
+  loops: number;      // >= 1 (rainbow): hue travels loops × 360°
+  direction: 1 | -1;  // +1 = cw, -1 = ccw (rainbow)
+  stops: number;      // stop count
+}
+
+/** Generator provenance: how a generated palette was produced (params + the UI
+ *  seed). Stored on the palette so it rides through the in-session undo history
+ *  (structuredClone), letting the generator controls re-sync after undo/redo.
+ *  Editor-only — `serialize.ts` whitelists palette fields, so `gen` is NOT
+ *  written to saved files / animation / parity. (#358) */
+export interface RampMeta extends RampParams {
+  seed: number;
+}
+
 export interface Palette {
   name: string;
   stops: ColorStop[];
   hue?: number;        // degrees in [0, 360); default 0 — HSV-rotate stops at bake time
   mode?: PaletteMode;  // default 'linear'
+  gen?: RampMeta;      // generator provenance (editor-only, not serialized) — #358
 }
 
 // Cardinal Catmull-Rom (tension B=0.5) for one channel across 4 control values.

@@ -67,10 +67,11 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-mount.ts',        // /editor page mount — owns canvas + DOM
   'edit-ui.ts',           // /editor panel shell — DOM-mounting
   'edit-section-palette.ts',  // /editor section — DOM-mounting
+  'edit-palette-generator.ts', // /editor palette ramp generator — DOM-mounting (#358)
   'edit-section-viewport.ts', // /editor section — DOM-mounting
   'edit-section-xforms.ts',   // /editor section — DOM-mounting
-  'edit-section-final.ts',    // /editor section — DOM-mounting
   'edit-section-global.ts',   // /editor section — DOM-mounting
+  'edit-section-background.ts', // shared bg control — DOM-mounting (#27)
   'edit-section-density.ts',  // /editor section — DOM-mounting
   'edit-section-render.ts',   // /editor section — DOM-mounting
   'edit-section-curves.ts',   // /editor Color Curves section — DOM-mounting (#116)
@@ -78,6 +79,9 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-section-hsl.ts',      // /editor HSL Adjust section — DOM-mounting (#172)
   'edit-canvas-nav.ts',   // /editor pan + zoom — owns mouse/wheel listeners on window
   'edit-xform-viz.ts',    // /editor affine viz — owns a 2D canvas
+  'edit-xform-gizmo.ts',       // /editor on-canvas affine gizmo overlay — owns a 2D canvas + listeners (#350)
+  'edit-gradient-overlay.ts',  // /editor on-canvas gradient bar overlay — DOM host + embedded palette editor (#372)
+  'edit-canvas-overlays.ts',   // /editor screen-fixed canvas chrome menu — DOM-mounting (#350)
   'edit-variation-picker.ts',  // /editor variation picker — owns a modal, document keydown listener
   'edit-variation-kind.ts',    // /editor variation-kind helpers — opens the picker on document.body (#236/#237)
   'edit-scrubby-input.ts',     // /editor drag-to-scrub numeric cell — owns DOM + pointer lock
@@ -102,7 +106,6 @@ const SEAM_EXEMPT = new Set<string>([
   'playback-bar.ts',           // /animate scrubber — DOM-mounting (#211 P6)
   'palette-editor.ts',         // /gradient stop-bar editor — DOM-mounting (#115)
   'color-picker.ts',           // /gradient HSV picker popover — owns DOM (#115)
-  'gradient-page.ts',          // /gradient page shell — DOM-mounting (#115)
   'palette-file.ts',           // /gradient .pyre-palette.json import/export — anchor download (#115)
   'timeline-track.ts',         // /animate timeline lane — DOM-mounting (clip blocks, draggable playhead) (#227c)
   'timeline-thumbnails.ts',    // /animate clip thumbnails — creates offscreen canvases via document (#227c)

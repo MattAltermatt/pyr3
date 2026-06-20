@@ -53,6 +53,13 @@ describe('densitySection', () => {
     expect(typeof densitySection.build).toBe('function');
   });
 
+  it('stamps data-help-key on minRad / maxRad / curve (Q4)', () => {
+    const { host } = mount();
+    expect(host.querySelector('[data-help-key="density.minRad"]')).not.toBeNull();
+    expect(host.querySelector('[data-help-key="density.maxRad"]')).not.toBeNull();
+    expect(host.querySelector('[data-help-key="density.curve"]')).not.toBeNull();
+  });
+
   it('renders 3 slider+input pairs (preset dropdown removed 2026-06-05)', () => {
     const { host } = mount();
     // Dropdown is gone — confirm explicitly.
@@ -77,10 +84,14 @@ describe('densitySection', () => {
     expect(onChange).toHaveBeenCalledWith('density.maxRad');
   });
 
-  it('editing maxRad number input mutates state and syncs the slider', () => {
+  it('editing the maxRad scrubby mutates state and syncs the hidden range mirror', () => {
     const { host, state } = mount();
-    const number = host.querySelector<HTMLElement>('.pyr3-edit-density-maxRad-number')!;
-    const slider = host.querySelector<HTMLInputElement>('.pyr3-edit-density-maxRad-slider')!;
+    // The buildSlider control owns an internal scrubby (`.pyr3-slider-scrubby`)
+    // and a visually-hidden range mirror (`.pyr3-edit-density-maxRad-slider`).
+    // Typing into the scrubby writes the genome and mirrors back to the range.
+    const row = host.querySelector<HTMLElement>('.pyr3-edit-density-maxRad-row')!;
+    const number = row.querySelector<HTMLElement>('.pyr3-slider-scrubby')!;
+    const slider = row.querySelector<HTMLInputElement>('.pyr3-edit-density-maxRad-slider')!;
     typeInto(number, '12.5');
     expect(state.genome.density!.maxRad).toBe(12.5);
     expect(slider.value).toBe('12.5');

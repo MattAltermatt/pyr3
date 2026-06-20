@@ -7,8 +7,11 @@
 
 import {
   persistSectionCollapse,
+  persistActiveLens,
   type EditState,
   type SectionKey,
+  type LensKey,
+  type SectionGroup,
 } from './edit-state';
 import { scrubbyInput } from './edit-scrubby-input';
 import { COLORS } from './ui-tokens';
@@ -18,6 +21,11 @@ import { SETTLE_PRESETS } from './load-intent';
 export interface SectionMount {
   key: SectionKey;
   title: string;
+  /** Which top-level lens this section belongs to (4-lens IA, #27). */
+  lens: LensKey;
+  /** Optional sub-group within a lens — renders a static DEFINE→GRADE divider
+   *  above the group's first section (Color lens only, #358). */
+  group?: SectionGroup;
   /** Build the section into `host`. May return a disposer (#300) — called by
    *  the EditUiHandle.destroy() before the DOM is torn down, to release
    *  cross-DOM subscriptions (state.settledPixelsListeners, document-level
@@ -44,6 +52,31 @@ export interface EditUiCallbacks {
   /** Fires whenever the user changes the settle-delay input. Host pipes
    *  the new value into the live/settle scheduler. */
   onSettleDelayChange?: (ms: number) => void;
+}
+
+/** Bucket sections by their lens, preserving order within each lens (#27). */
+export function groupByLens(sections: SectionMount[]): Record<LensKey, SectionMount[]> {
+  const g: Record<LensKey, SectionMount[]> = { xform: [], scene: [], color: [], output: [] };
+  for (const s of sections) g[s.lens].push(s);
+  return g;
+}
+
+const GROUP_HEADERS: Record<SectionGroup, { label: string; qualifier: string }> = {
+  palette: { label: '🎨 Palette', qualifier: 'define what colors exist · pre-render' },
+  grading: { label: '🎚️ Grading', qualifier: 'shape the rendered image · post-tonemap' },
+};
+
+function buildGroupHeader(group: SectionGroup): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'pyr3-edit-group-header';
+  const label = document.createElement('span');
+  label.className = 'pyr3-edit-group-label';
+  label.textContent = GROUP_HEADERS[group].label;
+  const qual = document.createElement('span');
+  qual.className = 'pyr3-edit-group-qualifier';
+  qual.textContent = GROUP_HEADERS[group].qualifier;
+  el.append(label, qual);
+  return el;
 }
 
 export function mountEditUi(
@@ -122,12 +155,61 @@ export function mountEditUi(
   topbar.appendChild(settleRow);
   highlightSettleLadder(Math.round(callbacks.settleDelayMs ?? 200));
 
-  host.appendChild(topbar);
+  // #350 — settle + lens tabs stay pinned at the top of the panel (sticky,
+  // outside the scroll) so they're always reachable while sections scroll.
+  const stickyHead = document.createElement('div');
+  stickyHead.className = 'pyr3-edit-stickyhead';
+  stickyHead.appendChild(topbar);
+
+  // ── Lens buttons (4-lens IA, #27) ──────────────────────────────────────
+  // Four hard top-level lenses. Each section declares its lens; clicking a
+  // button shows that lens's sections and hides the rest (display toggle —
+  // sections are built ONCE so cross-DOM subscriptions like the Scopes
+  // gradedPixels listener survive a lens switch).
+  const LENS_LABELS: Array<[LensKey, string]> = [
+    ['xform', 'XForm'], ['scene', 'Scene'], ['color', 'Color'], ['output', 'Output'],
+  ];
+  const lensBar = document.createElement('div');
+  lensBar.className = 'pyr3-edit-lensbar';
+  const lensBtns = new Map<LensKey, HTMLButtonElement>();
+  const lensWraps: Record<LensKey, HTMLElement[]> = { xform: [], scene: [], color: [], output: [] };
+  function showLens(lens: LensKey): void {
+    state.activeLens = lens;
+    for (const [k, b] of lensBtns) b.classList.toggle('on', k === lens);
+    for (const k of ['xform', 'scene', 'color', 'output'] as LensKey[]) {
+      for (const w of lensWraps[k]) w.style.display = k === lens ? 'block' : 'none';
+    }
+    persistActiveLens(lens);
+  }
+  for (const [lens, label] of LENS_LABELS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pyr3-edit-lensbtn';
+    b.textContent = label;
+    b.dataset.lens = lens;
+    b.addEventListener('click', () => showLens(lens));
+    lensBtns.set(lens, b);
+    lensBar.append(b);
+  }
+  stickyHead.appendChild(lensBar);
+  host.appendChild(stickyHead);
 
   // ── Section accordion ─────────────────────────────────────────────────
   const sectionEls: HTMLElement[] = [];
   const sectionDisposers: Array<() => void> = [];
+  const seenGroups = new Set<string>();
   for (const sec of sections) {
+    // #358 — emit a static group divider before the first section of each
+    // group (Color lens DEFINE→GRADE). Pushed into lensWraps so it shows/hides
+    // with its lens and is removed by destroy().
+    if (sec.group && !seenGroups.has(`${sec.lens}:${sec.group}`)) {
+      seenGroups.add(`${sec.lens}:${sec.group}`);
+      const gh = buildGroupHeader(sec.group);
+      host.appendChild(gh);
+      sectionEls.push(gh);
+      lensWraps[sec.lens].push(gh);
+    }
+
     const wrap = document.createElement('div');
     wrap.className = 'pyr3-edit-section';
 
@@ -161,7 +243,11 @@ export function mountEditUi(
     wrap.append(header, body);
     host.appendChild(wrap);
     sectionEls.push(wrap);
+    lensWraps[sec.lens].push(wrap);
   }
+
+  // Activate the persisted lens — shows its sections, hides the rest.
+  showLens(state.activeLens);
 
   return {
     destroy(): void {
@@ -170,7 +256,7 @@ export function mountEditUi(
       // document keydown listeners across the editor's lifetime.
       for (const dispose of sectionDisposers) dispose();
       for (const el of sectionEls) el.remove();
-      topbar.remove();
+      stickyHead.remove(); // wraps topbar + lensBar (#350 sticky header)
     },
     setSettleDelayMs(ms: number): void {
       // setValue updates the scrubby's display + internal state but does
@@ -192,7 +278,7 @@ function ensureEditStyles(): void {
   document.head.appendChild(style);
 }
 
-const EDIT_CSS = `
+export const EDIT_CSS = `
 .pyr3-edit-root {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -214,11 +300,21 @@ const EDIT_CSS = `
      overflows the viewport at narrow widths → the flame gets cropped instead of
      fitting. With minmax(0,…) the track collapses and the canvas's
      object-fit:contain (below) scales the flame to fit. */
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 8px;
+  /* #27 — panel column width is a drag-resizable per-browser pref (CSS var
+     set from state.panelWidth; the resize grip in edit-mount updates it). The
+     7px middle track is the grip column. */
+  grid-template-columns: var(--pyr3-panel-w, 360px) 7px minmax(0, 1fr);
+  gap: 0;
   min-height: 0;
   overflow: hidden;
 }
+.pyr3-edit-resize-grip {
+  cursor: col-resize;
+  background: var(--bar-border, #2a2a30);
+  border-radius: 2px;
+  transition: background 0.12s;
+}
+.pyr3-edit-resize-grip:hover { background: #3257a8; }
 .pyr3-edit-render-mode-bar-host {
   /* render-mode-bar host spans the full editor width above the body row */
 }
@@ -263,6 +359,56 @@ const EDIT_CSS = `
   flex-direction: column;
   gap: 6px;
 }
+.pyr3-edit-stickyhead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bar-bg-3, #0f0f13);
+  /* Bleed over the panel's 8px padding so scrolled sections don't peek above
+     or beside the pinned header; padding restores the inner gap. */
+  margin: -8px -8px 0 -8px;
+  padding: 8px;
+}
+.pyr3-edit-lensbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 0;
+}
+.pyr3-edit-lensbtn {
+  flex: 1;
+  padding: 7px 2px;
+  border: 1px solid var(--bar-border, #3a3a48);
+  border-radius: 5px;
+  background: var(--bar-bg-2, #1e1e28);
+  color: var(--bar-text-dim, #aab);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pyr3-edit-lensbtn:hover { border-color: #5a6a9a; }
+.pyr3-edit-lensbtn.on {
+  background: #3257a8;
+  color: #fff;
+  border-color: #3257a8;
+}
+.pyr3-edit-group-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 4px 4px;
+  margin-top: 4px;
+}
+.pyr3-edit-group-label {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text, #ddd);
+}
+.pyr3-edit-group-qualifier {
+  font-size: 10px;
+  color: var(--text-dim, #888);
+}
 .pyr3-edit-named { display: flex; align-items: center; gap: 4px; }
 .pyr3-edit-text,
 .pyr3-edit-settle-input {
@@ -300,8 +446,10 @@ const EDIT_CSS = `
   text-align: right;
   white-space: nowrap;
 }
-.pyr3-scrubby:focus { outline: none; border-color: var(--accent-border, #884a1a); }
-.pyr3-scrubby-dragging { border-color: var(--accent, #ff8c1a); }
+/* The drag-to-edit affordance lives on .pyr3-edit-num (the boxed number field,
+   #373 decision B — a 2px accent bottom-rule). This base .pyr3-scrubby rule stays
+   layout-only so a non-boxed scrubby doesn't double up. */
+.pyr3-scrubby:focus { outline: none; }
 .pyr3-scrubby-textmode { cursor: text; text-align: right; }
 .pyr3-edit-section {
   background: var(--bar-bg-1, #15151a);
@@ -311,7 +459,8 @@ const EDIT_CSS = `
   overflow: hidden;
 }
 .pyr3-edit-section-header {
-  background: var(--bar-bg-2, #1a1a20);
+  background: #20202a;
+  border-left: 3px solid var(--structure, #3257a8);
   padding: 6px 8px;
   cursor: pointer;
   user-select: none;
@@ -321,8 +470,8 @@ const EDIT_CSS = `
 }
 .pyr3-edit-section-header:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); }
 .pyr3-edit-chev { color: var(--text-dim, #888); width: 10px; display: inline-block; }
-.pyr3-edit-section-title { font-weight: 600; letter-spacing: 0.04em; font-size: 11px; text-transform: uppercase; }
-.pyr3-edit-section-body { padding: 8px; }
+.pyr3-edit-section-title { color: #fff; font-weight: 600; letter-spacing: 0.04em; font-size: 11px; text-transform: uppercase; }
+.pyr3-edit-section-body { padding: var(--sp, 8px); }
 .pyr3-edit-xform-inactive { opacity: 0.55; }
 .pyr3-edit-xform-inactive .pyr3-edit-xform-active { opacity: 1; }
 .pyr3-edit-var-row.pyr3-edit-var-inactive { opacity: 0.55; }
@@ -336,11 +485,11 @@ const EDIT_CSS = `
   position: fixed;
   top: 0;
   bottom: 0;
-  /* Anchored to the right edge of the left panel. The panel width is
-     pinned at 340px in the editor layout; if that ever becomes dynamic,
-     promote this to a CSS custom property updated from JS. */
-  left: 340px;
-  width: 340px;
+  /* Anchored to the right edge of the resizable left panel (#27 — the panel
+     width is the --pyr3-panel-w custom property; +7px for the resize grip
+     column). Width tracks the panel so the picker overlays it exactly. */
+  left: calc(var(--pyr3-panel-w, 360px) + 7px);
+  width: var(--pyr3-panel-w, 360px);
   background: var(--bar-bg-1, #15151a);
   border-right: 1px solid var(--bar-border, #2a2a30);
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
@@ -459,4 +608,55 @@ const EDIT_CSS = `
 .pyr3-var-category > summary::-webkit-details-marker { display: none; }
 .pyr3-var-category[open] > summary { border-bottom: 1px solid var(--bar-border, #2a2a30); }
 .pyr3-var-category > .pyr3-var-grid { padding: 8px 10px; }
+
+/* #350 Phase 2.3 — on-canvas gizmo: screen-fixed overlays chrome + overlay layer. */
+.pyr3-edit-canvas-overlays { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; z-index: 5; }
+.pyr3-edit-overlay-btn { font: 12px/1.2 system-ui, sans-serif; padding: 3px 7px; border-radius: 5px;
+  background: rgba(20,20,24,0.72); color: #eee; border: 1px solid rgba(255,255,255,0.14); cursor: pointer; }
+.pyr3-edit-overlay-btn[aria-pressed="true"] { background: #ff8c1a; color: #1a1206; border-color: #ff8c1a; }
+.pyr3-edit-overlay-mode { display: flex; align-items: center; gap: 2px; font: 12px/1.2 system-ui, sans-serif;
+  background: rgba(20,20,24,0.72); border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; padding: 2px 4px 2px 6px; }
+.pyr3-edit-overlay-mode-label { color: #aaa; margin-right: 3px; }
+.pyr3-edit-overlay-seg { font: 12px/1.2 system-ui, sans-serif; padding: 2px 9px; border-radius: 4px;
+  background: transparent; color: #ddd; border: 1px solid transparent; cursor: pointer; }
+.pyr3-edit-overlay-seg[aria-pressed="true"] { background: #ff8c1a; color: #1a1206; font-weight: 600; }
+.pyr3-edit-overlay-step { font: 11px system-ui; color: #ccc; background: rgba(20,20,24,0.72); padding: 2px 6px; border-radius: 5px; }
+.pyr3-edit-overlay-step input { width: 52px; margin-left: 4px; }
+.pyr3-edit-overlay-readout { font: 11px ui-monospace, monospace; color: #ffd23a; min-height: 14px;
+  background: rgba(20,20,24,0.72); padding: 1px 6px; border-radius: 4px; }
+.pyr3-edit-gizmo-overlay { z-index: 4; }
+
+/* ── Tier-4 action expander — shared accent-bar (docs/ui-affordance-system.md). ──
+   The canonical disclosure/action bar (built by buildExpander in
+   edit-primitives.ts). Orange border + tint + ▸ chevron so a fold reads as a
+   pressable control, not a label. (#373 — generalizes the #358 Generate-ramp.) */
+.pyr3-aff-expander { margin: var(--sp, 8px) 0 var(--sp-tight, 4px); }
+.pyr3-aff-expander > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent, #ff8c1a);
+  background: var(--accent-soft, rgba(255, 140, 26, 0.12));
+  border: 1px solid var(--accent-border, #884a1a);
+  border-radius: 5px;
+}
+.pyr3-aff-expander > summary::-webkit-details-marker { display: none; }
+.pyr3-aff-expander > summary::after {
+  content: '▸';
+  color: var(--accent, #ff8c1a);
+  transition: transform 0.12s ease;
+}
+.pyr3-aff-expander[open] > summary::after { transform: rotate(90deg); }
+.pyr3-aff-expander > summary:hover {
+  background: var(--accent-soft, rgba(255, 140, 26, 0.2));
+  border-color: var(--accent, #ff8c1a);
+}
+.pyr3-aff-expander-body { padding: 6px 4px 2px; }
 `;

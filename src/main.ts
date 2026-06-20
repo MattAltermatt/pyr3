@@ -251,7 +251,6 @@ async function main(): Promise<void> {
     const is = (root: string): boolean => p === root || p.startsWith(root + '/');
     if (is('/esf/gallery')) return 'gallery';
     if (is('/editor')) return 'editor';
-    if (is('/gradient')) return 'gradient';
     if (is('/animate')) return 'animate';
     if (is('/about')) return 'about';
     if (is('/screensaver')) return 'screensaver';
@@ -305,39 +304,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // #115 — /v1/gradient short-circuit. Bar chrome with the Gradient tab active;
-  // the page body lives in the bar's middleSlot. Viewer canvas + first-paint cue
-  // hidden so the page owns the zone. #269 — the page now renders the flame, so
-  // a GPU device is acquired (best-effort) and passed in.
-  if (window.location.pathname === '/gradient' || window.location.pathname.startsWith('/gradient/')) {
-    const barRoot = document.getElementById('pyr3-bar');
-    const bodyRoot = document.getElementById('pyr3-canvas-zone');
-    if (!barRoot || !bodyRoot) {
-      console.error('pyr3: /v1/gradient — required DOM nodes missing');
-      return;
-    }
-    // #353 — the page now OWNS the bar (mountGradientBar) so the action verbs
-    // live in the shared chrome. main only hides the viewer canvas + drops the
-    // first-paint cue, acquires GPU best-effort, and hands #pyr3-bar to the page.
-    const canvas = document.getElementById('pyr3-canvas');
-    if (canvas) canvas.hidden = true;
-    const firstPaint = document.getElementById('pyr3-firstpaint');
-    if (firstPaint) firstPaint.remove();
-    // #269 — acquire a GPU device so the gradient editor can render the flame.
-    // Best-effort: if WebGPU is unavailable the page still works palette-only.
-    let gradGpu: { device: GPUDevice; format: GPUTextureFormat } | undefined;
-    try {
-      const { device, format } = await acquireGpu();
-      gradGpu = { device, format };
-    } catch (err) {
-      console.warn('pyr3: /v1/gradient — GPU unavailable, palette-only mode', err);
-    }
-    const { mountGradientPage } = await import('./gradient-page');
-    const gradientHandle = mountGradientPage({ barRoot, webgpu, ...(gradGpu ?? {}) });
-    window.addEventListener('pagehide', () => { gradientHandle.destroy(); }, { once: true });
-    setDocTitle('gradient');
-    return;
-  }
+  // #372 — /gradient retired. The standalone palette page is gone; palette
+  // editing now lives in the editor's Color lens (on-canvas overlay). Old
+  // /gradient and /v1/gradient URLs are redirected to /editor by
+  // redirectLegacyPath at boot (above), so no route block remains here.
 
   // #109 — /v1/screensaver short-circuit. Mirrors the /about pattern:
   // mountScreensaverBar into #pyr3-bar; screensaver page body into the
@@ -644,8 +614,7 @@ async function main(): Promise<void> {
     const { scopesSection } = await import('./edit-section-scopes');
     const { viewportSection } = await import('./edit-section-viewport');
     const { xformsSection } = await import('./edit-section-xforms');
-    const { finalSection } = await import('./edit-section-final');
-    const { globalSection } = await import('./edit-section-global');
+    const { globalSymmetrySection, globalTonemapSection } = await import('./edit-section-global');
     const { densitySection } = await import('./edit-section-density');
     const { renderSection } = await import('./edit-section-render');
     // #119 — catalog → editor handoff. When the URL is
@@ -665,17 +634,24 @@ async function main(): Promise<void> {
       format: editFormat,
       defaultNick: savedNick,
       initialGenome: catalogInitialGenome,
+      // #27 — grouped by lens (XForm · Scene · Color · Output); array order
+      // sets the vertical order within each lens. mountEditUi shows one lens
+      // at a time via the lens-button row.
       sections: [
-        renderSection,
-        paletteSection,
-        hslSection,
-        curvesSection,
-        scopesSection,
-        viewportSection,
+        // XForm lens (the final xform folds into this section's selector — #350)
         xformsSection,
-        finalSection,
-        globalSection,
+        // Scene lens
+        viewportSection,
+        globalSymmetrySection,
+        // Color lens — static DEFINE→GRADE group dividers (#358)
+        { ...paletteSection, group: 'palette' as const },
+        { ...hslSection, group: 'grading' as const },
+        { ...curvesSection, group: 'grading' as const },
+        { ...scopesSection, group: 'grading' as const },
+        // Output lens
+        globalTonemapSection,
         densitySection,
+        renderSection,
       ],
       onStateChange: (state) => {
         // #357 — the loaded-source chip is provenance-only: show the flame's
@@ -2419,13 +2395,12 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
       // means that dispatch was bypassed — log + paint welcome as a safe net.
       console.error('pyr3: viewer intent reached resolveLoadIntent — dispatch order broken');
       return fetchAsFile(WELCOME_FLAME_URL);
-    case 'gradient':
     case 'animate':
     case 'screensaver':
     case 'esf':
-      // #264 — /gradient, /animate, /screensaver, /esf all dispatch via their
-      // own early short-circuits in main() BEFORE this function runs. Reaching
-      // here is a routing bug — log loudly + paint welcome as a safe fallback.
+      // #264 — /animate, /screensaver, /esf all dispatch via their own early
+      // short-circuits in main() BEFORE this function runs. Reaching here is a
+      // routing bug — log loudly + paint welcome as a safe fallback.
       console.error(`pyr3: ${intent.kind} intent reached resolveLoadIntent — dispatch order broken`);
       return fetchAsFile(WELCOME_FLAME_URL);
     case 'default':

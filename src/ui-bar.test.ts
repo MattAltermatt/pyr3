@@ -7,11 +7,9 @@ import {
   mountBarChrome,
   mountEditBar,
   mountGalleryBar,
-  mountGradientBar,
   type BarOpts,
   type EditBarOpts,
   type GalleryBarOpts,
-  type GradientBarOpts,
   type TabSurface,
 } from './ui-bar';
 import type { WebGPUStatus } from './webgpu-check';
@@ -75,141 +73,12 @@ function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
   };
 }
 
-function makeGradientOpts(over: Partial<GradientBarOpts> = {}): GradientBarOpts {
-  return {
-    webgpu: STUB_WEBGPU,
-    onLoadFlame: vi.fn(),
-    onBrowse: vi.fn(),
-    onSave: vi.fn(),
-    onExport: vi.fn(),
-    onImport: vi.fn(),
-    onReset: vi.fn(),
-    onUndo: vi.fn(),
-    onRedo: vi.fn(),
-    onTabClick: vi.fn(),
-    ...over,
-  };
-}
-
-describe('mountGradientBar (#353)', () => {
-  it('mounts shared chrome (Gradient surface) + action verbs, NO editable name input', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const h = mountGradientBar(root, makeGradientOpts());
-    // shared chrome with Gradient lit (under the Editor dropdown)
-    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="gradient"].active')).toBeTruthy();
-    // action verbs present
-    for (const r of ['load-flame', 'browse', 'save', 'export', 'import', 'reset']) {
-      expect(root.querySelector(`[data-role="${r}"]`)).toBeTruthy();
-    }
-    // name-free: no editable name input (naming lives in the #346 save dialog)
-    expect(root.querySelector('.pyr3-bar-name-input')).toBeNull();
-    // page body mounts into the middle slot
-    expect(h.middleSlot.classList.contains('pyr3-middle-slot')).toBe(true);
-    h.destroy();
-  });
-
-  it('action buttons fire their callbacks', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const onBrowse = vi.fn(); const onReset = vi.fn();
-    const h = mountGradientBar(root, makeGradientOpts({ onBrowse, onReset }));
-    (root.querySelector('[data-role="browse"]') as HTMLElement).click();
-    (root.querySelector('[data-role="reset"]') as HTMLElement).click();
-    expect(onBrowse).toHaveBeenCalledTimes(1);
-    expect(onReset).toHaveBeenCalledTimes(1);
-    h.destroy();
-  });
-
-  it('has ⟲/⟳ undo-redo buttons (start disabled) that fire + toggle (#265)', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const onUndo = vi.fn(); const onRedo = vi.fn();
-    const h = mountGradientBar(root, makeGradientOpts({ onUndo, onRedo }));
-    const undo = root.querySelector('[data-role="undo"]') as HTMLButtonElement;
-    const redo = root.querySelector('[data-role="redo"]') as HTMLButtonElement;
-    expect(undo).toBeTruthy();
-    expect(redo).toBeTruthy();
-    // Start disabled (no history yet).
-    expect(undo.disabled).toBe(true);
-    expect(redo.disabled).toBe(true);
-    // The page drives the enabled state.
-    h.setUndoEnabled(true);
-    h.setRedoEnabled(true);
-    expect(undo.disabled).toBe(false);
-    expect(redo.disabled).toBe(false);
-    undo.click();
-    redo.click();
-    expect(onUndo).toHaveBeenCalledTimes(1);
-    expect(onRedo).toHaveBeenCalledTimes(1);
-    h.destroy();
-  });
-
-  it('round-trip mode adds Apply + Cancel CTAs leading the action row', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const h = mountGradientBar(root, makeGradientOpts({ roundTrip: true }));
-    expect(root.querySelector('[data-role="apply"]')).toBeTruthy();
-    expect(root.querySelector('[data-role="cancel-return"]')).toBeTruthy();
-    h.destroy();
-  });
-
-  it('non-round-trip mode has no Apply / Cancel CTAs', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const h = mountGradientBar(root, makeGradientOpts());
-    expect(root.querySelector('[data-role="apply"]')).toBeNull();
-    expect(root.querySelector('[data-role="cancel-return"]')).toBeNull();
-    h.destroy();
-  });
-
-  it('setIdentity shows a read-only "🎨 name" chip; empty hides it', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const h = mountGradientBar(root, makeGradientOpts());
-    const chip = root.querySelector('[data-role="palette-identity"]') as HTMLElement;
-    expect(chip.style.display).toBe('none');
-    h.setIdentity('ember');
-    expect(chip.textContent).toContain('ember');
-    expect(chip.style.display).not.toBe('none');
-    h.setIdentity('');
-    expect(chip.style.display).toBe('none');
-    h.destroy();
-  });
-});
-
 describe('#356 — bar ethos sweep (verb-heavy surfaces keep a slim 2nd row)', () => {
   // The #367 restructure folded the few viewer/editor verbs into the identity
   // row's right gutter and dropped the action bar. The two remaining surfaces on
   // the old layout — the gradient editor and the ESF corpus viewer — are
   // verb-heavy (gradient) or nav-primary (esf), so they KEEP a second row;
   // only the light/secondary controls move up into the identity-row gutter.
-
-  it('gradient: undo/redo live in the identity-row right gutter; file verbs stay on the action row', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const h = mountGradientBar(root, makeGradientOpts());
-    const gutter = root.querySelector('.pyr3-bar-info .pyr3-bar-info-actions');
-    expect(gutter, 'gradient info row should carry a right-gutter zone').not.toBeNull();
-    expect(gutter!.querySelector('[data-role="undo"]')).toBeTruthy();
-    expect(gutter!.querySelector('[data-role="redo"]')).toBeTruthy();
-    const actionRow = root.querySelector('.pyr3-bar-action')!;
-    for (const r of ['load-flame', 'browse', 'save', 'export', 'import', 'reset']) {
-      expect(actionRow.querySelector(`[data-role="${r}"]`), `${r} stays on the action row`).toBeTruthy();
-      expect(gutter!.querySelector(`[data-role="${r}"]`), `${r} is not pulled into the gutter`).toBeNull();
-    }
-    h.destroy();
-  });
-
-  it('gradient: round-trip Apply/Cancel CTAs sit in the identity-row right gutter', () => {
-    document.body.innerHTML = '<div id="root"></div>';
-    const root = document.getElementById('root')!;
-    const h = mountGradientBar(root, makeGradientOpts({ roundTrip: true }));
-    const gutter = root.querySelector('.pyr3-bar-info .pyr3-bar-info-actions')!;
-    expect(gutter.querySelector('[data-role="apply"]')).toBeTruthy();
-    expect(gutter.querySelector('[data-role="cancel-return"]')).toBeTruthy();
-    h.destroy();
-  });
 
   it('esf: Save Flame + Edit move to the identity-row gutter; corpus nav + dice keep the slim action row', () => {
     document.body.innerHTML = '<div id="root"></div>';

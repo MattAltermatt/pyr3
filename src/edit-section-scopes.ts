@@ -115,6 +115,7 @@ function drawVectorscope(ctx: CanvasRenderingContext2D, v: VectorBins): void {
 
 export const scopesSection: SectionMount = {
   key: 'scopes',
+  lens: 'color',
   title: '📊 SCOPES',
   // _onChange unused: scopes are read-only diagnostics with no editable
   // controls, but we keep the full SectionMount signature for consistency

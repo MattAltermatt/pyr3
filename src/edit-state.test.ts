@@ -4,6 +4,7 @@ import {
   pathLane,
   createLaneScheduler,
   createEditState,
+  setActiveCanvasOverlay,
   persistWip,
   restoreWip,
   schedulePersist,
@@ -12,6 +13,14 @@ import {
   saveEditRenderSettings,
   DEFAULT_EDIT_RENDER_SETTINGS,
   EDIT_RENDER_SETTINGS_KEY,
+  LENS_KEY,
+  persistActiveLens,
+  restoreActiveLens,
+  persistPanelWidth,
+  restorePanelWidth,
+  loadGizmoPrefs,
+  saveGizmoPrefs,
+  GIZMO_PREFS_DEFAULT,
   type Clock,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
@@ -211,15 +220,15 @@ describe('createLaneScheduler', () => {
 });
 
 describe('createEditState', () => {
-  it('starts with all 7 sections collapsed (collapse = true)', () => {
+  it('starts with all sections EXPANDED on first load (collapse = false) (#27)', () => {
     const st = createEditState(generateRandomGenome(() => 0.5), 1);
-    expect(st.sectionCollapse.palette).toBe(true);
-    expect(st.sectionCollapse.viewport).toBe(true);
-    expect(st.sectionCollapse.xforms).toBe(true);
-    expect(st.sectionCollapse.final).toBe(true);
-    expect(st.sectionCollapse.global).toBe(true);
-    expect(st.sectionCollapse.density).toBe(true);
-    expect(st.sectionCollapse.render).toBe(true);
+    expect(st.sectionCollapse.palette).toBe(false);
+    expect(st.sectionCollapse.viewport).toBe(false);
+    expect(st.sectionCollapse.xforms).toBe(false);
+    expect(st.sectionCollapse['global-symmetry']).toBe(false);
+    expect(st.sectionCollapse['global-tonemap']).toBe(false);
+    expect(st.sectionCollapse.density).toBe(false);
+    expect(st.sectionCollapse.render).toBe(false);
   });
 
   it('records the seed and a default preview size', () => {
@@ -378,8 +387,8 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('persistSectionCollapse writes JSON under pyr3.editor.sectionCollapse', () => {
     expect(SECTION_COLLAPSE_KEY).toBe('pyr3.editor.sectionCollapse');
     const map = {
-      palette: false, curves: true, scopes: true, hsl: false, viewport: true, xforms: false, final: true,
-      global: false, density: true, render: true,
+      palette: false, curves: true, scopes: true, hsl: false, viewport: true, xforms: false,
+      'global-symmetry': false, 'global-tonemap': false, density: true, render: true,
     };
     persistSectionCollapse(map);
     const raw = localStorage.getItem(SECTION_COLLAPSE_KEY);
@@ -388,24 +397,24 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   });
 
     it('leaves localStorage empty when writing defaults', () => {
-      persistSectionCollapse({ palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true, global: true, density: true, render: true });
+      persistSectionCollapse({ palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, 'global-symmetry': true, 'global-tonemap': true, density: true, render: true });
       expect(localStorage.getItem('pyr3.edit.sectionCollapse')).toBeNull();
     });
 
   it('restoreSectionCollapse returns the persisted map', () => {
     const map = {
-      palette: false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false, final: true,
-      global: false, density: true, render: true,
+      palette: false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false,
+      'global-symmetry': false, 'global-tonemap': false, density: true, render: true,
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
     expect(restoreSectionCollapse()).toEqual(map);
   });
 
-  it('restoreSectionCollapse returns default all-collapsed when absent', () => {
+  it('restoreSectionCollapse returns default all-EXPANDED when absent (#27)', () => {
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true,
-      global: true, density: true, render: true,
+      palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
+      'global-symmetry': false, 'global-tonemap': false, density: false, render: false,
     });
   });
 
@@ -413,15 +422,63 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
     localStorage.setItem(SECTION_COLLAPSE_KEY, '{not valid');
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true,
-      global: true, density: true, render: true,
+      palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
+      'global-symmetry': false, 'global-tonemap': false, density: false, render: false,
     });
   });
 
   it('round-trip integrity preserves all keys', () => {
-      const oldSections = { palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false, final: false, global: false, density: false, render: false };
+      const oldSections = { palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false, 'global-symmetry': false, 'global-tonemap': false, density: false, render: false };
       persistSectionCollapse(oldSections);
       expect(restoreSectionCollapse()).toEqual(oldSections);
+  });
+});
+
+import {
+  persistXformDetailCollapse,
+  restoreXformDetailCollapse,
+  XFORM_DETAIL_COLLAPSE_KEY,
+} from './edit-state';
+
+describe('persistXformDetailCollapse / restoreXformDetailCollapse (#350 P2.2)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', makeStorageStub());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('default is Affine open, the rest folded', () => {
+    expect(XFORM_DETAIL_COLLAPSE_KEY).toBe('pyr3.editor.xformDetailCollapse');
+    expect(restoreXformDetailCollapse()).toEqual({
+      affine: false, variations: true, color: true, xaos: true,
+    });
+  });
+
+  it('round-trips a persisted map', () => {
+    const map = { affine: true, variations: false, color: true, xaos: false };
+    persistXformDetailCollapse(map);
+    expect(restoreXformDetailCollapse()).toEqual(map);
+  });
+
+  it('merges a partial / older shape over the default (all four keys present)', () => {
+    localStorage.setItem(XFORM_DETAIL_COLLAPSE_KEY, JSON.stringify({ variations: false }));
+    expect(restoreXformDetailCollapse()).toEqual({
+      affine: false, variations: false, color: true, xaos: true,
+    });
+  });
+
+  it('returns the default on malformed JSON (does not crash)', () => {
+    localStorage.setItem(XFORM_DETAIL_COLLAPSE_KEY, '{not valid');
+    expect(restoreXformDetailCollapse()).toEqual({
+      affine: false, variations: true, color: true, xaos: true,
+    });
+  });
+
+  it('createEditState seeds xformDetailCollapse from the persisted map', () => {
+    persistXformDetailCollapse({ affine: true, variations: true, color: false, xaos: true });
+    const st = createEditState(generateRandomGenome(() => 0.5), 1);
+    expect(st.xformDetailCollapse).toEqual({ affine: true, variations: true, color: false, xaos: true });
   });
 });
 
@@ -448,63 +505,89 @@ describe('snapshotForSolo / restoreFromSolo', () => {
   });
 });
 
-import {
-  writeGradientHandoff, consumeGradientHandoff,
-  writeGradientReturn, consumeGradientReturn,
-  GRADIENT_HANDOFF_KEY, GRADIENT_HANDOFF_TTL_MS,
-} from './edit-state';
-import type { Palette } from './palette';
-
-const ROUNDTRIP_PAL: Palette = {
-  name: 'x',
-  stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }],
-};
-
-describe('gradient handoff (edit → gradient) — #266/#269', () => {
+describe('lens + panel-width state (#27)', () => {
   beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('round-trips a genome', () => {
-    const g = generateRandomGenome();
-    g.name = 'handoff-flame';
-    writeGradientHandoff(g);
-    const h = consumeGradientHandoff();
-    expect(h?.genome.name).toBe('handoff-flame');
-    expect(h?.editable).toBe(false);   // default — not flagged custom
+  it('createEditState defaults activeLens=xform, selectedXformIndex=0, panelWidth=360', () => {
+    const s = createEditState(generateRandomGenome(() => 0.5), 1);
+    expect(s.activeLens).toBe('xform');
+    expect(s.selectedXformIndex).toBe(0);
+    expect(s.panelWidth).toBe(360);
   });
 
-  it('carries the editable (custom-provenance) flag', () => {
-    writeGradientHandoff(generateRandomGenome(), true);
-    expect(consumeGradientHandoff()?.editable).toBe(true);
+  it('createEditState seeds an identity workspace view (#350 decoupled view)', () => {
+    const s = createEditState(generateRandomGenome(() => 0.5), 1);
+    expect(s.view).toEqual({ panX: 0, panY: 0, zoom: 1 });
   });
 
-  it('is single-shot — second consume is null', () => {
-    writeGradientHandoff(generateRandomGenome());
-    consumeGradientHandoff();
-    expect(consumeGradientHandoff()).toBeNull();
+  it('createEditState defaults activeCanvasOverlay to none (#372)', () => {
+    const s = createEditState(generateRandomGenome(() => 0.5), 1);
+    expect(s.activeCanvasOverlay).toBe('none');
   });
 
-  it('rejects a stale payload', () => {
-    localStorage.setItem(GRADIENT_HANDOFF_KEY, JSON.stringify({
-      genome: generateRandomGenome(), timestamp: Date.now() - GRADIENT_HANDOFF_TTL_MS - 1,
-    }));
-    expect(consumeGradientHandoff()).toBeNull();
+  it('setActiveCanvasOverlay is mutually exclusive — switching replaces, never stacks (#372)', () => {
+    const s = createEditState(generateRandomGenome(() => 0.5), 1);
+    setActiveCanvasOverlay(s, 'gradient');
+    expect(s.activeCanvasOverlay).toBe('gradient');
+    setActiveCanvasOverlay(s, 'gizmo');
+    expect(s.activeCanvasOverlay).toBe('gizmo');
+    setActiveCanvasOverlay(s, 'none');
+    expect(s.activeCanvasOverlay).toBe('none');
   });
 
-  it('clears a malformed slot', () => {
-    localStorage.setItem(GRADIENT_HANDOFF_KEY, '{not json');
-    expect(consumeGradientHandoff()).toBeNull();
-    expect(localStorage.getItem(GRADIENT_HANDOFF_KEY)).toBeNull();
+  it('persistActiveLens round-trips; restore falls back to xform on absent/garbage', () => {
+    expect(restoreActiveLens()).toBe('xform');
+    persistActiveLens('color');
+    expect(restoreActiveLens()).toBe('color');
+    localStorage.setItem(LENS_KEY, 'not-a-lens');
+    expect(restoreActiveLens()).toBe('xform');
+  });
+
+  it('persistPanelWidth clamps to 280..560 on restore', () => {
+    persistPanelWidth(9999);
+    expect(restorePanelWidth()).toBe(560);
+    persistPanelWidth(10);
+    expect(restorePanelWidth()).toBe(280);
+    persistPanelWidth(400);
+    expect(restorePanelWidth()).toBe(400);
   });
 });
 
-describe('gradient return (gradient → edit) — #266', () => {
+describe('global section split keys (#27)', () => {
   beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('round-trips and is single-shot', () => {
-    writeGradientReturn(ROUNDTRIP_PAL);
-    expect(consumeGradientReturn()?.name).toBe('x');
-    expect(consumeGradientReturn()).toBeNull();
+  it('default collapse map has the two global halves and no plain global', () => {
+    const m = restoreSectionCollapse();
+    expect(m['global-symmetry']).toBe(false);
+    expect(m['global-tonemap']).toBe(false);
+    expect('global' in m).toBe(false);
+  });
+
+  it('an old persisted {global:false} is ignored (orphan); halves default true', () => {
+    localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify({ global: false }));
+    const m = restoreSectionCollapse();
+    expect(m['global-symmetry']).toBe(false);
+    expect(m['global-tonemap']).toBe(false);
+  });
+});
+
+describe('gizmo prefs persistence', () => {
+  beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('returns defaults when nothing stored', () => {
+    expect(loadGizmoPrefs()).toEqual(GIZMO_PREFS_DEFAULT);
+  });
+
+  it('round-trips saved prefs but editOnCanvas always loads false (#350 flame default)', () => {
+    saveGizmoPrefs({ editOnCanvas: true, showWorldGrid: true, snapEnabled: true, snapStep: 0.25, snapAngleStep: 15 });
+    expect(loadGizmoPrefs()).toEqual({ editOnCanvas: false, showWorldGrid: true, snapEnabled: true, snapStep: 0.25, snapAngleStep: 15 });
+  });
+
+  it('falls back to defaults on malformed JSON', () => {
+    globalThis.localStorage!.setItem('pyr3.edit.gizmo', '{not json');
+    expect(loadGizmoPrefs()).toEqual(GIZMO_PREFS_DEFAULT);
   });
 });

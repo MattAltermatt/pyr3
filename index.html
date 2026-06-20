@@ -17,11 +17,15 @@
         --accent: #ff8c1a;
         --accent-soft: rgba(255, 140, 26, 0.18);
         --accent-border: #884a1a;
+        --structure: #3257a8;
         --text: #ddd;
         --text-dim: #888;
         --text-muted: #aaa;
         --ok: #9aff7a;
         --err: #ff7a7a;
+        --sp-tight: 4px;
+        --sp: 8px;
+        --sp-group: 12px;
       }
 
       /* Hide the canvas while the WebGPU fallback panel is mounted. */
@@ -44,7 +48,7 @@
       }
       #pyr3-gallery[hidden] { display: none; }
 
-      /* /editor surface — same sibling-of-canvas pattern as #pyr3-gallery.
+      /* /v1/edit surface — same sibling-of-canvas pattern as #pyr3-gallery.
          Edit mode hides the viewer canvas + bar and takes over the whole
          viewport area. */
       #pyr3-edit {
@@ -296,7 +300,7 @@
         margin-right: auto;
       }
 
-      /* #119 — /variations surface. Same sibling-of-canvas pattern as
+      /* #119 — /v1/variations surface. Same sibling-of-canvas pattern as
          #pyr3-edit / #pyr3-gallery. The catalog page mounts a sticky
          sidebar + scrollable catalog column inside this root. */
       /* #354 — mounted into the shared chrome's middleSlot (under the 44px

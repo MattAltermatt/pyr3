@@ -6,7 +6,7 @@
 // it tears down when the host dispatches a `pyr3:destroy` event on the <nav>.
 
 export type NavSubKey =
-  | 'editor' | 'gradient' | 'animate' | 'screensaver'
+  | 'editor' | 'animate' | 'screensaver'
   | 'esf' | 'gallery' | 'esf-source' | 'variations' | 'surprise' | 'about' | 'showcase'
   | 'help-color' | 'help-ifs' | 'help-webgpu';
 
@@ -31,10 +31,9 @@ export interface NavTop {
 
 export const NAV_MODEL: NavTop[] = [
   { key: 'viewer', label: 'Viewer', route: '/viewer' },
-  { key: 'editor', label: 'Editor', items: [
-    { key: 'editor',   label: 'Flame',    route: '/editor' },
-    { key: 'gradient', label: 'Gradient', route: '/gradient' },
-  ]},
+  // #372 — the standalone Gradient page was retired (palette editing moved into
+  // the Flame editor's Color lens), so Editor is now a direct link, not a menu.
+  { key: 'editor', label: 'Editor', route: '/editor' },
   { key: 'animate', label: 'Animate', items: [
     { key: 'animate',     label: 'Timeline',    route: '/animate' },
     { key: 'screensaver', label: 'Screensaver', route: '/screensaver' },

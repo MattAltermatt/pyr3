@@ -19,7 +19,33 @@ import {
   buildToggle,
   buildRemoveButton,
   buildButton,
+  buildExpander,
 } from './edit-primitives';
+
+describe('buildExpander', () => {
+  it('builds a details/summary with the shared aff-expander class', () => {
+    const { details, summary, body } = buildExpander({ summary: 'raw matrix' });
+    expect(details.tagName).toBe('DETAILS');
+    expect(details.classList.contains('pyr3-aff-expander')).toBe(true);
+    expect(summary.tagName).toBe('SUMMARY');
+    expect(summary.textContent).toContain('raw matrix');
+    expect(body.parentElement).toBe(details);
+    expect(body.classList.contains('pyr3-aff-expander-body')).toBe(true);
+  });
+
+  it('honors open + subpanelKey', () => {
+    const { details } = buildExpander({ summary: 'shear', open: true, subpanelKey: 'x.0.shearFold' });
+    expect(details.open).toBe(true);
+    expect(details.dataset.subpanel).toBe('x.0.shearFold');
+  });
+
+  it('accepts a custom HTMLElement summary', () => {
+    const span = document.createElement('span');
+    span.textContent = '✨ Generate ramp';
+    const { summary } = buildExpander({ summary: span });
+    expect(summary.firstChild).toBe(span);
+  });
+});
 
 describe('buildRow', () => {
   it('renders a 96px label + 1fr control grid', () => {
@@ -238,25 +264,26 @@ describe('buildRemoveButton', () => {
 });
 
 describe('buildButton', () => {
-  it('plain variant: pyr3-btn class, normal text color, dark border', () => {
+  it('plain variant: pyr3-btn class, secondary text color, dark border', () => {
     const onClick = vi.fn();
     const b = buildButton({ variant: 'plain', label: 'open', onClick });
     expect(b.classList.contains('pyr3-btn')).toBe(true);
     expect(b.classList.contains('pyr3-btn-plain')).toBe(true);
     expect(b.textContent).toBe('open');
-    expect(b.style.color.toLowerCase()).toContain('d8d8de'); // primary text
-    // border = COLORS.border = #26262c
-    expect(b.style.border.toLowerCase()).toContain('26262c');
+    expect(b.style.color.toLowerCase()).toContain('cfcfd6'); // secondary text (#373)
+    // secondary border = #34343e (#373 button vocab)
+    expect(b.style.border.toLowerCase()).toContain('34343e');
     b.click();
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it('accent variant: pyr3-btn-accent class, amber text', () => {
+  it('accent variant: pyr3-btn-accent class, renders the secondary look (#373)', () => {
     const b = buildButton({ variant: 'accent', label: 'fit', onClick: vi.fn() });
     expect(b.classList.contains('pyr3-btn')).toBe(true);
     expect(b.classList.contains('pyr3-btn-accent')).toBe(true);
-    // amber text = COLORS.flame.top = #ffbe3e
-    expect(b.style.color.toLowerCase()).toContain('ffbe3e');
+    // accent now converges to the secondary tier — secondary text #cfcfd6 (#373)
+    expect(b.style.color.toLowerCase()).toContain('cfcfd6');
+    expect(b.style.border.toLowerCase()).toContain('34343e');
   });
 
   it('primary variant: pyr3-btn-primary class, dark text on flame gradient, glow shadow', () => {

@@ -26,8 +26,9 @@ npm run animate -- <in> <out-dir>                   #   env: width=W height=H (a
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 
-The nav is **5 top menus** (#264): **Viewer** · **Editor ▾** (Flame `/editor` ·
-Gradient `/gradient`) · **Animate ▾** (Timeline `/animate` · Screensaver
+The nav is **5 top menus** (#264): **Viewer** · **Editor** (`/editor` — direct
+link; the old Gradient page `/gradient` was retired in #372 and now redirects
+to `/editor`, where the gradient editor is an in-lens overlay) · **Animate ▾** (Timeline `/animate` · Screensaver
 `/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/esf` +
 `/esf/gen/N/id/M` · Gallery `/esf/gallery` · Electric Sheep Fold ↗ source repo) ·
 **Discover ▾** (Variations `/variations` · About ·
@@ -81,9 +82,13 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.10
-  have all shipped** (latest: `v1.10.0` on 2026-06-14 — the **More variations** milestone (#16)
-  closed: novel warp families V317–V322 growing the catalog to **323** (V0..V322); `v1.9.0` was
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.11
+  have all shipped** (latest: `v1.11.0` on 2026-06-19 — the **Editor IA rework** milestone (#27)
+  closed: the 4-lens editor redesign (XForm · Scene · Color · Output), xform reorder (#335),
+  one consolidated Color lens (#358), in-lens gradient editor retiring `/gradient` (#372), and the
+  6-tier affordance/control-consistency pass (#373); `v1.10.0` on 2026-06-14 was the **More
+  variations** milestone (#16): novel warp families V317–V322 growing the catalog to **323**
+  (V0..V322); `v1.9.0` was
   the **Animation** milestone — the timeline sequencer (#227) plus keyframe interp / motion /
   easing / frame export, 29 issues; `v1.8.0` the bug-sweep cluster; `v1.7.0` the More Variations
   Marathon). **Apophysis and JWildfire** (#6 — plugin pack #114, importer parity sweep #17,
@@ -201,6 +206,17 @@ v0.1):
   into the `--preset` flag family in v0.20.
 
 Any code that breaks this seam should be loudly questioned before landing.
+
+## Editor settings affordance vocabulary (#373)
+
+The `/editor` panel (and any future settings surface) uses a shared **6-tier
+affordance vocabulary** — see [`docs/ui-affordance-system.md`](docs/ui-affordance-system.md).
+Tiers: lens tab · section header (filled bar + 3px `--structure` left-rule) ·
+group divider (borderless caption) · **action expander** (orange accent-bar,
+`buildExpander` in `src/edit-primitives.ts` + `.pyr3-aff-expander` in
+`src/edit-ui.ts`) · inline value (scrubby, dashed-underline base; panel fields
+are boxed via `.pyr3-edit-num`) · help icon (`infoIcon` in `src/help-text.ts`,
+stamps `data-help-key`). Adopt by class, not copy-paste.
 
 ## Editor affine decomposition (`/editor` xforms v2)
 

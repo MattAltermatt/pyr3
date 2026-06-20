@@ -99,6 +99,8 @@ function favoriteIdFor(source: PaletteSource): string {
     // #266 — a custom-edited gradient is transient (not a library entry), so it
     // is never favorited; the case exists only to keep the switch exhaustive.
     case 'custom': return 'custom';
+    // #358 — a generated ramp is procedural (not a library entry); not favoritable.
+    case 'generate': return 'generate';
   }
 }
 
@@ -332,6 +334,24 @@ export function mountPalettePicker(
   head.appendChild(controlsRow);
 
   picker.appendChild(head);
+
+  // ── ✨ Generate ramp — a procedural palette that REPLACES the current one,
+  // offered alongside the library so "picking it replaces your palette" reads
+  // the same as picking any library entry. Selecting it commits + closes; the
+  // generator's config then appears in the Color panel. (#358)
+  const genRow = document.createElement('div');
+  genRow.className = 'pyr3-palette-picker-genrow';
+  const genBtn = document.createElement('button');
+  genBtn.type = 'button';
+  genBtn.className = 'pyr3-palette-picker-genbtn';
+  genBtn.textContent = '✨ Generate ramp';
+  genBtn.title = 'Replace the palette with a procedurally generated ramp you can tune';
+  genBtn.addEventListener('click', () => {
+    opts.onApply({ kind: 'generate' }); // no meta → editor uses default params
+    opts.onClose();
+  });
+  genRow.appendChild(genBtn);
+  picker.appendChild(genRow);
 
   // ── Body — 3-col cell grid (Task 9.4) ──────────────────────────────────
   const body = document.createElement('div');
@@ -872,6 +892,26 @@ const PICKER_CSS = `
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.pyr3-palette-picker-genrow {
+  padding: 8px 12px 0;
+}
+.pyr3-palette-picker-genbtn {
+  width: 100%;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent, #ff8c1a);
+  background: var(--accent-soft, rgba(255, 140, 26, 0.12));
+  border: 1px solid var(--accent-border, #884a1a);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+}
+.pyr3-palette-picker-genbtn:hover {
+  background: var(--accent-soft, rgba(255, 140, 26, 0.2));
+  border-color: var(--accent, #ff8c1a);
 }
 .pyr3-palette-picker-body {
   flex: 1 1 auto;

@@ -67,4 +67,12 @@ describe('paletteIdentifier', () => {
       monospace: false,
     });
   });
+
+  it('generated ramp: { kind: "generate" } → "✨ Generated ramp" (#358)', () => {
+    expect(paletteIdentifier({ kind: 'generate' })).toEqual({
+      prefix: null,
+      name: '✨ Generated ramp',
+      monospace: false,
+    });
+  });
 });

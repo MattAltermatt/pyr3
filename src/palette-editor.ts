@@ -25,6 +25,19 @@ import {
 export interface PaletteEditorOpts {
   initial: Palette;
   onChange: (p: Palette) => void;
+  /** #372 — mount the parametric controls region (interpolation / transforms /
+   *  delete / resample) into a SEPARATE host instead of inside the bar root.
+   *  The on-canvas gradient overlay passes the Color-lens subpanel here so the
+   *  bar floats on the flame while its controls live in the panel. Default:
+   *  controls render inside the bar root (the /gradient layout). */
+  controlsHost?: HTMLElement;
+  /** #372 — fired whenever the selected stop changes (index, or -1 when
+   *  cleared). Drives the subpanel's selected-stop readout. */
+  onSelect?: (idx: number) => void;
+  /** #372/#269 — fired on bar hover with the CONTINUOUS position t ∈ [0,1] under
+   *  the cursor (or null on leave). Point-to-paint tints the flame regions whose
+   *  palette index ≈ t — so the WHOLE bar is live, not just the stoppers. */
+  onHoverT?: (t: number | null) => void;
 }
 export interface PaletteEditorHandle {
   getPalette(): Palette;
@@ -33,11 +46,16 @@ export interface PaletteEditorHandle {
    *  clicks a flame region that maps to it): highlights it AND opens the HSV
    *  picker anchored to its handle, same as a bar-handle click. */
   selectStop(idx: number): void;
+  /** #372/#269 — point-to-paint flame→bar spotlight: dim the gradient zones that
+   *  don't color the hovered flame region, given a HINT_BINS-length normalized
+   *  histogram of contributing palette indices. Pass null to clear. */
+  showHint(hist: Float32Array | null): void;
   destroy(): void;
 }
 
 const HIT_FRAC = 0.03; // handle hit radius in fractional strip coords
 const EDGE = 1e-3; // min gap from endpoints / neighbors
+const HINT_BINS = 64; // #372/#269 — point-to-paint spotlight resolution along the bar
 
 // ── pure helpers ──────────────────────────────────────────────────────────
 function clone(p: Palette): Palette {
@@ -107,6 +125,21 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
     border: `1px solid ${COLORS.border}`, cursor: 'crosshair',
   });
 
+  // #372/#269 — point-to-paint hint overlay: a HINT_BINS-wide spotlight stretched
+  // over the bar. Hovering the flame dims the gradient zones that do NOT color the
+  // hovered region, leaving the contributing range bright. Sits UNDER the handles
+  // (appended first) so stoppers stay crisp. pointer-events:none keeps drag live.
+  const hint = document.createElement('canvas');
+  hint.dataset['role'] = 'bar-hint-overlay';
+  hint.width = HINT_BINS;
+  hint.height = 1;
+  Object.assign(hint.style, {
+    position: 'absolute', inset: '0', width: '100%', height: '100%',
+    pointerEvents: 'none', borderRadius: '3px', imageRendering: 'pixelated',
+  });
+  strip.appendChild(hint);
+  const hintCtx = hint.getContext('2d');
+
   const handles = document.createElement('div'); // overlay; pointer-events pass through
   Object.assign(handles.style, {
     position: 'absolute', inset: '0', pointerEvents: 'none',
@@ -119,9 +152,18 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   const controls = document.createElement('div');
   controls.dataset['role'] = 'controls';
   Object.assign(controls.style, { display: 'flex', flexDirection: 'column', gap: '8px' });
-  root.appendChild(controls);
+  // #372 — controls render into a separate host (the Color-lens subpanel) when
+  // provided; otherwise inside the bar root (the /gradient layout).
+  (opts.controlsHost ?? root).appendChild(controls);
 
   host.appendChild(root);
+
+  // #372 — single funnel for selection changes so opts.onSelect fires once per
+  // change. Every `selectedIdx = …` mutation routes through here.
+  function setSelected(idx: number): void {
+    selectedIdx = idx;
+    opts.onSelect?.(idx);
+  }
 
   // ── render ────────────────────────────────────────────────────────────
   function render(): void {
@@ -177,7 +219,7 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   function onMouseDown(e: MouseEvent): void {
     const t = tForEvent(e.clientX);
     const idx = hitHandle(palette.stops, t);
-    selectedIdx = idx;
+    setSelected(idx);
     dragIdx = idx;
     dragMoved = false;
     render();
@@ -198,7 +240,7 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
     const c = colorAt(palette, t);
     palette.stops.push({ t, r: c.r, g: c.g, b: c.b });
     palette.stops.sort((a, b) => a.t - b.t);
-    selectedIdx = palette.stops.findIndex((s) => s.t === t);
+    setSelected(palette.stops.findIndex((s) => s.t === t));
     render();
     emit();
   }
@@ -210,7 +252,7 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   function deleteSelected(): void {
     if (!canDelete()) return;
     palette.stops.splice(selectedIdx, 1);
-    selectedIdx = -1;
+    setSelected(-1);
     render();
     emit();
   }
@@ -219,10 +261,21 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
     deleteSelected();
   }
 
+  // #372/#269 — bar hover → report the CONTINUOUS cursor position t (point-to-
+  // paint tints the flame regions at that gradient index). Continuous, NOT
+  // snapped to handles, so the whole bar is live. Suppressed mid-drag.
+  function onStripHover(e: MouseEvent): void {
+    if (!opts.onHoverT || dragIdx >= 0) return;
+    opts.onHoverT(tForEvent(e.clientX));
+  }
+  function onStripLeave(): void { opts.onHoverT?.(null); }
+
   strip.addEventListener('mousedown', onMouseDown);
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
   strip.addEventListener('dblclick', onDblClick);
+  strip.addEventListener('mousemove', onStripHover);
+  strip.addEventListener('mouseleave', onStripLeave);
   document.addEventListener('keydown', onKeyDown);
 
   // ── Task 7: interpolation toggle (linear / smooth / step) ──────────────
@@ -258,12 +311,17 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   // flame-click → select-its-stop path (handle.selectStop).
   function selectStop(idx: number): void {
     if (idx < 0 || idx >= palette.stops.length) return;
-    selectedIdx = idx;
+    setSelected(idx);
     render();
     closePicker();
     const stop = palette.stops[idx]!;
     const anchorEl = (handles.children[idx] as HTMLElement | undefined) ?? strip;
-    picker = mountColorPicker(host, {
+    // #372 — mount the picker on document.body, NOT `host`: when this editor is
+    // embedded in the on-canvas gradient overlay, `host` has a CSS filter (→ a
+    // containing block) and a viewport offset, which double-offsets the picker's
+    // viewport-coordinate absolute position off-screen. document.body keeps the
+    // coords true; mountColorPicker handles viewport flip/clamp.
+    picker = mountColorPicker(document.body, {
       initial: { r: stop.r, g: stop.g, b: stop.b },
       anchor: anchorEl,
       onChange: (rgb) => {
@@ -287,7 +345,7 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   // ── Task 8: lossless whole-palette transforms ──────────────────────────
   function applyTransform(fn: (s: ColorStop[]) => ColorStop[]): void {
     palette.stops = fn(palette.stops);
-    selectedIdx = -1;
+    setSelected(-1);
     closePicker();
     render();
     emit();
@@ -336,14 +394,33 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
 
   return {
     getPalette: () => clone(palette),
-    setPalette: (p: Palette) => { palette = clone(p); selectedIdx = -1; closePicker(); render(); },
+    setPalette: (p: Palette) => { palette = clone(p); setSelected(-1); closePicker(); render(); },
     selectStop: (idx: number) => selectStop(idx),
+    showHint: (hist: Float32Array | null) => {
+      if (!hintCtx) return;
+      hintCtx.clearRect(0, 0, HINT_BINS, 1);
+      if (!hist) return;   // not hovering the flame → no dimming, full gradient
+      // Spotlight: dim each bin proportional to how little it contributes to the
+      // brushed region (w=1 → bright, w=0 → 0.62 dim). The lit band = the range
+      // of the gradient that colors what the cursor points at.
+      for (let b = 0; b < HINT_BINS; b++) {
+        const w = Math.min(1, hist[b] ?? 0);
+        const dim = 0.62 * (1 - w);
+        if (dim <= 0.01) continue;
+        hintCtx.fillStyle = `rgba(8, 8, 12, ${dim})`;
+        hintCtx.fillRect(b, 0, 1, 1);
+      }
+    },
     destroy: () => {
       closePicker();
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('keydown', onKeyDown);
       root.remove();
+      // #372 — when controlsHost relocated the controls region OUT of root, it
+      // isn't a child of root, so root.remove() leaves it orphaned. Remove it
+      // explicitly (no-op when it lived inside root).
+      controls.remove();
     },
   };
 }

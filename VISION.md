@@ -100,8 +100,7 @@ importer-default parity sweep (#17) shipped 2026-06-08.
   superseded by the corpus URL.)
 - **`/editor` — the visual flame editor (shipped).** Xforms with decomposed
   affine (scale / rotation / position + optional shear), the **fitting-room** variation
-  picker over the full **323-entry variation catalog** — the flam3 library, the
-  Apophysis / JWildfire long tail, pyr3's own novel families, and the **direct-color (DC) family**
+  picker over the full 99-variation flam3 library plus pyr3's **direct-color (DC) family**
   (`dc_linear` · `dc_perlin` · `dc_gridout` · `dc_cylinder`), live + settled render lanes,
   undo/redo, name templates, save to `.pyr3.json`. The "much-later post-v1" editor arc that
   shipped earlier than planned across many small issues.

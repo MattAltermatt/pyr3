@@ -96,6 +96,7 @@ export function createHslSection(
 
 export const hslSection = {
   key: 'hsl' as const,
+  lens: 'color' as const,
   title: 'HSL Adjust',
   build: (host: HTMLElement, state: EditState, onChange: (path: string) => void): void => {
     host.appendChild(createHslSection(state, onChange));

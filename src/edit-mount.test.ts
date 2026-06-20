@@ -12,8 +12,7 @@ import {
   type SectionKey,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
-import { applyGradientReturn, scalePreviewGenome } from './edit-mount';
-import { writeGradientReturn } from './edit-state';
+import { scalePreviewGenome } from './edit-mount';
 
 // Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
 // globally under vitest. See src/prefs.test.ts for the canonical pattern.
@@ -285,69 +284,21 @@ describe('resolveColdStartCollapse (Task 6.5)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns the default all-collapsed map when nothing persisted (#102 preserved)', () => {
+  it('returns the default all-EXPANDED map when nothing persisted (#27)', () => {
     const map = resolveColdStartCollapse();
     expect(map).toEqual({
-      palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, final: true,
-      global: true, density: true, render: true,
+      palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
+      'global-symmetry': false, 'global-tonemap': false, density: false, render: false,
     });
   });
 
   it('returns the persisted map when present', () => {
     const stored = {
       palette: false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false, final: true,
-      global: false, density: false, render: true,
+      'global-symmetry': false, 'global-tonemap': false, density: false, render: true,
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(stored));
     expect(resolveColdStartCollapse()).toEqual(stored);
-  });
-});
-
-describe('applyGradientReturn (#266)', () => {
-  beforeEach(() => {
-    vi.stubGlobal('localStorage', makeStorageStub());
-  });
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('patches palette, resets hue, sets custom source', () => {
-    const g = generateRandomGenome(seededRng(1));
-    g.palette = {
-      name: 'old', hue: 120, mode: 'step',
-      stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }],
-    };
-    const state = createEditState(g, 1);
-    writeGradientReturn({
-      name: 'mine', stops: [
-        { t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 1, b: 0 }],
-    });
-    expect(applyGradientReturn(state)).toBe(true);
-    expect(state.genome.palette.name).toBe('mine');
-    expect(state.genome.palette.hue).toBe(0);   // reset to 0 (literal colors)
-    expect(state.genome.palette.mode).toBe('step');      // preserved
-    expect(state.paletteSource).toEqual({ kind: 'custom' });
-  });
-
-  it('is a no-op when nothing is queued', () => {
-    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    expect(applyGradientReturn(state)).toBe(false);
-  });
-
-  // #316 — a mode change made in the gradient editor must survive the round-trip.
-  it('carries the returned palette mode (does not discard it for the prior mode)', () => {
-    const g = generateRandomGenome(seededRng(1));
-    g.palette = {
-      name: 'old', mode: 'linear',
-      stops: [{ t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 }],
-    };
-    const state = createEditState(g, 1);
-    writeGradientReturn({
-      name: 'mine', mode: 'smooth',
-      stops: [{ t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 1, b: 0 }],
-    });
-    expect(applyGradientReturn(state)).toBe(true);
-    expect(state.genome.palette.mode).toBe('smooth'); // edited mode wins, not 'linear'
   });
 });
 
@@ -365,6 +316,7 @@ function seededRng(seed: number): () => number {
 function makeSections(keys: SectionKey[]): SectionMount[] {
   return keys.map((k) => ({
     key: k,
+    lens: 'output' as const,
     title: k.toUpperCase(),
     build: () => {},
   }));
@@ -380,7 +332,7 @@ describe('mountEditUi shell', () => {
   it('renders 7 section headers when 7 sections are passed', () => {
     const host = document.createElement('div');
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-    const all: SectionKey[] = ['palette', 'viewport', 'xforms', 'final', 'global', 'density', 'render'];
+    const all: SectionKey[] = ['palette', 'viewport', 'xforms', 'curves', 'global-symmetry', 'density', 'render'];
     mountEditUi(host, state, makeSections(all), { onChange: () => {} });
     expect(host.querySelectorAll('.pyr3-edit-section-header').length).toBe(7);
   });
@@ -394,11 +346,7 @@ describe('mountEditUi shell', () => {
     const chev = header.querySelector('.pyr3-edit-chev') as HTMLElement;
     const body = host.querySelector('.pyr3-edit-section-body') as HTMLElement;
 
-    expect(state.sectionCollapse.palette).toBe(true);
-    expect(chev.textContent).toBe('▶');
-    expect(body.style.display).toBe('none');
-
-    header.click();
+    // #27 — sections start expanded on first load.
     expect(state.sectionCollapse.palette).toBe(false);
     expect(chev.textContent).toBe('▼');
     expect(body.style.display).toBe('block');
@@ -407,6 +355,11 @@ describe('mountEditUi shell', () => {
     expect(state.sectionCollapse.palette).toBe(true);
     expect(chev.textContent).toBe('▶');
     expect(body.style.display).toBe('none');
+
+    header.click();
+    expect(state.sectionCollapse.palette).toBe(false);
+    expect(chev.textContent).toBe('▼');
+    expect(body.style.display).toBe('block');
   });
 
   it('passes the build callback the section body host + state + onChange', () => {
@@ -414,7 +367,7 @@ describe('mountEditUi shell', () => {
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     const build = vi.fn();
     const onChange = vi.fn();
-    mountEditUi(host, state, [{ key: 'palette', title: 'PAL', build }], { onChange });
+    mountEditUi(host, state, [{ key: 'palette', lens: 'color', title: 'PAL', build }], { onChange });
     expect(build).toHaveBeenCalledTimes(1);
     const [bodyArg, stateArg, onChangeArg] = build.mock.calls[0]!;
     expect((bodyArg as HTMLElement).className).toBe('pyr3-edit-section-body');
@@ -441,20 +394,21 @@ describe('mountEditUi shell', () => {
       // Nothing written yet.
       expect(localStorage.getItem(SECTION_COLLAPSE_KEY)).toBeNull();
 
-      // Click the palette header → toggles palette to expanded → persists.
+      // #27 — sections start expanded; clicking the palette header collapses
+      // it (false → true) and persists. viewport stays expanded (false).
       const headers = host.querySelectorAll('.pyr3-edit-section-header');
       (headers[0] as HTMLElement).click();
       const raw = localStorage.getItem(SECTION_COLLAPSE_KEY);
       expect(raw).not.toBeNull();
       const parsed = JSON.parse(raw!);
-      expect(parsed.palette).toBe(false);
-      expect(parsed.viewport).toBe(true);
+      expect(parsed.palette).toBe(true);
+      expect(parsed.viewport).toBe(false);
 
-      // Click viewport too — the next persisted map reflects both.
+      // Click viewport too — the next persisted map reflects both collapsed.
       (headers[1] as HTMLElement).click();
       const parsed2 = JSON.parse(localStorage.getItem(SECTION_COLLAPSE_KEY)!);
-      expect(parsed2.palette).toBe(false);
-      expect(parsed2.viewport).toBe(false);
+      expect(parsed2.palette).toBe(true);
+      expect(parsed2.viewport).toBe(true);
     } finally {
       vi.unstubAllGlobals();
     }

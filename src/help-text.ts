@@ -26,6 +26,19 @@ export const HELP: Record<HelpKey, InfoIconOpts> = {
       + 'Save Render produces the full-quality image you download.',
   },
 
+  // ── XForm-lens ───────────────────────────────────────────────────────
+  'xform.xaos': {
+    title: 'Xaos (transition weights)',
+    body:
+      'Normally the chaos game picks the next xform purely by each xform’s '
+      + 'weight. Xaos adds a per-pair multiplier so the pick depends on which '
+      + 'xform fired last. Each row →xfN scales how likely xform N is chosen '
+      + 'as the NEXT xform right after THIS (selected) one fires.',
+    hint: '1 = neutral · 0 = forbidden (xfN can never directly follow this '
+      + 'xform) · >1 = favored. Defaults are all 1. Lets you shape the flow '
+      + '/ sequencing of the fractal, beyond what weights alone can do.',
+  },
+
   // ── render controls (viewer bar + editor RENDER section) ─────────────
   'render.quality': {
     title: 'Quality (samples per pixel)',
@@ -224,6 +237,22 @@ export const HELP: Record<HelpKey, InfoIconOpts> = {
       + '/ G / B individually, then value (luminance). Drag points to reshape '
       + 'the tone curve for that channel.',
   },
+
+  // ── PALETTE section — ramp generator (#358) ──────────────────────────
+  'palette.generate': {
+    title: 'Generate ramp',
+    body:
+      'Builds a fresh palette procedurally instead of picking one from the '
+      + 'library. Colors are computed in a perceptual space (OkLCh), so a '
+      + 'rainbow stays evenly bright across hues instead of pulsing — which '
+      + 'reads as cleaner color in the render. Every change applies live and is '
+      + 'fully undo-able (Cmd/Ctrl+Z), like any other control.',
+    hint:
+      'Rainbow — sweeps the hue wheel. Shades — one hue ramped dark→light. '
+      + 'Chroma = how vivid · Lightness = how bright · Loops ≥2 = a multi-loop '
+      + '(“double rainbow”) · Reverse flips the sweep direction · 🎲 picks a '
+      + 'fresh start hue (Seed makes it repeatable).',
+  },
 };
 
 // Controls deliberately left without a `?` icon because they are
@@ -242,7 +271,12 @@ export const HELP_SKIP_ALLOWLIST: readonly HelpKey[] = [
 export function infoIcon(key: HelpKey): HTMLElement {
   const opts = HELP[key];
   if (!opts) throw new Error(`help-text: unknown key "${key}"`);
-  return buildInfoIcon(opts);
+  const el = buildInfoIcon(opts);
+  // Stamp the registry key onto the element so tests (and any future
+  // key-driven lookups) can locate a specific control's `?` via
+  // `[data-help-key="<key>"]` (Q4 targeted help icons).
+  el.dataset['helpKey'] = key;
+  return el;
 }
 
 // One consolidated `?` for the whole RENDER row — a single wider popover

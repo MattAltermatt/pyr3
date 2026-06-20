@@ -12,6 +12,12 @@
 export function redirectLegacyPath(pathname: string, search: string, hash = ''): string | null {
   const stripped = pathname.replace(/^\//, '').replace(/\/$/, '');
   const parts = stripped.length === 0 ? [] : stripped.split('/');
+
+  // #372 — the standalone /gradient page was retired; palette editing now lives
+  // in the editor's Color lens. Redirect old bookmarks (both the flat /gradient
+  // and the legacy /v1/gradient handled below) to /editor.
+  if (parts[0] === 'gradient') return '/editor' + search + hash;
+
   if (parts[0] !== 'v1') return null;
 
   const sub = parts[1];
@@ -21,7 +27,7 @@ export function redirectLegacyPath(pathname: string, search: string, hash = ''):
   else if (sub === 'gen') dest = `/esf/${parts.slice(1).join('/')}`;
   else if (sub === 'gallery') dest = `/esf/${parts.slice(1).join('/')}`;
   else if (sub === 'edit') dest = '/editor';
-  else if (sub === 'gradient') dest = '/gradient';
+  else if (sub === 'gradient') dest = '/editor';  // #372 — /gradient retired → editor
   else if (sub === 'animate') dest = '/animate';
   else if (sub === 'screensaver') dest = '/screensaver';
   else if (sub === 'variations') dest = '/variations';

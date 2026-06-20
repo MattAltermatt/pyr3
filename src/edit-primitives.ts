@@ -132,7 +132,11 @@ export function buildNumberInput(opts: NumberInputOpts): NumberInputResult {
   handle.el.style.textAlign = 'right';
   handle.el.style.fontVariantNumeric = 'tabular-nums';
   handle.el.style.background = COLORS.bg.input;
-  handle.el.style.border = `1px solid ${COLORS.border}`;
+  // Border is owned by the `.pyr3-edit-num` class (1px sides + a 2px accent
+  // bottom-rule = the #373 drag-to-edit hint + focus brighten). Setting an
+  // inline `border` here would beat the class and suppress the accent underline
+  // on every buildNumberInput field (colorSpeed, xaos, vibrancy, DE params…) —
+  // so we deliberately do NOT set border inline. (#373)
   handle.el.style.borderRadius = '3px';
   handle.el.style.color = COLORS.text.primary;
   handle.el.style.padding = '3px 6px';
@@ -214,7 +218,13 @@ export interface SliderOpts {
   onChange: (v: number) => void;
 }
 
-export function buildSlider(opts: SliderOpts): HTMLElement {
+/** The element buildSlider returns — an HTMLElement with a programmatic
+ *  `setValue` (updates the displayed value/fill without firing onChange). */
+export interface SliderControl extends HTMLElement {
+  setValue(v: number): void;
+}
+
+export function buildSlider(opts: SliderOpts): SliderControl {
   const wrap = document.createElement('div');
   wrap.className = 'pyr3-slider';
   wrap.style.display = 'grid';
@@ -222,6 +232,11 @@ export function buildSlider(opts: SliderOpts): HTMLElement {
   wrap.style.alignItems = 'center';
   wrap.style.gap = '8px';
   wrap.style.minWidth = '0';
+  // Grow to fill the row's control column (#373). Without this the grid wrap
+  // is content-sized inside its flex parent (.pyr3-ctrl), so the 1fr rail
+  // collapsed to 0px — the slider read as a bare handle dot, no visible track.
+  wrap.style.flex = '1 1 0';
+  wrap.style.width = '100%';
 
   // Visual rail (left) — interactive. Click-anywhere snaps the handle to
   // that point and drag-anywhere updates the value continuously. The
@@ -244,11 +259,13 @@ export function buildSlider(opts: SliderOpts): HTMLElement {
   stripe.style.left = '0';
   stripe.style.right = '0';
   stripe.style.top = '50%';
-  stripe.style.height = '4px';
+  stripe.style.height = '5px';
   stripe.style.transform = 'translateY(-50%)';
-  stripe.style.background = COLORS.bg.input;
-  stripe.style.border = `1px solid ${COLORS.border}`;
-  stripe.style.borderRadius = '2px';
+  // Visible neutral track (#373) — was COLORS.bg.input (#0a0a0c), nearly
+  // identical to the panel so the rail read as a stray dot. A lighter track
+  // makes every buildSlider field a legible slider behind the orange fill.
+  stripe.style.background = '#34343e';
+  stripe.style.borderRadius = '3px';
   stripe.style.pointerEvents = 'none';
   rail.appendChild(stripe);
 
@@ -257,10 +274,11 @@ export function buildSlider(opts: SliderOpts): HTMLElement {
   fill.style.position = 'absolute';
   fill.style.left = '0';
   fill.style.top = '50%';
-  fill.style.height = '4px';
+  fill.style.height = '5px';
   fill.style.transform = 'translateY(-50%)';
-  fill.style.background = COLORS.flame.mid;
-  fill.style.borderRadius = '2px';
+  // Warm amber→orange fill (#373) — matches the flame palette + accent vocabulary.
+  fill.style.background = `linear-gradient(90deg, ${COLORS.flame.mid}, ${COLORS.flame.top})`;
+  fill.style.borderRadius = '3px';
   fill.style.pointerEvents = 'none';
 
   const handle = document.createElement('div');
@@ -359,7 +377,16 @@ export function buildSlider(opts: SliderOpts): HTMLElement {
   rail.addEventListener('pointerup', endRailDrag);
   rail.addEventListener('pointercancel', endRailDrag);
 
-  return wrap;
+  // Expose a programmatic setter so callers (preset/undo/external sync) can
+  // update the displayed value WITHOUT firing onChange — mirrors scrubby's
+  // setValue contract. Non-breaking: SliderControl extends HTMLElement (#373).
+  const control = wrap as unknown as SliderControl;
+  control.setValue = (v: number): void => {
+    updateVisual(v);
+    scrubby.setValue(v);
+  };
+
+  return control;
 }
 
 function defaultSliderFormat(v: number): string {
@@ -500,23 +527,23 @@ export function buildButton(opts: ButtonOpts): HTMLElement {
   btn.style.flex = '0 0 auto';
 
   switch (opts.variant) {
-    case 'plain': {
-      btn.style.background = `linear-gradient(180deg, ${COLORS.bg.panel}, ${COLORS.bg.bar})`;
-      btn.style.border = `1px solid ${COLORS.border}`;
-      btn.style.color = COLORS.text.primary;
-      const rest = COLORS.border;
-      btn.addEventListener('mouseenter', () => { btn.style.borderColor = COLORS.flame.top; });
-      btn.addEventListener('mouseleave', () => { btn.style.borderColor = rest; });
-      break;
-    }
+    // 'plain' and 'accent' both render the canonical SECONDARY look (#373 button
+    // vocab) — the workhorse tier. `fit`, `Reset HSL`, `reset to identity` etc.
+    // all converge here so the panel reads consistently. The loud filled
+    // 'primary' tier below stays the one true add/apply emphasis.
+    case 'plain':
     case 'accent': {
-      // Warm tint: a darkened blend toward flame.bot for the bg.
-      btn.style.background = `linear-gradient(180deg, ${COLORS.bg.action}, ${COLORS.bg.bar})`;
-      btn.style.border = `1px solid ${COLORS.flame.bot}`;
-      btn.style.color = COLORS.flame.top;
-      const rest = COLORS.flame.bot;
-      btn.addEventListener('mouseenter', () => { btn.style.borderColor = COLORS.flame.top; });
-      btn.addEventListener('mouseleave', () => { btn.style.borderColor = rest; });
+      btn.style.background = '#1a1a20';
+      btn.style.border = '1px solid #34343e';
+      btn.style.color = '#cfcfd6';
+      btn.addEventListener('mouseenter', () => {
+        btn.style.borderColor = '#55556a';
+        btn.style.background = '#202028';
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.borderColor = '#34343e';
+        btn.style.background = '#1a1a20';
+      });
       break;
     }
     case 'primary': {
@@ -562,4 +589,40 @@ export function buildPair(left: HTMLElement, sep: string, right: HTMLElement): H
   wrap.appendChild(sepEl);
   wrap.appendChild(right);
   return wrap;
+}
+
+// ── Expander (Tier-4 action expander) ──────────────────────────────────────
+// The canonical disclosure/action bar for any settings surface. Orange
+// accent-bar styling lives in the shared `.pyr3-aff-expander` class
+// (src/edit-ui.ts EDIT_CSS). See docs/ui-affordance-system.md (#373). Built on
+// native <details>/<summary> so open-state toggling is free; callers append
+// fold content into `.body`.
+export interface ExpanderOpts {
+  /** Summary content — plain label text, or a prebuilt element (e.g. label + ? icon). */
+  summary: string | HTMLElement;
+  /** Initial open state (default false). */
+  open?: boolean;
+  /** Stable key for undo/redo open-state restore (sets data-subpanel, #358). */
+  subpanelKey?: string;
+}
+
+export interface ExpanderResult {
+  details: HTMLDetailsElement;
+  summary: HTMLElement;
+  /** Append your fold content here. */
+  body: HTMLDivElement;
+}
+
+export function buildExpander(opts: ExpanderOpts): ExpanderResult {
+  const details = document.createElement('details');
+  details.className = 'pyr3-aff-expander';
+  if (opts.open) details.open = true;
+  if (opts.subpanelKey) details.dataset.subpanel = opts.subpanelKey;
+  const summary = document.createElement('summary');
+  if (typeof opts.summary === 'string') summary.textContent = opts.summary;
+  else summary.appendChild(opts.summary);
+  const body = document.createElement('div');
+  body.className = 'pyr3-aff-expander-body';
+  details.append(summary, body);
+  return { details, summary, body };
 }

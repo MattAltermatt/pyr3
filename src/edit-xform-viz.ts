@@ -40,7 +40,9 @@ export function attachXformViz(
     const cx = w / 2;
     const cy = h / 2;
     const worldScale = Math.min(w, h) / 4; // ~1 world unit = quarter the canvas
-    const toScreen = (x: number, y: number): [number, number] => [cx + x * worldScale, cy - y * worldScale];
+    // y-DOWN to match the canvas gizmo + flame render orientation (#350). The
+    // earlier y-up convention mirrored the square vertically vs the canvas.
+    const toScreen = (x: number, y: number): [number, number] => [cx + x * worldScale, cy + y * worldScale];
 
     // Axes
     ctx.strokeStyle = COLOR_AXIS;

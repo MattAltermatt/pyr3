@@ -166,3 +166,92 @@ describe('palette-editor transforms + resample (#115 T8)', () => {
     h.destroy();
   });
 });
+
+describe('palette-editor split DOM + onSelect (#372)', () => {
+  it('controlsHost relocates the controls region out of the bar root', () => {
+    const bar = document.createElement('div');
+    const panel = document.createElement('div');
+    document.body.append(bar, panel);
+    const h = mountPaletteEditor(bar, { initial: PYRE_PALETTE, onChange: () => {}, controlsHost: panel });
+    expect(bar.querySelector('[data-role="controls"]')).toBeNull();
+    expect(panel.querySelector('[data-role="controls"]')).not.toBeNull();
+    // bar still owns the strip + handles
+    expect(bar.querySelector('[data-role="strip"]')).not.toBeNull();
+    h.destroy();
+  });
+
+  it('destroy removes the relocated controls region (no leak across re-mounts)', () => {
+    const bar = document.createElement('div');
+    const panel = document.createElement('div');
+    document.body.append(bar, panel);
+    // mount → destroy twice; the controls region must not accumulate in the panel
+    for (let i = 0; i < 2; i++) {
+      const h = mountPaletteEditor(bar, { initial: PYRE_PALETTE, onChange: () => {}, controlsHost: panel });
+      h.destroy();
+    }
+    expect(panel.querySelectorAll('[data-role="controls"]').length).toBe(0);
+    // and a fresh mount yields exactly one controls region (not zero, not two)
+    const h = mountPaletteEditor(bar, { initial: PYRE_PALETTE, onChange: () => {}, controlsHost: panel });
+    expect(panel.querySelectorAll('[data-role="controls"]').length).toBe(1);
+    h.destroy();
+  });
+
+  it('controls default to the bar root when no controlsHost is given', () => {
+    const bar = document.createElement('div');
+    document.body.append(bar);
+    const h = mountPaletteEditor(bar, { initial: PYRE_PALETTE, onChange: () => {} });
+    expect(bar.querySelector('[data-role="controls"]')).not.toBeNull();
+    h.destroy();
+  });
+
+  it('onSelect fires with the selected stop index on selectStop', () => {
+    const bar = document.createElement('div');
+    document.body.append(bar);
+    let last: number | null = null;
+    const h = mountPaletteEditor(bar, {
+      initial: { name: 'x', stops: [
+        { t: 0, r: 0, g: 0, b: 0 }, { t: 0.5, r: 1, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 },
+      ] },
+      onChange: () => {},
+      onSelect: (idx) => { last = idx; },
+    });
+    h.selectStop(1);
+    expect(last).toBe(1);
+    h.destroy();
+  });
+
+  it('showHint mounts a bar-hint overlay and is a no-op-safe clear (point-to-paint spotlight)', () => {
+    const bar = document.createElement('div');
+    document.body.append(bar);
+    const h = mountPaletteEditor(bar, { initial: PYRE_PALETTE, onChange: () => {} });
+    // the spotlight overlay lives on the strip, under the handles
+    const hintOverlay = bar.querySelector('[data-role="bar-hint-overlay"]');
+    expect(hintOverlay).not.toBeNull();
+    // a histogram + a null clear both run without throwing
+    const hist = new Float32Array(64).fill(0);
+    hist[10] = 1; hist[11] = 0.5;
+    expect(() => h.showHint(hist)).not.toThrow();
+    expect(() => h.showHint(null)).not.toThrow();
+    h.destroy();
+  });
+
+  it('onHoverT reports the CONTINUOUS cursor position on strip mousemove (whole bar live)', () => {
+    const bar = document.createElement('div');
+    document.body.append(bar);
+    const seen: (number | null)[] = [];
+    const h = mountPaletteEditor(bar, { initial: { name: 'x', stops: [
+      { t: 0, r: 0, g: 0, b: 0 }, { t: 1, r: 1, g: 1, b: 1 },
+    ] }, onChange: () => {}, onHoverT: (t) => { seen.push(t); } });
+    const strip = bar.querySelector('[data-role="strip"]') as HTMLElement;
+    mockRect(strip, 200);
+    // mid-bar (x=130/200) maps to t≈0.65 — NOT snapped to a stop at 0 or 1
+    strip.dispatchEvent(new MouseEvent('mousemove', { clientX: 130, clientY: 0, bubbles: true }));
+    expect(seen[seen.length - 1]).toBeCloseTo(0.65, 2);
+    // left edge → t≈0
+    strip.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, clientY: 0, bubbles: true }));
+    expect(seen[seen.length - 1]).toBeCloseTo(0, 5);
+    strip.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    expect(seen[seen.length - 1]).toBeNull(); // leaving clears
+    h.destroy();
+  });
+});

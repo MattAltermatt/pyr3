@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest';
-import { globalSection, hexToRgb01, rgb01ToHex } from './edit-section-global';
+import { globalSymmetrySection, globalTonemapSection, hexToRgb01, rgb01ToHex } from './edit-section-global';
 import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
 import { DEFAULT_TONEMAP } from './tonemap';
@@ -27,7 +27,14 @@ function setup(): {
   delete genome.tonemap;
   const state = createEditState(genome, 1);
   const onChange = vi.fn();
-  globalSection.build(host, state, onChange);
+  // #27 — GLOBAL split into two sections; each build() calls replaceChildren on
+  // its own host, so mount each into a sub-host under one parent. rowByLabel
+  // searches the whole subtree, so all 7 rows resolve.
+  const tonemapHost = document.createElement('div');
+  const symHost = document.createElement('div');
+  host.append(tonemapHost, symHost);
+  globalTonemapSection.build(tonemapHost, state, onChange);
+  globalSymmetrySection.build(symHost, state, onChange);
   document.body.appendChild(host); // text-mode swap needs to be in the document
   return { host, state, onChange };
 }
@@ -48,10 +55,13 @@ function rowByLabel(host: HTMLElement, label: string): HTMLElement {
 }
 
 describe('globalSection — shell', () => {
-  it('exports the SectionMount shape', () => {
-    expect(globalSection.key).toBe('global');
-    expect(globalSection.title).toMatch(/global/i);
-    expect(typeof globalSection.build).toBe('function');
+  it('exports the two SectionMount shapes (#27 split)', () => {
+    expect(globalTonemapSection.key).toBe('global-tonemap');
+    expect(globalTonemapSection.title).toMatch(/tonemap/i);
+    expect(typeof globalTonemapSection.build).toBe('function');
+    expect(globalSymmetrySection.key).toBe('global-symmetry');
+    expect(globalSymmetrySection.title).toMatch(/symmetry/i);
+    expect(typeof globalSymmetrySection.build).toBe('function');
   });
 
   it('renders all six core rows (brightness/gamma/highlightPower/gammaThreshold/vibrancy/background) + symmetry', () => {
@@ -147,7 +157,7 @@ describe('globalSection — background color', () => {
     const host = document.createElement('div');
     const state = createEditState(generateRandomGenome(seededRng(1)), 1);
     state.genome.background = [1.0, 0.5, 0.0];
-    globalSection.build(host, state, () => {});
+    globalTonemapSection.build(host, state, () => {});
     const input = rowByLabel(host, 'background').querySelector('input[type="color"]') as HTMLInputElement;
     expect(input.value.toLowerCase()).toBe('#ff8000');
   });
@@ -217,6 +227,20 @@ describe('globalSection — row primitive adoption (task 7.8)', () => {
     expect(symRow.querySelector('input[type="checkbox"]')).not.toBeNull();
     expect(symRow.querySelector('select')).not.toBeNull();
     expect(symRow.querySelector('.pyr3-scrubby')).not.toBeNull();
+  });
+});
+
+describe('globalSection — targeted help icons (Q4)', () => {
+  it('tonemap section stamps data-help-key on gammaThreshold / highlightPower / vibrancy', () => {
+    const { host } = setup();
+    expect(host.querySelector('[data-help-key="global.gammaThreshold"]')).not.toBeNull();
+    expect(host.querySelector('[data-help-key="global.highlightPower"]')).not.toBeNull();
+    expect(host.querySelector('[data-help-key="global.vibrancy"]')).not.toBeNull();
+  });
+
+  it('symmetry section stamps data-help-key on symmetry', () => {
+    const { host } = setup();
+    expect(host.querySelector('[data-help-key="global.symmetry"]')).not.toBeNull();
   });
 });
 

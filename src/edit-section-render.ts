@@ -32,6 +32,7 @@ const OVERSAMPLE_OPTIONS: readonly number[] = [1, 2, 4];
 
 export const renderSection: SectionMount = {
   key: 'render',
+  lens: 'output',
   title: '🎚️ RENDER',
   build(host, state, onChange) {
     host.classList.add('pyr3-edit-section-render');

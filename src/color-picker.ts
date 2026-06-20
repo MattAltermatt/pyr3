@@ -89,8 +89,18 @@ export function mountColorPicker(host: HTMLElement, opts: ColorPickerOpts): Colo
   hex.addEventListener('change', () => { const p = parseHex(hex.value); if (p) {
     const hsv = rgbToHsv(p.r, p.g, p.b); h = hsv.h; s = hsv.s; v = hsv.v; emit(); } });
 
+  // Position relative to the anchor, but keep the whole picker on-screen: flip
+  // ABOVE the anchor when there's no room below (the gradient overlay's bar sits
+  // near the canvas bottom), and clamp horizontally. Measured after append so the
+  // real size is known. (#372)
   const ar = opts.anchor.getBoundingClientRect();
-  root.style.left = `${ar.left}px`; root.style.top = `${ar.bottom + 4}px`;
+  const pw = root.offsetWidth || 218;
+  const ph = root.offsetHeight || 207;
+  const left = Math.max(8, Math.min(ar.left, window.innerWidth - pw - 8));
+  let top = ar.bottom + 4;
+  if (top + ph > window.innerHeight - 8) top = ar.top - ph - 4; // flip above
+  top = Math.max(8, top);
+  root.style.left = `${left}px`; root.style.top = `${top}px`;
   paint(); hex.value = toHex(opts.initial.r, opts.initial.g, opts.initial.b);
 
   // ── dismissal: ✕ button, click-outside, Escape ──────────────────────────

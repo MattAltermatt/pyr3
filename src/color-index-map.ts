@@ -14,6 +14,22 @@ export interface IndexMap {
   height: number;
 }
 
+/** Choose downsample out-dims for an index map. `downsampleIndexMap` applies one
+ *  integer `oversample` (= superW/outW) to BOTH axes, so the out-dims must divide
+ *  the super-res dims by the SAME factor — otherwise blocks read out of bounds
+ *  (→ mask=0, missing coverage) and the aspect is distorted. Derive an integer
+ *  oversample from the long edge, then floor both axes by it: in-bounds AND
+ *  aspect-true. (#372) */
+export function paintMapDims(
+  superW: number, superH: number, longEdge: number,
+): { outW: number; outH: number } {
+  const oversample = Math.max(1, Math.round(Math.max(superW, superH) / longEdge));
+  return {
+    outW: Math.max(1, Math.floor(superW / oversample)),
+    outH: Math.max(1, Math.floor(superH / oversample)),
+  };
+}
+
 /** Downsample super-res idx_sum + count (row-major, superW×superH) to output
  *  dims by summing both over each oversample block. avg = Σidx / Σcount (both
  *  carry the opacity*255 weight, so the ratio is the weighted-average color

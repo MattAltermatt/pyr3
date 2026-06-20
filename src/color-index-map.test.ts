@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  downsampleIndexMap, brushHistogram, regionMask, insertStopAtIndex,
+  downsampleIndexMap, paintMapDims, brushHistogram, regionMask, insertStopAtIndex,
   clientToPixel, colorAtIndex,
 } from './color-index-map';
 
@@ -23,6 +23,43 @@ describe('downsampleIndexMap', () => {
     const map = downsampleIndexMap(idx, cnt, 2, 2, 1, 1);
     expect(map.avg[0]).toBeCloseTo(1.0, 5);
     expect(map.mask[0]).toBe(1);
+  });
+});
+
+describe('paintMapDims (#372 — aspect-true, in-bounds out-dims)', () => {
+  it('16:9 render → out-dims share the aspect, NOT a forced square', () => {
+    const { outW, outH } = paintMapDims(1024, 576, 256);
+    expect(outW).toBe(256);
+    expect(outH).toBe(144); // 1024/4, 576/4 — NOT 256 (the old square bug)
+    expect(outW / outH).toBeCloseTo(1024 / 576, 5);
+  });
+
+  it('keeps oversample integer + every block in-bounds (no OOB → no missing coverage)', () => {
+    const superW = 1024, superH = 576;
+    const { outW, outH } = paintMapDims(superW, superH, 256);
+    // downsampleIndexMap derives oversample = round(superW/outW); the last block
+    // it reads must stay within the super-res buffer on BOTH axes.
+    const oversample = Math.round(superW / outW);
+    expect((outW - 1) * oversample + (oversample - 1)).toBeLessThan(superW);
+    expect((outH - 1) * oversample + (oversample - 1)).toBeLessThan(superH);
+  });
+
+  it('square render stays square; portrait flips correctly', () => {
+    expect(paintMapDims(512, 512, 256)).toEqual({ outW: 256, outH: 256 });
+    expect(paintMapDims(576, 1024, 256)).toEqual({ outW: 144, outH: 256 });
+  });
+
+  it('a fully-covered non-square super map downsamples to a fully-covered map', () => {
+    // 8x4 super, all pixels hit; paintMapDims(8,4,4) → oversample 2 → 4x2.
+    const { outW, outH } = paintMapDims(8, 4, 4);
+    const n = 8 * 4;
+    const map = downsampleIndexMap(
+      new Uint32Array(n).fill(100), new Uint32Array(n).fill(255), 8, 4, outW, outH);
+    expect(map.width).toBe(outW);
+    expect(map.height).toBe(outH);
+    // EVERY output pixel must be covered — the old square-dims bug zeroed the
+    // bottom rows via out-of-bounds reads.
+    expect([...map.mask].every((m) => m === 1)).toBe(true);
   });
 });
 

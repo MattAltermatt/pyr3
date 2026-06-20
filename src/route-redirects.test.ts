@@ -14,7 +14,11 @@ describe('redirectLegacyPath (#264)', () => {
   it('/v1/edit → /editor', () => expect(redirectLegacyPath('/v1/edit', '')).toBe('/editor'));
   it('/v1/edit?gen=1&id=2 → /editor?gen=1&id=2', () =>
     expect(redirectLegacyPath('/v1/edit', '?gen=1&id=2')).toBe('/editor?gen=1&id=2'));
-  it('/v1/gradient → /gradient', () => expect(redirectLegacyPath('/v1/gradient', '')).toBe('/gradient'));
+  // #372 — /gradient retired; both the flat route and the legacy /v1 form land in /editor.
+  it('/gradient → /editor', () => expect(redirectLegacyPath('/gradient', '')).toBe('/editor'));
+  it('/v1/gradient → /editor', () => expect(redirectLegacyPath('/v1/gradient', '')).toBe('/editor'));
+  it('/gradient preserves search + hash', () =>
+    expect(redirectLegacyPath('/gradient', '?gen=1', '#x')).toBe('/editor?gen=1#x'));
   it('/v1/animate → /animate', () => expect(redirectLegacyPath('/v1/animate', '')).toBe('/animate'));
   it('/v1/screensaver → /screensaver', () => expect(redirectLegacyPath('/v1/screensaver', '')).toBe('/screensaver'));
   it('/v1/variations → /variations', () => expect(redirectLegacyPath('/v1/variations', '')).toBe('/variations'));

@@ -73,7 +73,8 @@ export function applyQuickOp(op: QuickOpId, d: DecomposedAffine): DecomposedAffi
 }
 
 /** Strip definition — the 7 button order, label, delta tag, glyph icon.
- *  Consumed by the strip UI in edit-section-xforms.ts + edit-section-final.ts. */
+ *  Consumed by the affine quick-ops strip in edit-section-xforms.ts (regular +
+ *  final xform detail panes share that one builder). */
 export const QUICK_OPS_DEFS: readonly { id: QuickOpId; label: string; delta: string; icon: string }[] = [
   { id: 'rotate+45', label: 'rotate', delta: '+45°', icon: '↻' },
   { id: 'rotate-45', label: 'rotate', delta: '−45°', icon: '↺' },

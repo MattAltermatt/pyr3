@@ -12,10 +12,9 @@
 //   - Mode radio (linear/step → genome.paletteMode) preserved.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { paletteSection, gradientNav } from './edit-section-palette';
-import { createEditState, consumeGradientHandoff } from './edit-state';
+import { paletteSection } from './edit-section-palette';
+import { createEditState } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
-import { rotateHueRGB } from './palette';
 import { FLAM3_PALETTE_COUNT, getLibraryPaletteName } from './flam3-palettes';
 import { saveMine, deleteMine } from './palette-library';
 
@@ -360,94 +359,44 @@ function makeStorageStub(): Storage {
   };
 }
 
-describe('paletteSection — Edit gradient round-trip (#266)', () => {
+describe('paletteSection — Edit gradient toggle (#372)', () => {
   beforeEach(() => { vi.stubGlobal('localStorage', makeStorageStub()); });
 
-  it('Edit gradient → writes a hue-baked handoff', () => {
-    const realGo = gradientNav.go;
-    gradientNav.go = () => {};
-    try {
-      const host = document.createElement('div');
-      const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-      state.genome.palette = {
-        name: 'p', hue: 90,
-        stops: [{ t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 0, b: 1 }],
-      };
-      const onChange = vi.fn();
-      paletteSection.build(host, state, onChange);
-      document.body.appendChild(host);
-
-      const btn = host.querySelector('.pyr3-edit-gradient-link') as HTMLElement;
-      expect(btn).toBeTruthy();
-      btn.click();
-
-      const handed = consumeGradientHandoff();
-      const expected = rotateHueRGB(1, 0, 0, 90);
-      expect(handed?.genome.palette.hue).toBeUndefined();           // hue baked out
-      expect(handed?.genome.palette.stops[0]!.r).toBeCloseTo(expected.r, 5);
-      expect(handed?.genome.palette.stops[0]!.g).toBeCloseTo(expected.g, 5);
-      expect(handed?.genome.palette.stops[0]!.b).toBeCloseTo(expected.b, 5);
-    } finally {
-      gradientNav.go = realGo;
-    }
+  it('exposes the toggle, a controls host, and a readout', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    paletteSection.build(host, state, vi.fn());
+    expect(host.querySelector('[data-role="edit-gradient-toggle"]')).toBeTruthy();
+    expect(host.querySelector('[data-role="gradient-controls-host"]')).toBeTruthy();
+    expect(host.querySelector('[data-role="gradient-readout"]')).toBeTruthy();
   });
 
-  it('hue === 0 passes the stops through unrotated', () => {
-    const realGo = gradientNav.go;
-    gradientNav.go = () => {};
-    try {
-      const host = document.createElement('div');
-      const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-      state.genome.palette = {
-        name: 'p',
-        stops: [{ t: 0, r: 0.25, g: 0.5, b: 0.75 }, { t: 1, r: 0, g: 0, b: 1 }],
-      };
-      paletteSection.build(host, state, vi.fn());
-      document.body.appendChild(host);
+  it('toggle drives activeCanvasOverlay on/off and fires onCanvasOverlayChange', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    let fired = 0;
+    state.onCanvasOverlayChange = () => { fired++; };
+    paletteSection.build(host, state, vi.fn());
 
-      (host.querySelector('.pyr3-edit-gradient-link') as HTMLElement).click();
-      const handed = consumeGradientHandoff();
-      expect(handed?.genome.palette.hue).toBeUndefined();
-      expect(handed?.genome.palette.stops[0]!.r).toBeCloseTo(0.25, 5);
-      expect(handed?.genome.palette.stops[0]!.g).toBeCloseTo(0.5, 5);
-      expect(handed?.genome.palette.stops[0]!.b).toBeCloseTo(0.75, 5);
-    } finally {
-      gradientNav.go = realGo;
-    }
+    const toggle = host.querySelector('[data-role="edit-gradient-toggle"]') as HTMLElement;
+    toggle.click();
+    expect(state.activeCanvasOverlay).toBe('gradient');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(fired).toBe(1);
+
+    toggle.click();
+    expect(state.activeCanvasOverlay).toBe('none');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(fired).toBe(2);
   });
 
-  it('flags editable when the palette source is custom (#266)', () => {
-    const realGo = gradientNav.go;
-    gradientNav.go = () => {};
-    try {
-      const host = document.createElement('div');
-      const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-      state.genome.palette = { name: 'mine', stops: [{ t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 0, b: 1 }] };
-      state.paletteSource = { kind: 'custom' };
-      paletteSection.build(host, state, vi.fn());
-      document.body.appendChild(host);
-      (host.querySelector('.pyr3-edit-gradient-link') as HTMLElement).click();
-      expect(consumeGradientHandoff()?.editable).toBe(true);
-    } finally {
-      gradientNav.go = realGo;
-    }
-  });
-
-  it('does NOT flag editable for a library (flam3) palette source (#266)', () => {
-    const realGo = gradientNav.go;
-    gradientNav.go = () => {};
-    try {
-      const host = document.createElement('div');
-      const state = createEditState(generateRandomGenome(seededRng(1)), 1);
-      state.genome.palette = { name: 'flame #5', stops: [{ t: 0, r: 1, g: 0, b: 0 }, { t: 1, r: 0, g: 0, b: 1 }] };
-      state.paletteSource = { kind: 'flam3', number: 5 };
-      paletteSection.build(host, state, vi.fn());
-      document.body.appendChild(host);
-      (host.querySelector('.pyr3-edit-gradient-link') as HTMLElement).click();
-      expect(consumeGradientHandoff()?.editable).toBe(false);
-    } finally {
-      gradientNav.go = realGo;
-    }
+  it('exposes a Save / Import / Export library cluster', () => {
+    const host = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    paletteSection.build(host, state, vi.fn());
+    expect(host.querySelector('[data-role="palette-save"]')).toBeTruthy();
+    expect(host.querySelector('[data-role="palette-import"]')).toBeTruthy();
+    expect(host.querySelector('[data-role="palette-export"]')).toBeTruthy();
   });
 });
 

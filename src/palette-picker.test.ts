@@ -48,6 +48,18 @@ describe('palette picker — shell DOM', () => {
     expect(root.querySelector('.pyr3-palette-picker-foot')).toBeTruthy();
   });
 
+  it('has a "Generate ramp" entry that commits {kind:"generate"} + closes (#358)', () => {
+    const onApply = vi.fn();
+    const onClose = vi.fn();
+    const { root } = mount(makeOpts({ onApply, onClose }));
+    const genBtn = root.querySelector('.pyr3-palette-picker-genbtn') as HTMLButtonElement;
+    expect(genBtn).toBeTruthy();
+    expect(genBtn.textContent).toMatch(/generate ramp/i);
+    genBtn.click();
+    expect(onApply).toHaveBeenCalledWith({ kind: 'generate' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('header has title + total/filtered count badge', () => {
     const { root } = mount();
     const title = root.querySelector('.pyr3-palette-picker-title') as HTMLElement;

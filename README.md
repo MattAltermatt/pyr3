@@ -174,8 +174,9 @@ Open work and ship history live on GitHub (since the 2026-05-30 pivot):
 - [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry, labelled by
   type (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
 - [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — themed arcs; the
-  `v1.0` → `v1.10` line shipped (latest `v1.10.0`, the More variations milestone — novel warp
-  families growing the catalog to 323). Active themed work groups around **Binary distribution**
+  `v1.0` → `v1.11` line shipped (latest `v1.11.0`, the Editor IA rework milestone — the 4-lens
+  editor redesign, xform reorder, a consolidated Color lens, an in-lens gradient editor, and a
+  control-consistency pass). Active themed work groups around **Binary distribution**
   (cross-platform verify #126, Windows `.exe` #287), **Viewer / editor UX & presets**, **Color
   grading & scopes**, **evolving flame creation**, and **Mobile rework** (#66)
 - [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward

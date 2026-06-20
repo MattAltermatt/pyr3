@@ -11,7 +11,7 @@
 
 import { type Genome } from './genome';
 import { type PaletteSource } from './flam3-palette-names';
-import { type Palette } from './palette';
+import { type WorkspaceView, IDENTITY_VIEW } from './edit-camera-projection';
 
 export type Lane = 'fast' | 'slow' | 'rebuild';
 
@@ -60,10 +60,20 @@ export type SectionKey =
   | 'hsl'
   | 'viewport'
   | 'xforms'
-  | 'final'
-  | 'global'
+  | 'global-symmetry'
+  | 'global-tonemap'
   | 'density'
   | 'render';
+
+/** The four top-level editor lenses (4-lens IA, #27). */
+export type LensKey = 'xform' | 'scene' | 'color' | 'output';
+
+/** Sub-groups within the Color lens — static DEFINE→GRADE dividers (#358). */
+export type SectionGroup = 'palette' | 'grading';
+const LENS_VALUES: readonly LensKey[] = ['xform', 'scene', 'color', 'output'];
+export const PANEL_WIDTH_MIN = 280;
+export const PANEL_WIDTH_MAX = 560;
+export const PANEL_WIDTH_DEFAULT = 360;
 
 export interface EditState {
   genome: Genome;
@@ -76,7 +86,36 @@ export interface EditState {
   loadedSource?: boolean;
   preview: { width: number; height: number };
   sectionCollapse: Record<SectionKey, boolean>;
-  xformCollapse: Record<number, boolean>;
+  /** Active editor lens (4-lens IA, #27). Per-browser pref. UI-only. */
+  activeLens: LensKey;
+  /** Drag-resizable panel width in px (clamped PANEL_WIDTH_MIN..MAX). Pref. */
+  panelWidth: number;
+  /** Index of the xform the editor is "working on" — drives the XForm-lens
+   *  detail + on-canvas gizmo (#350). Phase 1 stores it; Phase 2 wires the UI.
+   *  Session-only, not persisted. Defaults to 0. */
+  selectedXformIndex: number;
+  /** #350 Phase 2.3 — on-canvas gizmo prefs (UI-only, per-browser; NOT serialized). */
+  gizmo: GizmoPrefs;
+  /** #372 — which on-canvas overlay is live. The affine gizmo (XForm lens) and
+   *  the gradient bar (Color lens) are mutually exclusive — only one is ever
+   *  attached. UI-only, session-scoped; NOT serialized. */
+  activeCanvasOverlay: 'none' | 'gizmo' | 'gradient';
+  /** #372 — fired by the Color lens' Edit-gradient toggle (and the reciprocal
+   *  gizmo toggle) so the editor host (edit-mount) can attach/detach the
+   *  matching overlay. Wired at build time; UI-only, never serialized. */
+  onCanvasOverlayChange?: () => void;
+  /** Editor-only workspace view (pan/zoom) layered on top of the genome
+   *  composition camera. NEVER serialized + NEVER persisted — it lets on-canvas
+   *  editing frame an xform without disturbing the saved composition. Default
+   *  identity; reset to identity on every flame load (#350 follow-up). */
+  view: WorkspaceView;
+  /** Per-group collapse for the XForm-lens detail sub-accordions (#350 Phase
+   *  2.2). Global pref across xforms; persisted per-browser. */
+  xformDetailCollapse: Record<XformDetailGroup, boolean>;
+  /** Background-mirror bus (#27): the Color + Output background controls both
+   *  push a listener here; whoever edits notifies the other to refresh its
+   *  swatch. UI-only; never serialized. */
+  backgroundListeners?: Array<(rgb: readonly [number, number, number]) => void>;
   /** Transient solo state. Present when an xform / variation is currently
    *  "soloed" via shift-click. Cleared when solo exits or the genome
    *  changes. Not persisted to .pyr3.json. */
@@ -131,18 +170,26 @@ export function createEditState(genome: Genome, seed: number): EditState {
     seed,
     preview: { width: 512, height: 512 },
     sectionCollapse: {
-      palette: true,
-      curves: true,
-      scopes: true,
-      hsl: true,
-      viewport: true,
-      xforms: true,
-      final: true,
-      global: true,
-      density: true,
-      render: true,
+      // #27 — subpanels start EXPANDED on first load (collapse=false); the
+      // user's per-section open/closed choices then persist between sessions.
+      palette: false,
+      curves: false,
+      scopes: false,
+      hsl: false,
+      viewport: false,
+      xforms: false,
+      'global-symmetry': false,
+      'global-tonemap': false,
+      density: false,
+      render: false,
     },
-    xformCollapse: {},
+    activeLens: restoreActiveLens(),
+    panelWidth: restorePanelWidth(),
+    selectedXformIndex: 0,
+    gizmo: loadGizmoPrefs(),
+    activeCanvasOverlay: 'none',
+    view: { ...IDENTITY_VIEW },
+    xformDetailCollapse: restoreXformDetailCollapse(),
   };
 }
 
@@ -375,88 +422,6 @@ export function consumePendingTransfer(): PendingTransfer | null {
   }
 }
 
-// ── Editor ↔ Gradient-editor round-trip (#266) ────────────────────────
-// Single-shot, TTL-guarded localStorage handoffs mirroring PENDING_TRANSFER.
-//   handoff: /v1/edit → /v1/gradient  (carries the flame's palette to seed)
-//   return:  /v1/gradient → /v1/edit  (carries the edited palette to apply)
-// Consume-on-read makes each a single click→nav round trip; a later refresh
-// can't replay it.
-
-export const GRADIENT_HANDOFF_KEY = 'pyr3.gradient.handoff';
-export const GRADIENT_RETURN_KEY = 'pyr3.gradient.return';
-// Freshness window for the single click→page-load round trip. Generous enough
-// to cover a slow editor cold-start (cold GPU cache / large genome) so an
-// "Apply to flame" never reads as stale, while still refusing to resurrect a
-// long-abandoned palette on some unrelated later visit.
-export const GRADIENT_HANDOFF_TTL_MS = 15000;
-
-interface GradientSlot {
-  /** Handoff direction (edit→gradient) carries the full genome so /v1/gradient
-   *  can RENDER the flame (and seed the bar from genome.palette). (#269) */
-  genome?: Genome;
-  /** Return direction (gradient→edit) carries only the edited palette to apply
-   *  back — /v1/edit stays the flame's source of truth. */
-  palette?: Palette;
-  /** Handoff direction only: the palette is already the user's own custom
-   *  gradient (paletteSource === 'custom'), so /v1/gradient should open it
-   *  directly editable instead of behind the read-only Modify gate. */
-  editable?: boolean;
-  timestamp: number;
-}
-
-/** What `consumeGradientHandoff` hands back: the seed genome plus whether it is
- *  the user's own custom gradient (open-editable) vs a dense flame palette. */
-export interface GradientHandoff {
-  genome: Genome;
-  editable: boolean;
-}
-
-function writeSlot(key: string, payload: Omit<GradientSlot, 'timestamp'>): void {
-  try {
-    globalThis.localStorage?.setItem(key, JSON.stringify({ ...payload, timestamp: Date.now() }));
-  } catch {
-    // localStorage disabled / full — silently no-op.
-  }
-}
-
-function readSlot(key: string): GradientSlot | null {
-  try {
-    const raw = globalThis.localStorage?.getItem(key);
-    if (!raw) return null;
-    globalThis.localStorage?.removeItem(key); // remove first so a stale/bad slot still clears
-    const parsed = JSON.parse(raw) as Partial<GradientSlot>;
-    if (!parsed || typeof parsed !== 'object') return null;
-    if (typeof parsed.timestamp !== 'number') return null;
-    if (Date.now() - parsed.timestamp > GRADIENT_HANDOFF_TTL_MS) return null;
-    return parsed as GradientSlot;
-  } catch {
-    return null;
-  }
-}
-
-/** Stash the flame's genome for /v1/gradient to render + seed from. `editable`
- *  marks it as the user's own custom gradient (open it directly, not behind the
- *  gate). Best-effort. */
-export function writeGradientHandoff(genome: Genome, editable = false): void {
-  writeSlot(GRADIENT_HANDOFF_KEY, { genome, editable });
-}
-/** Consume the edit→gradient handoff (single-shot). null when empty/stale/bad. */
-export function consumeGradientHandoff(): GradientHandoff | null {
-  const slot = readSlot(GRADIENT_HANDOFF_KEY);
-  if (!slot || !slot.genome || !Array.isArray(slot.genome.palette?.stops)) return null;
-  return { genome: slot.genome, editable: slot.editable === true };
-}
-/** Stash the edited palette for /v1/edit to apply on return. Best-effort. */
-export function writeGradientReturn(palette: Palette): void {
-  writeSlot(GRADIENT_RETURN_KEY, { palette });
-}
-/** Consume the gradient→edit return (single-shot). null when empty/stale/bad. */
-export function consumeGradientReturn(): Palette | null {
-  const slot = readSlot(GRADIENT_RETURN_KEY);
-  if (!slot || !slot.palette || !Array.isArray(slot.palette.stops)) return null;
-  return slot.palette;
-}
-
 // Debounced persistence — coalesces a rapid edit stream into a single
 // localStorage write 200ms after the LAST edit. The timer lives at module
 // scope so consecutive schedulePersist() calls share / reset the same timer.
@@ -479,17 +444,47 @@ export function schedulePersist(genome: Genome): void {
 
 export const SECTION_COLLAPSE_KEY = 'pyr3.editor.sectionCollapse';
 
+// ── Lens + panel-width prefs (4-lens IA, #27) ──────────────────────────────
+export const LENS_KEY = 'pyr3.editor.activeLens';
+export const PANEL_WIDTH_KEY = 'pyr3.editor.panelWidth';
+
+/** Persist the active lens. Best-effort; swallows localStorage failures. */
+export function persistActiveLens(lens: LensKey): void {
+  try { globalThis.localStorage?.setItem(LENS_KEY, lens); } catch { /* no-op */ }
+}
+/** Read the active lens; falls back to 'xform' on absent/garbage/throw. */
+export function restoreActiveLens(): LensKey {
+  try {
+    const raw = globalThis.localStorage?.getItem(LENS_KEY);
+    return LENS_VALUES.includes(raw as LensKey) ? (raw as LensKey) : 'xform';
+  } catch { return 'xform'; }
+}
+/** Persist the panel width (px). Best-effort. */
+export function persistPanelWidth(px: number): void {
+  try { globalThis.localStorage?.setItem(PANEL_WIDTH_KEY, String(Math.round(px))); } catch { /* no-op */ }
+}
+/** Read the panel width, clamped to [MIN,MAX]; default when absent/garbage. */
+export function restorePanelWidth(): number {
+  try {
+    const n = Number(globalThis.localStorage?.getItem(PANEL_WIDTH_KEY));
+    if (!Number.isFinite(n) || n === 0) return PANEL_WIDTH_DEFAULT;
+    return Math.max(PANEL_WIDTH_MIN, Math.min(PANEL_WIDTH_MAX, n));
+  } catch { return PANEL_WIDTH_DEFAULT; }
+}
+
+// #27 — subpanels start EXPANDED (collapse=false) on first load; persisted
+// per-section choices win on subsequent sessions (restoreSectionCollapse).
 const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
-  palette: true,
-  curves: true,
-  scopes: true,
-  hsl: true,
-  viewport: true,
-  xforms: true,
-  final: true,
-  global: true,
-  density: true,
-  render: true,
+  palette: false,
+  curves: false,
+  scopes: false,
+  hsl: false,
+  viewport: false,
+  xforms: false,
+  'global-symmetry': false,
+  'global-tonemap': false,
+  density: false,
+  render: false,
 };
 
 /** Persist the per-section collapse map immediately. No debounce — toggle
@@ -518,6 +513,108 @@ export function restoreSectionCollapse(): Record<SectionKey, boolean> {
   } catch {
     return { ...DEFAULT_SECTION_COLLAPSE };
   }
+}
+
+// ── XForm-lens detail sub-accordions (#350 Phase 2.2) ──────────────────────
+// The selected xform's detail pane groups its controls into four collapsible
+// sub-accordions. Collapse is a per-browser PREF (global across xforms, like
+// section-collapse — not per-xform-index), so "I always want Xaos folded
+// away" sticks. Default mirrors the spec mockup: Affine open, the rest folded.
+export type XformDetailGroup = 'affine' | 'variations' | 'color' | 'xaos';
+
+export const XFORM_DETAIL_COLLAPSE_KEY = 'pyr3.editor.xformDetailCollapse';
+
+const DEFAULT_XFORM_DETAIL_COLLAPSE: Record<XformDetailGroup, boolean> = {
+  affine: false,     // open — the geometric core
+  variations: true,  // folded by default to keep the narrow panel uncluttered
+  color: true,
+  xaos: true,
+};
+
+/** Persist the per-group detail-collapse map immediately (toggle events are
+ *  rare). Best-effort; swallows any localStorage failure. */
+export function persistXformDetailCollapse(map: Record<XformDetailGroup, boolean>): void {
+  try {
+    globalThis.localStorage?.setItem(XFORM_DETAIL_COLLAPSE_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage disabled or full — no-op; in-memory map drives this session.
+  }
+}
+
+/** Read the persisted detail-collapse map, merged over the default so a
+ *  partial / older shape still yields all four keys. Fresh copy each call. */
+export function restoreXformDetailCollapse(): Record<XformDetailGroup, boolean> {
+  try {
+    const raw = globalThis.localStorage?.getItem(XFORM_DETAIL_COLLAPSE_KEY);
+    if (!raw) return { ...DEFAULT_XFORM_DETAIL_COLLAPSE };
+    const parsed = JSON.parse(raw) as Record<XformDetailGroup, boolean>;
+    return { ...DEFAULT_XFORM_DETAIL_COLLAPSE, ...parsed };
+  } catch {
+    return { ...DEFAULT_XFORM_DETAIL_COLLAPSE };
+  }
+}
+
+// ── #350 Phase 2.3 — on-canvas gizmo prefs (UI-only, per-browser) ─────
+export interface GizmoPrefs {
+  /** ✏️ edit-affine-on-canvas master toggle. Default OFF. */
+  editOnCanvas: boolean;
+  /** ▦ world-coordinate reference grid. */
+  showWorldGrid: boolean;
+  /** ☐ persistent snap (snap without holding Shift). */
+  snapEnabled: boolean;
+  /** Translate/scale snap step in world units. */
+  snapStep: number;
+  /** Rotation snap step in degrees. */
+  snapAngleStep: number;
+}
+
+export const GIZMO_PREFS_DEFAULT: GizmoPrefs = {
+  editOnCanvas: false,
+  showWorldGrid: false,
+  snapEnabled: false,
+  snapStep: 0.1,
+  snapAngleStep: 15,
+};
+
+const GIZMO_PREFS_KEY = 'pyr3.edit.gizmo';
+
+/** Load gizmo prefs from localStorage; defaults on miss/malformed/disabled. */
+export function loadGizmoPrefs(): GizmoPrefs {
+  try {
+    const raw = globalThis.localStorage?.getItem(GIZMO_PREFS_KEY);
+    if (!raw) return { ...GIZMO_PREFS_DEFAULT };
+    const parsed = JSON.parse(raw) as Partial<GizmoPrefs>;
+    return {
+      // #350 — the editor always opens in FLAME mode (pannable/zoomable flame);
+      // edit-on-canvas is session-only, never restored from storage.
+      editOnCanvas: false,
+      showWorldGrid: parsed.showWorldGrid ?? GIZMO_PREFS_DEFAULT.showWorldGrid,
+      snapEnabled: parsed.snapEnabled ?? GIZMO_PREFS_DEFAULT.snapEnabled,
+      snapStep: Number.isFinite(parsed.snapStep) ? (parsed.snapStep as number) : GIZMO_PREFS_DEFAULT.snapStep,
+      snapAngleStep: Number.isFinite(parsed.snapAngleStep) ? (parsed.snapAngleStep as number) : GIZMO_PREFS_DEFAULT.snapAngleStep,
+    };
+  } catch {
+    return { ...GIZMO_PREFS_DEFAULT };
+  }
+}
+
+/** Persist gizmo prefs. Best-effort; swallows localStorage failures. */
+export function saveGizmoPrefs(p: GizmoPrefs): void {
+  try {
+    globalThis.localStorage?.setItem(GIZMO_PREFS_KEY, JSON.stringify(p));
+  } catch {
+    // localStorage disabled / full — no-op.
+  }
+}
+
+/** #372 — set the live on-canvas overlay. The gizmo and the gradient bar are
+ *  mutually exclusive: switching always replaces, never stacks. The editor host
+ *  reacts via state.onCanvasOverlayChange to attach/detach the matching overlay. */
+export function setActiveCanvasOverlay(
+  state: EditState,
+  which: 'none' | 'gizmo' | 'gradient',
+): void {
+  state.activeCanvasOverlay = which;
 }
 
 // ── #103 Phase 6 Task 6.5 — Cold-start hydration helpers ──────────────

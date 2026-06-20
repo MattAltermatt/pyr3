@@ -30,14 +30,13 @@
 
 import { type SectionMount } from './edit-ui';
 import { type Density, DEFAULT_DENSITY } from './density';
-import { scrubbyInput, type ScrubbyHandle } from './edit-scrubby-input';
 import { DEFAULT_TONEMAP, type Tonemap } from './tonemap';
 import {
   DENSITY_PRESETS as TONEMAP_PRESETS,
   type DensityPreset as TonemapPreset,
 } from './edit-preset-density';
 import { COLORS } from './ui-tokens';
-import { buildButton } from './edit-primitives';
+import { buildButton, buildSlider, type SliderControl } from './edit-primitives';
 import { infoIcon } from './help-text';
 
 // Cross-section event: fired when any tonemap field is edited outside the
@@ -70,6 +69,7 @@ function approxEq(a: number, b: number, eps = 1e-6): boolean {
 
 export const densitySection: SectionMount = {
   key: 'density',
+  lens: 'output',
   title: '💫 DENSITY EMITTER',
   build(host, state, onChange) {
     host.classList.add('pyr3-edit-section-density');
@@ -177,19 +177,24 @@ export const densitySection: SectionMount = {
     // was dropped — the tonemap preset strip above already serves the
     // "quick-start defaults" affordance for this section, and the three
     // sliders below let advanced users tune maxRad/minRad/curve directly.
+    // Each row is now a single shared buildSlider control (rail + orange
+    // fill + thumb + internal scrubby number — the same primitive every
+    // other editor section uses). A visually-hidden <input type="range">
+    // mirror rides alongside, wired to the same setter, so the legacy
+    // `input[type="range"]` test contract keeps working and external
+    // drivers (preset/undo) can sync the displayed value. Mirrors the
+    // hidden-range pattern in edit-section-global.ts (vibrancy).
     interface SliderPair {
-      slider: HTMLInputElement;
-      number: HTMLElement;
-      handle: ScrubbyHandle;
+      control: SliderControl;
     }
 
     function makeRow(
       labelText: string,
       cls: string,
+      field: keyof Density,
       min: number,
       max: number,
       step: number,
-      onScrub: (v: number) => void,
       helpKey: string,
     ): SliderPair {
       const row = document.createElement('div');
@@ -205,45 +210,48 @@ export const densitySection: SectionMount = {
       lab.style.color = COLORS.text.muted;
       lab.style.fontSize = '12px';
 
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.min = String(min);
-      slider.max = String(max);
-      slider.step = String(step);
-      slider.className = `${cls}-slider`;
-      slider.style.flex = '1 1 auto';
+      // Legacy range input mirror — same min/max/step, visually hidden,
+      // drives the same setter. Forward-declared so the slider onChange can
+      // keep it in sync; tab-blocked so the visible slider owns interaction.
+      const rangeMirror = document.createElement('input');
+      rangeMirror.type = 'range';
+      rangeMirror.min = String(min);
+      rangeMirror.max = String(max);
+      rangeMirror.step = String(step);
+      rangeMirror.className = `${cls}-slider`;
+      rangeMirror.tabIndex = -1;
+      rangeMirror.style.position = 'absolute';
+      rangeMirror.style.width = '1px';
+      rangeMirror.style.height = '1px';
+      rangeMirror.style.opacity = '0';
+      rangeMirror.style.pointerEvents = 'none';
 
-      const handle = scrubbyInput({
+      const control = buildSlider({
         value: 0,
-        kind: 'generic',
         min,
         max,
-        minStep: step,
-        onInput: onScrub,
+        step,
+        onChange: (v) => {
+          rangeMirror.value = String(v);
+          setField(field, v);
+        },
       });
-      const number = handle.el;
-      number.classList.add(`${cls}-number`);
-      number.style.width = '60px';
 
-      row.append(lab, slider, number, infoIcon(helpKey));
+      rangeMirror.addEventListener('input', () => {
+        const v = Number(rangeMirror.value);
+        if (!Number.isFinite(v)) return;
+        control.setValue(v);
+        setField(field, v);
+      });
+
+      row.append(lab, control, rangeMirror, infoIcon(helpKey));
       host.appendChild(row);
-      return { slider, number, handle };
+      return { control };
     }
 
-    // Forward-declare so the makeRow onScrub callbacks can reference setField
-    // (function declarations below are hoisted within this build() scope).
-    const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 0, 30, 0.5, (v) => {
-      maxRadPair.slider.value = String(v);
-      setField('maxRad', v);
-    }, 'density.maxRad');
-    const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 0, 30, 0.1, (v) => {
-      minRadPair.slider.value = String(v);
-      setField('minRad', v);
-    }, 'density.minRad');
-    const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 0.1, 2.0, 0.05, (v) => {
-      curvePair.slider.value = String(v);
-      setField('curve', v);
-    }, 'density.curve');
+    const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 'maxRad', 0, 30, 0.5, 'density.maxRad');
+    const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 'minRad', 0, 30, 0.1, 'density.minRad');
+    const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 'curve', 0.1, 2.0, 0.05, 'density.curve');
 
     // ── Header chip + dirty marker ─────────────────────────────────────────
     // The chip lives in the header sibling (parent's previousElementSibling
@@ -324,12 +332,9 @@ export const densitySection: SectionMount = {
 
     function syncWidgets(): void {
       const d = ensureDensity();
-      maxRadPair.slider.value = String(d.maxRad);
-      maxRadPair.handle.setValue(d.maxRad);
-      minRadPair.slider.value = String(d.minRad);
-      minRadPair.handle.setValue(d.minRad);
-      curvePair.slider.value = String(d.curve);
-      curvePair.handle.setValue(d.curve);
+      maxRadPair.control.setValue(d.maxRad);
+      minRadPair.control.setValue(d.minRad);
+      curvePair.control.setValue(d.curve);
     }
 
     function setField(field: keyof Density, value: number): void {
@@ -338,19 +343,6 @@ export const densitySection: SectionMount = {
       d[field] = value;
       onChange(`density.${field}`);
     }
-
-    function bindSlider(pair: SliderPair, field: keyof Density): void {
-      pair.slider.addEventListener('input', () => {
-        const n = Number(pair.slider.value);
-        if (!Number.isFinite(n)) return;
-        pair.handle.setValue(n);
-        setField(field, n);
-      });
-    }
-
-    bindSlider(maxRadPair, 'maxRad');
-    bindSlider(minRadPair, 'minRad');
-    bindSlider(curvePair, 'curve');
 
     syncWidgets();
   },

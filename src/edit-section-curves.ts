@@ -108,16 +108,24 @@ function presetLabel(key: string): string {
     .join(' ');
 }
 
-// pyr3 themed button — matches edit-primitives.ts buildButton 'plain' variant
-// but works on raw <button> so disabled-state and dataset attributes survive.
+// pyr3 themed button (#373 button vocab). `plain` = the canonical SECONDARY
+// workhorse look (Reset all / delete / reset-channel / preview, and channel-tab
+// OFF state); `active` = the canonical TOGGLE on-state (channel tab / snap ON).
+// Works on raw <button> so disabled-state and dataset attributes survive.
 function applyBtnStyle(btn: HTMLElement, kind: 'plain' | 'active' = 'plain'): void {
-  btn.style.background = kind === 'active'
-    ? `linear-gradient(180deg, ${COLORS.bg.action}, ${COLORS.bg.bar})`
-    : `linear-gradient(180deg, ${COLORS.bg.panel}, ${COLORS.bg.bar})`;
-  btn.style.border = `1px solid ${kind === 'active' ? COLORS.flame.top : COLORS.border}`;
-  btn.style.color = kind === 'active' ? COLORS.flame.top : COLORS.text.primary;
+  if (kind === 'active') {
+    btn.style.background = '#ff8c1a';
+    btn.style.border = '1px solid #ff8c1a';
+    btn.style.color = '#1a1206';
+    btn.style.fontWeight = '600';
+  } else {
+    btn.style.background = '#1a1a20';
+    btn.style.border = '1px solid #34343e';
+    btn.style.color = '#cfcfd6';
+    btn.style.fontWeight = '';
+  }
   btn.style.padding = '4px 9px';
-  btn.style.borderRadius = '4px';
+  btn.style.borderRadius = '5px';
   btn.style.cursor = 'pointer';
   btn.style.fontSize = '12px';
   btn.style.lineHeight = '1.2';
@@ -127,10 +135,16 @@ function applyBtnStyle(btn: HTMLElement, kind: 'plain' | 'active' = 'plain'): vo
 
 function wireHover(btn: HTMLElement, isActive: () => boolean): void {
   btn.addEventListener('mouseenter', () => {
-    if (!isActive()) btn.style.borderColor = COLORS.flame.top;
+    if (!isActive()) {
+      btn.style.borderColor = '#55556a';
+      btn.style.background = '#202028';
+    }
   });
   btn.addEventListener('mouseleave', () => {
-    if (!isActive()) btn.style.borderColor = COLORS.border;
+    if (!isActive()) {
+      btn.style.borderColor = '#34343e';
+      btn.style.background = '#1a1a20';
+    }
   });
 }
 
@@ -176,6 +190,7 @@ function clampToNeighbors(curve: CurvePoint[], idx: number, x: number): number {
 
 export const curvesSection: SectionMount = {
   key: 'curves',
+  lens: 'color',
   title: '🎚 COLOR CURVES',
   build(host, state, onChange) {
     host.classList.add('pyr3-edit-section-curves');
@@ -333,6 +348,9 @@ export const curvesSection: SectionMount = {
       input.style.background = COLORS.bg.input;
       input.style.color = COLORS.text.primary;
       input.style.border = `1px solid ${COLORS.border}`;
+      // Accent bottom-rule — the #373 editable-number-field affordance, applied
+      // consistently to these curve point inputs too.
+      input.style.borderBottom = '2px solid var(--accent-border, #884a1a)';
       input.style.borderRadius = '3px';
       input.style.fontFamily = 'inherit';
       input.style.fontSize = '12px';

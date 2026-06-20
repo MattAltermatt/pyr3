@@ -1,20 +1,37 @@
-// pyr3 — /v1/edit Xforms section.
+// pyr3 — /editor XForm lens section (#350 / #335).
 //
-// Dense card-stack section: one collapsible card per xform with weight,
-// color/colorSpeed/opacity, affine + optional post-affine, variation chain
-// (kind dropdown + weight + per-kind named params), and xaos row. Plus
-// `+ add` / per-card 🗑️ to grow/shrink the xform list.
+// Single-selection model (Phase 2.1, replaces the v1 card-stack): a dropdown
+// selector + action bar pick ONE xform; its detail fills the pane below.
+// The final xform folds in as a second always-present selector row (sentinel
+// `state.selectedXformIndex === -1`) sharing the same detail pane — the
+// standalone `finalSection` was retired here.
 //
-// ALL edits route through `onChange` with `xforms.${i}.…` paths; pathLane()
-// routes the entire `xforms.*` family to the slow lane (re-iterate + re-DE
-// + present), so we don't need to think about lane assignment here.
+//   ┌ XForm lens ───────────────────────────────┐
+//   │ xform   [ xform 1 · of 6   ▾ ]             │  ← regular selector
+//   │ [⏻ │ ＋ 🗑 ⧉      ↑ ↓]                       │  ← regular action bar
+//   │ final xform   [ ✨ final ]                  │  ← always-present final row
+//   │ [⏻ │ 🗑]                                     │  ← final action bar
+//   │ ─────────────────────────────────────────   │
+//   │ Editing xform 1 · weight 0.99               │
+//   │ weight […] · affine · variations · color    │  ← selection-driven detail
+//   │ · xaos                                       │
+//   └──────────────────────────────────────────────┘
 //
-// On add/remove we rebuild only the section body (the cheap re-render —
-// 3-7 cards on a typical seed; no need for surgical DOM diffing).
+// ALL structural ops route through `xform-ops.ts` (add/remove/duplicate/swap,
+// with xaos column/row upkeep) then `onChange` — so history/persist/live-render
+// fire and every op is one-⌘Z undoable. Pure-genome correctness lives in
+// xform-ops.ts (unit-tested); this file is the DOM shell.
 
 import { type SectionMount } from './edit-ui';
-import { type EditState, snapshotForSolo, restoreFromSolo } from './edit-state';
+import {
+  type EditState,
+  type XformDetailGroup,
+  snapshotForSolo,
+  restoreFromSolo,
+  persistXformDetailCollapse,
+} from './edit-state';
 import { type Xform } from './genome';
+import { addXform, removeXform, duplicateXform, swapXforms, makeDefaultXform } from './xform-ops';
 import { type Variation, V, VARIATION_NAMES, MAX_VARIATIONS_PER_XFORM, DC_VARIATION_SET } from './variations';
 import { VARIATION_PARAMS, PARAM_KEYS } from './serialize';
 import {
@@ -39,8 +56,12 @@ import {
   buildRow,
   buildSlider,
   buildNumberInput,
+  buildExpander,
 } from './edit-primitives';
-import { infoIcon } from './help-text';
+import { infoIcon, type HelpKey } from './help-text';
+
+/** Sentinel `selectedXformIndex` value meaning "the final xform is selected". */
+const FINAL_SEL = -1;
 
 // Per-variation param-slot keys, in stable index order. Names match the
 // VARIATION_PARAMS schema; slot index = positional index into PARAM_KEYS.
@@ -49,17 +70,6 @@ function paramNamesFor(variationIndex: number): readonly string[] {
   const kindName = VARIATION_NAMES[variationIndex];
   if (kindName === undefined) return [];
   return VARIATION_PARAMS[kindName] ?? [];
-}
-
-function makeDefaultXform(): Xform {
-  return {
-    a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
-    weight: 1,
-    color: 0.5,
-    colorSpeed: 0.5,
-    opacity: 1,
-    variations: [{ index: V.linear, weight: 1 }],
-  };
 }
 
 function makeIdentityPost(): NonNullable<Xform['post']> {
@@ -85,25 +95,6 @@ function makeNumberInput(
   });
   if (opts.width !== undefined) handle.el.style.width = opts.width;
   return handle;
-}
-
-function makeSliderInput(
-  initial: number,
-  commit: (val: number) => void,
-  opts: { min: number; max: number; step?: number } = { min: 0, max: 1 },
-): HTMLInputElement {
-  const inp = document.createElement('input');
-  inp.type = 'range';
-  inp.className = 'pyr3-edit-slider';
-  inp.min = String(opts.min);
-  inp.max = String(opts.max);
-  inp.step = String(opts.step ?? 0.001);
-  inp.value = String(initial);
-  inp.addEventListener('input', () => {
-    const n = Number(inp.value);
-    if (Number.isFinite(n)) commit(n);
-  });
-  return inp;
 }
 
 function makeLabeledField(labelText: string, control: HTMLElement): HTMLDivElement {
@@ -132,17 +123,76 @@ function makeIconButton(label: string, onClick: () => void): HTMLButtonElement {
   return b;
 }
 
-// Build one variation row (active checkbox + kind picker-trigger button +
-// weight + 🗑️ + per-kind param inputs). The param-row sub-container is
+// ── Selector action-bar primitives ──────────────────────────────────────────
+
+/** A square icon button for the selector action bar (＋ 🗑 ⧉ ↑ ↓). */
+function makeBarButton(
+  glyph: string,
+  title: string,
+  onClick: () => void,
+  opts: { disabled?: boolean } = {},
+): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pyr3-edit-bar-btn';
+  b.textContent = glyph;
+  b.title = title;
+  if (opts.disabled) {
+    b.disabled = true;
+    b.setAttribute('aria-disabled', 'true');
+  } else {
+    b.addEventListener('click', onClick);
+  }
+  return b;
+}
+
+/** Power (⏻) button — green when active, grey when inactive. Plain click
+ *  toggles; an optional shift-click handler drives solo. */
+function makePowerButton(
+  active: boolean,
+  onToggle: () => void,
+  onSolo?: () => void,
+): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = active ? 'pyr3-edit-bar-btn pyr3-edit-power on' : 'pyr3-edit-bar-btn pyr3-edit-power';
+  b.textContent = '⏻';
+  b.title = onSolo
+    ? 'Toggle active. Shift-click to solo (turn off all others).'
+    : 'Toggle active.';
+  b.addEventListener('click', (ev) => {
+    const me = ev as MouseEvent;
+    if (me.shiftKey && onSolo) {
+      me.preventDefault();
+      onSolo();
+      return;
+    }
+    onToggle();
+  });
+  return b;
+}
+
+/** A thin vertical delimiter between button clusters in the action bar. */
+function makeBarDiv(): HTMLSpanElement {
+  const d = document.createElement('span');
+  d.className = 'pyr3-edit-bardiv';
+  return d;
+}
+
+// Build one variation row (active toggle + kind picker-trigger button + weight
+// + 🗑️ + per-kind param inputs). `pathPrefix` is the genome path to this xform
+// (e.g. `xforms.2` or `finalxform`); `soloKey` keys the variation-solo snapshot
+// (xform index, or FINAL_SEL for the final). The param-row sub-container is
 // rebuilt in place on kind change.
 function buildVariationRow(
   state: EditState,
   xform: Xform,
-  xformIndex: number,
+  pathPrefix: string,
+  soloKey: number,
   varIndex: number,
   onChange: (path: string) => void,
   removeSelf: () => void,
-  rebuildSection?: () => void,
+  rebuildDetail: () => void,
 ): HTMLDivElement {
   const v = xform.variations[varIndex]!;
 
@@ -158,7 +208,7 @@ function buildVariationRow(
     onChange: (next) => {
       v.active = next ? undefined : false;
       wrap.classList.toggle('pyr3-edit-var-inactive', v.active === false);
-      onChange(`xforms.${xformIndex}.variations.${varIndex}.active`);
+      onChange(`${pathPrefix}.variations.${varIndex}.active`);
     },
   });
   activeToggle.classList.add('pyr3-edit-var-active');
@@ -170,19 +220,19 @@ function buildVariationRow(
     me.preventDefault();
     me.stopImmediatePropagation();
     state.soloVariationSnapshot = state.soloVariationSnapshot ?? {};
-    const existing = state.soloVariationSnapshot[xformIndex];
+    const existing = state.soloVariationSnapshot[soloKey];
     if (existing && existing.targetIndex === varIndex) {
       restoreFromSolo(xform.variations, existing);
-      delete state.soloVariationSnapshot[xformIndex];
+      delete state.soloVariationSnapshot[soloKey];
     } else {
       if (existing) restoreFromSolo(xform.variations, existing);
-      state.soloVariationSnapshot[xformIndex] = snapshotForSolo(xform.variations, varIndex);
+      state.soloVariationSnapshot[soloKey] = snapshotForSolo(xform.variations, varIndex);
       for (let i = 0; i < xform.variations.length; i++) {
         if (i !== varIndex) xform.variations[i]!.active = false;
       }
     }
-    onChange(`xforms.${xformIndex}.variations.solo`);
-    rebuildSection?.();
+    onChange(`${pathPrefix}.variations.solo`);
+    rebuildDetail();
   }, true);
 
   const kindBtn = document.createElement('button');
@@ -190,13 +240,13 @@ function buildVariationRow(
   kindBtn.className = 'pyr3-edit-var-kind-btn';
   kindBtn.textContent = VARIATION_NAMES[v.index] ?? `var${v.index}`;
   kindBtn.title = 'Click to pick a different variation kind.';
-  wireVariationKindButton(kindBtn, v, `xforms.${xformIndex}.variations.${varIndex}.index`, onChange);
+  wireVariationKindButton(kindBtn, v, `${pathPrefix}.variations.${varIndex}.index`, onChange);
 
   const weightInput = makeNumberInput(
     v.weight,
     (n) => {
       v.weight = n;
-      onChange(`xforms.${xformIndex}.variations.${varIndex}.weight`);
+      onChange(`${pathPrefix}.variations.${varIndex}.weight`);
     },
     { kind: 'weight', width: '64px' },
   );
@@ -249,7 +299,7 @@ function buildVariationRow(
         current,
         (n) => {
           (v as unknown as Record<string, number>)[paramKey] = n;
-          onChange(`xforms.${xformIndex}.variations.${varIndex}.${paramKey}`);
+          onChange(`${pathPrefix}.variations.${varIndex}.${paramKey}`);
         },
         { kind: 'generic', width: '56px' },
       );
@@ -275,14 +325,15 @@ const AFFINE_TOOLTIPS: Record<string, string> = {
 
 type AffineLens = 'pre' | 'post';
 
-// Builds the decomposed-affine UI (5 fields + viz + presets + shear fold +
-// raw fold) inside `parent`. Used by both pre- and post-affine. The
-// genome's authoritative a..f stays the source of truth — the decomposed
-// view recomposes on every edit.
+// Builds the decomposed-affine UI (5 fields + viz + quick-ops + shear fold +
+// raw fold) inside `parent`. Used by both pre- and post-affine. `pathPrefix`
+// is the genome path to the owning xform (`xforms.2` or `finalxform`). The
+// genome's authoritative a..f stays the source of truth — the decomposed view
+// recomposes on every edit.
 function buildDecomposedAffineBlock(
   parent: HTMLElement,
   xform: Xform,
-  xformIndex: number,
+  pathPrefix: string,
   onChange: (path: string) => void,
   lens: AffineLens,
 ): void {
@@ -302,11 +353,10 @@ function buildDecomposedAffineBlock(
     xform.post.a = r.a; xform.post.b = r.b; xform.post.c = r.c;
     xform.post.d = r.d; xform.post.e = r.e; xform.post.f = r.f;
   };
-  const pathBase = lens === 'pre' ? `xforms.${xformIndex}` : `xforms.${xformIndex}.post`;
+  const pathBase = lens === 'pre' ? pathPrefix : `${pathPrefix}.post`;
 
-  // Container — stacks the fields-and-viz row above the three fold-ups
-  // (shape presets, shear, raw matrix). Previously all five children sat
-  // in one flex row; the fold-up summary labels clipped at panel width.
+  // Container — stacks the fields-and-viz row above the two fold-ups
+  // (shear, raw matrix).
   const block = document.createElement('div');
   block.className = lens === 'pre' ? 'pyr3-edit-aff-block' : 'pyr3-edit-aff-block pyr3-edit-aff-post';
   parent.appendChild(block);
@@ -322,10 +372,8 @@ function buildDecomposedAffineBlock(
   vizCol.className = 'pyr3-edit-aff-viz-col';
   const vizCanvas = document.createElement('canvas');
   vizCanvas.className = 'pyr3-edit-aff-viz';
-  // Mini viz canvas. Sized to fit the editor's 340px panel comfortably:
-  // 88×88 intrinsic + 1px border ≈ 90px column → leaves ~210px for fields
-  // even with a ~16px scrollbar. CSS keeps a max-width: 100% so further
-  // panel shrinkage doesn't overflow.
+  // Mini viz canvas. 88×88 intrinsic + 1px border ≈ 90px column; CSS keeps a
+  // max-width: 100% so panel shrinkage doesn't overflow.
   vizCanvas.width = 88;
   vizCanvas.height = 88;
   vizCol.appendChild(vizCanvas);
@@ -336,8 +384,8 @@ function buildDecomposedAffineBlock(
   const RAD = Math.PI / 180;
   const initial = rawToDecomposed(getRaw());
 
-  // Cache the 5 decomposed-field scrubby handles so preset clicks + raw-
-  // matrix edits can refresh displayed values without re-triggering onInput.
+  // Cache the 5 decomposed-field scrubby handles so quick-ops + raw-matrix
+  // edits can refresh displayed values without re-triggering onInput.
   const decomposedInputs: Partial<Record<keyof DecomposedAffine, ScrubbyHandle>> = {};
 
   function bindDecomposed(
@@ -354,7 +402,6 @@ function buildDecomposedAffineBlock(
     // Display value: rotation stored as radians in DecomposedAffine, shown
     // as degrees; everything else 1:1.
     const displayInitial = field === 'rotation' ? initialValue / RAD : initialValue;
-    // Pick scrubby kind per field.
     const kind: FieldKind =
       field === 'rotation' ? 'rotation'
       : field === 'scaleX' || field === 'scaleY' ? 'scale'
@@ -394,10 +441,6 @@ function buildDecomposedAffineBlock(
   bindDecomposed('positionY', 'position y', initial.positionY);
 
   // ── Quick-ops strip + reset-to-identity ───────────────────────────
-  // Relative modifiers (rotate ±45° / scale ×2 ×½ / flip x / flip y /
-  // shear +0.1) applied via applyQuickOp from edit-xform-quickops.ts.
-  // The reset-to-identity is a separate accent button below — it's the
-  // only absolute write left and is intentionally distinguished.
   const quickopsStrip = document.createElement('div');
   quickopsStrip.className = 'pyr3-edit-aff-quickops';
   for (const q of QUICK_OPS_DEFS) {
@@ -408,7 +451,12 @@ function buildDecomposedAffineBlock(
     btn.textContent = q.icon + (q.delta ? ' ' + q.delta : ' ' + q.label);
     btn.title = `${q.label}${q.delta ? ' ' + q.delta : ''}`;
     btn.addEventListener('click', () => {
-      const dec = rawToDecomposed(getRaw());
+      const before = getRaw();
+      // Pivot rotate/scale/flip about the GIZMO CENTER (apply(0.5,0.5)), not the
+      // xform origin — so the square transforms in place (#350 quick-ops).
+      const ctrX = before.a * 0.5 + before.b * 0.5 + before.c;
+      const ctrY = before.d * 0.5 + before.e * 0.5 + before.f;
+      const dec = rawToDecomposed(before);
       // Convert affine-decompose contract (radians + positionX/Y) →
       // quickops contract (degrees + posX/Y), apply, then back.
       const qop: QuickOpAffine = {
@@ -428,16 +476,23 @@ function buildDecomposedAffineBlock(
         positionX: after.posX,
         positionY: after.posY,
       };
-      setRaw(decomposedToRaw(nextDec));
+      const raw = decomposedToRaw(nextDec);
+      // Re-anchor translation so the center stays fixed under the op.
+      const ctrAfterX = raw.a * 0.5 + raw.b * 0.5 + raw.c;
+      const ctrAfterY = raw.d * 0.5 + raw.e * 0.5 + raw.f;
+      raw.c += ctrX - ctrAfterX;
+      raw.f += ctrY - ctrAfterY;
+      setRaw(raw);
       viz.draw();
-      for (const f of ['scaleX', 'scaleY', 'rotation', 'positionX', 'positionY'] as const) {
-        const h = decomposedInputs[f];
-        if (!h) continue;
-        const v = f === 'rotation' ? nextDec.rotation / RAD : nextDec[f];
-        h.setValue(v);
-      }
-      if (shearHandle) shearHandle.setValue(nextDec.shear);
-      if (shearFold && Math.abs(nextDec.shear) > 1e-9) shearFold.open = true;
+      // Displays re-read from the FINAL decomposition (position changed).
+      const finalDec = rawToDecomposed(raw);
+      decomposedInputs.scaleX?.setValue(finalDec.scaleX);
+      decomposedInputs.scaleY?.setValue(finalDec.scaleY);
+      decomposedInputs.rotation?.setValue(finalDec.rotation / RAD);
+      decomposedInputs.positionX?.setValue(finalDec.positionX);
+      decomposedInputs.positionY?.setValue(finalDec.positionY);
+      if (shearHandle) shearHandle.setValue(finalDec.shear);
+      if (shearFold && Math.abs(finalDec.shear) > 1e-9) shearFold.open = true;
       refreshRawInputs();
       onChange(`${pathBase}.quickop`);
     });
@@ -472,12 +527,17 @@ function buildDecomposedAffineBlock(
   block.appendChild(resetBtn);
 
   // ── Shear fold-up (auto-opens if shear !== 0) ─────────────────────
-  const shearFold = document.createElement('details');
-  shearFold.className = 'pyr3-edit-aff-shear-fold';
-  const shearSum = document.createElement('summary');
-  shearSum.textContent = 'shear';
-  shearFold.appendChild(shearSum);
-  if (Math.abs(initial.shear) > 1e-9) shearFold.open = true;
+  // Routed through the shared Tier-4 expander (uniform orange accent-bar,
+  // decision Q1). The legacy `.pyr3-edit-aff-shear-fold` class is retained on
+  // the <details> so existing selectors keep resolving; the subpanel key is
+  // passed through buildExpander (undo/redo open-state restore, #358).
+  const shearExp = buildExpander({
+    summary: 'shear',
+    open: Math.abs(initial.shear) > 1e-9,
+    subpanelKey: `${pathBase}.shearFold`,
+  });
+  const shearFold = shearExp.details;
+  shearFold.classList.add('pyr3-edit-aff-shear-fold');
   const shearWrap = document.createElement('div');
   shearWrap.className = 'pyr3-edit-field pyr3-edit-aff-shear';
   const shearLbl = document.createElement('label');
@@ -497,15 +557,19 @@ function buildDecomposedAffineBlock(
   });
   shearHandle.el.title = AFFINE_TOOLTIPS.shear ?? '';
   shearWrap.append(shearLbl, shearHandle.el);
-  shearFold.appendChild(shearWrap);
+  shearExp.body.appendChild(shearWrap);
   block.appendChild(shearFold);
 
   // ── Raw matrix fold-up ────────────────────────────────────────────
-  const rawFold = document.createElement('details');
-  rawFold.className = 'pyr3-edit-aff-raw-fold';
-  const rawSum = document.createElement('summary');
-  rawSum.textContent = 'raw matrix';
-  rawFold.appendChild(rawSum);
+  // Shared Tier-4 expander (decision Q1). Legacy `.pyr3-edit-aff-raw-fold`
+  // class retained for existing selectors; subpanel key threads through for
+  // undo/redo open-state restore (#358).
+  const rawExp = buildExpander({
+    summary: 'raw matrix',
+    subpanelKey: `${pathBase}.rawFold`,
+  });
+  const rawFold = rawExp.details;
+  rawFold.classList.add('pyr3-edit-aff-raw-fold');
   const rawGrid = document.createElement('div');
   rawGrid.className = 'pyr3-edit-raw-grid';
   const rawInputs: Partial<Record<'a' | 'b' | 'c' | 'd' | 'e' | 'f', ScrubbyHandle>> = {};
@@ -540,7 +604,7 @@ function buildDecomposedAffineBlock(
     rawGrid.appendChild(wrap);
     rawInputs[key] = handle;
   }
-  rawFold.appendChild(rawGrid);
+  rawExp.body.appendChild(rawGrid);
   block.appendChild(rawFold);
 
   function refreshRawInputs(): void {
@@ -550,410 +614,573 @@ function buildDecomposedAffineBlock(
     }
   }
 
+  // #350 #1 — refresh ALL displayed values + the mini-viz from the live genome
+  // affine. Fired when an external surface (the on-canvas gizmo) mutates this
+  // xform, so the panel fields + mini-viz track the drag in real time.
+  function syncFromGenome(): void {
+    const dec = rawToDecomposed(getRaw());
+    decomposedInputs.scaleX?.setValue(dec.scaleX);
+    decomposedInputs.scaleY?.setValue(dec.scaleY);
+    decomposedInputs.rotation?.setValue(dec.rotation / RAD);
+    decomposedInputs.positionX?.setValue(dec.positionX);
+    decomposedInputs.positionY?.setValue(dec.positionY);
+    shearHandle.setValue(dec.shear);
+    refreshRawInputs();
+    viz.draw();
+  }
+  // Self-removing document listener: the detail pane is rebuilt (replaceChildren)
+  // on selection change, so a detached block unhooks itself on the next event.
+  const onGizmoAffine = (): void => {
+    if (!block.isConnected) { document.removeEventListener('pyr3:xform-affine-changed', onGizmoAffine); return; }
+    syncFromGenome();
+  };
+  document.addEventListener('pyr3:xform-affine-changed', onGizmoAffine);
+
   // Initial paint of the viz.
   viz.draw();
 }
 
-// Build one xform card (header + collapsible body). The card is the unit
-// the section body re-renders on add/remove; the body within the card is
-// the unit the per-xform collapse toggles.
-function buildXformCard(
+// ── Detail pane ──────────────────────────────────────────────────────────────
+
+/** Which xform the detail pane is editing. Regular carries the index; final
+ *  is the singular post-pick lens (no weight, no xaos). */
+type DetailTarget = { kind: 'regular'; index: number } | { kind: 'final' };
+
+// A collapsible detail sub-accordion (#350 Phase 2.2). The header chevron
+// toggles `state.xformDetailCollapse[group]` (a persisted per-browser pref,
+// global across xforms) and shows/hides the body — it never re-renders the
+// body, so the affine viz + scrubby handles inside stay live (avoids the #283
+// per-frame-replaceChildren click hazard). `fill` populates the body once.
+function buildAccordion(
+  title: string,
+  group: XformDetailGroup,
   state: EditState,
-  xformIndex: number,
-  onChange: (path: string) => void,
-  rebuildSection: () => void,
-): HTMLDivElement {
-  const xform = state.genome.xforms[xformIndex]!;
-  const totalXforms = state.genome.xforms.length;
+  fill: (body: HTMLElement) => void,
+  helpKey?: HelpKey,
+): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pyr3-edit-accordion';
+  wrap.dataset['group'] = group;
 
-  const card = document.createElement('div');
-  card.className = 'pyr3-edit-xform-card';
-  if (xform.active === false) card.classList.add('pyr3-edit-xform-inactive');
+  const collapsed = state.xformDetailCollapse[group] === true;
 
-  // ── Header (always visible) ──────────────────────────────────────────
   const header = document.createElement('div');
-  header.className = 'pyr3-edit-xform-header';
-
+  header.className = 'pyr3-edit-accordion-header';
   const chev = document.createElement('span');
-  chev.className = 'pyr3-edit-chev';
-  const collapsed = state.xformCollapse[xformIndex] === true;
-  chev.textContent = collapsed ? '▶' : '▼';
-
-  const titleSpan = document.createElement('span');
-  titleSpan.className = 'pyr3-edit-xform-title';
-  titleSpan.textContent = `xform ${xformIndex + 1}`;
-
-  const weightLabel = document.createElement('span');
-  weightLabel.className = 'pyr3-edit-field-label';
-  weightLabel.textContent = ' · weight ';
-
-  const weightInput = makeNumberInput(
-    xform.weight,
-    (n) => {
-      xform.weight = n;
-      onChange(`xforms.${xformIndex}.weight`);
-    },
-    { kind: 'weight', min: 0, width: '64px' },
-  );
-  weightInput.el.title = 'Relative chance this xform gets picked each chaos-game step. Higher = more contribution.';
-  // Stop pointer interactions on the weight input from toggling collapse —
-  // both `click` (dblclick → text mode) and `pointerdown` (start of a scrub
-  // drag) need to be silenced so the card-header collapse listener never
-  // sees them.
-  weightInput.el.addEventListener('click', (e) => e.stopPropagation());
-  weightInput.el.addEventListener('pointerdown', (e) => e.stopPropagation());
-
-  // ── Active toggle (pyr3-toggle pill; shift-click solos) ──────────────
-  // buildToggle's internal click handler flips boolean state + calls
-  // onChange(next). We intercept shift-click in the CAPTURE phase to drive
-  // solo behavior before the toggle's own handler runs.
-  const activeToggle = buildToggle({
-    value: xform.active !== false,
-    onChange: (next) => {
-      xform.active = next ? undefined : false;
-      card.classList.toggle('pyr3-edit-xform-inactive', xform.active === false);
-      onChange(`xforms.${xformIndex}.active`);
-    },
-  });
-  // Legacy compatibility class (#102 contract): keep `pyr3-edit-xform-active`
-  // on the new toggle widget so existing tests + shift-click solo wiring
-  // remain stable. Tests query by this class.
-  activeToggle.classList.add('pyr3-edit-xform-active');
-  activeToggle.title = 'Click to toggle this xform. Shift-click to solo (turn off all others).';
-  // Don't propagate clicks up to the collapse-toggle handler on the header.
-  activeToggle.addEventListener('click', (e) => e.stopPropagation());
-  // Capture-phase shift-click → solo (intercept before buildToggle's listener).
-  activeToggle.addEventListener('click', (ev) => {
-    const me = ev as MouseEvent;
-    if (!me.shiftKey) return;
-    me.preventDefault();
-    me.stopImmediatePropagation();
-    if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === xformIndex) {
-      restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
-      state.soloXformSnapshot = undefined;
-    } else {
-      if (state.soloXformSnapshot) {
-        restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
-      }
-      state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, xformIndex);
-      for (let i = 0; i < state.genome.xforms.length; i++) {
-        if (i !== xformIndex) state.genome.xforms[i]!.active = false;
-      }
-      xform.active = undefined;
-    }
-    onChange(`xforms.${xformIndex}.solo`);
-    rebuildSection();
-  }, true);
-
-  // ── Duplicate icon (kept from v1; not in spec but shipped) ──
-  const dupBtn = makeIconButton('⎘', () => {
-    const clone: Xform = JSON.parse(JSON.stringify(xform));
-    state.genome.xforms.splice(xformIndex + 1, 0, clone);
-    // xaos arrays index by destination, so inserting a new destination at
-    // xformIndex+1 needs a matching column on every xform (mirror of the
-    // remove path's column splice). The clone inherits the original's
-    // incoming weights — and, via the clone's own copied row, its self-weight.
-    // Without this, survivors' xaos beyond xformIndex silently mis-index. (#293)
-    for (const x of state.genome.xforms) {
-      if (x.xaos) x.xaos.splice(xformIndex + 1, 0, x.xaos[xformIndex] ?? 1);
-    }
-    onChange(`xforms.${xformIndex}.duplicated`);
-    rebuildSection();
-  });
-  dupBtn.title = 'Clone this xform with the same affine, color, and variations.';
-  dupBtn.classList.add('pyr3-edit-xform-dup');
-  dupBtn.addEventListener('click', (e) => e.stopPropagation());
-
-  // ── Remove × button (buildRemoveButton primitive) ──
-  const removeBtn = buildRemoveButton({
-    title: 'Remove this xform from the genome.',
-    onClick: () => {
-      if (state.genome.xforms.length <= 1) return;
-      state.genome.xforms.splice(xformIndex, 1);
-      // xaos arrays on the surviving xforms still index by destination;
-      // splice them too so the row count stays in sync.
-      for (const x of state.genome.xforms) {
-        if (x.xaos) x.xaos.splice(xformIndex, 1);
-      }
-      onChange(`xforms.${xformIndex}.removed`);
-      rebuildSection();
-    },
-  });
-  removeBtn.classList.add('pyr3-edit-xform-del');
-  // Dim + visually disable when only one xform remains (removing would
-  // leave the genome empty).
-  if (totalXforms <= 1) {
-    removeBtn.style.opacity = '0.35';
-    removeBtn.style.cursor = 'not-allowed';
-    removeBtn.setAttribute('aria-disabled', 'true');
+  chev.className = 'pyr3-edit-accordion-chev';
+  chev.textContent = collapsed ? '▸' : '▾';
+  const titleEl = document.createElement('span');
+  titleEl.className = 'pyr3-edit-accordion-title';
+  titleEl.textContent = title;
+  header.append(chev, titleEl);
+  if (helpKey) {
+    const help = infoIcon(helpKey);
+    // Clicking the help icon must NOT toggle the accordion collapse.
+    help.addEventListener('click', (e) => e.stopPropagation());
+    header.appendChild(help);
   }
-  removeBtn.addEventListener('click', (e) => e.stopPropagation());
 
-  header.append(chev, titleSpan, weightLabel, weightInput.el, activeToggle, dupBtn, removeBtn);
-  card.appendChild(header);
-
-  // ── Body (collapsible) ───────────────────────────────────────────────
   const body = document.createElement('div');
-  body.className = 'pyr3-edit-xform-body';
+  body.className = 'pyr3-edit-accordion-body';
   body.style.display = collapsed ? 'none' : 'block';
+  fill(body);
 
   header.addEventListener('click', () => {
-    const nowCollapsed = !state.xformCollapse[xformIndex];
-    state.xformCollapse[xformIndex] = nowCollapsed;
-    chev.textContent = nowCollapsed ? '▶' : '▼';
-    body.style.display = nowCollapsed ? 'none' : 'block';
+    const now = !(state.xformDetailCollapse[group] === true);
+    state.xformDetailCollapse[group] = now;
+    persistXformDetailCollapse(state.xformDetailCollapse);
+    chev.textContent = now ? '▸' : '▾';
+    body.style.display = now ? 'none' : 'block';
   });
 
-  // Body section order (spec Decision 7): shape → math → color → mixing.
-  //   1. Affine        — the xform's geometric core
-  //   2. Variations    — the math chain that warps space after the affine
-  //   3. Post-affine   — optional second affine, applied after variations
-  //   4. Color         — color / colorSpeed / opacity (deposit properties)
-  //   5. Xaos          — per-source mixing weights (only when totalXforms > 1)
+  wrap.append(header, body);
+  return wrap;
+}
 
-  // ── 1. Affine (decomposed) ─────────────────────────────────────────
-  body.appendChild(makeSectionLabel('affine'));
-  buildDecomposedAffineBlock(body, xform, xformIndex, onChange, 'pre');
+// Build the editable detail for the selected xform into `host`. `rebuildDetail`
+// re-renders just this pane (used after a kind/variation change). Regular xforms
+// show weight + affine + variations + post + color + xaos; the final omits
+// weight and xaos (it is not in the chaos pick and has no transition row).
+function buildXformDetail(
+  host: HTMLElement,
+  state: EditState,
+  target: DetailTarget,
+  onChange: (path: string) => void,
+  rebuildDetail: () => void,
+): void {
+  host.replaceChildren();
 
-  // ── 3. Post-transform header sits below variations (see below). ────
-  // (The post-transform block construction stays here so refs are in scope;
-  //  we mount it into the body AFTER variations.)
-  const postWrap = document.createElement('div');
-  postWrap.className = 'pyr3-edit-post-wrap';
-  postWrap.appendChild(makeSectionLabel('post-transform'));
+  const isFinal = target.kind === 'final';
+  const xform = isFinal ? state.genome.finalxform : state.genome.xforms[target.index];
+  if (!xform) return;
+  const pathPrefix = isFinal ? 'finalxform' : `xforms.${target.index}`;
+  const soloKey = isFinal ? FINAL_SEL : target.index;
+  const totalXforms = state.genome.xforms.length;
 
-  // Container that mounts the decomposed post-block when active.
-  const postBlockHost = document.createElement('div');
-  postBlockHost.className = 'pyr3-edit-post-block-host';
+  // ── Detail header line (which xform + its weight) ──────────────────
+  const headerLine = document.createElement('div');
+  headerLine.className = 'pyr3-edit-detail-header';
+  headerLine.textContent = isFinal
+    ? 'Editing final xform'
+    : `Editing xform ${target.index + 1}`;
+  host.appendChild(headerLine);
 
-  function mountPostBlock(): void {
-    postBlockHost.replaceChildren();
-    if (xform.post !== undefined) {
-      buildDecomposedAffineBlock(postBlockHost, xform, xformIndex, onChange, 'post');
-    }
+  // ── weight (regular only — meaningless for the final lens) ─────────
+  if (!isFinal) {
+    const weightInput = makeNumberInput(
+      xform.weight,
+      (n) => {
+        xform.weight = n;
+        onChange(`${pathPrefix}.weight`);
+      },
+      { kind: 'weight', min: 0, width: '80px' },
+    );
+    weightInput.el.title = 'Relative chance this xform gets picked each chaos-game step. Higher = more contribution.';
+    weightInput.el.classList.add('pyr3-edit-xform-weight');
+    const weightRow = buildRow('weight', weightInput.el);
+    host.appendChild(weightRow);
   }
 
-  // POST-TRANSFORM toggle (buildToggle pyr3-toggle pill).
-  const postToggle = buildToggle({
-    value: xform.post !== undefined,
-    onChange: (next) => {
-      if (next) {
-        xform.post = makeIdentityPost();
-      } else {
-        xform.post = undefined;
-      }
-      onChange(`xforms.${xformIndex}.post`);
-      mountPostBlock();
-    },
-  });
-  postToggle.classList.add('pyr3-edit-post-toggle');
-  postToggle.title = 'Apply a second affine AFTER the variation chain.';
-  postWrap.appendChild(buildRow('use post-transform', postToggle));
-  postWrap.appendChild(postBlockHost);
-  mountPostBlock();
+  // ── Affine accordion (decomposed + quick-ops + shear/raw folds + the
+  //    optional post-transform, all grouped under the geometric core; §3) ──
+  host.appendChild(buildAccordion('Affine', 'affine', state, (body) => {
+    buildDecomposedAffineBlock(body, xform, pathPrefix, onChange, 'pre');
 
-  // ── 2. Variations chain (before post per spec body order) ──────────
-  body.appendChild(makeSectionLabel('variations'));
-  const varHeader = document.createElement('div');
-  varHeader.className = 'pyr3-edit-var-header-row';
-  const addVarBtn = makeIconButton('+ var', () => {
-    if (xform.variations.length >= MAX_VARIATIONS_PER_XFORM) return;
-    // Open picker. New row is appended only when user picks (onPreview).
-    let inserted = false;
-    openVariationPicker({
-      host: document.body,
-      initialIndex: V.linear,
-      onPreview: (idx) => {
-        if (!inserted) {
-          const nv: Variation = { index: idx as Variation['index'], weight: 1 };
-          applyVariationKind(nv, nv.index); // stamp the kind's default params (#261)
-          xform.variations.push(nv);
-          inserted = true;
-          rebuildSection();
-        } else {
-          applyVariationKind(
-            xform.variations[xform.variations.length - 1]!,
-            idx as Variation['index'],
-          );
-          onChange(
-            `xforms.${xformIndex}.variations.${xform.variations.length - 1}.index`,
-          );
-        }
-      },
-      onCommit: () => {
-        onChange(`xforms.${xformIndex}.variations.added`);
-      },
-      onCancel: () => {
-        if (inserted) {
-          xform.variations.pop();
-          rebuildSection();
-        }
+    // Post-transform (optional second affine) — a fold within Affine.
+    const postWrap = document.createElement('div');
+    postWrap.className = 'pyr3-edit-post-wrap';
+    postWrap.appendChild(makeSectionLabel('post-transform'));
+
+    const postBlockHost = document.createElement('div');
+    postBlockHost.className = 'pyr3-edit-post-block-host';
+
+    const mountPostBlock = (): void => {
+      postBlockHost.replaceChildren();
+      if (xform.post !== undefined) {
+        buildDecomposedAffineBlock(postBlockHost, xform, pathPrefix, onChange, 'post');
+      }
+    };
+
+    const postToggle = buildToggle({
+      value: xform.post !== undefined,
+      onChange: (next) => {
+        xform.post = next ? makeIdentityPost() : undefined;
+        onChange(`${pathPrefix}.post`);
+        mountPostBlock();
       },
     });
-  });
-  addVarBtn.classList.add('pyr3-edit-var-add');
-  addVarBtn.title = 'Add a variation to this xform — opens the variation picker.';
-  varHeader.appendChild(addVarBtn);
-  body.appendChild(varHeader);
+    postToggle.classList.add('pyr3-edit-post-toggle');
+    postToggle.title = 'Apply a second affine AFTER the variation chain.';
+    postWrap.appendChild(buildRow('use post-transform', postToggle));
+    postWrap.appendChild(postBlockHost);
+    mountPostBlock();
+    body.appendChild(postWrap);
+  }));
 
-  const varList = document.createElement('div');
-  varList.className = 'pyr3-edit-var-list';
-  for (let j = 0; j < xform.variations.length; j++) {
-    const row = buildVariationRow(state, xform, xformIndex, j, onChange, () => {
-      if (xform.variations.length <= 1) return;
-      xform.variations.splice(j, 1);
-      onChange(`xforms.${xformIndex}.variations.${j}.removed`);
-      rebuildSection();
-    }, rebuildSection);
-    varList.appendChild(row);
-  }
-  body.appendChild(varList);
-
-  // ── 3. Post-affine (the postWrap was built above; append it here) ──
-  body.appendChild(postWrap);
-
-  // ── 4. Color block (buildRow + buildSlider) ────────────────────────
-  // #114 — when any variation in the chain is a DC kind, color +
-  // color_speed are overridden at render time by the dc_*'s RGB. The
-  // values are still editable (they stay on the genome so removing
-  // the DC variation restores them) — the label just tells the user
-  // they're inactive right now.
-  const dcVarInChain = xform.variations.find(v => DC_VARIATION_SET.has(v.index));
-  const dcKindName = dcVarInChain ? (VARIATION_NAMES[dcVarInChain.index] ?? 'a DC variation') : null;
-  const colorLabelText = dcKindName ? `color (overridden by ${dcKindName})` : 'color';
-  const colorLabel = makeSectionLabel(colorLabelText);
-  if (dcKindName) {
-    colorLabel.style.opacity = '0.7';
-    colorLabel.title = `This xform's color is computed from position by ${dcKindName}; the slider values below are kept on the genome but not in effect.`;
-  }
-  body.appendChild(colorLabel);
-
-  const colorSliderEl = buildSlider({
-    value: xform.color,
-    min: 0,
-    max: 1,
-    step: 0.001,
-    onChange: (n) => {
-      xform.color = n;
-      onChange(`xforms.${xformIndex}.color`);
-    },
-  });
-  colorSliderEl.classList.add('pyr3-edit-color-slider');
-  colorSliderEl.title = 'Where this xform pulls toward on the palette gradient (0 = left, 1 = right).';
-  const colorRow = buildRow('color', colorSliderEl);
-  colorRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.color'));
-  body.appendChild(colorRow);
-
-  const colorSpeedInput = buildNumberInput({
-    value: xform.colorSpeed,
-    kind: 'color',
-    min: 0,
-    max: 1,
-    onChange: (n) => {
-      xform.colorSpeed = n;
-      onChange(`xforms.${xformIndex}.colorSpeed`);
-    },
-  });
-  colorSpeedInput.el.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
-  colorSpeedInput.el.classList.add('pyr3-edit-color-speed');
-  const colorSpeedRow = buildRow('colorSpeed', colorSpeedInput.el);
-  colorSpeedRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.colorSpeed'));
-  body.appendChild(colorSpeedRow);
-
-  const opacitySliderEl = buildSlider({
-    value: xform.opacity ?? 1,
-    min: 0,
-    max: 1,
-    step: 0.001,
-    onChange: (n) => {
-      xform.opacity = n;
-      onChange(`xforms.${xformIndex}.opacity`);
-    },
-  });
-  opacitySliderEl.classList.add('pyr3-edit-opacity-slider');
-  opacitySliderEl.title = "Visibility of this xform's deposits. 0 = ghostly, 1 = full.";
-  const opacityRow = buildRow('opacity', opacitySliderEl);
-  opacityRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.opacity'));
-  body.appendChild(opacityRow);
-
-  // ── 5. Xaos rows (one buildRow per destination xform). ─────────────
-  if (totalXforms > 1) {
-    body.appendChild(makeSectionLabel('xaos →'));
-    const xaosWrap = document.createElement('div');
-    xaosWrap.className = 'pyr3-edit-xaos-row';
-    for (let k = 0; k < totalXforms; k++) {
-      const current = xform.xaos?.[k] ?? 1;
-      const inp = buildNumberInput({
-        value: current,
-        kind: 'weight',
-        min: 0,
-        onChange: (n) => {
-          if (!xform.xaos) {
-            xform.xaos = new Array<number>(totalXforms).fill(1);
+  // ── Variations accordion ────────────────────────────────────────────
+  host.appendChild(buildAccordion('Variations', 'variations', state, (body) => {
+    const varHeader = document.createElement('div');
+    varHeader.className = 'pyr3-edit-var-header-row';
+    const addVarBtn = makeIconButton('+ var', () => {
+      if (xform.variations.length >= MAX_VARIATIONS_PER_XFORM) return;
+      // Open picker. New row is appended only when user picks (onPreview).
+      let inserted = false;
+      openVariationPicker({
+        host: document.body,
+        initialIndex: V.linear,
+        onPreview: (idx) => {
+          if (!inserted) {
+            const nv: Variation = { index: idx as Variation['index'], weight: 1 };
+            applyVariationKind(nv, nv.index); // stamp the kind's default params (#261)
+            xform.variations.push(nv);
+            inserted = true;
+            rebuildDetail();
+          } else {
+            applyVariationKind(
+              xform.variations[xform.variations.length - 1]!,
+              idx as Variation['index'],
+            );
+            onChange(
+              `${pathPrefix}.variations.${xform.variations.length - 1}.index`,
+            );
           }
-          // Grow if shorter than the destination index.
-          while (xform.xaos.length <= k) xform.xaos.push(1);
-          xform.xaos[k] = n;
-          onChange(`xforms.${xformIndex}.xaos.${k}`);
+        },
+        onCommit: () => {
+          onChange(`${pathPrefix}.variations.added`);
+        },
+        onCancel: () => {
+          if (inserted) {
+            xform.variations.pop();
+            rebuildDetail();
+          }
+        },
+        // #315 — revert means "undo the add" (matching ✕ cancel), not "reset
+        // the new slot to linear". The picker stays open, so reset `inserted`.
+        onRevert: () => {
+          if (inserted) {
+            xform.variations.pop();
+            inserted = false;
+            rebuildDetail();
+          }
         },
       });
-      inp.el.title = `Per-source bias: how likely THIS xform is picked AFTER xform ${k + 1}. 1 = neutral, 0 = forbidden.`;
-      xaosWrap.appendChild(buildRow(`→xf${k + 1}`, inp.el));
-    }
-    body.appendChild(xaosWrap);
-  }
+    });
+    addVarBtn.classList.add('pyr3-edit-var-add');
+    addVarBtn.title = 'Add a variation to this xform — opens the variation picker.';
+    varHeader.appendChild(addVarBtn);
+    body.appendChild(varHeader);
 
-  card.appendChild(body);
-  return card;
+    const varList = document.createElement('div');
+    varList.className = 'pyr3-edit-var-list';
+    for (let j = 0; j < xform.variations.length; j++) {
+      const row = buildVariationRow(state, xform, pathPrefix, soloKey, j, onChange, () => {
+        if (xform.variations.length <= 1) return;
+        xform.variations.splice(j, 1);
+        onChange(`${pathPrefix}.variations.${j}.removed`);
+        rebuildDetail();
+      }, rebuildDetail);
+      varList.appendChild(row);
+    }
+    body.appendChild(varList);
+  }));
+
+  // ── Color accordion (color / colorSpeed / opacity) ──────────────────
+  host.appendChild(buildAccordion('Color', 'color', state, (body) => {
+    // #114 — when any variation in the chain is a DC kind, color + color_speed
+    // are overridden at render time by the dc_*'s RGB. The values stay editable
+    // (kept on the genome so removing the DC variation restores them) — a note
+    // tells the user they're inactive right now.
+    const dcVarInChain = xform.variations.find(v => DC_VARIATION_SET.has(v.index));
+    const dcKindName = dcVarInChain ? (VARIATION_NAMES[dcVarInChain.index] ?? 'a DC variation') : null;
+    if (dcKindName) {
+      const note = makeSectionLabel(`overridden by ${dcKindName}`);
+      note.style.opacity = '0.7';
+      note.title = `This xform's color is computed from position by ${dcKindName}; the slider values below are kept on the genome but not in effect.`;
+      body.appendChild(note);
+    }
+
+    const colorSliderEl = buildSlider({
+      value: xform.color,
+      min: 0,
+      max: 1,
+      step: 0.001,
+      onChange: (n) => {
+        xform.color = n;
+        onChange(`${pathPrefix}.color`);
+      },
+    });
+    colorSliderEl.classList.add('pyr3-edit-color-slider');
+    colorSliderEl.title = 'Where this xform pulls toward on the palette gradient (0 = left, 1 = right).';
+    const colorRow = buildRow('color', colorSliderEl);
+    colorRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.color'));
+    body.appendChild(colorRow);
+
+    const colorSpeedInput = buildNumberInput({
+      value: xform.colorSpeed,
+      kind: 'color',
+      min: 0,
+      max: 1,
+      onChange: (n) => {
+        xform.colorSpeed = n;
+        onChange(`${pathPrefix}.colorSpeed`);
+      },
+    });
+    colorSpeedInput.el.title = 'How fast each visit tugs the color toward its target. 0 = ignore, 1 = snap.';
+    colorSpeedInput.el.classList.add('pyr3-edit-color-speed');
+    const colorSpeedRow = buildRow('colorSpeed', colorSpeedInput.el);
+    colorSpeedRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.colorSpeed'));
+    body.appendChild(colorSpeedRow);
+
+    const opacitySliderEl = buildSlider({
+      value: xform.opacity ?? 1,
+      min: 0,
+      max: 1,
+      step: 0.001,
+      onChange: (n) => {
+        xform.opacity = n;
+        onChange(`${pathPrefix}.opacity`);
+      },
+    });
+    opacitySliderEl.classList.add('pyr3-edit-opacity-slider');
+    opacitySliderEl.title = "Visibility of this xform's deposits. 0 = ghostly, 1 = full.";
+    const opacityRow = buildRow('opacity', opacitySliderEl);
+    opacityRow.querySelector('.pyr3-ctrl')?.appendChild(infoIcon('xform.opacity'));
+    body.appendChild(opacityRow);
+  }));
+
+  // ── Xaos accordion (regular + 2+ xforms only; the final has no xaos) ─
+  if (!isFinal && totalXforms > 1) {
+    host.appendChild(buildAccordion('Xaos →', 'xaos', state, (body) => {
+      const xaosWrap = document.createElement('div');
+      xaosWrap.className = 'pyr3-edit-xaos-row';
+      for (let k = 0; k < totalXforms; k++) {
+        const current = xform.xaos?.[k] ?? 1;
+        const inp = buildNumberInput({
+          value: current,
+          kind: 'weight',
+          min: 0,
+          onChange: (n) => {
+            if (!xform.xaos) {
+              xform.xaos = new Array<number>(totalXforms).fill(1);
+            }
+            // Grow if shorter than the destination index.
+            while (xform.xaos.length <= k) xform.xaos.push(1);
+            xform.xaos[k] = n;
+            onChange(`${pathPrefix}.xaos.${k}`);
+          },
+        });
+        inp.el.title = `→xf${k + 1}: how likely xform ${k + 1} is picked as the NEXT xform right after THIS one fires. 1 = neutral, 0 = forbidden, >1 = favored.`;
+        xaosWrap.appendChild(buildRow(`→xf${k + 1}`, inp.el));
+      }
+      body.appendChild(xaosWrap);
+    }, 'xform.xaos'));
+  }
 }
 
 export const xformsSection: SectionMount = {
   key: 'xforms',
+  lens: 'xform',
   title: '🧬 XFORMS',
 
   build(host, state, onChange): void {
     ensureXformStyles();
     host.replaceChildren();
 
-    // Outer wrapper: header row (count + add) + card list. We rebuild only
-    // the inner contents on add/remove so the section's own collapse state
-    // (managed by mountEditUi) isn't perturbed.
-    const headerRow = document.createElement('div');
-    headerRow.className = 'pyr3-edit-xforms-header';
-
-    const countLabel = document.createElement('span');
-    countLabel.className = 'pyr3-edit-xforms-count';
-    countLabel.textContent = `(${state.genome.xforms.length})`;
-
-    const addBtn = makeIconButton('+ add', () => {
-      state.genome.xforms.push(makeDefaultXform());
-      // Grow xaos rows for existing xforms so their displayed length tracks
-      // the new totalXforms — the GPU packer treats trailing missing entries
-      // as 1.0 already, but the UI row count is read once at card build.
-      onChange(`xforms.${state.genome.xforms.length - 1}.added`);
-      rebuildSection();
-    });
-
-    headerRow.append(countLabel, addBtn);
-    host.appendChild(headerRow);
-
-    const cardList = document.createElement('div');
-    cardList.className = 'pyr3-edit-xform-list';
-    host.appendChild(cardList);
-
-    function rebuildSection(): void {
-      // Update the count label + card list in place; leave the section
-      // collapse + outer header alone.
-      countLabel.textContent = `(${state.genome.xforms.length})`;
-      cardList.replaceChildren();
-      for (let i = 0; i < state.genome.xforms.length; i++) {
-        cardList.appendChild(buildXformCard(state, i, onChange, rebuildSection));
+    // Clamp the regular selection into range (a prior flame may have had more
+    // xforms). The final sentinel (-1) is left untouched.
+    function clampSelection(): void {
+      const n = state.genome.xforms.length;
+      if (state.selectedXformIndex !== FINAL_SEL) {
+        state.selectedXformIndex = Math.max(0, Math.min(state.selectedXformIndex, n - 1));
+      } else if (state.genome.finalxform === undefined) {
+        // Final selected but none exists (e.g. cleared) → fall back to xform 0.
+        state.selectedXformIndex = 0;
       }
     }
 
-    rebuildSection();
+    // The regular dropdown always reflects a valid regular index, even while
+    // the final detail is showing (sentinel -1). Regular-bar ops act on this.
+    const regIndex = (): number =>
+      state.selectedXformIndex === FINAL_SEL ? 0 : state.selectedXformIndex;
+
+    const selectorHost = document.createElement('div');
+    selectorHost.className = 'pyr3-edit-xform-selectors';
+    const detailHost = document.createElement('div');
+    detailHost.className = 'pyr3-edit-xform-detail';
+    host.append(selectorHost, detailHost);
+
+    function rebuildDetail(): void {
+      const sel = state.selectedXformIndex;
+      if (sel === FINAL_SEL) {
+        if (state.genome.finalxform) {
+          buildXformDetail(detailHost, state, { kind: 'final' }, onChange, rebuildDetail);
+        } else {
+          detailHost.replaceChildren();
+          const hint = document.createElement('div');
+          hint.className = 'pyr3-edit-detail-hint';
+          hint.textContent = 'No final xform. Toggle ⏻ to add one.';
+          detailHost.appendChild(hint);
+        }
+      } else {
+        buildXformDetail(detailHost, state, { kind: 'regular', index: sel }, onChange, rebuildDetail);
+      }
+    }
+
+    function rebuildAll(): void {
+      clampSelection();
+      rebuildSelectors();
+      rebuildDetail();
+      // #350 Phase 2.3 — notify the on-canvas gizmo that the selected xform
+      // (or the xform list) changed so it can redraw its live square/handles.
+      document.dispatchEvent(new CustomEvent('pyr3:xform-selection-changed'));
+    }
+
+    function rebuildSelectors(): void {
+      selectorHost.replaceChildren();
+      const n = state.genome.xforms.length;
+      const sel = state.selectedXformIndex;
+
+      // ── Regular xform selector ──────────────────────────────────────
+      selectorHost.appendChild(makeSelectorLabel('xform'));
+
+      const selectWrap = document.createElement('div');
+      selectWrap.className = 'pyr3-edit-select-wrap';
+      const finalSelected = sel === FINAL_SEL;
+      if (!finalSelected) selectWrap.classList.add('pyr3-edit-selected');
+      const select = document.createElement('select');
+      select.className = 'pyr3-edit-xform-select';
+      // #374 — while the FINAL detail owns the selection, the regular <select>
+      // must not pre-select a regular index. A native select fires no `change`
+      // when the picked value equals the shown value, so if it claimed "xform 1"
+      // the user couldn't re-pick xform 1 to switch back to it. A leading
+      // placeholder owns the shown value instead, making EVERY regular pick a
+      // genuine value change. The placeholder is disabled so it can't be chosen.
+      if (finalSelected) {
+        const ph = document.createElement('option');
+        ph.value = '';
+        ph.textContent = '— pick an xform —';
+        ph.disabled = true;
+        ph.selected = true;
+        select.appendChild(ph);
+      }
+      for (let i = 0; i < n; i++) {
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = `xform ${i + 1} · of ${n}`;
+        if (!finalSelected && i === regIndex()) opt.selected = true;
+        select.appendChild(opt);
+      }
+      select.addEventListener('change', () => {
+        if (select.value === '') return; // placeholder — no selection change
+        state.selectedXformIndex = Number(select.value);
+        rebuildAll();
+      });
+      selectWrap.appendChild(select);
+      selectorHost.appendChild(selectWrap);
+
+      // ── Regular action bar ──────────────────────────────────────────
+      const bar = document.createElement('div');
+      bar.className = 'pyr3-edit-xform-bar';
+
+      const cur = state.genome.xforms[regIndex()]!;
+      const power = makePowerButton(
+        cur.active !== false,
+        () => {
+          cur.active = cur.active === false ? undefined : false;
+          onChange(`xforms.${regIndex()}.active`);
+          rebuildAll();
+        },
+        () => soloXform(regIndex()),
+      );
+      power.classList.add('pyr3-edit-xform-active'); // legacy hook for solo tests
+      bar.append(power, makeBarDiv());
+
+      bar.appendChild(makeBarButton('＋', 'Add a new xform.', () => {
+        state.selectedXformIndex = addXform(state.genome);
+        onChange('xforms.add');
+        rebuildAll();
+      }));
+      bar.appendChild(makeBarButton('🗑', 'Remove the selected xform.', () => {
+        state.selectedXformIndex = removeXform(state.genome, regIndex());
+        onChange('xforms.remove');
+        rebuildAll();
+      }, { disabled: n <= 1 }));
+      bar.appendChild(makeBarButton('⧉', 'Duplicate the selected xform.', () => {
+        state.selectedXformIndex = duplicateXform(state.genome, regIndex());
+        onChange('xforms.duplicate');
+        rebuildAll();
+      }));
+
+      const spacer = document.createElement('span');
+      spacer.className = 'pyr3-edit-bar-spacer';
+      bar.appendChild(spacer);
+
+      bar.appendChild(makeBarButton('↑', 'Move the selected xform up.', () => {
+        const i = regIndex();
+        if (i <= 0) return;
+        swapXforms(state.genome, i, i - 1);
+        state.selectedXformIndex = i - 1;
+        onChange('xforms.reorder');
+        rebuildAll();
+      }, { disabled: regIndex() <= 0 }));
+      bar.appendChild(makeBarButton('↓', 'Move the selected xform down.', () => {
+        const i = regIndex();
+        if (i >= n - 1) return;
+        swapXforms(state.genome, i, i + 1);
+        state.selectedXformIndex = i + 1;
+        onChange('xforms.reorder');
+        rebuildAll();
+      }, { disabled: regIndex() >= n - 1 }));
+
+      selectorHost.appendChild(bar);
+
+      // ── Final xform selector (always present) ───────────────────────
+      selectorHost.appendChild(makeSelectorLabel('final xform'));
+
+      const fx = state.genome.finalxform;
+      const finalActive = fx !== undefined && fx.active !== false;
+      const finalRow = document.createElement('div');
+      finalRow.className = 'pyr3-edit-final-row';
+      if (sel === FINAL_SEL) finalRow.classList.add('pyr3-edit-selected');
+      if (!finalActive) finalRow.classList.add('pyr3-edit-final-dim');
+      const finalLabel = document.createElement('span');
+      finalLabel.className = 'pyr3-edit-final-label';
+      finalLabel.textContent = '✨ final';
+      finalRow.appendChild(finalLabel);
+      if (fx === undefined) {
+        const tag = document.createElement('span');
+        tag.className = 'pyr3-edit-final-tag';
+        tag.textContent = '(none)';
+        finalRow.appendChild(tag);
+      } else if (fx.active === false) {
+        const tag = document.createElement('span');
+        tag.className = 'pyr3-edit-final-tag';
+        tag.textContent = '(inactive)';
+        finalRow.appendChild(tag);
+      }
+      finalRow.title = 'The post-pick lens applied to every point after the chaos draw. Click to edit.';
+      finalRow.addEventListener('click', () => {
+        state.selectedXformIndex = FINAL_SEL;
+        rebuildAll();
+      });
+      selectorHost.appendChild(finalRow);
+
+      // Final action bar: ⏻ active · delimiter · 🗑 clear.
+      const finalBar = document.createElement('div');
+      finalBar.className = 'pyr3-edit-xform-bar';
+      const finalPower = makePowerButton(finalActive, () => {
+        if (state.genome.finalxform === undefined) {
+          state.genome.finalxform = makeDefaultXform();
+          state.selectedXformIndex = FINAL_SEL;
+        } else {
+          const f = state.genome.finalxform;
+          f.active = f.active === false ? undefined : false;
+        }
+        onChange('finalxform.active');
+        rebuildAll();
+      });
+      finalPower.classList.add('pyr3-edit-final-active');
+      finalBar.append(finalPower, makeBarDiv());
+      finalBar.appendChild(makeBarButton('🗑', 'Clear the final xform.', () => {
+        state.genome.finalxform = undefined;
+        if (state.selectedXformIndex === FINAL_SEL) state.selectedXformIndex = 0;
+        onChange('finalxform.clear');
+        rebuildAll();
+      }, { disabled: fx === undefined }));
+      selectorHost.appendChild(finalBar);
+    }
+
+    // Solo a regular xform (turn off all others), or restore from a prior solo.
+    function soloXform(index: number): void {
+      if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === index) {
+        restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+        state.soloXformSnapshot = undefined;
+      } else {
+        if (state.soloXformSnapshot) {
+          restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+        }
+        state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, index);
+        for (let i = 0; i < state.genome.xforms.length; i++) {
+          if (i !== index) state.genome.xforms[i]!.active = false;
+        }
+        state.genome.xforms[index]!.active = undefined;
+      }
+      onChange(`xforms.${index}.solo`);
+      rebuildAll();
+    }
+
+    clampSelection();
+    rebuildSelectors();
+    rebuildDetail();
   },
 };
+
+function makeSelectorLabel(text: string): HTMLDivElement {
+  const lbl = document.createElement('div');
+  lbl.className = 'pyr3-edit-selector-label';
+  lbl.textContent = text;
+  return lbl;
+}
 
 // One-time style injection for the xforms section. Idempotent so HMR + repeat
 // mounts don't double-inject.
@@ -966,52 +1193,134 @@ function ensureXformStyles(): void {
   document.head.appendChild(style);
 }
 
+const ACCENT = '#ff8c1a';
+
 const XFORM_CSS = `
-.pyr3-edit-xforms-header {
+.pyr3-edit-xform-selectors { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.pyr3-edit-selector-label {
+  color: var(--text-dim, #888);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+.pyr3-edit-select-wrap {
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 1px;
+}
+.pyr3-edit-select-wrap.pyr3-edit-selected { border-color: ${ACCENT}; box-shadow: 0 0 0 1px ${ACCENT}; }
+.pyr3-edit-xform-select {
+  width: 100%;
+  background: var(--bar-bg-3, #0f0f13);
+  color: var(--text, #ddd);
+  border: 1px solid var(--bar-border, #2a2a30);
+  border-radius: 2px;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 12px;
+}
+.pyr3-edit-xform-bar { display: flex; align-items: center; gap: 4px; }
+.pyr3-edit-bar-spacer { flex: 1 1 auto; }
+.pyr3-edit-bardiv {
+  width: 1px;
+  align-self: stretch;
+  background: var(--bar-border, #2a2a30);
+  margin: 2px 2px;
+}
+.pyr3-edit-bar-btn {
+  min-width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bar-bg-2, #1a1a20);
+  color: #cfcfd6;
+  border: 1px solid #34343e;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.pyr3-edit-bar-btn:hover:not(:disabled) {
+  border-color: #55556a;
+  background: #202028;
+}
+.pyr3-edit-bar-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.pyr3-edit-power.on { color: #4ade80; border-color: #2f6f49; }
+.pyr3-edit-power:not(.on) { color: var(--text-dim, #888); }
+.pyr3-edit-final-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: var(--bar-bg-3, #0f0f13);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
 }
-.pyr3-edit-xforms-count { color: var(--text-dim, #888); font-size: 11px; }
-.pyr3-edit-xform-list { display: flex; flex-direction: column; gap: 4px; }
-.pyr3-edit-xform-card {
-  background: var(--bar-bg-2, #1a1a20);
+.pyr3-edit-final-row:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); }
+.pyr3-edit-final-row.pyr3-edit-selected { border-color: ${ACCENT}; box-shadow: 0 0 0 1px ${ACCENT}; }
+.pyr3-edit-final-row.pyr3-edit-final-dim { opacity: 0.5; }
+.pyr3-edit-final-label { font-weight: 600; font-size: 12px; color: #ffd27a; }
+.pyr3-edit-final-row.pyr3-edit-final-dim .pyr3-edit-final-label { color: var(--text-dim, #888); }
+.pyr3-edit-final-tag { font-size: 10px; color: var(--text-dim, #888); }
+.pyr3-edit-detail-header {
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text, #ddd);
+  margin: 2px 0 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--bar-border, #2a2a30);
+}
+.pyr3-edit-detail-hint {
+  color: var(--text-dim, #888);
+  font-size: 11px;
+  padding: 12px 4px;
+  text-align: center;
+}
+.pyr3-edit-xform-detail { display: flex; flex-direction: column; gap: 4px; }
+/* Detail sub-accordions (#350 Phase 2.2). */
+.pyr3-edit-accordion {
   border: 1px solid var(--bar-border, #2a2a30);
   border-radius: 3px;
   overflow: hidden;
 }
-.pyr3-edit-xform-header {
+/* Sub-group separation: each accordion after the first (Affine) gets a
+   group gap so the eye finds Variations / Color / Xaos boundaries (Q5). */
+.pyr3-edit-accordion + .pyr3-edit-accordion { margin-top: var(--sp-group, 12px); }
+/* Nested sub-section header (AFFINE/VARIATIONS/COLOR/XAOS). Tier-2 "nested"
+   variant (#373) — heavier fill + crisp title + a thin NEUTRAL left-rule so it
+   reads as a pressable bar while staying subordinate to the blue-ruled top
+   section header (preserves the nesting hierarchy). See docs/ui-affordance-system.md. */
+.pyr3-edit-accordion-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: 6px;
+  padding: 5px 6px;
   cursor: pointer;
   user-select: none;
-  background: var(--bar-bg-3, #0f0f13);
+  background: #1c1c24;
+  border-left: 2px solid #3a3a46;
 }
-.pyr3-edit-xform-header:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); }
-.pyr3-edit-xform-title { font-weight: 600; font-size: 11px; }
-.pyr3-edit-xform-body {
+.pyr3-edit-accordion-header:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); }
+.pyr3-edit-accordion-chev { color: #aab; font-size: 10px; width: 10px; }
+.pyr3-edit-accordion-title {
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #e6e6ea;
+}
+.pyr3-edit-accordion-body {
   padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.pyr3-edit-xform-inactive .pyr3-edit-xform-body {
-  opacity: 0.4;
-  pointer-events: none;
-}
-.pyr3-edit-xform-inactive .pyr3-edit-xform-header {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--bar-bg-3, #0f0f13),
-    var(--bar-bg-3, #0f0f13) 4px,
-    var(--bar-bg-2, #1a1a20) 4px,
-    var(--bar-bg-2, #1a1a20) 8px
-  );
-}
-/* Quick-ops strip + reset-to-identity button (Phase 8). */
+/* Quick-ops strip + reset-to-identity button. */
 .pyr3-edit-aff-quickops {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1020,9 +1329,9 @@ const XFORM_CSS = `
 }
 .pyr3-edit-quickop {
   background: var(--bar-bg-2, #1a1a20);
-  color: var(--text, #ddd);
-  border: 1px solid var(--bar-border, #2a2a30);
-  border-radius: 2px;
+  color: #cfcfd6;
+  border: 1px solid #34343e;
+  border-radius: 5px;
   padding: 3px 4px;
   font: inherit;
   font-size: 10px;
@@ -1030,8 +1339,8 @@ const XFORM_CSS = `
   text-align: center;
 }
 .pyr3-edit-quickop:hover {
-  background: var(--accent-soft, rgba(255, 140, 26, 0.18));
-  border-color: var(--accent-border, #884a1a);
+  border-color: #55556a;
+  background: #202028;
 }
 .pyr3-edit-aff-reset {
   margin-top: 6px;
@@ -1046,10 +1355,6 @@ const XFORM_CSS = `
   letter-spacing: 0.04em;
   margin-top: 4px;
 }
-.pyr3-edit-affine-row {
-  display: flex;
-  gap: 4px;
-}
 .pyr3-edit-num, .pyr3-edit-select {
   background: var(--bar-bg-3, #0f0f13);
   color: var(--text, #ddd);
@@ -1059,6 +1364,12 @@ const XFORM_CSS = `
   font: inherit;
   font-size: 11px;
 }
+/* #373 field affordance (decision B) — a 2px accent bottom-rule on every scrubby
+   number box signals drag-to-edit and echoes the slider thumb's orange, so plain
+   number boxes read as clearly editable (not static text). Brightens on focus/drag. */
+.pyr3-edit-num { border-bottom: 2px solid var(--accent-border, #884a1a); }
+.pyr3-edit-num:focus { border-bottom-color: var(--accent, #ff8c1a); outline: none; }
+.pyr3-edit-num.pyr3-scrubby-dragging { border-bottom-color: var(--accent, #ff8c1a); }
 .pyr3-edit-num:disabled { opacity: 0.4; }
 .pyr3-edit-slider { flex: 1 1 auto; min-width: 80px; }
 .pyr3-edit-checkbox { margin: 0 4px 0 0; }
@@ -1075,7 +1386,7 @@ const XFORM_CSS = `
 }
 .pyr3-edit-var-header { display: flex; align-items: center; gap: 4px; }
 .pyr3-edit-var-params { display: flex; flex-wrap: wrap; gap: 4px; }
-.pyr3-edit-xaos-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.pyr3-edit-xaos-row { display: flex; flex-direction: column; gap: 4px; }
 .pyr3-edit-icon-btn {
   background: var(--bar-bg-2, #1a1a20);
   color: var(--text, #ddd);
@@ -1091,6 +1402,38 @@ const XFORM_CSS = `
   border-color: var(--accent-border, #884a1a);
 }
 .pyr3-edit-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* "+ var" add-action — tinted accent-bar treatment so the primary "add a
+   variation" action is clearly visible, not a faint outline (#373). Matches the
+   Tier-4 accent family. */
+.pyr3-edit-var-add {
+  background: var(--accent-soft, rgba(255, 140, 26, 0.12));
+  color: var(--accent, #ff8c1a);
+  border: 1px solid var(--accent-border, #884a1a);
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-weight: 600;
+}
+.pyr3-edit-var-add:hover:not(:disabled) {
+  background: var(--accent-soft, rgba(255, 140, 26, 0.2));
+  border-color: var(--accent, #ff8c1a);
+}
+/* Variation-name pill (e.g. "horseshoe") — secondary tier (#373 button vocab).
+   Was rendering with the UA-default button chrome (2px outset border); pin it to
+   the canonical secondary look so it reads as a pressable workhorse control. */
+.pyr3-edit-var-kind-btn {
+  background: var(--bar-bg-2, #1a1a20);
+  color: #cfcfd6;
+  border: 1px solid #34343e;
+  border-radius: 5px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pyr3-edit-var-kind-btn:hover {
+  border-color: #55556a;
+  background: #202028;
+}
 .pyr3-edit-aff-block {
   display: flex;
   flex-direction: column;
@@ -1103,6 +1446,24 @@ const XFORM_CSS = `
   align-items: flex-start;
 }
 .pyr3-edit-aff-fields { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; }
+/* Decomposed affine fields (scale x/y · rotation · position x/y) line up like
+   the xaos rows (#373) — a [label][1fr input][unit] grid with full-width,
+   right-aligned number boxes, instead of content-width boxes of varying width.
+   Scoped to .pyr3-edit-aff-fields so the raw-matrix 3-col grid + variation
+   params are untouched. Applies to both the pre- and post-affine blocks. */
+.pyr3-edit-aff-fields .pyr3-edit-field {
+  display: grid;
+  /* Fixed unit column (14px) so the °-bearing rotation row's box is the same
+     width as the unit-less rows — every box right-edge lines up. */
+  grid-template-columns: 60px 1fr 14px;
+  align-items: center;
+  gap: 6px;
+}
+.pyr3-edit-aff-fields .pyr3-edit-num {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: right;
+}
 .pyr3-edit-aff-viz-col { flex: 0 0 auto; }
 canvas.pyr3-edit-aff-viz {
   background: var(--bar-bg-3, #0f0f13);
@@ -1113,35 +1474,10 @@ canvas.pyr3-edit-aff-viz {
   height: auto;
 }
 .pyr3-edit-unit { color: var(--text-dim, #888); font-size: 10px; margin-left: 2px; }
-.pyr3-edit-aff-presets details > summary,
-.pyr3-edit-aff-shear-fold > summary,
-.pyr3-edit-aff-raw-fold > summary {
-  color: var(--text-dim, #888);
-  font-size: 10px;
-  cursor: pointer;
-  padding: 2px 0;
-  user-select: none;
-}
-.pyr3-edit-preset-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 3px;
-  margin-top: 3px;
-}
-.pyr3-edit-preset {
-  background: var(--bar-bg-2, #1a1a20);
-  color: var(--text, #ddd);
-  border: 1px solid var(--bar-border, #2a2a30);
-  border-radius: 2px;
-  padding: 2px 4px;
-  font: inherit;
-  font-size: 10px;
-  cursor: pointer;
-}
-.pyr3-edit-preset:hover {
-  background: var(--accent-soft, rgba(255, 140, 26, 0.18));
-  border-color: var(--accent-border, #884a1a);
-}
+/* The shear + raw-matrix folds now route through buildExpander, so the shared
+   pyr3-aff-expander accent-bar summary chrome (EDIT_CSS) governs their look —
+   the old dim-10px summary override that lived here was dropped (decision Q1:
+   uniform orange accent-bar across all sub-expanders, #373). */
 .pyr3-edit-raw-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

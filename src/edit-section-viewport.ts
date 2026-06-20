@@ -86,6 +86,7 @@ function fitCanvasDims(state: EditState): { width: number; height: number } {
 
 export const viewportSection: SectionMount = {
   key: 'viewport',
+  lens: 'scene',
   title: '📐 VIEWPORT',
   build(host, state, onChange) {
     host.classList.add('pyr3-edit-section-viewport');

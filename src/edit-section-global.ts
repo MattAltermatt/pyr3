@@ -29,11 +29,11 @@ import {
   buildRow,
   buildNumberInput,
   buildSlider,
-  buildColorSwatch,
   buildDropdown,
 } from './edit-primitives';
 import { scrubbyInput } from './edit-scrubby-input';
 import { infoIcon } from './help-text';
+import { buildBackgroundControl } from './edit-section-background';
 
 // Hex `#rrggbb` → [r, g, b] floats in 0..1.
 export function hexToRgb01(hex: string): [number, number, number] {
@@ -65,11 +65,73 @@ function ensureTonemap(state: EditState): Tonemap {
   return state.genome.tonemap;
 }
 
-export const globalSection: SectionMount = {
-  key: 'global',
-  title: '🌐 GLOBAL',
-  build(host: HTMLElement, state: EditState, onChange: (path: string) => void): void {
+// Tooltips — plain-English what / effect on the picture, matching the
+// render section's hover-hint pattern. Module-level so both the tonemap and
+// symmetry sections (split out of the old GLOBAL section, #27) can share them.
+const TIPS = {
+  brightness:
+    'Overall brightness of the whole flame.\n'
+    + 'Higher = brighter. Lower = darker.\n'
+    + 'Affects every pixel equally — different from per-xform color.',
+  gamma:
+    'Mid-tone curve.\n'
+    + 'Lower (<1) lifts midtones (brighter, washed).\n'
+    + 'Higher (>1) crushes midtones (darker, punchier).',
+  highlightPower:
+    'Compresses the brightest highlights.\n'
+    + 'Higher = stronger compression, more detail in bright cores.\n'
+    + 'Lower = highlights blow out to white earlier.',
+  gammaThreshold:
+    'Below this density level, gamma is applied differently to avoid noise.\n'
+    + 'Higher = more low-density pixels get the special treatment.\n'
+    + 'Leave at default unless you see noisy near-black regions.',
+  vibrancy:
+    'Color saturation lift.\n'
+    + '0 = grayscale. 1 = full original palette colors.\n'
+    + 'Mid values desaturate the palette without losing structure.',
+  background:
+    'Background color of the canvas.\n'
+    + 'Shown in unhit pixels and bleeds through translucent flame regions.',
+  symmetry:
+    'Add rotational or dihedral symmetry to the chaos game.\n'
+    + 'N = number of rotational copies. 6 = hexagonal, 2 = mirror.\n'
+    + 'Dihedral adds an extra mirror axis on top of the rotation.',
+};
+
+// Augment buildRow with a class + title hook so existing tests that
+// walk rows by the legacy `.pyr3-edit-row` / `.pyr3-edit-label`
+// selectors keep working without re-asserting against the new
+// `.pyr3-row` / `.pyr3-lbl` classes used by edit-primitives.
+function row(
+  label: string,
+  control: HTMLElement,
+  title: string,
+  helpKey?: string,
+): HTMLElement {
+  const r = buildRow(label, control);
+  r.classList.add('pyr3-edit-row');
+  r.title = title;
+  // Add the legacy label class so rowByLabel() helpers keep matching.
+  const lbl = r.querySelector('.pyr3-lbl');
+  lbl?.classList.add('pyr3-edit-label');
+  // Visible `?` info icon appended into the control cell (the flex
+  // `.pyr3-ctrl`, not the label cell — keeps the label's textContent
+  // clean for rowByLabel matchers). Promotes the otherwise hover-only
+  // `.title` help to an obvious affordance (#348).
+  if (helpKey) r.querySelector('.pyr3-ctrl')?.appendChild(infoIcon(helpKey));
+  return r;
+}
+
+// #27 — the old single GLOBAL section is dissolved into the 4-lens IA:
+// tonemap + background → Output lens (this section); symmetry → Scene lens
+// (globalSymmetrySection below).
+export const globalTonemapSection: SectionMount = {
+  key: 'global-tonemap',
+  title: '🌐 Tonemap',
+  lens: 'output',
+  build(host: HTMLElement, state: EditState, onChange: (path: string) => void): (() => void) | void {
     host.replaceChildren();
+    let backgroundDispose: (() => void) | undefined;
 
     // Helper: read current value via override-fallback so initial render
     // reflects DEFAULT_TONEMAP without forcing a lazy-init before the user
@@ -84,62 +146,6 @@ export const globalSection: SectionMount = {
     function fireTonemap(path: string): void {
       onChange(path);
       document.dispatchEvent(new CustomEvent('pyr3:tonemap-changed'));
-    }
-
-    // Tooltips — plain-English what / effect on the picture, matching the
-    // render section's hover-hint pattern.
-    const TIPS = {
-      brightness:
-        'Overall brightness of the whole flame.\n'
-        + 'Higher = brighter. Lower = darker.\n'
-        + 'Affects every pixel equally — different from per-xform color.',
-      gamma:
-        'Mid-tone curve.\n'
-        + 'Lower (<1) lifts midtones (brighter, washed).\n'
-        + 'Higher (>1) crushes midtones (darker, punchier).',
-      highlightPower:
-        'Compresses the brightest highlights.\n'
-        + 'Higher = stronger compression, more detail in bright cores.\n'
-        + 'Lower = highlights blow out to white earlier.',
-      gammaThreshold:
-        'Below this density level, gamma is applied differently to avoid noise.\n'
-        + 'Higher = more low-density pixels get the special treatment.\n'
-        + 'Leave at default unless you see noisy near-black regions.',
-      vibrancy:
-        'Color saturation lift.\n'
-        + '0 = grayscale. 1 = full original palette colors.\n'
-        + 'Mid values desaturate the palette without losing structure.',
-      background:
-        'Background color of the canvas.\n'
-        + 'Shown in unhit pixels and bleeds through translucent flame regions.',
-      symmetry:
-        'Add rotational or dihedral symmetry to the chaos game.\n'
-        + 'N = number of rotational copies. 6 = hexagonal, 2 = mirror.\n'
-        + 'Dihedral adds an extra mirror axis on top of the rotation.',
-    };
-
-    // Augment buildRow with a class + title hook so existing tests that
-    // walk rows by the legacy `.pyr3-edit-row` / `.pyr3-edit-label`
-    // selectors keep working without re-asserting against the new
-    // `.pyr3-row` / `.pyr3-lbl` classes used by edit-primitives.
-    function row(
-      label: string,
-      control: HTMLElement,
-      title: string,
-      helpKey?: string,
-    ): HTMLElement {
-      const r = buildRow(label, control);
-      r.classList.add('pyr3-edit-row');
-      r.title = title;
-      // Add the legacy label class so rowByLabel() helpers keep matching.
-      const lbl = r.querySelector('.pyr3-lbl');
-      lbl?.classList.add('pyr3-edit-label');
-      // Visible `?` info icon appended into the control cell (the flex
-      // `.pyr3-ctrl`, not the label cell — keeps the label's textContent
-      // clean for rowByLabel matchers). Promotes the otherwise hover-only
-      // `.title` help to an obvious affordance (#348).
-      if (helpKey) r.querySelector('.pyr3-ctrl')?.appendChild(infoIcon(helpKey));
-      return r;
     }
 
     // ── brightness ───────────────────────────────────────────────────────
@@ -249,62 +255,26 @@ export const globalSection: SectionMount = {
       host.appendChild(row('vibrancy', ctrlWrap, TIPS.vibrancy, 'global.vibrancy'));
     }
 
-    // ── background color swatch ──────────────────────────────────────────
-    // #351 — the native <input type="color"> is the REAL click target, layered
-    // transparently (opacity:0) and full-size ON TOP of the visible swatch.
-    // The previous design hid the input (1px / opacity:0 / pointer-events:none)
-    // and proxied a programmatic `colorInput.click()` from the swatch — but a
-    // programmatic click on a non-interactable color input does NOT reliably
-    // open the OS picker (observed dead in Chrome incognito). An overlaid,
-    // interactable-but-invisible input lets a genuine user click open the
-    // picker directly (real user activation, no proxy). The input stays
-    // discoverable to tests via input[type="color"].
+    // ── background color swatch (shared widget, mirrored into Color/Palette — #27) ──
+    // The #351 overlay-input behavior lives in buildBackgroundControl now; this
+    // is one of two mount points (the other is the Palette section in the Color
+    // lens), kept in sync via state.backgroundListeners.
     {
-      const initialHex = rgb01ToHex(state.genome.background ?? [0, 0, 0]);
-      const colorInput = document.createElement('input');
-      colorInput.type = 'color';
-      colorInput.className = 'pyr3-edit-color';
-      colorInput.value = initialHex;
-      // Full-size transparent overlay — interactable (no pointer-events:none).
-      colorInput.style.position = 'absolute';
-      colorInput.style.inset = '0';
-      colorInput.style.width = '100%';
-      colorInput.style.height = '100%';
-      colorInput.style.margin = '0';
-      colorInput.style.padding = '0';
-      colorInput.style.border = 'none';
-      colorInput.style.opacity = '0';
-      colorInput.style.cursor = 'pointer';
-
-      const swatch = buildColorSwatch({
-        // Swatch is purely visual now; the overlaid input catches clicks. Keep
-        // a proxy click as a harmless fallback for any pointer that reaches the
-        // swatch (the input is interactable, so this path works too now).
-        color: initialHex,
-        onClick: () => colorInput.click(),
-      });
-      swatch.style.height = '22px';
-      swatch.style.minHeight = '22px';
-      swatch.style.pointerEvents = 'none'; // let the overlaid input receive clicks
-
-      colorInput.addEventListener('input', () => {
-        state.genome.background = hexToRgb01(colorInput.value);
-        swatch.style.background = colorInput.value;
-        onChange('background');
-      });
-
-      const ctrlWrap = document.createElement('div');
-      ctrlWrap.style.position = 'relative';
-      ctrlWrap.style.display = 'flex';
-      ctrlWrap.style.alignItems = 'center';
-      ctrlWrap.style.gap = '0';
-      ctrlWrap.style.width = '100%';
-      ctrlWrap.style.minWidth = '0';
-      ctrlWrap.style.height = '22px';
-      ctrlWrap.appendChild(swatch);
-      ctrlWrap.appendChild(colorInput);
-      host.appendChild(row('background', ctrlWrap, TIPS.background, 'global.background'));
+      const bg = buildBackgroundControl(state, onChange);
+      backgroundDispose = bg.dispose;
+      host.appendChild(row('background', bg.el, TIPS.background, 'global.background'));
     }
+
+    return backgroundDispose;
+  },
+};
+
+export const globalSymmetrySection: SectionMount = {
+  key: 'global-symmetry',
+  title: '🔯 Symmetry',
+  lens: 'scene',
+  build(host: HTMLElement, state: EditState, onChange: (path: string) => void): void {
+    host.replaceChildren();
 
     // ── symmetry (checkbox + kind dropdown + count) ──────────────────────
     // Inline grid: [checkbox][kind][count] inside the control column.
@@ -350,7 +320,8 @@ export const globalSection: SectionMount = {
       symNHandle.el.style.textAlign = 'right';
       symNHandle.el.style.fontVariantNumeric = 'tabular-nums';
       symNHandle.el.style.background = COLORS.bg.input;
-      symNHandle.el.style.border = `1px solid ${COLORS.border}`;
+      // Border owned by .pyr3-edit-num (1px sides + accent bottom-rule, #373) —
+      // setting it inline would suppress the drag-to-edit underline.
       symNHandle.el.style.borderRadius = '3px';
       symNHandle.el.style.color = COLORS.text.primary;
       symNHandle.el.style.padding = '3px 6px';
