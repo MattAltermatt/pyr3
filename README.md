@@ -80,7 +80,16 @@ npm run render -- --preset quick fixtures/electricsheep.247.19679.flam3 preview.
 npm run render -- --preset 4k fixtures/pyr3-hero.pyr3.json hero-4k.png
 ```
 
-### Build a standalone binary (optional)
+**Windows (win32-x64):** the same `npm run render` path works — install
+official Node 26 from [nodejs.org](https://nodejs.org) (not a stripped build),
+run `npm install`, then render exactly as above. No flags needed: pyr3 forces
+Dawn's Vulkan backend on Windows (the default D3D12/FXC compile path hangs on
+the large chaos shader) and splits long dispatches into watchdog-safe (TDR)
+submits automatically. The standalone binary below is **not** available on
+Windows — Dawn fails to load inside a Node single-executable, so the
+from-source path above is the supported route there.
+
+### Build a standalone binary (optional, macOS / Linux)
 
 To skip the `npm run render --` dance and the tsx startup cost, build a
 self-contained executable. This matches the **flam3 convention** (ship
@@ -121,14 +130,15 @@ renders the whole timeline to a PNG frame sequence through the same backend (#22
 `nsteps=N` to opt into motion blur (ESF/timeline genomes carry up to 1000, which
 would sub-render each frame that many times — #294).
 
-**Platform status (as of v1.10):**
+**Platform status (as of v1.11):**
 
 ```text
 darwin-arm64    verified end-to-end
 darwin-x64      code-paths shared with arm64; untested live
 linux-x64       code-reviewed clean; untested live (see issue #126)
 linux-arm64     code-reviewed clean; untested live (see issue #126)
-win32-x64       not implemented (Mach-O / ELF only)
+win32-x64       from-source `npm run render` works (Vulkan, parity-verified);
+                standalone binary N/A (Dawn won't load in a Node SEA)
 ```
 
 See [CLAUDE.md](CLAUDE.md#quick-commands) for the full command list (parity rigs, typecheck,
