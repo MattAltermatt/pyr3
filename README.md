@@ -87,7 +87,10 @@ Dawn's Vulkan backend on Windows (the default D3D12/FXC compile path hangs on
 the large chaos shader) and splits long dispatches into watchdog-safe (TDR)
 submits automatically. The standalone binary below is **not** available on
 Windows — Dawn fails to load inside a Node single-executable, so the
-from-source path above is the supported route there.
+from-source path above is the supported route there. (The SEA build *runs*
+on Windows but the produced `.exe` segfaults at load; build steps and the
+diagnosis live in [#399](https://github.com/MattAltermatt/pyr3/issues/399)
+for anyone wanting to take a crack at it.)
 
 ### Build a standalone binary (optional, macOS / Linux)
 
