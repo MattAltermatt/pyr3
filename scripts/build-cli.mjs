@@ -21,9 +21,11 @@
 // entry lands in bundle-cli.mjs.
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import {
   writeFileSync,
+  readFileSync,
   copyFileSync,
   chmodSync,
   statSync,
@@ -53,19 +55,24 @@ function isMacOS() {
   return platform() === 'darwin';
 }
 
+function isWindows() {
+  return platform() === 'win32';
+}
+
+/** Executable suffix for the host platform (`.exe` on Windows, empty elsewhere). */
+const EXE_SUFFIX = isWindows() ? '.exe' : '';
+
 function run(cmd, args, opts = {}) {
   execFileSync(cmd, args, { stdio: 'inherit', ...opts });
 }
 
-/** True if the given binary contains the SEA fuse sentinel (postject can inject into it). */
+/** True if the given binary contains the SEA fuse sentinel (postject can inject into it).
+ *  Pure-Node byte scan — no `grep`, so it works on Windows (which ships no grep).
+ *  The sentinel is ASCII, so a utf8 Buffer search matches the same bytes the old
+ *  `grep -aoc` did on macOS/Linux. */
 function hasSeaFuse(nodePath) {
   try {
-    const count = execFileSync('grep', ['-aoc', SEA_FUSE, nodePath], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-      .toString()
-      .trim();
-    return parseInt(count, 10) > 0;
+    return readFileSync(nodePath).includes(SEA_FUSE);
   } catch {
     return false;
   }
@@ -141,9 +148,14 @@ function nodejsOrgArtifact() {
   if (plat === 'linux' && arch === 'arm64') {
     return { name: `node-${PINNED_NODE_VERSION}-linux-arm64`, ext: 'tar.xz' };
   }
+  if (plat === 'win32' && arch === 'x64') {
+    // Windows ships a .zip whose `node.exe` sits at the artifact root
+    // (no bin/ subdir) — see ensureFusedNode()'s platform-aware cachedNode.
+    return { name: `node-${PINNED_NODE_VERSION}-win-x64`, ext: 'zip' };
+  }
   throw new Error(
     `build-cli: unsupported platform/arch: ${plat}/${arch}. ` +
-      `Supported: darwin-arm64, darwin-x64, linux-x64, linux-arm64.`,
+      `Supported: darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64.`,
   );
 }
 
@@ -160,7 +172,11 @@ async function ensureFusedNode() {
   const { name, ext } = nodejsOrgArtifact();
   const cacheRoot = join(homedir(), '.cache', 'pyr3', 'node');
   const artifactDir = join(cacheRoot, name);
-  const cachedNode = join(artifactDir, 'bin', 'node');
+  // Windows .zip lays `node.exe` at the artifact root; the unix tarballs nest
+  // the binary under bin/node.
+  const cachedNode = isWindows()
+    ? join(artifactDir, 'node.exe')
+    : join(artifactDir, 'bin', 'node');
 
   if (existsSync(cachedNode) && hasSeaFuse(cachedNode)) {
     return cachedNode;
@@ -204,7 +220,7 @@ async function buildCli(name) {
   const buildDir = join(REPO_ROOT, 'build');
   const tmpDir = join(buildDir, '.tmp');
   mkdirSync(tmpDir, { recursive: true });
-  const binPath = join(buildDir, `pyr3-${name}`);
+  const binPath = join(buildDir, `pyr3-${name}${EXE_SUFFIX}`);
   const seaConfigPath = join(tmpDir, `sea-config-${name}.json`);
   const seaBlobPath = join(tmpDir, `sea-prep-${name}.blob`);
 
@@ -220,6 +236,24 @@ async function buildCli(name) {
     'dawn.node': dawnNodePath,
     'package.json': join(REPO_ROOT, 'package.json'),
   };
+  // Windows: win32-x64.dawn.node has a runtime dependency on the sibling
+  // d3dcompiler_47.dll that ships next to it in node_modules/webgpu/dist
+  // (Dawn's HLSL → DXBC shader compile path). Node's process.dlopen uses
+  // LOAD_WITH_ALTERED_SEARCH_PATH, so the loader resolves a module's
+  // dependents from that module's own directory — bundle the DLL and let
+  // bin/host.ts extract it next to the .node in the cache dir. Without it,
+  // dlopen fails with ERR_DLOPEN_FAILED "The specified module could not be
+  // found" (it means the dependent DLL, not the .node itself).
+  if (isWindows()) {
+    const dllPath = join(dirname(dawnNodePath), 'd3dcompiler_47.dll');
+    if (!existsSync(dllPath)) {
+      throw new Error(
+        `build-cli: ${dllPath} not found (sibling of the win32 Dawn-node ` +
+          `binding). Did you run \`npm ci\`?`,
+      );
+    }
+    assets['d3dcompiler_47.dll'] = dllPath;
+  }
   if (name === 'serve') {
     const distDir = join(REPO_ROOT, 'dist');
     if (!existsSync(distDir)) {
@@ -270,7 +304,6 @@ async function buildCli(name) {
   // ── 6. postject the blob ─────────────────────────────────────────────
   console.log('💉 Injecting SEA blob …');
   const postjectArgs = [
-    'postject',
     binPath,
     'NODE_SEA_BLOB',
     seaBlobPath,
@@ -281,7 +314,18 @@ async function buildCli(name) {
     // macOS Mach-O requires the segment name for the injected resource.
     postjectArgs.push('--macho-segment-name', 'NODE_SEA');
   }
-  run('npx', postjectArgs);
+  // Run postject's CLI directly with `process.execPath` rather than via `npx`.
+  // On Windows `npx` is `npx.cmd`, and since the CVE-2024-27980 fix
+  // `execFileSync` refuses to spawn `.cmd`/`.bat` shims without `shell:true`
+  // (throws EINVAL). Resolving the JS entry and running it under Node is
+  // platform-agnostic, avoids the shim entirely, and drops a subprocess.
+  const require = createRequire(import.meta.url);
+  const postjectCli = join(
+    dirname(require.resolve('postject/package.json')),
+    'dist',
+    'cli.js',
+  );
+  run(process.execPath, [postjectCli, ...postjectArgs]);
 
   // ── 7. macOS: ad-hoc re-sign ─────────────────────────────────────────
   if (isMacOS()) {

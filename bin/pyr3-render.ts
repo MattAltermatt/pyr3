@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, basename, extname } from 'node:path';
 import { PNG } from 'pngjs';
 
-import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch, DEFAULT_SPP } from '../src/renderer';
+import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch, DEFAULT_SPP, type Renderer } from '../src/renderer';
 import { deriveCalibration } from '../src/calibration';
 import { type Genome } from '../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../src/chaos';
@@ -32,7 +32,47 @@ import {
   QUALITY_NAMES,
   type PresetSpec,
 } from '../src/presets';
-import { installWebGPUHost, acquireDawnDevice, parseGenomeText, parsePositiveInt } from './host';
+import {
+  installWebGPUHost,
+  acquireDawnDevice,
+  parseGenomeText,
+  parsePositiveInt,
+  MAX_ITERS_PER_SUBMIT,
+} from './host';
+
+/**
+ * Run the chaos game as one or more TDR-safe submits, accumulating into the
+ * renderer's shared histogram. `totalIters` is split so no single GPU dispatch
+ * exceeds MAX_ITERS_PER_SUBMIT (Infinity off-win32 → exactly one submit,
+ * byte-identical to the historical single-shot). Each chunk is an independent
+ * re-seeded batch (seed + chunkIndex), matching the serve / orchestrator
+ * pattern; walkers stay fixed per chunk so per-walker trajectory length — the
+ * parity-load-bearing knob — is preserved. Returns the actual sample total.
+ * See host.ts:MAX_ITERS_PER_SUBMIT for the Windows-TDR-blank rationale.
+ */
+function chunkedIterate(
+  renderer: Renderer,
+  genome: Genome,
+  seedBase: number,
+  walkers: number,
+  totalIters: number,
+  walkerJitter: number,
+): number {
+  const chunks = Math.max(1, Math.ceil(totalIters / MAX_ITERS_PER_SUBMIT));
+  const itersPerChunk = Math.ceil(totalIters / chunks);
+  let total = 0;
+  for (let c = 0; c < chunks; c++) {
+    renderer.iterate({
+      genome,
+      seed: seedBase + c,
+      walkers,
+      itersPerWalker: itersPerChunk,
+      walkerJitter,
+    });
+    total += walkers * itersPerChunk;
+  }
+  return total;
+}
 
 installWebGPUHost();
 
@@ -228,15 +268,19 @@ async function main(): Promise<void> {
 
   // 4. Render.
   const t0 = Date.now();
+  // Chaos work is run host-orchestrated (reset → chunked iterate → present)
+  // rather than via the renderer.render() convenience, so the dispatch can be
+  // split into TDR-safe submits on Windows (see chunkedIterate). Off-win32 this
+  // collapses to a single submit — byte-identical to render()'s single-shot.
   if (sampleInflate === 1 && walkersOverride === null) {
-    renderer.render({
-      genome,
-      outputView: texture.createView(),
-      forceDeOff,
-      seed: seedOverride ?? undefined,
-      walkerJitter,
-      transparent,
-    });
+    const seed = seedOverride ?? ((Math.random() * 0xffffffff) >>> 0);
+    const targetSpp = genome.quality ?? DEFAULT_SPP;
+    const { dispatchWalkers, dispatchIters } = computeDispatch(targetSpp, width, height);
+    renderer.reset(genome);
+    const totalSamples = chunkedIterate(
+      renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter,
+    );
+    renderer.present({ genome, outputView: texture.createView(), totalSamples, forceDeOff, transparent });
   } else {
     // Probe path: manual walker-sizing for #43 re-fuse probe (--walkers) and/or
     // PYR3-029 sample-inflate. Walker count from --walkers or auto-computed.
@@ -252,7 +296,7 @@ async function main(): Promise<void> {
       console.log(`[pyr3-render] probe: walkers=${dispatchWalkers} iters=${dispatchIters} (--walkers override)`);
     }
     renderer.reset(genome);
-    renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter });
+    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter);
     renderer.present({
       genome,
       outputView: texture.createView(),
