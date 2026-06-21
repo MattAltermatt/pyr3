@@ -31,6 +31,11 @@ export function createSizePresetControl(opts: SizePresetControlOpts): SizePreset
   Object.assign(el.style, { display: 'flex', alignItems: 'center', gap: '6px' });
 
   const select = document.createElement('select');
+  // #408 — reuse the viewer's size-control classes (defined globally in
+  // index.html) so the animate dimensions control matches the viewer/editor
+  // RENDER size widget pixel-for-pixel instead of falling back to unstyled
+  // native form controls.
+  select.className = 'pyr3-render-mode-bar-preset';
   const customOpt = document.createElement('option');
   customOpt.value = '__custom__';
   customOpt.textContent = 'Custom';
@@ -53,15 +58,16 @@ export function createSizePresetControl(opts: SizePresetControlOpts): SizePreset
   wIn.type = 'number';
   wIn.min = '1';
   wIn.dataset['sizeW'] = '';
-  wIn.style.width = '72px';
+  wIn.className = 'pyr3-render-mode-bar-w'; // #408 — match viewer size control
   wIn.title = 'Output width in pixels.'; // #276
   const hIn = document.createElement('input');
   hIn.type = 'number';
   hIn.min = '1';
   hIn.dataset['sizeH'] = '';
-  hIn.style.width = '72px';
+  hIn.className = 'pyr3-render-mode-bar-h'; // #408 — match viewer size control
   hIn.title = 'Output height in pixels.'; // #276
   const times = document.createElement('span');
+  times.className = 'pyr3-render-mode-bar-x'; // #408 — match viewer size control
   times.textContent = '×';
 
   el.append(select, wIn, times, hIn);

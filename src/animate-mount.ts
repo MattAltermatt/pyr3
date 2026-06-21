@@ -61,6 +61,10 @@ const CANVAS_MAX_W = 1280;
 const CANVAS_MAX_H = 720;
 const CANVAS_DEFAULT_W = 800;
 const CANVAS_DEFAULT_H = 600;
+// #408 — the output dimensions default to 4K (matches the "4K" SIZE_PRESET) and
+// stay there; flame loads never override the user's size pick (per the
+// bar-state-independent-of-genome convention, #176).
+const ANIMATE_DEFAULT_OUTPUT: OutputSize = { width: 3840, height: 2160 };
 
 /** Preview canvas dims = the chosen output size capped to (maxW, maxH), aspect
  *  preserved, never upscaled. The preview is a scaled-down WYSIWYG of the export:
@@ -134,9 +138,76 @@ function previewTimeline(tl: Timeline): Timeline {
   };
 }
 
+// #408 — themed styles for the animate action bar + buttons + empty state.
+// Reuses the app's design tokens (defined in index.html :root) so the surface
+// matches the viewer/editor chrome instead of the old ad-hoc grey-on-black
+// inline styles. Injected once.
+const ANIMATE_CSS = `
+.pyr3-animate-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--bar-bg-1, #15151a);
+  border-bottom: 1px solid var(--bar-border, #2a2a30);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: var(--text, #ddd);
+}
+.pyr3-animate-bar-btn {
+  background: transparent;
+  border: 1px solid var(--bar-border, #2a2a30);
+  color: var(--text, #ddd);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 3px;
+  font: inherit;
+}
+.pyr3-animate-bar-btn:hover:not(:disabled) { background: var(--accent-soft, rgba(255,140,26,0.18)); }
+.pyr3-animate-bar-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.pyr3-animate-bar-status { color: var(--text-dim, #888); }
+.pyr3-animate-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-dim, #888);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.pyr3-animate-empty-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text, #ddd);
+  margin-bottom: 2px;
+}
+.pyr3-animate-empty code {
+  background: var(--bar-bg-3, #0f0f13);
+  border: 1px solid var(--bar-border, #2a2a30);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+`;
+
+function injectAnimateStylesOnce(): void {
+  if (document.getElementById('pyr3-animate-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'pyr3-animate-styles';
+  style.textContent = ANIMATE_CSS;
+  document.head.appendChild(style);
+}
+
 export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   const { root, device, format } = opts;
   root.replaceChildren();
+  injectAnimateStylesOnce();
   root.style.display = 'flex';
   root.style.flexDirection = 'column';
 
@@ -166,96 +237,62 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   canvas.height = CANVAS_DEFAULT_H;
   canvasZone.appendChild(canvas);
 
-  // Empty-state overlay: load instructions when no animation is loaded.
+  // Empty-state overlay: a welcoming prompt when no animation is loaded.
+  // #408 — themed via .pyr3-animate-empty (sans-serif, design tokens); copy
+  // points at the action bar that now sits ABOVE the canvas.
   const empty = document.createElement('div');
-  Object.assign(empty.style, {
-    position: 'absolute',
-    inset: '0',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '14px',
-    color: '#aaa',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: '13px',
-    textAlign: 'center',
-    padding: '24px',
-    pointerEvents: 'none',
-  });
+  empty.className = 'pyr3-animate-empty';
   const emptyHeader = document.createElement('div');
-  emptyHeader.textContent = 'Animation surface';
-  emptyHeader.style.fontSize = '15px';
-  emptyHeader.style.color = '#ccc';
+  emptyHeader.className = 'pyr3-animate-empty-title';
+  emptyHeader.textContent = 'Animate your flames';
   const emptyLine = document.createElement('div');
-  const emptyBefore = document.createTextNode('Drop a multi-keyframe ');
+  emptyLine.textContent = 'Build a timeline keyframe by keyframe — and watch one flame morph into the next.';
+  const emptyHint = document.createElement('div');
+  const hintBefore = document.createTextNode('Hit ');
+  const hintAdd = document.createElement('strong');
+  hintAdd.textContent = '＋ Add key flame';
+  const hintMid = document.createTextNode(' above to begin, or drop a multi-keyframe ');
   const emptyCode = document.createElement('code');
   emptyCode.textContent = '.flam3';
-  emptyCode.style.background = '#222';
-  emptyCode.style.padding = '2px 6px';
-  emptyCode.style.borderRadius = '3px';
-  const emptyAfter = document.createTextNode(' file here');
-  emptyLine.append(emptyBefore, emptyCode, emptyAfter);
-  const emptyHint = document.createElement('div');
-  emptyHint.textContent = 'or use the load button below';
-  emptyHint.style.opacity = '0.7';
+  const hintAfter = document.createTextNode(' here to play it back.');
+  emptyHint.append(hintBefore, hintAdd, hintMid, emptyCode, hintAfter);
   empty.append(emptyHeader, emptyLine, emptyHint);
-  // #227c — timeline docs are also loadable here.
-  const emptyTimelineHint = document.createElement('div');
-  emptyTimelineHint.textContent = 'or ＋ Add key flame to start building a timeline';
-  emptyTimelineHint.style.opacity = '0.7';
-  empty.append(emptyTimelineHint);
   canvasZone.appendChild(empty);
 
-  // Bottom controls strip: load button + playback bar (mounted into scrubHost
-  // when an animation loads) + status text.
+  // #408 — the action bar now sits at the TOP (directly under the nav, matching
+  // every other surface) instead of pinned to the bottom. `topRow` is inserted
+  // before the canvas; the timeline + transport dock stays at the bottom in
+  // `controls`.
+  const topRow = document.createElement('div');
+  topRow.className = 'pyr3-animate-bar';
+  root.insertBefore(topRow, canvasZone);
+
+  // Bottom dock: the playback bar + section track (mounted into scrubHost when
+  // an animation loads).
   const controls = document.createElement('div');
   Object.assign(controls.style, {
     flex: '0 0 auto',
     display: 'flex',
     flexDirection: 'column',
     background: 'rgba(0,0,0,0.4)',
-    borderTop: '1px solid #2a2a2a',
+    borderTop: '1px solid var(--bar-border, #2a2a30)',
   });
   root.appendChild(controls);
 
-  const topRow = document.createElement('div');
-  Object.assign(topRow.style, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '8px 16px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: '12px',
-    color: '#ccc',
-  });
-  controls.appendChild(topRow);
-
   const loadBtn = document.createElement('button');
   loadBtn.type = 'button';
+  loadBtn.className = 'pyr3-animate-bar-btn';
   loadBtn.textContent = '📂 Load';
   loadBtn.title = 'Load a multi-keyframe .flam3 animation or a .pyr3.timeline.json timeline';
-  Object.assign(loadBtn.style, {
-    background: 'transparent',
-    border: '1px solid #444',
-    color: '#eee',
-    cursor: 'pointer',
-    padding: '4px 10px',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
   topRow.appendChild(loadBtn);
 
   // #227d — Add a key flame to the timeline. Single flame → one node; a
   // multi-keyframe animation .flam3 opens the import dialog.
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
+  addBtn.className = 'pyr3-animate-bar-btn';
   addBtn.textContent = '＋ Add key flame';
   addBtn.title = 'Add a flame (.flame/.flam3/.pyr3.json) to the timeline';
-  Object.assign(addBtn.style, {
-    background: 'transparent', border: '1px solid #9cd', color: '#cfe9f3',
-    cursor: 'pointer', padding: '4px 10px', borderRadius: '3px', fontSize: '12px',
-  });
   topRow.appendChild(addBtn);
 
   const addInput = document.createElement('input');
@@ -282,38 +319,26 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // is false, so the button renders disabled+dim with the install tooltip.
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
+  exportBtn.className = 'pyr3-animate-bar-btn';
   exportBtn.setAttribute('data-export-sequence', '');
   exportBtn.textContent = '📤 Export sequence';
-  Object.assign(exportBtn.style, {
-    background: 'transparent',
-    border: '1px solid #444',
-    color: '#eee',
-    cursor: 'pointer',
-    padding: '4px 10px',
-    borderRadius: '3px',
-    fontSize: '12px',
-  });
   topRow.appendChild(exportBtn);
 
   // #227d — Save the authored timeline as a .pyr3.timeline.json (browser
   // download — no backend, works on gh-pages). Hidden until a timeline exists.
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
+  saveBtn.className = 'pyr3-animate-bar-btn';
   saveBtn.textContent = '💾 Save timeline';
   saveBtn.title = 'Download this timeline as a .pyr3.timeline.json';
-  Object.assign(saveBtn.style, {
-    background: 'transparent', border: '1px solid #5a7', color: '#bfe9cf',
-    cursor: 'pointer', padding: '4px 10px', borderRadius: '3px', fontSize: '12px',
-  });
   // #276 — no-jump: present-but-disabled until a timeline exists (was display:none).
+  // The .pyr3-animate-bar-btn:disabled rule dims it.
   saveBtn.disabled = true;
-  saveBtn.style.opacity = '0.45';
   topRow.appendChild(saveBtn);
 
   /** #276 — enable/dim Save in place (no appear/disappear). */
   function refreshSaveButton(): void {
     saveBtn.disabled = timeline === null || timeline.clips.length === 0;
-    saveBtn.style.opacity = saveBtn.disabled ? '0.45' : '1';
   }
 
   function saveTimeline(): void {
@@ -337,29 +362,25 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     // Nothing-loaded => disabled (no tooltip override)
     // #227 — timeline export rides the same backend route + capability bit.
     const noSource = animation === null && timeline === null;
+    // #408 — the .pyr3-animate-bar-btn:disabled rule owns the dim/cursor look;
+    // here we only flip `disabled` + the explanatory tooltip.
     if (!canExport) {
       exportBtn.disabled = true;
-      exportBtn.style.opacity = '0.45';
-      exportBtn.style.cursor = 'not-allowed';
       exportBtn.title =
         'Animation export needs filesystem access. Install pyr3 locally: '
         + '`npm install -g pyr3` then run `pyr3` — same UI, same flame, with export enabled.';
     } else if (noSource) {
       exportBtn.disabled = true;
-      exportBtn.style.opacity = '0.45';
-      exportBtn.style.cursor = 'not-allowed';
       exportBtn.title = 'Load a multi-keyframe .flam3 or build a timeline to enable export.';
     } else {
       exportBtn.disabled = false;
-      exportBtn.style.opacity = '1';
-      exportBtn.style.cursor = 'pointer';
       exportBtn.title = '';
     }
   }
 
   const status = document.createElement('span');
+  status.className = 'pyr3-animate-bar-status';
   status.textContent = 'no animation loaded';
-  status.style.color = '#888';
   topRow.appendChild(status);
 
   // Playback bar host — only populated when an animation loads.
@@ -407,11 +428,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // `animation` / `timeline` is non-null at a time.
   let timeline: Timeline | null = null;
   let timelinePreview: Timeline | null = null;
-  // #274 — output dimensions for preview + export. Sticky once initialised from
-  // the first loaded flame's native size (per the bar-state-independent-of-genome
-  // convention — flame loads do NOT override a user pick). The size control in
-  // the chrome drives both the live preview aspect and the export request.
-  let outputSize: OutputSize | null = null;
+  // #274/#408 — output dimensions for preview + export. Defaults to 4K and
+  // stays there: flame loads do NOT override it (per the
+  // bar-state-independent-of-genome convention, #176). The size control in the
+  // chrome drives both the live preview aspect and the export request.
+  let outputSize: OutputSize | null = { ...ANIMATE_DEFAULT_OUTPUT };
   let sizeControl: SizePresetControlHandle | null = null;
   // #227d — authoring uses the editable section track + inspector. (The #227c
   // clip-strip `mountTimelineTrack` is retired from this path.)
@@ -504,7 +525,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // both the live preview aspect and the export request. Initialised to defaults;
   // setSize is called to the first flame's native size when a source loads.
   sizeControl = createSizePresetControl({
-    initial: { width: CANVAS_DEFAULT_W, height: CANVAS_DEFAULT_H },
+    initial: { ...ANIMATE_DEFAULT_OUTPUT },
     onChange: (s) => {
       outputSize = s;
       rebuildAndRender();
@@ -519,15 +540,6 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     else if (timeline) buildTimelineRenderer();
     else return;
     void renderAtTime(lastRenderedTime);
-  }
-
-  /** Default the sticky output size to a freshly-loaded source's native dims
-   *  (only when never set — a user pick persists across loads). Syncs the control. */
-  function initOutputSize(native: OutputSize): void {
-    if (outputSize === null) {
-      outputSize = native;
-      sizeControl?.setSize(native);
-    }
   }
 
   function setStatus(msg: string, tone: 'info' | 'error' = 'info'): void {
@@ -648,13 +660,9 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   }
 
   function buildRenderer(): void {
-    // #274 — the chosen output size (sticky; defaults to the first keyframe's
-    // native dims) drives the framing; the preview canvas caps it to CANVAS_MAX_*.
+    // #274/#408 — the chosen output size (defaults to 4K; never overridden by a
+    // flame load) drives the framing; the preview canvas caps it to CANVAS_MAX_*.
     const firstKf = animation!.keyframes[0]!;
-    initOutputSize({
-      width: firstKf.size?.width ?? CANVAS_DEFAULT_W,
-      height: firstKf.size?.height ?? CANVAS_DEFAULT_H,
-    });
     const { width, height } = computeOutputAwarePreviewDims(outputSize!, CANVAS_MAX_W, CANVAS_MAX_H);
     canvas.width = width;
     canvas.height = height;
@@ -676,10 +684,6 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // the canvas WebGPU context. Mirrors buildRenderer() for the timeline path.
   function buildTimelineRenderer(): void {
     const firstG = timeline!.clips[0]!.flame.genome;
-    initOutputSize({
-      width: firstG.size?.width ?? CANVAS_DEFAULT_W,
-      height: firstG.size?.height ?? CANVAS_DEFAULT_H,
-    });
     const { width, height } = computeOutputAwarePreviewDims(outputSize!, CANVAS_MAX_W, CANVAS_MAX_H);
     canvas.width = width;
     canvas.height = height;

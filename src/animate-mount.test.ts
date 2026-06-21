@@ -141,6 +141,56 @@ describe('mountAnimatePage — Export button capability gate', () => {
   });
 });
 
+describe('mountAnimatePage — #408 visual update', () => {
+  it('renders the action bar (Load) ABOVE the canvas, not pinned to the bottom', async () => {
+    await primeCapability(GHPAGES_DEFAULT);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    mountAnimatePage({ root, device: fakeDevice(), format: fakeFormat() });
+
+    const load = Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.includes('Load'))!;
+    const canvas = root.querySelector('canvas')!;
+    expect(load).toBeTruthy();
+    expect(canvas).toBeTruthy();
+    // Load must precede the canvas in document order (top action bar).
+    expect(load.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('styles the dimensions control with the viewer size-control classes (consistency)', async () => {
+    await primeCapability(GHPAGES_DEFAULT);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    mountAnimatePage({ root, device: fakeDevice(), format: fakeFormat() });
+
+    expect(root.querySelector('select.pyr3-render-mode-bar-preset')).toBeTruthy();
+    expect(root.querySelector('input.pyr3-render-mode-bar-w')).toBeTruthy();
+    expect(root.querySelector('input.pyr3-render-mode-bar-h')).toBeTruthy();
+  });
+
+  it('defaults the dimensions to 4K (not Custom/HD)', async () => {
+    await primeCapability(GHPAGES_DEFAULT);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    mountAnimatePage({ root, device: fakeDevice(), format: fakeFormat() });
+
+    const select = root.querySelector<HTMLSelectElement>('select.pyr3-render-mode-bar-preset')!;
+    expect(select.value).toBe('3840x2160'); // 4K
+  });
+
+  it('shows welcoming empty-state copy (not the old terminal-style "Animation surface")', async () => {
+    await primeCapability(GHPAGES_DEFAULT);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    mountAnimatePage({ root, device: fakeDevice(), format: fakeFormat() });
+
+    const text = root.textContent ?? '';
+    expect(text).toContain('Animate your flames');
+    expect(text).not.toContain('Animation surface');
+    // The Load/Add controls moved to the top, so the empty state must not say "below".
+    expect(text).not.toMatch(/load button below/i);
+  });
+});
+
 describe('computeOutputAwarePreviewDims', () => {
   it('caps the chosen output size to the preview max, preserving aspect', () => {
     // square 2000 output, preview cap 800×600 → min(800/2000, 600/2000)=0.3 → 600×600
