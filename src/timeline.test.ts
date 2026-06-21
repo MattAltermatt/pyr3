@@ -3,6 +3,7 @@ import {
   timelineDuration,
   timelineSegmentAt,
   timelineGenomeAt,
+  sectionTransitionMidpoint,
   animationToTimeline,
   type Timeline,
 } from './timeline';
@@ -110,6 +111,35 @@ describe('timelineSegmentAt', () => {
     const seg = timelineSegmentAt(withHold, 2.25);
     expect(seg.localTime).toBeCloseTo(0.25, 9);
     expect(seg.animation.keyframes[1]!.time).toBe(1); // transitionDuration
+  });
+});
+
+// ── sectionTransitionMidpoint (#410) ─────────────────────────────────────────
+
+describe('sectionTransitionMidpoint', () => {
+  it('full cross-fade (no hold): midpoint is clipStart + dur/2', () => {
+    // clip0: 2s box, full 2s xfade.
+    expect(sectionTransitionMidpoint(tl([[2, 2], [2, 0]]), 0)).toBeCloseTo(1.0, 9);
+  });
+
+  it('hold then morph: midpoint is clipStart + holdDur + trans/2', () => {
+    // clip0: 2s box = 1s hold then 1s xfade → midpoint = 0 + 1 + 0.5.
+    expect(sectionTransitionMidpoint(tl([[2, 1], [2, 0]]), 0)).toBeCloseTo(1.5, 9);
+  });
+
+  it('offsets a later section by the preceding clip durations', () => {
+    // clip0: 2s; clip1: 3s box = 1s hold then 2s xfade → midpoint = 2 + 1 + 1.
+    expect(sectionTransitionMidpoint(tl([[2, 1], [3, 2], [0, 0]]), 1)).toBeCloseTo(4.0, 9);
+  });
+
+  it('lands strictly INSIDE the transition window (where edits are visible)', () => {
+    // The whole point of #410: a section edit re-renders here, not at a keyframe.
+    const t = tl([[2, 2], [2, 0]]);
+    const mid = sectionTransitionMidpoint(t, 0);
+    const seg = timelineSegmentAt(t, mid);
+    // localTime strictly between 0 (first keyframe) and trans (second keyframe).
+    expect(seg.localTime).toBeGreaterThan(0);
+    expect(seg.localTime).toBeLessThan(2);
   });
 });
 

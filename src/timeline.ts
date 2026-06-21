@@ -155,6 +155,23 @@ export function timelineSegmentAt(tl: Timeline, t: number): TimelineSegment {
   };
 }
 
+/** #410 — the global time at the MIDDLE of clip `i`'s transition window.
+ *  A pairing / easing / evolve edit is only visible mid-transition: at either
+ *  keyframe the render is order-invariant (first keyframe = pure flame-A; second
+ *  = flame-B's xforms reordered, which the chaos game renders identically). The
+ *  section editor seeks here on select so edits show immediately rather than
+ *  appearing to do nothing. For a zero-transition (cut) clip this returns the
+ *  clip's end (still a keyframe — there is no in-between to show). */
+export function sectionTransitionMidpoint(tl: Timeline, i: number): number {
+  let clipStart = 0;
+  for (let k = 0; k < i; k++) clipStart += Math.max(0, tl.clips[k]!.duration);
+  const clip = tl.clips[i]!;
+  const dur = Math.max(0, clip.duration);
+  const trans = Math.max(0, Math.min(clip.transitionDuration, dur));
+  const holdDur = dur - trans;
+  return clipStart + holdDur + trans / 2;
+}
+
 /** Concrete Genome at global time `t` — the per-frame entry point.
  *  Reuses interpolate() on the ephemeral per-pair segment. */
 export function timelineGenomeAt(tl: Timeline, t: number): Genome {

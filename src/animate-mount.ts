@@ -24,7 +24,7 @@ import { openAnimateExportModal, type AnimateExportModalHandle } from './animate
 import { estimateExport, estimateTimelineExport } from './animate-estimate';
 import { buildEasingPanel } from './animate-easing-panel';
 import { type EasingCurve } from './easing';
-import { type Timeline, timelineDuration } from './timeline';
+import { type Timeline, timelineDuration, sectionTransitionMidpoint } from './timeline';
 import { rescaleGenomeToOutput, type OutputSize } from './output-size';
 import { createSizePresetControl, type SizePresetControlHandle } from './size-preset-control';
 import { timelineFromJson, timelineToJson } from './timeline-serialize';
@@ -760,7 +760,17 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       onSelectSection: (i) => {
         selection = { kind: 'section', index: i };
         sectionTrack?.setSelection(selection);
-        if (timeline) sectionEditor?.showSection(timeline, i);
+        if (timeline) {
+          sectionEditor?.showSection(timeline, i);
+          // #410 — seek the preview into the MIDDLE of this section's transition so
+          // pairing / easing / evolve edits are immediately visible. At a keyframe
+          // those edits are no-ops (the render is order-invariant), which made the
+          // pairing reorder look like it did nothing.
+          stopPlayback();
+          const t = sectionTransitionMidpoint(timeline, i);
+          playbackBar?.setTime(t);
+          void renderAtTime(t);
+        }
         contextPanel?.open(); // #283
       },
       onAdd: () => { pendingTarget = undefined; addInput.click(); },
