@@ -5,6 +5,7 @@ import { type Genome, type Xform, type ChannelCurves, type CurvePoint, type Symm
 import { linear as linearVar, julian, V, type VariationIndex } from './variations';
 import { PYRE_PALETTE } from './palette';
 import { expandGenomeForGPU } from './symmetry';
+import { type EasingCurve } from './easing';
 
 // ── test helpers ───────────────────────────────────────────────────────────
 
@@ -958,5 +959,131 @@ describe('#292 guardrail: interpolate handles every Genome field', () => {
         'name', 'nick', 'oversample', 'palette', 'paletteMode', 'quality', 'rotate',
         'scale', 'size', 'spatialFilter', 'symmetry', 'time', 'tonemap', 'xforms']),
     );
+  });
+});
+
+// ── #414 cross-feature interaction matrix ────────────────────────────────────
+// #412 lived because features were tested in isolation — no test combined the
+// data-transforming passes that touch the same xform array. This matrix crosses
+// symmetry × permutation, motion × permutation, and easing × symmetry. Through-
+// line invariant: a valid NON-identity permutation MUST change a distinct-xform
+// flame's mid-transition genome (and an identity permutation must NOT).
+describe('interpolate — cross-feature interaction matrix (#414)', () => {
+  // Distinct-xform flames: 3 xforms tagged in `c` so a reorder is observable.
+  const tagged = (tags: number[], time: number): Genome =>
+    baseGenome({
+      time,
+      xforms: tags.map((t) => ({
+        a: 1, b: 0, c: t, d: 0, e: 1, f: 0,
+        weight: 1, color: 0, colorSpeed: 0.5,
+        variations: [linearVar(1)],
+      })),
+    });
+  const withSym = (g: Genome, sym?: Symmetry): Genome => (sym ? { ...g, symmetry: sym } : g);
+  const cs = (g: Genome): number[] => g.xforms.map((x) => x.c);
+  // The 3 ORIGINAL slots; symmetry appends positional-paired slots after them.
+  const orig = (arr: number[]): number[] => arr.slice(0, 3);
+
+  const evalC = (overrides: Partial<Animation>, sym: Symmetry | undefined, t = 0.5): number[] =>
+    cs(interpolate(anim(withSym(tagged([10, 20, 30], 0), sym), withSym(tagged([11, 21, 31], 1), sym), overrides), t));
+
+  const SYMS: { name: string; sym?: Symmetry }[] = [
+    { name: 'none', sym: undefined },
+    { name: 'rotational n=4', sym: { kind: 'rotational', n: 4 } },
+    { name: 'dihedral n=3', sym: { kind: 'dihedral', n: 3 } },
+  ];
+  const PERMS: { name: string; perm: number[] }[] = [
+    { name: 'identity', perm: [0, 1, 2] },
+    { name: 'swap', perm: [1, 0, 2] },
+    { name: 'reverse', perm: [2, 1, 0] },
+  ];
+
+  // ── Matrix A: symmetry × permutation ──────────────────────────────────────
+  describe.each(SYMS)('symmetry=$name', ({ sym }) => {
+    it.each(PERMS)('perm=$name upholds the invariant', ({ name, perm }) => {
+      const positional = evalC({}, sym);
+      const permuted = evalC({ segmentPermutation: [perm] }, sym);
+      if (name === 'identity') {
+        expect(orig(permuted)).toEqual(orig(positional));
+      } else {
+        expect(orig(permuted)).not.toEqual(orig(positional));
+      }
+    });
+
+    it('symmetry grows the baked xform count (guard — else the test proves nothing)', () => {
+      const len = evalC({}, sym).length;
+      if (sym) expect(len).toBeGreaterThan(3);
+      else expect(len).toBe(3);
+    });
+  });
+
+  // ── Matrix B: motion × permutation ────────────────────────────────────────
+  // HILL overlay (motion_func 3) peaks at t=0.5, so motion is observable exactly
+  // at mid — a sin/triangle overlay would zero-out there (sin(π)=0, triangle(0.5)=0).
+  const motionXform = (c: number): Xform => ({
+    a: 1, b: 0, c, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+    variations: [linearVar(1)],
+    motion: [{
+      a: 0, b: 0, c: 5, d: 0, e: 0, f: 0, weight: 0, color: 0, colorSpeed: 0,
+      variations: [], motion_func: 3, motion_freq: 1,
+    }],
+  });
+  const taggedMotion = (tags: number[], time: number): Genome =>
+    baseGenome({ time, xforms: tags.map((t) => motionXform(t)) });
+  const motionMid = (overrides: Partial<Animation>): number[] =>
+    cs(interpolate(anim(taggedMotion([10, 20, 30], 0), taggedMotion([11, 21, 31], 1), overrides), 0.5));
+  const plainMid = (overrides: Partial<Animation>): number[] =>
+    cs(interpolate(anim(tagged([10, 20, 30], 0), tagged([11, 21, 31], 1), overrides), 0.5));
+
+  describe.each(PERMS)('motion × perm=$name', ({ name, perm }) => {
+    it('motion shifts the blended xforms (motion not suppressed by the permutation)', () => {
+      expect(motionMid({ segmentPermutation: [perm] })).not.toEqual(plainMid({ segmentPermutation: [perm] }));
+    });
+
+    it('permutation still changes mid while motion is active', () => {
+      const positionalMotion = motionMid({});
+      const permutedMotion = motionMid({ segmentPermutation: [perm] });
+      if (name === 'identity') {
+        expect(permutedMotion).toEqual(positionalMotion);
+      } else {
+        expect(permutedMotion).not.toEqual(positionalMotion);
+      }
+    });
+  });
+
+  // ── Matrix C: easing × symmetry ───────────────────────────────────────────
+  // Evaluated OFF-mid at t=0.3: symmetric easings (easeInOut, a symmetric bezier)
+  // both map 0.5→0.5, so easing is a no-op at exactly mid and would prove nothing.
+  const EASINGS: { name: string; easing?: EasingCurve }[] = [
+    { name: 'linear', easing: undefined },
+    { name: 'easeInOut', easing: { kind: 'preset', name: 'easeInOut' } },
+    { name: 'cubicBezier', easing: { kind: 'cubicBezier', x1: 0.2, y1: 0, x2: 0.8, y2: 1 } },
+  ];
+  const SYMS_C = SYMS.slice(0, 2); // none, rotational
+
+  describe.each(SYMS_C)('easing × symmetry=$name', ({ sym }) => {
+    it.each(EASINGS)('easing=$name: count stable, easing observable, invariant intact', ({ name, easing }) => {
+      const T = 0.3;
+      const linear = evalC({}, sym, T);
+      const eased = evalC(easing ? { segmentEasing: [easing] } : {}, sym, T);
+
+      // Symmetry-baked count is stable regardless of the easing curve.
+      expect(eased.length).toBe(linear.length);
+
+      // Easing reshapes the blend time (linear is the no-op baseline).
+      if (name === 'linear') {
+        expect(eased).toEqual(linear);
+      } else {
+        expect(eased).not.toEqual(linear);
+      }
+
+      // Through-line invariant holds under easing × symmetry too.
+      const positional = evalC(easing ? { segmentEasing: [easing] } : {}, sym, T);
+      const permuted = evalC(
+        easing ? { segmentEasing: [easing], segmentPermutation: [[1, 0, 2]] } : { segmentPermutation: [[1, 0, 2]] },
+        sym, T,
+      );
+      expect(orig(permuted)).not.toEqual(orig(positional));
+    });
   });
 });
