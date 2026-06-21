@@ -1032,3 +1032,26 @@ describe('#418 — esf Browse: corpus strip + progress relocate to the bottom-ba
     expect(root.querySelector('.pyr3-bar-action')).toBeTruthy();
   });
 });
+
+describe('#419 — gallery: page-nav strip relocates to galleryBottomBarHost', () => {
+  function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
+    return {
+      webgpu: STUB_WEBGPU, page: 1, totalPages: 10,
+      onPrevPage: vi.fn(), onNextPage: vi.fn(), onRandomPage: vi.fn(),
+      activeAxes: 0, onFilterToggle: vi.fn(), onTabClick: vi.fn(),
+      ...over,
+    };
+  }
+  it('mounts the page-nav info row into galleryBottomBarHost when provided', () => {
+    const root = document.createElement('div');
+    const host = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts({ galleryBottomBarHost: host }));
+    expect(host.querySelector('.pyr3-bar-info-gallery')).toBeTruthy();
+    expect(root.querySelector('.pyr3-bar-info-gallery')).toBeNull();
+  });
+  it('without a host, the page-nav row stays in the bar root (default unchanged)', () => {
+    const root = document.createElement('div');
+    mountGalleryBar(root, makeGalleryOpts());
+    expect(root.querySelector('.pyr3-bar-info-gallery')).toBeTruthy();
+  });
+});

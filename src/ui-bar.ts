@@ -157,6 +157,12 @@ export interface GalleryBarOpts {
   /** #264 — vestigial: the nav menu self-navigates via window.location now, so
    *  this callback is no longer invoked. Kept optional for back-compat. */
   onTabClick?: (surface: TabSurface) => void;
+  /** #419 — gallery Browse: when provided, the page-nav info row (‹prev · page N
+   *  of M · next› · 🎲 · ⚙ filters) mounts into THIS host instead of the chrome
+   *  middle-slot. main.ts places it directly above the grid (mirroring #418), so
+   *  the strip becomes its own bar at the top of the content. Omit to keep it in
+   *  the middle-slot. */
+  galleryBottomBarHost?: HTMLElement;
 }
 
 export interface GalleryBarHandle {
@@ -1446,7 +1452,9 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   infoRight.append(filterPill);
 
   infoRow.append(infoLeft, infoCenter, infoRight);
-  chrome.middleSlot.append(infoRow);
+  // #419 — gallery: the page-nav row mounts into the bottom-bar host (directly
+  // above the grid) when provided; otherwise it stays in the chrome middle-slot.
+  (opts.galleryBottomBarHost ?? chrome.middleSlot).append(infoRow);
 
   let currentPage = opts.page;
   let currentTotal = opts.totalPages;

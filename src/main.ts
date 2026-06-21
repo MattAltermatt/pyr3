@@ -466,7 +466,14 @@ async function main(): Promise<void> {
   // via the shareable /editor?gen=&id= deep-link.
   const editorUrlForCurrentFlame = (): string => {
     const cf = getCurrentFlame();
-    if (cf?.corpusId) return editorUrlForFlame(cf.corpusId);
+    if (cf?.corpusId) {
+      // #419 — the editor never parses the /editor?gen=&id= deep-link
+      // (parseLoadIntent → bare {kind:'edit'}; cold-start is pending→wip→reroll),
+      // so the URL alone loses the flame and Edit opens a stale wip / reroll.
+      // Carry the loaded genome via the pending transfer the editor DOES consume.
+      if (cf.genome) writePendingTransfer({ genome: cf.genome, corpusId: cf.corpusId, timestamp: Date.now() });
+      return editorUrlForFlame(cf.corpusId);
+    }
     if (cf?.genome) {
       writePendingTransfer({ genome: cf.genome, corpusId: null, timestamp: Date.now() });
     }
@@ -916,7 +923,10 @@ async function main(): Promise<void> {
   //   - 🖼 gallery → a RANDOM gallery page (new tab)
   //   - 📂 Open    → the local file picker (this tab — a picker, not a page)
   //   - ✏️ Edit    → the editor for the current flame (new tab)
-  if (viewerMode === 'basic') {
+  // #419 — the gallery route resolves viewerMode='basic' (currentTabSurface()
+  // → 'gallery' → not 'esf'), which would mount the #338 onboarding card on the
+  // grid. The card is for the true basic viewer (/viewer, bare /) only.
+  if (viewerMode === 'basic' && currentTabSurface() !== 'gallery') {
     mountViewerWelcome = (): void => {
       void import('./welcome-card').then(({ mountWelcomeCard }) => {
         mountWelcomeCard(canvasZone, {
@@ -2008,8 +2018,23 @@ async function main(): Promise<void> {
     currentSurface = 'gallery';
     setDocTitle(`gallery · p${currentGalleryPage}`);
 
+    // #419 — the render-mode (PREVIEW/RENDER) bar is a viewer-init artifact with
+    // no live flame on the grid; 💾 Save Render here blanks the canvas the grid
+    // overlays. Hide it (not unmount — keeps the handle wiring intact) and drop
+    // the body class so its dependent CSS resets. Viewer↔gallery is a full
+    // reload, so a fresh viewer load remounts it visible.
+    renderModeBarHost.style.display = 'none';
+    document.body.classList.remove('pyr3-has-render-mode-bar');
+
+    // #419 — host for the page-nav strip, placed directly above the grid (the
+    // render-mode bar above is hidden). Mirrors #418's bottom-bar host. Created
+    // here to pass to mountGalleryBar; inserted into the DOM below.
+    const galleryBottomBarHost = document.createElement('div');
+    galleryBottomBarHost.className = 'pyr3-gallery-bottom-bar-host';
+
     galleryBar = mountGalleryBar(barRoot, {
       webgpu,
+      galleryBottomBarHost,
       page: currentGalleryPage,
       totalPages: 0,
       onPrevPage: () => navGallery(currentGalleryPage - 1),
@@ -2030,9 +2055,17 @@ async function main(): Promise<void> {
     // #49 Phase B6 — mount drawer EAGERLY with loading=true, before
     // awaiting the index. On slow networks the visitor sees the drawer
     // outline + a "loading feature index…" banner instead of an empty bar.
+    // #419 — insert the page-nav host directly above the grid (canvas zone),
+    // i.e. after the hidden render-mode bar. Order: #pyr3-bar · render-mode
+    // (hidden) · page-nav host · canvas-zone (grid). getElementById avoids the
+    // gallery scope's later `const canvasZone` (TDZ).
+    document.getElementById('pyr3-canvas-zone')!.insertAdjacentElement('beforebegin', galleryBottomBarHost);
+
     drawerRoot = document.createElement('div');
     drawerRoot.id = 'pyr3-gallery-filter-drawer-root';
-    barRoot.insertAdjacentElement('afterend', drawerRoot);
+    // #419 — anchor the filter drawer below the page-nav host so it opens
+    // beneath the page-nav bar (was: afterend of #pyr3-bar).
+    galleryBottomBarHost.insertAdjacentElement('afterend', drawerRoot);
     drawerHandle = mountFilterDrawer(drawerRoot, {
       initialFilter: currentFilter,
       facetCounts: {
