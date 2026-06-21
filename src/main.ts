@@ -473,9 +473,19 @@ async function main(): Promise<void> {
     return editorUrlForFlame();
   };
 
+  // #418 — esf Browse: a bottom-bar host for the corpus strip (🎲 surprise +
+  // ‹prev next›). Created here so it can be passed to mountBar; inserted into
+  // the app column below the render-mode bar (after it exists) so the corpus
+  // strip becomes the bottom-most solid bar and the render-progress row overlays
+  // the flame beneath it. esf only — basic viewer is unchanged.
+  const esfBottomBarHost: HTMLDivElement | null =
+    viewerMode === 'esf' ? document.createElement('div') : null;
+  if (esfBottomBarHost) esfBottomBarHost.className = 'pyr3-esf-bottom-bar-host';
+
   const bar: BarHandle = mountBar(document.getElementById('pyr3-bar')!, {
     webgpu,
     mode: viewerMode,
+    esfBottomBarHost: esfBottomBarHost ?? undefined,
     onOpenFile: () => openFilePicker(),
     onRenderQuality: (req) => renderQualityFn(req),
     onNavigate: (gen, id) => navigateCorpus(gen, id),
@@ -889,6 +899,11 @@ async function main(): Promise<void> {
   const appRoot = document.getElementById('pyr3-app')!;
   const canvasZone = document.getElementById('pyr3-canvas-zone')!;
   appRoot.insertBefore(renderModeBarHost, canvasZone);
+  // #418 — place the esf corpus strip host directly after the render-mode bar
+  // (between it and the canvas). insertBefore the canvas puts it right above the
+  // flame; the render-mode bar, inserted just above, stays above it. Final
+  // order: bar-root · render-mode bar · corpus strip · canvas.
+  if (esfBottomBarHost) appRoot.insertBefore(esfBottomBarHost, canvasZone);
   // #176 — body class hides the chrome bar's Size + Quality + Save Render
   // (now duplicated by render-mode-bar). CSS selector in index.html.
   document.body.classList.add('pyr3-has-render-mode-bar');

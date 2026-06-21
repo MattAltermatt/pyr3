@@ -811,6 +811,18 @@
         flex: 0 0 auto;
       }
 
+      /* #418 — esf Browse: the corpus strip (🎲 surprise + ‹prev next›) is the
+         bottom-most solid bar, between the render-mode bar and the flame.
+         position:relative makes it the positioning context for the render-
+         progress (tier3) row, whose `top:100%` then overlays the flame just
+         beneath the strip (not over the render-mode bar). flex:0 0 auto so it
+         takes only the action-row height in the app column. */
+      .pyr3-esf-bottom-bar-host {
+        flex: 0 0 auto;
+        position: relative;
+        z-index: 1;
+      }
+
       #pyr3-canvas-zone {
         flex: 1 1 auto;
         display: flex;

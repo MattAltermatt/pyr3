@@ -1007,3 +1007,28 @@ describe('editor action row — Open · Reroll · Size · QUALITY · Save Flame 
   });
 });
 
+
+describe('#418 — esf Browse: corpus strip + progress relocate to the bottom-bar host', () => {
+  it('mounts the action row into esfBottomBarHost (not the bar root) when provided', () => {
+    const root = document.createElement('div');
+    const host = document.createElement('div');
+    mountBar(root, makeBarOpts({ mode: 'esf', esfBottomBarHost: host }));
+    expect(host.querySelector('.pyr3-bar-action')).toBeTruthy();
+    expect(root.querySelector('.pyr3-bar-action')).toBeNull();
+  });
+
+  it('mounts the render-progress (tier3) row into esfBottomBarHost on showProgress', () => {
+    const root = document.createElement('div');
+    const host = document.createElement('div');
+    const bar = mountBar(root, makeBarOpts({ mode: 'esf', esfBottomBarHost: host }));
+    bar.showProgress({ label: 'Rendering', percent: 0.5, etaSeconds: 3, samples: 1_000_000, onCancel: () => {} });
+    expect(host.querySelector('.pyr3-bar-tier3')).toBeTruthy();
+    expect(root.querySelector('.pyr3-bar-tier3')).toBeNull();
+  });
+
+  it('without a host, the esf action row stays in the bar root (default unchanged)', () => {
+    const root = document.createElement('div');
+    mountBar(root, makeBarOpts({ mode: 'esf' }));
+    expect(root.querySelector('.pyr3-bar-action')).toBeTruthy();
+  });
+});

@@ -63,6 +63,13 @@ export interface BarOpts {
   /** #264 — vestigial: the nav menu self-navigates via window.location now, so
    *  this callback is no longer invoked. Kept optional for back-compat. */
   onTabClick?: (surface: TabSurface) => void;
+  /** #418 — esf Browse: when provided, the slim corpus action row (🎲 surprise
+   *  + ‹prev next›) AND the render-progress (tier3) row mount into THIS host
+   *  instead of the chrome middle-slot. The host (`main.ts`) places it below the
+   *  render-mode bar and above the canvas, so the corpus strip becomes the
+   *  bottom-most solid bar and the progress row overlays the flame beneath it.
+   *  Omit (basic viewer / editor) to keep both in the middle-slot. */
+  esfBottomBarHost?: HTMLElement;
 }
 
 /** Resolved cost of a custom render request. */
@@ -737,8 +744,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 
   // #367 — basic viewer folds its actions into infoRow, so the standalone
   // action bar is omitted; ESF still needs it (dice + corpus nav).
-  if (opts.mode === 'esf') chrome.middleSlot.append(infoRow, actionRow);
-  else chrome.middleSlot.append(infoRow);
+  chrome.middleSlot.append(infoRow);
+  // #418 — esf Browse: the slim corpus action row mounts into the bottom-bar
+  // host (below the render-mode bar, over the flame) when one is provided;
+  // otherwise it stays in the middle-slot. Basic mode has no standalone action
+  // row at all (its controls fold into the info row above).
+  if (opts.mode === 'esf') (opts.esfBottomBarHost ?? chrome.middleSlot).append(actionRow);
 
   let tier3: Tier3 | null = null;
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -793,7 +804,9 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     showProgress(p) {
       if (!tier3) {
         tier3 = buildTier3();
-        chrome.middleSlot.append(tier3.row);
+        // #418 — overlay the flame beneath the corpus strip (host) when one is
+        // provided; otherwise pin under the chrome bar as before.
+        (opts.esfBottomBarHost ?? chrome.middleSlot).append(tier3.row);
       }
       tier3.label.textContent = p.label;
       tier3.fill.style.width = `${Math.round(p.percent * 100)}%`;
