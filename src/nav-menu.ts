@@ -78,6 +78,8 @@ function injectNavStylesOnce(): void {
 .pyr3-nav-toptab {
   font: inherit; font-size: 13px; color: #c9c9d2; background: transparent;
   border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  /* #407 — direct-link tabs are now <a>; kill the underline + inherit our color. */
+  display: inline-block; text-decoration: none;
 }
 .pyr3-nav-toptab:hover { background: rgba(255,255,255,0.06); color: #fff; }
 .pyr3-nav-top.active > .pyr3-nav-toptab { color: #ffbe3e; }
@@ -95,6 +97,8 @@ function injectNavStylesOnce(): void {
   font: inherit; font-size: 13px; text-align: left; color: #c9c9d2;
   background: transparent; border: 0; padding: 7px 10px; border-radius: 5px;
   cursor: pointer; white-space: nowrap;
+  /* #407 — leaf items are now <a>; full-width block + no underline. */
+  display: block; text-decoration: none;
 }
 .pyr3-nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
 .pyr3-nav-item.active { color: #ffbe3e; }
@@ -150,6 +154,21 @@ export function buildNavMenu(
   return nav;
 }
 
+/**
+ * #407 — a click counts as "plain left-click" (intercept for SPA nav) unless it
+ * carries a modifier (cmd/ctrl/shift/alt) or a non-primary button. Those keep
+ * the browser's native <a> behaviour (open in a new tab/window). Synthetic
+ * clicks (`el.click()` in tests, or events without a button field) are treated
+ * as plain so existing nav tests still drive onNavigate. Middle-click never
+ * reaches here in modern browsers — it fires `auxclick`, so the <a href> opens
+ * a new tab natively with no JS at all.
+ */
+export function isPlainLeftClick(e: MouseEvent): boolean {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+  if (e.button !== undefined && e.button !== 0) return false;
+  return true;
+}
+
 function buildTop(
   top: NavTop,
   current: string,
@@ -161,20 +180,31 @@ function buildTop(
   wrap.className = 'pyr3-nav-top';
   wrap.dataset.navTop = top.key;
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'pyr3-nav-toptab';
-  btn.textContent = top.label + (top.items ? ' ▾' : '');
-  wrap.append(btn);
-
-  // Direct link (Viewer) — no dropdown.
+  // Direct link (Viewer / Editor) — a real <a> so cmd/ctrl/middle-click open a
+  // new tab natively (#407). Plain left-click is intercepted for SPA routing.
   if (top.route && !top.items) {
     if (current === top.key) wrap.classList.add('active');
-    btn.addEventListener('click', () => { closeAll(); onNavigate(top.route!); });
+    const a = document.createElement('a');
+    a.className = 'pyr3-nav-toptab';
+    a.href = top.route;
+    a.textContent = top.label;
+    a.addEventListener('click', (e) => {
+      if (!isPlainLeftClick(e)) return;     // let the browser open a new tab
+      e.preventDefault();
+      closeAll();
+      onNavigate(top.route!);
+    });
+    wrap.append(a);
     return wrap;
   }
 
-  // Dropdown.
+  // Dropdown header — stays a <button>; it toggles a panel, it isn't a link.
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pyr3-nav-toptab';
+  btn.textContent = top.label + ' ▾';
+  wrap.append(btn);
+
   const panel = document.createElement('div');
   panel.className = 'pyr3-nav-panel';
   panel.hidden = true;
@@ -184,13 +214,21 @@ function buildTop(
       div.className = 'pyr3-nav-divider';
       panel.append(div);
     }
-    const item = document.createElement('button');
-    item.type = 'button';
+    // #407 — leaves are real <a href> too. External/new-tab leaves carry
+    // target=_blank so even a JS-disabled plain click opens correctly.
+    const item = document.createElement('a');
     item.className = 'pyr3-nav-item';
     item.dataset.navSub = leaf.key;
+    item.href = leaf.route;
     item.textContent = leaf.label;
+    if (leaf.newTab) { item.target = '_blank'; item.rel = 'noopener'; }
     if (leaf.key === current) { item.classList.add('active'); wrap.classList.add('active'); }
-    item.addEventListener('click', () => { closeAll(); onNavigate(leaf.route, leaf.newTab); });
+    item.addEventListener('click', (e) => {
+      if (!isPlainLeftClick(e)) return;     // let the browser open a new tab
+      e.preventDefault();
+      closeAll();
+      onNavigate(leaf.route, leaf.newTab);
+    });
     panel.append(item);
   }
   wrap.append(panel);

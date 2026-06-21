@@ -67,6 +67,51 @@ describe('nav-menu structure (#264)', () => {
   });
 });
 
+describe('nav-menu modified-click → native new tab (#407)', () => {
+  it('navigable entries are real <a href> anchors', () => {
+    const el = buildNavMenu('viewer', vi.fn());
+    const viewer = el.querySelector('[data-nav-top="viewer"] .pyr3-nav-toptab') as HTMLAnchorElement;
+    expect(viewer.tagName).toBe('A');
+    expect(viewer.getAttribute('href')).toBe('/viewer');
+    const leaf = el.querySelector('[data-nav-sub="screensaver"]') as HTMLAnchorElement;
+    expect(leaf.tagName).toBe('A');
+    expect(leaf.getAttribute('href')).toBe('/screensaver');
+  });
+  it('new-tab leaves carry target=_blank + rel=noopener', () => {
+    const el = buildNavMenu('viewer', vi.fn());
+    const help = el.querySelector('[data-nav-sub="help-webgpu"]') as HTMLAnchorElement;
+    expect(help.target).toBe('_blank');
+    expect(help.rel).toBe('noopener');
+  });
+  it('cmd/ctrl-click on a direct link does NOT JS-navigate (browser opens a new tab)', () => {
+    const onNav = vi.fn();
+    const el = buildNavMenu('editor', onNav);
+    const viewer = el.querySelector('[data-nav-top="viewer"] .pyr3-nav-toptab') as HTMLElement;
+    viewer.dispatchEvent(new MouseEvent('click', { metaKey: true, bubbles: true, cancelable: true }));
+    viewer.dispatchEvent(new MouseEvent('click', { ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(onNav).not.toHaveBeenCalled();
+  });
+  it('cmd-click on a leaf does NOT JS-navigate', () => {
+    const onNav = vi.fn();
+    const el = buildNavMenu('viewer', onNav);
+    document.body.append(el);
+    const leaf = el.querySelector('[data-nav-sub="screensaver"]') as HTMLElement;
+    leaf.dispatchEvent(new MouseEvent('click', { metaKey: true, bubbles: true, cancelable: true }));
+    expect(onNav).not.toHaveBeenCalled();
+    el.dispatchEvent(new Event('pyr3:destroy'));
+    el.remove();
+  });
+  it('plain left-click still routes through onNavigate (and prevents default)', () => {
+    const onNav = vi.fn();
+    const el = buildNavMenu('editor', onNav);
+    const viewer = el.querySelector('[data-nav-top="viewer"] .pyr3-nav-toptab') as HTMLElement;
+    const ev = new MouseEvent('click', { button: 0, bubbles: true, cancelable: true });
+    viewer.dispatchEvent(ev);
+    expect(onNav).toHaveBeenCalledWith('/viewer');
+    expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
 describe('nav-menu active-state (#264)', () => {
   const cases: [string, string, string][] = [
     // surface,      activeTop,  activeSub

@@ -14,6 +14,7 @@ import {
 } from './learn-chaos';
 import { type RawAffine } from './affine-decompose';
 import { buildGlowDemo } from './learn/glow';
+import { isPlainLeftClick } from './nav-menu';
 
 export interface HowItWorksOpts {
   /** Base-aware in-app links (Editor / Viewer / Variations). */
@@ -221,13 +222,22 @@ export function mountHowItWorks(root: HTMLElement, opts: HowItWorksOpts = {}): v
   const goNav = opts.nav ?? ((r: string) => { window.location.href = r; });
   const cta = document.createElement('div');
   Object.assign(cta.style, { display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' });
+  // #407 — real <a href> so cmd/ctrl/middle-click open the surface in a new
+  // tab; plain left-click is intercepted for in-app (base-aware) navigation.
   const card8 = (title: string, desc: string, route: string): HTMLElement => {
-    const b = document.createElement('button'); b.type = 'button';
+    const b = document.createElement('a'); b.href = route;
     Object.assign(b.style, { flex: '1 1 180px', textAlign: 'left', cursor: 'pointer', background: '#0f0f13',
-      border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '14px', color: COLORS.text.primary, font: 'inherit' });
+      border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '14px', color: COLORS.text.primary, font: 'inherit',
+      textDecoration: 'none', display: 'block' });
     const h = document.createElement('div'); h.textContent = title; Object.assign(h.style, { fontWeight: '700', marginBottom: '4px', color: COLORS.flame.top });
     const d = document.createElement('div'); d.textContent = desc; Object.assign(d.style, { fontSize: '12px', color: COLORS.text.muted });
-    b.append(h, d); b.addEventListener('click', () => goNav(route)); return b;
+    b.append(h, d);
+    b.addEventListener('click', (e) => {
+      if (!isPlainLeftClick(e)) return;
+      e.preventDefault();
+      goNav(route);
+    });
+    return b;
   };
   cta.append(
     card8('Open the Editor →', 'Build your own flame: xforms, variations, colour.', '/editor'),
