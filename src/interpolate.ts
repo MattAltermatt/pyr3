@@ -112,8 +112,14 @@ export function interpolate(animation: Animation, time: number): Genome {
   // for intentional appear/disappear. Absent/identity/invalid ⇒ positional
   // (b1 === aligned1) ⇒ byte-identical to today. finalxform is exempt (never in
   // the xforms[] array), matching flam3's final-xform exemption.
-  const perm = animation.segmentPermutation?.[i1];
-  const b1 = isPermutation(perm, aligned1.xforms.length)
+  // #412 — the pairing UI builds the permutation over the keyframe's ORIGINAL
+  // (pre-symmetry-bake) xforms, but bakeSymmetryXforms above can grow the count,
+  // so a short perm is extended with an identity tail to the aligned length (the
+  // appended symmetry + alignment-pad slots pair positionally). A full-length
+  // perm is used verbatim (can target a padded slot for intentional appear/
+  // disappear). Anything invalid ⇒ undefined ⇒ positional.
+  const perm = resolveSegmentPermutation(animation.segmentPermutation?.[i1], aligned1.xforms.length);
+  const b1 = perm
     ? { ...aligned1, xforms: perm.map((j) => aligned1.xforms[j]!) }
     : aligned1;
 
@@ -1324,4 +1330,23 @@ function isPermutation(perm: number[] | undefined, n: number): perm is number[] 
     seen[v] = true;
   }
   return true;
+}
+
+/** #412 — resolve a UI-supplied xform-correspondence permutation to the
+ *  symmetry-baked / alignment-padded `n`. The pairing widget builds the perm
+ *  over the keyframe's ORIGINAL xforms, but `bakeSymmetryXforms` (#291) can grow
+ *  the count before the blend — so a SHORTER valid permutation is extended with
+ *  an identity tail (the appended symmetry + pad slots pair positionally). A
+ *  full-length valid permutation is returned verbatim (it may target a padded
+ *  slot for intentional appear/disappear, #225). Anything else ⇒ undefined ⇒
+ *  the caller blends positionally. */
+function resolveSegmentPermutation(perm: number[] | undefined, n: number): number[] | undefined {
+  if (!perm || perm.length === 0) return undefined;
+  if (perm.length === n) return isPermutation(perm, n) ? perm : undefined;
+  if (perm.length < n && isPermutation(perm, perm.length)) {
+    const out = perm.slice();
+    for (let j = perm.length; j < n; j++) out.push(j);
+    return out;
+  }
+  return undefined;
 }

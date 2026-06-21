@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { interpolate, pickKeyframes } from './interpolate';
 import { type Animation, FLAM3_ANIMATION_DEFAULTS } from './animation';
-import { type Genome, type Xform, type ChannelCurves, type CurvePoint } from './genome';
+import { type Genome, type Xform, type ChannelCurves, type CurvePoint, type Symmetry } from './genome';
 import { linear as linearVar, julian, V, type VariationIndex } from './variations';
 import { PYRE_PALETTE } from './palette';
 import { expandGenomeForGPU } from './symmetry';
@@ -602,8 +602,30 @@ describe('interpolate — segmentPermutation (#225)', () => {
   it('invalid permutation (wrong length) degrades to positional', () => {
     const k0 = tagged([10, 20, 30], 0);
     const k1 = tagged([11, 21, 31], 1);
+    // [0,1] over 3 aligned xforms extends to the identity [0,1,2] (#412) ⇒ positional.
     expect(interpolate(anim(k0, k1, { segmentPermutation: [[0, 1]] }), 0.5).xforms.map((x) => x.c))
       .toEqual([10.5, 20.5, 30.5]);
+  });
+
+  it('#412 — a short permutation applies on a SYMMETRY-baked flame (identity tail)', () => {
+    // bakeSymmetryXforms (#291) grows the xform count past the original 2 before
+    // the blend, so a length-2 UI permutation must still reorder the originals
+    // (the appended symmetry xforms stay positional). Regression for the bug
+    // where isPermutation(perm, alignedLen) silently dropped the perm.
+    const sym: Symmetry = { kind: 'rotational', n: 4 };
+    const k0: Genome = { ...tagged([10, 20], 0), symmetry: sym };
+    const k1: Genome = { ...tagged([11, 21], 1), symmetry: sym };
+    const positional = interpolate(anim(k0, k1), 0.5);
+    const swapped = interpolate(anim(k0, k1, { segmentPermutation: [[1, 0]] }), 0.5);
+    // Symmetry must actually have grown the count (else this proves nothing).
+    expect(positional.xforms.length).toBeGreaterThan(2);
+    // Original slot0/slot1 morph differently under the swap:
+    //   positional slot0 = mean(A.x0=10, B.x0=11) = 10.5
+    //   swapped    slot0 = mean(A.x0=10, B.x1=21) = 15.5
+    expect(positional.xforms[0]!.c).toBeCloseTo(10.5);
+    expect(swapped.xforms[0]!.c).toBeCloseTo(15.5);
+    expect(swapped.xforms[1]!.c).toBeCloseTo(15.5); // mean(A.x1=20, B.x0=11)
+    expect(swapped.xforms[0]!.c).not.toBeCloseTo(positional.xforms[0]!.c);
   });
 
   it('invalid permutation (duplicate target) degrades to positional', () => {
