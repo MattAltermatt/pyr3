@@ -23,6 +23,8 @@ export interface WelcomeCardOpts {
   onOpen: () => void;
   /** Carry the current flame into the editor. */
   onEdit: () => void;
+  /** Open the interactive "How fractal flames work" guide (#347, /how-it-works). */
+  onLearnIfs: () => void;
   /** Injectable for tests; defaults to globalThis.localStorage. */
   storage?: MiniStorage | null;
 }
@@ -47,17 +49,14 @@ export function welcomeAlreadySeen(storage?: MiniStorage | null): boolean {
   }
 }
 
-// #338 — the discovery links. Gallery leads (it's the deepest path); the
-// TODO(#347) below is the seam for the interactive "How IFS works" guide link.
+// #338 — the discovery links. Gallery leads (it's the deepest path). The
+// #347 "learn how flames work" link opens the interactive /how-it-works guide
+// (in a new tab, like its siblings — wired in main.ts).
 const LINKS = [
   { role: 'welcome-gallery', em: '🖼', label: 'Browse the flame gallery', lead: true, cb: 'onBrowseGallery' },
   { role: 'welcome-open', em: '📂', label: 'Open a flame file', lead: false, cb: 'onOpen' },
   { role: 'welcome-edit', em: '✏️', label: 'Edit this flame', lead: false, cb: 'onEdit' },
-  // TODO(#347): when the interactive "How IFS / fractal flames work" guide page
-  // ships, add a 4th link here — { role:'welcome-ifs', em:'🎓', label:'Learn how
-  // fractal flames work', cb:'onLearnIfs' } — and thread an onLearnIfs callback
-  // through WelcomeCardOpts + the main.ts mount site. (User-directive at #338
-  // design time; see memory project-pyr3-338-welcome-ifs-link.)
+  { role: 'welcome-ifs', em: '🎓', label: 'Learn how fractal flames work', lead: false, cb: 'onLearnIfs' },
 ] as const satisfies ReadonlyArray<{ role: string; em: string; label: string; lead: boolean; cb: keyof WelcomeCardOpts }>;
 
 let stylesInjected = false;

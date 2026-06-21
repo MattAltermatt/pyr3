@@ -1022,6 +1022,21 @@ export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHa
   };
 }
 
+// ─── mountHowItWorksBar (#347) ──────────────────────────────────────────────
+// The /how-it-works guide's top-bar. Same content-page chrome as mountAboutBar
+// (nav + middleSlot, no GPU), but does NOT highlight the about-link — this page
+// is its own surface reached via the Discover ▾ "How flames work" entry.
+export function mountHowItWorksBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHandle {
+  injectStylesOnce();
+  root.replaceChildren();
+  root.classList.add('pyr3-bar-root');
+  const chrome = mountBarChrome(root, { surface: 'about', webgpu: opts.webgpu, onTabClick: opts.onTabClick });
+  return {
+    middleSlot: chrome.middleSlot,
+    destroy: () => { chrome.destroy(); root.classList.remove('pyr3-bar-root'); },
+  };
+}
+
 // ─── mountScreensaverBar (#109) ─────────────────────────────────────────────
 // The /v1/screensaver top-bar variant. Mirrors mountAboutBar: reuses
 // mountBarChrome and renders all three real tabs inactive via

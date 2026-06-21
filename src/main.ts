@@ -79,6 +79,7 @@ import {
   type TabSurface,
 } from './ui-bar';
 import { mountAbout } from './about-mount';
+import { mountHowItWorks } from './how-it-works-mount';
 import { checkWebGPU } from './webgpu-check';
 import { fetchCapability } from './capability';
 
@@ -301,6 +302,30 @@ async function main(): Promise<void> {
       // undefined so mountAbout's "WebGPU" fallback shows on the chip.
     });
     setDocTitle('about');
+    return;
+  }
+
+  // #347 — /how-it-works guide. Pure-content surface like /about: no GPU device,
+  // no canvas. Content bar into #pyr3-bar; scrollytelling body into middleSlot.
+  if (window.location.pathname === '/how-it-works') {
+    const barRoot = document.getElementById('pyr3-bar');
+    const bodyRoot = document.getElementById('pyr3-canvas-zone');
+    if (!barRoot || !bodyRoot) {
+      console.error('pyr3: /how-it-works — required DOM nodes missing');
+      return;
+    }
+    const { mountHowItWorksBar } = await import('./ui-bar');
+    const hiwBar = mountHowItWorksBar(barRoot, { webgpu });
+    const canvas = document.getElementById('pyr3-canvas');
+    if (canvas) canvas.hidden = true;
+    const firstPaint = document.getElementById('pyr3-firstpaint');
+    if (firstPaint) firstPaint.remove();
+    const hiwContainer = document.createElement('div');
+    hiwContainer.id = 'pyr3-howitworks-scroll';
+    Object.assign(hiwContainer.style, { overflowY: 'auto', height: 'calc(100vh - 44px)' });
+    hiwBar.middleSlot.appendChild(hiwContainer);
+    mountHowItWorks(hiwContainer, { nav: (route) => { window.location.href = route; } });
+    setDocTitle('how it works');
     return;
   }
 
@@ -899,6 +924,10 @@ async function main(): Promise<void> {
           onOpen: () => openFilePicker(),
           onEdit: () => {
             window.open(editorUrlForCurrentFlame(), '_blank');
+          },
+          // #347 — open the interactive guide in a new tab (sibling-link convention).
+          onLearnIfs: () => {
+            window.open(`${import.meta.env.BASE_URL}how-it-works`, '_blank');
           },
         });
       });

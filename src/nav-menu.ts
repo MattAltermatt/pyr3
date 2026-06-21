@@ -8,7 +8,7 @@
 export type NavSubKey =
   | 'editor' | 'animate' | 'screensaver'
   | 'esf' | 'gallery' | 'esf-source' | 'variations' | 'surprise' | 'about' | 'showcase'
-  | 'help-color' | 'help-ifs' | 'help-webgpu';
+  | 'help-color' | 'help-ifs' | 'help-cost' | 'help-webgpu';
 
 export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover';
 
@@ -51,7 +51,12 @@ export const NAV_MODEL: NavTop[] = [
     { key: 'variations',  label: 'Variations',      route: '/variations' },
     { key: 'about',       label: 'About',           route: '/about' },
     { key: 'help-color',  label: 'Color',           route: '/help/direct-color-variations.html', newTab: true },
-    { key: 'help-ifs',    label: 'How flames work', route: '/help/ifs-and-render-cost.html',      newTab: true },
+    // #347 — "How flames work" now points at the in-app interactive guide
+    // (same-tab SPA surface). The render-cost help page keeps its own entry
+    // under an honest label; its #why-not-working anchor is still deep-linked
+    // from the editor render bar.
+    { key: 'help-ifs',    label: 'How flames work', route: '/how-it-works' },
+    { key: 'help-cost',   label: 'Render cost & quality', route: '/help/ifs-and-render-cost.html', newTab: true },
     { key: 'help-webgpu', label: 'WebGPU',          route: '/help/webgpu.html',                   newTab: true },
     // #264 — trailing slash: /showcase/ is the deployed static dir (deploy.yml
     // extracts the showcase Release tar there). /showcase 301-redirects to it on

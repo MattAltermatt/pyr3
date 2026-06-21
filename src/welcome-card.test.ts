@@ -16,6 +16,7 @@ function makeOpts(
     onBrowseGallery: () => void;
     onOpen: () => void;
     onEdit: () => void;
+    onLearnIfs: () => void;
     storage: ReturnType<typeof fakeStorage>;
   }> = {},
 ) {
@@ -23,6 +24,7 @@ function makeOpts(
     onBrowseGallery: vi.fn(),
     onOpen: vi.fn(),
     onEdit: vi.fn(),
+    onLearnIfs: vi.fn(),
     storage: fakeStorage(),
     ...over,
   };
@@ -31,7 +33,7 @@ function makeOpts(
 const SEEN = 'pyr3.welcome.seen';
 
 describe('welcome-card (#338)', () => {
-  it('mounts a dismissible welcome card with the three discovery links when unseen', () => {
+  it('mounts a dismissible welcome card with the four discovery links when unseen', () => {
     document.body.innerHTML = '<div id="zone"></div>';
     const zone = document.getElementById('zone')!;
     const h = mountWelcomeCard(zone, makeOpts());
@@ -40,6 +42,7 @@ describe('welcome-card (#338)', () => {
     expect(zone.querySelector('[data-role="welcome-gallery"]')).toBeTruthy();
     expect(zone.querySelector('[data-role="welcome-open"]')).toBeTruthy();
     expect(zone.querySelector('[data-role="welcome-edit"]')).toBeTruthy();
+    expect(zone.querySelector('[data-role="welcome-ifs"]')).toBeTruthy();
     expect(zone.querySelector('[data-role="welcome-dismiss"]')).toBeTruthy();
   });
 
@@ -72,6 +75,7 @@ describe('welcome-card (#338)', () => {
       ['welcome-gallery', 'onBrowseGallery'],
       ['welcome-open', 'onOpen'],
       ['welcome-edit', 'onEdit'],
+      ['welcome-ifs', 'onLearnIfs'],
     ] as const) {
       document.body.innerHTML = '<div id="zone"></div>';
       const zone = document.getElementById('zone')!;

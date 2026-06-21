@@ -51,6 +51,13 @@ const SEAM_EXEMPT = new Set<string>([
   'ui-bar.ts',            // viewer bar — uses document
   'nav-menu.ts',          // top-nav menus — DOM-mounting + document dismiss listeners (#264)
   'about-mount.ts',       // /about page body — DOM-mounting (#103 visual overhaul)
+  'how-it-works-mount.ts', // /how-it-works guide page body — DOM-mounting (#347)
+  'learn/chaos-player.ts', // /how-it-works demo player — Canvas2D DOM-mounting (#347)
+  'learn/sections.ts',     // /how-it-works section builders — DOM-mounting (#347)
+  'learn/self-similar.ts', // /how-it-works §0 recursive-subdivision visual — DOM (#347)
+  'learn/mandelbrot.ts',   // /how-it-works §1 escape-time Mandelbrot — Canvas2D DOM (#347)
+  'learn/affine-warp.ts',  // /how-it-works §3 affine playground — Canvas2D DOM (#347)
+  'learn/glow.ts',         // /how-it-works §7 colour+glow density demo — Canvas2D DOM (#347)
   'variation-picker.ts',  // DOM-mounting variation picker (#79)
   'screensaver-mount.ts', // /screensaver page body — DOM-mounting (#109)
   'screensaver-ui.ts',    // /screensaver landing card — DOM-mounting (#109)

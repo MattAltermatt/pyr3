@@ -18,6 +18,9 @@ export function redirectLegacyPath(pathname: string, search: string, hash = ''):
   // and the legacy /v1/gradient handled below) to /editor.
   if (parts[0] === 'gradient') return '/editor' + search + hash;
 
+  // #347 — poppy no-hyphen alias for the interactive guide page.
+  if (parts[0] === 'howitworks') return '/how-it-works' + search + hash;
+
   if (parts[0] !== 'v1') return null;
 
   const sub = parts[1];

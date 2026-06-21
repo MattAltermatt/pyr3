@@ -25,6 +25,12 @@ describe('redirectLegacyPath (#264)', () => {
   it('/v1/surprise → /surprise', () => expect(redirectLegacyPath('/v1/surprise', '')).toBe('/surprise'));
   it('already-new path → null', () => expect(redirectLegacyPath('/editor', '')).toBeNull());
   it('/about (unchanged) → null', () => expect(redirectLegacyPath('/about', '')).toBeNull());
+
+  // #347 — poppy no-hyphen alias for the interactive guide page.
+  it('/howitworks → /how-it-works', () => expect(redirectLegacyPath('/howitworks', '', '')).toBe('/how-it-works'));
+  it('/howitworks preserves search + hash', () =>
+    expect(redirectLegacyPath('/howitworks', '?x=1', '#chaos-game')).toBe('/how-it-works?x=1#chaos-game'));
+  it('canonical /how-it-works → null', () => expect(redirectLegacyPath('/how-it-works', '', '')).toBeNull());
   it('bare / → null', () => expect(redirectLegacyPath('/', '')).toBeNull());
 
   // #299 — the deep-link hash must survive the rewrite (variation catalog anchor).
