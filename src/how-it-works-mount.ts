@@ -154,6 +154,8 @@ export function mountHowItWorks(root: HTMLElement, opts: HowItWorksOpts = {}): v
   weightInp.value = String(DEFAULT_VAR_WEIGHT); // low mix — gently bent Sierpinski (user pick)
   const weightLab = document.createElement('label'); weightLab.append(document.createTextNode('weight '), weightInp);
   controls5.append(sel, weightLab);
+  // §6 mirrors §5's current selection — set once §6 is built (below).
+  let refreshS6: (() => void) | null = null;
   let player5: ChaosPlayerHandle | null = null;
   function rebuild5(): void {
     if (player5) { player5.destroy(); const i = handles.indexOf(player5); if (i >= 0) handles.splice(i, 1); }
@@ -161,6 +163,7 @@ export function mountHowItWorks(root: HTMLElement, opts: HowItWorksOpts = {}): v
     // Catalog-faithful: same scaffold/mix/colours + the catalog view (scale 170, cy 0.2).
     player5 = mountChaosPlayer({ flame: catalogVariationFlame(kind, +weightInp.value), size: 384, view: CATALOG_VIEW, seed: 9, mode: 'result', initialPoints: 8000 });
     handles.push(player5); holder5.replaceChildren(player5.el);
+    refreshS6?.(); // keep §6 mirroring whatever §5 now shows
   }
   sel.addEventListener('change', rebuild5);
   weightInp.addEventListener('change', rebuild5); // 'change' (release): rebuild re-animates ~2s
@@ -171,7 +174,7 @@ export function mountHowItWorks(root: HTMLElement, opts: HowItWorksOpts = {}): v
   s6.appendChild(para(
     'A variation (section 5) bends each xform on its own. The final xform is different: it is ' +
     'one extra transform applied to EVERY point after its own xform, just before the dot is ' +
-    'drawn — a single lens over the whole image. This is the spherical flame from section 5; ' +
+    'drawn — a single lens over the whole image. This is the very flame you picked in section 5; ' +
     'toggle the lens and a fisheye pulls the entire attractor into a disk at once — one warp ' +
     'applied to everything, not per-xform.'));
   const holder6 = document.createElement('div');
@@ -181,12 +184,12 @@ export function mountHowItWorks(root: HTMLElement, opts: HowItWorksOpts = {}): v
   let player6: ChaosPlayerHandle | null = null;
   function rebuild6(): void {
     if (player6) { player6.destroy(); const i = handles.indexOf(player6); if (i >= 0) handles.splice(i, 1); }
-    // The flame from §5 (spherical at the shared default weight) so §6 reads as
-    // "that same flame, now lensed." The lens is a final xform carrying an
-    // eyefish (fisheye) variation — a genuinely global warp distinct from §5's
-    // per-xform bend. Lens-off uses §5's catalog view; lens-on auto-fits (the
-    // eyefish pulls everything into a tighter disk).
-    const base = catalogVariationFlame(DEFAULT_VAR_KIND, DEFAULT_VAR_WEIGHT);
+    // Live mirror of §5: read §5's current variation + weight so lens-off looks
+    // identical to §5. The lens is a final xform carrying an eyefish (fisheye)
+    // variation — a global warp distinct from §5's per-xform bend. Lens-off uses
+    // §5's catalog view; lens-on auto-fits (the eyefish pulls into a tighter disk).
+    const kind = sel.value === 'none' ? null : (sel.value as VarKind);
+    const base = catalogVariationFlame(kind, +weightInp.value);
     const flame: DemoFlame = cb.checked
       ? { ...base, finalXform: { affine: IDENTITY, variation: { kind: 'eyefish', weight: 1 } } }
       : base;
@@ -194,6 +197,7 @@ export function mountHowItWorks(root: HTMLElement, opts: HowItWorksOpts = {}): v
     handles.push(player6); holder6.replaceChildren(player6.el);
   }
   cb.addEventListener('change', rebuild6);
+  refreshS6 = rebuild6; // §5 changes now re-render §6 to match
   s6.append(lens, holder6); rebuild6(); page.appendChild(s6);
 
   // ── Section 7 · From points to a picture (colour + glow) ───────────────────
