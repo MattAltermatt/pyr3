@@ -1340,7 +1340,7 @@ function isPermutation(perm: number[] | undefined, n: number): perm is number[] 
  *  full-length valid permutation is returned verbatim (it may target a padded
  *  slot for intentional appear/disappear, #225). Anything else ⇒ undefined ⇒
  *  the caller blends positionally. */
-function resolveSegmentPermutation(perm: number[] | undefined, n: number): number[] | undefined {
+export function resolveSegmentPermutation(perm: number[] | undefined, n: number): number[] | undefined {
   if (!perm || perm.length === 0) return undefined;
   if (perm.length === n) return isPermutation(perm, n) ? perm : undefined;
   if (perm.length < n && isPermutation(perm, perm.length)) {

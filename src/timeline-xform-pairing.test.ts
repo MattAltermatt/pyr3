@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Genome, Xform } from './genome';
 import {
-  xformLabel, alignedCount, toOrder, nudge, swap, toPermutation,
+  xformLabel, alignedCount, toOrder, nudge, swap, toPermutation, classifyPairing,
 } from './timeline-xform-pairing';
 
 // linear = index 0, spherical = index 2 (src/variations.ts).
@@ -73,6 +73,59 @@ describe('toPermutation', () => {
   });
   it('returns the order for a non-identity order', () => {
     expect(toPermutation([1, 0, 2])).toEqual([1, 0, 2]);
+  });
+});
+
+// #413 — classify a stored pairing against the POST-symmetry-bake aligned count.
+// rotational n=3 appends 2 rotation xforms (k=1,2), so 3 source xforms ⇒ 5 baked.
+const symmetric = (n: number, ...xforms: Xform[]): Genome =>
+  ({ xforms, symmetry: { kind: 'rotational', n } } as Genome);
+
+describe('classifyPairing', () => {
+  it('identity: no perm ⇒ kind identity (no badge)', () => {
+    expect(classifyPairing(genome(xf(0), xf(1), xf(2)), genome(xf(0), xf(1), xf(2)), undefined).kind)
+      .toBe('identity');
+  });
+
+  it('applies: full-length valid perm over the baked count', () => {
+    const g = genome(xf(0), xf(1), xf(2));
+    expect(classifyPairing(g, g, [1, 0, 2]).kind).toBe('applies');
+  });
+
+  it('positional-tail: short perm on a symmetry-baked flame (the #412 shape)', () => {
+    // 3 source xforms + symmetry n=3 ⇒ bakes to 5; a 3-long perm gets an identity tail.
+    const status = classifyPairing(symmetric(3, xf(0), xf(1), xf(2)), genome(xf(0), xf(1), xf(2)), [1, 0, 2]);
+    expect(status.kind).toBe('positional-tail');
+    if (status.kind === 'positional-tail') {
+      expect(status.authoredLen).toBe(3);
+      expect(status.bakedLen).toBe(5);
+    }
+  });
+
+  it('rejected: stale over-long perm on a shrunk flame ⇒ silently dropped today', () => {
+    // perm authored for 5 xforms, flame now bakes to 3 ⇒ resolve returns undefined.
+    const g = genome(xf(0), xf(1), xf(2));
+    const status = classifyPairing(g, g, [0, 1, 2, 3, 4]);
+    expect(status.kind).toBe('rejected');
+    if (status.kind === 'rejected') {
+      expect(status.authoredLen).toBe(5);
+      expect(status.bakedLen).toBe(3);
+    }
+  });
+
+  it('rejected: full-length but non-bijective perm (dup index)', () => {
+    const g = genome(xf(0), xf(1), xf(2));
+    const status = classifyPairing(g, g, [0, 0, 2]); // dup ⇒ not a bijection over 3
+    expect(status.kind).toBe('rejected');
+    if (status.kind === 'rejected') {
+      expect(status.authoredLen).toBe(3);
+      expect(status.bakedLen).toBe(3);
+    }
+  });
+
+  it('identity: full-length explicit identity perm ⇒ no badge', () => {
+    const g = genome(xf(0), xf(1), xf(2));
+    expect(classifyPairing(g, g, [0, 1, 2]).kind).toBe('identity');
   });
 });
 

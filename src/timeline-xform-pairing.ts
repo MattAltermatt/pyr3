@@ -7,6 +7,8 @@
 
 import { type Genome, type Xform } from './genome';
 import { VARIATION_NAMES } from './variations';
+import { bakeSymmetryXforms } from './symmetry';
+import { resolveSegmentPermutation } from './interpolate';
 
 /** `#<1-based> · name, name` — text label, no render (brainstorm decision). */
 export function xformLabel(xform: Xform, rowIndex: number): string {
@@ -18,6 +20,35 @@ export function xformLabel(xform: Xform, rowIndex: number): string {
  *  separate Genome field, already excluded from xforms[]. */
 export function alignedCount(a: Genome, b: Genome): number {
   return Math.max(a.xforms.length, b.xforms.length);
+}
+
+/** #413 — classify a stored pairing against the POST-symmetry-bake aligned count
+ *  (the count interpolate.ts:121 actually resolves against). Lets the widget show
+ *  a badge when a pairing won't apply as authored — making the #412 silent-drop
+ *  class visible at authoring time. Pure; reuses the engine's resolveSegmentPermutation
+ *  so the classification can't drift from the render path. */
+export type PairingStatus =
+  | { kind: 'identity' }
+  | { kind: 'applies' }
+  | { kind: 'positional-tail'; authoredLen: number; bakedLen: number }
+  | { kind: 'rejected'; authoredLen: number; bakedLen: number };
+
+export function classifyPairing(
+  a: Genome,
+  b: Genome,
+  perm: number[] | undefined,
+): PairingStatus {
+  if (!perm || perm.length === 0) return { kind: 'identity' };
+  const bakedLen = alignedCount(bakeSymmetryXforms(a), bakeSymmetryXforms(b));
+  const resolved = resolveSegmentPermutation(perm, bakedLen);
+  if (!resolved) return { kind: 'rejected', authoredLen: perm.length, bakedLen };
+  if (perm.length < bakedLen) return { kind: 'positional-tail', authoredLen: perm.length, bakedLen };
+  // Here perm.length === bakedLen and resolves. A full-length explicit identity
+  // ([0,1,2,…]) expresses no reordering — treat it as identity (no badge), not
+  // 'applies'. Placed AFTER the rejected/tail checks so a stale over-long
+  // identity-prefix (e.g. [0,1,2,3,4] on a shrunk flame) still reads as rejected.
+  if (perm.every((v, i) => v === i)) return { kind: 'identity' };
+  return { kind: 'applies' };
 }
 
 /** True iff `p` is a bijection over [0, n). Mirrors interpolate.ts isPermutation. */
@@ -87,6 +118,10 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
   const n = alignedCount(opts.flameA, opts.flameB);
   let order = toOrder(opts.permutation, n);
   let dragFrom = -1;
+  // #413 — classify against the RAW stored perm on mount (a stale/rejected perm is
+  // sanitized to identity by `toOrder` above, so the badge must see the original);
+  // after an edit, the freshly-authored perm (over n pre-bake rows) is the source.
+  let currentPerm = opts.permutation;
 
   const root = document.createElement('div');
   Object.assign(root.style, { marginTop: '8px', fontSize: '11px' });
@@ -95,6 +130,40 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
   title.textContent = 'xform pairing — drag flame 2 rows (or ↑↓) to choose which morphs into which';
   Object.assign(title.style, { color: 'var(--text-dim, #888)', marginBottom: '6px' });
   root.appendChild(title);
+
+  // #413 — surface a silently-dropped / partial pairing where the user authored it.
+  const badge = document.createElement('div');
+  Object.assign(badge.style, {
+    marginBottom: '6px', fontSize: '11px', borderRadius: '5px', padding: '3px 8px',
+    display: 'none', lineHeight: '16px',
+  });
+  root.appendChild(badge);
+
+  function refreshBadge(): void {
+    const status = classifyPairing(opts.flameA, opts.flameB, currentPerm);
+    if (status.kind === 'identity' || status.kind === 'applies') {
+      badge.style.display = 'none';
+      return;
+    }
+    badge.style.display = 'block';
+    if (status.kind === 'positional-tail') {
+      const tail = status.bakedLen - status.authoredLen;
+      badge.textContent = `ℹ️ ${tail} symmetry/pad xform${tail === 1 ? '' : 's'} pair positionally`;
+      Object.assign(badge.style, {
+        color: 'var(--text-muted, #aaa)', background: 'var(--bar-bg-3, #0f0f13)',
+        border: '1px solid var(--bar-border, #2a2a30)',
+      });
+    } else {
+      badge.textContent =
+        `⚠️ Saved pairing no longer fits this flame (it was set for ${status.authoredLen} ` +
+        `xforms, the flame now has ${status.bakedLen}). Drag the rows below to re-pair, ` +
+        `or click “↺ reset to positional”.`;
+      Object.assign(badge.style, {
+        color: 'var(--accent, #ff8c1a)', background: 'var(--accent-soft, rgba(255,140,26,0.12))',
+        border: '1px solid var(--accent-border, #884a1a)',
+      });
+    }
+  }
 
   const list = document.createElement('div');
   root.appendChild(list);
@@ -112,7 +181,9 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
 
   function commit(): void {
     render();
-    opts.onChange(toPermutation(order));
+    currentPerm = toPermutation(order);
+    refreshBadge();
+    opts.onChange(currentPerm);
   }
 
   function arrowButton(label: string, onClick: () => void): HTMLButtonElement {
@@ -177,6 +248,7 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
   }
 
   render();
+  refreshBadge();
   host.appendChild(root);
   return { destroy(): void { root.remove(); } };
 }
