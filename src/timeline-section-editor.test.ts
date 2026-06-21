@@ -41,8 +41,9 @@ describe('showSection — 2-column layout (#283)', () => {
     expect(colL.querySelector('input[type=number]')).toBeTruthy();
     // Right column carries the xform pairing widget (its title text is distinctive).
     expect(colR.textContent).toContain('xform pairing');
-    // Divider lives on the right column.
-    expect(colR.style.borderLeft).not.toBe('');
+    // Divider lives on the right column (longhand props — var() colour rides the
+    // token and is dropped by jsdom, so we assert the style longhand that survives).
+    expect(colR.style.borderLeftStyle).toBe('solid');
   });
 });
 

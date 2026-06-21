@@ -37,8 +37,8 @@ function numberField(value: number, onCommit: (n: number) => void): HTMLInputEle
   inp.step = '0.1';
   inp.value = String(value);
   Object.assign(inp.style, {
-    width: '64px', background: '#0c0c0e', border: '1px solid #3a3a44', color: '#ddd',
-    padding: '2px 6px', borderRadius: '3px', fontFamily: 'ui-monospace,monospace', fontSize: '12px',
+    width: '64px', background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text, #ddd)',
+    padding: '3px 7px', borderRadius: '4px', fontFamily: 'inherit', fontSize: '12px',
   });
   const commit = (): void => {
     const n = Number(inp.value);
@@ -50,11 +50,11 @@ function numberField(value: number, onCommit: (n: number) => void): HTMLInputEle
 
 function row(labelText: string, title?: string): { row: HTMLDivElement; add: (el: HTMLElement | Text) => void } {
   const r = document.createElement('div');
-  Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '8px', margin: '7px 0', fontSize: '12px', color: '#bbb' });
+  Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '8px', margin: '7px 0', fontSize: '12px', color: 'var(--text-muted, #aaa)' });
   const lab = document.createElement('label');
   lab.textContent = labelText;
   if (title) lab.title = title; // #276 — hover affordance for bare controls
-  Object.assign(lab.style, { width: '92px', color: '#888', cursor: title ? 'help' : 'default' });
+  Object.assign(lab.style, { width: '92px', color: 'var(--text-dim, #888)', cursor: title ? 'help' : 'default' });
   r.appendChild(lab);
   return { row: r, add: (el) => r.appendChild(el) };
 }
@@ -62,8 +62,9 @@ function row(labelText: string, title?: string): { row: HTMLDivElement; add: (el
 export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): SectionEditorHandle {
   const root = document.createElement('div');
   Object.assign(root.style, {
-    margin: '6px 16px 10px', padding: '12px 14px', background: '#121218',
-    border: '1px solid #2a2a2a', borderRadius: '6px', fontFamily: 'ui-monospace,monospace',
+    margin: '6px 16px 10px', padding: '12px 14px', background: 'var(--bar-bg-2, #1a1a20)',
+    border: '1px solid var(--bar-border, #2a2a30)', borderRadius: '6px',
+    fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
     display: 'none',
   });
   host.appendChild(root);
@@ -92,14 +93,20 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     const colL = document.createElement('div');
     Object.assign(colL.style, { flex: '0 0 auto', minWidth: '300px' });
     const colR = document.createElement('div');
-    Object.assign(colR.style, { flex: '1 1 auto', borderLeft: '1px solid #2a3540', paddingLeft: '22px' });
+    // Divider via longhand props: jsdom drops var() inside the `border-left`
+  // shorthand, so width/style are set separately (always parse) and only the
+  // colour rides the token (resolves in real browsers).
+  Object.assign(colR.style, {
+    flex: '1 1 auto', borderLeftWidth: '1px', borderLeftStyle: 'solid',
+    borderLeftColor: 'var(--bar-border, #2a2a30)', paddingLeft: '22px',
+  });
     split.append(colL, colR);
     root.appendChild(split);
 
     const evolveRow = row('evolve time', 'Seconds to morph from this flame into the next.');
     const evolve = timeline.clips[index]!.transitionDuration;
     evolveRow.add(numberField(evolve, (n) => opts.onEvolveChange(index, n)));
-    const unit = document.createElement('span'); unit.textContent = 's'; unit.style.color = '#888';
+    const unit = document.createElement('span'); unit.textContent = 's'; unit.style.color = 'var(--text-dim, #888)';
     evolveRow.add(unit);
     colL.appendChild(evolveRow.row);
 
@@ -122,8 +129,9 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
       pill.title = LINGER_TIP[l]; // #276 — per-pill hover info
       const on = current === l;
       Object.assign(pill.style, {
-        background: '#181820', border: `1px solid ${on ? '#9cd' : '#3a3a44'}`,
-        color: on ? '#cfe9f3' : '#cdd', borderRadius: '13px', padding: '3px 12px',
+        background: on ? 'var(--accent-soft, rgba(255,140,26,0.18))' : 'var(--bar-bg-2, #1a1a20)',
+        border: `1px solid ${on ? 'var(--accent-border, #884a1a)' : 'var(--bar-border, #2a2a30)'}`,
+        color: on ? 'var(--accent, #ff8c1a)' : 'var(--text-muted, #aaa)', borderRadius: '13px', padding: '3px 12px',
         fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit',
       });
       pill.addEventListener('click', () => opts.onLingerChange(index, l));
@@ -131,7 +139,7 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     }
     if (current === 'custom') {
       const c = document.createElement('span');
-      c.textContent = 'custom'; c.style.color = '#9cd'; c.style.fontSize = '11px';
+      c.textContent = 'custom'; c.style.color = 'var(--accent, #ff8c1a)'; c.style.fontSize = '11px';
       lingerRow.add(c);
     }
     colL.appendChild(lingerRow.row);
@@ -159,7 +167,7 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     pauseRow.add(numberField(pause, (n) => opts.onPauseChange(index, n)));
     const unit = document.createElement('span');
     unit.textContent = 's (hold before evolving)';
-    unit.style.color = '#888';
+    unit.style.color = 'var(--text-dim, #888)';
     pauseRow.add(unit);
     root.appendChild(pauseRow.row);
 
@@ -174,8 +182,8 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
       b.title = title;
       b.disabled = disabled;
       Object.assign(b.style, {
-        background: '#0c0c0e', border: '1px solid #3a3a44', color: disabled ? '#555' : '#cdd',
-        padding: '3px 12px', borderRadius: '3px', fontSize: '12px',
+        background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: disabled ? 'var(--text-dim, #888)' : 'var(--text, #ddd)',
+        padding: '3px 12px', borderRadius: '5px', fontSize: '12px',
         cursor: disabled ? 'default' : 'pointer', opacity: disabled ? '0.5' : '1', fontFamily: 'inherit',
       });
       if (!disabled) b.addEventListener('click', () => opts.onMoveNode(index, dir));
@@ -193,8 +201,8 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     swap.textContent = '🔄 swap key flame';
     swap.title = 'Replace this key flame with a different one — the slot timing stays put.';
     Object.assign(swap.style, {
-      background: '#0c0c0e', border: '1px solid #3a6b7a', color: '#bcdde9',
-      padding: '3px 10px', borderRadius: '3px', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit',
+      background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text, #ddd)',
+      padding: '3px 10px', borderRadius: '5px', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit',
     });
     swap.addEventListener('click', () => opts.onReplaceNode(index));
     actions.add(swap);
@@ -202,8 +210,8 @@ export function mountSectionEditor(host: HTMLElement, opts: SectionEditorOpts): 
     remove.type = 'button';
     remove.textContent = '🗑 remove key flame';
     Object.assign(remove.style, {
-      background: '#0c0c0e', border: '1px solid #a55', color: '#e9bcbc',
-      padding: '3px 10px', borderRadius: '3px', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit',
+      background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text-muted, #aaa)',
+      padding: '3px 10px', borderRadius: '5px', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit',
     });
     remove.addEventListener('click', () => opts.onRemoveNode(index));
     actions.add(remove);

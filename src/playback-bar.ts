@@ -48,11 +48,14 @@ export interface PlaybackBarHandle {
 export function mountPlaybackBar(host: HTMLElement, opts: PlaybackBarOpts): PlaybackBarHandle {
   const root = document.createElement('div');
   root.className = 'pyr3-playback-bar';
+  // #408 — transparent so the cohesive bottom dock (controls wrapper) provides
+  // the ground; sans font matches the action bar; the only internal divider is
+  // the token-coloured top rule.
   Object.assign(root.style, {
     display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 16px',
-    background: 'rgba(0,0,0,0.55)', color: '#eee',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px',
-    borderTop: '1px solid #2a2a2a',
+    background: 'transparent', color: 'var(--text, #ddd)',
+    fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif', fontSize: '12px',
+    borderTop: '1px solid var(--bar-border, #2a2a30)',
   });
 
   // --- control row ---------------------------------------------------------
@@ -62,10 +65,14 @@ export function mountPlaybackBar(host: HTMLElement, opts: PlaybackBarOpts): Play
   const ctlBtn = (cls: string, txt: string, title: string, fn: () => void): HTMLButtonElement => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = cls; b.textContent = txt; b.title = title;
+    // #408 — match the action bar's .pyr3-animate-bar-btn treatment.
     Object.assign(b.style, {
-      background: 'transparent', border: '1px solid #444', color: '#eee',
-      cursor: 'pointer', padding: '4px 8px', borderRadius: '3px', fontSize: '12px',
+      background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)',
+      color: 'var(--text, #ddd)', cursor: 'pointer', padding: '4px 8px',
+      borderRadius: '5px', fontSize: '12px',
     });
+    b.addEventListener('mouseenter', () => { if (!b.disabled) b.style.background = 'var(--accent-soft, rgba(255,140,26,0.18))'; });
+    b.addEventListener('mouseleave', () => { b.style.background = 'var(--bar-bg-3, #0f0f13)'; });
     b.addEventListener('click', fn);
     return b;
   };
@@ -89,15 +96,21 @@ export function mountPlaybackBar(host: HTMLElement, opts: PlaybackBarOpts): Play
     speed.appendChild(o);
   }
   Object.assign(speed.style, {
-    background: '#0c0c0e', color: '#ddd', border: '1px solid #3a3a44',
-    borderRadius: '3px', fontSize: '12px', padding: '2px 4px',
+    background: 'var(--bar-bg-3, #0f0f13)', color: 'var(--text, #ddd)',
+    border: '1px solid var(--bar-border, #2a2a30)',
+    borderRadius: '5px', fontSize: '12px', padding: '2px 4px',
   });
   speed.title = 'Playback speed (1× = real authored duration)';
   speed.addEventListener('change', () => opts.onSpeedChange?.(Number(speed.value)));
 
   const timeReadout = document.createElement('span');
   timeReadout.className = 'pyr3-playback-bar-time';
-  Object.assign(timeReadout.style, { minWidth: '120px', marginLeft: 'auto', textAlign: 'right', color: '#9cd' });
+  // #408 — keep monospace for the numeric readout (tabular numerals — stops the
+  // time jittering as digits change); only the teal colour is re-tokened.
+  Object.assign(timeReadout.style, {
+    minWidth: '120px', marginLeft: 'auto', textAlign: 'right',
+    color: 'var(--text-dim, #888)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  });
 
   ctlRow.append(jumpStart, stepBack, playBtn, stepFwd, jumpEnd, speed, timeReadout);
 
@@ -142,7 +155,12 @@ export function mountPlaybackBar(host: HTMLElement, opts: PlaybackBarOpts): Play
     playhead.style.left = `${scale.timeToX(curT)}px`;
   }
 
-  function updateButton(): void { playBtn.textContent = playing ? '⏸' : '▶'; }
+  function updateButton(): void {
+    playBtn.textContent = playing ? '⏸' : '▶';
+    // #408 — the playing state takes the accent so the transport has hierarchy.
+    playBtn.style.borderColor = playing ? 'var(--accent, #ff8c1a)' : 'var(--bar-border, #2a2a30)';
+    playBtn.style.color = playing ? 'var(--accent, #ff8c1a)' : 'var(--text, #ddd)';
+  }
 
   const detachScrub = attachScrub({
     strip: rulerRow, playhead, getScale: () => scale,

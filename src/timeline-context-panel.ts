@@ -27,10 +27,11 @@ export function mountContextPanel(overlayHost: HTMLElement, opts: ContextPanelOp
     // the overlay's overflow:hidden and clips the ✕ — the body scrolls instead.
     minHeight: '96px', maxHeight: '100%',
     display: 'flex', flexDirection: 'column',
-    background: 'rgba(18,20,24,0.95)', borderTop: '1px solid #3a5b66',
-    boxShadow: '0 -10px 30px rgba(0,0,0,0.55)', transform: 'translateY(100%)',
+    // #408 — themed (was teal-bordered CLI monospace).
+    background: 'var(--bar-bg-2, #1a1a20)', borderTop: '1px solid var(--accent-border, #884a1a)',
+    boxShadow: '0 -12px 34px rgba(0,0,0,0.6)', transform: 'translateY(100%)',
     transition: 'transform 0.2s ease', pointerEvents: 'none',
-    fontFamily: 'ui-monospace,monospace',
+    fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
   });
 
   // Fixed header bar keeps the ✕ reachable regardless of body scroll.
@@ -44,7 +45,7 @@ export function mountContextPanel(overlayHost: HTMLElement, opts: ContextPanelOp
   closeBtn.textContent = '✕';
   closeBtn.title = 'Close';
   Object.assign(closeBtn.style, {
-    background: 'transparent', border: '1px solid #444', color: '#999',
+    background: 'transparent', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text-dim, #888)',
     borderRadius: '4px', cursor: 'pointer', padding: '1px 9px',
     fontFamily: 'inherit', pointerEvents: 'auto',
   });

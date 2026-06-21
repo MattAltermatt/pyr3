@@ -194,6 +194,20 @@ const ANIMATE_CSS = `
   padding: 1px 5px;
   border-radius: 3px;
 }
+.pyr3-animate-sample-cta {
+  pointer-events: auto;
+  margin-top: 8px;
+  background: var(--accent, #ff8c1a);
+  color: #1a1a1a;
+  border: none;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pyr3-animate-sample-cta:hover { filter: brightness(1.08); }
 `;
 
 function injectAnimateStylesOnce(): void {
@@ -256,7 +270,16 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   emptyCode.textContent = '.flam3';
   const hintAfter = document.createTextNode(' here to play it back.');
   emptyHint.append(hintBefore, hintAdd, hintMid, emptyCode, hintAfter);
-  empty.append(emptyHeader, emptyLine, emptyHint);
+  // #408 (option C) — a one-click sample-load CTA fills the empty-state void so a
+  // new visitor can see the feature immediately. The overlay is pointer-events:none;
+  // the CTA re-enables clicks on itself (.pyr3-animate-sample-cta).
+  const sampleBtn = document.createElement('button');
+  sampleBtn.type = 'button';
+  sampleBtn.className = 'pyr3-animate-sample-cta';
+  sampleBtn.textContent = '▶ Load a sample animation';
+  sampleBtn.title = 'Load a bundled multi-keyframe animation to see one flame morph into the next';
+  sampleBtn.addEventListener('click', () => void loadSampleAnimation());
+  empty.append(emptyHeader, emptyLine, sampleBtn, emptyHint);
   canvasZone.appendChild(empty);
 
   // #408 — the action bar now sits at the TOP (directly under the nav, matching
@@ -270,11 +293,13 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // Bottom dock: the playback bar + section track (mounted into scrubHost when
   // an animation loads).
   const controls = document.createElement('div');
+  // #408 — one cohesive dock ground (was rgba black); the transparent transport
+  // bar + section track sit on this single surface so they read as one unit.
   Object.assign(controls.style, {
     flex: '0 0 auto',
     display: 'flex',
     flexDirection: 'column',
-    background: 'rgba(0,0,0,0.4)',
+    background: 'var(--bar-bg-1, #15151a)',
     borderTop: '1px solid var(--bar-border, #2a2a30)',
   });
   root.appendChild(controls);
@@ -402,7 +427,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // Drop zone — the whole canvasZone accepts file drops.
   canvasZone.addEventListener('dragover', (e) => {
     e.preventDefault();
-    canvasZone.style.outline = '2px dashed #9cd';
+    canvasZone.style.outline = '2px dashed var(--accent, #ff8c1a)';
     canvasZone.style.outlineOffset = '-8px';
   });
   canvasZone.addEventListener('dragleave', () => {
@@ -1007,6 +1032,25 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus(`failed to load: ${msg}`, 'error');
+    }
+  }
+
+  // #408 (option C) — one-click load of the bundled sample. It's a built pyr3
+  // timeline (.pyr3.timeline.json) showcasing same-flame → same-flame clips with
+  // DIFFERENT per-clip xform pairings (the #412 feature): the .json name routes
+  // handleFile to timeline mode (section track + inspector). Swap the showcase by
+  // replacing the file at this path — no code change (ship the seam, evolve it).
+  const SAMPLE_ANIMATION_URL = '/fixtures/sample-animation.pyr3.timeline.json';
+  async function loadSampleAnimation(): Promise<void> {
+    setStatus('loading sample animation …');
+    try {
+      const res = await fetch(SAMPLE_ANIMATION_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      await handleFile(new File([text], 'sample-animation.pyr3.timeline.json'));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(`couldn't load sample: ${msg}`, 'error');
     }
   }
 

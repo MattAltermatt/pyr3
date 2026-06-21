@@ -132,7 +132,8 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
   const root = document.createElement('div');
   Object.assign(root.style, {
     position: 'relative', height: `${TRACK_HEIGHT}px`,
-    background: '#0c0c0e', border: '1px solid #2a2a2a', borderRadius: '6px',
+    // #408 — transparent so it sits on the cohesive dock ground (was opaque box).
+    background: 'transparent', border: '1px solid var(--bar-border, #2a2a30)', borderRadius: '6px',
     overflowX: 'auto', overflowY: 'hidden', userSelect: 'none', whiteSpace: 'nowrap',
   });
   wrapper.appendChild(root);
@@ -159,8 +160,8 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
     const b = document.createElement('button');
     b.type = 'button'; b.textContent = txt; b.title = title;
     Object.assign(b.style, {
-      background: '#181820', border: '1px solid #3a3a44', color: '#cdd',
-      borderRadius: '3px', fontSize: '11px', cursor: 'pointer', padding: '1px 6px', fontFamily: 'inherit',
+      background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text, #ddd)',
+      borderRadius: '5px', fontSize: '11px', cursor: 'pointer', padding: '1px 6px', fontFamily: 'inherit',
     });
     b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
     return b;
@@ -216,8 +217,8 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
         const selN = selection?.kind === 'node' && selection.index === s.index;
         Object.assign(node.style, {
           position: 'absolute', top: '12px', left: `${s.x}px`, width: `${s.w}px`,
-          height: `${TRACK_HEIGHT - 24}px`, borderRadius: '7px', background: '#191922',
-          boxShadow: selN ? '0 0 0 2px #ff8c1a' : '0 0 0 2px #000, 0 0 0 3px #333',
+          height: `${TRACK_HEIGHT - 24}px`, borderRadius: '7px', background: 'var(--bar-bg-2, #1a1a20)',
+          boxShadow: selN ? '0 0 0 2px var(--accent, #ff8c1a)' : '0 0 0 2px #000, 0 0 0 3px var(--bar-border, #2a2a30)',
           overflow: 'hidden', cursor: 'pointer', zIndex: '2',
         });
         node.title = `key flame ${s.index + 1}`;
@@ -239,7 +240,7 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
             position: 'absolute', left: '3px', bottom: '3px',
             padding: '1px 5px', borderRadius: '8px', fontSize: '9px',
             fontFamily: 'ui-monospace,monospace', pointerEvents: 'none', zIndex: '3',
-            background: 'rgba(0,0,0,.72)', color: '#cfe9f3',
+            background: 'rgba(0,0,0,.72)', color: 'var(--text-muted, #aaa)',
           });
           node.appendChild(badge);
         }
@@ -253,13 +254,14 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
           position: 'absolute', top: `${TRACK_HEIGHT / 2 - 13}px`, left: `${s.x}px`, width: `${s.w}px`,
           height: '26px', borderRadius: '13px', cursor: 'pointer', zIndex: '1',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'repeating-linear-gradient(90deg,#3a4a55 0 8px,#2a3640 8px 16px)',
-          boxShadow: selE ? '0 0 0 2px #ff8c1a, inset 0 0 0 1px #9cd' : 'inset 0 0 0 1px #44545f',
+          // #408 — neutral token stripe (was teal); selection rides the accent.
+          background: 'repeating-linear-gradient(90deg,var(--bar-border, #2a2a30) 0 8px,var(--bar-bg-2, #1a1a20) 8px 16px)',
+          boxShadow: selE ? '0 0 0 2px var(--accent, #ff8c1a), inset 0 0 0 1px var(--accent-border, #884a1a)' : 'inset 0 0 0 1px var(--bar-border, #2a2a30)',
         });
         const evolve = timeline.clips[s.index]!.transitionDuration;
         const lbl = document.createElement('span');
         lbl.textContent = `${evolve.toFixed(1)}s`;
-        Object.assign(lbl.style, { fontSize: '10px', color: '#cfe9f3', fontFamily: 'ui-monospace,monospace', pointerEvents: 'none' });
+        Object.assign(lbl.style, { fontSize: '10px', color: 'var(--text-muted, #aaa)', fontFamily: 'ui-monospace,monospace', pointerEvents: 'none' });
         edge.appendChild(lbl);
         edge.addEventListener('pointerdown', (e) => e.stopPropagation()); // #276 — click=select, not seek
         edge.addEventListener('click', () => opts.onSelectSection(s.index));
@@ -272,8 +274,8 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
         ins.title = 'Insert a key flame here';
         Object.assign(ins.style, {
           position: 'absolute', top: '0px', left: `${s.x + s.w / 2 - 9}px`,
-          width: '18px', height: '18px', borderRadius: '9px', border: '1px dashed #3a6',
-          background: '#0c0c0e', color: '#bfe9cf', display: 'flex', alignItems: 'center',
+          width: '18px', height: '18px', borderRadius: '9px', border: '1px dashed var(--accent-border, #884a1a)',
+          background: 'var(--bar-bg-3, #0f0f13)', color: 'var(--accent, #ff8c1a)', display: 'flex', alignItems: 'center',
           justifyContent: 'center', fontSize: '11px', lineHeight: '1', cursor: 'pointer', zIndex: '3',
         });
         ins.addEventListener('pointerdown', (e) => e.stopPropagation()); // click=insert, not seek
@@ -285,9 +287,9 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
     const add = document.createElement('div');
     Object.assign(add.style, {
       position: 'absolute', top: '12px', left: `${contentW + 14}px`, width: '60px',
-      height: `${TRACK_HEIGHT - 24}px`, borderRadius: '7px', border: '1px dashed #3a6',
-      color: '#bfe9cf', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: '11px', fontFamily: 'ui-monospace,monospace', cursor: 'pointer', textAlign: 'center', zIndex: '2',
+      height: `${TRACK_HEIGHT - 24}px`, borderRadius: '7px', border: '1px dashed var(--accent-border, #884a1a)',
+      color: 'var(--accent, #ff8c1a)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: '11px', fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif', cursor: 'pointer', textAlign: 'center', zIndex: '2',
     });
     add.textContent = '＋ add';
     add.title = 'Add a key flame';

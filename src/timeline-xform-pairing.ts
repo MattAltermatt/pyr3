@@ -93,7 +93,7 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
 
   const title = document.createElement('div');
   title.textContent = 'xform pairing — drag flame 2 rows (or ↑↓) to choose which morphs into which';
-  Object.assign(title.style, { color: '#888', marginBottom: '6px' });
+  Object.assign(title.style, { color: 'var(--text-dim, #888)', marginBottom: '6px' });
   root.appendChild(title);
 
   const list = document.createElement('div');
@@ -103,8 +103,8 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
   resetBtn.type = 'button';
   resetBtn.textContent = '↺ reset to positional';
   Object.assign(resetBtn.style, {
-    marginTop: '8px', background: '#0c0c0e', border: '1px solid #3a3a44',
-    color: '#cdd', borderRadius: '3px', padding: '3px 10px', fontSize: '11px',
+    marginTop: '8px', background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)',
+    color: 'var(--text, #ddd)', borderRadius: '5px', padding: '3px 10px', fontSize: '11px',
     cursor: 'pointer', fontFamily: 'inherit',
   });
   resetBtn.addEventListener('click', () => { order = toOrder(undefined, n); commit(); });
@@ -120,8 +120,8 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
     b.type = 'button';
     b.textContent = label;
     Object.assign(b.style, {
-      background: 'transparent', border: '1px solid #3a3a44', color: '#cdd',
-      borderRadius: '3px', padding: '0 6px', fontSize: '11px', cursor: 'pointer',
+      background: 'transparent', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text, #ddd)',
+      borderRadius: '5px', padding: '0 6px', fontSize: '11px', cursor: 'pointer',
       fontFamily: 'inherit', lineHeight: '18px',
     });
     b.addEventListener('click', onClick);
@@ -138,11 +138,11 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
       const a = aRowLabel(opts.flameA, row);
       const aSpan = document.createElement('span');
       aSpan.textContent = a.text;
-      Object.assign(aSpan.style, { width: '150px', color: a.padded ? '#666' : '#bbb' });
+      Object.assign(aSpan.style, { width: '150px', color: a.padded ? 'var(--text-dim, #888)' : 'var(--text-muted, #aaa)' });
       r.appendChild(aSpan);
 
       const arrow = document.createElement('span');
-      arrow.textContent = '↔'; arrow.style.color = '#666';
+      arrow.textContent = '↔'; arrow.style.color = 'var(--text-dim, #888)';
       r.appendChild(arrow);
 
       const b = bRowLabel(opts.flameB, bIndex);
@@ -150,15 +150,15 @@ export function mountXformPairing(host: HTMLElement, opts: XformPairingOpts): Xf
       bRow.draggable = true;
       Object.assign(bRow.style, {
         display: 'flex', alignItems: 'center', gap: '6px', flex: '1',
-        border: '1px solid #2a2a2a', borderRadius: '3px', padding: '2px 6px',
-        background: '#0c0c0e', cursor: 'grab',
+        border: '1px solid var(--bar-border, #2a2a30)', borderRadius: '5px', padding: '2px 6px',
+        background: 'var(--bar-bg-3, #0f0f13)', cursor: 'grab',
       });
       const handle = document.createElement('span');
-      handle.textContent = '⠿'; handle.style.color = '#555';
+      handle.textContent = '⠿'; handle.style.color = 'var(--text-dim, #888)';
       bRow.appendChild(handle);
       const bSpan = document.createElement('span');
       bSpan.textContent = b.text;
-      Object.assign(bSpan.style, { flex: '1', color: b.padded ? '#666' : '#cdd' });
+      Object.assign(bSpan.style, { flex: '1', color: b.padded ? 'var(--text-dim, #888)' : 'var(--text, #ddd)' });
       bRow.appendChild(bSpan);
       bRow.appendChild(arrowButton('↑', () => { order = nudge(order, row, -1); commit(); }));
       bRow.appendChild(arrowButton('↓', () => { order = nudge(order, row, 1); commit(); }));

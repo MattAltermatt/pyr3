@@ -15,15 +15,19 @@ export function openAddAnimationDialog(host: HTMLElement, keyframeCount: number)
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     });
     const box = document.createElement('div');
+    // #408 — themed to the app's design language (was ad-hoc CLI monospace).
     Object.assign(box.style, {
-      background: '#16161c', border: '1px solid #333', borderRadius: '8px', padding: '20px 22px',
-      width: '360px', fontFamily: 'ui-monospace,monospace', color: '#ddd', fontSize: '13px',
+      background: 'var(--bar-bg-2, #1a1a20)', border: '1px solid var(--bar-border, #2a2a30)',
+      borderRadius: '10px', padding: '20px 22px', width: '360px',
+      fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
+      color: 'var(--text, #ddd)', fontSize: '13px',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
     });
     overlay.appendChild(box);
 
     const title = document.createElement('div');
     title.textContent = `This file has ${keyframeCount} keyframes`;
-    Object.assign(title.style, { fontSize: '14px', color: '#cfe9f3', marginBottom: '14px' });
+    Object.assign(title.style, { fontSize: '15px', fontWeight: '600', color: 'var(--text, #ddd)', marginBottom: '14px' });
     box.appendChild(title);
 
     const name = 'pyr3-add-anim';
@@ -34,6 +38,7 @@ export function openAddAnimationDialog(host: HTMLElement, keyframeCount: number)
     Object.assign(allRow.style, { display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0', cursor: 'pointer' });
     const allRadio = document.createElement('input');
     allRadio.type = 'radio'; allRadio.name = name; allRadio.checked = true;
+    allRadio.style.accentColor = 'var(--accent, #ff8c1a)';
     const allText = document.createElement('span');
     allText.textContent = 'Import all keyframes (with their timing)';
     allRow.append(allRadio, allText);
@@ -44,10 +49,11 @@ export function openAddAnimationDialog(host: HTMLElement, keyframeCount: number)
     Object.assign(oneRow.style, { display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0', cursor: 'pointer' });
     const oneRadio = document.createElement('input');
     oneRadio.type = 'radio'; oneRadio.name = name;
+    oneRadio.style.accentColor = 'var(--accent, #ff8c1a)';
     const oneText = document.createElement('span');
     oneText.textContent = 'Import one keyframe:';
     const sel = document.createElement('select');
-    Object.assign(sel.style, { background: '#0c0c0e', border: '1px solid #3a3a44', color: '#ddd', borderRadius: '3px', fontFamily: 'inherit', fontSize: '12px' });
+    Object.assign(sel.style, { background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text, #ddd)', borderRadius: '5px', fontFamily: 'inherit', fontSize: '12px', padding: '3px 8px' });
     for (let i = 0; i < keyframeCount; i++) {
       const o = document.createElement('option');
       o.value = String(i); o.textContent = `keyframe ${i + 1}`;
@@ -65,9 +71,10 @@ export function openAddAnimationDialog(host: HTMLElement, keyframeCount: number)
     const ok = document.createElement('button');
     ok.type = 'button'; ok.textContent = 'Add';
     for (const b of [cancel, ok]) {
-      Object.assign(b.style, { background: 'transparent', border: '1px solid #444', color: '#eee', padding: '4px 12px', borderRadius: '3px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '12px' });
+      // #408 — Cancel = secondary bar-btn; Add = primary accent (set below).
+      Object.assign(b.style, { background: 'var(--bar-bg-3, #0f0f13)', border: '1px solid var(--bar-border, #2a2a30)', color: 'var(--text, #ddd)', padding: '4px 14px', borderRadius: '5px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '12px' });
     }
-    ok.style.borderColor = '#5a7'; ok.style.color = '#bfe9cf';
+    Object.assign(ok.style, { background: 'var(--accent, #ff8c1a)', borderColor: 'var(--accent, #ff8c1a)', color: '#1a1a1a', fontWeight: '600' });
     btnRow.append(cancel, ok);
     box.appendChild(btnRow);
 
