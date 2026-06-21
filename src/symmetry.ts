@@ -55,6 +55,12 @@ export function expandGenomeForGPU(genome: Genome): Genome {
  *  with the morph instead of being copied from the first keyframe only. Baking
  *  here keeps the GPU packer's `expandGenomeForGPU` a no-op on already-baked
  *  genomes (the field is cleared), so symmetry is never double-applied. */
+// INVARIANT: changes xform count — reconcile with index/perm consumers.
+// (#412/#415) This APPENDS symmetry xforms, growing the count. Any index- or
+// permutation-based consumer downstream — `segmentPermutation` /
+// `resolveSegmentPermutation` in interpolate.ts, the /animate pairing widget's
+// `classifyPairing` — must validate against the POST-bake count, not the
+// pre-bake authored count. The #412 bug was exactly this mismatch.
 export function bakeSymmetryXforms(genome: Genome): Genome {
   if (!genome.symmetry) return genome;
   const extras = generateSymmetryXforms(genome.symmetry);

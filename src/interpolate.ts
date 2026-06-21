@@ -296,7 +296,10 @@ function endpointBlend(keyframes: Genome[], i1: number, i2: number, time: number
 // with identity xforms (linear weight=1, identity affine, no variations
 // beyond linear(1)) so both genomes have the same xform count. Special-case
 // 180° rotated identity for 7 listed variations is deferred.
-
+//
+// INVARIANT: changes xform count — reconcile with index/perm consumers.
+// (#412/#415) Padding grows the aligned count; the segmentPermutation applied
+// just below resolves against THIS post-align length, never the authored one.
 function alignXformCounts(
   k0: Genome,
   k1: Genome,
@@ -1078,6 +1081,9 @@ function interpolateCatmullRom(
  *  (and to finalxform presence if any has one), reusing the spherical-family
  *  flipped-identity hint (#213 part 3); the hint is the first keyframe whose
  *  xform[j] carries a listed variation. */
+// INVARIANT: changes xform count — reconcile with index/perm consumers.
+// (#412/#415) Pads every keyframe to the max count; the N-keyframe (Catmull-Rom)
+// permutation path must resolve against this post-align length.
 function alignXformCountsN(kfs: Genome[], interpolationType: InterpolationType): Genome[] {
   const n = Math.max(...kfs.map((k) => k.xforms.length));
   const anyFinal = kfs.some((k) => k.finalxform);
