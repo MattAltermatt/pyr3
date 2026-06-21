@@ -12,11 +12,34 @@ import {
   FEATURE_INDEX_HEADER_BYTES,
   FEATURE_INDEX_MAGIC,
   FEATURE_INDEX_RECORD_BYTES,
-  FEATURE_INDEX_SCHEMA_V1,
+  FEATURE_INDEX_SCHEMA_CURRENT,
   quantizeQ8,
   type FeatureRecord,
   VARIATION_BITSET_BYTES,
 } from './feature-index';
+import { V } from './variations';
+
+// ── Catalog-coverage tripwire (#393-D) ──────────────────────────────────
+//
+// The variation bitset must address every catalog index. When it didn't
+// (16-byte / 128-bit cap vs a V0..V322 catalog) `bitsetSet` threw mid-bake
+// — a latent crash hours into a 3-4h feature bake. This test turns any
+// future overflow into a loud, fast unit failure: when the catalog grows
+// past the bitset capacity, bump VARIATION_BITSET_BYTES + schema here, not
+// in a crash report.
+describe('variation bitset covers the whole catalog (#393-D)', () => {
+  const maxCatalogIndex = Math.max(...Object.values(V));
+
+  it('addresses the highest catalog variation index', () => {
+    expect(maxCatalogIndex).toBeLessThan(VARIATION_BITSET_BYTES * 8);
+  });
+
+  it('bitsetSet accepts the highest catalog index without throwing', () => {
+    const buf = new Uint8Array(VARIATION_BITSET_BYTES);
+    expect(() => bitsetSet(buf, maxCatalogIndex)).not.toThrow();
+    expect(bitsetGet(buf, maxCatalogIndex)).toBe(true);
+  });
+});
 
 // ── Bitset helpers ──────────────────────────────────────────────────────
 
@@ -29,7 +52,9 @@ describe('bitsetSet / bitsetGet / bitsetUnpack', () => {
     [63, 7, 0x80],  // last bit of byte 7
     [64, 8, 0x01],  // first bit of byte 8
     [98, 12, 0x04], // index 98 = byte 12, bit (98 % 8 = 2), 0x04
-    [127, 15, 0x80], // last addressable bit
+    [127, 15, 0x80], // last bit of the old (v1) 16-byte bitset
+    [322, 40, 0x04], // highest catalog index (V322) = byte 40, bit 2
+    [511, 63, 0x80], // last addressable bit of the v2 64-byte bitset
   ])('set bit %i lands in byte %i with mask 0x%s', (idx, byteIndex, mask) => {
     const buf = new Uint8Array(VARIATION_BITSET_BYTES);
     bitsetSet(buf, idx);
@@ -44,18 +69,18 @@ describe('bitsetSet / bitsetGet / bitsetUnpack', () => {
 
   it('rejects indices past the bitset capacity', () => {
     const buf = new Uint8Array(VARIATION_BITSET_BYTES);
-    expect(() => bitsetSet(buf, 128)).toThrow(/out of bitset range/);
+    expect(() => bitsetSet(buf, 512)).toThrow(/out of bitset range/);
   });
 
   it('bitsetGet returns false for out-of-range indices (graceful, not throwing)', () => {
     const buf = new Uint8Array(VARIATION_BITSET_BYTES);
     expect(bitsetGet(buf, -1)).toBe(false);
-    expect(bitsetGet(buf, 128)).toBe(false);
+    expect(bitsetGet(buf, 512)).toBe(false);
   });
 
   it('bitsetUnpack returns sorted ascending indices', () => {
     const buf = new Uint8Array(VARIATION_BITSET_BYTES);
-    const toSet = [0, 7, 8, 63, 64, 98, 127];
+    const toSet = [0, 7, 8, 63, 64, 98, 127, 322, 511];
     for (const i of toSet) bitsetSet(buf, i);
     expect(bitsetUnpack(buf)).toEqual(toSet);
   });
@@ -113,7 +138,7 @@ describe('quantizeQ8 / dequantizeQ8', () => {
 describe('encodeHeader / decodeHeader', () => {
   it('round-trips a typical header', () => {
     const header = {
-      schemaVersion: FEATURE_INDEX_SCHEMA_V1,
+      schemaVersion: FEATURE_INDEX_SCHEMA_CURRENT,
       corpusTag: 'corpus-chunks-genome-2026-05-29',
       recordCount: 52365,
     };

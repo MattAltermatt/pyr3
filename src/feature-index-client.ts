@@ -13,7 +13,7 @@ import {
   decodeRecord,
   FEATURE_INDEX_HEADER_BYTES,
   FEATURE_INDEX_RECORD_BYTES,
-  FEATURE_INDEX_SCHEMA_V1,
+  FEATURE_INDEX_SCHEMA_CURRENT,
   REC_OFFSET_GEN,
   REC_OFFSET_ID,
   type FeatureRecord,
@@ -156,11 +156,11 @@ async function buildIndex(fetchImpl: typeof fetch): Promise<BuiltIndex> {
     return terminalEmpty();
   }
 
-  if (header.schemaVersion !== FEATURE_INDEX_SCHEMA_V1) {
+  if (header.schemaVersion !== FEATURE_INDEX_SCHEMA_CURRENT) {
     if (!warnedSchema) {
       warnedSchema = true;
       console.warn(
-        `pyr3: feature index schema v${header.schemaVersion} not supported (expected v${FEATURE_INDEX_SCHEMA_V1}); filter chips disabled`,
+        `pyr3: feature index schema v${header.schemaVersion} not supported (expected v${FEATURE_INDEX_SCHEMA_CURRENT}); filter chips disabled`,
       );
     }
     return terminalEmpty();

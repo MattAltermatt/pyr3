@@ -45,7 +45,7 @@ import {
   encodeHeader,
   encodeRecord,
   FEATURE_INDEX_RECORD_BYTES,
-  FEATURE_INDEX_SCHEMA_V1,
+  FEATURE_INDEX_SCHEMA_CURRENT,
   type FeatureRecord,
   type SheepRef,
 } from '../src/feature-index';
@@ -445,7 +445,7 @@ async function finalize(args: Args, partPath: string): Promise<void> {
   const sorted = sortRecordsCanonical(partBytes, recCount);
 
   const header = encodeHeader({
-    schemaVersion: FEATURE_INDEX_SCHEMA_V1,
+    schemaVersion: FEATURE_INDEX_SCHEMA_CURRENT,
     corpusTag: args.tag,
     recordCount: recCount,
   });

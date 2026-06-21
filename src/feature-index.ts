@@ -14,12 +14,17 @@
 //     corpus_tag      32   UTF-8, NUL-padded
 //     record_count     4   u32 little-endian
 //
-//   [ records — record_count × 30 bytes each, sorted (gen ↑, id ↑) ]
+//   [ records — record_count × 78 bytes each, sorted (gen ↑, id ↑) ]
 //     gen              2   u16 little-endian
 //     id               4   u32 little-endian
-//     variation_bitset 16  bit N = 1 iff variation index N appears in any
-//                          xform. Indices 0-98 currently used (91 variations),
-//                          headroom to bit 127.
+//     variation_bitset 64  bit N = 1 iff variation index N appears in any
+//                          xform. Catalog runs V0..V322 (323 variations);
+//                          512 bits give headroom to bit 511. (Was 16 bytes /
+//                          128 bits in schema v1 — too small for V128+, which
+//                          made bitsetSet throw mid-bake; #393-D. A test in
+//                          feature-index.test.ts trips loudly if the catalog
+//                          ever outgrows this cap — grow it + bump schema
+//                          here, don't wait for the crash.)
 //     xform_count      1   u8, 1-30 expected
 //     coverage_q8      1   u8 — 0..1 quantized to 0..255
 //     mean_lum_q8      1   u8
@@ -34,23 +39,34 @@
 // require re-baking the 3-4 hour Draft-render sweep.
 
 export const FEATURE_INDEX_MAGIC = 'pyf3';
+/** Schema v1: 30-byte records, 16-byte (128-bit) variation bitset. Frozen
+ *  historical value — v1 files predate the catalog outgrowing 128 indices. */
 export const FEATURE_INDEX_SCHEMA_V1 = 1;
+/** Schema v2 (#393-D): 78-byte records, 64-byte (512-bit) variation bitset.
+ *  The record layout changed, so the version bumps — v1 files are rejected by
+ *  the client and degrade to "no index" until a re-bake ships. */
+export const FEATURE_INDEX_SCHEMA_V2 = 2;
+/** The version this build encodes + the only version the client accepts. */
+export const FEATURE_INDEX_SCHEMA_CURRENT = FEATURE_INDEX_SCHEMA_V2;
 
 export const FEATURE_INDEX_HEADER_BYTES = 41;
-export const FEATURE_INDEX_RECORD_BYTES = 30;
-export const VARIATION_BITSET_BYTES = 16;
+export const VARIATION_BITSET_BYTES = 64;
 export const CORPUS_TAG_MAX_BYTES = 32;
 
-// Offsets inside one 30-byte record. Exported so the client can iterate via
-// a single zero-alloc byte view without re-decoding each field.
+// Offsets inside one record. Derived from the field widths so growing the
+// bitset (or adding a field) shifts everything downstream automatically —
+// no hand-recomputed literals to drift. Exported so the client can iterate
+// via a single zero-alloc byte view without re-decoding each field.
 export const REC_OFFSET_GEN = 0;
-export const REC_OFFSET_ID = 2;
-export const REC_OFFSET_VARS = 6;
-export const REC_OFFSET_XFORMS = 22;
-export const REC_OFFSET_COVERAGE = 23;
-export const REC_OFFSET_MEAN_LUM = 24;
-export const REC_OFFSET_ENTROPY = 25;
-export const REC_OFFSET_COLOR_VAR = 26;
+export const REC_OFFSET_ID = REC_OFFSET_GEN + 2;
+export const REC_OFFSET_VARS = REC_OFFSET_ID + 4;
+export const REC_OFFSET_XFORMS = REC_OFFSET_VARS + VARIATION_BITSET_BYTES;
+export const REC_OFFSET_COVERAGE = REC_OFFSET_XFORMS + 1;
+export const REC_OFFSET_MEAN_LUM = REC_OFFSET_COVERAGE + 1;
+export const REC_OFFSET_ENTROPY = REC_OFFSET_MEAN_LUM + 1;
+export const REC_OFFSET_COLOR_VAR = REC_OFFSET_ENTROPY + 1;
+// 1 stat byte + 3 reserved bytes follow the last stat field.
+export const FEATURE_INDEX_RECORD_BYTES = REC_OFFSET_COLOR_VAR + 1 + 3;
 
 /** A sheep's coordinates in canonical corpus order. */
 export interface SheepRef {

@@ -8,6 +8,7 @@ import {
   encodeHeader,
   encodeRecord,
   FEATURE_INDEX_RECORD_BYTES,
+  FEATURE_INDEX_SCHEMA_CURRENT,
   FEATURE_INDEX_SCHEMA_V1,
   type FeatureRecord,
 } from './feature-index';
@@ -17,7 +18,7 @@ import {
 // caller; the format requires (gen ↑, id ↑).
 function buildIndexResponse(
   records: FeatureRecord[],
-  schemaVersion = FEATURE_INDEX_SCHEMA_V1,
+  schemaVersion = FEATURE_INDEX_SCHEMA_CURRENT,
   corpusTag = 'test-corpus',
 ): Response {
   const header = encodeHeader({ schemaVersion, corpusTag, recordCount: records.length });
@@ -86,7 +87,7 @@ describe('loadFeatureIndex', () => {
   it('happy path: header fields + has/get round-trip + filter', async () => {
     const f = vi.fn(async () => buildIndexResponse(sample));
     const idx = await loadFeatureIndex(f as unknown as typeof fetch);
-    expect(idx.schemaVersion).toBe(FEATURE_INDEX_SCHEMA_V1);
+    expect(idx.schemaVersion).toBe(FEATURE_INDEX_SCHEMA_CURRENT);
     expect(idx.corpusTag).toBe('test-corpus');
     expect(idx.recordCount).toBe(sample.length);
 
@@ -181,12 +182,24 @@ describe('loadFeatureIndex', () => {
     warn.mockRestore();
   });
 
+  it('rejects a legacy v1 index → empty sentinel (#393-D schema bump)', async () => {
+    // v1 used 30-byte records / a 128-bit bitset; v2 (current) grew the
+    // record layout, so the bump must reject the old deployed index rather
+    // than mis-stride it. Filter chips degrade off until a v2 re-bake ships.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f = vi.fn(async () => buildIndexResponse(sample, FEATURE_INDEX_SCHEMA_V1));
+    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    expect(idx.schemaVersion).toBe(0);
+    expect(idx.has(245, 100)).toBe(false);
+    warn.mockRestore();
+  });
+
   it('truncated body (header record_count exceeds the bytes present) → empty sentinel (#256)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // Valid header claiming sample.length records, but only ONE record's
     // worth of body bytes follow — a partial deploy / hand-edited file.
     const header = encodeHeader({
-      schemaVersion: FEATURE_INDEX_SCHEMA_V1,
+      schemaVersion: FEATURE_INDEX_SCHEMA_CURRENT,
       corpusTag: 'test-corpus',
       recordCount: sample.length,
     });
@@ -223,7 +236,7 @@ describe('loadFeatureIndex', () => {
     // Second call must NOT return the same dead sentinel — it should retry
     // because the first failure was transient.
     const b = await loadFeatureIndex(f as unknown as typeof fetch);
-    expect(b.schemaVersion).toBe(FEATURE_INDEX_SCHEMA_V1);
+    expect(b.schemaVersion).toBe(FEATURE_INDEX_SCHEMA_CURRENT);
     expect(b.recordCount).toBe(sample.length);
     expect(f).toHaveBeenCalledTimes(2);
     warn.mockRestore();
