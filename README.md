@@ -35,9 +35,9 @@ GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through th
   `.pyre-palette.json` files.
 - 🎬 **[Animate a flame](https://pyr3.app/animate)** — keyframe interpolation, per-xform
   motion, temporal-sampling motion blur, and a playback scrubber; export the sequence to frames.
-- 📺 **[Run as a screensaver](https://pyr3.app/screensaver)** — build-up mode (watch one
-  flame paint over a minute) or slideshow mode (prefetch + crossfade through the corpus).
-  Press **R** to record any session to `.webm`.
+- 📺 **[Run as a screensaver](https://pyr3.app/screensaver)** — a two-mode player:
+  **slideshow** (an interestingness-filtered crossfade through the corpus) or **animation**
+  (load a timeline and slowly morph through it, frame by frame).
 
 > Needs a WebGPU-capable browser — Chrome/Edge 113+, Safari 18+ (macOS Sequoia), or Firefox
 > Nightly. If yours can't, the viewer says so and points you to a fix.

@@ -61,7 +61,8 @@ const SEAM_EXEMPT = new Set<string>([
   'variation-picker.ts',  // DOM-mounting variation picker (#79)
   'screensaver-mount.ts', // /screensaver page body — DOM-mounting (#109)
   'screensaver-ui.ts',    // /screensaver landing card — DOM-mounting (#109)
-  'screensaver-record.ts', // MediaRecorder wrapper — URL.createObjectURL + anchor download (#111)
+  'screensaver-controls.ts', // /screensaver in-playback control bar — DOM-mounting (#355)
+  'screensaver-settings.ts', // /screensaver settings widgets — DOM-mounting (#355)
   'webgpu-check.ts',      // probes navigator.gpu — checking is its job
   'brotli.ts',            // platform-aware decoder probe (native vs wasm)
   'device.ts',            // viewer-side device acquisition uses navigator.gpu

@@ -7,9 +7,9 @@ import {
   parseSecondsInput,
   parseNumericInput,
   DEFAULTS,
-  CLAMPS,
   PREFS_KEY,
   PREFS_VERSION,
+  type ScreensaverPrefs,
 } from './screensaver-prefs';
 
 // Map-backed localStorage stub — happy-dom v20 doesn't expose `localStorage`
@@ -35,185 +35,75 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('screensaver-prefs', () => {
+describe('screensaver prefs v5', () => {
   it('returns DEFAULTS when localStorage is empty', () => {
     expect(readScreensaverPrefs()).toEqual(DEFAULTS);
+    expect(DEFAULTS.mode).toBe('slideshow');
+    expect(DEFAULTS.slideshow.interest).toBe('normal');
+    expect(DEFAULTS.slideshow.width).toBe(1920);
+    expect(DEFAULTS.animation.loop).toBe(true);
   });
 
-  it('round-trips through write + read', () => {
-    writeScreensaverPrefs({
-      mode: 'slideshow',
-      buildUpSec: 60,
-      restSec: 10,
-      holdSec: 30,
-      buildUpQ: 75,
-      slideshowQ: 200,
-      buildUpRamp: 1.5,
-      recordTimeSec: 30,
-      recordQ: 200,
-      recordRamp: 3.0,
-    });
-    expect(readScreensaverPrefs()).toEqual({
-      mode: 'slideshow',
-      buildUpSec: 60,
-      restSec: 10,
-      holdSec: 30,
-      buildUpQ: 75,
-      slideshowQ: 200,
-      buildUpRamp: 1.5,
-      recordTimeSec: 30,
-      recordQ: 200,
-      recordRamp: 3.0,
-    });
+  it('returns a fresh copy each time (no shared mutable DEFAULTS)', () => {
+    const a = readScreensaverPrefs();
+    a.slideshow.quality = 999;
+    expect(readScreensaverPrefs().slideshow.quality).toBe(DEFAULTS.slideshow.quality);
   });
 
-  it('clamps out-of-range values to CLAMPS', () => {
-    writeScreensaverPrefs({
-      mode: 'build-up',
-      buildUpSec: 99999, // > max
-      restSec: -5,       // < min
-      holdSec: 15,
-      buildUpQ: 99999,   // > max
-      slideshowQ: 1,     // < min
-      buildUpRamp: 99,   // > max
-      recordTimeSec: 30,
-      recordQ: 200,
-      recordRamp: 3.0,
-    });
-    const got = readScreensaverPrefs();
-    expect(got.buildUpSec).toBe(CLAMPS.buildUpSec.max);
-    expect(got.restSec).toBe(CLAMPS.restSec.min);
-    expect(got.holdSec).toBe(15);
-    expect(got.buildUpQ).toBe(CLAMPS.buildUpQ.max);
-    expect(got.slideshowQ).toBe(CLAMPS.slideshowQ.min);
-    expect(got.buildUpRamp).toBe(CLAMPS.buildUpRamp.max);
+  it('round-trips a written prefs object', () => {
+    const p: ScreensaverPrefs = {
+      ...DEFAULTS,
+      mode: 'animation',
+      animation: { ...DEFAULTS.animation, updateIntervalSec: 7, loop: false },
+    };
+    writeScreensaverPrefs(p);
+    expect(readScreensaverPrefs()).toEqual(p);
   });
 
-  it('DEFAULTS expose the spec’d quality baselines (200 build-up, 100 slideshow)', () => {
-    expect(DEFAULTS.buildUpQ).toBe(200);
-    expect(DEFAULTS.slideshowQ).toBe(100);
+  it('discards a stale-version payload → DEFAULTS', () => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ version: 4, mode: 'build-up' }));
+    expect(readScreensaverPrefs()).toEqual(DEFAULTS);
   });
 
-  it('DEFAULTS.buildUpRamp is Medium (3.0)', () => {
-    expect(DEFAULTS.buildUpRamp).toBe(3.0);
+  it('writes the current version envelope (flat)', () => {
+    writeScreensaverPrefs(DEFAULTS);
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY)!);
+    expect(raw.version).toBe(PREFS_VERSION);
+    expect(raw.slideshow.interest).toBe('normal');
   });
 
-  it('DEFAULTS.buildUpSec is 1m (60s)', () => {
-    expect(DEFAULTS.buildUpSec).toBe(60);
-  });
-
-  it('DEFAULTS.restSec is 0 (no rest between builds)', () => {
-    expect(DEFAULTS.restSec).toBe(0);
-  });
-
-  it('CLAMPS bound quality 10..500 for both modes', () => {
-    expect(CLAMPS.buildUpQ.min).toBe(10);
-    expect(CLAMPS.buildUpQ.max).toBe(500);
-    expect(CLAMPS.slideshowQ.min).toBe(10);
-    expect(CLAMPS.slideshowQ.max).toBe(500);
-  });
-
-  it('older stored prefs trigger DEFAULTS fallback (new fields gained)', () => {
-    // Simulate a user who saved prefs under v2 (no buildUpRamp).
+  it('clamps out-of-range values and self-heals missing nested fields', () => {
     localStorage.setItem(
-      'pyr3.screensaver.prefs',
+      PREFS_KEY,
       JSON.stringify({
-        version: 2,
-        mode: 'build-up',
-        buildUpSec: 60,
-        restSec: 10,
-        holdSec: 30,
-        buildUpQ: 75,
-        slideshowQ: 200,
+        version: PREFS_VERSION,
+        mode: 'slideshow',
+        slideshow: { quality: 99999, dwellSec: -5, interest: 'bogus' },
+        // animation block omitted entirely
       }),
     );
-    expect(readScreensaverPrefs()).toEqual(DEFAULTS);
+    const p = readScreensaverPrefs();
+    expect(p.slideshow.quality).toBe(500); // clamped to max
+    expect(p.slideshow.dwellSec).toBe(1); // clamped to min
+    expect(p.slideshow.interest).toBe('normal'); // invalid → default
+    expect(p.animation).toEqual(DEFAULTS.animation); // missing block → defaults
   });
 
-  it('falls back to DEFAULTS on version mismatch', () => {
-    localStorage.setItem(
-      'pyr3.screensaver.prefs',
-      JSON.stringify({ version: 999, mode: 'slideshow' }),
-    );
-    expect(readScreensaverPrefs()).toEqual(DEFAULTS);
-  });
-
-  it('falls back to DEFAULTS on malformed JSON', () => {
-    localStorage.setItem('pyr3.screensaver.prefs', 'not-json');
+  it('rejects an invalid mode → DEFAULTS', () => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ version: PREFS_VERSION, mode: 'record' }));
     expect(readScreensaverPrefs()).toEqual(DEFAULTS);
   });
 });
 
-describe('parseSecondsInput', () => {
-  it('parses bare seconds', () => {
+describe('input parsers (retained)', () => {
+  it('parseSecondsInput accepts s/m suffixes', () => {
     expect(parseSecondsInput('30')).toBe(30);
     expect(parseSecondsInput('30s')).toBe(30);
-  });
-  it('parses Nm shorthand', () => {
     expect(parseSecondsInput('5m')).toBe(300);
-    expect(parseSecondsInput('2m')).toBe(120);
+    expect(parseSecondsInput('junk')).toBeNull();
   });
-  it('returns null for non-numeric junk', () => {
-    expect(parseSecondsInput('xyz')).toBeNull();
-    expect(parseSecondsInput('')).toBeNull();
-  });
-});
-
-describe('parseNumericInput', () => {
-  it('parses plain numbers', () => {
+  it('parseNumericInput rejects suffixes', () => {
     expect(parseNumericInput('100')).toBe(100);
-    expect(parseNumericInput('50.5')).toBe(50.5);
-  });
-  it('rejects unit-suffixed input (quality has no minutes)', () => {
-    expect(parseNumericInput('5m')).toBeNull();
-    expect(parseNumericInput('30s')).toBeNull();
-  });
-  it('returns null for junk + empty', () => {
-    expect(parseNumericInput('xyz')).toBeNull();
-    expect(parseNumericInput('')).toBeNull();
-  });
-});
-
-describe('ScreensaverPrefs v3→v4 migration', () => {
-  it('PREFS_VERSION bumped to 4', () => {
-    expect(PREFS_VERSION).toBe(4);
-  });
-
-  it('DEFAULTS includes record fields', () => {
-    expect(DEFAULTS.recordTimeSec).toBe(30);  // 30s — short default fits "I just want a quick clip"
-    expect(DEFAULTS.recordQ).toBe(200);       // Match buildUpQ — same perceptual target
-    expect(DEFAULTS.recordRamp).toBe(3);      // Medium — same as buildUp default
-  });
-
-  it('mode union accepts "record"', () => {
-    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record' });
-    const out = readScreensaverPrefs();
-    expect(out.mode).toBe('record');
-  });
-
-  it('v3 payload (no record fields, version=3) falls back to DEFAULTS', () => {
-    const v3 = { version: 3, mode: 'build-up', buildUpSec: 120, restSec: 30, holdSec: 15,
-                 buildUpQ: 300, slideshowQ: 100, buildUpRamp: 5 };
-    localStorage.setItem(PREFS_KEY, JSON.stringify(v3));
-    const out = readScreensaverPrefs();
-    // version mismatch → full DEFAULTS reset (matches existing v2→v3 policy)
-    expect(out).toEqual(DEFAULTS);
-  });
-
-  it('clamps recordTimeSec to [5, 3600]', () => {
-    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordTimeSec: 999999 });
-    expect(readScreensaverPrefs().recordTimeSec).toBe(3600);
-    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordTimeSec: 0 });
-    expect(readScreensaverPrefs().recordTimeSec).toBe(5);
-  });
-
-  it('clamps recordQ to [10, 500]', () => {
-    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordQ: 9999 });
-    expect(readScreensaverPrefs().recordQ).toBe(500);
-  });
-
-  it('clamps recordRamp to [1, 10]', () => {
-    writeScreensaverPrefs({ ...DEFAULTS, mode: 'record', recordRamp: 999 });
-    expect(readScreensaverPrefs().recordRamp).toBe(10);
+    expect(parseNumericInput('100s')).toBeNull();
   });
 });

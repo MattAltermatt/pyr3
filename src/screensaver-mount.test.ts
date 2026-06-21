@@ -29,25 +29,24 @@ describe('mountScreensaverPage', () => {
     expect(document.querySelector('.pyr3-screensaver-card')).toBeTruthy();
   });
 
-  it('renders the permanent controls strip', () => {
+  it('renders the two-tile mode chooser', () => {
     mountScreensaverPage({ root: document.body });
-    const strip = document.querySelector('.pyr3-screensaver-strip');
-    expect(strip).toBeTruthy();
-    expect(strip!.textContent).toContain('Space');
-    expect(strip!.textContent).toContain('settings');
+    const card = document.querySelector('.pyr3-screensaver-card');
+    expect(card).toBeTruthy();
+    expect(card!.textContent).toContain('Slideshow');
+    expect(card!.textContent).toContain('Animation');
   });
 
-  it('hides settings card after Play, shows now-playing pill', () => {
+  it('hides the landing card after Play (slideshow, preview mode)', () => {
     mountScreensaverPage({ root: document.body });
     const play = document.querySelector<HTMLButtonElement>('[data-screensaver-play]');
     play!.click();
     expect(
       document.querySelector('.pyr3-screensaver-card')?.classList.contains('hidden'),
     ).toBe(true);
-    expect(document.querySelector('.pyr3-screensaver-pill')).toBeTruthy();
   });
 
-  it('Stop returns to landing card', () => {
+  it('Stop returns to the landing card', () => {
     const handle = mountScreensaverPage({ root: document.body });
     const play = document.querySelector<HTMLButtonElement>('[data-screensaver-play]');
     play!.click();
@@ -55,7 +54,6 @@ describe('mountScreensaverPage', () => {
     expect(
       document.querySelector('.pyr3-screensaver-card')?.classList.contains('hidden'),
     ).toBe(false);
-    expect(document.querySelector('.pyr3-screensaver-pill')).toBeFalsy();
   });
 });
 

@@ -1,19 +1,23 @@
-// Mount the /v1/screensaver page body. Wires the landing card, the canvas
-// host, the per-mode render loops (build-up wired here in T7; slideshow in
-// T8), and the permanent bottom controls strip.
+// Mount the /screensaver page body (#355). A two-mode immersive player:
 //
-// Structural analogue of edit-mount.ts: this module owns the page-level state
-// machine. The bar lives in #pyr3-bar and is mounted by main.ts via
-// mountScreensaverBar — this module renders only the body content into the
-// container it's handed.
+//   Slideshow — random walk over an INTERESTINGNESS-pre-filtered corpus pool,
+//               each flame rendered once to target quality, held for the dwell,
+//               crossfaded to the next.
+//   Animation — a loaded timeline walked in discrete held frames (stepped
+//               morph), via createSteppedPlayer.
 //
-// Engine modules (chaos / density / visualize_*) untouched. See:
-// docs/superpowers/specs/2026-06-05-screensaver-design.md.
+// One auto-hiding control bar (createControlBar) folds together the old hints
+// strip + now-playing pill + info overlay. Build-up reveal and .webm recording
+// were removed. Engine modules (chaos / density / visualize_*) untouched. See
+// docs/superpowers/specs/2026-06-20-screensaver-revamp-design.md.
 
 import { mountScreensaverLanding } from './screensaver-ui';
 import type { ScreensaverPrefs } from './screensaver-prefs';
 import { createScreensaverQueue, type SheepRef } from './screensaver-queue';
-import { cumulativeSamplesAt, rampLabel } from './screensaver-pacing';
+import { buildInterestPool } from './screensaver-interest';
+import { createControlBar, type ControlBar } from './screensaver-controls';
+import { createSteppedPlayer, type SteppedPlayer } from './screensaver-animation';
+import type { Timeline } from './timeline';
 import { loadFeatureIndex } from './feature-index-client';
 import { fetchFlameXml } from './chunk-fetch';
 import { parseFlame } from './flame-import';
@@ -24,265 +28,42 @@ import {
   type Renderer,
 } from './renderer';
 import type { Genome } from './genome';
-import { COLORS } from './ui-tokens';
 import { HERO_GEN, HERO_ID } from './load-intent';
-import { createRecorder, type RecorderHandle } from './screensaver-record';
-import { deriveRecordingFilename } from './screensaver-record-filename';
 
 export interface MountScreensaverOpts {
   /** Container the page renders into. Cleared on mount. */
   root: HTMLElement;
   /** Pre-acquired WebGPU device + canvas format. Optional so unit tests
-   *  (no WebGPU) can still mount the landing card; production main.ts
-   *  always passes both. When absent, Play stages the UI transitions but
-   *  no flame loop runs. */
+   *  (no WebGPU) can still mount the landing card. */
   device?: GPUDevice;
   format?: GPUTextureFormat;
 }
 
 export interface ScreensaverPageHandle {
-  /** Returns to the landing state (hides pill + canvas, re-shows card). */
+  /** Returns to the landing state. */
   stop(): void;
-  /** Tear down GPU resources held by the picker thumbnail renderer + any
-   *  in-flight playback. Idempotent. Wire to SPA route-leave / pagehide
-   *  so the picker's GPU buffers don't leak when the page unmounts. */
+  /** Tear down GPU resources + in-flight playback. Idempotent. */
   destroy(): void;
 }
 
-// Canvas backing-store dims target HD by default — CSS scales 100% to fill
-// the viewport / screen, browser handles the upscale. Going screen-native
-// (2560×1440 or 4K) PLUS a genome oversample of 4 builds an internal
-// histogram of 50M-130M pixels; each present's density+visualize pass over
-// that swamps the GPU and locks the page up. Override with ?w=N&h=N when
-// you have headroom. Genome oversample is also capped (see SCREENSAVER_MAX_OS).
-const CANVAS_MAX_W = 1920;
-const CANVAS_MAX_H = 1080;
+// Canvas backing-store cap — see #109. Going screen-native + high oversample
+// builds a 50M-130M-cell histogram that swamps the GPU; cap the long edge here.
+const CANVAS_MAX_W = 3840;
+const CANVAS_MAX_H = 2160;
 const CANVAS_MIN_DIM = 256;
-// Genomes typically set oversample 1-4. For real-time screensaver render
-// we cap at 2 — going to 4 quadruples the histogram size and present cost
-// for marginal visible-quality gain on a fullscreen canvas.
 const SCREENSAVER_MAX_OS = 2;
+const SLIDESHOW_CHUNK_SAMPLES = 5_000_000;
+const SLIDESHOW_CROSSFADE_MS = 1500;
 
-// Build-up loop tuning (spec §4.2.1). Fixed; not user-exposed.
-// 30fps cadence with 1024 walkers × ~112 splat iters per walker per frame
-// lands ~115k samples/frame at hero dims (1080p × OS=2), reaching q=50
-// over 30s buildUpSec at ~13% sustained GPU. See spec §4.2.2 cost model.
-const BUILD_UP_TARGET_FPS = 30;
-const BUILD_UP_WALKERS    = 1024;
-const BUILD_UP_FUSE       = 200;
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  cls?: string,
-): HTMLElementTagNameMap[K] {
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   return e;
 }
 
-interface StripChip {
-  key: string;
-  label: string;
-  onClick: () => void;
-}
-
-function buildControlsStrip(chips: StripChip[]): HTMLElement {
-  const strip = el('div', 'pyr3-screensaver-strip');
-  Object.assign(strip.style, {
-    position: 'absolute',
-    left: '0',
-    right: '0',
-    top: '0',
-    padding: '12px 24px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '14px',
-    background: COLORS.bg.info,
-    borderBottom: `1px solid ${COLORS.border}`,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: '13px',
-    color: COLORS.text.primary,
-    zIndex: '12',
-  });
-  for (const chip of chips) {
-    const group = el('button', 'pyr3-screensaver-hint');
-    Object.assign(group.style, {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '6px',
-      padding: '4px 8px',
-      background: 'transparent',
-      border: '1px solid transparent',
-      borderRadius: '6px',
-      cursor: 'pointer',
-      fontFamily: 'inherit',
-      fontSize: 'inherit',
-      color: 'inherit',
-    });
-    group.title = `${chip.key} — click or press`;
-    group.addEventListener('click', chip.onClick);
-    group.addEventListener('mouseenter', () => {
-      group.style.background = COLORS.bg.action;
-      group.style.borderColor = COLORS.border;
-    });
-    group.addEventListener('mouseleave', () => {
-      group.style.background = 'transparent';
-      group.style.borderColor = 'transparent';
-    });
-
-    const kbd = el('kbd', 'pyr3-screensaver-kbd');
-    kbd.textContent = chip.key;
-    Object.assign(kbd.style, {
-      padding: '3px 8px',
-      background: COLORS.bg.action,
-      border: `1px solid ${COLORS.border}`,
-      borderRadius: '4px',
-      color: COLORS.flame.top,
-      fontWeight: '600',
-      letterSpacing: '0.02em',
-      minWidth: '20px',
-      textAlign: 'center',
-      pointerEvents: 'none',
-    });
-    const lbl = el('span');
-    lbl.textContent = chip.label;
-    Object.assign(lbl.style, { color: COLORS.text.muted, pointerEvents: 'none' });
-    group.append(kbd, lbl);
-    strip.append(group);
-  }
-  return strip;
-}
-
-interface PillCallbacks {
-  onPrev: () => void;
-  onPause: () => void;
-  onNext: () => void;
-  onFullscreen: () => void;
-  onStop: () => void;
-}
-
-interface PillHandle {
-  el: HTMLElement;
-  setPaused(paused: boolean): void;
-}
-
-function buildNowPlayingPill(cb: PillCallbacks): PillHandle {
-  const pill = el('div', 'pyr3-screensaver-pill');
-  Object.assign(pill.style, {
-    position: 'absolute',
-    top: '60px',
-    right: '16px',
-    padding: '6px',
-    display: 'flex',
-    gap: '4px',
-    background: COLORS.bg.panel,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-    zIndex: '11',
-    transition: 'opacity 0.2s',
-  });
-  function btn(label: string, fn: () => void, title: string): HTMLButtonElement {
-    const b = el('button', 'pyr3-screensaver-pill-btn');
-    b.textContent = label;
-    b.title = title;
-    Object.assign(b.style, {
-      padding: '6px 10px',
-      background: COLORS.bg.input,
-      border: `1px solid ${COLORS.border}`,
-      borderRadius: '4px',
-      color: COLORS.text.primary,
-      cursor: 'pointer',
-      fontSize: '14px',
-      minWidth: '32px',
-    });
-    b.addEventListener('click', fn);
-    return b;
-  }
-  const playPauseBtn = btn('⏸', cb.onPause, 'Pause / resume (Space)');
-  // Orange ring signals "this is the live play/pause control." When paused
-  // the ring stays static; when playing it pulses gently so the user has
-  // an at-a-glance "yes it's running" signal.
-  playPauseBtn.style.boxShadow = `0 0 0 2px ${COLORS.flame.top}`;
-  playPauseBtn.style.transition = 'box-shadow 0.2s';
-  pill.append(
-    btn('⏮', cb.onPrev,       'Previous (←)'),
-    playPauseBtn,
-    btn('⏭', cb.onNext,       'Next (→)'),
-    btn('⛶', cb.onFullscreen, 'Toggle fullscreen (F)'),
-    btn('⏹', cb.onStop,       'Stop, back to settings (S)'),
-  );
-  return {
-    el: pill,
-    setPaused(paused) {
-      playPauseBtn.textContent = paused ? '▶' : '⏸';
-      playPauseBtn.title = paused ? 'Resume (Space)' : 'Pause (Space)';
-      playPauseBtn.style.boxShadow = paused
-        ? `0 0 0 2px ${COLORS.flame.top}`
-        : `0 0 0 2px ${COLORS.flame.top}, 0 0 10px ${COLORS.flame.mid}`;
-    },
-  };
-}
-
-interface RecordPillCallbacks {
-  onFullscreen: () => void;
-  /** Stop & save — explicit click intent. Saves the partial blob. */
-  onStop: () => void;
-}
-
-interface RecordPillHandle {
-  el: HTMLElement;
-}
-
-/** Simplified pill for record mode: just Fullscreen + Stop & save. No
- *  Prev/Pause/Next — see spec Q5 for the rationale (pause yields held
- *  frames in the .webm; skip mid-record splices flames). */
-function buildRecordPill(cb: RecordPillCallbacks): RecordPillHandle {
-  const pill = el('div', 'pyr3-screensaver-pill');
-  Object.assign(pill.style, {
-    position: 'absolute',
-    top: '60px',
-    right: '16px',
-    padding: '6px',
-    display: 'flex',
-    gap: '4px',
-    background: COLORS.bg.panel,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-    zIndex: '11',
-  });
-  function btn(label: string, fn: () => void, title: string): HTMLButtonElement {
-    const b = el('button', 'pyr3-screensaver-pill-btn');
-    b.textContent = label;
-    b.title = title;
-    Object.assign(b.style, {
-      padding: '6px 10px',
-      background: COLORS.bg.input,
-      border: `1px solid ${COLORS.border}`,
-      borderRadius: '4px',
-      color: COLORS.text.primary,
-      cursor: 'pointer',
-      fontSize: '14px',
-      minWidth: '32px',
-    });
-    b.addEventListener('click', fn);
-    return b;
-  }
-  pill.append(
-    btn('⛶', cb.onFullscreen, 'Toggle fullscreen (F)'),
-    btn('⏹', cb.onStop,       'Stop & save (S)'),
-  );
-  return { el: pill };
-}
-
 async function toggleFullscreen(target: HTMLElement): Promise<void> {
-  if (document.fullscreenElement) {
-    await document.exitFullscreen();
-  } else {
-    await target.requestFullscreen();
-  }
+  if (document.fullscreenElement) await document.exitFullscreen();
+  else await target.requestFullscreen();
 }
 
 async function loadGenomeByRef(ref: SheepRef): Promise<Genome> {
@@ -290,189 +71,69 @@ async function loadGenomeByRef(ref: SheepRef): Promise<Genome> {
   return parseFlame(xml).genome;
 }
 
-/** `?hero=true` — render only the canonical hero flame on repeat. Useful
- *  for visually QAing build-up pacing / tonemap behavior against a known
- *  fixture instead of a random shuffle. */
+/** `?hero=true` — render only the canonical hero flame on repeat (QA aid). */
 function shouldUseHeroOnly(): boolean {
   if (typeof window === 'undefined') return false;
   return new URLSearchParams(window.location.search).get('hero') === 'true';
-}
-
-function pickSourceRefs(allRefs: SheepRef[]): SheepRef[] {
-  if (shouldUseHeroOnly()) return [{ gen: HERO_GEN, id: HERO_ID }];
-  return allRefs;
-}
-
-interface StatusPanel {
-  el: HTMLElement;
-  setText(s: string): void;
-}
-
-function buildStatusPanel(): StatusPanel {
-  const panel = el('div', 'pyr3-screensaver-status');
-  Object.assign(panel.style, {
-    position: 'absolute',
-    top: '60px',
-    left: '16px',
-    padding: '8px 12px',
-    background: COLORS.bg.panel,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '6px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: '12px',
-    color: COLORS.text.primary,
-    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-    zIndex: '11',
-    minWidth: '240px',
-    lineHeight: '1.45',
-  });
-  panel.textContent = 'starting…';
-  return {
-    el: panel,
-    setText: (s) => { panel.textContent = s; },
-  };
 }
 
 function clampDim(n: number, max: number): number {
   return Math.max(CANVAS_MIN_DIM, Math.min(max, Math.floor(n)));
 }
 
-// #321 — a `?w=`/`?h=` URL override is untrusted: a junk value (`?w=abc`, `?w=-5`)
-// must fall back to the screen dimension rather than propagate NaN/≤0 into
-// canvas.width. Exported for unit test.
+// #321 — `?w=`/`?h=` overrides are untrusted; junk falls back. Exported for test.
 export function resolveDimOverride(override: string | null, fallback: number): number {
   if (override === null || override === '') return fallback;
   const n = Number(override);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-function makeRenderCanvas(host: HTMLElement): HTMLCanvasElement {
+/** Build a render canvas at the prefs-chosen dims (clamped), honouring ?w/?h
+ *  overrides when present. */
+function makeRenderCanvas(host: HTMLElement, prefW: number, prefH: number): HTMLCanvasElement {
   const canvas = el('canvas', 'pyr3-screensaver-canvas');
-  // Render at the user's screen resolution (capped at 4K) so fullscreen
-  // looks pixel-native. CSS scales 100% in the windowed view; the browser
-  // downsamples cleanly. URL overrides: ?w=NNNN&h=NNNN.
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const screenW = (typeof window !== 'undefined' && window.screen?.width)  ? window.screen.width  : 1920;
-  const screenH = (typeof window !== 'undefined' && window.screen?.height) ? window.screen.height : 1080;
-  const sw = resolveDimOverride(params?.get('w') ?? null, screenW);
-  const sh = resolveDimOverride(params?.get('h') ?? null, screenH);
-  canvas.width = clampDim(sw, CANVAS_MAX_W);
-  canvas.height = clampDim(sh, CANVAS_MAX_H);
-  Object.assign(canvas.style, {
-    position: 'absolute',
-    inset: '0',
-    width: '100%',
-    height: '100%',
-  });
+  const w = resolveDimOverride(params?.get('w') ?? null, prefW);
+  const h = resolveDimOverride(params?.get('h') ?? null, prefH);
+  canvas.width = clampDim(w, CANVAS_MAX_W);
+  canvas.height = clampDim(h, CANVAS_MAX_H);
+  Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%' });
   host.append(canvas);
   return canvas;
 }
 
-interface ModeControls {
-  /** Toggle paused state. Pause freezes elapsed/hold timers; render output
-   *  is whatever was last presented. */
-  togglePause(): void;
-  /** Read current paused state — wired to the pill's play/pause icon. */
-  isPaused(): boolean;
-  /** Signal a skip — dir = 1 for next, -1 for prev. The mode picks this up
-   *  at its next loop boundary. */
-  skip(dir: -1 | 1): void;
-  /** Record-mode only: request the current recording finish + save the
-   *  partial blob. Build-up / slideshow modes implement as a no-op. */
-  requestStopAndSave?(): void;
-}
-
-interface ModeHandle {
-  cancel(): void;
-  controls: ModeControls;
-}
-
-// Slideshow target quality is user-adjustable as of #109 (DEFAULTS.slideshowQ
-// = 100, range 10..500 via the landing card's Quality ladder). Higher than
-// build-up's DEFAULTS.buildUpQ (50) since slideshow is "lean back at full
-// quality"; high values may push per-flame render time past holdSec, which
-// is fine — the slideshow extends the hold until prefetch settles (spec §4.1).
-const SLIDESHOW_CHUNK_SAMPLES = 5_000_000;
-const SLIDESHOW_CROSSFADE_MS = 1500;
-
-/** Mutable state shared between mode loops and their ModeControls. Wrapped
- *  in an object so TS doesn't narrow `skipDir` to a literal across closures
- *  on each assignment. */
-interface ModeState {
-  cancelled: boolean;
-  paused: boolean;
-  /** Skip-direction signal. Set by controls.skip(); cleared by the mode loop
-   *  when consumed. */
-  skipDir: -1 | 0 | 1;
-  /** Build-up only: timestamp at which the current pause began (0 = not
-   *  paused). */
-  pausedAt: number;
-  /** Build-up only: total ms accumulated across resumed pauses, applied as
-   *  an offset to the elapsed-vs-target calculation. */
-  pauseAccumMs: number;
-  /** Record-mode only: ⏹ button (or S key) was pressed during recording —
-   *  exit the build-up loop AND save the partial blob. Distinct from
-   *  cancelled (which discards). */
-  manualStopAndSave: boolean;
-}
-
-/** Promise-based sleep that bails on cancel. Use for the fade-to-black
- *  transition where pause/skip shouldn't extend or shorten the wall-clock
- *  fade duration. */
-async function sleepCancellable(ms: number, isCancelled: () => boolean): Promise<void> {
-  const end = performance.now() + ms;
-  while (performance.now() < end) {
-    if (isCancelled()) return;
-    await new Promise<void>((r) => setTimeout(r, Math.min(50, end - performance.now())));
-  }
-}
-
-/** Sleep that bails on cancel, EXTENDS while paused, and SHORTCIRCUITS on
- *  skip. Returns the reason it exited so the caller can branch. */
-type SleepReason = 'done' | 'cancelled' | 'skipped';
-async function sleepInteractive(ms: number, state: ModeState): Promise<SleepReason> {
-  let remaining = ms;
-  while (remaining > 0) {
-    if (state.cancelled) return 'cancelled';
-    if (state.skipDir !== 0) return 'skipped';
-    if (state.paused) {
-      await new Promise<void>((r) => setTimeout(r, 100));
-      continue;
-    }
-    const step = Math.min(50, remaining);
-    await new Promise<void>((r) => setTimeout(r, step));
-    remaining -= step;
-  }
-  return 'done';
-}
-
-function createModeState(): ModeState {
-  return {
-    cancelled: false,
-    paused: false,
-    skipDir: 0,
-    pausedAt: 0,
-    pauseAccumMs: 0,
-    manualStopAndSave: false,
-  };
-}
-
-/** Render a single flame to the target quality in chunks, yielding to the
- *  event loop between dispatches so cancellation can land. Presents only
- *  once at the end — slideshow is "appear fully rendered". */
-async function renderFlameToQuality(args: {
-  renderer: Renderer;
-  genome: Genome;
+interface RenderLayer {
+  canvas: HTMLCanvasElement;
   ctx: GPUCanvasContext;
+  renderer: Renderer;
   W: number;
   H: number;
-  targetQ: number;
-  isCancelled: () => boolean;
+}
+
+function makeLayer(
+  host: HTMLElement, device: GPUDevice, format: GPUTextureFormat,
+  zIndex: number, prefW: number, prefH: number,
+): RenderLayer {
+  const canvas = makeRenderCanvas(host, prefW, prefH);
+  canvas.style.zIndex = String(zIndex);
+  const ctx = canvas.getContext('webgpu');
+  if (!ctx) throw new Error('screensaver: WebGPU canvas context unavailable');
+  ctx.configure({ device, format, alphaMode: 'opaque' });
+  const renderer = createRenderer(device, format, {
+    width: canvas.width, height: canvas.height, oversample: 1, filterRadius: DEFAULT_FILTER_RADIUS,
+  });
+  return { canvas, ctx, renderer, W: canvas.width, H: canvas.height };
+}
+
+/** Render one flame to the target quality in chunks, yielding so cancellation
+ *  can land. Presents once at the end — "appear fully rendered". */
+async function renderFlameToQuality(args: {
+  renderer: Renderer; genome: Genome; ctx: GPUCanvasContext;
+  W: number; H: number; targetQ: number; isCancelled: () => boolean;
 }): Promise<void> {
   const { renderer, genome, ctx, W, H, targetQ, isCancelled } = args;
-  // Apply the genome's preferred oversample + filter radius for full quality.
   const overs = Math.min(SCREENSAVER_MAX_OS, genome.oversample ?? 1);
-  const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+  const filt = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
   renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
   renderer.reset(genome);
   const seed = (Math.random() * 0xffffffff) >>> 0;
@@ -484,789 +145,319 @@ async function renderFlameToQuality(args: {
     const chunkSamples = Math.min(SLIDESHOW_CHUNK_SAMPLES, remaining);
     const sppToAdd = Math.max(1, Math.ceil(chunkSamples / pixels));
     const dispatch = computeDispatch(sppToAdd, W, H);
-    renderer.iterate({
-      genome,
-      seed,
-      walkers: dispatch.dispatchWalkers,
-      itersPerWalker: dispatch.dispatchIters,
-    });
+    renderer.iterate({ genome, seed, walkers: dispatch.dispatchWalkers, itersPerWalker: dispatch.dispatchIters });
     accumulated += dispatch.actualSamples;
     await new Promise<void>((r) => setTimeout(r, 0));
   }
   if (isCancelled()) return;
-  // Final DE-on present — matches the viewer's q=50 finish.
-  renderer.present({
-    genome,
-    outputView: ctx.getCurrentTexture().createView(),
-    totalSamples: Math.max(1, accumulated),
-    forceDeOff: false,
-  });
+  renderer.present({ genome, outputView: ctx.getCurrentTexture().createView(), totalSamples: Math.max(1, accumulated), forceDeOff: false });
 }
 
-function makeSlideshowCanvas(
-  host: HTMLElement,
-  device: GPUDevice,
-  format: GPUTextureFormat,
-  zIndex: number,
-): { canvas: HTMLCanvasElement; ctx: GPUCanvasContext; renderer: Renderer; W: number; H: number } {
-  const canvas = makeRenderCanvas(host);
-  canvas.style.zIndex = String(zIndex);
-  const ctx = canvas.getContext('webgpu');
-  if (!ctx) throw new Error('screensaver: WebGPU canvas context unavailable');
-  ctx.configure({ device, format, alphaMode: 'opaque' });
-  const renderer = createRenderer(device, format, {
-    width: canvas.width,
-    height: canvas.height,
-    oversample: 1,
-    filterRadius: DEFAULT_FILTER_RADIUS,
-  });
-  return { canvas, ctx, renderer, W: canvas.width, H: canvas.height };
+// ─── mode state + sleep helpers (slideshow) ─────────────────────────────────
+
+interface ModeControls {
+  togglePause(): void;
+  isPaused(): boolean;
+  skip(dir: -1 | 1): void;
 }
+interface ModeHandle { cancel(): void; controls: ModeControls; }
+
+interface ModeState { cancelled: boolean; paused: boolean; skipDir: -1 | 0 | 1; }
+function createModeState(): ModeState { return { cancelled: false, paused: false, skipDir: 0 }; }
+
+async function sleepCancellable(ms: number, isCancelled: () => boolean): Promise<void> {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    if (isCancelled()) return;
+    await new Promise<void>((r) => setTimeout(r, Math.min(50, end - performance.now())));
+  }
+}
+
+type SleepReason = 'done' | 'cancelled' | 'skipped';
+async function sleepInteractive(ms: number, state: ModeState): Promise<SleepReason> {
+  let remaining = ms;
+  while (remaining > 0) {
+    if (state.cancelled) return 'cancelled';
+    if (state.skipDir !== 0) return 'skipped';
+    if (state.paused) { await new Promise<void>((r) => setTimeout(r, 100)); continue; }
+    const step = Math.min(50, remaining);
+    await new Promise<void>((r) => setTimeout(r, step));
+    remaining -= step;
+  }
+  return 'done';
+}
+
+function flameLabel(genome: Genome, ref: SheepRef): { name: string; meta: string } {
+  // ESF flames carry the author handle as the `nick` (from the <edit nick=…>
+  // chain). When present, attribute it as "by <nick>"; otherwise the flame has
+  // no name, so fall back to its corpus sheep id.
+  const nick = genome.nick?.trim();
+  if (nick) return { name: `by ${nick}`, meta: `gen ${ref.gen} · id ${ref.id} · 🖼️ slideshow` };
+  return { name: `electricsheep ${ref.gen}.${ref.id}`, meta: '🖼️ slideshow' };
+}
+
+// ─── slideshow ──────────────────────────────────────────────────────────────
 
 function startSlideshow(args: {
-  device: GPUDevice;
-  format: GPUTextureFormat;
-  canvasHost: HTMLElement;
-  prefs: ScreensaverPrefs;
-  status: StatusPanel;
+  device: GPUDevice; format: GPUTextureFormat; canvasHost: HTMLElement;
+  prefs: ScreensaverPrefs; bar: ControlBar;
 }): ModeHandle {
-  const { device, format, canvasHost, prefs, status } = args;
+  const { device, format, canvasHost, prefs, bar } = args;
   const state = createModeState();
   const isCancelled = () => state.cancelled;
+  // Hoisted so cancel() can destroy the GPU renderers SYNCHRONOUSLY (matching
+  // startAnimation) rather than waiting for the async loop's finally. All
+  // renderer calls in the loop are guarded by isCancelled() checks that run
+  // after each await, so a destroy here can't race an in-flight iterate/present.
+  let layers: { front: RenderLayer; back: RenderLayer } | null = null;
+  const destroyLayers = (): void => {
+    if (!layers) return;
+    layers.front.renderer.destroy();
+    layers.back.renderer.destroy();
+    layers = null;
+  };
 
   void (async () => {
-    const front = makeSlideshowCanvas(canvasHost, device, format, 2);
-    const back = makeSlideshowCanvas(canvasHost, device, format, 1);
+    const { width, height } = prefs.slideshow;
+    const front = makeLayer(canvasHost, device, format, 2, width, height);
+    const back = makeLayer(canvasHost, device, format, 1, width, height);
+    layers = { front, back };
     front.canvas.style.opacity = '0';
     back.canvas.style.opacity = '0';
 
-    // #242 — free both renderers' GPU pipelines + histogram buffers when the
-    // loop drains. cancel() sets state.cancelled; the loop returns at its next
-    // isCancelled() checkpoint, so the finally runs only after any in-flight
-    // render has resolved — no use-after-destroy. Without this, each
-    // Play→Stop cycle leaked 2 renderers (~2×33MB histograms at 1080p).
     try {
-    status.setText('Loading corpus index…');
-    const index = await loadFeatureIndex();
-    if (isCancelled()) return;
-    const allRefs = pickSourceRefs(index.filter(() => true));
-    if (allRefs.length === 0) return;
-    const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
-    let slideNum = 0;
-
-    // Prime the front layer with the first flame.
-    const firstRef = queue.next();
-    if (!firstRef) return;
-    slideNum++;
-    let firstGenome: Genome;
-    try {
-      status.setText(`Rendering slide #${slideNum} (${firstRef.gen}/${firstRef.id})…`);
-      firstGenome = await loadGenomeByRef(firstRef);
-    } catch {
-      return;
-    }
-    if (isCancelled()) return;
-    await renderFlameToQuality({
-      renderer: front.renderer,
-      genome: firstGenome,
-      ctx: front.ctx,
-      W: front.W,
-      H: front.H,
-      targetQ: prefs.slideshowQ,
-      isCancelled,
-    });
-    if (isCancelled()) return;
-    front.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
-    front.canvas.style.opacity = '1';
-
-    // Track which layer currently displays the active flame. After every
-    // crossfade we flip — the layer that just faded out becomes the prefetch
-    // target for the next flame.
-    let activeIsFront = true;
-
-    while (!isCancelled()) {
-      // Pick + render the next flame into the inactive layer (prefetch).
-      // Skip-back consumes the queue's history; skip-forward and natural
-      // advance both call next().
-      const pickRef =
-        state.skipDir === -1
-          ? (queue.prev() ?? queue.next())
-          : queue.next();
-      state.skipDir = 0;
-      if (!pickRef) break;
-      slideNum++;
-      let nextGenome: Genome;
-      try {
-        status.setText(`Rendering slide #${slideNum} (${pickRef.gen}/${pickRef.id})…`);
-        nextGenome = await loadGenomeByRef(pickRef);
-      } catch {
-        continue;
+      const index = await loadFeatureIndex();
+      if (isCancelled()) return;
+      let allRefs: SheepRef[];
+      if (shouldUseHeroOnly()) {
+        allRefs = [{ gen: HERO_GEN, id: HERO_ID }];
+      } else {
+        allRefs = buildInterestPool((pred) => index.filter(pred), prefs.slideshow.interest).refs;
       }
+      if (allRefs.length === 0) return;
+      const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
+
+      const firstRef = queue.next();
+      if (!firstRef) return;
+      let firstGenome: Genome;
+      try { firstGenome = await loadGenomeByRef(firstRef); } catch { return; }
       if (isCancelled()) return;
-      const prefetchTarget = activeIsFront ? back : front;
-      const currentActive = activeIsFront ? front : back;
-      await renderFlameToQuality({
-        renderer: prefetchTarget.renderer,
-        genome: nextGenome,
-        ctx: prefetchTarget.ctx,
-        W: prefetchTarget.W,
-        H: prefetchTarget.H,
-        targetQ: prefs.slideshowQ,
-        isCancelled,
-      });
+      await renderFlameToQuality({ renderer: front.renderer, genome: firstGenome, ctx: front.ctx, W: front.W, H: front.H, targetQ: prefs.slideshow.quality, isCancelled });
       if (isCancelled()) return;
+      { const l = flameLabel(firstGenome, firstRef); bar?.setFlameName(l.name, l.meta); }
+      front.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
+      front.canvas.style.opacity = '1';
 
-      // Wait the remainder of the hold period. Skip signal shortcircuits
-      // immediately; pause extends.
-      const holdStart = performance.now();
-      const holdMs = prefs.holdSec * 1000;
-      const statusTick = window.setInterval(() => {
-        const e = Math.min(prefs.holdSec, (performance.now() - holdStart) / 1000);
-        status.setText(`Slide #${slideNum - 1} on screen · ${e.toFixed(0)}s / ${prefs.holdSec}s · next ready`);
-      }, 500);
-      const reason = await sleepInteractive(holdMs, state);
-      window.clearInterval(statusTick);
-      if (reason === 'cancelled') return;
-      // 'done' and 'skipped' both fall through to the crossfade.
-      status.setText(`Crossfading to slide #${slideNum}…`);
-
-      // Crossfade.
-      prefetchTarget.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
-      prefetchTarget.canvas.style.opacity = '1';
-      currentActive.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
-      currentActive.canvas.style.opacity = '0';
-      await sleepCancellable(SLIDESHOW_CROSSFADE_MS + 100, isCancelled);
-
-      activeIsFront = !activeIsFront;
-    }
-    } finally {
-      front.renderer.destroy();
-      back.renderer.destroy();
-    }
-  })();
-
-  return {
-    cancel() {
-      state.cancelled = true;
-    },
-    controls: {
-      togglePause() {
-        state.paused = !state.paused;
-      },
-      isPaused() {
-        return state.paused;
-      },
-      skip(dir) {
-        state.skipDir = dir;
-      },
-    },
-  };
-}
-
-function startBuildUp(args: {
-  device: GPUDevice;
-  format: GPUTextureFormat;
-  canvasHost: HTMLElement;
-  prefs: ScreensaverPrefs;
-  status: StatusPanel;
-}): ModeHandle {
-  const { device, format, canvasHost, prefs, status } = args;
-  const state = createModeState();
-  const isCancelled = () => state.cancelled;
-
-  void (async () => {
-    const canvas = makeRenderCanvas(canvasHost);
-    const W = canvas.width;
-    const H = canvas.height;
-    const ctx = canvas.getContext('webgpu');
-    if (!ctx) return;
-    ctx.configure({ device, format, alphaMode: 'opaque' });
-
-    const renderer: Renderer = createRenderer(device, format, {
-      width: W,
-      height: H,
-      oversample: 1,
-      filterRadius: DEFAULT_FILTER_RADIUS,
-    });
-
-    // #242 — destroy the renderer's GPU pipelines + histogram buffers when the
-    // loop drains (cancel() → next isCancelled() checkpoint → finally). Without
-    // this, each Play→Stop cycle leaked one renderer's pipeline set + histogram.
-    try {
-    status.setText('Loading corpus index…');
-    const index = await loadFeatureIndex();
-    if (isCancelled()) return;
-    const allRefs = pickSourceRefs(index.filter(() => true));
-    if (allRefs.length === 0) return;
-    const queue = createScreensaverQueue(allRefs, Math.floor(performance.now()));
-    let flameNum = 0;
-
-    while (!isCancelled()) {
-      const ref =
-        state.skipDir === -1
-          ? (queue.prev() ?? queue.next())
-          : queue.next();
-      state.skipDir = 0;
-      if (!ref) break;
-      flameNum++;
-      let genome: Genome;
-      try {
-        status.setText(`Loading flame #${flameNum} (${ref.gen}/${ref.id})…`);
-        genome = await loadGenomeByRef(ref);
-      } catch {
-        continue;
-      }
-      if (isCancelled()) return;
-
-      // Apply screensaver oversample cap (parity with slideshow's
-      // renderFlameToQuality). Without this, hero genome's native OS=4
-      // quadruples the histogram (8.3M → 33M cells) and pins the GPU on
-      // every present pass — the original lockup.
-      const overs = Math.min(SCREENSAVER_MAX_OS, genome.oversample ?? 1);
-      const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
-      renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
-      renderer.reset(genome);
-
-      const startedAt = performance.now();
-      state.pauseAccumMs = 0;
-      state.pausedAt = 0;
-      let samplesAccumulated = 0;
-
-      canvas.style.transition = '';
-      canvas.style.opacity = '1';
-
-      const totalPixels = W * H;
-      const targetTotalSamples = prefs.buildUpQ * totalPixels;
-
-      // Pacing math — spec §4.2 + ramp follow-up. The cumulative sample
-      // target follows `total × (elapsed / buildUpSec)^buildUpRamp`; each
-      // frame deposits the gap between that target and what's already
-      // landed. ramp=1.0 reproduces the original flat cadence; higher
-      // exponents slow the start and steepen the finish (image visibly
-      // builds through 50%). Each walker runs FUSE warm-up iters then
-      // splatItersPerWalker scatter iters; only post-fuse iters count
-      // toward samplesAccumulated.
-      //
-      // #200 — fixed cadence is the v1 ship contract. Cost model (§4.2.2)
-      // predicts ~4-5ms per frame at hero dims — 30fps has 5× headroom; in
-      // practice the screensaver settled at <30% GPU per the visual-overhaul
-      // post-mortem. The original §4.2 adaptive backoff
-      // (ADAPTIVE_BACKOFF_MS=25 → 20fps drop) was deferred and #200 closed
-      // it as won't-do — no stutter reports came in. Heavy ramp briefly
-      // multiplies per-frame cost near the end; the loop already lets frames
-      // slip (sleepFor = max(1, FRAME_INTERVAL_MS - frameElapsed)).
-      const FRAME_INTERVAL_MS   = 1000 / BUILD_UP_TARGET_FPS;
-
+      let activeIsFront = true;
       while (!isCancelled()) {
-        if (state.skipDir !== 0) break;
-        if (state.paused) {
-          if (state.pausedAt === 0) state.pausedAt = performance.now();
-          await new Promise<void>((r) => setTimeout(r, 100));
-          continue;
-        }
-        if (state.pausedAt !== 0) {
-          state.pauseAccumMs += performance.now() - state.pausedAt;
-          state.pausedAt = 0;
-        }
+        const pickRef = state.skipDir === -1 ? (queue.prev() ?? queue.next()) : queue.next();
+        state.skipDir = 0;
+        if (!pickRef) break;
+        let nextGenome: Genome;
+        try { nextGenome = await loadGenomeByRef(pickRef); } catch { continue; }
+        if (isCancelled()) return;
+        const prefetch = activeIsFront ? back : front;
+        const active = activeIsFront ? front : back;
+        await renderFlameToQuality({ renderer: prefetch.renderer, genome: nextGenome, ctx: prefetch.ctx, W: prefetch.W, H: prefetch.H, targetQ: prefs.slideshow.quality, isCancelled });
+        if (isCancelled()) return;
 
-        const frameStart = performance.now();
+        const reason = await sleepInteractive(prefs.slideshow.dwellSec * 1000, state);
+        if (reason === 'cancelled') return;
 
-        // Size this frame's splat from the gap between the ramp's
-        // cumulative target at frame-start elapsed and what we've already
-        // deposited. ramp=1.0 yields ~constant splat (linear); ramp>1.0
-        // makes early frames thin and late frames thick.
-        const frameElapsedSec = (frameStart - startedAt - state.pauseAccumMs) / 1000;
-        const cumTarget = cumulativeSamplesAt(
-          frameElapsedSec, prefs.buildUpSec, targetTotalSamples, prefs.buildUpRamp,
-        );
-        const neededThisFrame   = Math.max(0, cumTarget - samplesAccumulated);
-        const splatItersPerWalker = Math.max(1, Math.ceil(neededThisFrame / BUILD_UP_WALKERS));
-        const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
-
-        // Fresh ISAAC seed every frame — same seed re-renders the identical
-        // scatter pattern and just brightens the same cells (chaos.ts
-        // re-inits ISAAC from `seed` on every dispatch).
-        const seed = (Math.random() * 0xffffffff) >>> 0;
-        renderer.iterate({
-          genome,
-          seed,
-          walkers:        BUILD_UP_WALKERS,
-          itersPerWalker: totalItersPerWalker,
-        });
-        // Splatted samples = walkers × (iters - fuse). First BUILD_UP_FUSE
-        // iters per walker are warm-up; only post-fuse iters scatter.
-        // Tracking walkers × iters would over-normalize the tonemap and
-        // the build-up would look incorrectly dim.
-        samplesAccumulated += BUILD_UP_WALKERS * splatItersPerWalker;
-
-        // Tone-normalize against ACCUMULATED samples (not a fixed target)
-        // AND skip density. Each new sample lands bright; the image
-        // densifies frame by frame rather than fading-up. forceDeOff: true
-        // is required even when genome.density is undefined (renderer.ts
-        // useDE rule) to make intent explicit.
-        renderer.present({
-          genome,
-          outputView:   ctx.getCurrentTexture().createView(),
-          totalSamples: Math.max(1, samplesAccumulated),
-          forceDeOff:   true,
-        });
-
-        const elapsed = (performance.now() - startedAt - state.pauseAccumMs) / 1000;
-        const pct     = Math.min(100, Math.round(100 * samplesAccumulated / targetTotalSamples));
-        status.setText(
-          `Building flame #${flameNum} (${ref.gen}/${ref.id})\n` +
-          `${elapsed.toFixed(1)}s / ${prefs.buildUpSec}s · ` +
-          `samples ${(samplesAccumulated / 1e6).toFixed(1)}M / ${(targetTotalSamples / 1e6).toFixed(1)}M · ${pct}% · ` +
-          `ramp ${rampLabel(prefs.buildUpRamp)}` +
-          (state.paused ? ' · PAUSED' : ''),
-        );
-
-        if (samplesAccumulated >= targetTotalSamples) break;
-        if (elapsed >= prefs.buildUpSec) break;
-
-        const frameElapsed = performance.now() - frameStart;
-        const sleepFor     = Math.max(1, FRAME_INTERVAL_MS - frameElapsed);
-        await new Promise<void>((r) => setTimeout(r, sleepFor));
+        { const l = flameLabel(nextGenome, pickRef); bar?.setFlameName(l.name, l.meta); }
+        prefetch.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
+        prefetch.canvas.style.opacity = '1';
+        active.canvas.style.transition = `opacity ${SLIDESHOW_CROSSFADE_MS}ms`;
+        active.canvas.style.opacity = '0';
+        await sleepCancellable(SLIDESHOW_CROSSFADE_MS + 100, isCancelled);
+        activeIsFront = !activeIsFront;
       }
-      if (isCancelled()) return;
-
-      // Settle: density ON, tone-normalize to actual accumulated samples.
-      // This is the dotty → smooth reveal — the chaos game's coherent
-      // attractor emerges via the density pass + log tonemap.
-      renderer.present({
-        genome,
-        outputView:   ctx.getCurrentTexture().createView(),
-        totalSamples: Math.max(1, samplesAccumulated),
-        forceDeOff:   false,
-      });
-
-      // Rest period — hold settled image at full quality.
-      const restStart = performance.now();
-      const restTick = window.setInterval(() => {
-        const e = Math.min(prefs.restSec, (performance.now() - restStart) / 1000);
-        status.setText(
-          `Flame #${flameNum} (${ref.gen}/${ref.id}) settled\n` +
-          `resting ${e.toFixed(0)}s / ${prefs.restSec}s` +
-          (state.paused ? ' · PAUSED' : ''),
-        );
-      }, 500);
-      const restReason = await sleepInteractive(prefs.restSec * 1000, state);
-      window.clearInterval(restTick);
-      if (restReason === 'cancelled') return;
-
-      // Fade-to-black ~2s, then advance.
-      status.setText(`Fading out flame #${flameNum}…`);
-      canvas.style.transition = 'opacity 2s';
-      canvas.style.opacity = '0';
-      await sleepCancellable(2200, isCancelled);
-    }
     } finally {
-      renderer.destroy();
+      destroyLayers();
     }
   })();
 
   return {
-    cancel() {
-      state.cancelled = true;
-    },
+    cancel() { state.cancelled = true; destroyLayers(); },
     controls: {
-      togglePause() {
-        state.paused = !state.paused;
-      },
-      isPaused() {
-        return state.paused;
-      },
-      skip(dir) {
-        state.skipDir = dir;
-      },
+      togglePause() { state.paused = !state.paused; },
+      isPaused() { return state.paused; },
+      skip(dir) { state.skipDir = dir; },
     },
   };
 }
 
-/** Record mode (#111). Loads the user-picked flame, runs a build-up loop
- *  parameterised on prefs.recordTimeSec/recordQ/recordRamp, wraps with a
- *  MediaRecorder. End triggers:
- *    - settle (cumTarget reached or recordTimeSec elapsed)  → save + download
- *    - state.manualStopAndSave (⏹ button or S key)          → save + download
- *    - state.cancelled (Esc / navigate-away)                → abort, no save */
-function runRecordSession(args: {
-  device: GPUDevice;
-  format: GPUTextureFormat;
-  canvasHost: HTMLElement;
-  prefs: ScreensaverPrefs;
-  status: StatusPanel;
-  pickedRef: SheepRef;
-  onDone: () => void;
-}): ModeHandle {
-  const { device, format, canvasHost, prefs, status, pickedRef, onDone } = args;
-  const state = createModeState();
-  const isCancelled = () => state.cancelled;
-  let recorder: RecorderHandle | null = null;
-  // Guard so the IIFE's onDone doesn't double-fire stopPlayback when the
-  // user explicitly stopped via Esc / S — caller's stopPlayback already tore
-  // down the pill + landing card before recorder.stop's onstop resolved.
-  let doneFired = false;
-  const fireOnce = () => { if (!doneFired) { doneFired = true; onDone(); } };
+// ─── animation (stepped morph) ──────────────────────────────────────────────
 
-  void (async () => {
-    const canvas = makeRenderCanvas(canvasHost);
-    const W = canvas.width;
-    const H = canvas.height;
-    const ctx = canvas.getContext('webgpu');
-    if (!ctx) { fireOnce(); return; }
-    ctx.configure({ device, format, alphaMode: 'opaque' });
+interface AnimationHandle { cancel(): void; player: SteppedPlayer; }
 
-    const renderer: Renderer = createRenderer(device, format, {
-      width: W, height: H, oversample: 1, filterRadius: DEFAULT_FILTER_RADIUS,
-    });
+function startAnimation(args: {
+  device: GPUDevice; format: GPUTextureFormat; canvasHost: HTMLElement;
+  prefs: ScreensaverPrefs; timeline: Timeline; bar: ControlBar; fileName: string;
+}): AnimationHandle {
+  const { device, format, canvasHost, prefs, timeline, bar, fileName } = args;
+  let cancelled = false;
+  const isCancelled = () => cancelled;
+  const { width, height, quality } = prefs.animation;
+  const layer = makeLayer(canvasHost, device, format, 2, width, height);
+  layer.canvas.style.opacity = '1';
+  bar.setFlameName(fileName, '🎞️ animation');
 
-    // #242 — free the renderer's GPU pipelines + buffers on every exit path
-    // (load-fail, cancel-abort, settle-and-save). The recorder is torn down
-    // separately via recorder.stop(); this finally only owns the renderer.
-    try {
-    let genome: Genome;
-    try {
-      status.setText(`Loading flame ${pickedRef.gen}/${pickedRef.id}…`);
-      genome = await loadGenomeByRef(pickedRef);
-    } catch {
-      status.setText('Failed to load flame.');
-      fireOnce();
-      return;
-    }
-    if (isCancelled()) { fireOnce(); return; }
-
-    const overs = Math.min(SCREENSAVER_MAX_OS, genome.oversample ?? 1);
-    const filt  = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
-    renderer.resize({ width: W, height: H, oversample: overs, filterRadius: filt });
-    renderer.reset(genome);
-
-    const filename = deriveRecordingFilename({ genome, ref: pickedRef, now: new Date() });
-    recorder = createRecorder({ canvas, filename });
-    recorder.start();
-
-    const startedAt = performance.now();
-    let samplesAccumulated = 0;
-    canvas.style.transition = '';
-    canvas.style.opacity = '1';
-
-    const totalPixels = W * H;
-    const targetTotalSamples = prefs.recordQ * totalPixels;
-    const FRAME_INTERVAL_MS  = 1000 / BUILD_UP_TARGET_FPS;
-    let reachedSettle = false;
-
-    const mmss = (s: number): string => {
-      const m = Math.floor(s / 60);
-      const r = Math.floor(s % 60).toString().padStart(2, '0');
-      return `${m}:${r}`;
-    };
-    const displayName = genome.nick || `${pickedRef.gen}/${pickedRef.id}`;
-
-    while (!isCancelled() && !state.manualStopAndSave) {
-      const frameStart = performance.now();
-      const frameElapsedSec = (frameStart - startedAt) / 1000;
-      const cumTarget = cumulativeSamplesAt(
-        frameElapsedSec, prefs.recordTimeSec, targetTotalSamples, prefs.recordRamp,
-      );
-      const neededThisFrame   = Math.max(0, cumTarget - samplesAccumulated);
-      const splatItersPerWalker = Math.max(1, Math.ceil(neededThisFrame / BUILD_UP_WALKERS));
-      const totalItersPerWalker = BUILD_UP_FUSE + splatItersPerWalker;
-
-      const seed = (Math.random() * 0xffffffff) >>> 0;
-      renderer.iterate({
-        genome, seed,
-        walkers: BUILD_UP_WALKERS,
-        itersPerWalker: totalItersPerWalker,
-      });
-      samplesAccumulated += BUILD_UP_WALKERS * splatItersPerWalker;
-
-      renderer.present({
-        genome,
-        outputView:   ctx.getCurrentTexture().createView(),
-        totalSamples: Math.max(1, samplesAccumulated),
-        forceDeOff:   true,
-      });
-
-      const elapsedSec = recorder.elapsedMs() / 1000;
-      const pct  = Math.min(100, Math.round(100 * samplesAccumulated / targetTotalSamples));
-      const mb   = (recorder.bytesAccumulated() / (1024 * 1024)).toFixed(2);
-      status.setText(
-        `Recording ${displayName}\n` +
-        `● ${mmss(elapsedSec)} / ${mmss(prefs.recordTimeSec)} · ` +
-        `samples ${(samplesAccumulated / 1e6).toFixed(1)}M / ${(targetTotalSamples / 1e6).toFixed(1)}M · ${pct}% · ` +
-        `~${mb} MB`,
-      );
-
-      if (samplesAccumulated >= targetTotalSamples) { reachedSettle = true; break; }
-      if (elapsedSec >= prefs.recordTimeSec)        { reachedSettle = true; break; }
-
-      const frameElapsed = performance.now() - frameStart;
-      const sleepFor     = Math.max(1, FRAME_INTERVAL_MS - frameElapsed);
-      await new Promise<void>((r) => setTimeout(r, sleepFor));
-    }
-
-    if (isCancelled() && !state.manualStopAndSave) {
-      // Abort path — Esc / navigate-away. Discard, no download.
-      await recorder.stop(false);
-      fireOnce();
-      return;
-    }
-
-    if (reachedSettle) {
-      // Settle present: density ON, tone-normalize to actual accumulated samples.
-      renderer.present({
-        genome,
-        outputView:   ctx.getCurrentTexture().createView(),
-        totalSamples: Math.max(1, samplesAccumulated),
-        forceDeOff:   false,
-      });
-    }
-    status.setText('Saving recording…');
-    await recorder.stop(true);
-    fireOnce();
-    } finally {
-      renderer.destroy();
-    }
-  })();
+  const player = createSteppedPlayer({
+    timeline,
+    durationSec: prefs.animation.durationSec,
+    updateIntervalSec: prefs.animation.updateIntervalSec,
+    loop: prefs.animation.loop,
+    isCancelled,
+    renderFrame: async (genome) => {
+      await renderFlameToQuality({ renderer: layer.renderer, genome, ctx: layer.ctx, W: layer.W, H: layer.H, targetQ: quality, isCancelled });
+    },
+    onProgress: (i, frames) => { bar.setProgress(frames > 1 ? i / (frames - 1) : 1); },
+  });
+  player.start();
 
   return {
-    cancel() { state.cancelled = true; },
-    controls: {
-      togglePause() { /* no-op: pausing yields held frames in the .webm */ },
-      isPaused() { return false; },
-      skip(_dir) { /* no-op: skipping mid-record would splice flames */ },
-      requestStopAndSave() { state.manualStopAndSave = true; },
-    },
+    cancel() { cancelled = true; player.destroy(); layer.renderer.destroy(); },
+    player,
   };
 }
 
-export function mountScreensaverPage(
-  opts: MountScreensaverOpts,
-): ScreensaverPageHandle {
+// ─── page mount ─────────────────────────────────────────────────────────────
+
+export function mountScreensaverPage(opts: MountScreensaverOpts): ScreensaverPageHandle {
   const { root, device, format } = opts;
   root.replaceChildren();
+  injectStyleOnce();
 
   const canvasHost = el('div', 'pyr3-screensaver-canvas-host');
-  Object.assign(canvasHost.style, {
-    position: 'absolute',
-    inset: '0',
-  });
+  Object.assign(canvasHost.style, { position: 'absolute', inset: '0' });
   root.append(canvasHost);
 
-  let runHandle: ModeHandle | null = null;
-
-  let pillHandle: PillHandle | RecordPillHandle | null = null;
-  let pillSyncTimer: number | undefined;
-  let isRecordMode = false;
+  let slideHandle: ModeHandle | null = null;
+  let animHandle: AnimationHandle | null = null;
+  let bar: ControlBar | null = null;
+  let animPaused = false;
 
   const landing = mountScreensaverLanding(root, {
-    device,
-    format,
-    onPlay: (prefs: ScreensaverPrefs, pickedRef) => {
+    onPlay: (prefs, timeline, timelineName) => {
+      if (slideHandle || animHandle) return; // already playing — ignore re-entry
       landing.card.classList.add('hidden');
-      isRecordMode = prefs.mode === 'record';
+      if (!device || !format) return; // preview mode (no WebGPU) — landing only
 
-      // Record mode mounts its own simplified pill (⛶ ⏹) and gates on
-      // both WebGPU + a picked flame. Build-up / slideshow share the
-      // 5-button NowPlaying pill regardless of WebGPU availability so
-      // the UI shape stays stable in preview mode.
-      if (isRecordMode) {
-        const status = buildStatusPanel();
-        root.append(status.el);
-        if (!device || !format) {
-          status.setText('WebGPU unavailable — recording requires WebGPU.');
-          return;
-        }
-        if (!pickedRef) {
-          status.setText('Record mode requires a picked flame.');
-          return;
-        }
-        const recordPill = buildRecordPill({
-          onFullscreen: () => { void toggleFullscreen(root); },
-          onStop:       () => {
-            // Don't cancel — the loop sees manualStopAndSave and exits cleanly
-            // through the save path. onDone fires stopPlayback when the
-            // recorder finishes its blob assembly.
-            runHandle?.controls.requestStopAndSave?.();
+      if (prefs.mode === 'animation') {
+        if (!timeline) { landing.card.classList.remove('hidden'); return; }
+        const stepBack = (): void => { animPaused = true; animHandle?.player.stepBack(); bar?.setPaused(true); };
+        const stepForward = (): void => { animPaused = true; animHandle?.player.stepForward(); bar?.setPaused(true); };
+        bar = createControlBar({
+          transport: 'animation',
+          onPlayPause: () => {
+            animPaused = !animPaused;
+            if (animPaused) animHandle?.player.pause(); else animHandle?.player.resume();
+            bar?.setPaused(animPaused);
           },
+          onPrev: stepBack,
+          onNext: stepForward,
+          onFullscreen: () => { void toggleFullscreen(root); },
+          onExit: stopPlayback,
         });
-        pillHandle = recordPill;
-        root.append(recordPill.el);
-        attachPillAutohide(recordPill.el);
-        runHandle = runRecordSession({
-          device, format, canvasHost, prefs, status, pickedRef,
-          onDone: () => { stopPlayback(); },
-        });
-        return;
-      }
-
-      const nowPlaying = buildNowPlayingPill({
-        onPrev:       () => runHandle?.controls.skip(-1),
-        onPause:      () => runHandle?.controls.togglePause(),
-        onNext:       () => runHandle?.controls.skip(1),
-        onFullscreen: () => { void toggleFullscreen(root); },
-        onStop:       stopPlayback,
-      });
-      pillHandle = nowPlaying;
-      root.append(nowPlaying.el);
-      attachPillAutohide(nowPlaying.el);
-      const status = buildStatusPanel();
-      root.append(status.el);
-      if (device && format) {
-        runHandle =
-          prefs.mode === 'build-up'
-            ? startBuildUp({ device, format, canvasHost, prefs, status })
-            : startSlideshow({ device, format, canvasHost, prefs, status });
+        root.append(bar.el);
+        animPaused = false;
+        animHandle = startAnimation({ device, format, canvasHost, prefs, timeline, bar, fileName: timelineName ?? 'timeline' });
       } else {
-        status.setText('WebGPU unavailable — preview mode only.');
+        bar = createControlBar({
+          transport: 'slideshow',
+          onPrev: () => slideHandle?.controls.skip(-1),
+          onNext: () => slideHandle?.controls.skip(1),
+          onPlayPause: () => { slideHandle?.controls.togglePause(); bar?.setPaused(slideHandle?.controls.isPaused() ?? false); },
+          onFullscreen: () => { void toggleFullscreen(root); },
+          onExit: stopPlayback,
+        });
+        root.append(bar.el);
+        slideHandle = startSlideshow({ device, format, canvasHost, prefs, bar });
       }
-      // Poll runHandle.controls.isPaused() so the pill icon + ring stays
-      // in sync regardless of who toggled pause (keyboard / pill click).
-      pillSyncTimer = window.setInterval(() => {
-        if (!pillHandle || !runHandle) return;
-        (pillHandle as PillHandle).setPaused?.(runHandle.controls.isPaused());
-      }, 100);
+      attachReveal();
+      bar.reveal();
     },
   });
 
   Object.assign(landing.card.style, {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    zIndex: '5',
+    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: '5',
   });
-  injectHiddenRuleOnce();
 
+  // ── reveal-on-activity ──
   let mousemoveListener: ((ev: MouseEvent) => void) | null = null;
-  let pillHideTimer: number | undefined;
-
-  function attachPillAutohide(pill: HTMLElement): void {
-    function show(): void {
-      pill.style.opacity = '1';
-      pill.style.pointerEvents = 'auto';
-      window.clearTimeout(pillHideTimer);
-      pillHideTimer = window.setTimeout(() => {
-        pill.style.opacity = '0';
-        pill.style.pointerEvents = 'none';
-      }, 2500);
-    }
-    mousemoveListener = () => show();
+  function attachReveal(): void {
+    if (mousemoveListener) return;
+    mousemoveListener = () => bar?.reveal();
     window.addEventListener('mousemove', mousemoveListener);
-    show();
+  }
+  function detachReveal(): void {
+    if (mousemoveListener) { window.removeEventListener('mousemove', mousemoveListener); mousemoveListener = null; }
   }
 
-  // Window-level keydown listener. Lives for the page lifetime; handlers
-  // delegate to the active mode's controls (null when not playing).
+  // ── keyboard ──
   function onKeydown(ev: KeyboardEvent): void {
-    // Don't steal keys when the user is typing in the freeform input on the
-    // landing card.
     const target = ev.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
-      // Allow Esc to fall through (browser default).
       if (ev.key !== 'Escape') return;
     }
+    if (!slideHandle && !animHandle) return;
+    bar?.reveal();
     if (ev.key === ' ' || ev.code === 'Space') {
       ev.preventDefault();
-      runHandle?.controls.togglePause();
+      if (slideHandle) { slideHandle.controls.togglePause(); bar?.setPaused(slideHandle.controls.isPaused()); }
+      else if (animHandle) { animPaused = !animPaused; if (animPaused) animHandle.player.pause(); else animHandle.player.resume(); bar?.setPaused(animPaused); }
       return;
     }
-    if (ev.key === 'ArrowLeft')  { runHandle?.controls.skip(-1); return; }
-    if (ev.key === 'ArrowRight') { runHandle?.controls.skip(1);  return; }
-    if (ev.key === 'f' || ev.key === 'F') {
-      void toggleFullscreen(root);
+    if (ev.key === 'ArrowLeft') {
+      slideHandle?.controls.skip(-1);
+      if (animHandle) { animPaused = true; animHandle.player.stepBack(); bar?.setPaused(true); }
       return;
     }
-    if (ev.key === 's' || ev.key === 'S') {
-      if (runHandle) {
-        if (isRecordMode) {
-          // S = Stop & save in record mode; let runRecordSession's save
-          // path land before stopPlayback tears down.
-          runHandle.controls.requestStopAndSave?.();
-        } else {
-          stopPlayback();
-        }
-      }
+    if (ev.key === 'ArrowRight') {
+      slideHandle?.controls.skip(1);
+      if (animHandle) { animPaused = true; animHandle.player.stepForward(); bar?.setPaused(true); }
       return;
     }
-    // Esc: in record mode → abort (no save), per spec Q5. In other modes,
-    // browser auto-exits fullscreen and playback continues — no explicit
-    // handling needed there.
-    if (ev.key === 'Escape' && isRecordMode && runHandle) {
-      stopPlayback();
-      return;
-    }
+    if (ev.key === 'f' || ev.key === 'F') { void toggleFullscreen(root); return; }
+    if (ev.key === 'Escape') { stopPlayback(); return; }
   }
   window.addEventListener('keydown', onKeydown);
 
   function stopPlayback(): void {
-    runHandle?.cancel();
-    runHandle = null;
-    isRecordMode = false;
-    if (mousemoveListener) {
-      window.removeEventListener('mousemove', mousemoveListener);
-      mousemoveListener = null;
-    }
-    window.clearTimeout(pillHideTimer);
-    window.clearInterval(pillSyncTimer);
-    pillSyncTimer = undefined;
-    pillHandle = null;
-    root.querySelector('.pyr3-screensaver-pill')?.remove();
-    root.querySelector('.pyr3-screensaver-status')?.remove();
+    slideHandle?.cancel();
+    slideHandle = null;
+    animHandle?.cancel();
+    animHandle = null;
+    detachReveal();
+    bar?.destroy();
+    bar = null;
     canvasHost.replaceChildren();
-    // Exit fullscreen if we're in it. Idempotent if windowed.
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     landing.card.classList.remove('hidden');
     landing.refresh();
   }
 
-  // Clickable strip: each chip fires the same action as its keyboard
-  // shortcut. Esc-chip click does what Esc does (stop + exit FS).
-  const strip = buildControlsStrip([
-    { key: 'Space', label: 'pause',      onClick: () => runHandle?.controls.togglePause() },
-    { key: '← →',   label: 'skip',       onClick: () => runHandle?.controls.skip(1) },
-    { key: 'F',     label: 'fullscreen', onClick: () => { void toggleFullscreen(root); } },
-    { key: 'Esc',   label: 'exit FS',    onClick: () => { if (runHandle) stopPlayback(); } },
-    { key: 'S',     label: 'settings',   onClick: () => {
-      // In record mode, S = Stop & save (matches the ⏹ pill button + keyboard S);
-      // anywhere else, S returns to the landing card.
-      if (!runHandle) return;
-      if (isRecordMode) runHandle.controls.requestStopAndSave?.();
-      else stopPlayback();
-    } },
-  ]);
-  root.append(strip);
-
   return {
     stop: stopPlayback,
     destroy() {
-      runHandle?.cancel();
+      // stopPlayback tears down handles (sync renderer destroy), overlay, bar,
+      // canvasHost, reveal listener + fullscreen. Then drop the keydown listener
+      // and the landing card.
+      stopPlayback();
+      window.removeEventListener('keydown', onKeydown);
       landing.destroy();
     },
   };
 }
 
-let hiddenRuleInjected = false;
-function injectHiddenRuleOnce(): void {
-  if (hiddenRuleInjected) return;
-  hiddenRuleInjected = true;
+let styleInjected = false;
+function injectStyleOnce(): void {
+  if (styleInjected) return;
+  styleInjected = true;
   const style = document.createElement('style');
   style.textContent = `
 .pyr3-screensaver-card.hidden { display: none; }
-/* In fullscreen, hide the top strip — the flame owns the whole screen.
-   !important overrides the inline display:flex on the strip element.
-   Use both :fullscreen (native) and our class fallback for max coverage. */
-:fullscreen .pyr3-screensaver-strip { display: none !important; }
-:-webkit-full-screen .pyr3-screensaver-strip { display: none !important; }
-.pyr3-screensaver-fs .pyr3-screensaver-strip { display: none !important; }
-/* Also hide the now-playing pill + status panel in fullscreen — pure flame. */
-:fullscreen .pyr3-screensaver-pill,
-:fullscreen .pyr3-screensaver-status,
-:-webkit-full-screen .pyr3-screensaver-pill,
-:-webkit-full-screen .pyr3-screensaver-status,
-.pyr3-screensaver-fs .pyr3-screensaver-pill,
-.pyr3-screensaver-fs .pyr3-screensaver-status { display: none !important; }
 `;
   document.head.append(style);
 }
