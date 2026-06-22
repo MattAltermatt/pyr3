@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { sectionLayout, playheadX, type SectionLayoutOpts } from './timeline-sections';
+import { sectionLayout, type SectionLayoutOpts } from './timeline-sections';
+import { segmentScale } from './timeline-scale';
 import { createTimeline } from './timeline-edit';
 import type { Timeline } from './timeline';
 import type { Genome } from './genome';
@@ -50,19 +51,21 @@ describe('sectionLayout', () => {
   });
 });
 
-describe('playheadX', () => {
+// playhead placement now routes through segmentScale().timeToX (the playheadX
+// helper was inlined in #425); these assert the section-layout integration.
+describe('section playhead placement (segmentScale.timeToX)', () => {
   it('interpolates x within the segment containing t', () => {
     const tl = twoFlame();
-    const segs = sectionLayout(tl, OPTS);
+    const scale = segmentScale(sectionLayout(tl, OPTS));
     // t=1 is halfway through edge0 (time [0,2], x [60,140]) → x=100.
-    expect(playheadX(segs, 1)).toBeCloseTo(100, 6);
+    expect(scale.timeToX(1)).toBeCloseTo(100, 6);
     // t=3 is halfway through node1 hold (time [2,4], x [140,200]) → x=170.
-    expect(playheadX(segs, 3)).toBeCloseTo(170, 6);
+    expect(scale.timeToX(3)).toBeCloseTo(170, 6);
   });
   it('clamps out-of-range t to the chain ends', () => {
     const tl = twoFlame();
-    const segs = sectionLayout(tl, OPTS);
-    expect(playheadX(segs, -5)).toBe(0);
-    expect(playheadX(segs, 999)).toBeCloseTo(200, 6); // last seg x+w
+    const scale = segmentScale(sectionLayout(tl, OPTS));
+    expect(scale.timeToX(-5)).toBe(0);
+    expect(scale.timeToX(999)).toBeCloseTo(200, 6); // last seg x+w
   });
 });

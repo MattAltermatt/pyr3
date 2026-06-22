@@ -23,7 +23,7 @@ export interface ChaosPlayerOpts {
   annotate?: boolean;       // §2: jump line + readout (default false)
   seed?: number;            // rng seed (default 1)
   mode?: 'step' | 'result'; // default 'step' (see file header)
-  initialPoints?: number;   // 'result' mode: total points the auto-fill animates to (default 30000)
+  initialPoints?: number;   // 'result' mode: total points the auto-fill animates to (default 8000)
   moveLabel?: (p: PlottedPoint, flame: DemoFlame) => string; // readout text
 }
 export interface ChaosPlayerHandle { el: HTMLElement; reset(): void; destroy(): void }

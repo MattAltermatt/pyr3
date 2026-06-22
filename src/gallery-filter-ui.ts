@@ -24,11 +24,7 @@ import {
 import { FILTER_LABEL_MAP } from './gallery-facets';
 import { mountVariationPicker, type VariationPickerHandle } from './variation-picker';
 import { VARIATION_NAMES } from './variations';
-import type { ScoreWeights } from './feature-score';
 import type { FacetCounts } from './gallery-facets';
-// SORT_MODES retained for re-exports / external consumers; SortDir/SortMode
-// reach the new buildSortRow widget below.
-void SORT_MODES;
 
 export interface FilterDrawerOpts {
   initialFilter: FilterSpec;
@@ -618,13 +614,6 @@ export function mountFilterDrawer(
     },
   };
 }
-
-// ScoreWeights kept reachable in scope — main.ts re-imports it elsewhere
-// but TS still warns when the import sits unused here after the rewrite.
-// The custom-tune panel was retired in the progressive-disclosure layout;
-// if it returns it'll re-use this import.
-void (null as unknown as ScoreWeights);
-
 
 // ──────────────────────────────────────────────────────────────────────────
 // Task 5.2 — Active filter chip strip

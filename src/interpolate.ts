@@ -256,12 +256,14 @@ export function pickKeyframes(keyframes: Genome[], time: number): KeyframePick {
   const n = keyframes.length;
   if (n < 2) throw new Error('pyr3: pickKeyframes requires N >= 2');
 
-  // Endpoint clamps. flam3: `cps[0].time >= time` → i1=0, i2=1.
+  // Endpoint clamps. flam3: `cps[0].time >= time` → i1=0, i2=1. computeBlend
+  // extrapolates past the ends (c0 > 1 before first, c0 < 0 after last),
+  // pulling the result toward the nearer endpoint — matching flam3.
   if ((keyframes[0]!.time ?? 0) >= time) {
-    return endpointBlend(keyframes, 0, 1, time);
+    return computeBlend(keyframes, 0, 1, time);
   }
   if ((keyframes[n - 1]!.time ?? 0) <= time) {
-    return endpointBlend(keyframes, n - 2, n - 1, time);
+    return computeBlend(keyframes, n - 2, n - 1, time);
   }
 
   // Linear scan for the bracket. flam3.c:818-822 — same algorithm.
@@ -272,6 +274,10 @@ export function pickKeyframes(keyframes: Genome[], time: number): KeyframePick {
   return computeBlend(keyframes, i1, i2, time);
 }
 
+/** Compute the two-keyframe blend weights for `time` within the [i1, i2]
+ *  window. For interior windows c0 ∈ [0, 1]; called with an endpoint window it
+ *  extrapolates (c0 > 1 or c0 < 0) to pull toward the nearer endpoint, mirroring
+ *  flam3's `c0 = (t2 - time) / (t2 - t1)` at the ends. */
 function computeBlend(keyframes: Genome[], i1: number, i2: number, time: number): KeyframePick {
   const t1 = keyframes[i1]!.time ?? 0;
   const t2 = keyframes[i2]!.time ?? 0;
@@ -282,13 +288,6 @@ function computeBlend(keyframes: Genome[], i1: number, i2: number, time: number)
   }
   const c0 = (t2 - time) / (t2 - t1);
   return { i1, i2, c0, c1: 1 - c0 };
-}
-
-function endpointBlend(keyframes: Genome[], i1: number, i2: number, time: number): KeyframePick {
-  // At endpoints, flam3 still computes c0 = (t2 - time) / (t2 - t1) — which
-  // gives c0 > 1 (before first) or c0 < 0 (after last), pulling the result
-  // toward the nearer endpoint. We mirror that.
-  return computeBlend(keyframes, i1, i2, time);
 }
 
 // ───────────────────────────────────────────────────────────────────────────

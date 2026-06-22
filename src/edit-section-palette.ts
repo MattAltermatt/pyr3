@@ -570,11 +570,6 @@ export const paletteSection: SectionMount = {
   },
 };
 
-// Suppress unused-import warning — paletteAtIndex / FLAM3_PALETTE_COUNT
-// stay exported indirectly through edit-state callsites; the picker
-// (Task 9.3+) will reimport paletteAtIndex when wiring apply.
-void paletteAtIndex;
-
 // One-time CSS injection (idempotent — same id check as the rest of the editor).
 function ensurePaletteStyles(): void {
   if (typeof document === 'undefined') return;

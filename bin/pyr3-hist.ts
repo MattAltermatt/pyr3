@@ -22,7 +22,6 @@ import { resolve } from 'node:path';
 
 import { createChaosPass, HIST_CHANNELS } from '../src/chaos';
 import { type Genome } from '../src/genome';
-import { packIsaacStates } from '../src/isaac';
 import { computeDispatch, DEFAULT_SPP, MIN_ITERS_PER_WALKER } from '../src/renderer';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText, parsePositiveInt } from './host';
 
@@ -98,7 +97,6 @@ async function main(): Promise<void> {
 
   // Acquire Dawn device.
   const device = await acquireDawnDevice('pyr3-hist');
-  void packIsaacStates; // touch to ensure import survives tree-shake (used transitively)
 
   // Walker-sizing — identical to renderer.render() so the histogram reflects
   // the same dispatch profile a normal render produces. Diagnostic override

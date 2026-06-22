@@ -78,14 +78,10 @@ export function createHslSection(
     onClick: () => {
       state.genome.hslAdjust = undefined;
       onChange('hslAdjust');
-      // No easy way to push state back into the sliders built by buildSlider
-      // because they capture their initial value. The panel will re-mount
-      // on rebuild, but hsl is fast lane so it doesn't remount automatically.
-      // Wait, we can dispatch a pyr3:refresh-hsl event and handle it inside 
-      // the inputs, but buildSlider doesn't expose a setValue.
-      // Actually, since we're returning an HTMLElement, we can just replace 
-      // the contents or we can trigger a full remount if needed. 
-      // If we trigger a rebuild lane, it will remount. Let's do that for reset.
+      // buildSlider captures its initial value and exposes no setValue, so the
+      // cleared adjustment can't be pushed back into the existing sliders. HSL
+      // is fast-lane and doesn't remount on its own — fire a rebuild-lane change
+      // to force a full remount, which rebuilds the sliders from the reset state.
       onChange('rebuild');
     },
   });

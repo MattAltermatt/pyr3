@@ -4,9 +4,7 @@ import {
   meanLuminance,
   densityEntropy,
   colorVariance,
-  computeQuantizedStats,
 } from './bake-stats';
-import { quantizeQ8 } from '../src/feature-index';
 
 // Build an N-pixel RGBA8 buffer where every pixel has the same (r,g,b,255).
 function solidCanvas(pixels: number, r: number, g: number, b: number): Uint8Array {
@@ -137,26 +135,5 @@ describe('colorVariance', () => {
     const buf = new Uint8Array([0, 0, 0, 255, 100, 0, 0, 255]);
     const expected = 50 / (Math.sqrt(3) * 127.5);
     expect(colorVariance(buf)).toBeCloseTo(expected, 10);
-  });
-});
-
-describe('computeQuantizedStats', () => {
-  it('combines all four formulas + quantizes', () => {
-    // All-white canvas + half-and-half density.
-    const density = new Float32Array([0, 1, 0, 1]);
-    const rgba = solidCanvas(4, 255, 255, 255);
-    const out = computeQuantizedStats(density, rgba);
-    expect(out.coverage).toBe(quantizeQ8(0.5));
-    expect(out.meanLum).toBe(quantizeQ8(1));
-    expect(out.entropy).toBe(quantizeQ8(1));
-    expect(out.colorVar).toBe(quantizeQ8(0));
-  });
-
-  it('handles empty inputs without NaN', () => {
-    const out = computeQuantizedStats(new Float32Array(0), new Uint8Array(0));
-    expect(out.coverage).toBe(0);
-    expect(out.meanLum).toBe(0);
-    expect(out.entropy).toBe(0);
-    expect(out.colorVar).toBe(0);
   });
 });

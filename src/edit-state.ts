@@ -220,8 +220,9 @@ export const DEFAULT_DEBOUNCE_MS: Record<Lane, number> = {
   // Short debounce so the live (small-canvas) preview keeps up with slider
   // drags & rapid keystrokes — the editor's Apophysis-style live/settled
   // split (in edit-mount.ts) renders each slow-lane fire at downsized dims
-  // for snappy feedback. A separate 1500ms settle timer kicks the final
-  // full-dim/quality render once the user stops fiddling.
+  // for snappy feedback. A separate settle timer (default 500ms, see
+  // DEFAULT_EDIT_RENDER_SETTINGS.settleMs) kicks the final full-dim/quality
+  // render once the user stops fiddling.
   slow: 80,
   rebuild: 80,
 };

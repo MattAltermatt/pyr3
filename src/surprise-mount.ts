@@ -9,7 +9,7 @@ import { VARIATION_NAMES } from './variations';
 import { generateSurpriseBatch } from './surprise-seed';
 import { createSurpriseQueue } from './surprise-queue';
 import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
-import { createSurpriseState, MAX_KEEP_TRAY, type WallTile } from './surprise-state';
+import { createSurpriseState, MAX_KEEP_TRAY } from './surprise-state';
 import { readWall, writeWall } from './surprise-prefs';
 import { writePendingTransfer } from './edit-state';
 
@@ -20,12 +20,6 @@ const BATCH = 16;
 // Canvas backing store must equal the renderer's output dims (THUMB_DIM) so the
 // readback ImageData maps 1:1 onto the canvas. CSS scales it to the grid cell.
 const TILE_PX = THUMB_DIM;
-
-function symmetryLabel(genome: Genome): string {
-  const s = genome.symmetry;
-  if (!s) return 'asym';
-  return `${s.kind[0]!.toUpperCase()}${s.n}`;
-}
 
 export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions): SurpriseMountHandle {
   host.replaceChildren();
@@ -105,11 +99,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
       // lib types reject the ArrayBufferLike union the readback produces.
       if (ctx) ctx.putImageData(new ImageData(new Uint8ClampedArray(t.rgba), t.w, t.h), 0, 0);
       const name = VARIATION_NAMES[t.genome.xforms[0]?.variations[0]?.index ?? 0] ?? '';
-      const tile: WallTile = {
-        genome: t.genome, rgba: t.rgba, w: t.w, h: t.h,
-        label: { variation: name, symmetry: symmetryLabel(t.genome) },
-      };
-      state.setTile(item.slot, tile);
+      state.setTile(item.slot, { genome: t.genome });
       cell.classList.remove('pending');
       const labelEl = cell.querySelector('.pyr3-tile-label') as HTMLElement | null;
       if (labelEl) labelEl.textContent = name;

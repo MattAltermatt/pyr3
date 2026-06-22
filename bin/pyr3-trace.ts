@@ -20,7 +20,6 @@ import { resolve } from 'node:path';
 
 import { createChaosPass } from '../src/chaos';
 import { type Genome } from '../src/genome';
-import { ISAAC_STATE_U32 } from '../src/isaac';
 import { installWebGPUHost, acquireDawnDevice, parseGenomeText } from './host';
 
 const FUSE = 200;
@@ -100,7 +99,6 @@ async function main(): Promise<void> {
   //
   // Re-derive POST-init via packIsaacStates(walkers=1, seed) — bit-identical to
   // what was uploaded. Saves us a GPU readback.
-  void ISAAC_STATE_U32; // reserved for multi-walker dumps later
   // flam3 isaac_seed_hex protocol (flam3.c:2594-2606): the hex provides the
   // randrsl SEED that flam3 then runs through irandinit() to derive mm[] and
   // produce its first isaac() round. So pyr3 must emit the PRE-irandinit

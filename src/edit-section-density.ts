@@ -51,10 +51,6 @@ export const densitySection: SectionMount = {
     // test contract keeps working and external drivers (undo) can sync the
     // displayed value. Mirrors the hidden-range pattern in
     // edit-section-global.ts (vibrancy).
-    interface SliderPair {
-      control: SliderControl;
-    }
-
     // Collected so the DE on/off toggle can dim/disable the kernel sliders
     // when DE is off (#397).
     const sliderRows: HTMLElement[] = [];
@@ -67,7 +63,7 @@ export const densitySection: SectionMount = {
       max: number,
       step: number,
       helpKey: string,
-    ): SliderPair {
+    ): SliderControl {
       const row = document.createElement('div');
       row.className = `pyr3-edit-density-row ${cls}-row`;
       row.style.display = 'flex';
@@ -118,12 +114,12 @@ export const densitySection: SectionMount = {
       row.append(lab, control, rangeMirror, infoIcon(helpKey));
       host.appendChild(row);
       sliderRows.push(row);
-      return { control };
+      return control;
     }
 
-    const maxRadPair = makeRow('maxRad', 'pyr3-edit-density-maxRad', 'maxRad', 0, 30, 0.5, 'density.maxRad');
-    const minRadPair = makeRow('minRad', 'pyr3-edit-density-minRad', 'minRad', 0, 30, 0.1, 'density.minRad');
-    const curvePair = makeRow('curve', 'pyr3-edit-density-curve', 'curve', 0.1, 2.0, 0.05, 'density.curve');
+    const maxRadControl = makeRow('maxRad', 'pyr3-edit-density-maxRad', 'maxRad', 0, 30, 0.5, 'density.maxRad');
+    const minRadControl = makeRow('minRad', 'pyr3-edit-density-minRad', 'minRad', 0, 30, 0.1, 'density.minRad');
+    const curveControl = makeRow('curve', 'pyr3-edit-density-curve', 'curve', 0.1, 2.0, 0.05, 'density.curve');
 
     // ── DE on/off toggle (#397) ─────────────────────────────────────────────
     // DE off = maxRad 0 (radius collapses to 0 → no adaptive blur), a real
@@ -144,11 +140,11 @@ export const densitySection: SectionMount = {
         if (on) {
           const restore = state.deRestoreMaxRad ?? DEFAULT_DENSITY.maxRad;
           setField('maxRad', restore);
-          maxRadPair.control.setValue(restore);
+          maxRadControl.setValue(restore);
         } else {
           state.deRestoreMaxRad = effectiveDensity().maxRad || DEFAULT_DENSITY.maxRad;
           setField('maxRad', 0);
-          maxRadPair.control.setValue(0);
+          maxRadControl.setValue(0);
         }
         setSlidersDimmed(!on);
       },
@@ -177,9 +173,9 @@ export const densitySection: SectionMount = {
 
     function syncWidgets(): void {
       const d = effectiveDensity();
-      maxRadPair.control.setValue(d.maxRad);
-      minRadPair.control.setValue(d.minRad);
-      curvePair.control.setValue(d.curve);
+      maxRadControl.setValue(d.maxRad);
+      minRadControl.setValue(d.minRad);
+      curveControl.setValue(d.curve);
       deToggle.setValue(d.maxRad > 0);
       setSlidersDimmed(d.maxRad <= 0);
     }

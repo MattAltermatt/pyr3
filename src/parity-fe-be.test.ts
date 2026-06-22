@@ -123,8 +123,7 @@ const fixtures = isSmoke
   : allFixtures;
 
 // Per-fixture R results are appended JSONL to .remember/tmp/pyr3-026-results.jsonl
-// (truncated at beforeAll). Consumed by `scripts/pyr3-026-build-html.mjs` to
-// build the eyeball gallery and (post-calibration) to compare across runs.
+// (truncated at beforeAll) for ad-hoc inspection / cross-run comparison.
 const RESULTS_PATH = join(REPO_ROOT, '.remember', 'tmp', 'pyr3-026-results.jsonl');
 
 let viteProc: ChildProcess | null = null;

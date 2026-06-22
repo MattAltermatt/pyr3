@@ -1,5 +1,5 @@
 // #227d — the editable "section model" timeline track: key-flame nodes joined
-// by evolve sections. Pure geometry (sectionLayout/playheadX) + a createElement
+// by evolve sections. Pure geometry (sectionLayout) + a createElement
 // DOM lane (no innerHTML, per the repo invariant). Selection drives the
 // inspector in timeline-section-editor.ts; scrub/play stays on the playback bar.
 
@@ -54,23 +54,6 @@ export function sectionLayout(tl: Timeline, opts: SectionLayoutOpts): LayoutSeg[
     clipStart += dur;
   }
   return segs;
-}
-
-/** Forward map global time `t` → playhead x across a section layout. */
-export function playheadX(segs: LayoutSeg[], t: number): number {
-  if (segs.length === 0) return 0;
-  const first = segs[0]!;
-  const last = segs[segs.length - 1]!;
-  if (t <= first.tStart) return first.x;
-  if (t >= last.tEnd) return last.x + last.w;
-  for (const s of segs) {
-    if (t >= s.tStart && t <= s.tEnd) {
-      const span = s.tEnd - s.tStart;
-      if (span <= 0) return s.x; // zero-time node (pause 0)
-      return s.x + ((t - s.tStart) / span) * s.w;
-    }
-  }
-  return last.x + last.w;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +288,7 @@ export function mountSectionTrack(host: HTMLElement, opts: SectionTrackOpts): Se
   return {
     setPlayhead(t: number): void {
       lastT = t; // #276 — remembered so zoom changes can re-place the playhead
-      playhead.style.left = `${playheadX(sectionLayout(timeline, trackOpts()), t)}px`;
+      playhead.style.left = `${segmentScale(sectionLayout(timeline, trackOpts())).timeToX(t)}px`;
     },
     setSelection(sel: Selection): void { selection = sel; render(); },
     setThumbnail(index: number, thumb: HTMLCanvasElement): void { thumbs.set(index, thumb); render(); },

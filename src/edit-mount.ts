@@ -498,16 +498,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // whatever canvas is currently mounted.
   const LIVE_MAX_LONG_EDGE = 384;
   // Quiet time after the user's last edit before the full-dim/quality render
-  // kicks off. 150ms is on the snappy end of typical editor norms (Lightroom
-  // / Affinity sit around 200-300ms, Photoshop preview around 100ms).
-  // Quiet time after the last edit before the full-quality render fires.
-  // Exposed in the top-bar as a settable input — see EditUiCallbacks.
-  // Default 200 ms — longer than the original 150 because on single clicks
-  // the live frame needs time to be VISIBLE before the settled render
-  // resizes the canvas to full dims and starts encoding (the resize blanks
-  // the canvas briefly). With 200 ms, single clicks reliably show their
-  // live frame; user can tune lower for a snappier settled, higher for a
-  // longer-lived live preview.
+  // fires. Exposed in the top-bar as a settable input (see EditUiCallbacks)
+  // and persisted; the default is 500ms (DEFAULT_EDIT_RENDER_SETTINGS.settleMs).
+  // It needs to be long enough that on single clicks the live frame is VISIBLE
+  // before the settled render resizes the canvas to full dims and starts
+  // encoding (the resize blanks the canvas briefly). User can tune lower for a
+  // snappier settled render, higher for a longer-lived live preview.
   let settleDelayMs = renderSettings.settleMs;
   const BAR_DELAY_MS = 500;
 
@@ -1430,7 +1426,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     input.click();
   }
 
-  // #104 — resolve `state.genome.name` against live state if it contains a
   /** #192 — the effective save name: the user's typed save default (sticky)
    *  takes precedence; the loaded flame's name is the fallback when the user
    *  hasn't overridden. */
@@ -1527,7 +1522,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     });
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
-    let cancelled = false;
     try {
       canvas.width = targetW;
       canvas.height = targetH;
@@ -1558,10 +1552,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         format: exportOpts.format,
         transparent: exportOpts.transparent,
       });
-      if (outcome === 'cancelled') {
-        // User-cancelled — silent (modal close + restore is enough signal).
-        cancelled = true;
-      } else {
+      // outcome === 'cancelled' is silent (modal close + restore is signal enough).
+      if (outcome !== 'cancelled') {
         // #176 — post-save toast confirms filename + Downloads landing.
         // #334 — reflect the chosen format's extension.
         const savedExt = exportOpts.format === 'exr' ? 'exr' : 'png';
@@ -1589,8 +1581,6 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       panelHost.removeAttribute('data-busy');
       modal.close();
       renderInFlight = false;
-      // Suppress unused-variable diagnostic; cancelled is documented above.
-      void cancelled;
     }
   }
 

@@ -1,12 +1,13 @@
 // Variation registry for pyr3.
 //
 // Each variation has a stable numeric INDEX matching the WGSL switch
-// dispatcher in `src/shaders/chaos.wgsl`. As of 2026-06-09 the catalog
-// holds V0..V303 (304 entries) — flam3 originals + DC family + Apophysis
-// plugin pack + JWildfire 2D long tail (V152..V213 from #121, V214..V219
-// from #170 sibling-pair completions) + Pyre originals (V220.., e.g.
-// chaotic-billiards V258..V261 from #150, modular V266..V270 from #131,
-// and the More Variations Marathon V271..V303 from #16 — 11 novel families).
+// dispatcher in `src/shaders/chaos.wgsl`. The catalog holds V0..V322
+// (323 entries) — flam3 originals + DC family + Apophysis plugin pack +
+// JWildfire 2D long tail (V152..V213 from #121, V214..V219 from #170
+// sibling-pair completions) + Pyre originals (V220.., e.g. chaotic-billiards
+// V258..V261 from #150, modular V266..V270 from #131, the More Variations
+// Marathon V271..V303 from #16, and the v1.10.0 novel warp families
+// V304..V322 — also #16).
 //
 // Adding a variation = (1) add an entry to V, (2) add a `var_X` kernel
 // in chaos.wgsl, (3) add a switch case in `apply_variation`. The genome

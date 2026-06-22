@@ -10,7 +10,7 @@
 // names + author nicks from untrusted .flame XML can't smuggle script. The SVG
 // octocat is assembled via createElementNS for the same reason.
 
-import { corpusUrl, galleryUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
+import { corpusUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
 import { buildNavMenu } from './nav-menu';
 import type { QualityRequest } from './presets';
 import { composeFlameFilename } from './save-flame';
@@ -511,13 +511,6 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   // the viewer-specific meta readout (flame name + quality + variations).
   const infoRow = el('div', 'pyr3-bar-info');
   const infoLeft = el('div', 'pyr3-zone-left');
-  // setGalleryHref still updates an internal anchor for back-compat. The
-  // chrome's gallery tab replaces the visible link, but the BarHandle
-  // contract stays. The link is created but kept off-DOM so the setter can
-  // no-op safely without surprising callers.
-  const gallery = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
-  gallery.href = galleryUrl(1);
-  gallery.textContent = 'gallery';
   const metaName = el('div', 'pyr3-bar-meta-name');
   // Quality readout (PYR3-050): ` · {w}×{h} · q{spp} · {tier}` after the name.
   const metaQuality = el('span', 'pyr3-bar-quality');
@@ -875,8 +868,10 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
       currentQuality = q; // #22
       refreshSave();
     },
-    setGalleryHref(page) {
-      gallery.href = galleryUrl(page);
+    setGalleryHref(_page) {
+      // No-op stub for BarHandle back-compat (#103 Task 1.4): the chrome's
+      // gallery tab now owns gallery navigation, so there's no longer a
+      // bar-owned anchor to update. Kept so the main.ts call site stays valid.
     },
     setVariations(names) {
       // #103 Phase 3 Task 3.1 — every variation visible inline, no `+N`
@@ -1507,16 +1502,6 @@ const BAR_CSS = `
 }
 .pyr3-nav-pill:hover { background: var(--accent); color: ${COLORS.bg.page}; }
 .pyr3-nav-pill.disabled { opacity: 0.4; pointer-events: none; cursor: not-allowed; }
-.pyr3-bar-qlabel { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.pyr3-bar-ladder { display: inline-flex; border: 1px solid #3a3a42; border-radius: 6px; overflow: hidden; }
-.pyr3-tier-btn {
-  font-size: 11px; padding: 4px 11px; font-family: inherit; cursor: pointer;
-  background: #202026; color: var(--text-muted); border: 0; border-right: 1px solid #3a3a42;
-}
-.pyr3-tier-btn:last-child { border-right: 0; }
-.pyr3-tier-btn:hover:not(:disabled):not(.on) { background: #2a2a30; color: var(--text); }
-.pyr3-tier-btn.on { background: var(--accent); color: ${COLORS.bg.page}; font-weight: 600; }
-.pyr3-tier-btn:disabled { color: #555; cursor: not-allowed; }
 .pyr3-bar-quality { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; white-space: nowrap; }
 .pyr3-bar-gallery-nav {
   /* #103 Phase 4 Task 4.1 — Gallery info row is a 3-column grid (1fr|auto|1fr);
@@ -1578,35 +1563,6 @@ const BAR_CSS = `
   min-width: 0;
 }
 
-.pyr3-bar-advanced {
-  display: flex; align-items: center; gap: 9px;
-  padding: 7px 14px; font-size: 11px;
-  background: var(--bar-bg-3); border-bottom: 1px solid var(--bar-border);
-}
-.pyr3-bar-advanced[hidden] { display: none; }
-.pyr3-adv-num {
-  width: 72px; font-family: ui-monospace, monospace; font-size: 11px;
-  background: #202026; color: var(--text); border: 1px solid #3a3a42; border-radius: 4px; padding: 3px 6px;
-}
-.pyr3-adv-unit { font-size: 10px; color: var(--text-dim); }
-.pyr3-adv-range { width: 130px; accent-color: var(--accent); }
-.pyr3-adv-sppval { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent); min-width: 36px; }
-.pyr3-adv-cost { font-family: ui-monospace, monospace; font-size: 10px; color: var(--text-dim); }
-.pyr3-adv-cost.over { color: var(--err); }
-.pyr3-adv-render {
-  font-size: 11px; padding: 4px 14px; border-radius: 4px; font-family: inherit; font-weight: 600; cursor: pointer;
-  background: var(--accent); color: ${COLORS.bg.page}; border: 1px solid var(--accent);
-}
-.pyr3-adv-render:disabled { background: #2a2118; color: #6b5a44; border-color: #3a3a42; cursor: not-allowed; }
-
-.pyr3-bar-wordmark {
-  color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 5px;
-}
-.pyr3-bar-mark { width: 16px; height: 16px; display: block; }
-.pyr3-bar-wordmark:hover { text-decoration: underline; }
-.pyr3-bar-about { color: var(--text-dim); font-size: 11px; text-decoration: none; white-space: nowrap; }
-.pyr3-bar-about:hover { color: var(--text-muted); text-decoration: underline; }
 .pyr3-bar-sep { color: var(--text-dim); }
 .pyr3-bar-meta-name { color: var(--text); user-select: text; cursor: text; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pyr3-bar-meta-author { color: var(--text-muted); }
@@ -1757,33 +1713,6 @@ const BAR_CSS = `
   transform: translateY(1px);
   filter: drop-shadow(0 0 6px rgba(255, 130, 30, 0.35));
 }
-.pyr3-brand-wordmark {
-  font-weight: 800; font-size: 24px; line-height: 1; letter-spacing: -0.02em;
-  background: linear-gradient(180deg, ${COLORS.flame.top}, ${COLORS.flame.bot});
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.pyr3-tabs {
-  display: flex; align-items: center; gap: 4px;
-  background: #07070a; padding: 3px;
-  border-radius: 9px; border: 1px solid #1a1a1f;
-}
-.pyr3-tab {
-  padding: 4px 16px; border-radius: 7px;
-  font-size: 13px; font-weight: 600; color: ${COLORS.text.muted};
-  cursor: pointer; user-select: none;
-  transition: color 0.15s, background 0.15s;
-}
-.pyr3-tab:hover { color: ${COLORS.text.primary}; }
-.pyr3-tab.active {
-  background: linear-gradient(180deg, #2a1a08, #1a0d04);
-  color: ${COLORS.flame.top};
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 190, 62, 0.5),
-    inset 0 1px 3px rgba(0, 0, 0, 0.7),
-    0 0 14px rgba(255, 130, 30, 0.2);
-  text-shadow: 0 0 8px rgba(255, 190, 62, 0.5);
-}
-
 .pyr3-right-cluster {
   display: flex; align-items: center; justify-content: flex-end; gap: 18px;
   min-width: 0;

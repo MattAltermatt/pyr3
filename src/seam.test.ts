@@ -119,7 +119,6 @@ const SEAM_EXEMPT = new Set<string>([
   'palette-editor.ts',         // /gradient stop-bar editor — DOM-mounting (#115)
   'color-picker.ts',           // /gradient HSV picker popover — owns DOM (#115)
   'palette-file.ts',           // /gradient .pyre-palette.json import/export — anchor download (#115)
-  'timeline-track.ts',         // /animate timeline lane — DOM-mounting (clip blocks, draggable playhead) (#227c)
   'timeline-thumbnails.ts',    // /animate clip thumbnails — creates offscreen canvases via document (#227c)
   'timeline-sections.ts',      // /animate section-model authoring track — DOM-mounting (#227d)
   'timeline-section-editor.ts',// /animate clip/section inspector — DOM-mounting (#227d)

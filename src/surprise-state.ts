@@ -6,8 +6,7 @@
 import { type Genome } from './genome';
 import { readKeepTray, writeKeepTray } from './surprise-prefs';
 
-export interface TileLabel { variation: string; symmetry: string }
-export interface WallTile { genome: Genome; rgba: Uint8ClampedArray; w: number; h: number; label: TileLabel }
+export interface WallTile { genome: Genome }
 export interface KeptFlame { genome: Genome }
 
 /** #304 — hard cap on the keep-tray. Each entry is a full genome (~25 KB, a

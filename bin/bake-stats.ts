@@ -1,14 +1,11 @@
 // Pure per-sheep statistics for the feature-index bake CLI.
 //
 // Four formulas — histogram coverage, mean luminance, density entropy,
-// color variance — plus a quantizing wrapper. ZERO environment branching,
-// no GPU, no I/O, no DOM. Inputs are the raw Float32 density grid and the
-// RGBA8 pixel buffer the Draft render leaves behind; outputs are 0..1
-// floats (or q8 bytes from the wrapper). All four are defensive against
-// empty inputs and non-finite values so a corrupt render never poisons a
-// feature record with NaN.
-
-import { quantizeQ8 } from '../src/feature-index';
+// color variance. ZERO environment branching, no GPU, no I/O, no DOM.
+// Inputs are the raw Float32 density grid and the RGBA8 pixel buffer the
+// Draft render leaves behind; outputs are 0..1 floats. All four are
+// defensive against empty inputs and non-finite values so a corrupt
+// render never poisons a feature record with NaN.
 
 /** Fraction of histogram cells with non-zero density. 0..1. */
 export function histogramCoverage(density: Float32Array): number {
@@ -99,26 +96,4 @@ export function colorVariance(rgba: Uint8Array): number {
   const norm = stddev / (Math.sqrt(3) * 127.5);
   if (!Number.isFinite(norm)) return 0;
   return norm < 0 ? 0 : norm > 1 ? 1 : norm;
-}
-
-/** The 4 q8 bytes the bake writes into a feature record for one sheep. */
-export interface QuantizedStats {
-  coverage: number;
-  meanLum: number;
-  entropy: number;
-  colorVar: number;
-}
-
-/** Convenience: compute all four stats + quantize. The bake CLI calls this
- *  once per sheep after the Draft render completes. */
-export function computeQuantizedStats(
-  density: Float32Array,
-  rgba: Uint8Array,
-): QuantizedStats {
-  return {
-    coverage: quantizeQ8(histogramCoverage(density)),
-    meanLum: quantizeQ8(meanLuminance(rgba)),
-    entropy: quantizeQ8(densityEntropy(density)),
-    colorVar: quantizeQ8(colorVariance(rgba)),
-  };
 }
