@@ -39,6 +39,7 @@ const SRC_DIR = __dirname;
 // here; engine modules MUST NOT.
 const SEAM_EXEMPT = new Set<string>([
   'main.ts',              // viewer entry — uses document, window, history
+  'main-dev-hooks.ts',    // DEV-only window.__pyr3* debug hooks (#423)
   'avail-client.ts',      // uses import.meta.env.BASE_URL (build constant)
   'corpus-bounds.ts',     // same
   'chunk-fetch.ts',       // same
