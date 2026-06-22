@@ -310,9 +310,33 @@ export function persistWip(genome: Genome): void {
   }
 }
 
+/** #421 — minimal structural validation for a restored WIP genome. A blob whose
+ *  JSON parses but whose *shape* is stale/incompatible (e.g. a pre-migration
+ *  schema, or hand-planted junk) must NOT be handed to editor init: the renderer
+ *  indexes `xforms[0]` / `palette.stops[0]`, so a missing/empty array crashes the
+ *  whole `/editor` mount with no recovery. We check only the invariants the
+ *  renderer hard-assumes — the non-optional `Genome` fields — so a genuinely
+ *  valid (if old-but-compatible) flame still restores; anything else fails soft
+ *  to the reroll path. This is intentionally shallow: it guards structure, not
+ *  semantics. (A future `_v` schema-version tag could enable deterministic
+ *  migration/upgrade of stale payloads — see #421.) */
+function isStructurallyValidGenome(obj: unknown): obj is Genome {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const g = obj as Record<string, unknown>;
+  if (typeof g.name !== 'string') return false;
+  if (!Array.isArray(g.xforms) || g.xforms.length === 0) return false;
+  if (!Number.isFinite(g.scale) || !Number.isFinite(g.cx) || !Number.isFinite(g.cy)) return false;
+  const palette = g.palette as Record<string, unknown> | null | undefined;
+  if (typeof palette !== 'object' || palette === null) return false;
+  if (!Array.isArray(palette.stops) || palette.stops.length === 0) return false;
+  return true;
+}
+
 /** Read the persisted genome back. Returns null when:
  *   • the key isn't present (first visit / cleared storage)
  *   • the stored JSON is malformed (corrupted by a partial write)
+ *   • the parsed value fails minimal structural validation (#421 — stale schema
+ *     / hand-planted junk that would crash editor init)
  *   • localStorage itself throws (private mode).
  *
  *  The caller (mountEditPage cold-start) treats null as "no saved WIP" and
@@ -321,7 +345,8 @@ export function restoreWip(): Genome | null {
   try {
     const raw = globalThis.localStorage?.getItem(WIP_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as Genome;
+    const parsed: unknown = JSON.parse(raw);
+    return isStructurallyValidGenome(parsed) ? parsed : null;
   } catch {
     return null;
   }

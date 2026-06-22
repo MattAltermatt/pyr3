@@ -7,6 +7,7 @@ import {
   setActiveCanvasOverlay,
   persistWip,
   restoreWip,
+  resolveColdStartGenomeWithSource,
   schedulePersist,
   WIP_KEY,
   loadEditRenderSettings,
@@ -304,6 +305,62 @@ describe('persistWip / restoreWip', () => {
   it('restoreWip returns null when JSON is malformed (does not crash)', () => {
     localStorage.setItem(WIP_KEY, '{not valid json');
     expect(restoreWip()).toBeNull();
+  });
+
+  // #421 — fail soft on structurally-stale-but-valid-JSON WIP. A genome whose
+  // JSON parses but whose shape is old/incompatible must return null (→ caller
+  // rerolls a fresh genome) rather than slip through and crash editor init
+  // downstream (e.g. `xforms[0]` / `palette.stops[0]` on undefined).
+  it('restoreWip returns null for valid JSON that is not an object', () => {
+    for (const raw of ['42', '"hello"', 'null', 'true', '[1,2,3]']) {
+      localStorage.setItem(WIP_KEY, raw);
+      expect(restoreWip()).toBeNull();
+    }
+  });
+
+  it('restoreWip returns null when xforms is missing or empty', () => {
+    const g = generateRandomGenome();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, xforms: undefined }));
+    expect(restoreWip()).toBeNull();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, xforms: [] }));
+    expect(restoreWip()).toBeNull();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, xforms: 'not-an-array' }));
+    expect(restoreWip()).toBeNull();
+  });
+
+  it('restoreWip returns null when palette is missing or has no stops', () => {
+    const g = generateRandomGenome();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, palette: undefined }));
+    expect(restoreWip()).toBeNull();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, palette: { name: 'x', stops: [] } }));
+    expect(restoreWip()).toBeNull();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, palette: { name: 'x' } }));
+    expect(restoreWip()).toBeNull();
+  });
+
+  it('restoreWip returns null when scale/cx/cy are not finite numbers', () => {
+    const g = generateRandomGenome();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, scale: undefined }));
+    expect(restoreWip()).toBeNull();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, cx: 'nope' }));
+    expect(restoreWip()).toBeNull();
+  });
+
+  it('restoreWip still returns a structurally-complete genome', () => {
+    const g = generateRandomGenome();
+    g.name = 'structurally-valid';
+    persistWip(g);
+    expect(restoreWip()?.name).toBe('structurally-valid');
+  });
+
+  it('resolveColdStartGenomeWithSource falls through to reroll on stale WIP (no throw)', () => {
+    const g = generateRandomGenome();
+    localStorage.setItem(WIP_KEY, JSON.stringify({ ...g, xforms: [] }));
+    const fresh = generateRandomGenome();
+    fresh.name = 'fresh-reroll';
+    const result = resolveColdStartGenomeWithSource(() => fresh);
+    expect(result.source).toBe('reroll');
+    expect(result.genome.name).toBe('fresh-reroll');
   });
 
   it('round-trip preserves genome fields (parse + stringify integrity)', () => {
