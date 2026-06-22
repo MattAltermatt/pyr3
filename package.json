@@ -38,6 +38,7 @@
     "bench": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bench.ts",
     "hist": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-hist.ts",
     "bake-features": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs bin/pyr3-bake-features.ts",
+    "convert-feature-index": "node --import tsx/esm bin/pyr3-convert-feature-index.ts",
     "gen:variation-thumbs": "node --import tsx/esm --import ./bin/wgsl-loader-register.mjs scripts/gen-variation-thumbs.mjs",
     "audit:live": "node --import tsx/esm scripts/audit-live-pages.ts"
   },
