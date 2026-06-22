@@ -8062,6 +8062,62 @@ fn atomic_add_sat_idx(idx: u32, delta: u32) {
   }
 }
 
+// Apply pre_blur (V=97) deltas to `coord`. flam3-canonical: pre_blur mutates
+// the affine pre-transform coord BEFORE the regular variation chain runs.
+// Shared by the main xform chain and the finalxform chain (#427 dedup).
+//
+// DETERMINISM (load-bearing): draws EXACTLY five ISAAC values per pre_blur
+// entry in left-to-right order r0..r4 (r0..r3 → Gaussian radius, r4 → angle).
+// rand01(walker_id) advances the per-walker ISAAC stream, so this draw order
+// must NOT be reordered, hoisted, or short-circuited — FE↔BE determinism and
+// the flam3-C parity rig both depend on the exact RNG-consumption sequence.
+fn apply_pre_blur(coord: vec2f, xform_idx: u32, num_vars: u32, walker_id: u32) -> vec2f {
+  var out = coord;
+  for (var k = 0u; k < num_vars; k = k + 1u) {
+    let v = xforms[xform_idx].vars[k];
+    if (u32(v.x) == 97u) {
+      let r0 = rand01(walker_id);
+      let r1 = rand01(walker_id);
+      let r2 = rand01(walker_id);
+      let r3 = rand01(walker_id);
+      let rndG = v.y * (r0 + r1 + r2 + r3 - 2.0);
+      let r4 = rand01(walker_id);
+      let rndA = r4 * TAU;
+      // Note: v.y (weight) is already folded into rndG; do NOT multiply again here.
+      out = out + vec2f(cos(rndA) * rndG, sin(rndA) * rndG);
+    }
+  }
+  return out;
+}
+
+// Result of a direct-color (DC) override lookup. `hit` is false when the
+// variation has no DC color contribution. (`active` is a WGSL reserved word —
+// do not rename this field to `active`.)
+struct DcColor { rgb: vec3f, hit: bool }
+
+// #114 — compute the direct-color override for one DC variation in a chain.
+// Color is computed from the variation's INPUT coord (pre-warp), matching
+// JWildfire. Shared by the main + finalxform chains (#427 dedup); callers gate
+// on `color_params.w > 0.5 && v.y > 0.0` and keep "last DC in chain wins".
+fn dc_color_for(var_idx: u32, coord: vec2f, v: vec4f, ve: vec4f) -> DcColor {
+  if (var_idx == 99u) { return DcColor(var_dc_linear_color(coord), true); }
+  // dc_perlin params: scale (v.z), octaves (v.w), color_seed (ve.x).
+  if (var_idx == 100u) { return DcColor(var_dc_perlin_color(coord, v.z, v.w, ve.x), true); }
+  // dc_gridout params: cells (v.z).
+  if (var_idx == 101u) { return DcColor(var_dc_gridout_color(coord, v.z), true); }
+  if (var_idx == 102u) { return DcColor(var_dc_cylinder_color(coord), true); }
+  // #133 V220 newton: DC basin color (recomputes one Newton step internally).
+  if (var_idx == 220u) { return DcColor(var_newton_color(coord, v.z), true); }
+  // magnetic_pendulum params: magnets (v.z), radius (v.w).
+  if (var_idx == 265u) { return DcColor(var_magnetic_pendulum_color(coord, v.z, v.w), true); }
+  // #145 escape-band colors. cx (v.z), cy (v.w), nova relax (ve.x).
+  if (var_idx == 310u) { return DcColor(escape_color(coord, 310u, v.z, v.w, 0.0), true); }
+  if (var_idx == 311u) { return DcColor(escape_color(coord, 311u, v.z, v.w, 0.0), true); }
+  if (var_idx == 312u) { return DcColor(escape_color(coord, 312u, v.z, v.w, ve.x), true); }
+  if (var_idx == 313u) { return DcColor(escape_color(coord, 313u, v.z, v.w, 0.0), true); }
+  return DcColor(vec3f(0.0), false);
+}
+
 @compute @workgroup_size(64)
 fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   let walker_id = gid.x;
@@ -8150,21 +8206,7 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     // would `u32`-cast to a huge value and stall the workgroup. Phase 9b
     // post-mortem hardening (BACKLOG, 2026-05-12).
     let num_vars = min(u32(a1.w), MAX_VARS_PER_XFORM);
-    var pa_mut = pa;
-    for (var k = 0u; k < num_vars; k = k + 1u) {
-      let v = xforms[fn_idx].vars[k];
-      if (u32(v.x) == 97u) {
-        let r0 = rand01(walker_id);
-        let r1 = rand01(walker_id);
-        let r2 = rand01(walker_id);
-        let r3 = rand01(walker_id);
-        let rndG = v.y * (r0 + r1 + r2 + r3 - 2.0);
-        let r4 = rand01(walker_id);
-        let rndA = r4 * TAU;
-        // Note: v.y (weight) is already folded into rndG; do NOT multiply again here.
-        pa_mut = pa_mut + vec2f(cos(rndA) * rndG, sin(rndA) * rndG);
-      }
-    }
+    let pa_mut = apply_pre_blur(pa, fn_idx, num_vars, walker_id);
     var pv = vec2f(0.0, 0.0);
     // #114 — DC override accumulator for THIS xform's chain. When the
     // xform's dc_flag (color_params.w) is set, the chain has at least
@@ -8194,45 +8236,9 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
       // dc_rgb_override). For dc_cylinder, color is computed from pa_mut
       // (the input coord), NOT the post-warp coord — matches JWildfire.
       if (xf.color_params.w > 0.5 && v.y > 0.0) {
-        if (var_idx == 99u) {
-          dc_rgb_override = var_dc_linear_color(pa_mut);
-          dc_override_active = true;
-        } else if (var_idx == 100u) {
-          // dc_perlin params: scale (v.z), octaves (v.w), color_seed (ve.x).
-          dc_rgb_override = var_dc_perlin_color(pa_mut, v.z, v.w, ve.x);
-          dc_override_active = true;
-        } else if (var_idx == 101u) {
-          // dc_gridout params: cells (v.z).
-          dc_rgb_override = var_dc_gridout_color(pa_mut, v.z);
-          dc_override_active = true;
-        } else if (var_idx == 102u) {
-          dc_rgb_override = var_dc_cylinder_color(pa_mut);
-          dc_override_active = true;
-        } else if (var_idx == 220u) {
-          // #133 V220 newton: position-warp + DC basin color. Color
-          // helper recomputes one Newton step internally to classify
-          // the nearest root for the basin hue.
-          dc_rgb_override = var_newton_color(pa_mut, v.z);
-          dc_override_active = true;
-        } else if (var_idx == 265u) {
-          // magnetic_pendulum params: magnets (v.z), radius (v.w).
-          dc_rgb_override = var_magnetic_pendulum_color(pa_mut, v.z, v.w);
-          dc_override_active = true;
-        } else if (var_idx == 310u) {
-          // #145 burning_ship escape-band color. cx (v.z), cy (v.w).
-          dc_rgb_override = escape_color(pa_mut, 310u, v.z, v.w, 0.0);
-          dc_override_active = true;
-        } else if (var_idx == 311u) {
-          // #145 magnet1 escape-band color. cx (v.z), cy (v.w).
-          dc_rgb_override = escape_color(pa_mut, 311u, v.z, v.w, 0.0);
-          dc_override_active = true;
-        } else if (var_idx == 312u) {
-          // #145 nova escape-band color. cx (v.z), cy (v.w), relax (ve.x).
-          dc_rgb_override = escape_color(pa_mut, 312u, v.z, v.w, ve.x);
-          dc_override_active = true;
-        } else if (var_idx == 313u) {
-          // #145 halley escape-band color. cx (v.z), cy (v.w).
-          dc_rgb_override = escape_color(pa_mut, 313u, v.z, v.w, 0.0);
+        let dc = dc_color_for(var_idx, pa_mut, v, ve);
+        if (dc.hit) {
+          dc_rgb_override = dc.rgb;
           dc_override_active = true;
         }
       }
@@ -8366,21 +8372,7 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         // Defensive clamp on f_num_vars per the same Phase 9b post-mortem
         // hardening as the regular xform path above.
         let f_num_vars = min(u32(fa1.w), MAX_VARS_PER_XFORM);
-        var fpa_mut = fpa;
-        for (var k = 0u; k < f_num_vars; k = k + 1u) {
-          let v = xforms[u.final_xform_idx].vars[k];
-          if (u32(v.x) == 97u) {
-            let r0 = rand01(walker_id);
-            let r1 = rand01(walker_id);
-            let r2 = rand01(walker_id);
-            let r3 = rand01(walker_id);
-            let rndG = v.y * (r0 + r1 + r2 + r3 - 2.0);
-            let r4 = rand01(walker_id);
-            let rndA = r4 * TAU;
-            // Note: v.y (weight) is already folded into rndG; do NOT multiply again here.
-            fpa_mut = fpa_mut + vec2f(cos(rndA) * rndG, sin(rndA) * rndG);
-          }
-        }
+        let fpa_mut = apply_pre_blur(fpa, u32(u.final_xform_idx), f_num_vars, walker_id);
         var fpv = vec2f(0.0, 0.0);
         // #114 — DC override on the finalxform. Same mechanism as the
         // main chain (last active DC wins, color computed from the
@@ -8396,43 +8388,9 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
             fpv = fpv + apply_variation(var_idx, fpa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, ve2.z, ve2.w, fa0, fa1, walker_id);
           }
           if (fxf.color_params.w > 0.5 && v.y > 0.0) {
-            if (var_idx == 99u) {
-              dc_rgb_override = var_dc_linear_color(fpa_mut);
-              dc_override_active = true;
-            } else if (var_idx == 100u) {
-              dc_rgb_override = var_dc_perlin_color(fpa_mut, v.z, v.w, ve.x);
-              dc_override_active = true;
-            } else if (var_idx == 101u) {
-              dc_rgb_override = var_dc_gridout_color(fpa_mut, v.z);
-              dc_override_active = true;
-            } else if (var_idx == 102u) {
-              dc_rgb_override = var_dc_cylinder_color(fpa_mut);
-              dc_override_active = true;
-            } else if (var_idx == 220u) {
-              // #133 V220 newton: position-warp + DC basin color
-              // (finalxform parallel).
-              dc_rgb_override = var_newton_color(fpa_mut, v.z);
-              dc_override_active = true;
-            } else if (var_idx == 265u) {
-              // magnetic_pendulum params: magnets (v.z), radius (v.w).
-              dc_rgb_override = var_magnetic_pendulum_color(fpa_mut, v.z, v.w);
-              dc_override_active = true;
-            } else if (var_idx == 310u) {
-              // #232 #145 burning_ship escape-band color (finalxform parallel
-              // to the normal chain). cx (v.z), cy (v.w).
-              dc_rgb_override = escape_color(fpa_mut, 310u, v.z, v.w, 0.0);
-              dc_override_active = true;
-            } else if (var_idx == 311u) {
-              // #232 #145 magnet1 escape-band color. cx (v.z), cy (v.w).
-              dc_rgb_override = escape_color(fpa_mut, 311u, v.z, v.w, 0.0);
-              dc_override_active = true;
-            } else if (var_idx == 312u) {
-              // #232 #145 nova escape-band color. cx (v.z), cy (v.w), relax (ve.x).
-              dc_rgb_override = escape_color(fpa_mut, 312u, v.z, v.w, ve.x);
-              dc_override_active = true;
-            } else if (var_idx == 313u) {
-              // #232 #145 halley escape-band color. cx (v.z), cy (v.w).
-              dc_rgb_override = escape_color(fpa_mut, 313u, v.z, v.w, 0.0);
+            let dc = dc_color_for(var_idx, fpa_mut, v, ve);
+            if (dc.hit) {
+              dc_rgb_override = dc.rgb;
               dc_override_active = true;
             }
           }
