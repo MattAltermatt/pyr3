@@ -97,7 +97,7 @@ function ensureVulkanLoader(
  * may be mutated in place (overwrite path). win32-x64 only — never called off
  * win32. Throws on a malformed PE or no node.exe import (a real, loud bug).
  */
-function patchWindowsNodeImport(bytes: Buffer, hostName: string): Buffer {
+export function patchWindowsNodeImport(bytes: Buffer, hostName: string): Buffer {
   const want = Buffer.from(hostName + '\0', 'latin1');
   const eLfanew = bytes.readUInt32LE(0x3c);
   const coff = eLfanew + 4;
