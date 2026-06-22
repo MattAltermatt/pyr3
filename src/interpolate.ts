@@ -475,6 +475,15 @@ function interpolateAffineLinear(x0: Affine6, x1: Affine6, c0: number, c1: numbe
  *  LOG_MAG_THRESHOLD). Translation (column 2) stays linear. The angle-unwrap
  *  loop in convert_linear_to_polar pulls k>k-1 angles into the same 2π window
  *  to take the shorter arc. */
+// #423 — INTENTIONALLY NOT collapsed to interpolateAffineLogPolarN (unlike the
+// other helpers). The 2-kf path carries the #213 asymmetric-wind branch
+// (blendPolarColumn), which pins the rotation winding into a 2π reference window.
+// A "convert to Cartesian, delegate to N" pre-pass cannot preserve it: the N path
+// re-derives angles via polarColumns→atan2, which re-normalizes to (−π,π] and
+// destroys the window. Collapsing would require threading a per-column reference
+// angle into blendPolarColumnN (and thus into the Catmull-Rom path) — more risk
+// and scope than the duplication is worth. Keep both; the characterization net
+// (asymmetric-wind tests) guards the 2-kf behavior. Same call as interpolatePalette.
 function interpolateAffineLogPolar(
   x0: Affine6, x1: Affine6, c0: number, c1: number, _usePost: boolean,
   wind?: [number, number],
