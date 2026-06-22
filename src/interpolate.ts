@@ -495,14 +495,8 @@ interface Affine6 {
 }
 
 function interpolateAffineLinear(x0: Affine6, x1: Affine6, c0: number, c1: number, _usePost: boolean): Affine6 {
-  return {
-    a: blend(x0.a, x1.a, c0, c1),
-    b: blend(x0.b, x1.b, c0, c1),
-    c: blend(x0.c, x1.c, c0, c1),
-    d: blend(x0.d, x1.d, c0, c1),
-    e: blend(x0.e, x1.e, c0, c1),
-    f: blend(x0.f, x1.f, c0, c1),
-  };
+  // #393-A: 2-kf is the N=2 case of interpolateAffineLinearN.
+  return interpolateAffineLinearN([x0, x1], [c0, c1]);
 }
 
 /** Log-polar affine interp. Each "column" (in flam3 terms — x-vec and y-vec)
@@ -658,19 +652,9 @@ function interpolateXaos(
   c0: number = 0,
   c1: number = 1,
 ): number[] | undefined {
-  const n = Math.max(x0?.length ?? 0, x1?.length ?? 0);
-  if (n === 0) return undefined;
-  const out: number[] = [];
-  let allOne = true;
-  for (let i = 0; i < n; i++) {
-    const a = x0?.[i] ?? 1;
-    const b = x1?.[i] ?? 1;
-    const v = clampGE0(blend(a, b, c0, c1));
-    out.push(v);
-    if (v !== 1) allOne = false;
-  }
-  // All-ones → undefined (identity xaos doesn't need to be stored).
-  return allOne ? undefined : out;
+  // #393-A: the 2-kf path is exactly the N=2 case — delegate to the N machinery
+  // (blend(a,b,c0,c1) === blendN([a,b],[c0,c1])) so the dedup keeps one impl.
+  return interpolateXaosN([x0, x1], [c0, c1]);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -812,15 +796,8 @@ function interpolateTonemap(
   c0: number,
   c1: number,
 ): Tonemap {
-  const a = t0 ?? INTERP_TONEMAP_FALLBACK;
-  const b = t1 ?? INTERP_TONEMAP_FALLBACK;
-  return {
-    gamma: blend(a.gamma, b.gamma, c0, c1),
-    brightness: blend(a.brightness, b.brightness, c0, c1),
-    vibrancy: blend(a.vibrancy, b.vibrancy, c0, c1),
-    highlightPower: blend(a.highlightPower, b.highlightPower, c0, c1),
-    gammaThreshold: blend(a.gammaThreshold, b.gammaThreshold, c0, c1),
-  };
+  // #393-A: 2-kf is the N=2 case of interpolateTonemapN (same fallback, blend===blendN).
+  return interpolateTonemapN([t0, t1], [c0, c1]);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -837,14 +814,8 @@ type HslAdjust = { hue: number; sat: number; light: number };
 function interpolateHslAdjust(
   a: HslAdjust | undefined, b: HslAdjust | undefined, c0: number, c1: number,
 ): HslAdjust | undefined {
-  if (!a && !b) return undefined;
-  const x = a ?? IDENTITY_HSL_ADJUST;
-  const y = b ?? IDENTITY_HSL_ADJUST;
-  return {
-    hue: blendHueShortArc([x.hue, y.hue], [c0, c1]),
-    sat: blend(x.sat, y.sat, c0, c1),
-    light: blend(x.light, y.light, c0, c1),
-  };
+  // #393-A: 2-kf is the N=2 case of interpolateHslAdjustN.
+  return interpolateHslAdjustN([a, b], [c0, c1]);
 }
 
 function interpolateHslAdjustN(
@@ -889,12 +860,8 @@ function identityCurves(): ChannelCurves {
 function interpolateChannelCurves(
   a: ChannelCurves | undefined, b: ChannelCurves | undefined, c0: number, c1: number,
 ): ChannelCurves | undefined {
-  if (!a && !b) return undefined;
-  const x = a ?? identityCurves();
-  const y = b ?? identityCurves();
-  const out = {} as ChannelCurves;
-  for (const ch of CURVE_CHANNELS) out[ch] = blendCurve([x[ch], y[ch]], [c0, c1]);
-  return out;
+  // #393-A: 2-kf is the N=2 case of interpolateChannelCurvesN.
+  return interpolateChannelCurvesN([a, b], [c0, c1]);
 }
 
 function interpolateChannelCurvesN(
