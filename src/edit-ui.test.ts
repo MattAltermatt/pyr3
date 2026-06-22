@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// pyr3 — /v1/edit shell. Focused coverage for the SETTLE control in the
+// pyr3 — /editor shell. Focused coverage for the SETTLE control in the
 // panel topbar (#367 moved the ladder here, next to the `settle` scrubby).
 
 import { describe, expect, it, vi } from 'vitest';

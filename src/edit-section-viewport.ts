@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit viewport section.
+// pyr3 — /editor viewport section.
 //
 // Four number inputs (scale, cx, cy, rotate) plus a 🎯 fit button at the top.
 // Number inputs use the scrubby chrome from edit-primitives.ts so the drag-

@@ -1,4 +1,4 @@
-// Mount the /v1/animate page body. Owns: a canvas, a load-flame affordance,
+// Mount the /animate page body. Owns: a canvas, a load-flame affordance,
 // the playback scrubber. P6 of Animation milestone (#17 / #211).
 //
 // Structural analogue of screensaver-mount.ts: this module renders the body

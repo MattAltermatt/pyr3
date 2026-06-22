@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit info-icon + anchored popover (Phase 7 visual overhaul).
+// pyr3 — /editor info-icon + anchored popover (Phase 7 visual overhaul).
 //
 // buildInfoIcon returns a `?` glyph; clicking it toggles an explainer
 // popover anchored to the icon's nearest `.pyr3-section` ancestor. The

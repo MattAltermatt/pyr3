@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// pyr3 — /v1/edit shared primitive builders (Phase 7).
+// pyr3 — /editor shared primitive builders (Phase 7).
 //
 // Row pattern: [96px label | 1fr control] grid. NumberInput delegates to
 // scrubbyInput() so every editor numeric stays drag-to-scrub (#105). Dropdown

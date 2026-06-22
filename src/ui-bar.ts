@@ -88,7 +88,7 @@ export interface QualityReadout {
 
 /** Adjacent available sheep for the action-bar corpus nav. `prev`/`next` carry
  *  full (gen, id) so the pill can cross gen boundaries at the corpus edges
- *  (#38) — e.g. `/v1/gen/0/id/1` resolves next → first sheep of the first gen.
+ *  (#38) — e.g. `/esf/gen/0/id/1` resolves next → first sheep of the first gen.
  *  Either side is null at the genuine corpus boundary. The top-level `gen` is
  *  the anchor gen of the current load (used for context, not for prev/next). */
 export interface CorpusNav {
@@ -542,7 +542,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
 
   // 📐 Size ▾ — dropdown button. Label shows current `{W}×{H}` in amber.
   // Click opens a categorized menu (Common / Phone portrait / Tablet) plus a
-  // footer link that deflects "I need explicit non-preset dims" to /v1/edit.
+  // footer link that deflects "I need explicit non-preset dims" to /editor.
   const sizeBtn = button('📐 1920×1080 ▾', 'pyr3-bar-size', () => toggleSizeMenu());
   sizeBtn.title = 'pick a canvas size';
 
@@ -1028,7 +1028,7 @@ export function mountHowItWorksBar(root: HTMLElement, opts: AboutBarOpts): About
 }
 
 // ─── mountScreensaverBar (#109) ─────────────────────────────────────────────
-// The /v1/screensaver top-bar variant. Mirrors mountAboutBar: reuses
+// The /screensaver top-bar variant. Mirrors mountAboutBar: reuses
 // mountBarChrome and renders all three real tabs inactive via
 // surface: 'screensaver'. The screensaver page renders its own settings card
 // + canvas + permanent controls strip into middleSlot.
@@ -1066,7 +1066,7 @@ export function mountScreensaverBar(
 }
 
 // ─── mountAnimateBar (#211 / P6) ───────────────────────────────────────────
-// Top-bar variant for /v1/animate — same pattern as mountScreensaverBar /
+// Top-bar variant for /animate — same pattern as mountScreensaverBar /
 // mountAboutBar. Renders all real tabs with 'animate' marked active.
 
 export interface AnimateBarOpts {

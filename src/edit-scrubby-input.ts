@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit scrubby-slider numeric input.
+// pyr3 — /editor scrubby-slider numeric input.
 //
 // Replaces input[type=number] cells with a click-drag-horizontally-to-scrub
 // control (Blender / Photoshop / Figma pattern). Double-click swaps to

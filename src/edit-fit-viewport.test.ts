@@ -1,5 +1,5 @@
 // Unit tests for the CPU chaos sampler + percentile-bbox fit used by the
-// /v1/edit viewport section's 🎯 fit button.
+// /editor viewport section's 🎯 fit button.
 
 import { describe, expect, it } from 'vitest';
 import {

@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit Renderer wrapper.
+// pyr3 — /editor Renderer wrapper.
 //
 // Routes lane → Renderer call sequence (per the two-lane refresh model in
 // the spec): fast = present()-only against the existing histogram; slow =

@@ -1,4 +1,4 @@
-// Modal for /v1/animate's Export Sequence button (#212). Two states in one
+// Modal for /animate's Export Sequence button (#212). Two states in one
 // shell:
 //
 //   1. Form  — user fills begin/end/dtime/qs/prefix/out_dir, hits Start.

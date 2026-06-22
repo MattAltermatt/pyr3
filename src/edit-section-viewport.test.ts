@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the /v1/edit viewport section.
+// Unit tests for the /editor viewport section.
 
 import { describe, expect, it, vi } from 'vitest';
 import { viewportSection } from './edit-section-viewport';

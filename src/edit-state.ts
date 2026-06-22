@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit state model + lane dispatcher + per-lane debouncer.
+// pyr3 — /editor state model + lane dispatcher + per-lane debouncer.
 //
 // EditState owns the live Genome plus UI bookkeeping (per-section collapse,
 // per-xform collapse). The lane categoriser is a pure function of the

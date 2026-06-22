@@ -1,6 +1,6 @@
 // Up-front render-time estimate for animation export (#226).
 //
-// The /v1/animate Export modal answers "is this a 2-minute or a 2-hour job?"
+// The /animate Export modal answers "is this a 2-minute or a 2-hour job?"
 // BEFORE the first frame renders. The estimate is two parts:
 //   1. A sample BUDGET — computable up front from frames × per-frame dispatch
 //      cost (the same computeDispatch() math the real render uses).

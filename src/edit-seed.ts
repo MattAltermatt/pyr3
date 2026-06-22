@@ -1,4 +1,4 @@
-// pyr3 — procedural seed generator for the /v1/edit page.
+// pyr3 — procedural seed generator for the /editor page.
 //
 // Produces a fresh, visually-interesting Genome from an injectable rng so
 // tests stay deterministic. The original edit-seed (uniform-random affine

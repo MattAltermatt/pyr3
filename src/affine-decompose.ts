@@ -1,4 +1,4 @@
-// pyr3 — affine decomposition for the /v1/edit xforms section v2.
+// pyr3 — affine decomposition for the /editor xforms section v2.
 //
 // The genome's source of truth is the 2x3 raw matrix (a, b, c, d, e, f):
 //

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // P7 (#212) — capability-gate assertions for the Export sequence button on
-// /v1/animate. Mounting the page doesn't require a real GPU device since
+// /animate. Mounting the page doesn't require a real GPU device since
 // nothing touches `device` until an Animation is loaded (handleFile); the
 // button stamp itself is purely DOM + capability lookup.
 

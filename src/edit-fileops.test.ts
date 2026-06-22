@@ -1,4 +1,4 @@
-// File-ops round-trip + slug helper tests for /v1/edit Task 4.1.
+// File-ops round-trip + slug helper tests for /editor Task 4.1.
 //
 // The full open/save DOM flow requires happy-dom; the round-trip itself is
 // a pure logic check that exercises genomeToJson / genomeFromJson.

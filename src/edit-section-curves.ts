@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit Color Curves section (issue #116).
+// pyr3 — /editor Color Curves section (issue #116).
 //
 // Five post-tonemap channel curves (Composite, R, G, B, Luma) applied
 // per-pixel in the visualize pass. Section shape:

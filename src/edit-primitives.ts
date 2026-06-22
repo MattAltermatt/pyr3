@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit shared primitive builders (Phase 7 visual overhaul).
+// pyr3 — /editor shared primitive builders (Phase 7 visual overhaul).
 //
 // All editor section bodies adopt these row-shaped primitives so layouts
 // stay consistent across Render / Global / Viewport / Density / xforms /

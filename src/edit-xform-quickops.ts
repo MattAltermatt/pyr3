@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit xform quick-ops.
+// pyr3 — /editor xform quick-ops.
 //
 // Relative-modifier ops on the decomposed affine. Each op takes the
 // current state and applies a single delta — the position fields

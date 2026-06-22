@@ -1,4 +1,4 @@
-// Minimal per-segment easing UI for /v1/animate (#224). PURE DOM builder,
+// Minimal per-segment easing UI for /animate (#224). PURE DOM builder,
 // no innerHTML (per src/no-innerhtml.test.ts) — SVG built with createElementNS.
 // One row per keyframe gap: a preset <select> + a curve-shape thumbnail.
 // The rich timeline curve-editor (draggable handles, per-channel) is #227.

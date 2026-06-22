@@ -2090,7 +2090,7 @@ async function main(): Promise<void> {
     navigateCorpus(target.gen, target.id);
   });
 
-  // Hero fallback shared by the bare-root (`default`) and the empty-/v1/viewer
+  // Hero fallback shared by the bare-root (`default`) and the empty-/viewer
   // (#203) cold-start branches. Rewrite the address bar to the canonical hero
   // corpus URL so the landing page is real, shareable and nav-wired — but keep
   // painting the BUNDLED fixture for an instant, chunk-free first paint instead
@@ -2142,7 +2142,7 @@ async function main(): Promise<void> {
   // #199 — the deferred v1 §12 routes (gen-list / gen-browse / custom-reserved)
   // were superseded by the gallery (#39, 2026-05-30). They previously
   // silently painted the welcome flame with only a console.info — soft UX
-  // cliff. Redirect to /v1/gallery (the modern equivalent) so the URL the
+  // cliff. Redirect to /esf/gallery (the modern equivalent) so the URL the
   // user lands on is real + shareable + nav-wired, instead of staying on a
   // dead route while a placeholder loads.
   if (
@@ -2315,7 +2315,7 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
     case 'gen-list':
     case 'gen-browse':
     case 'custom-reserved':
-      // #199 — these deferred routes are now redirected to /v1/gallery at
+      // #199 — these deferred routes are now redirected to /esf/gallery at
       // the top of main() before this dispatch runs. Reaching here means
       // the redirect block was bypassed (routing bug) — log loudly + paint
       // welcome as a safe fallback so the page isn't blank.
@@ -2336,8 +2336,8 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
     case 'catalog-entry':
     case 'variations':
     case 'surprise':
-      // /v1/edit (and the /v1/edit?from=catalog catalog-handoff variant) +
-      // /v1/variations + /surprise all dispatch via their own mount() BEFORE
+      // /editor (and the /editor?from=catalog catalog-handoff variant) +
+      // /variations + /surprise all dispatch via their own mount() BEFORE
       // this function is called (see the early-dispatch block at the top of
       // main()). Reaching here is a routing bug — log + paint welcome as a safe
       // fallback so the page isn't blank.

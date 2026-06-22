@@ -760,7 +760,7 @@ describe('active round-trip', () => {
 });
 
 // Issue #228 — author nick must survive the serialize boundary (Save Flame,
-// Save Render PNG metadata, /v1/viewer refresh persistence).
+// Save Render PNG metadata, /viewer refresh persistence).
 describe('#228 — nick round-trip', () => {
   it('omits nick when undefined or empty', () => {
     const g: Genome = { ...SPIRAL_GALAXY };

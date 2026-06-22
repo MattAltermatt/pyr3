@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit variation kind picker (Phase 10 visual overhaul refactor).
+// pyr3 — /editor variation kind picker (Phase 10 visual overhaul refactor).
 //
 // Docked sidecar mirroring the palette picker shell DOM. Same family of
 // affordances: header with title + close-x + search + tabs (all · ★ favorites)
@@ -345,7 +345,7 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   autoApply.classList.add('pyr3-picker-auto-apply');
   autoApplyWrap.append(autoApplyLabel, autoApply);
 
-  // Catalog link — opens the live catalog (/v1/variations) in a new tab so
+  // Catalog link — opens the live catalog (/variations) in a new tab so
   // the user can preview every variation rendered + with controls before
   // picking one here. #171: anchor the deep-link to the current selection
   // via the catalogAnchorSlug hash convention (display-label namespace,

@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit page mount.
+// pyr3 — /editor page mount.
 //
 // Owns WebGPU canvas wiring, creates EditState, wires the lane scheduler to
 // the EditRenderer, and composes section modules into the left panel via
@@ -130,7 +130,7 @@ export interface MountEditPageOpts {
    *  catalog identity. */
   initialGenome?: Genome;
   /** Fires on init + after every genome change (lane fire / reroll / open) so
-   *  the host can sync external chrome (e.g. /v1/edit's top bar) with the
+   *  the host can sync external chrome (e.g. /editor's top bar) with the
    *  current name + dimensions. */
   onStateChange?: (state: EditState) => void;
   /** Fires when a render is in flight — host typically wires this to the

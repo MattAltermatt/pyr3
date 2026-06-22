@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit density-estimation section.
+// pyr3 — /editor density-estimation section.
 //
 // Surfaces the engine's adaptive-Gaussian DE blur kernel: maxRad / minRad /
 // curve sliders. Same lane routing as before (fast lane — present()-only

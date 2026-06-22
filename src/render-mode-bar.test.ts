@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
 // Unit tests for the shared render-mode bar (#176 Task 3). The bar mounts in
-// both the editor (/v1/edit) and the viewer (/v1) and splits into a PREVIEW
+// both the editor (/editor) and the viewer (/v1) and splits into a PREVIEW
 // side (tier + quality, off-ladder default 25) and a RENDER side (size
 // dropdown + W/H + quality + Save Render).
 //

@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit UI shell: top bar + collapsible section accordion.
+// pyr3 — /editor UI shell: top bar + collapsible section accordion.
 //
 // Sections are passed in as `SectionMount` objects (one per genome subtree).
 // This module owns ONLY the shell — header layout, collapsible chevrons,

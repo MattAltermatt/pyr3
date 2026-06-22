@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit palette section (Phase 9 visual overhaul).
+// pyr3 — /editor palette section (Phase 9 visual overhaul).
 //
 // Layout:
 //   - Ribbon (full-width 22px, top) — gradient strip of the current palette;

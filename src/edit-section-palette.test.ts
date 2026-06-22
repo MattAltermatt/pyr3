@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Unit tests for the /v1/edit palette section after Phase 9 reflow:
+// Unit tests for the /editor palette section after Phase 9 reflow:
 //   - Full-width hue-rotating ribbon at top (the one section-body exception
 //     to the row grid).
 //   - `palette` row: launcher button (text = paletteIdentifier()) →
