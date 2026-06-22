@@ -191,6 +191,23 @@ describe('mountAnimatePage — #408 visual update', () => {
   });
 });
 
+describe('mountAnimatePage — #409 Add key flame accepts pyr3 PNGs', () => {
+  it('the ＋ Add key flame file input accepts .png (embedded-genome PNGs)', async () => {
+    await primeCapability(GHPAGES_DEFAULT);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    mountAnimatePage({ root, device: fakeDevice(), format: fakeFormat() });
+
+    // Two hidden file inputs exist (Add key flame + Load). The Add input is the
+    // one that accepts .flame/.flam3/.json; #409 widens it to .png as well.
+    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[type=file]'));
+    const addInput = inputs.find((i) => /\.flame/.test(i.accept) && !/timeline/.test(i.accept));
+    expect(addInput).toBeTruthy();
+    expect(addInput!.accept).toMatch(/\.png/);
+    expect(addInput!.accept).toMatch(/image\/png/);
+  });
+});
+
 describe('computeOutputAwarePreviewDims', () => {
   it('caps the chosen output size to the preview max, preserving aspect', () => {
     // square 2000 output, preview cap 800×600 → min(800/2000, 600/2000)=0.3 → 600×600

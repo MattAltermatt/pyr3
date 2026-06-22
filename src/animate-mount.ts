@@ -14,6 +14,7 @@
 
 import { mountPlaybackBar, type PlaybackBarHandle } from './playback-bar';
 import { parseFlame } from './flame-import';
+import { load as loadFile } from './loader';
 import { type Animation } from './animation';
 import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer';
 import { renderAnimationFrame } from './animate-render';
@@ -317,12 +318,15 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   addBtn.type = 'button';
   addBtn.className = 'pyr3-animate-bar-btn';
   addBtn.textContent = '＋ Add key flame';
-  addBtn.title = 'Add a flame (.flame/.flam3/.pyr3.json) to the timeline';
+  addBtn.title = 'Add a flame (.flame/.flam3/.pyr3.json/.png) to the timeline';
   topRow.appendChild(addBtn);
 
   const addInput = document.createElement('input');
   addInput.type = 'file';
-  addInput.accept = '.flame,.flam3,.json';
+  // #409 — also accept pyr3 PNGs (the `pyr3` tEXt-chunk genome written by Save
+  // Render). A PNG carries one genome = one keyframe, so it routes through the
+  // single-node Add path, not the multi-keyframe Load path.
+  addInput.accept = '.flame,.flam3,.json,.png,image/png';
   addInput.style.display = 'none';
   root.appendChild(addInput);
   // #286 — interior insert AND in-place replace ("swap key flame") route through
@@ -899,7 +903,6 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     const verb = target === undefined ? 'adding' : target.mode === 'replace' ? 'swapping in' : 'inserting';
     setStatus(`${verb} ${file.name} …`);
     try {
-      const text = await file.text();
       const base = timeline ?? createTimeline();
       // #286 — one builder: append (no target), insert mid-timeline, or replace
       // a slot's flame in place ("swap key flame").
@@ -908,27 +911,37 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
           : target.mode === 'replace' ? replaceClipFlame(base, target.index, genome, source)
             : insertFlame(base, target.index, genome, source);
       let next: Timeline;
-      if (/\.json$/i.test(file.name)) {
-        const doc = JSON.parse(text) as Record<string, unknown>;
-        if (doc.format === 'pyr3-timeline') {
-          setStatus('that’s a timeline — use Load, not Add', 'error');
-          return;
-        }
-        next = addOne(genomeFromJson(doc), { kind: 'json' });
+      if (/\.png$/i.test(file.name)) {
+        // #409 — a pyr3 PNG carries one genome (the `pyr3` tEXt chunk) = one
+        // keyframe. Route through the shared loader.ts dispatch (reads + decodes
+        // the chunk; foreign PNGs throw a clear "no pyr3 metadata" error caught
+        // below). It's read as binary, so we MUST NOT call file.text() first.
+        const { genome } = await loadFile(file);
+        next = addOne(genome, { kind: 'upload', filename: file.name });
       } else {
-        const parsed = parseFlame(text);
-        if (parsed.animation && parsed.animation.keyframes.length > 1) {
-          const choice = await openAddAnimationDialog(root, parsed.animation.keyframes.length);
-          if (!choice) { setStatus('add cancelled'); return; }
-          // "all" appends the whole sequence; insert/replace of a full sequence
-          // isn't supported, so use the first keyframe (single waypoint) there.
-          next = choice.kind === 'all'
-            ? (target === undefined
-                ? appendAnimationAll(base, parsed.animation)
-                : addOne(parsed.animation.keyframes[0]!, { kind: 'upload', filename: file.name }))
-            : addOne(parsed.animation.keyframes[choice.keyframeIndex]!, { kind: 'upload', filename: file.name });
+        const text = await file.text();
+        if (/\.json$/i.test(file.name)) {
+          const doc = JSON.parse(text) as Record<string, unknown>;
+          if (doc.format === 'pyr3-timeline') {
+            setStatus('that’s a timeline — use Load, not Add', 'error');
+            return;
+          }
+          next = addOne(genomeFromJson(doc), { kind: 'json' });
         } else {
-          next = addOne(parsed.genome, { kind: 'upload', filename: file.name });
+          const parsed = parseFlame(text);
+          if (parsed.animation && parsed.animation.keyframes.length > 1) {
+            const choice = await openAddAnimationDialog(root, parsed.animation.keyframes.length);
+            if (!choice) { setStatus('add cancelled'); return; }
+            // "all" appends the whole sequence; insert/replace of a full sequence
+            // isn't supported, so use the first keyframe (single waypoint) there.
+            next = choice.kind === 'all'
+              ? (target === undefined
+                  ? appendAnimationAll(base, parsed.animation)
+                  : addOne(parsed.animation.keyframes[0]!, { kind: 'upload', filename: file.name }))
+              : addOne(parsed.animation.keyframes[choice.keyframeIndex]!, { kind: 'upload', filename: file.name });
+          } else {
+            next = addOne(parsed.genome, { kind: 'upload', filename: file.name });
+          }
         }
       }
       const wasEmpty = !timeline;
