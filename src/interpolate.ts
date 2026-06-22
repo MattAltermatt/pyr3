@@ -305,45 +305,15 @@ function alignXformCounts(
   k1: Genome,
   interpolationType: InterpolationType,
 ): { aligned0: Genome; aligned1: Genome } {
-  const n = Math.max(k0.xforms.length, k1.xforms.length);
-  const useLog = interpolationType === 'log';
-
-  // Quick path: same lengths + matching finalxform presence → no padding.
-  if (
-    k0.xforms.length === n &&
-    k1.xforms.length === n &&
-    !!k0.finalxform === !!k1.finalxform
-  ) {
-    return { aligned0: k0, aligned1: k1 };
-  }
-
-  // Pad the short side. For each padded slot j, peek at the OTHER (longer) side's
-  // xform[j]: if it carries one of the spherical-family variations and interp is
-  // log, use a 180°-rotated identity so the appearing/disappearing xform rotates
-  // through the short arc instead of collapsing through a black wedge (#213,
-  // flam3 interpolation.c:846-895).
-  const padIfShort = (g: Genome, other: Genome): Genome => {
-    let xforms = g.xforms;
-    if (g.xforms.length < n) {
-      const pads = Array.from({ length: n - g.xforms.length }, (_unused, k) => {
-        const j = g.xforms.length + k;
-        // flam3 checks ANY variation slot with positive weight (interpolation.c
-        // :877-883), not just the first — scan for a listed-family member.
-        const hint = other.xforms[j]?.variations.find(
-          (v) => FLIPPED_IDENTITY_VARS.has(v.index) && v.active !== false,
-        )?.index;
-        return makeIdentityXform(hint, useLog);
-      });
-      xforms = g.xforms.concat(pads);
-    }
-    let finalxform = g.finalxform;
-    if (!finalxform && (k0.finalxform || k1.finalxform)) {
-      finalxform = makeIdentityXform();   // final-xform pad stays plain identity
-    }
-    return finalxform ? { ...g, xforms, finalxform } : { ...g, xforms };
-  };
-
-  return { aligned0: padIfShort(k0, k1), aligned1: padIfShort(k1, k0) };
+  // #423 (#393-A Phase B): the 2-kf path is the N=2 case of alignXformCountsN.
+  // At N=2 the N hint-scan over [k0,k1].xforms[j] resolves to the same value as
+  // the 2-kf "peek at the OTHER side" — the short genome's padded slot j (>= its
+  // length) is undefined, so the scan returns the long side's hint. Same n,
+  // anyFinal, and finalxform-pad. (N returns {...g} copies vs the 2-kf quick-path
+  // references, but field values are identical and interpolate() builds a fresh
+  // genome downstream, so the output is unchanged — pinned by the characterization net.)
+  const [aligned0, aligned1] = alignXformCountsN([k0, k1], interpolationType);
+  return { aligned0: aligned0!, aligned1: aligned1! };
 }
 
 /** pyr3 variation indices whose padded identity should be 180°-rotated under log
@@ -589,51 +559,11 @@ function blendPolarColumn(
 // indices; for each, lerp the weights + every param (missing side = 0 / default).
 
 function interpolateVariations(v0: Variation[], v1: Variation[], c0: number, c1: number): Variation[] {
-  // Build index → variation maps for fast lookup.
-  const m0 = new Map<VariationIndex, Variation>();
-  const m1 = new Map<VariationIndex, Variation>();
-  for (const v of v0) m0.set(v.index, v);
-  for (const v of v1) m1.set(v.index, v);
-
-  // Preserve k0's order for variations present in k0; append k1-only at end.
-  const indices: VariationIndex[] = [];
-  for (const v of v0) indices.push(v.index);
-  for (const v of v1) if (!m0.has(v.index)) indices.push(v.index);
-
-  const out: Variation[] = [];
-  for (const idx of indices) {
-    const a = m0.get(idx);
-    const b = m1.get(idx);
-    // active:false mirrors the packer (symmetry.ts) — an inactive variation has
-    // effective weight 0 — so a deactivated variation stays off (no surprise
-    // weight AND no dc_flag for DC variations) across a tween instead of
-    // silently re-activating mid-animation (#260). Inactive on BOTH keyframes →
-    // result stays flagged inactive; mixed off→on just ramps from 0.
-    const aOff = a?.active === false;
-    const bOff = b?.active === false;
-    const weight = blend(aOff ? 0 : (a?.weight ?? 0), bOff ? 0 : (b?.weight ?? 0), c0, c1);
-    const v: Variation = { index: idx, weight };
-    if (aOff && bOff) v.active = false;
-    // Lerp each param. Missing side uses 0 — same as flam3, which initializes
-    // padded xforms with each variation's default params but then interpolates
-    // toward them as if from 0 (PYR3 simplification: just use 0).
-    for (const pk of PARAM_KEYS) {
-      const pa = (a as Record<string, number | undefined> | undefined)?.[pk];
-      const pb = (b as Record<string, number | undefined> | undefined)?.[pk];
-      if (pa !== undefined || pb !== undefined) {
-        const blended = blend(pa ?? 0, pb ?? 0, c0, c1);
-        (v as unknown as Record<string, number>)[pk] = blended;
-      }
-    }
-    out.push(v);
-  }
-
-  // pyr3 cap. We never produce > MAX_VARIATIONS_PER_XFORM variations even if
-  // the union exceeds it (drop trailing — preserves k0's ordering preference).
-  if (out.length > MAX_VARIATIONS_PER_XFORM) out.length = MAX_VARIATIONS_PER_XFORM;
-  // Empty union → linear(1) fallback (parser invariant — never an empty chain).
-  if (out.length === 0) out.push(linearVar(1));
-  return out;
+  // #423 (#393-A Phase B): the 2-kf path is exactly the N=2 case of
+  // interpolateVariationsN — same k0-first index ordering (vss iterated in order),
+  // same active-gate (every off → off), same per-param blend, same cap + linear(1)
+  // fallback. Delegate so the union/blend logic lives in one place.
+  return interpolateVariationsN([v0, v1], [c0, c1]);
 }
 
 const PARAM_KEYS = [
