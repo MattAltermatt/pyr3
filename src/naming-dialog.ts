@@ -19,6 +19,37 @@ function slugForFilename(name: string): string {
   return cleaned || 'flame';
 }
 
+// #368 — when the user submits the Save dialog with no filename, fall back to a
+// timestamped default so the download is never blank / a dotfile. The default
+// is shown as the filename field's placeholder and used verbatim on an empty
+// submit; the two are kept in lockstep so what's shown is what's saved.
+
+/** Local clock as `YYYYMMDD-HHMMSS` — filesystem-safe (no `:`), sortable, and
+ *  second-resolution so repeated blank saves don't collide. */
+export function formatSaveTimestamp(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
+    + `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/** A filename part that keeps the source recognizable: lowercased, internal
+ *  dots preserved (ESF nicks like `electricsheep.247.19679`), every other run
+ *  of unsafe chars collapsed to `-`, and no leading dot/dash (no dotfiles). */
+function sanitizeFilenamePart(s: string | undefined): string {
+  return (s ?? '').toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^[-.]+/, '').replace(/-+$/, '');
+}
+
+/** Compute the default filename base (no extension) for a blank submit:
+ *  `<nick | slug(real name) | 'flame'>-<timestamp>`. Nick wins (it names the
+ *  source); a placeholder/blank name contributes nothing, leaving the generic
+ *  `flame-` prefix. */
+export function defaultFilenameBase(id: { name?: string; nick?: string }, d: Date): string {
+  const fromNick = sanitizeFilenamePart(id.nick);
+  const fromName = isPlaceholderName(id.name) ? '' : sanitizeFilenamePart(id.name);
+  const prefix = fromNick || fromName || 'flame';
+  return `${prefix}-${formatSaveTimestamp(d)}`;
+}
+
 export interface NamingResult { name: string; nick: string; filename: string }
 
 /** #362 — a flame with no meaningful user/source name: empty, whitespace, or a
@@ -94,15 +125,29 @@ export function openNamingDialog(opts: NamingDialogOpts): Promise<NamingResult |
     let nickF: { row: HTMLElement; input: HTMLInputElement } | null = null;
     if (cfg.nick) { nickF = labeledInput('nick', 'nick', fresh ? '' : (opts.seed.nick ?? '')); box.append(nickF.row); }
 
+    // #368 — capture the dialog-open time once so the placeholder shown and the
+    // value used on an empty submit are byte-identical.
+    const openedAt = new Date();
     let filenameF: { row: HTMLElement; input: HTMLInputElement } | null = null;
     if (cfg.filename) {
       filenameF = labeledInput('filename', 'filename', fresh ? '' : (opts.seed.filename ?? ''));
       box.append(filenameF.row);
+      // #368 — show the timestamped default as the placeholder so an empty Save
+      // produces a sensible name (never a blank `.png` dotfile). Tracks the live
+      // name/nick so the hint reflects whatever identity the user has typed.
+      const syncDefaultPlaceholder = (): void => {
+        filenameF!.input.placeholder = defaultFilenameBase(
+          { name: nameF.input.value, nick: nickF?.input.value }, openedAt,
+        );
+      };
+      syncDefaultPlaceholder();
+      nickF?.input.addEventListener('input', syncDefaultPlaceholder);
       // #357 — the filename auto-follows slug(flame name) until the user edits
       // it manually; once overridden it stops syncing so the override sticks.
       let filenameDirty = false;
       filenameF.input.addEventListener('input', () => { filenameDirty = true; });
       nameF.input.addEventListener('input', () => {
+        syncDefaultPlaceholder();
         if (!filenameDirty) filenameF!.input.value = slugForFilename(nameF.input.value);
       });
     }
@@ -121,10 +166,17 @@ export function openNamingDialog(opts: NamingDialogOpts): Promise<NamingResult |
     nameF.input.focus();
 
     function commit(): void {
+      // #368 — an empty filename falls back to the placeholder default (the
+      // timestamped `flame-…` name shown in the field), so the save is never
+      // blank. A typed value always wins.
+      const typedFilename = filenameF?.input.value.trim() ?? '';
+      const resolvedFilename = filenameF
+        ? (typedFilename || filenameF.input.placeholder)
+        : typedFilename;
       settle({
         name: nameF.input.value.trim(),
         nick: nickF?.input.value.trim() ?? '',
-        filename: filenameF?.input.value.trim() ?? '',
+        filename: resolvedFilename,
       });
     }
     let settled = false;

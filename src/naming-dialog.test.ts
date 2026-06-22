@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { openNamingDialog, isPlaceholderName } from './naming-dialog';
+import {
+  openNamingDialog,
+  isPlaceholderName,
+  formatSaveTimestamp,
+  defaultFilenameBase,
+} from './naming-dialog';
 
 function modal(): HTMLElement {
   const m = document.querySelector('.pyr3-naming-dialog') as HTMLElement;
@@ -24,6 +29,69 @@ describe('isPlaceholderName', () => {
     for (const n of ['ember', 'Spiral Galaxy', 'broccoli', 'Untitled Symphony']) {
       expect(isPlaceholderName(n)).toBe(false);
     }
+  });
+});
+
+// #368 — save dialog falls back to a timestamped default filename when none entered.
+describe('formatSaveTimestamp (#368)', () => {
+  it('formats a Date as YYYYMMDD-HHMMSS, zero-padded, no colons', () => {
+    // 2026-06-21 09:07:05 local
+    expect(formatSaveTimestamp(new Date(2026, 5, 21, 9, 7, 5))).toBe('20260621-090705');
+  });
+  it('pads single-digit month/day/time parts', () => {
+    expect(formatSaveTimestamp(new Date(2026, 0, 3, 0, 0, 0))).toBe('20260103-000000');
+  });
+});
+
+describe('defaultFilenameBase (#368)', () => {
+  const d = new Date(2026, 5, 21, 20, 1, 45); // → 20260621-200145
+  it('uses the generic flame- prefix when nothing identifies the flame', () => {
+    expect(defaultFilenameBase({}, d)).toBe('flame-20260621-200145');
+    expect(defaultFilenameBase({ name: 'Untitled flame' }, d)).toBe('flame-20260621-200145');
+  });
+  it('incorporates the nick/source when present (dots preserved, fs-safe)', () => {
+    expect(defaultFilenameBase({ nick: 'electricsheep.247.19679' }, d))
+      .toBe('electricsheep.247.19679-20260621-200145');
+  });
+  it('falls back to a slug of a real flame name when there is no nick', () => {
+    expect(defaultFilenameBase({ name: 'Crimson Bloom' }, d)).toBe('crimson-bloom-20260621-200145');
+  });
+  it('prefers nick over name', () => {
+    expect(defaultFilenameBase({ name: 'Crimson Bloom', nick: 'mu' }, d)).toBe('mu-20260621-200145');
+  });
+});
+
+describe('openNamingDialog — default filename fallback (#368)', () => {
+  it('sets the computed default as the filename placeholder', () => {
+    void openNamingDialog({ kind: 'render', seed: {}, ext: 'png' });
+    expect(field('filename')!.placeholder).toMatch(/^flame-\d{8}-\d{6}$/);
+  });
+
+  it('Save with an empty filename resolves the placeholder default verbatim', async () => {
+    const p = openNamingDialog({ kind: 'render', seed: {}, ext: 'png' });
+    const fileI = field('filename')!;
+    const expected = fileI.placeholder;
+    expect(expected).toMatch(/^flame-\d{8}-\d{6}$/);
+    (modal().querySelector('[data-role="save"]') as HTMLElement).click();
+    await expect(p).resolves.toEqual({ name: '', nick: '', filename: expected });
+  });
+
+  it('placeholder reflects the nick of a real (non-fresh) flame', () => {
+    // A real name keeps the identity fields populated (#362); the nick then
+    // drives the default-filename prefix.
+    void openNamingDialog({
+      kind: 'render',
+      seed: { name: 'Sheep 19679', nick: 'electricsheep.247.19679', filename: '' },
+      ext: 'png',
+    });
+    expect(field('filename')!.placeholder).toMatch(/^electricsheep\.247\.19679-\d{8}-\d{6}$/);
+  });
+
+  it('a typed filename still wins over the default', async () => {
+    const p = openNamingDialog({ kind: 'render', seed: {}, ext: 'png' });
+    field('filename')!.value = 'my-render';
+    (modal().querySelector('[data-role="save"]') as HTMLElement).click();
+    await expect(p).resolves.toMatchObject({ filename: 'my-render' });
   });
 });
 
