@@ -78,6 +78,127 @@ function ensureVulkanLoader(
   }
 }
 
+/**
+ * Rewrite a Windows PE `.node`'s import-table DLL name `node.exe` → `hostName`
+ * so the loader binds the addon's N-API imports to the running (renamed) host
+ * process instead of a stray node.exe on PATH. See the call site (#399) for why
+ * Dawn-node needs this and node-gyp addons don't.
+ *
+ * Two strategies, picked by length:
+ *   - `hostName` (incl. NUL) fits the existing `node.exe` slot → overwrite in
+ *     place, NUL-padding any leftover bytes.
+ *   - longer → APPEND a fresh, dedicated section holding the name and repoint
+ *     the import descriptor's Name RVA at it. (Hunting incidental zero runs to
+ *     reuse is unsafe — a zero region inside .rdata can be live zero-initialised
+ *     data, not slack; a new section can never clobber existing image bytes.)
+ *
+ * Idempotent: returns the buffer unchanged if the import already is `hostName`.
+ * Returns a possibly-larger Buffer (append path grows it); the original `bytes`
+ * may be mutated in place (overwrite path). win32-x64 only — never called off
+ * win32. Throws on a malformed PE or no node.exe import (a real, loud bug).
+ */
+function patchWindowsNodeImport(bytes: Buffer, hostName: string): Buffer {
+  const want = Buffer.from(hostName + '\0', 'latin1');
+  const eLfanew = bytes.readUInt32LE(0x3c);
+  const coff = eLfanew + 4;
+  const numSections = bytes.readUInt16LE(coff + 2);
+  const optSize = bytes.readUInt16LE(coff + 16);
+  const opt = coff + 20;
+  const pe32plus = bytes.readUInt16LE(opt) === 0x20b;
+  const ddStart = opt + (pe32plus ? 112 : 96);
+  const importRva = bytes.readUInt32LE(ddStart + 8); // data dir [1] = import table
+  const secHdr = opt + optSize;
+
+  interface Sec {
+    vaddr: number;
+    vsize: number;
+    praw: number;
+    rsize: number;
+  }
+  const sections: Sec[] = [];
+  for (let i = 0; i < numSections; i++) {
+    const o = secHdr + i * 40;
+    sections.push({
+      vsize: bytes.readUInt32LE(o + 8),
+      vaddr: bytes.readUInt32LE(o + 12),
+      rsize: bytes.readUInt32LE(o + 16),
+      praw: bytes.readUInt32LE(o + 20),
+    });
+  }
+  const rva2off = (rva: number): number => {
+    for (const s of sections) {
+      if (rva >= s.vaddr && rva < s.vaddr + Math.max(s.vsize, s.rsize)) {
+        return s.praw + (rva - s.vaddr);
+      }
+    }
+    return -1;
+  };
+  const cstrLen = (off: number): number => {
+    let e = off;
+    while (bytes[e]) e++;
+    return e - off;
+  };
+
+  // Walk the import descriptors (20 bytes each, Name RVA at +12) for node.exe.
+  let descOff = -1;
+  let nameOff = -1;
+  let oldLen = 0;
+  for (let o = rva2off(importRva); ; o += 20) {
+    const nameRva = bytes.readUInt32LE(o + 12);
+    if (nameRva === 0) break;
+    const off = rva2off(nameRva);
+    const name = bytes.toString('latin1', off, off + cstrLen(off));
+    if (name === hostName) return bytes; // already patched — idempotent
+    if (name.toLowerCase() === 'node.exe') {
+      descOff = o;
+      nameOff = off;
+      oldLen = name.length;
+    }
+  }
+  if (descOff < 0) throw new Error('patchWindowsNodeImport: no node.exe import descriptor');
+
+  // In-place: fits the old string + its NUL terminator.
+  if (want.length <= oldLen + 1) {
+    want.copy(bytes, nameOff);
+    for (let i = want.length; i <= oldLen; i++) bytes[nameOff + i] = 0;
+    return bytes;
+  }
+
+  // Append a new section for the longer name.
+  const align = (n: number, a: number): number => Math.ceil(n / a) * a;
+  const secAlign = bytes.readUInt32LE(opt + 32);
+  const fileAlign = bytes.readUInt32LE(opt + 36);
+  const hdrEnd = secHdr + numSections * 40;
+  let firstRaw = Infinity;
+  let maxVEnd = 0;
+  for (const s of sections) {
+    if (s.praw > 0) firstRaw = Math.min(firstRaw, s.praw);
+    maxVEnd = Math.max(maxVEnd, s.vaddr + s.vsize);
+  }
+  if (firstRaw - hdrEnd < 40) {
+    throw new Error('patchWindowsNodeImport: no header slack for a new section');
+  }
+
+  const newVaddr = align(maxVEnd, secAlign);
+  const newPraw = align(bytes.length, fileAlign);
+  const newRawSize = align(want.length, fileAlign);
+  const grown = Buffer.alloc(newPraw + newRawSize);
+  bytes.copy(grown, 0);
+  want.copy(grown, newPraw);
+
+  const nh = hdrEnd; // new section header slot
+  grown.write('.pyr3nm\0', nh, 'latin1'); // 8-byte Name field
+  grown.writeUInt32LE(want.length, nh + 8); // VirtualSize
+  grown.writeUInt32LE(newVaddr, nh + 12); // VirtualAddress
+  grown.writeUInt32LE(newRawSize, nh + 16); // SizeOfRawData
+  grown.writeUInt32LE(newPraw, nh + 20); // PointerToRawData
+  grown.writeUInt32LE(0x40000040, nh + 36); // MEM_READ | CNT_INITIALIZED_DATA
+  grown.writeUInt16LE(numSections + 1, coff + 2); // NumberOfSections
+  grown.writeUInt32LE(align(newVaddr + want.length, secAlign), opt + 56); // SizeOfImage
+  grown.writeUInt32LE(newVaddr, descOff + 12); // repoint import Name RVA
+  return grown;
+}
+
 function loadWebgpu(): { create: (flags: string[]) => { requestAdapter: () => Promise<GPUAdapter | null> }; globals: object } {
   // Probe for `node:sea`. Available inside a SEA binary; throws
   // ERR_UNKNOWN_BUILTIN_MODULE in normal Node, which we catch and fall
@@ -98,9 +219,27 @@ function loadWebgpu(): { create: (flags: string[]) => { requestAdapter: () => Pr
     const { createHash } = builtinRequire('node:crypto') as typeof import('node:crypto');
     const { homedir } = builtinRequire('node:os') as typeof import('node:os');
     const fs = builtinRequire('node:fs') as typeof import('node:fs');
-    const { join } = builtinRequire('node:path') as typeof import('node:path');
+    const { join, basename } = builtinRequire('node:path') as typeof import('node:path');
 
-    const bytes = Buffer.from(buf);
+    let bytes: Buffer = Buffer.from(buf);
+    // Windows: win32-x64.dawn.node statically imports its N-API symbols from a
+    // DLL literally named `node.exe` (it's a GN/CMake build with no node-gyp
+    // delay-load hook). Under a SEA the host exe is NOT named node.exe, so the
+    // Windows loader can't bind that import to THIS process and instead resolves
+    // a *different* node.exe found on PATH — a second, uninitialized V8/N-API
+    // runtime — into which the addon registers, faulting (0xC0000005) the moment
+    // its init touches a napi entrypoint. Rewrite the import's DLL name to the
+    // running host's own basename so it binds to this process's exports. No-op
+    // off win32 and when the host already is node.exe (the from-source path).
+    // See #399. The cache key (hash below) is taken over the PATCHED bytes, so
+    // distinct host names (pyr3-render.exe vs pyr3-serve.exe, or a user rename)
+    // get distinct cache files automatically — no collision.
+    if (process.platform === 'win32') {
+      const hostName = basename(process.execPath);
+      if (hostName.toLowerCase() !== 'node.exe') {
+        bytes = patchWindowsNodeImport(bytes, hostName);
+      }
+    }
     const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
     const cacheDir = join(homedir(), '.cache', 'pyr3');
     fs.mkdirSync(cacheDir, { recursive: true });
@@ -125,11 +264,13 @@ function loadWebgpu(): { create: (flags: string[]) => { requestAdapter: () => Pr
       ensureVulkanLoader(cacheDir, fs, join);
     }
     // Load the native binding with the low-level process.dlopen rather than
-    // require(): inside a SEA binary, createRequire()-based loading of an
-    // absolute .node path segfaults (the embedder module system + native-addon
-    // registration don't compose), whereas process.dlopen — the primitive
-    // require() itself calls — loads it cleanly. We pass a fresh module object
-    // and read its `.exports`, exactly as the CJS loader would.
+    // require(): inside a SEA binary the native `require` is the embedder
+    // require, which only knows builtins and throws on an absolute .node path.
+    // process.dlopen — the primitive require() itself calls — loads it directly.
+    // We pass a fresh module object and read its `.exports`, exactly as the CJS
+    // loader would. (On Windows this only succeeds because the import name was
+    // rewritten above; an unpatched node.exe import faults here regardless of
+    // whether require() or dlopen() drives the load — #399.)
     type WebgpuModule = ReturnType<typeof loadWebgpu>;
     const nodeMod: { exports: WebgpuModule } = { exports: {} as WebgpuModule };
     (process as unknown as { dlopen: (m: object, p: string) => void }).dlopen(
