@@ -12,7 +12,7 @@
 //   footer  = selected info + revert + apply&close
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mountPalettePicker, type PalettePickerOpts } from './palette-picker';
+import { mountPalettePicker, buildPaletteCell, type PalettePickerOpts } from './palette-picker';
 import { type PaletteSource } from './flam3-palette-names';
 import { saveMine } from './palette-library';
 
@@ -627,5 +627,77 @@ describe('palette picker — mine tab (#115)', () => {
     cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(onApply).toHaveBeenCalledWith({ kind: 'mine', name: 'ember' });
     h.destroy();
+  });
+});
+
+// #430 — the flam3 catalog grid and the user-saved ("mine") grid built two
+// near-identical cells inline. `buildPaletteCell` is the shared builder these
+// tests pin at the unit level; the grid-level describes above are the
+// characterization net proving the call sites still behave.
+describe('buildPaletteCell (#430 — shared flam3/mine cell builder)', () => {
+  it('builds cell · ribbon · name with the shared structure + order', () => {
+    const { cell, ribbon, nameEl, star } = buildPaletteCell({
+      name: 'sunset',
+      gradient: 'red',
+      isActive: false,
+      onClick: () => {},
+    });
+    expect(cell.className).toBe('pyr3-palette-picker-cell');
+    expect(cell.title).toBe('sunset');
+    expect(ribbon.className).toBe('pyr3-palette-picker-cell-ribbon');
+    expect(ribbon.style.background).toBe('red');
+    expect(nameEl.className).toBe('pyr3-palette-picker-cell-name');
+    expect(nameEl.textContent).toBe('sunset');
+    expect(star).toBeUndefined();
+    // ribbon precedes name in DOM order (matches the original inline blocks).
+    expect(cell.children[0]).toBe(ribbon);
+    expect(cell.children[1]).toBe(nameEl);
+  });
+
+  it('applies dataset entries + an extra class (mine-cell variant)', () => {
+    const { cell } = buildPaletteCell({
+      name: 'x',
+      gradient: 'blue',
+      isActive: false,
+      onClick: () => {},
+      dataset: { mine: 'my palette' },
+      extraClass: 'pyr3-palette-picker-mine-cell',
+    });
+    expect(cell.dataset['mine']).toBe('my palette');
+    expect(cell.classList.contains('pyr3-palette-picker-mine-cell')).toBe(true);
+  });
+
+  it('active cell carries the active class + a non-transparent border', () => {
+    const { cell } = buildPaletteCell({
+      name: 'x', gradient: 'red', isActive: true, onClick: () => {},
+    });
+    expect(cell.classList.contains('active')).toBe(true);
+    expect(cell.style.borderColor).not.toBe('transparent');
+    expect(cell.style.borderColor).not.toBe('');
+  });
+
+  it('cell click fires onClick', () => {
+    const onClick = vi.fn();
+    const { cell } = buildPaletteCell({
+      name: 'x', gradient: 'red', isActive: false, onClick,
+    });
+    cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('star (when requested) appends, toggles, and stops propagation to the cell', () => {
+    const onToggle = vi.fn();
+    const onClick = vi.fn();
+    const { cell, star } = buildPaletteCell({
+      name: 'x', gradient: 'red', isActive: false, onClick,
+      star: { onToggle },
+    });
+    expect(star).toBeTruthy();
+    expect(star!.className).toBe('pyr3-palette-picker-cell-star');
+    expect(star!.textContent).toBe('☆');
+    expect(cell.children[2]).toBe(star); // ribbon · name · star order
+    star!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onToggle).toHaveBeenCalledOnce();
+    expect(onClick).not.toHaveBeenCalled(); // stopPropagation guards the cell handler
   });
 });

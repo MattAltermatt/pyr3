@@ -172,6 +172,109 @@ function currentActiveIdx(source: PaletteSource): number | null {
   return source.kind === 'flam3' ? source.number : null;
 }
 
+/** Inputs for {@link buildPaletteCell}. */
+export interface BuildPaletteCellOpts {
+  /** Display name — used for the truncated label and the cell `title`. */
+  name: string;
+  /** CSS background for the 36px ribbon strip (a `linear-gradient(…)`). */
+  gradient: string;
+  /** Whether the cell starts highlighted as the active selection. */
+  isActive: boolean;
+  /** Fires when the cell body is clicked. */
+  onClick: () => void;
+  /** `data-*` attributes to stamp on the cell (e.g. `{ idx, name }` or `{ mine }`). */
+  dataset?: Record<string, string>;
+  /** Extra class appended after the base `pyr3-palette-picker-cell`. */
+  extraClass?: string;
+  /**
+   * When present, append a top-right ★ favorites toggle. `onToggle` fires on
+   * click; propagation to the cell handler is stopped so toggling a favorite
+   * never doubles as a selection.
+   */
+  star?: { onToggle: () => void };
+}
+
+/** The nodes {@link buildPaletteCell} produces, for callers that wire them up. */
+export interface BuiltPaletteCell {
+  cell: HTMLDivElement;
+  ribbon: HTMLDivElement;
+  nameEl: HTMLDivElement;
+  /** Present only when `opts.star` was supplied. */
+  star?: HTMLDivElement;
+}
+
+// Shared builder for the picker's grid cells. The flam3 catalog grid and the
+// user-saved ("mine") grid render structurally-identical cells — ribbon +
+// truncated name, an optional active highlight, an optional ★ — differing only
+// in dataset, gradient source, click target, and whether a star is shown. This
+// is the one place that structure + styling lives (#430).
+export function buildPaletteCell(opts: BuildPaletteCellOpts): BuiltPaletteCell {
+  const cell = document.createElement('div');
+  cell.className = 'pyr3-palette-picker-cell';
+  if (opts.extraClass) cell.classList.add(opts.extraClass);
+  if (opts.dataset) {
+    for (const [k, v] of Object.entries(opts.dataset)) cell.dataset[k] = v;
+  }
+  cell.title = opts.name;
+  cell.style.cursor = 'pointer';
+  cell.style.padding = '4px';
+  cell.style.borderRadius = '3px';
+  cell.style.border = '1px solid transparent';
+  cell.style.background = 'transparent';
+  cell.style.position = 'relative';
+  if (opts.isActive) {
+    cell.classList.add('active');
+    cell.style.borderColor = COLORS.flame.top;
+    cell.style.background = COLORS.bg.action;
+  }
+  cell.addEventListener('click', opts.onClick);
+
+  // Ribbon: 36px gradient strip.
+  const ribbon = document.createElement('div');
+  ribbon.className = 'pyr3-palette-picker-cell-ribbon';
+  ribbon.style.height = '36px';
+  ribbon.style.borderRadius = '2px';
+  ribbon.style.border = `1px solid ${COLORS.border}`;
+  ribbon.style.background = opts.gradient;
+  cell.appendChild(ribbon);
+
+  // Name (truncated).
+  const nameEl = document.createElement('div');
+  nameEl.className = 'pyr3-palette-picker-cell-name';
+  nameEl.textContent = opts.name;
+  nameEl.style.fontSize = '10px';
+  nameEl.style.color = COLORS.text.muted;
+  nameEl.style.marginTop = '4px';
+  nameEl.style.overflow = 'hidden';
+  nameEl.style.textOverflow = 'ellipsis';
+  nameEl.style.whiteSpace = 'nowrap';
+  nameEl.style.textAlign = 'center';
+  cell.appendChild(nameEl);
+
+  let star: HTMLDivElement | undefined;
+  if (opts.star) {
+    const { onToggle } = opts.star;
+    star = document.createElement('div');
+    star.className = 'pyr3-palette-picker-cell-star';
+    star.textContent = '☆';
+    star.style.position = 'absolute';
+    star.style.top = '2px';
+    star.style.right = '4px';
+    star.style.fontSize = '12px';
+    star.style.color = COLORS.text.dim;
+    star.style.userSelect = 'none';
+    star.style.cursor = 'pointer';
+    star.title = 'toggle favorite';
+    star.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      onToggle();
+    });
+    cell.appendChild(star);
+  }
+
+  return { cell, ribbon, nameEl, star };
+}
+
 export function mountPalettePicker(
   root: HTMLElement,
   opts: PalettePickerOpts,
@@ -409,75 +512,23 @@ export function mountPalettePicker(
 
   const activeIdx = currentActiveIdx(opts.current);
   for (const entry of entries) {
-    const cell = document.createElement('div');
-    cell.className = 'pyr3-palette-picker-cell';
-    cell.dataset['idx'] = String(entry.idx);
-    cell.dataset['name'] = entry.searchName;
-    cell.title = entry.name;
-    cell.style.cursor = 'pointer';
-    cell.style.padding = '4px';
-    cell.style.borderRadius = '3px';
-    cell.style.border = `1px solid transparent`;
-    cell.style.background = 'transparent';
-    cell.style.position = 'relative';
-
-    if (entry.idx === activeIdx) {
-      cell.classList.add('active');
-      cell.style.borderColor = COLORS.flame.top;
-      cell.style.background = COLORS.bg.action;
-    }
-
     // Cell click → update selection. With auto-apply ON, also fire onApply.
-    cell.addEventListener('click', () => {
-      setSelected({ kind: 'flam3', number: entry.idx });
-      if (autoApplyOn) {
-        opts.onApply(selectedSource);
-      }
+    // Star → favorites toggle (Task 9.6); see buildPaletteCell for structure.
+    const { cell, star } = buildPaletteCell({
+      name: entry.name,
+      gradient: entry.gradient,
+      isActive: entry.idx === activeIdx,
+      onClick: () => {
+        setSelected({ kind: 'flam3', number: entry.idx });
+        if (autoApplyOn) opts.onApply(selectedSource);
+      },
+      dataset: { idx: String(entry.idx), name: entry.searchName },
+      star: { onToggle: () => toggleFavorite(entry.idx) },
     });
-
-    // Cell ribbon: 36px gradient strip
-    const ribbon = document.createElement('div');
-    ribbon.className = 'pyr3-palette-picker-cell-ribbon';
-    ribbon.style.height = '36px';
-    ribbon.style.borderRadius = '2px';
-    ribbon.style.border = `1px solid ${COLORS.border}`;
-    ribbon.style.background = entry.gradient;
-    cell.appendChild(ribbon);
-
-    // Name (truncated)
-    const nameEl = document.createElement('div');
-    nameEl.className = 'pyr3-palette-picker-cell-name';
-    nameEl.textContent = entry.name;
-    nameEl.style.fontSize = '10px';
-    nameEl.style.color = COLORS.text.muted;
-    nameEl.style.marginTop = '4px';
-    nameEl.style.overflow = 'hidden';
-    nameEl.style.textOverflow = 'ellipsis';
-    nameEl.style.whiteSpace = 'nowrap';
-    nameEl.style.textAlign = 'center';
-    cell.appendChild(nameEl);
-
-    // Star (top-right corner — favorites toggle, Task 9.6)
-    const star = document.createElement('div');
-    star.className = 'pyr3-palette-picker-cell-star';
-    star.textContent = '☆';
-    star.style.position = 'absolute';
-    star.style.top = '2px';
-    star.style.right = '4px';
-    star.style.fontSize = '12px';
-    star.style.color = COLORS.text.dim;
-    star.style.userSelect = 'none';
-    star.style.cursor = 'pointer';
-    star.title = 'toggle favorite';
-    star.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      toggleFavorite(entry.idx);
-    });
-    cell.appendChild(star);
 
     body.appendChild(cell);
     cellByIdx.set(entry.idx, cell);
-    starByIdx.set(entry.idx, star);
+    starByIdx.set(entry.idx, star!);
     paintStar(entry.idx);
   }
 
@@ -509,48 +560,20 @@ export function mountPalettePicker(
       return;
     }
     for (const entry of saved) {
-      const cell = document.createElement('div');
-      cell.className = 'pyr3-palette-picker-cell pyr3-palette-picker-mine-cell';
-      cell.dataset['mine'] = entry.name;
-      cell.title = entry.name;
-      cell.style.cursor = 'pointer';
-      cell.style.padding = '4px';
-      cell.style.borderRadius = '3px';
-      cell.style.border = '1px solid transparent';
-      cell.style.background = 'transparent';
-      cell.style.position = 'relative';
-
-      if (selectedSource.kind === 'mine' && selectedSource.name === entry.name) {
-        cell.classList.add('active');
-        cell.style.borderColor = COLORS.flame.top;
-        cell.style.background = COLORS.bg.action;
-      }
-
-      cell.addEventListener('click', () => {
-        setSelected({ kind: 'mine', name: entry.name });
-        if (autoApplyOn) opts.onApply(selectedSource);
+      // Mine cells reuse the shared builder; no star (favoriting saved
+      // palettes isn't a feature) and a mine-cell modifier class (#430).
+      const { cell } = buildPaletteCell({
+        name: entry.name,
+        gradient: gradientCss(entry.stops),
+        isActive:
+          selectedSource.kind === 'mine' && selectedSource.name === entry.name,
+        onClick: () => {
+          setSelected({ kind: 'mine', name: entry.name });
+          if (autoApplyOn) opts.onApply(selectedSource);
+        },
+        dataset: { mine: entry.name },
+        extraClass: 'pyr3-palette-picker-mine-cell',
       });
-
-      const ribbon = document.createElement('div');
-      ribbon.className = 'pyr3-palette-picker-cell-ribbon';
-      ribbon.style.height = '36px';
-      ribbon.style.borderRadius = '2px';
-      ribbon.style.border = `1px solid ${COLORS.border}`;
-      ribbon.style.background = gradientCss(entry.stops);
-      cell.appendChild(ribbon);
-
-      const nameEl = document.createElement('div');
-      nameEl.className = 'pyr3-palette-picker-cell-name';
-      nameEl.textContent = entry.name;
-      nameEl.style.fontSize = '10px';
-      nameEl.style.color = COLORS.text.muted;
-      nameEl.style.marginTop = '4px';
-      nameEl.style.overflow = 'hidden';
-      nameEl.style.textOverflow = 'ellipsis';
-      nameEl.style.whiteSpace = 'nowrap';
-      nameEl.style.textAlign = 'center';
-      cell.appendChild(nameEl);
-
       mineGrid.appendChild(cell);
     }
   }
