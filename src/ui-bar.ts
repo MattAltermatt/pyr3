@@ -943,9 +943,11 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
 
   const bar = el('div', 'pyr3-topbar');
 
-  // #103 Task 1.6: position:sticky + 44px topbar styling. Centered grid layout
-  // (1fr auto 1fr) keeps the tabs cluster in the literal middle regardless of
-  // left/right content widths.
+  // #103 Task 1.6: position:sticky + 44px topbar styling.
+  // #420: left-aligned layout — the brand + nav menus sit together hard-left
+  // (a little space after the wordmark), the right cluster hugs the far right.
+  // (Replaced the #103 centered `1fr auto 1fr` grid; the About link left the
+  // brand cluster and now lives in the Help menu.)
   bar.style.position = 'sticky';
   bar.style.top = '0';
   bar.style.zIndex = '50';
@@ -953,28 +955,27 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   bar.style.padding = '3px 18px';
   bar.style.background = COLORS.bg.bar;
   bar.style.borderBottom = `1px solid ${COLORS.border}`;
-  bar.style.display = 'grid';
-  bar.style.gridTemplateColumns = '1fr auto 1fr';
+  bar.style.display = 'flex';
+  bar.style.justifyContent = 'space-between';
   bar.style.alignItems = 'center';
   bar.style.gap = '16px';
 
-  // Left cluster: brand + about link
-  const left = el('div', 'pyr3-left-cluster');
-  left.append(buildBrand(), buildAboutLink());
-
-  // Center: top-nav menus (#264 — buildNavMenu replaces the flat tab row).
-  // Leaf clicks navigate directly; the menu stays pure presentation and the
-  // host owns window.location. opts.onTabClick is retained on ChromeOpts for
-  // the per-surface callers but is no longer routed through the nav.
+  // Left cluster: brand + the top-nav menus, left-aligned together.
+  // #264 — buildNavMenu replaces the flat tab row. Leaf clicks navigate
+  // directly; the menu stays pure presentation and the host owns
+  // window.location. opts.onTabClick is retained on ChromeOpts for the
+  // per-surface callers but is no longer routed through the nav.
   const tabs = buildNavMenu(opts.surface, (route, newTab) => {
     if (newTab) { window.open(route, '_blank', 'noopener'); return; }
     window.location.href = route;
   });
+  const left = el('div', 'pyr3-left-cluster');
+  left.append(buildBrand(), tabs);
 
   // Right cluster: WebGPU pill + fork-it octocat + more-flames octocat
   const right = buildRightCluster(opts.webgpu);
 
-  bar.append(left, tabs, right);
+  bar.append(left, right);
   root.append(bar);
 
   // Per-surface mount fns drop their info-row / action-row content here.
@@ -992,11 +993,10 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
 }
 
 // ─── mountAboutBar (#103 Task 1.5) ──────────────────────────────────────────
-// The /about route's top-bar variant. Reuses mountBarChrome and marks the
-// existing `.pyr3-about-link` in the left cluster with `.active` so the user
-// gets a clear "you are here" cue (about isn't a tab — it lives next to the
-// brand). All three real tabs render in their inactive state via
-// surface: 'about' on the chrome substrate.
+// The /about route's top-bar variant. Reuses mountBarChrome with
+// surface: 'about', which lets buildNavMenu self-highlight the About leaf in
+// the Help menu (#420) for the "you are here" cue. All other tabs render
+// inactive on the chrome substrate.
 
 export interface AboutBarOpts {
   webgpu: WebGPUStatus;
@@ -1022,15 +1022,13 @@ export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHa
   root.replaceChildren();
   root.classList.add('pyr3-bar-root');
 
+  // #420 — surface:'about' lets buildNavMenu self-highlight the About leaf
+  // (now under the Help menu); no separate left-cluster link to mark anymore.
   const chrome = mountBarChrome(root, {
     surface: 'about',
     webgpu: opts.webgpu,
     onTabClick: opts.onTabClick,
   });
-
-  // Highlight the about-link in the left cluster — the only "you are here"
-  // affordance on /about, since the tab group has no `about` slot.
-  root.querySelector('.pyr3-about-link')?.classList.add('active');
 
   return {
     middleSlot: chrome.middleSlot,
@@ -1149,14 +1147,6 @@ function buildBrand(): HTMLElement {
   return wrap;
 }
 
-function buildAboutLink(): HTMLElement {
-  const a = el('a', 'pyr3-about-link') as HTMLAnchorElement;
-  a.href = `${import.meta.env.BASE_URL}about`;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  a.textContent = 'about';
-  return a;
-}
 
 function buildRightCluster(webgpu: WebGPUStatus): HTMLElement {
   const wrap = el('div', 'pyr3-right-cluster');
@@ -1804,15 +1794,6 @@ const BAR_CSS = `
   background: linear-gradient(180deg, ${COLORS.flame.top}, ${COLORS.flame.bot});
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.pyr3-about-link {
-  color: ${COLORS.flame.mid}; font-size: 13px; font-weight: 500;
-  text-decoration: none; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 3px;
-}
-.pyr3-about-link::after { content: ' ↗'; font-size: 11px; opacity: 0.7; }
-.pyr3-about-link:hover { color: ${COLORS.flame.top}; }
-.pyr3-about-link.active { color: ${COLORS.flame.top}; }
-
 .pyr3-tabs {
   display: flex; align-items: center; gap: 4px;
   background: #07070a; padding: 3px;

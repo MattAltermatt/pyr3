@@ -359,7 +359,7 @@ describe('mountBarChrome', () => {
     handle.destroy();
   });
 
-  it('surface: "about" highlights the Discover menu (About lives under Discover)', () => {
+  it('surface: "about" highlights the Help menu (About moved under Help, #420)', () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.getElementById('root')!;
     const handle = mountBarChrome(root, {
@@ -368,7 +368,7 @@ describe('mountBarChrome', () => {
       onTabClick: vi.fn(),
     });
     expect(root.querySelector('.pyr3-nav')).toBeTruthy();
-    expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="help"].active')).toBeTruthy();
     expect(root.querySelector('.pyr3-nav-item[data-nav-sub="about"].active')).toBeTruthy();
     handle.destroy();
   });
@@ -467,15 +467,16 @@ describe('mountBarChrome', () => {
 });
 
 describe('mountAboutBar', () => {
-  it('renders chrome with NO tab active (about lives in left cluster, not tabs)', () => {
+  it('highlights the About leaf under the Help menu as the you-are-here cue (#420)', () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.getElementById('root')!;
     const handle = mountAboutBar(root, {
       webgpu: { available: true } as WebGPUStatus,
       onTabClick: vi.fn(),
     });
-    expect(root.querySelector('.pyr3-tab.active')).toBeFalsy();
-    expect(root.querySelector('.pyr3-about-link.active')).toBeTruthy();
+    // About moved into the Help menu (#420) — its leaf + the Help top go active.
+    expect(root.querySelector('[data-nav-sub="about"].active')).toBeTruthy();
+    expect(root.querySelector('[data-nav-top="help"].active')).toBeTruthy();
     handle.destroy();
   });
 

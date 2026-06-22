@@ -3,11 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { buildNavMenu } from './nav-menu';
 
 describe('nav-menu structure (#264)', () => {
-  it('renders 5 top-level items in order', () => {
+  it('renders 6 top-level items in order (Help added, #420)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     const tops = el.querySelectorAll('[data-nav-top]');
     expect([...tops].map((t) => t.getAttribute('data-nav-top')))
-      .toEqual(['viewer', 'editor', 'animate', 'esf', 'discover']);
+      .toEqual(['viewer', 'editor', 'animate', 'esf', 'discover', 'help']);
   });
   it('Editor is a direct link (no submenu — Gradient retired, #372)', () => {
     const el = buildNavMenu('viewer', vi.fn());
@@ -34,15 +34,21 @@ describe('nav-menu structure (#264)', () => {
     el.dispatchEvent(new Event('pyr3:destroy'));
     el.remove();
   });
-  it('Discover menu includes variations + about + showcase + help pages', () => {
+  it('Discover is exploration only — Surprise + Variations + Showcase (#420)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     const subs = [...el.querySelectorAll('[data-nav-top="discover"] [data-nav-sub]')]
       .map((s) => s.getAttribute('data-nav-sub'));
-    expect(subs).toContain('surprise');
-    expect(subs).toContain('variations');
-    expect(subs).toContain('about');
-    expect(subs).toContain('showcase');
-    expect(subs).toContain('help-webgpu');
+    expect(subs).toEqual(['showcase', 'variations', 'surprise']);
+    // learning/reference items moved out to Help (#420)
+    expect(subs).not.toContain('about');
+    expect(subs).not.toContain('help-webgpu');
+  });
+  it('Help menu carries the learning/reference items incl. About (#420)', () => {
+    const el = buildNavMenu('viewer', vi.fn());
+    const top = el.querySelector('[data-nav-top="help"]') as HTMLElement;
+    expect((top.querySelector('.pyr3-nav-toptab') as HTMLElement).textContent).toContain('Help');
+    const subs = [...top.querySelectorAll('[data-nav-sub]')].map((s) => s.getAttribute('data-nav-sub'));
+    expect(subs).toEqual(['help-ifs', 'help-color', 'help-cost', 'help-webgpu', 'about']);
   });
   it('Viewer is a direct link (no submenu panel)', () => {
     const el = buildNavMenu('viewer', vi.fn());
@@ -122,7 +128,7 @@ describe('nav-menu active-state (#264)', () => {
     ['esf',         'esf',      'esf'],
     ['gallery',     'esf',      'gallery'],
     ['variations',  'discover', 'variations'],
-    ['about',       'discover', 'about'],
+    ['about',       'help',     'about'],
   ];
   it.each(cases)('surface %s → top %s active', (surface, top) => {
     const el = buildNavMenu(surface, vi.fn());

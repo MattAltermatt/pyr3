@@ -264,7 +264,7 @@ async function main(): Promise<void> {
   // #103 Phase 2 Task 2.5 — /about short-circuit. Like /v1/edit, this route
   // skips the viewer renderer / corpus / gallery setup entirely; the About
   // page is pure content, no GPU device, no canvas. Mount the about-flavored
-  // chrome (no tab active, .pyr3-about-link gets `active`) into #pyr3-bar
+  // chrome (the About leaf in the Help menu gets `active`, #420) into #pyr3-bar
   // and the page body into #pyr3-canvas-zone. The version + buildDate come
   // from Vite's `define` block (mirrored in vitest.config.ts) so they can't
   // drift from package.json.

@@ -10,7 +10,7 @@ export type NavSubKey =
   | 'esf' | 'gallery' | 'esf-source' | 'variations' | 'surprise' | 'about' | 'showcase'
   | 'help-color' | 'help-ifs' | 'help-cost' | 'help-webgpu';
 
-export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover';
+export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover' | 'help';
 
 export interface NavLeaf {
   key: NavSubKey;
@@ -46,23 +46,29 @@ export const NAV_MODEL: NavTop[] = [
     { key: 'esf-source', label: 'Electric Sheep Fold ↗',
       route: 'https://github.com/MattAltermatt/electric-sheep-fold', newTab: true, divider: true },
   ]},
+  // #420 — Discover is now the *exploration* menu only (show me flames / the
+  // engine). The learning/reference items moved to the new Help menu below.
   { key: 'discover', label: 'Discover', items: [
-    { key: 'surprise',    label: 'Surprise',        route: '/surprise' },
-    { key: 'variations',  label: 'Variations',      route: '/variations' },
-    { key: 'about',       label: 'About',           route: '/about' },
-    { key: 'help-color',  label: 'Color',           route: '/help/direct-color-variations.html', newTab: true },
-    // #347 — "How flames work" now points at the in-app interactive guide
-    // (same-tab SPA surface). The render-cost help page keeps its own entry
-    // under an honest label; its #why-not-working anchor is still deep-linked
-    // from the editor render bar.
-    { key: 'help-ifs',    label: 'How flames work', route: '/how-it-works' },
-    { key: 'help-cost',   label: 'Render cost & quality', route: '/help/ifs-and-render-cost.html', newTab: true },
-    { key: 'help-webgpu', label: 'WebGPU',          route: '/help/webgpu.html',                   newTab: true },
     // #264 — trailing slash: /showcase/ is the deployed static dir (deploy.yml
     // extracts the showcase Release tar there). /showcase 301-redirects to it on
     // prod; the slash skips that hop. NOTE: absent in `npm run dev` (the bundle
     // ships only at deploy time), so locally this falls back to the viewer.
     { key: 'showcase',    label: 'Showcase',        route: '/showcase/',                          newTab: true },
+    { key: 'variations',  label: 'Variations',      route: '/variations' },
+    { key: 'surprise',    label: 'Surprise',        route: '/surprise' },
+  ]},
+  // #420 — Help: the learn/reference menu. "How flames work" leads (the in-app
+  // interactive guide, same-tab SPA, #347); the three static help pages (#406)
+  // follow; About sits last, set off by a divider as the meta/colophon entry
+  // (it left the brand cluster — its left-cluster link was retired in #420).
+  { key: 'help', label: 'Help', items: [
+    { key: 'help-ifs',    label: 'How flames work', route: '/how-it-works' },
+    { key: 'help-color',  label: 'Direct-color variations', route: '/help/direct-color-variations.html', newTab: true },
+    // The render-cost help page's #why-not-working anchor is still deep-linked
+    // from the editor render bar.
+    { key: 'help-cost',   label: 'Render cost & quality', route: '/help/ifs-and-render-cost.html', newTab: true },
+    { key: 'help-webgpu', label: 'WebGPU',          route: '/help/webgpu.html',                   newTab: true },
+    { key: 'about',       label: 'About',           route: '/about', divider: true },
   ]},
 ];
 
