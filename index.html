@@ -735,18 +735,46 @@
 
       /* First-paint cue: a quiet "dreaming…" in the canvas zone on cold
          load, cleared once the first flame paints. Not an overlay on a
-         rendered flame — there is none yet at first paint. */
+         rendered flame — there is none yet at first paint. A small spinner
+         + plain-language subline (#398) keep the ~3.7s cold-open shader
+         compile reading as "rendering" rather than frozen. Pure CSS so the
+         compositor keeps the spinner turning while the main thread blocks
+         on WebGPU pipeline creation. */
       #pyr3-firstpaint {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 7px;
+        transition: opacity 0.4s ease;
+        pointer-events: none;
+      }
+      #pyr3-firstpaint .pyr3-firstpaint-spinner {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid rgba(122, 106, 85, 0.22);
+        border-top-color: #7a6a55;
+        animation: pyr3-firstpaint-spin 0.95s linear infinite;
+        margin-bottom: 3px;
+      }
+      #pyr3-firstpaint .pyr3-firstpaint-primary {
         color: #7a6a55;
         font-size: 13px;
         font-style: italic;
         letter-spacing: 0.04em;
-        transition: opacity 0.4s ease;
-        pointer-events: none;
+      }
+      #pyr3-firstpaint .pyr3-firstpaint-sub {
+        color: #564b3c;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+      }
+      @keyframes pyr3-firstpaint-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        #pyr3-firstpaint .pyr3-firstpaint-spinner { animation: none; }
       }
       #pyr3-firstpaint.hidden { opacity: 0; }
       body.webgpu-unavailable #pyr3-firstpaint { display: none; }
@@ -1104,7 +1132,11 @@
       <header id="pyr3-bar"></header>
       <main id="pyr3-canvas-zone">
         <canvas id="pyr3-canvas"></canvas>
-        <div id="pyr3-firstpaint">dreaming…</div>
+        <div id="pyr3-firstpaint">
+          <div class="pyr3-firstpaint-spinner"></div>
+          <div class="pyr3-firstpaint-primary">dreaming…</div>
+          <div class="pyr3-firstpaint-sub">(rendering your first flame…)</div>
+        </div>
         <div id="pyr3-fallback" hidden></div>
         <div id="pyr3-gallery" hidden></div>
         <div id="pyr3-edit" hidden></div>
