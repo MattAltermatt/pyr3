@@ -29,6 +29,7 @@ import { type Timeline, timelineDuration, sectionTransitionMidpoint } from './ti
 import { rescaleGenomeToOutput, type OutputSize } from './output-size';
 import { createSizePresetControl, type SizePresetControlHandle } from './size-preset-control';
 import { timelineFromJson, timelineToJson } from './timeline-serialize';
+import { persistTimeline, restoreTimeline } from './animate-persist';
 import { renderTimelineFrame } from './animate-render';
 import { renderClipThumbnails } from './timeline-thumbnails';
 // #227d — section-model authoring.
@@ -457,6 +458,21 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   // `animation` / `timeline` is non-null at a time.
   let timeline: Timeline | null = null;
   let timelinePreview: Timeline | null = null;
+  // #411 — persist the working timeline to localStorage so a refresh restores
+  // it. Edits debounce (a linger/evolve slider can fire applyEdit repeatedly);
+  // clears (remove-last-node, switch to animation mode) write through
+  // immediately AND cancel any pending debounced write so a fast refresh can't
+  // resurrect the just-cleared timeline. Both read the live `timeline` closure
+  // var, so whatever the latest state is gets written.
+  let persistTimer: ReturnType<typeof setTimeout> | undefined;
+  function schedulePersistTimeline(): void {
+    if (persistTimer !== undefined) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => { persistTimer = undefined; persistTimeline(timeline); }, 200);
+  }
+  function persistTimelineNow(): void {
+    if (persistTimer !== undefined) { clearTimeout(persistTimer); persistTimer = undefined; }
+    persistTimeline(timeline);
+  }
   // #274/#408 — output dimensions for preview + export. Defaults to 4K and
   // stays there: flame loads do NOT override it (per the
   // bar-state-independent-of-genome convention, #176). The size control in the
@@ -846,6 +862,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     await renderAtTime(0);
     setStatus(`${timeline.clips.length} clips, ${timelineDuration(timeline).toFixed(2)} s`);
     await refreshThumbnails();
+    schedulePersistTimeline(); // #411 — park the timeline (first add / Load)
   }
 
   // Apply a pure timeline mutation: swap state, refresh preview/track/bar/editor,
@@ -866,6 +883,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       refreshSaveButton();
       mountEmptyScaffold();
       refreshExportButtonCapability();
+      persistTimelineNow(); // #411 — cleared the last node: drop the saved timeline
       return;
     }
     // Drop a stale selection if a structural edit shrank the chain past it
@@ -884,6 +902,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     void renderAtTime(Math.min(lastRenderedTime, dur));
     setStatus(`${timeline.clips.length} clips, ${dur.toFixed(2)} s`);
     if (opts.structural) void refreshThumbnails();
+    schedulePersistTimeline(); // #411 — park the edited timeline (debounced)
   }
 
   async function refreshThumbnails(): Promise<void> {
@@ -1014,6 +1033,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       // path for this freshly loaded .flam3.
       timeline = null;
       timelinePreview = null;
+      persistTimelineNow(); // #411 — animation mode is transient: drop the saved timeline
       sectionTrack?.destroy();
       sectionTrack = null;
       sectionEditor?.destroy();
@@ -1273,9 +1293,20 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   mountEmptyScaffold();
   refreshExportButtonCapability();
 
+  // #411 — restore a persisted working timeline so a page refresh picks up where
+  // the user left off (timeline mode only; a loaded .flam3 animation is
+  // transient and was never persisted). Fail-soft: a missing/corrupt payload
+  // returns null and leaves the empty state in place.
+  const restored = restoreTimeline();
+  if (restored && restored.clips.length > 0) {
+    timeline = restored;
+    void enterSectionMode();
+  }
+
   return {
     destroy(): void {
       stopPlayback();
+      if (persistTimer !== undefined) { clearTimeout(persistTimer); persistTimer = undefined; }
       window.removeEventListener('keydown', onKey);
       if (exportAbort) exportAbort.abort();
       exportAbort = null;
