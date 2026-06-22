@@ -31,6 +31,7 @@ import {
   type SettledPixels,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
+import { unpackSettledRgba } from './edit-pixel-readback';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
 import { saveRenderToPng, type ExportFormat } from './render-save';
@@ -712,29 +713,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
         return;
       }
       const padded = new Uint8Array(buf.getMappedRange());
-      // Strip row padding into tight TRUE-RGBA. macOS Chrome's swap chain is
-      // commonly bgra8unorm — undo the channel swap here so downstream binning
-      // is format-agnostic.
-      const swapBR = opts.format === 'bgra8unorm';
-      const rgba = new Uint8ClampedArray(W * H * 4);
-      for (let y = 0; y < H; y++) {
-        const srcRow = y * bytesPerRow;
-        const dstRow = y * unpaddedBytesPerRow;
-        for (let x = 0; x < W; x++) {
-          const s = srcRow + x * 4;
-          const d = dstRow + x * 4;
-          if (swapBR) {
-            rgba[d] = padded[s + 2]!;
-            rgba[d + 1] = padded[s + 1]!;
-            rgba[d + 2] = padded[s]!;
-          } else {
-            rgba[d] = padded[s]!;
-            rgba[d + 1] = padded[s + 1]!;
-            rgba[d + 2] = padded[s + 2]!;
-          }
-          rgba[d + 3] = padded[s + 3]!;
-        }
-      }
+      // Strip row padding into tight TRUE-RGBA (undo the bgra swap on macOS
+      // Chrome's bgra8unorm swap chain) so downstream scope binning is
+      // format-agnostic. (#423 — extracted to a unit-tested pure helper.)
+      const rgba = unpackSettledRgba(padded, W, H, opts.format === 'bgra8unorm');
       buf.unmap();
 
       const payload: SettledPixels = { width: W, height: H, rgba };
