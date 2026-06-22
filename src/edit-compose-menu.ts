@@ -18,12 +18,13 @@ export interface ComposeMenuHandle {
   destroy(): void;
 }
 
-const GUIDES: Array<{ key: 'thirds' | 'center' | 'grid' | 'rings' | 'spokes'; label: string }> = [
+const GUIDES: Array<{ key: 'thirds' | 'center' | 'grid' | 'rings' | 'spokes' | 'goldenSpiral'; label: string }> = [
   { key: 'thirds', label: 'Rule of thirds' },
   { key: 'center', label: 'Center cross' },
   { key: 'grid', label: 'Grid' },
   { key: 'rings', label: 'Concentric rings' },
   { key: 'spokes', label: 'Radial spokes' },
+  { key: 'goldenSpiral', label: 'Golden spiral' },
 ];
 
 export function attachComposeMenu(cb: ComposeMenuCallbacks): ComposeMenuHandle {
@@ -59,6 +60,19 @@ export function attachComposeMenu(cb: ComposeMenuCallbacks): ComposeMenuHandle {
       root.appendChild(row);
     }
 
+    // #403 — spokes "auto-match symmetry" toggle. When on, the fold stepper is
+    // disabled and the overlay snaps the fold to the genome's symmetry order.
+    const autoRow = document.createElement('label');
+    autoRow.className = 'pyr3-compose-menu-row';
+    const autoBox = document.createElement('input');
+    autoBox.type = 'checkbox';
+    autoBox.dataset.spokesAuto = 'true';
+    autoBox.checked = p.spokesAuto;
+    const autoTxt = document.createElement('span');
+    autoTxt.textContent = 'spokes auto (match symmetry)';
+    autoRow.append(autoBox, autoTxt);
+    root.appendChild(autoRow);
+
     const foldRow = document.createElement('label');
     foldRow.className = 'pyr3-compose-menu-row';
     const foldTxt = document.createElement('span');
@@ -68,13 +82,36 @@ export function attachComposeMenu(cb: ComposeMenuCallbacks): ComposeMenuHandle {
     fold.dataset.fold = 'true';
     fold.min = '2'; fold.max = '12'; fold.step = '1';
     fold.value = String(p.spokeFold);
+    fold.disabled = p.spokesAuto;
     fold.addEventListener('change', () => {
       const n = Math.min(12, Math.max(2, Math.round(Number(fold.value) || 6)));
       fold.value = String(n);
       cb.onChange({ ...cb.getPrefs(), spokeFold: n });
     });
+    autoBox.addEventListener('change', () => {
+      fold.disabled = autoBox.checked;
+      cb.onChange({ ...cb.getPrefs(), spokesAuto: autoBox.checked });
+    });
     foldRow.append(foldTxt, fold);
     root.appendChild(foldRow);
+
+    // #402 — golden-spiral orientation stepper (0..3 quadrant flips).
+    const orientRow = document.createElement('label');
+    orientRow.className = 'pyr3-compose-menu-row';
+    const orientTxt = document.createElement('span');
+    orientTxt.textContent = 'spiral orient';
+    const orient = document.createElement('input');
+    orient.type = 'number';
+    orient.dataset.orient = 'true';
+    orient.min = '0'; orient.max = '3'; orient.step = '1';
+    orient.value = String(p.spiralOrient);
+    orient.addEventListener('change', () => {
+      const n = Math.min(3, Math.max(0, Math.round(Number(orient.value) || 0)));
+      orient.value = String(n);
+      cb.onChange({ ...cb.getPrefs(), spiralOrient: n });
+    });
+    orientRow.append(orientTxt, orient);
+    root.appendChild(orientRow);
 
     const a = anchor.getBoundingClientRect();
     root.style.left = `${a.left + window.scrollX}px`;

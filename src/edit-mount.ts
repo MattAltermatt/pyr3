@@ -51,7 +51,7 @@ import { load } from './loader';
 import { type Genome } from './genome';
 import { attachPanZoom, type PanZoomHandle } from './edit-canvas-nav';
 import { attachXformGizmo, type GizmoHandle } from './edit-xform-gizmo';
-import { attachComposeOverlay, composeShows, type ComposeOverlayHandle } from './edit-compose-overlay';
+import { attachComposeOverlay, composeShows, anyComposeGuideSelected, type ComposeOverlayHandle } from './edit-compose-overlay';
 import { attachComposeMenu, type ComposeMenuHandle } from './edit-compose-menu';
 import { attachGradientOverlay, type GradientOverlayHandle } from './edit-gradient-overlay';
 import {
@@ -1107,7 +1107,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       return !!xf?.post;
     },
     // #364 — composition guides split control.
-    onComposeToggle: () => {
+    onComposeToggle: (anchor) => {
+      // When no guide is selected, toggling the master would show nothing — so
+      // the main click opens the picker instead, keeping the action visible.
+      if (!anyComposeGuideSelected(state.compose)) { composeMenu?.toggle(anchor); return; }
       const next = { ...state.compose, composeOn: !state.compose.composeOn };
       state.compose = next; saveComposePrefs(next); composeOverlay?.draw(); overlays.sync();
     },
@@ -1243,13 +1246,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       const c = flameContentRect();
       return { x: c.left - hostRect.left, y: c.top - hostRect.top, w: c.width, h: c.height };
     },
+    // #403 — rotational symmetry order (rotational + dihedral both expose `.n`)
+    // drives the spokes "auto" fold; null when the genome has no symmetry.
+    getSymmetryFold: () => state.genome.symmetry?.n ?? null,
   });
   composeMenu = attachComposeMenu({
     getPrefs: () => state.compose,
     onChange: (next) => {
       // #364 — enabling a guide via the picker auto-arms the master, so a check
       // always has a visible effect (no dead picker when master was off).
-      const anyGuide = next.thirds || next.center || next.grid || next.rings || next.spokes;
+      const anyGuide = next.thirds || next.center || next.grid || next.rings || next.spokes || next.goldenSpiral;
       const merged = anyGuide && !next.composeOn ? { ...next, composeOn: true } : next;
       state.compose = merged; saveComposePrefs(merged); composeOverlay?.draw(); overlays.sync();
     },

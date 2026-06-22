@@ -13,11 +13,44 @@ function setup() {
 }
 
 describe('attachComposeMenu (#364)', () => {
-  it('toggle() opens the popover with 5 guide checkboxes', () => {
+  it('toggle() opens the popover with 6 guide checkboxes', () => {
     const { anchor, menu } = setup();
     menu.toggle(anchor);
     const boxes = document.querySelectorAll('.pyr3-compose-menu [data-guide]');
-    expect(boxes).toHaveLength(5);
+    expect(boxes).toHaveLength(6); // + golden spiral (#402)
+    menu.destroy();
+  });
+  it('checking golden spiral flips its pref (#402)', () => {
+    const { anchor, menu, getPrefs } = setup();
+    menu.toggle(anchor);
+    const box = document.querySelector('.pyr3-compose-menu [data-guide="goldenSpiral"]') as HTMLInputElement;
+    box.checked = true;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(getPrefs().goldenSpiral).toBe(true);
+    menu.destroy();
+  });
+  it('spiral orient stepper clamps to 0..3 (#402)', () => {
+    const { anchor, menu, getPrefs } = setup();
+    menu.toggle(anchor);
+    const orient = document.querySelector('.pyr3-compose-menu [data-orient]') as HTMLInputElement;
+    orient.value = '9';
+    orient.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(getPrefs().spiralOrient).toBe(3);
+    orient.value = '-2';
+    orient.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(getPrefs().spiralOrient).toBe(0);
+    menu.destroy();
+  });
+  it('spokes-auto checkbox sets spokesAuto + disables the fold stepper (#403)', () => {
+    const { anchor, menu, getPrefs } = setup();
+    menu.toggle(anchor);
+    const auto = document.querySelector('.pyr3-compose-menu [data-spokes-auto]') as HTMLInputElement;
+    const fold = document.querySelector('.pyr3-compose-menu [data-fold]') as HTMLInputElement;
+    expect(fold.disabled).toBe(false);
+    auto.checked = true;
+    auto.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(getPrefs().spokesAuto).toBe(true);
+    expect(fold.disabled).toBe(true);
     menu.destroy();
   });
   it('checking a guide fires onChange with that pref flipped', () => {

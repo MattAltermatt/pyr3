@@ -20,8 +20,10 @@ export interface CanvasOverlaysCallbacks {
   getLens?: () => 'pre' | 'post';
   setLens?: (lens: 'pre' | 'post') => void;
   hasPost?: () => boolean;
-  /** #364 — toggle the master on/off (the `◈ compose` label half of the split). */
-  onComposeToggle?: () => void;
+  /** #364 — the `◈ compose` label half of the split. Toggles the master on/off
+   *  when a guide is selected; when none is, it opens the picker (anchored at the
+   *  split wrapper) so the click always has a visible effect. */
+  onComposeToggle?: (anchorEl: HTMLElement) => void;
   /** #364 — open the compose-guides picker popover (the `▾` caret half). */
   onCompose?: (anchorEl: HTMLElement) => void;
   /** #364 — whether guides are currently showing (master on + a selection) — drives the dot. */
@@ -137,13 +139,13 @@ export function attachCanvasOverlays(host: HTMLElement, cb: CanvasOverlaysCallba
   composeBtn.dataset.overlay = 'compose';
   composeBtn.textContent = '◈ compose';
   composeBtn.title = 'Toggle composition guides on/off (your selection is remembered)';
-  composeBtn.addEventListener('click', () => cb.onComposeToggle?.());
+  composeBtn.addEventListener('click', () => cb.onComposeToggle?.(composeWrap));
   const composeCaret = document.createElement('button');
   composeCaret.type = 'button';
   composeCaret.className = 'pyr3-edit-overlay-btn pyr3-edit-overlay-split-caret';
   composeCaret.dataset.overlay = 'compose-menu';
   composeCaret.textContent = '▾';
-  composeCaret.title = 'Choose which guides (thirds, center, grid, rings, spokes)';
+  composeCaret.title = 'Choose which guides (thirds, center, grid, rings, spokes, spiral)';
   composeCaret.addEventListener('click', () => cb.onCompose?.(composeWrap));
   composeWrap.append(composeBtn, composeCaret);
 

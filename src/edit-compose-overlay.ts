@@ -54,16 +54,70 @@ export function spokeLines(r: Rect, fold: number): Line[] {
   return lines;
 }
 
+/** Golden-ratio (Fibonacci) spiral as a polyline, fit to the content rect (#402).
+ *  A logarithmic spiral r = e^(bθ) with b = ln(φ)/(π/2), so r grows by φ every
+ *  quarter-turn. The tight inner end is the spiral's pole — the "eye" the user
+ *  composes the flame core onto. `orient` (0..3) flips the spiral about the rect
+ *  center across the X and/or Y axis, giving the 4 quadrant orientations. */
+export function goldenSpiralPoints(r: Rect, orient: number): Array<[number, number]> {
+  const PHI = (1 + Math.sqrt(5)) / 2;
+  const b = Math.log(PHI) / (Math.PI / 2);
+  const TH_MAX = Math.PI * 4; // two full turns reads as a recognisable nautilus
+  const STEPS = 200;
+  const raw: Array<[number, number]> = [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i <= STEPS; i++) {
+    const th = (i / STEPS) * TH_MAX;
+    const rad = Math.exp(b * th);
+    const x = Math.cos(th) * rad, y = Math.sin(th) * rad;
+    raw.push([x, y]);
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+  }
+  // Fit the spiral's bbox inside the rect (uniform scale, centered), then apply
+  // the orientation flip about the rect center.
+  const sw = maxX - minX, sh = maxY - minY;
+  const scale = Math.min(r.w / sw, r.h / sh);
+  const ox = r.x + (r.w - sw * scale) / 2 - minX * scale;
+  const oy = r.y + (r.h - sh * scale) / 2 - minY * scale;
+  const flipX = orient === 1 || orient === 2;
+  const flipY = orient === 2 || orient === 3;
+  const ccx = r.x + r.w / 2, ccy = r.y + r.h / 2;
+  return raw.map(([x, y]) => {
+    let px = ox + x * scale, py = oy + y * scale;
+    if (flipX) px = 2 * ccx - px;
+    if (flipY) py = 2 * ccy - py;
+    return [px, py];
+  });
+}
+
+/** #403 — resolve the spokes fold: in auto mode use the genome's symmetry order
+ *  (when present), otherwise the manual stepper. Pure so it's testable without a
+ *  2D context (which happy-dom doesn't provide). */
+export function resolveSpokeFold(p: ComposePrefs, symmetryFold: number | null): number {
+  return (p.spokesAuto ? symmetryFold : null) ?? p.spokeFold;
+}
+
+/** Whether any compose guide is selected, independent of the master toggle.
+ *  Single source of truth for the guide set so adding a guide (#402 spiral)
+ *  can't drift between callers. */
+export function anyComposeGuideSelected(p: ComposePrefs): boolean {
+  return p.thirds || p.center || p.grid || p.rings || p.spokes || p.goldenSpiral;
+}
+
 /** Whether any guide should currently draw: master on AND at least one selected.
  *  Reused by the chrome's active-dot so the button and the canvas agree. */
 export function composeShows(p: ComposePrefs): boolean {
-  return p.composeOn && (p.thirds || p.center || p.grid || p.rings || p.spokes);
+  return p.composeOn && anyComposeGuideSelected(p);
 }
 
 export interface ComposeOverlayCallbacks {
   getPrefs: () => ComposePrefs;
   /** Letterbox-corrected content rect in host-element CSS px (top-left origin). */
   getContentRect: () => Rect;
+  /** #403 — the genome's rotational-symmetry order, or null when none. Drives
+   *  the spokes "auto" mode; omit (or return null) to always use spokeFold. */
+  getSymmetryFold?: () => number | null;
 }
 export interface ComposeOverlayHandle {
   draw(): void;
@@ -107,6 +161,17 @@ export function attachComposeOverlay(host: HTMLElement, cb: ComposeOverlayCallba
       for (const rad of radii) { ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke(); }
     }
   }
+  /** Two-pass stroke of a connected polyline (the golden spiral, #402). */
+  function strokePolyline(pts: Array<[number, number]>): void {
+    if (!ctx || pts.length < 2) return;
+    for (const pass of [{ c: HALO, w: 3 }, { c: LINE, w: 1 }]) {
+      ctx.strokeStyle = pass.c; ctx.lineWidth = pass.w;
+      ctx.beginPath();
+      ctx.moveTo(pts[0]![0], pts[0]![1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]![0], pts[i]![1]);
+      ctx.stroke();
+    }
+  }
 
   function draw(): void {
     if (!ctx) return;
@@ -122,7 +187,12 @@ export function attachComposeOverlay(host: HTMLElement, cb: ComposeOverlayCallba
       strokeLines([[cx, r.y, cx, r.y + r.h], [r.x, cy, r.x + r.w, cy]]);
     }
     if (p.rings) { const { cx, cy, radii } = ringRadii(r); strokeArcs(cx, cy, radii); }
-    if (p.spokes) strokeLines(spokeLines(r, p.spokeFold));
+    if (p.spokes) {
+      // #403 — auto mode snaps the fold to the genome's rotational symmetry
+      // order, falling back to the manual stepper when there's no symmetry.
+      strokeLines(spokeLines(r, resolveSpokeFold(p, cb.getSymmetryFold?.() ?? null)));
+    }
+    if (p.goldenSpiral) strokePolyline(goldenSpiralPoints(r, p.spiralOrient));
   }
 
   resizeBacking();

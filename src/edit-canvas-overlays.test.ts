@@ -92,9 +92,12 @@ describe('attachCanvasOverlays', () => {
     expect(label.getAttribute('aria-pressed')).toBe('false');
     active = true; ov.sync();
     expect(label.getAttribute('aria-pressed')).toBe('true');
-    // label → master toggle; caret → open picker
+    // label → master toggle; caret → open picker. Both hand the split wrapper
+    // as the anchor (the label needs it to open the picker when nothing is
+    // selected — #402/#403 follow-up).
     label.click();
     expect(onComposeToggle).toHaveBeenCalled();
+    expect(onComposeToggle.mock.calls[0]![0]).toBeInstanceOf(HTMLElement);
     expect(onCompose).not.toHaveBeenCalled();
     caret.click();
     expect(onCompose).toHaveBeenCalled();

@@ -661,10 +661,18 @@ export interface ComposePrefs {
   spokes: boolean;
   /** Radial-spokes fold count, clamped 2..12. */
   spokeFold: number;
+  /** #402 — golden-ratio / Fibonacci spiral guide. */
+  goldenSpiral: boolean;
+  /** #402 — spiral orientation, one of 4 quadrant flips (0..3). */
+  spiralOrient: number;
+  /** #403 — when true, radial spokes auto-match the genome's rotational
+   *  symmetry order (falling back to spokeFold when none is present). */
+  spokesAuto: boolean;
 }
 
 export const COMPOSE_PREFS_DEFAULT: ComposePrefs = {
   composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: false, spokeFold: 6,
+  goldenSpiral: false, spiralOrient: 0, spokesAuto: false,
 };
 
 const COMPOSE_PREFS_KEY = 'pyr3.edit.compose';
@@ -676,11 +684,15 @@ export function loadComposePrefs(): ComposePrefs {
     if (!raw) return { ...COMPOSE_PREFS_DEFAULT };
     const p = JSON.parse(raw) as Partial<ComposePrefs>;
     const fold = Number(p.spokeFold);
+    const orient = Number(p.spiralOrient);
     return {
       composeOn: p.composeOn !== false, // default ON (absent in legacy prefs)
       thirds: !!p.thirds, center: !!p.center, grid: !!p.grid,
       rings: !!p.rings, spokes: !!p.spokes,
       spokeFold: Number.isFinite(fold) ? Math.min(12, Math.max(2, Math.round(fold))) : 6,
+      goldenSpiral: !!p.goldenSpiral,
+      spiralOrient: Number.isFinite(orient) ? Math.min(3, Math.max(0, Math.round(orient))) : 0,
+      spokesAuto: !!p.spokesAuto,
     };
   } catch {
     return { ...COMPOSE_PREFS_DEFAULT };

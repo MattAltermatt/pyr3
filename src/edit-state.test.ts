@@ -659,12 +659,13 @@ describe('compose prefs persistence (#364)', () => {
   it('defaults: master on, all guides off, spokeFold 6', () => {
     expect(COMPOSE_PREFS_DEFAULT).toEqual({
       composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: false, spokeFold: 6,
+      goldenSpiral: false, spiralOrient: 0, spokesAuto: false,
     });
     expect(loadComposePrefs()).toEqual(COMPOSE_PREFS_DEFAULT);
   });
 
   it('round-trips saved prefs (incl. master off)', () => {
-    const p = { composeOn: false, thirds: true, center: false, grid: false, rings: true, spokes: true, spokeFold: 8 };
+    const p = { ...COMPOSE_PREFS_DEFAULT, composeOn: false, thirds: true, rings: true, spokes: true, spokeFold: 8 };
     saveComposePrefs(p);
     expect(loadComposePrefs()).toEqual(p);
   });
@@ -674,10 +675,30 @@ describe('compose prefs persistence (#364)', () => {
     expect(loadComposePrefs().composeOn).toBe(true);
   });
 
+  it('defaults new #402/#403 fields when absent (legacy prefs)', () => {
+    globalThis.localStorage!.setItem('pyr3.edit.compose', JSON.stringify({ thirds: true, spokeFold: 6 }));
+    const p = loadComposePrefs();
+    expect(p.goldenSpiral).toBe(false);
+    expect(p.spiralOrient).toBe(0);
+    expect(p.spokesAuto).toBe(false);
+  });
+
+  it('round-trips + clamps the spiral orientation 0..3 (#402)', () => {
+    saveComposePrefs({ ...COMPOSE_PREFS_DEFAULT, goldenSpiral: true, spiralOrient: 2, spokesAuto: true });
+    const p = loadComposePrefs();
+    expect(p.goldenSpiral).toBe(true);
+    expect(p.spiralOrient).toBe(2);
+    expect(p.spokesAuto).toBe(true);
+    saveComposePrefs({ ...COMPOSE_PREFS_DEFAULT, spiralOrient: 9 });
+    expect(loadComposePrefs().spiralOrient).toBe(3);
+    saveComposePrefs({ ...COMPOSE_PREFS_DEFAULT, spiralOrient: -4 });
+    expect(loadComposePrefs().spiralOrient).toBe(0);
+  });
+
   it('clamps spokeFold to 2..12 on load', () => {
-    saveComposePrefs({ composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: true, spokeFold: 99 });
+    saveComposePrefs({ ...COMPOSE_PREFS_DEFAULT, spokes: true, spokeFold: 99 });
     expect(loadComposePrefs().spokeFold).toBe(12);
-    saveComposePrefs({ composeOn: true, thirds: false, center: false, grid: false, rings: false, spokes: true, spokeFold: 1 });
+    saveComposePrefs({ ...COMPOSE_PREFS_DEFAULT, spokes: true, spokeFold: 1 });
     expect(loadComposePrefs().spokeFold).toBe(2);
   });
 
