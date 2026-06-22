@@ -55,10 +55,10 @@ import { attachComposeOverlay, composeShows, type ComposeOverlayHandle } from '.
 import { attachComposeMenu, type ComposeMenuHandle } from './edit-compose-menu';
 import { attachGradientOverlay, type GradientOverlayHandle } from './edit-gradient-overlay';
 import {
-  downsampleIndexMap, paintMapDims, regionMask, brushHistogram,
-  clientToPixel, colorAtIndex, insertStopAtIndex,
+  downsampleIndexMap, paintMapDims, colorAtIndex, insertStopAtIndex,
   type IndexMap,
 } from './color-index-map';
+import { attachPaintRegion, type PaintRegionHandle } from './edit-paint-region';
 import { attachCanvasOverlays, type CanvasOverlaysHandle } from './edit-canvas-overlays';
 import { applyViewToCamera, type Camera, type Viewport, IDENTITY_VIEW } from './edit-camera-projection';
 import { computeFitView } from './edit-fit-handles';
@@ -920,7 +920,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       },
       // #269 — bar hover → tint the flame regions at that gradient position
       // (continuous t across the WHOLE bar, not snapped to stoppers).
-      onHoverT: (t) => paintRegion(t),
+      onHoverT: (t) => paintRegionHandle.paint(t),
     });
   }
 
@@ -934,7 +934,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     renderer.setCaptureIndex(false);   // #269/#372 — disarm the index channel
     indexMap = null;
     indexMapGenome = null;
-    paintRegion(null);
+    paintRegionHandle.paint(null);
     const t = panelHost.querySelector('[data-role="edit-gradient-toggle"]') as HTMLElement | null;
     if (t) { t.setAttribute('aria-pressed', 'false'); t.textContent = '🎨 Edit gradient'; }
   }
@@ -1223,12 +1223,23 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   };
   document.addEventListener('pyr3:xform-selection-changed', onGizmoSelectionChange);
   // Keep the overlay sized to the canvas host across panel-drag + window resize.
-  const gizmoResizeObs = new ResizeObserver(() => { gizmo?.resize(); composeOverlay?.resize(); positionRegionCanvas(); });
+  const gizmoResizeObs = new ResizeObserver(() => { gizmo?.resize(); composeOverlay?.resize(); paintRegionHandle.reposition(); });
   gizmoResizeObs.observe(canvasHost);
 
   // #364 — screen-fixed compositional guides (thirds/center/grid/rings/spokes).
   // Always present + mode-independent (composing happens in flame mode). Drawn
   // relative to the letterbox-corrected content rect, host-relative coords.
+  // The flame's displayed (letterbox-corrected) content rect, in viewport coords.
+  // (edit-paint-region.ts keeps its own copy of this ~9-line helper; #423.)
+  const flameContentRect = (): { left: number; top: number; width: number; height: number } => {
+    const rect = canvas.getBoundingClientRect();
+    const ar = canvas.width / Math.max(1, canvas.height);
+    const boxAr = rect.width / Math.max(1, rect.height);
+    let w = rect.width, h = rect.height, ox = 0, oy = 0;
+    if (boxAr > ar) { w = rect.height * ar; ox = (rect.width - w) / 2; }
+    else { h = rect.width / ar; oy = (rect.height - h) / 2; }
+    return { left: rect.left + ox, top: rect.top + oy, width: w, height: h };
+  };
   composeOverlay = attachComposeOverlay(canvasHost, {
     getPrefs: () => state.compose,
     getContentRect: () => {
@@ -1268,111 +1279,30 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     indexMap = null;
     indexMapGenome = null;
     if (state.activeCanvasOverlay === 'gradient') scheduleSettle();
-    else { renderer.setCaptureIndex(false); paintRegion(null); }
+    else { renderer.setCaptureIndex(false); paintRegionHandle.paint(null); }
   }
   state.onCanvasOverlayChange = syncCanvasOverlay;
 
-  // #269/#372 — point-to-paint. A 2D region-tint canvas layered over the flame
-  // plus flame pointer handlers. Created once; inert unless the gradient overlay
-  // is active and an index map exists. The flame canvas is object-fit:contain
-  // (letterboxed), so map client coords through the CONTENT rect, not the box.
-  const regionCanvas = document.createElement('canvas');
-  regionCanvas.className = 'pyr3-edit-paint-region';
-  // Backing dims are (re)sized to the captured index map's dims in paintRegion —
-  // they follow the flame aspect, NOT a fixed square.
-  Object.assign(regionCanvas.style, {
-    position: 'absolute', pointerEvents: 'none', display: 'block',
-    borderRadius: '4px', imageRendering: 'pixelated', zIndex: '5',
+  // #269/#372 — point-to-paint. The region-tint canvas + flame pointer handlers
+  // live in edit-paint-region.ts (#423); the GPU index-capture stays here and the
+  // module reads the captured map via getIndexMap. The dblclick body (insert a
+  // stop, colored as the gradient currently is at that index) stays here too,
+  // since it touches the live palette + gradientOverlay + onPathChange.
+  const paintRegionHandle: PaintRegionHandle = attachPaintRegion(canvasHost, canvas, {
+    getIndexMap: () => indexMap,
+    getActiveOverlay: () => state.activeCanvasOverlay,
+    onShowHint: (h) => gradientOverlay?.showHint(h),
+    onInsertStop: (t) => {
+      if (!gradientOverlay) return;
+      const pal = state.genome.palette;
+      const rgb = colorAtIndex(pal.stops, pal.hue ?? 0, pal.mode ?? 'linear', t);
+      const res = insertStopAtIndex(pal.stops, t, rgb, 0.02);
+      if (res.selectedExisting) return;
+      state.genome.palette = { ...pal, stops: res.stops };
+      gradientOverlay.setPalette(state.genome.palette);
+      onPathChange('palette');
+    },
   });
-  canvasHost.appendChild(regionCanvas);
-  const regionCtx = regionCanvas.getContext('2d');
-  const REGION_EPSILON = 0.03;
-
-  // The flame's displayed (letterbox-corrected) content rect, in viewport coords.
-  function flameContentRect(): { left: number; top: number; width: number; height: number } {
-    const rect = canvas.getBoundingClientRect();
-    const ar = canvas.width / Math.max(1, canvas.height);
-    const boxAr = rect.width / Math.max(1, rect.height);
-    let w = rect.width, h = rect.height, ox = 0, oy = 0;
-    if (boxAr > ar) { w = rect.height * ar; ox = (rect.width - w) / 2; }
-    else { h = rect.width / ar; oy = (rect.height - h) / 2; }
-    return { left: rect.left + ox, top: rect.top + oy, width: w, height: h };
-  }
-
-  // Align the tint canvas over the flame content (relative to canvasHost).
-  function positionRegionCanvas(): void {
-    const host = canvasHost.getBoundingClientRect();
-    const c = flameContentRect();
-    Object.assign(regionCanvas.style, {
-      left: `${c.left - host.left}px`, top: `${c.top - host.top}px`,
-      width: `${c.width}px`, height: `${c.height}px`,
-    });
-  }
-
-  // Bar→flame: tint the pixels whose index sits within ε of stop position `t`.
-  function paintRegion(stopT: number | null): void {
-    if (!regionCtx) return;
-    if (stopT === null || indexMap === null || state.activeCanvasOverlay !== 'gradient') {
-      regionCtx.clearRect(0, 0, regionCanvas.width, regionCanvas.height);
-      return;
-    }
-    const W = indexMap.width, H = indexMap.height;
-    // Match the backing canvas to the index map's aspect (resizing also clears it).
-    if (regionCanvas.width !== W || regionCanvas.height !== H) {
-      regionCanvas.width = W;
-      regionCanvas.height = H;
-    } else {
-      regionCtx.clearRect(0, 0, W, H);
-    }
-    positionRegionCanvas();
-    const mask = regionMask(indexMap, stopT, REGION_EPSILON);
-    const img = regionCtx.createImageData(W, H);
-    for (let i = 0; i < mask.length; i++) {
-      if (mask[i]) {
-        img.data[i * 4 + 0] = 80; img.data[i * 4 + 1] = 240; img.data[i * 4 + 2] = 255;
-        img.data[i * 4 + 3] = 150;
-      }
-    }
-    regionCtx.putImageData(img, 0, 0);
-  }
-
-  // Flame→bar: the avg palette index at the cursor, or null off-flame / empty.
-  const PAINT_BRUSH_RADIUS = 10; // index-map pixels — the hover brush size
-  const PAINT_HINT_BINS = 64;    // spotlight resolution along the bar
-  function indexAtEvent(e: MouseEvent): number | null {
-    if (indexMap === null) return null;
-    const px = clientToPixel(flameContentRect(), e.clientX, e.clientY, indexMap.width, indexMap.height);
-    if (!px) return null;
-    const o = px.oy * indexMap.width + px.ox;
-    return indexMap.mask[o] ? indexMap.avg[o]! : null;
-  }
-  // Hovering the flame casts a SPOTLIGHT on the bar: the band of gradient indices
-  // that color the brushed region stays bright, the rest dims. (Old /gradient
-  // paintHint, restored.)
-  function onFlamePaintHover(e: MouseEvent): void {
-    if (state.activeCanvasOverlay !== 'gradient' || !gradientOverlay || indexMap === null) return;
-    const px = clientToPixel(flameContentRect(), e.clientX, e.clientY, indexMap.width, indexMap.height);
-    if (!px) { gradientOverlay.showHint(null); return; }
-    gradientOverlay.showHint(brushHistogram(indexMap, px.ox, px.oy, PAINT_BRUSH_RADIUS, PAINT_HINT_BINS));
-  }
-  function onFlamePaintLeave(): void { gradientOverlay?.showHint(null); }
-  // Double-click the flame → add a stop at that region's index, colored as the
-  // gradient currently is there (same genome identity → reuses the cached map).
-  function onFlamePaintDblClick(e: MouseEvent): void {
-    if (state.activeCanvasOverlay !== 'gradient' || indexMap === null || !gradientOverlay) return;
-    const t = indexAtEvent(e);
-    if (t === null) return;
-    const pal = state.genome.palette;
-    const rgb = colorAtIndex(pal.stops, pal.hue ?? 0, pal.mode ?? 'linear', t);
-    const res = insertStopAtIndex(pal.stops, t, rgb, 0.02);
-    if (res.selectedExisting) return;
-    state.genome.palette = { ...pal, stops: res.stops };
-    gradientOverlay.setPalette(state.genome.palette);
-    onPathChange('palette');
-  }
-  canvas.addEventListener('mousemove', onFlamePaintHover);
-  canvas.addEventListener('mouseleave', onFlamePaintLeave);
-  canvas.addEventListener('dblclick', onFlamePaintDblClick);
 
   async function applyNewGenome(
     genome: Genome,
@@ -1905,10 +1835,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
       composeOverlay?.destroy();
       composeMenu?.destroy();
       gradientOverlay?.destroy();
-      canvas.removeEventListener('mousemove', onFlamePaintHover);
-      canvas.removeEventListener('mouseleave', onFlamePaintLeave);
-      canvas.removeEventListener('dblclick', onFlamePaintDblClick);
-      regionCanvas.remove();
+      paintRegionHandle.destroy();
       overlays.destroy();
       scheduler.cancel();
       ui?.destroy();

@@ -89,6 +89,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-xform-viz.ts',    // /editor affine viz — owns a 2D canvas
   'edit-xform-gizmo.ts',       // /editor on-canvas affine gizmo overlay — owns a 2D canvas + listeners (#350)
   'edit-gradient-overlay.ts',  // /editor on-canvas gradient bar overlay — DOM host + embedded palette editor (#372)
+  'edit-paint-region.ts', // /editor point-to-paint region canvas — DOM + pointer listeners (#423)
   'edit-canvas-overlays.ts',   // /editor screen-fixed canvas chrome menu — DOM-mounting (#350)
   'edit-compose-overlay.ts',   // /editor screen-fixed compositional guides — owns a 2D canvas (#364)
   'edit-compose-menu.ts',      // /editor compose popover — DOM-mounting menu (#364)
