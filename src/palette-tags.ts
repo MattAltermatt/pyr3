@@ -237,20 +237,11 @@ export function getFlam3PaletteTags(idx: number): readonly ColorTag[] {
   }
   const cached = _flam3TagsCache.get(idx);
   if (cached) return cached;
-  const stops = getLibraryStops(idx);
-  if (!stops || stops.length === 0) {
+  const rgb = buildFlam3Rgb(idx);
+  if (!rgb) {
     const empty: ColorTag[] = [];
     _flam3TagsCache.set(idx, empty);
     return empty;
-  }
-  // Build a raw RGB byte array from ColorStop (stops are sorted by t = i/255).
-  const rgb = new Uint8Array(256 * 3);
-  for (const s of stops) {
-    const i = Math.round(s.t * 255);
-    if (i < 0 || i > 255) continue;
-    rgb[i * 3] = Math.round(s.r * 255);
-    rgb[i * 3 + 1] = Math.round(s.g * 255);
-    rgb[i * 3 + 2] = Math.round(s.b * 255);
   }
   const tags = computeTags(rgb);
   _flam3TagsCache.set(idx, tags);

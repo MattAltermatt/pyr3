@@ -1,5 +1,5 @@
 // src/timeline-context-panel.ts
-// #283 — a slide-up overlay that hosts the /v1/animate selection editor over the
+// #283 — a slide-up overlay that hosts the /animate selection editor over the
 // flame preview, above the static options/track/scrub spine. Presentation only:
 // no timeline knowledge — it opens/closes and hands back a contentHost. Because
 // it is absolutely positioned over the flame, opening it never reflows the spine.

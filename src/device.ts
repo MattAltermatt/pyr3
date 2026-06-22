@@ -16,7 +16,7 @@ export interface PyrGpu {
 
 /** Acquire device + adapter + preferred canvas format WITHOUT binding to a
  *  specific canvas. Useful when the caller owns canvases dynamically (the
- *  /v1/edit editor creates its own canvas inside its mounted panel). The
+ *  /editor editor creates its own canvas inside its mounted panel). The
  *  device-lost handler attaches to the global #pyr3-error overlay, same as
  *  initDevice. */
 export async function acquireGpu(): Promise<PyrGpu> {

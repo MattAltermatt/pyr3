@@ -1,4 +1,4 @@
-// #282 — xform pairing UI for the /v1/animate section editor. Authors
+// #282 — xform pairing UI for the /animate section editor. Authors
 // Clip.permutation (#225 wired the data + render path; this is UI only).
 //
 // "order" is the array the user manipulates by dragging the flame-B column.

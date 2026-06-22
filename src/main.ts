@@ -42,6 +42,7 @@ import {
   HERO_GEN,
   HERO_ID,
   parseLoadIntent,
+  parsePreviewOverride,
   viewerUrl,
   type LoadIntent,
 } from './load-intent';
@@ -67,7 +68,6 @@ import {
 } from './render-mode-config';
 import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
 import { openRenderProgressModal } from './render-progress-modal';
-import { parsePreviewOverride } from './load-intent';
 import { DEFAULT_WALKER_JITTER, resolveWalkerJitter } from './walker-jitter';
 import {
   mountAboutBar,
@@ -258,7 +258,7 @@ async function main(): Promise<void> {
     return 'viewer';
   }
 
-  // #103 Phase 2 Task 2.5 — /about short-circuit. Like /v1/edit, this route
+  // #103 Phase 2 Task 2.5 — /about short-circuit. Like /editor, this route
   // skips the viewer renderer / corpus / gallery setup entirely; the About
   // page is pure content, no GPU device, no canvas. Mount the about-flavored
   // chrome (the About leaf in the Help menu gets `active`, #420) into #pyr3-bar
@@ -331,7 +331,7 @@ async function main(): Promise<void> {
   // /gradient and /v1/gradient URLs are redirected to /editor by
   // redirectLegacyPath at boot (above), so no route block remains here.
 
-  // #109 — /v1/screensaver short-circuit. Mirrors the /about pattern:
+  // #109 — /screensaver short-circuit. Mirrors the /about pattern:
   // mountScreensaverBar into #pyr3-bar; screensaver page body into the
   // middleSlot. Viewer canvas + first-paint cue hidden so the screensaver
   // owns the visible zone. Device + format are pre-acquired here and passed
@@ -340,7 +340,7 @@ async function main(): Promise<void> {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
     if (!barRoot || !bodyRoot) {
-      console.error('pyr3: /v1/screensaver — required DOM nodes missing');
+      console.error('pyr3: /screensaver — required DOM nodes missing');
       return;
     }
     const { device: ssDevice, format: ssFormat } = await acquireGpu();
@@ -369,7 +369,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // P6 #211 — /v1/animate short-circuit. Same pattern as /v1/screensaver:
+  // P6 #211 — /animate short-circuit. Same pattern as /screensaver:
   // mountAnimateBar into #pyr3-bar; animate page body (canvas + playback
   // scrubber + drop zone) lives in the bar's middleSlot. Viewer canvas hidden
   // so the animate surface owns the visible zone. Device + format pre-acquired
@@ -378,7 +378,7 @@ async function main(): Promise<void> {
     const barRoot = document.getElementById('pyr3-bar');
     const bodyRoot = document.getElementById('pyr3-canvas-zone');
     if (!barRoot || !bodyRoot) {
-      console.error('pyr3: /v1/animate — required DOM nodes missing');
+      console.error('pyr3: /animate — required DOM nodes missing');
       return;
     }
     const { device: animDevice, format: animFormat } = await acquireGpu();
@@ -545,7 +545,7 @@ async function main(): Promise<void> {
       // #23: pick a flame from the corpus weighted by interestingness +
       // navigate to it. The first click awaits the feature-index load
       // (cached for the gallery too, so usually already in memory);
-      // subsequent clicks are sync-cheap. Reuses the existing /v1/gen/...
+      // subsequent clicks are sync-cheap. Reuses the existing /esf/gen/...
       // corpus-load path so the dice click is indistinguishable from a
       // manual share-link visit.
       void pickSurpriseFlame().then((pick) => {
@@ -563,8 +563,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  // /v1/edit short-circuits the viewer setup — the editor owns its own bar,
-  // canvas, and renderer. We mount the slim /v1/edit chrome bar (mountEditBar)
+  // /editor short-circuits the viewer setup — the editor owns its own bar,
+  // canvas, and renderer. We mount the slim /editor chrome bar (mountEditBar)
   // into #pyr3-bar; the rest of main() (viewer renderer, gallery dispatch,
   // corpus nav) doesn't run.
   const initialIntent = parseLoadIntent(window.location.pathname + window.location.search);
@@ -657,7 +657,7 @@ async function main(): Promise<void> {
     const { densitySection } = await import('./edit-section-density');
     const { renderSection } = await import('./edit-section-render');
     // #119 — catalog → editor handoff. When the URL is
-    // /v1/edit?from=catalog&v=&w=&p=, build the catalog genome and feed
+    // /editor?from=catalog&v=&w=&p=, build the catalog genome and feed
     // it to the editor as initialGenome. Otherwise mountEditPage falls
     // through to its normal cold-start (pending / wip / reroll).
     const catalogInitialGenome = initialIntent.kind === 'catalog-entry'
@@ -882,9 +882,11 @@ async function main(): Promise<void> {
   let viewerRenderCfg: ViewerRenderConfig = loadViewerRenderConfig();
 
   // #176 — track the user-facing flame name so Save Render's filename
-  // matches the chrome bar's existing 'Save' filename composition
-  // (`electricsheep.{gen}.{id}.pyr3.png`). Updated in applyLoadResult
-  // alongside the bar's setMeta call.
+  // matches the chrome bar's existing quick-'Save' filename composition.
+  // The viewer quick-Save (composeSaveFilename in save-image.ts) emits
+  // `flame.png` / `flame-preview-q16.png` / `flame-Npx-qSPP.png` — NO
+  // `pyr3` infix (only the editor + Save Render paths add it). Updated in
+  // applyLoadResult alongside the bar's setMeta call.
   let viewerCurrentFlameName: string | null = null;
   // #176 — URL params (?preview / ?previewQ / ?quick=1) override the
   // persisted config for THIS session only. NOT written back to localStorage.
@@ -1563,11 +1565,11 @@ async function main(): Promise<void> {
   }
 
   // #203 — a locally-loaded (non-corpus) flame has no gen/id URL, so reflect it
-  // as the generic /v1/viewer surface and persist the genome. A refresh on
-  // /v1/viewer then rehydrates the same flame (see the cold-start dispatch +
+  // as the generic /viewer surface and persist the genome. A refresh on
+  // /viewer then rehydrates the same flame (see the cold-start dispatch +
   // src/last-flame-store.ts) instead of bouncing back to the hero sheep.
   // pushState when arriving from a corpus URL (Back returns to that sheep);
-  // replaceState when already on /v1/viewer (opening another file doesn't stack
+  // replaceState when already on /viewer (opening another file doesn't stack
   // redundant history entries that all point at the same single stored flame).
   const routeToViewer = (): void => {
     saveLastFlame(activeGenome);
@@ -2132,7 +2134,7 @@ async function main(): Promise<void> {
     }
   };
 
-  // Resolve initial load from the URL (parseLoadIntent): a /v1/gen/{gen}/id/{id}
+  // Resolve initial load from the URL (parseLoadIntent): a /esf/gen/{gen}/id/{id}
   // corpus link (→ loadCorpus, wires nav) or default. Fallback chain is welcome
   // fixture → hardcoded SPIRAL_GALAXY (safety net if fetch fails).
   let intent = parseLoadIntent(window.location.pathname + window.location.search)
@@ -2305,7 +2307,7 @@ function makeMissingPanel(): MissingPanel {
 async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
   switch (intent.kind) {
     case 'corpus':
-      // Corpus leaves (/v1/gen/{gen}/id/{id}) are handled by loadCorpus() (wires
+      // Corpus leaves (/esf/gen/{gen}/id/{id}) are handled by loadCorpus() (wires
       // nav + the graceful missing state). main routes corpus intents directly,
       // so this is unreachable — fail loud rather than silently returning the
       // wrong (welcome) flame if that invariant is ever broken.

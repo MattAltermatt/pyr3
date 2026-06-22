@@ -659,7 +659,7 @@ export function getDisplayLabel(idx: number): string {
  *  lowercased, joined to the variation name. So the URL fragment matches the
  *  namespace the catalog actually shows the user:
  *    `v12-julia` (flam3) · `jwf10-juliaq` (JWildfire) · `p43-schwarzschild_lensing`.
- *  Shared by the /v1/variations sidebar links, per-section ids/anchors, and the
+ *  Shared by the /variations sidebar links, per-section ids/anchors, and the
  *  editor variation-picker's deep-link so all three agree. The raw registry
  *  index still lives on `data-idx` for IntersectionObserver wiring; only the
  *  human-facing fragment switched. */

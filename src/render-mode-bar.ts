@@ -1,17 +1,19 @@
 // #176 Task 3 — shared render-mode bar.
 //
-// Mounted into both the editor (/v1/edit) and viewer (/v1). Splits the screen
+// Mounted into both the editor (/editor) and viewer (/viewer). Splits the screen
 // (preview) vs output (render) concerns into two side-by-side panels:
 //
 //   PREVIEW (left, cool-tinted)
-//     - tier pill: Fast / Balanced / Sharp (default Balanced)
-//     - 5 quality buttons: 10 20 30 40 50 (default 25, off-ladder)
+//     - tier pill: Fast / Balanced / Sharp
+//     - quality buttons (default from DEFAULT_PREVIEW_CONFIG)
 //
 //   RENDER (right, warm-tinted)
 //     - size dropdown (SIZE_PRESETS) + W × H number inputs
-//     - 4 quality buttons: 50 75 100 200 (default 100)
-//     - quality text input (1..200; > 200 toasts + clamps)
+//     - quality buttons + quality text input (clamps to the cap; over toasts)
 //     - 💾 Save Render button (disabled when canSave() is false)
+//
+// Defaults come from DEFAULT_PREVIEW_CONFIG (preview) and
+// DEFAULT_VIEWER_RENDER_CFG (render, quality 200 per #341).
 //
 // The bar reads + writes the host's state through opts getters/setters; it
 // owns no engine state directly. CSS is deferred to Task 8 — Tests assert

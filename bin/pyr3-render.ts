@@ -179,6 +179,7 @@ async function main(): Promise<void> {
     console.error(
       `usage: npm run render [--no-de] [--preset {${QUALITY_NAMES.join('|')}}] ` +
         '[--long-edge N --quality N] [--max-dim N] [--sample-inflate=F] ' +
+        '[--format png8|png16|exr|exr-linear] [--transparent] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);

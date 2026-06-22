@@ -97,7 +97,7 @@ export interface FeatureIndexHeader {
 
 // ── Bitset helpers ──────────────────────────────────────────────────────
 
-/** Set bit `index` in a 16-byte little-endian bitset. Mutates `bytes`.
+/** Set bit `index` in a 64-byte (512-bit) little-endian bitset. Mutates `bytes`.
  *  Caller is responsible for passing the right subarray (a record's
  *  variation-bitset slice, not the whole record). */
 export function bitsetSet(bytes: Uint8Array, index: number): void {
@@ -192,7 +192,7 @@ export function decodeHeader(bytes: Uint8Array): FeatureIndexHeader {
 
 // ── Record encode / decode ──────────────────────────────────────────────
 
-/** Encode one feature record into a 30-byte buffer. The caller concatenates
+/** Encode one feature record into a 78-byte buffer (FEATURE_INDEX_RECORD_BYTES). The caller concatenates
  *  records after the header (sorted: gen ascending, id ascending). */
 export function encodeRecord(rec: FeatureRecord): Uint8Array {
   const out = new Uint8Array(FEATURE_INDEX_RECORD_BYTES);
@@ -206,7 +206,7 @@ export function encodeRecord(rec: FeatureRecord): Uint8Array {
   out[REC_OFFSET_MEAN_LUM] = quantizeQ8(rec.meanLum);
   out[REC_OFFSET_ENTROPY] = quantizeQ8(rec.entropy);
   out[REC_OFFSET_COLOR_VAR] = quantizeQ8(rec.colorVar);
-  // bytes 27-29 reserved, zero-filled by Uint8Array default
+  // bytes 75-77 reserved (REC_OFFSET_COLOR_VAR+1 .. +3), zero-filled by Uint8Array default
   return out;
 }
 

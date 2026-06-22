@@ -1,4 +1,4 @@
-// #276 — shared time↔x scale + tick layout for the /v1/animate timeline bars.
+// #276 — shared time↔x scale + tick layout for the /animate timeline bars.
 // Two scales feed the same ruler/scrub code: a LINEAR scale (bottom transport)
 // and a piecewise SEGMENT scale (the node/edge section track). Pure geometry
 // here; the DOM scrub helper + tick renderer live below (still framework-free).

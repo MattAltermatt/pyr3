@@ -1,4 +1,4 @@
-// Playback transport for the /v1/animate surface (P6 of Animation milestone
+// Playback transport for the /animate surface (P6 of Animation milestone
 // #17 / #211; reworked #276). Pure DOM, framework-free, mounted under a canvas.
 // Caller owns the rAF playback loop and pushes time updates via setTime();
 // onScrub fires while the user drags the ruler; onPlayToggle on play/pause;

@@ -104,9 +104,9 @@ export interface ChaosPass {
 }
 
 const WORKGROUP_SIZE = 64;
-// 14 scalar slots × 4 bytes = 56 bytes of named fields (after #254 dropped the
-// two dead slots), rounded up to the 16-byte uniform-binding granularity → 64.
-// The trailing 8 bytes are unused padding; `layout:'auto'` derives the same
+// 15 scalar slots × 4 bytes = 60 bytes of named fields (slots 0..14; slot 14 =
+// captureIndex #269), rounded up to the 16-byte uniform-binding granularity → 64.
+// The trailing 4 bytes are unused padding; `layout:'auto'` derives the same
 // 64-byte minBindingSize from the WGSL struct, so the buffer must stay 64.
 const UNIFORMS_BYTES = 64;
 

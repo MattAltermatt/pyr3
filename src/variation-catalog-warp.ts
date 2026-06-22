@@ -22,9 +22,11 @@ export interface BuildWarpOpts {
 }
 
 /** Build an SVG `<svg>...</svg>` string for the variation's warp diagram.
- *  Returns a complete root element so callers can `innerHTML = ...` into a
- *  pane container. The y-axis is flipped (SVG y grows downward) so
- *  positive-y math input corresponds to upward on screen. */
+ *  Returns a complete SVG root-element string; callers parse it via DOMParser +
+ *  importNode (see parseSvgFragment in variation-catalog-section.ts) to honor
+ *  the no-innerHTML invariant — do NOT assign it through innerHTML. The y-axis
+ *  is flipped (SVG y grows downward) so positive-y math input corresponds to
+ *  upward on screen. */
 export function buildWarpSvg(
   fn: (x: number, y: number) => [number, number],
   opts: BuildWarpOpts = {},

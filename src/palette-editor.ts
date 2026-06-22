@@ -1,4 +1,5 @@
-// pyr3 — /v1/gradient stop-bar gradient editor (#115, Model A).
+// pyr3 — in-lens gradient editor (#115, Model A) — the stop-bar widget used by
+// edit-gradient-overlay.ts (the Color-lens on-canvas gradient overlay).
 //
 // A standalone color-stop gradient widget. The working state IS the genome's
 // `Palette` shape ({name, stops, hue?, mode?}); the 256-LUT is derived on
@@ -29,7 +30,7 @@ export interface PaletteEditorOpts {
    *  delete / resample) into a SEPARATE host instead of inside the bar root.
    *  The on-canvas gradient overlay passes the Color-lens subpanel here so the
    *  bar floats on the flame while its controls live in the panel. Default:
-   *  controls render inside the bar root (the /gradient layout). */
+   *  controls render inside the bar-root layout (controlsHost omitted). */
   controlsHost?: HTMLElement;
   /** #372 — fired whenever the selected stop changes (index, or -1 when
    *  cleared). Drives the subpanel's selected-stop readout. */
@@ -153,7 +154,7 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   controls.dataset['role'] = 'controls';
   Object.assign(controls.style, { display: 'flex', flexDirection: 'column', gap: '8px' });
   // #372 — controls render into a separate host (the Color-lens subpanel) when
-  // provided; otherwise inside the bar root (the /gradient layout).
+  // provided; otherwise the bar-root layout (controlsHost omitted).
   (opts.controlsHost ?? root).appendChild(controls);
 
   host.appendChild(root);

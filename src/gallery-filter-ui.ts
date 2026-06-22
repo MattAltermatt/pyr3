@@ -1393,9 +1393,9 @@ export function buildMetricRow(opts: MetricRowOpts): HTMLElement {
 // `min <= max`. During the drag, the bars within the in-progress range
 // receive an `.in-range` class so the visual highlight tracks the cursor.
 //
-// `onRange` receives normalized 0..1 decile bounds:
-//   lo bucket B → min = B / 10
-//   hi bucket B → max = (B + 1) / 10, or `null` if B === 9 (saturates
+// `onRange` receives normalized 0..1 bounds (N = bucketCount buckets):
+//   lo bucket B → min = B / N
+//   hi bucket B → max = (B + 1) / N, or `null` if B === N - 1 (saturates
 //                 to "no upper cap" so the canonical FilterSpec encoding
 //                 matches DEFAULT_FILTER_SPEC.<metric>Max).
 //

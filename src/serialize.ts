@@ -909,7 +909,7 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
     out.hslAdjust = { hue: g.hslAdjust.hue, sat: g.hslAdjust.sat, light: g.hslAdjust.light };
   }
   // Issue #228 — preserve author nick across the serialize boundary (Save Flame,
-  // Save Render PNG metadata, /v1/viewer refresh persistence). Omit when blank.
+  // Save Render PNG metadata, viewer refresh persistence). Omit when blank.
   if (g.nick) out.nick = g.nick;
   // #247 — round-trip the genome-level keyframe timestamp. Omit at the flam3
   // default 0 (matches the importer's `t !== 0` guard → canonical form).

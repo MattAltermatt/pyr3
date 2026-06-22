@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit "fit to viewport" computation.
+// pyr3 — /editor "fit to viewport" computation.
 //
 // Runs a small CPU chaos game on the genome (re-using the ts_var_* reference
 // kernels from src/variations.ts) and returns a (cx, cy, scale) that frames

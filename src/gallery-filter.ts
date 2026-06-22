@@ -252,7 +252,7 @@ export function parseFilterSpec(params: URLSearchParams): FilterSpec {
 }
 
 /** Encode a FilterSpec into URLSearchParams. Default axes are OMITTED so
- *  a clean canonical-order browse stays at /v1/gallery/p/N with no
+ *  a clean canonical-order browse stays at /gallery/p/N with no
  *  querystring. */
 export function encodeFilterSpec(spec: FilterSpec): URLSearchParams {
   const p = new URLSearchParams();

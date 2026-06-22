@@ -2,7 +2,7 @@
 //
 // One-way compat lane: read upstream .flame files (Apophysis / Electric Sheep /
 // JWildfire) and produce a pyr3 Genome + ImportReport. No round-trip — pyr3's
-// shipping format is .pyr3.json (Phase 5a). Variations beyond pyr3's core 20
+// shipping format is .pyr3.json (Phase 5a). Variations not in pyr3's catalog
 // (see src/variations.ts:V) are dropped with explicit per-name reporting; the
 // HUD report panel surfaces what the import lost.
 
@@ -414,7 +414,8 @@ function expectFiniteNumber(s: string, field: string): number {
 // Per-variation params follow the `${varName}_${paramName}` prefix convention
 // in flam3 (e.g. `julian_power`, `julian_dist`, `pdj_a..pdj_d`). pyr3's
 // VARIATION_PARAMS table names the params in positional order — reuse that
-// as the source of truth. Phase 9b extended the seam to 6 slots.
+// as the source of truth. The seam currently exposes MAX_VARIATION_PARAMS
+// (=10) param slots (#120).
 type VariationParams = Partial<Record<ParamKey, number>>;
 
 function readVariationParams(
@@ -797,12 +798,12 @@ function parseSingleFlame(flame: Element, _flameIndex: number, flameCount: numbe
   for (const el of xformEls) {
     const isFinal = el.tagName === 'finalxform';
     const idx = isFinal ? -1 : regularIndex;
-    // colorFallback: position parity for the color-attr default. For
-    // finalxform, use the count of regular xforms so far (its conceptual
-    // position-after-the-block) — the prior `xformIndex & 1` would have
-    // hit -1 & 1 = 1 (always palette-top). See #165 fix in
-    // parseXformElement.
-    const colorFallback = isFinal ? regularIndex : regularIndex;
+    // colorFallback: position parity for the color-attr default. Both regular
+    // and final xforms use the running regular-xform count — for finalxform
+    // that count is its conceptual position-after-the-block (the prior
+    // `xformIndex & 1` would have hit -1 & 1 = 1, always palette-top). See #165
+    // fix in parseXformElement.
+    const colorFallback = regularIndex;
     const { xform, dropped, ignored } = parseXformElement(el, idx, isFinal, colorFallback);
     droppedVariations.push(...dropped);
     ignoredFields.push(...ignored);

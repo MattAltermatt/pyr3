@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit render-config section.
+// pyr3 — /editor render-config section.
 //
 // #176 (2026-06-07): Size + W × H + Quality MOVED to the shared render-mode-bar
 // (`src/render-mode-bar.ts`) that mounts above the canvas in both viewer +

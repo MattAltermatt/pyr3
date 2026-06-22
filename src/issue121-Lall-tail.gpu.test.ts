@@ -10,12 +10,13 @@
 // buffer, 15 dispatches with catalog-default params. Finite-output
 // smoke only; not parity.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
 const { gpu: _gpu, device } = await acquireTestGpu();
+afterAll(() => { device?.destroy?.(); });
 
 const SHADER_SRC = CHAOS_WGSL;
 const startMarker = '\n// ---------------------------------------------------------------------\n// #121 batch L1';

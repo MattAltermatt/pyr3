@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit global section.
+// pyr3 — /editor global section.
 //
 // Whole-flame knobs that don't belong to a single xform: tone-map (brightness,
 // gamma, vibrancy, highlightPower, gammaThreshold), background color, and

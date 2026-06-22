@@ -9,7 +9,7 @@ export const FLAM3_PALETTE_NAMES: readonly string[] = ["south-sea-bather", "sky-
 
 // ─── paletteIdentifier ────────────────────────────────────────────────────
 // PaletteSource is a tagged union describing where a palette came from. The
-// launcher button on /v1/edit's palette subpanel formats this via
+// launcher button on /editor's palette subpanel (of the Color lens) formats this via
 // paletteIdentifier() into the three display parts:
 //   - prefix   — "flam3" / "mine" / null (corpus uses no prefix)
 //   - name     — the displayable body (quoted name, hash-number, or gen/id)
@@ -61,7 +61,7 @@ export function paletteIdentifier(source: PaletteSource): PaletteIdentifier {
       return { prefix: 'mine', name: `"${source.name}"`, monospace: false };
     }
     case 'custom': {
-      // #266 — a gradient the user edited in /v1/gradient and applied back to
+      // #266 — a gradient the user edited in the in-lens gradient editor at /editor and applied back to
       // the flame. No prefix, no library identity — it just says what it is.
       return { prefix: null, name: 'custom gradient', monospace: false };
     }

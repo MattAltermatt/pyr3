@@ -550,7 +550,7 @@ export function restoreSectionCollapse(): Record<SectionKey, boolean> {
     if (!raw) return { ...DEFAULT_SECTION_COLLAPSE };
     const parsed = JSON.parse(raw) as Record<SectionKey, boolean>;
     // Merge over the default so a partial / older shape still produces all
-    // seven keys; persisted values win where present.
+    // SectionKey keys; persisted values win where present.
     return { ...DEFAULT_SECTION_COLLAPSE, ...parsed };
   } catch {
     return { ...DEFAULT_SECTION_COLLAPSE };

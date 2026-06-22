@@ -16,12 +16,13 @@
 // makes the height contribution branch-independent. So the assertions hold for
 // whichever of the two random branches a given invocation takes.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
 const { gpu: _gpu, device } = await acquireTestGpu();
+afterAll(() => { device?.destroy?.(); });
 
 const SHADER_SRC = CHAOS_WGSL;
 

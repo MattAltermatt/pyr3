@@ -1,4 +1,4 @@
-// pyr3 — /v1/edit canvas pan + zoom.
+// pyr3 — /editor canvas pan + zoom.
 //
 // Left-drag on the flame canvas pans (cx / cy). Mouse wheel zooms (scale,
 // anchored on the cursor so the point under the cursor stays put).

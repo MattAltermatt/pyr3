@@ -19,13 +19,14 @@
 //
 // NOT parity — these two have no flam3-C reference. Skips when no GPU adapter.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { acquireTestGpu } from './gpu-test-harness';
 
 const { gpu: _gpu, device } = await acquireTestGpu();
+afterAll(() => { device?.destroy?.(); });
 
 const SHADER_SRC = readFileSync(
   new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8',

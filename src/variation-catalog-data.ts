@@ -1,9 +1,8 @@
 // #119 — Variation Catalog content.
 //
 // One VariationDoc per variation index. The catalog page consumes this
-// in numeric order to render the full V0..V219 set. Stubs are allowed
-// during development — the page falls back to a placeholder. By ship,
-// every variation must have a complete entry (asserted in tests).
+// in numeric order to render the full V0..V322 set. Every variation has a
+// complete entry (asserted in tests).
 
 import {
   V,

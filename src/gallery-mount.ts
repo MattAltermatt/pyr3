@@ -1,6 +1,6 @@
 // Gallery surface mount + page-math helpers (#47).
 //
-// Page-math layer for the /v1/gallery/p/N grid. The canonical corpus order is
+// Page-math layer for the /gallery/p/N grid. The canonical corpus order is
 // "gens ascending, ids ascending within gen" — the same walk the cross-gen
 // neighbor resolver in corpus-bounds.ts uses for prev/next. These helpers
 // compose `loadGensManifest` + a per-gen `loadAvail` into bulk slice + lookup
@@ -9,8 +9,8 @@
 // Both fetchers are injectable so unit tests can pass synthetic corpora —
 // matches the testability shape of resolveCorpusNeighbors in corpus-bounds.ts.
 //
-// Task 4 will extend this module with the DOM grid + wave-fill orchestrator;
-// this file stays pure-logic only for now (no DOM, no WebGPU).
+// The DOM grid + wave-fill orchestrator (mountGallery etc.) now live in the
+// lower half of this module; the upper half (page math) remains pure-logic.
 //
 // Note on cost: pageOfSheep / pageForSheep walk gens sequentially calling
 // loadAvail per gen. loadAvail caches per-gen at the avail-client layer, so

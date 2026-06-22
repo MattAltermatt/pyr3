@@ -24,7 +24,7 @@
 // "baseline" row is Spiral Galaxy with every opted-in v1.0 feature OFF — the
 // closest analog to v0.1's render path.
 
-import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
+import { createRenderer, DEFAULT_FILTER_RADIUS, DEFAULT_SPP } from '../src/renderer';
 import { type Genome, SPIRAL_GALAXY } from '../src/genome';
 import { installWebGPUHost, acquireDawnDevice } from './host';
 
@@ -228,7 +228,7 @@ async function runScenario(
   // Samples per second using the median frame time. The renderer dispatches
   // walkers × itersPerWalker samples per render; default quality = 16 spp
   // gives ~16 × W × H samples per render.
-  const samplesPerRender = 16 * width * height; // default DEFAULT_SPP × W × H from renderer.ts
+  const samplesPerRender = DEFAULT_SPP * width * height;
   const samples_per_sec = (samplesPerRender / median_ms) * 1000;
 
   texture.destroy();

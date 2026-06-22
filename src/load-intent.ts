@@ -1,15 +1,14 @@
-// What pyr3 should load when the page boots. Driven entirely by the /v1 path
-// grammar; the legacy ?flame=<encoded> share-link codec was removed in v0.32
-// (superseded by /v1/gen/{gen}/id/{id}; see PYR3-020).
+// What pyr3 should load when the page boots. Driven by the flat path grammar
+// (#264): flat routes are canonical — /viewer, /editor, /animate, /screensaver,
+// /variations, /surprise, /esf/... — with corpus leaves under
+// /esf/gen/{gen}/id/{id} (gen, id are non-negative integers). The legacy
+// ?flame=<encoded> share-link codec was removed in v0.32 (see PYR3-020).
 //
-// /v1 path grammar:
-//   /v1/gen/{gen}/id/{id}  → corpus leaf (gen, id are non-negative integers)
-//   /v1/gen                → gen list
-//   /v1/gen/{gen}          → gen browse
-//   /v1/flame/...          → custom-reserved (future use)
+// /v1/* is a LEGACY boot-redirect fallback only (src/route-redirects.ts maps old
+// /v1/* URLs onto the flat surfaces); new URLs use the flat grammar.
 //
-// Absent a recognized /v1 path → default (main.ts resolves to the hardcoded
-// welcome flame). Malformed /v1 paths never throw — they fall through to default.
+// Absent a recognized path → default (main.ts resolves to the hardcoded welcome
+// flame). Malformed paths never throw — they fall through to default.
 
 import {
   encodeFilterSpec,
@@ -366,6 +365,6 @@ export function galleryUrlForFlame(
   _corpusId: { gen: number; id: number },
   flameCorpusIndex: number,
 ): string {
-  const page = Math.floor(flameCorpusIndex / GALLERY_PAGE_SIZE) + 1;
+  const page = pageForCorpusIndex(flameCorpusIndex);
   return `/esf/gallery/p/${page}`;
 }

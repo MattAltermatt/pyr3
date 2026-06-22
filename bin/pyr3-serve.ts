@@ -3,10 +3,12 @@
 //
 // Boots a node:http server on 127.0.0.1:5174 (auto-bumps if taken),
 // hosts the built viewer assets (SEA-bundled in production / from
-// ./dist in dev), and exposes three API routes:
+// ./dist in dev), and exposes five API routes:
 //
 //   GET  /api/capabilities  — viewer handshake; returns Capability JSON
 //   POST /api/render        — render genome → PNG, SSE progress + bytes
+//   POST /api/animate       — SSE-streamed render (keyframe .flam3 or timeline)
+//   POST /api/pick-dir      — directory picker
 //   POST /api/cancel/:id    — abort an in-flight render
 //
 // Usage:

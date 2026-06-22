@@ -167,7 +167,7 @@ async function buildIndex(fetchImpl: typeof fetch): Promise<BuiltIndex> {
   }
 
   // Truncation guard: decodeHeader validates magic + length≥41 but NOT that
-  // recordCount*30 record bytes actually follow. A truncated index (partial
+  // recordCount × FEATURE_INDEX_RECORD_BYTES record bytes actually follow. A truncated index (partial
   // deploy, hand-edited / re-compressed file whose header disagrees with the
   // table) would otherwise make the binary search read past the buffer
   // (RangeError) or decodeRecord throw 'truncated record' — an uncaught

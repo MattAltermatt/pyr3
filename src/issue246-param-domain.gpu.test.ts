@@ -9,12 +9,13 @@
 //      defined only for 0<=m<=l), so |Y_l^{-m}| == |Y_l^m|.
 // extractWgslFn + compileChecked per the chaos.wgsl GPU-test convention.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
 const { gpu: _gpu, device } = await acquireTestGpu();
+afterAll(() => { device?.destroy?.(); });
 
 const SRC = CHAOS_WGSL;
 const HELPERS = ['hash01', 'safe_sin', 'safe_cos', 'assoc_legendre', 'sph_harmonic', 'var_atan', 'var_shredrad']

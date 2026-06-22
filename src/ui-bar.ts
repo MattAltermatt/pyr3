@@ -183,19 +183,20 @@ const OCTOCAT_PATH =
 let stylesInjected = false;
 
 /** Edit-mode bar (#102): a slim variant of the viewer's chrome row used by
- *  `/v1/edit`. Same wordmark / nav tabs / WebGPU pill / octocat CTAs, with
- *  an EDITABLE flame-name input and a live dimensions readout in place of
- *  the viewer's static meta. No quality ladder / Open / Save row — those
- *  affordances live in the editor's left panel. (#103 Phase 2 Task 2.6:
- *  the version chip moved to /about; no longer shown in the top bar.) */
+ *  `/editor`. Same wordmark / nav tabs / WebGPU pill / octocat CTAs. Post-#367
+ *  the bar shows a READ-ONLY loaded-source chip (no editable name input) and a
+ *  live dimensions readout in place of the viewer's static meta; the verbs
+ *  (undo/redo · Open · Reroll · Size · QUALITY · Save) fold into the identity
+ *  row's right zone. Size / QUALITY / Save are present but hidden via the
+ *  render-mode-bar body class. (#103 Phase 2 Task 2.6: the version chip moved to
+ *  /about; no longer shown in the top bar.) */
 export interface EditBarOpts {
   webgpu: WebGPUStatus;
-  /** #103 Phase 6 Task 6.2 — action row callbacks. The editor's action row
-   *  mirrors the viewer's pattern (📂 Open · 📐 Size ▾ · QUALITY [10·25·…] ·
-   *  🧬 Save Flame · 💾 Save Render) and adds 🎲 Reroll between Open and
-   *  Size. main.ts wires each handler into the editor's state mutators
-   *  (handleReroll / handleOpenFile / handleSaveFile / handleRenderPng on
-   *  the EditPageHandle). */
+  /** #103 Phase 6 Task 6.2 — verb callbacks. The editor folds these into the
+   *  identity row's right zone (📂 Open · 🎲 Reroll · 📐 Size ▾ · QUALITY
+   *  [10·25·…] · 🧬 Save Flame · 💾 Save Render). main.ts wires each handler
+   *  into the editor's state mutators (handleReroll / handleOpenFile /
+   *  handleSaveFile / handleRenderPng on the EditPageHandle). */
   onOpenFile: () => void;
   onReroll: () => void;
   /** #108 — undo last edit. Disabled state is driven by setUndoEnabled. */
