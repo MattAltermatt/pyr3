@@ -251,7 +251,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     const cur = opts.getRenderSize();
     if (v !== cur.width) {
       opts.setRenderSize({ width: v, height: cur.height });
-      paintRender({ markCustomIfNoMatch: true });
+      paintRender();
       opts.onChange?.();
     }
   };
@@ -274,7 +274,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     const cur = opts.getRenderSize();
     if (v !== cur.height) {
       opts.setRenderSize({ width: cur.width, height: v });
-      paintRender({ markCustomIfNoMatch: true });
+      paintRender();
       opts.onChange?.();
     }
   };
@@ -429,7 +429,7 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     if (document.activeElement !== qInput) qInput.value = String(q);
   }
 
-  function paintRender(o: { markCustomIfNoMatch?: boolean } = {}): void {
+  function paintRender(): void {
     const size = opts.getRenderSize();
     if (document.activeElement !== wInput) wInput.value = String(size.width);
     if (document.activeElement !== hInput) hInput.value = String(size.height);
@@ -441,7 +441,6 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
       // Land on the Custom sentinel.
       presetSelect.value = '__custom__';
       presetLabel.textContent = 'Custom';
-      void o; // explicit-marker arg reserved for future "only mark on user-edit" semantics
     }
     paintRenderQ();
     saveBtn.disabled = !opts.canSave();

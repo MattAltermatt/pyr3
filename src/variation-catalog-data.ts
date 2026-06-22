@@ -1673,7 +1673,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     source: sourceForIdx(V.dc_cylinder),
     formula: 'JWF_{3}(x, y) = w\\,(\\sin x,\\; y);\\quad \\text{hue spirals along } x,\\; \\text{lightness modulates with } y',
     blurb: 'Direct-color cylinder — V21 position warp plus position-derived HSL. Hue cycles along x via sin; lightness modulates by tanh(y/2).',
-    // dc_cylinder is in DC_FAMILY but DOES warp position non-trivially
+    // dc_cylinder is in ZERO_POSITION_DC_VARIATIONS but DOES warp position non-trivially
     // (unlike V99 dc_linear / V100 dc_perlin / V101 dc_gridout which are
     // identity-warp + color-only). So `hideWeight` is intentionally
     // absent — the weight slider matters for the sin-warp magnitude.

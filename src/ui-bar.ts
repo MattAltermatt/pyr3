@@ -60,9 +60,6 @@ export interface BarOpts {
    *  viewer→editor transfer-on-tab-click; main carries the current flame into
    *  the editor (corpus deep-link `?gen=&id=` or a localStorage genome stash). */
   onEditFlame: () => void;
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
   /** #418 — esf Browse: when provided, the slim corpus action row (🎲 surprise
    *  + ‹prev next›) AND the render-progress (tier3) row mount into THIS host
    *  instead of the chrome middle-slot. The host (`main.ts`) places it below the
@@ -153,10 +150,6 @@ export interface GalleryBarOpts {
   /** Fired when the user clicks the [⚙ filters ▾] pill. main.ts forwards
    *  to the drawer's toggleOpen(). */
   onFilterToggle(): void;
-  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
   /** #419 — gallery Browse: when provided, the page-nav info row (‹prev · page N
    *  of M · next› · 🎲 · ⚙ filters) mounts into THIS host instead of the chrome
    *  middle-slot. main.ts places it directly above the grid (mirroring #418), so
@@ -197,10 +190,6 @@ let stylesInjected = false;
  *  the version chip moved to /about; no longer shown in the top bar.) */
 export interface EditBarOpts {
   webgpu: WebGPUStatus;
-  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
   /** #103 Phase 6 Task 6.2 — action row callbacks. The editor's action row
    *  mirrors the viewer's pattern (📂 Open · 📐 Size ▾ · QUALITY [10·25·…] ·
    *  🧬 Save Flame · 💾 Save Render) and adds 🎲 Reroll between Open and
@@ -255,7 +244,6 @@ export function mountEditBar(root: HTMLElement, opts: EditBarOpts): EditBarHandl
   const chrome = mountBarChrome(root, {
     surface: 'editor',
     webgpu: opts.webgpu,
-    onTabClick: opts.onTabClick,
   });
 
   const infoRow = el('div', 'pyr3-bar-info');
@@ -516,7 +504,6 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const chrome = mountBarChrome(root, {
     surface: opts.mode === 'esf' ? 'esf' : 'viewer',
     webgpu: opts.webgpu,
-    onTabClick: opts.onTabClick,
   });
 
   // ══ bar ① — info / identity ══
@@ -526,9 +513,8 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const infoLeft = el('div', 'pyr3-zone-left');
   // setGalleryHref still updates an internal anchor for back-compat. The
   // chrome's gallery tab replaces the visible link, but the BarHandle
-  // contract stays (Phase 2 wires real tab-nav via opts.onTabClick + the
-  // currentFlame context). The link is created but kept off-DOM so the
-  // setter can no-op safely without surprising callers.
+  // contract stays. The link is created but kept off-DOM so the setter can
+  // no-op safely without surprising callers.
   const gallery = el('a', 'pyr3-bar-about') as HTMLAnchorElement;
   gallery.href = galleryUrl(1);
   gallery.textContent = 'gallery';
@@ -927,9 +913,6 @@ export type TabSurface =
 export interface ChromeOpts {
   surface: TabSurface;
   webgpu: WebGPUStatus;
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface ChromeHandle {
@@ -963,8 +946,7 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   // Left cluster: brand + the top-nav menus, left-aligned together.
   // #264 — buildNavMenu replaces the flat tab row. Leaf clicks navigate
   // directly; the menu stays pure presentation and the host owns
-  // window.location. opts.onTabClick is retained on ChromeOpts for the
-  // per-surface callers but is no longer routed through the nav.
+  // window.location.
   const tabs = buildNavMenu(opts.surface, (route, newTab) => {
     if (newTab) { window.open(route, '_blank', 'noopener'); return; }
     window.location.href = route;
@@ -1000,10 +982,6 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
 
 export interface AboutBarOpts {
   webgpu: WebGPUStatus;
-  /** #103 Task 1.4: tab clicks in the chrome substrate's tab group route here. */
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface AboutBarHandle {
@@ -1027,7 +1005,6 @@ export function mountAboutBar(root: HTMLElement, opts: AboutBarOpts): AboutBarHa
   const chrome = mountBarChrome(root, {
     surface: 'about',
     webgpu: opts.webgpu,
-    onTabClick: opts.onTabClick,
   });
 
   return {
@@ -1047,7 +1024,7 @@ export function mountHowItWorksBar(root: HTMLElement, opts: AboutBarOpts): About
   injectStylesOnce();
   root.replaceChildren();
   root.classList.add('pyr3-bar-root');
-  const chrome = mountBarChrome(root, { surface: 'about', webgpu: opts.webgpu, onTabClick: opts.onTabClick });
+  const chrome = mountBarChrome(root, { surface: 'about', webgpu: opts.webgpu });
   return {
     middleSlot: chrome.middleSlot,
     destroy: () => { chrome.destroy(); root.classList.remove('pyr3-bar-root'); },
@@ -1062,9 +1039,6 @@ export function mountHowItWorksBar(root: HTMLElement, opts: AboutBarOpts): About
 
 export interface ScreensaverBarOpts {
   webgpu: WebGPUStatus;
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface ScreensaverBarHandle {
@@ -1084,7 +1058,6 @@ export function mountScreensaverBar(
   const chrome = mountBarChrome(root, {
     surface: 'screensaver',
     webgpu: opts.webgpu,
-    onTabClick: opts.onTabClick,
   });
 
   return {
@@ -1102,9 +1075,6 @@ export function mountScreensaverBar(
 
 export interface AnimateBarOpts {
   webgpu: WebGPUStatus;
-  /** #264 — vestigial: the nav menu self-navigates via window.location now, so
-   *  this callback is no longer invoked. Kept optional for back-compat. */
-  onTabClick?: (surface: TabSurface) => void;
 }
 
 export interface AnimateBarHandle {
@@ -1124,7 +1094,6 @@ export function mountAnimateBar(
   const chrome = mountBarChrome(root, {
     surface: 'animate',
     webgpu: opts.webgpu,
-    onTabClick: opts.onTabClick,
   });
 
   return {
@@ -1363,7 +1332,6 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   const chrome = mountBarChrome(root, {
     surface: 'gallery',
     webgpu: opts.webgpu,
-    onTabClick: opts.onTabClick,
   });
 
   // ══ info row — three-column grid: left placeholder / center page-nav / right filter ══

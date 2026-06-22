@@ -30,7 +30,6 @@ function makeBarOpts(over: Partial<BarOpts> = {}): BarOpts {
     onSurpriseMe: vi.fn(),
     onEditFlame: vi.fn(),
     estimateCost: () => ({ width: 1024, height: 1024, mb: 4, fits: true }),
-    onTabClick: vi.fn(),
     ...over,
   };
 }
@@ -52,7 +51,6 @@ function makeGalleryOpts(over: Partial<GalleryBarOpts> = {}): GalleryBarOpts {
     onRandomPage: vi.fn(),
     activeAxes: 0,
     onFilterToggle: vi.fn(),
-    onTabClick: vi.fn(),
     ...over,
   };
 }
@@ -68,7 +66,6 @@ function makeEditOpts(over: Partial<EditBarOpts> = {}): EditBarOpts {
     onQualityChange: vi.fn(),
     onSaveFlame: vi.fn(),
     onSave: vi.fn(),
-    onTabClick: vi.fn(),
     ...over,
   };
 }
@@ -325,12 +322,10 @@ describe('mountBarChrome', () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.getElementById('root')!;
     const webgpu: WebGPUStatus = { available: true } as WebGPUStatus;
-    const onTabClick = vi.fn();
 
     const handle = mountBarChrome(root, {
       surface: 'viewer',
       webgpu,
-      onTabClick,
     });
 
     expect(root.querySelector('.pyr3-brand')).toBeTruthy();
@@ -350,7 +345,6 @@ describe('mountBarChrome', () => {
     const handle = mountBarChrome(root, {
       surface: 'gallery',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     // #264 — gallery lives under the ESF dropdown, so ESF (top) + Gallery (leaf)
     // both carry the active class.
@@ -365,7 +359,6 @@ describe('mountBarChrome', () => {
     const handle = mountBarChrome(root, {
       surface: 'about',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     expect(root.querySelector('.pyr3-nav')).toBeTruthy();
     expect(root.querySelector('.pyr3-nav-top[data-nav-top="help"].active')).toBeTruthy();
@@ -379,7 +372,6 @@ describe('mountBarChrome', () => {
     const handle = mountBarChrome(root, {
       surface: 'variations',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
     expect(root.querySelector('.pyr3-nav-item[data-nav-sub="variations"].active')).toBeTruthy();
@@ -392,7 +384,6 @@ describe('mountBarChrome', () => {
     const handle = mountBarChrome(root, {
       surface: 'surprise',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
     expect(root.querySelector('.pyr3-nav-item[data-nav-sub="surprise"].active')).toBeTruthy();
@@ -413,7 +404,6 @@ describe('mountBarChrome', () => {
     const handle = mountBarChrome(root, {
       surface: 'viewer',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
 
     const allCta = Array.from(root.querySelectorAll('.pyr3-bar-cta')) as HTMLElement[];
@@ -434,7 +424,6 @@ describe('mountBarChrome', () => {
     const handle = mountBarChrome(root, {
       surface: 'viewer',
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
 
     const allCta = Array.from(root.querySelectorAll('.pyr3-bar-cta')) as HTMLElement[];
@@ -472,7 +461,6 @@ describe('mountAboutBar', () => {
     const root = document.getElementById('root')!;
     const handle = mountAboutBar(root, {
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     // About moved into the Help menu (#420) — its leaf + the Help top go active.
     expect(root.querySelector('[data-nav-sub="about"].active')).toBeTruthy();
@@ -489,7 +477,6 @@ describe('mountAboutBar', () => {
     root.appendChild(stale);
     mountAboutBar(root, {
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     expect(root.querySelector('.stale-prior-content')).toBeNull();
   });
@@ -499,7 +486,6 @@ describe('mountAboutBar', () => {
     const root = document.getElementById('root')!;
     const handle = mountAboutBar(root, {
       webgpu: { available: true } as WebGPUStatus,
-      onTabClick: vi.fn(),
     });
     expect(handle.middleSlot).toBeInstanceOf(HTMLElement);
     expect(handle.middleSlot.classList.contains('pyr3-middle-slot')).toBe(true);
@@ -1039,7 +1025,7 @@ describe('#419 — gallery: page-nav strip relocates to galleryBottomBarHost', (
     return {
       webgpu: STUB_WEBGPU, page: 1, totalPages: 10,
       onPrevPage: vi.fn(), onNextPage: vi.fn(), onRandomPage: vi.fn(),
-      activeAxes: 0, onFilterToggle: vi.fn(), onTabClick: vi.fn(),
+      activeAxes: 0, onFilterToggle: vi.fn(),
       ...over,
     };
   }

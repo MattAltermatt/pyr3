@@ -124,30 +124,6 @@ export function isDefaultFilterSpec(spec: FilterSpec): boolean {
   return filterSpecEquals(spec, DEFAULT_FILTER_SPEC);
 }
 
-/** Count of axes that differ from the default — drives the bar pill's
- *  "N active" badge. Variations count as ONE axis regardless of how many
- *  are selected; xform min/max collapse into one axis. */
-export function countActiveAxes(spec: FilterSpec): number {
-  let n = 0;
-  // Sort axis: mode OR direction differing from default = one axis active.
-  // (Direction asc on default `time` is still "non-default sort".)
-  if (
-    spec.sort !== DEFAULT_FILTER_SPEC.sort
-    || spec.sortDir !== DEFAULT_FILTER_SPEC.sortDir
-  ) n++;
-  if (spec.vars.length > 0) n++;
-  if (
-    spec.xformMin !== DEFAULT_FILTER_SPEC.xformMin
-    || spec.xformMax !== DEFAULT_FILTER_SPEC.xformMax
-  ) n++;
-  // Each stat axis is one active count when its range differs from default.
-  if (spec.coverageMin !== 0 || spec.coverageMax !== null) n++;
-  if (spec.entropyMin !== 0 || spec.entropyMax !== null) n++;
-  if (spec.colorVarMin !== 0 || spec.colorVarMax !== null) n++;
-  if (spec.meanLumMin !== 0 || spec.meanLumMax !== null) n++;
-  return n;
-}
-
 /** Parse a URLSearchParams into a FilterSpec. Forgiving: unknown values
  *  silently fall back to the default for that axis. Never throws. */
 export function parseFilterSpec(params: URLSearchParams): FilterSpec {

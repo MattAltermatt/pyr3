@@ -835,7 +835,7 @@ async function main(): Promise<void> {
   // in the viewer. Preview side is wired to localStorage (workstation pref);
   // render side mirrors activeGenome.size + activeGenome.quality. 💾 Save
   // Render fires a full-quality render at genome.size × oversample × quality
-  // through editRenderer.fullRenderAt with the new progress modal +
+  // through saveRenderToPng (src/render-save.ts) with a progress modal +
   // AbortSignal (parallel to the editor's Save Render flow).
   let viewerPreviewCfg: PreviewRenderConfig = loadPreviewConfig();
 

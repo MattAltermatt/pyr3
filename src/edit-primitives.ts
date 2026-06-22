@@ -65,52 +65,6 @@ export interface NumberInputResult {
   handle: ScrubbyHandle;
 }
 
-/** Plain `<input type="number">` variant of buildNumberInput — no scrub
- *  drag, no double-click-to-type swap. Use for fields where the user
- *  almost always types an exact value (W×H, quality) and the bar's
- *  Size/Quality ladders cover the "pick a preset" path. Returns the same
- *  NumberInputResult shape so existing call sites that use
- *  `result.handle.setValue(n)` keep working — `setValue` here simply
- *  updates the input's value without firing change. */
-export function buildPlainNumberInput(opts: NumberInputOpts): NumberInputResult {
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.value = String(opts.value);
-  if (opts.min !== undefined) input.min = String(opts.min);
-  if (opts.max !== undefined) input.max = String(opts.max);
-  if (opts.step !== undefined) input.step = String(opts.step);
-  input.className = 'pyr3-input pyr3-plain-num';
-  input.style.flex = '1 1 0';
-  input.style.minWidth = '0';
-  input.style.width = '100%';
-  input.style.textAlign = 'right';
-  input.style.fontVariantNumeric = 'tabular-nums';
-  input.style.background = COLORS.bg.input;
-  input.style.border = `1px solid ${COLORS.border}`;
-  input.style.borderRadius = '3px';
-  input.style.color = COLORS.text.primary;
-  input.style.padding = '3px 6px';
-  input.style.fontSize = '12px';
-  input.style.fontFamily = 'inherit';
-
-  input.addEventListener('input', () => {
-    const v = Number(input.value);
-    if (Number.isFinite(v)) opts.onChange(v);
-  });
-
-  const handle: ScrubbyHandle = {
-    el: input as unknown as HTMLSpanElement,
-    setValue(v: number): void {
-      // Don't clobber the user's in-flight typing.
-      if (document.activeElement !== input) input.value = String(v);
-    },
-    destroy(): void {
-      input.remove();
-    },
-  };
-  return { el: input, handle };
-}
-
 export function buildNumberInput(opts: NumberInputOpts): NumberInputResult {
   const fmt = opts.precision !== undefined
     ? (v: number): string => (Number.isFinite(v) ? v.toFixed(opts.precision!) : String(v))
@@ -494,13 +448,15 @@ export function buildRemoveButton(opts: RemoveButtonOpts): HTMLElement {
 }
 
 // ── Button tiers ──────────────────────────────────────────────────────────
-// Three visual variants for the editor's action surface:
-//   plain    — dark gradient bg, dark border, normal text (default neutral)
-//   accent   — warm-tint gradient, warm border, amber text (named action)
+// Two visual looks across three named variants for the editor's action surface:
+//   plain    — dark gradient bg, dark border, normal text (the SECONDARY look)
+//   accent   — renders IDENTICALLY to `plain` (post-#373 — the warm-tint look
+//              was retired; the variant name is kept as a semantic seam so
+//              call sites that mean "named action" don't have to churn)
 //   primary  — filled flame gradient, dark text, glow shadow (popped CTA)
 //
-// Hover lift logic: plain → border to flame.top; accent → border to flame.top;
-// primary keeps its bright fill but brightens the glow.
+// Hover lift: plain/accent → border + bg brighten on a dark base; primary
+// keeps its bright fill but brightens the glow.
 export type ButtonVariant = 'plain' | 'accent' | 'primary';
 
 export interface ButtonOpts {

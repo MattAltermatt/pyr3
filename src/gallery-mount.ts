@@ -195,13 +195,13 @@ export async function pageForSheep(
   if (manifest === null) return 1;
 
   // Walk identically to pageOfSheep: iterate manifest.gens IN ORDER (which
-  // is descending — newest gens first); accumulate `loadAvail(gen).length`
-  // per non-target gen; locate target id within target gen's avail. The
-  // previous logic used `entry.gen < gen` to mean "already-counted gens",
-  // which is correct ONLY for ascending manifests — wrong for the project's
-  // newest-first manifest (Bug 2026-06-04: hero 247/19679 was landing on
-  // p/4278 of 198/0734x flames because gens 246, 245, ... were wrongly
-  // counted as "before" the target gen 247).
+  // is ASCENDING — oldest gens first; loadGensManifest force-sorts the gens
+  // by .gen ascending, see corpus-bounds.ts:63); accumulate
+  // `loadAvail(gen).length` per gen until we reach the target gen, then
+  // locate target id within that gen's avail. Accumulating in this in-order
+  // walk (rather than an `entry.gen < gen` predicate) keeps the page count
+  // correct regardless of how the manifest writer happened to order the
+  // entries — the force-sort upstream guarantees ascending order here.
   let seen = 0;
   for (const entry of manifest.gens) {
     const ids = await loadAvail(entry.gen);
@@ -341,29 +341,6 @@ export async function pageOfSheepFiltered(
   const master = getMasterList(deps.index, spec);
   const start = (page - 1) * perPage;
   return master.slice(start, start + perPage);
-}
-
-/** Find the page (1-indexed) that contains the given {gen, id} flame under
- *  the active filter+sort. Walks the cached master list (same as
- *  pageOfSheepFiltered slices) so the returned page matches what the
- *  gallery actually displays. Returns 1 when the flame isn't in the
- *  filtered set (degrade gracefully).
- *
- *  Bug fix 2026-06-04: the unfiltered pageForSheep walked manifest.gens
- *  in native order, but the live gallery uses pageOfSheepFiltered with
- *  default sort `time desc` — different walks, different pages. */
-export function pageForSheepFiltered(
-  gen: number,
-  id: number,
-  perPage: number,
-  spec: FilterSpec,
-  deps: FilteredPageDeps,
-): number {
-  if (perPage < 1) return 1;
-  const master = getMasterList(deps.index, spec);
-  const idx = master.findIndex(r => r.gen === gen && r.id === id);
-  if (idx < 0) return 1;
-  return Math.floor(idx / perPage) + 1;
 }
 
 /** Total pages for the given filter spec. 0 when the filter matches no

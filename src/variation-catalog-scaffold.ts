@@ -11,19 +11,27 @@ import type { Genome, Xform } from './genome';
 import { V, type Variation, type VariationIndex } from './variations';
 import { PYRE_PALETTE } from './palette';
 
-// DC variations are color-only (position contribution = 0 in the
-// dispatcher for V99/100/101; V102 dc_cylinder has a position too, but
-// it's a position OVERRIDE, not an additive offset). Mixing linear at
-// (1-w) with a DC at w collapses the walker to the origin at w=1 — both
-// visually empty AND severe atomic contention on a single histogram
-// bucket. The fix: ALWAYS keep linear at full weight for DC variations,
-// and include the DC variation with whatever weight the slider provides
-// — only its presence in the chain matters for `dc_flag` (set by the
-// packer in genome.ts whenever any DC variation is active, regardless
-// of weight). At weight=0 the DC variation still triggers the color
-// override path via dc_flag; the slider's effect for DC entries is
-// effectively cosmetic for now (see catalog spec follow-up).
-const DC_FAMILY: ReadonlySet<number> = new Set<number>([
+// The ZERO-POSITION DC variations: color-only, with no usable position
+// contribution (position = 0 in the dispatcher for V99/100/101; V102
+// dc_cylinder has a position OVERRIDE, not an additive offset). Mixing
+// linear at (1-w) with one of these at w collapses the walker to the
+// origin at w=1 — both visually empty AND severe atomic contention on a
+// single histogram bucket. The fix: ALWAYS keep linear at full weight for
+// these entries, and include the DC variation with whatever weight the
+// slider provides — only its presence in the chain matters for `dc_flag`
+// (set by the packer in genome.ts whenever any DC variation is active,
+// regardless of weight). At weight=0 the DC variation still triggers the
+// color override path via dc_flag; the slider's effect for these entries
+// is effectively cosmetic for now (see catalog spec follow-up).
+//
+// DELIBERATE SUBSET — do NOT widen this to the full DC_VARIATION_SET
+// (src/variations.ts). The other DC members (newton, magnetic_pendulum,
+// burning_ship, magnet1, nova, halley) are real position-driving fractal
+// variations that ALSO emit DC color; they need the normal linear@(1-w)
+// mix and would render wrong if force-pinned to full linear. This set is
+// exactly the four pure-color DC variations with no position contribution.
+// Pinned by variation-catalog-scaffold.test.ts.
+export const ZERO_POSITION_DC_VARIATIONS: ReadonlySet<number> = new Set<number>([
   V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder,
 ]);
 
@@ -65,7 +73,7 @@ export function buildCatalogGenome(
     colorSpeed: 0.5,
     variations: idx === V.linear
       ? [{ index: V.linear, weight: 1 }]
-      : DC_FAMILY.has(idx)
+      : ZERO_POSITION_DC_VARIATIONS.has(idx)
       ? [
           // Linear always full-weight — DC variations don't drive position.
           { index: V.linear, weight: 1 },

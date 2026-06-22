@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  countActiveAxes,
   DEFAULT_FILTER_SPEC,
   encodeFilterSpec,
   filterSpecEquals,
@@ -363,48 +362,6 @@ describe('encodeFilterSpec', () => {
     expect(p.get('entropy')).toBe('0.5');
     expect(p.get('colorVar')).toBe('0.2-0.6');
     expect(p.get('meanLum')).toBe('0.4');
-  });
-});
-
-describe('countActiveAxes', () => {
-  it('default → 0', () => {
-    expect(countActiveAxes(DEFAULT_FILTER_SPEC)).toBe(0);
-  });
-  it('sort changed → 1', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest' })).toBe(1);
-  });
-  it('sort=custom counts as 1 axis (non-default sort)', () => {
-    expect(countActiveAxes({
-      ...DEFAULT_FILTER_SPEC,
-      sort: 'custom',
-      weights: PRESET_WEIGHTS.interest,
-    })).toBe(1);
-  });
-  it('vars set → 1 regardless of count', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, vars: [13] })).toBe(1);
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, vars: [13, 0, 20] })).toBe(1);
-  });
-  it('xform min OR max changed → 1', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMin: 2 })).toBe(1);
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMax: 8 })).toBe(1);
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, xformMin: 2, xformMax: 8 })).toBe(1);
-  });
-  it('all three axes → 3', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest', vars: [13], xformMin: 2, xformMax: 8 })).toBe(3);
-  });
-  it('sortDir asc on default sort → 1 (still part of the sort axis)', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sortDir: 'asc' })).toBe(1);
-  });
-  it('sort and sortDir both non-default → still 1 axis (bundled)', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, sort: 'interest', sortDir: 'asc' })).toBe(1);
-  });
-  it('each non-default stat range counts as 1 axis', () => {
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, coverageMin: 0.3 })).toBe(1);
-    expect(countActiveAxes({ ...DEFAULT_FILTER_SPEC, entropyMax: 0.7 })).toBe(1);
-    expect(countActiveAxes({
-      ...DEFAULT_FILTER_SPEC,
-      coverageMin: 0.3, entropyMax: 0.7, colorVarMin: 0.5, meanLumMin: 0.2,
-    })).toBe(4);
   });
 });
 

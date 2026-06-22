@@ -1953,16 +1953,3 @@ function showToast(host: HTMLElement, message: string): void {
   host.appendChild(t);
   setTimeout(() => t.remove(), 4000);
 }
-
-function showModal(host: HTMLElement, message: string): HTMLElement {
-  const m = document.createElement('div');
-  m.textContent = message;
-  m.style.cssText = `
-    position: absolute; inset: 0; display: flex;
-    align-items: center; justify-content: center;
-    background: rgba(0, 0, 0, 0.6); color: #ddd;
-    font-size: 14px; z-index: 200; pointer-events: all;
-  `;
-  host.appendChild(m);
-  return m;
-}

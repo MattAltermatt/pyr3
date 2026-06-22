@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildCatalogGenome, SIERPINSKI_CORNERS } from './variation-catalog-scaffold';
-import { V } from './variations';
+import {
+  buildCatalogGenome,
+  SIERPINSKI_CORNERS,
+  ZERO_POSITION_DC_VARIATIONS,
+} from './variation-catalog-scaffold';
+import { V, DC_VARIATION_SET } from './variations';
 
 describe('buildCatalogGenome', () => {
   it('builds a 3-xform sierpinski with equal weights', () => {
@@ -91,5 +95,49 @@ describe('buildCatalogGenome', () => {
     const mob = g.xforms[0]!.variations.find(v => v.index === V.mobius)!;
     expect(mob.param8).toBe(9);
     expect(mob.param9).toBe(10);
+  });
+});
+
+describe('ZERO_POSITION_DC_VARIATIONS (deliberate DC subset — D-2 / #393)', () => {
+  it('is exactly the four pure-color DC variations (no position contribution)', () => {
+    expect([...ZERO_POSITION_DC_VARIATIONS].sort((a, b) => a - b)).toEqual(
+      [V.dc_linear, V.dc_perlin, V.dc_gridout, V.dc_cylinder].sort((a, b) => a - b),
+    );
+  });
+
+  it('is a STRICT subset of DC_VARIATION_SET — and deliberately excludes the position-driving DC members', () => {
+    // Every member must be a DC variation…
+    for (const idx of ZERO_POSITION_DC_VARIATIONS) {
+      expect(DC_VARIATION_SET.has(idx)).toBe(true);
+    }
+    // …but the set must NOT be the full DC family: the position-driving DC
+    // variations (newton / magnetic_pendulum / burning_ship / magnet1 / nova /
+    // halley) need the normal linear@(1-w) mix and must stay out of this subset.
+    expect(ZERO_POSITION_DC_VARIATIONS.size).toBeLessThan(DC_VARIATION_SET.size);
+    for (const idx of [
+      V.newton, V.magnetic_pendulum, V.burning_ship, V.magnet1, V.nova, V.halley,
+    ]) {
+      expect(ZERO_POSITION_DC_VARIATIONS.has(idx)).toBe(false);
+    }
+  });
+
+  it('keeps linear at FULL weight for a zero-position DC entry (walker would collapse otherwise)', () => {
+    const g = buildCatalogGenome(V.dc_perlin, 0.4, []);
+    g.xforms.forEach(x => {
+      const linear = x.variations.find(v => v.index === V.linear)!;
+      const dc = x.variations.find(v => v.index === V.dc_perlin)!;
+      expect(linear.weight).toBe(1);   // NOT 1-w
+      expect(dc.weight).toBeCloseTo(0.4);
+    });
+  });
+
+  it('uses the normal linear@(1-w) mix for a position-driving DC entry (newton)', () => {
+    const g = buildCatalogGenome(V.newton, 0.4, []);
+    g.xforms.forEach(x => {
+      const linear = x.variations.find(v => v.index === V.linear)!;
+      const newton = x.variations.find(v => v.index === V.newton)!;
+      expect(linear.weight).toBeCloseTo(0.6);  // 1-w, not full
+      expect(newton.weight).toBeCloseTo(0.4);
+    });
   });
 });
