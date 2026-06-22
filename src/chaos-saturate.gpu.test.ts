@@ -11,22 +11,12 @@
 // `npm test` suite green without a GPU while still validating the actual shader
 // source locally.
 import { afterAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
-
-Object.assign(globalThis, globals);
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
 // Acquire a device at collection time so describe.skipIf can gate on it.
-let device: GPUDevice | null = null;
-try {
-  const gpu = create([]);
-  const adapter = await gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 
 afterAll(() => {
   device?.destroy?.();
@@ -36,7 +26,7 @@ afterAll(() => {
 // not a copy. Uses the brace-balanced `extractWgslFn` helper so nested `{`/`}`
 // inside the function body are handled correctly (the prior inline regex
 // assumed no column-0 `}` until the closing brace, which doesn't generalize).
-const SHADER_SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
+const SHADER_SRC = CHAOS_WGSL;
 const ATOMIC_ADD_SAT = extractWgslFn(SHADER_SRC, 'atomic_add_sat');
 
 describe('#18 — chaos histogram deposit saturates (shader source)', () => {

@@ -7,25 +7,14 @@
 // m → 1, so elliptic_K_eval floors m1 at 1e-3 and var_elliptic_K hard-clamps
 // r′ to tail_clamp. No trig → minimal prelude (the two A&S poly helpers only).
 import { afterAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let _gpu: ReturnType<typeof create> | null = null;
-let device: GPUDevice | null = null;
-try {
-  _gpu = create([]);
-  const adapter = await _gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 afterAll(() => { device?.destroy?.(); });
 
-const SHADER_SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
+const SHADER_SRC = CHAOS_WGSL;
 const E_EVAL = extractWgslFn(SHADER_SRC, 'elliptic_E_eval');
 const K_EVAL = extractWgslFn(SHADER_SRC, 'elliptic_K_eval');
 const PRELUDE = `\n${E_EVAL}\n${K_EVAL}\n`;

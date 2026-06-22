@@ -7,25 +7,14 @@
 // mirror of the digit recursion, and strict boundedness within [−extent,extent].
 // No trig → prelude is just the base-3 codec + scramble helpers (pow3 first).
 import { afterAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let _gpu: ReturnType<typeof create> | null = null;
-let device: GPUDevice | null = null;
-try {
-  _gpu = create([]);
-  const adapter = await _gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 afterAll(() => { device?.destroy?.(); });
 
-const SHADER_SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
+const SHADER_SRC = CHAOS_WGSL;
 const POW3 = extractWgslFn(SHADER_SRC, 'pow3');
 const TRI_ENC = extractWgslFn(SHADER_SRC, 'tri_encode');
 const TRI_DEC = extractWgslFn(SHADER_SRC, 'tri_decode');

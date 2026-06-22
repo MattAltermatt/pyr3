@@ -9,25 +9,14 @@
 // points, passthrough at the guarded pole, fixed-point identity at the cube
 // roots of unity (nova/halley), and finiteness across a grid (boundedness).
 import { afterAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let _gpu: ReturnType<typeof create> | null = null;
-let device: GPUDevice | null = null;
-try {
-  _gpu = create([]);
-  const adapter = await _gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 afterAll(() => { device?.destroy?.(); });
 
-const SHADER_SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
+const SHADER_SRC = CHAOS_WGSL;
 const CMUL = extractWgslFn(SHADER_SRC, 'complex_mul');
 const CSQR = extractWgslFn(SHADER_SRC, 'complex_sqr');
 const CDIV = extractWgslFn(SHADER_SRC, 'complex_div');

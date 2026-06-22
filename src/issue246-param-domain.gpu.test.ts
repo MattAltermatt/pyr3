@@ -10,18 +10,13 @@
 // extractWgslFn + compileChecked per the chaos.wgsl GPU-test convention.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
+const { gpu: _gpu, device } = await acquireTestGpu();
 
-const _gpu = create([]);
-const adapter = await _gpu.requestAdapter();
-const device = adapter ? await adapter.requestDevice() : null;
-
-const SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
+const SRC = CHAOS_WGSL;
 const HELPERS = ['hash01', 'safe_sin', 'safe_cos', 'assoc_legendre', 'sph_harmonic', 'var_atan', 'var_shredrad']
   .map((fn) => extractWgslFn(SRC, fn)).join('\n');
 

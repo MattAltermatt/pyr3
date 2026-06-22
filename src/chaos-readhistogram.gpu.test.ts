@@ -7,19 +7,10 @@
 // crash under Dawn+vitest; see the dispatch-crash note). The collapse/normalize
 // math is covered separately by export-linear.test.ts.
 import { afterAll, describe, expect, it } from 'vitest';
-import { create, globals } from 'webgpu';
 import { createChaosPass } from './chaos';
+import { acquireTestGpu } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let device: GPUDevice | null = null;
-try {
-  const gpu = create([]);
-  const adapter = await gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { device } = await acquireTestGpu();
 
 afterAll(() => device?.destroy());
 

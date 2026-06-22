@@ -17,20 +17,11 @@
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { perlin2d, perlinFbm } from './noise-perlin-oracle';
+import { acquireTestGpu } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let device: GPUDevice | null = null;
-try {
-  const gpu = create([]);
-  const adapter = await gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 afterAll(() => { device?.destroy?.(); });
 
 const NOISE_SRC = readFileSync(

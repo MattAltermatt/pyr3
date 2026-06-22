@@ -69,6 +69,7 @@ const SEAM_EXEMPT = new Set<string>([
   'device.ts',            // viewer-side device acquisition uses navigator.gpu
   'save-image.ts',        // unrelated — exports a pure helper, no env access
   'save-flame.ts',        // viewer .pyr3.json export — uses URL.createObjectURL + anchor download (#103 visual overhaul)
+  'gpu-test-harness.ts',  // node-only *.gpu.test.ts support helper (create([]) + node:fs read); never imported by engine code (#428)
   'no-innerhtml.test.ts', // test file; allowed
   'parity.test.ts',       // test file
   'parity-fe-be.test.ts', // test file

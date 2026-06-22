@@ -15,24 +15,14 @@
 // cleanly when no adapter is present, so the GPU-less fast suite stays green
 // while still asserting the source-level invariant below.
 import { afterAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let device: GPUDevice | null = null;
-try {
-  const gpu = create([]);
-  const adapter = await gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 afterAll(() => { device?.destroy?.(); });
 
-const SHADER_SRC = readFileSync(new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8');
+const SHADER_SRC = CHAOS_WGSL;
 
 describe('#72 — chaos.wgsl ships safe_sin/safe_cos (source invariant)', () => {
   it('var_waves routes trig through safe_sin (not raw sin)', () => {

@@ -16,35 +16,15 @@
 // Skips when no GPU adapter — fast suite stays green on CI.
 
 import { afterAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
 import { ISAAC_STATE_U32, packIsaacStates } from './isaac';
+import { acquireTestGpu, CHAOS_WGSL, ISAAC_STRUCT, ISAAC_FNS, CONSTS_PRELUDE } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
-
-let _gpu: ReturnType<typeof create> | null = null;
-let device: GPUDevice | null = null;
-try {
-  _gpu = create([]);
-  const adapter = await _gpu.requestAdapter();
-  device = adapter ? await adapter.requestDevice() : null;
-} catch {
-  device = null;
-}
+const { gpu: _gpu, device } = await acquireTestGpu();
 afterAll(() => { device?.destroy?.(); });
 
-const SHADER_SRC = readFileSync(
-  new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8',
-);
-
-const STRUCT_MATCH = SHADER_SRC.match(/struct IsaacState[\s\S]*?\n\};/);
-if (!STRUCT_MATCH) throw new Error('chaos.wgsl: struct IsaacState not found');
-const ISAAC_STRUCT = STRUCT_MATCH[0];
-const ISAAC_ROUND = extractWgslFn(SHADER_SRC, 'isaac_round');
-const ISAAC_IRAND = extractWgslFn(SHADER_SRC, 'isaac_irand');
-const RAND01 = extractWgslFn(SHADER_SRC, 'rand01');
+const SHADER_SRC = CHAOS_WGSL;
 
 // Complex helpers — all 6 inverse hyperbolic vars compose from these.
 const CPX_MUL = extractWgslFn(SHADER_SRC, 'complex_mul');
@@ -54,15 +34,12 @@ const CPX_RECIP = extractWgslFn(SHADER_SRC, 'complex_recip');
 const CPX_SQRT = extractWgslFn(SHADER_SRC, 'complex_sqrt');
 const CPX_LOG = extractWgslFn(SHADER_SRC, 'complex_log');
 
-const PRELUDE = `const TAU: f32 = 6.28318530717958647692;
-const PI: f32 = 3.14159265358979323846;
+const PRELUDE = `${CONSTS_PRELUDE}
 ${ISAAC_STRUCT}
 @group(0) @binding(0) var<storage, read_write> isaac_states: array<IsaacState>;
 @group(0) @binding(1) var<storage, read> pts: array<vec2f>;
 @group(0) @binding(2) var<storage, read_write> out: array<vec2f>;
-${ISAAC_ROUND}
-${ISAAC_IRAND}
-${RAND01}
+${ISAAC_FNS}
 ${CPX_MUL}
 ${CPX_SQR}
 ${CPX_DIV}

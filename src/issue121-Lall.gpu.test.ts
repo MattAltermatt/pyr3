@@ -20,20 +20,13 @@
 // Skips when no GPU adapter — fast suite stays green on CI.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { create, globals } from 'webgpu';
 import { compileChecked } from './gpu-compile-guard';
 import { extractWgslFn } from './shaders/extract';
+import { acquireTestGpu, CHAOS_WGSL } from './gpu-test-harness';
 
-Object.assign(globalThis, globals);
+const { gpu: _gpu, device } = await acquireTestGpu();
 
-const _gpu = create([]);
-const adapter = await _gpu.requestAdapter();
-const device = adapter ? await adapter.requestDevice() : null;
-
-const SHADER_SRC = readFileSync(
-  new URL('./shaders/chaos.wgsl', import.meta.url), 'utf8',
-);
+const SHADER_SRC = CHAOS_WGSL;
 const startMarker = '\n// ---------------------------------------------------------------------\n// #121 batch L1';
 const endMarker = '\nfn apply_variation';
 const V152_V213_REGION = SHADER_SRC.slice(
