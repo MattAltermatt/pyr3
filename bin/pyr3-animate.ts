@@ -22,6 +22,7 @@ import { type Genome } from '../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../src/chaos';
 import { genomeToJson } from '../src/serialize';
 import { injectPngTextChunk } from '../src/png-text-chunk';
+import { readTextureTight } from '../src/gpu-readback';
 import { interpolate } from '../src/interpolate';
 import { type Animation } from '../src/animation';
 import {
@@ -359,32 +360,7 @@ async function main(): Promise<void> {
     const genome = frameResult.centerGenome;
 
     // Read back texture → PNG.
-    const bytesPerPixel = 4;
-    const unpaddedBytesPerRow = width * bytesPerPixel;
-    const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-    const readBuf = device.createBuffer({
-      label: 'pyr3-animate.readback',
-      size: bytesPerRow * height,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder({ label: 'pyr3-animate.encoder' });
-    encoder.copyTextureToBuffer(
-      { texture: texture! },
-      { buffer: readBuf, bytesPerRow, rowsPerImage: height },
-      { width, height },
-    );
-    device.queue.submit([encoder.finish()]);
-    await readBuf.mapAsync(GPUMapMode.READ);
-    const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-    readBuf.unmap();
-    readBuf.destroy();
-
-    const tight = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; y++) {
-      const srcOff = y * bytesPerRow;
-      const dstOff = y * unpaddedBytesPerRow;
-      tight.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
-    }
+    const tight = await readTextureTight(device, texture!, width, height, 4);
 
     const png = new PNG({ width, height });
     png.data = Buffer.from(tight.buffer, tight.byteOffset, tight.byteLength);

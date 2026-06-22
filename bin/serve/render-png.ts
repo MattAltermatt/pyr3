@@ -10,8 +10,7 @@ import { type Genome } from '../../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../../src/chaos';
 import { encodeExr } from '../../src/exr-encode';
 import { encodePng16 } from '../../src/png16-encode';
-import { halfToFloat } from '../../src/half-float';
-import { srgbToLinear } from '../../src/srgb';
+import { readTextureTight, displayHalfToLinearExr, displayHalfToPng16 } from '../../src/gpu-readback';
 import { AsyncMutex } from './async-mutex';
 
 /** #334 — output format. png8/png16 are display-referred; exr is true linear. */
@@ -232,57 +231,18 @@ async function renderGenomeToPngInner(
 
   // Copy texture → buffer, 256-aligned row stride. png16 = 8 B/px (4×f16).
   const bytesPerPixel = gpuFormat === 'rgba16float' ? 8 : 4;
-  const unpaddedBytesPerRow = width * bytesPerPixel;
-  const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-  const readBufSize = bytesPerRow * height;
-  const readBuf = device.createBuffer({
-    label: 'pyr3-serve.readback',
-    size: readBufSize,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  });
-  const encoder = device.createCommandEncoder({ label: 'pyr3-serve.encoder' });
-  encoder.copyTextureToBuffer(
-    { texture },
-    { buffer: readBuf, bytesPerRow, rowsPerImage: height },
-    { width, height },
-  );
-  device.queue.submit([encoder.finish()]);
-
-  await readBuf.mapAsync(GPUMapMode.READ);
-  const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-  readBuf.unmap();
-  readBuf.destroy();
-
-  const tight = new Uint8Array(width * height * bytesPerPixel);
-  for (let y = 0; y < height; y++) {
-    tight.set(
-      padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow),
-      y * unpaddedBytesPerRow,
-    );
-  }
+  const tight = await readTextureTight(device, texture, width, height, bytesPerPixel);
 
   if (outFormat === 'exr') {
     // #334 — store the LINEAR LIGHT of the display image so EXR viewers (which
     // apply sRGB on view) reproduce the editor look on open. See src/srgb.ts.
-    const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
-    const rgba = new Float32Array(width * height * 4);
-    for (let i = 0; i < width * height; i++) {
-      const o = i * 4;
-      rgba[o] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o]!))));
-      rgba[o + 1] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 1]!))));
-      rgba[o + 2] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 2]!))));
-      rgba[o + 3] = Math.max(0, Math.min(1, halfToFloat(halfView[o + 3]!)));
-    }
+    // #388 NaN→0 guard lives inside displayHalfToLinearExr.
+    const rgba = displayHalfToLinearExr(tight, width, height);
     return encodeExr({ width, height, rgba });
   }
 
   if (outFormat === 'png16') {
-    const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
-    const rgba16 = new Uint16Array(width * height * 4);
-    for (let i = 0; i < rgba16.length; i++) {
-      const f = halfToFloat(halfView[i]!);
-      rgba16[i] = Math.round(Math.max(0, Math.min(1, f)) * 65535);
-    }
+    const rgba16 = displayHalfToPng16(tight, width, height);
     return encodePng16({ width, height, rgba16 }, (b) => new Uint8Array(deflateSync(b)));
   }
 

@@ -38,6 +38,7 @@ import { dirname, join } from 'node:path';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
 
 import { parseFlame } from '../src/flame-import';
+import { readTextureTight } from '../src/gpu-readback';
 import { createRenderer, DEFAULT_FILTER_RADIUS } from '../src/renderer';
 import { applyPreset, QUALITY_TIERS, tierToSpec } from '../src/presets';
 import {
@@ -338,11 +339,6 @@ async function main(): Promise<void> {
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
 
-  const bytesPerPixel = 4;
-  const unpaddedBytesPerRow = width * bytesPerPixel;
-  const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-  const readBufSize = bytesPerRow * height;
-
   const pixelCount = width * height;
   const t0 = Date.now();
   let processed = 0;
@@ -363,29 +359,7 @@ async function main(): Promise<void> {
       renderer.render({ genome: renderGenome, outputView: texture.createView() });
 
       // Fresh readback buffer per sheep — dawn-node maps don't repeat well.
-      const readBuf = device.createBuffer({
-        size: readBufSize,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-      });
-      const encoder = device.createCommandEncoder();
-      encoder.copyTextureToBuffer(
-        { texture },
-        { buffer: readBuf, bytesPerRow, rowsPerImage: height },
-        { width, height },
-      );
-      device.queue.submit([encoder.finish()]);
-      await readBuf.mapAsync(GPUMapMode.READ);
-      const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-      readBuf.unmap();
-      readBuf.destroy();
-
-      // Strip row padding into a tight RGBA buffer.
-      const rgba = new Uint8Array(pixelCount * 4);
-      for (let y = 0; y < height; y++) {
-        const srcOff = y * bytesPerRow;
-        const dstOff = y * unpaddedBytesPerRow;
-        rgba.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
-      }
+      const rgba = await readTextureTight(device, texture, width, height, 4);
 
       const stats = computeStats(rgba, pixelCount);
       const rec: FeatureRecord = {

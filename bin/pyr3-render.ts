@@ -21,8 +21,7 @@ import { injectPngTextChunk } from '../src/png-text-chunk';
 import { encodeExr } from '../src/exr-encode';
 import { encodePng16 } from '../src/png16-encode';
 import { histogramToLinearRgba } from '../src/export-linear';
-import { srgbToLinear } from '../src/srgb';
-import { halfToFloat } from '../src/half-float';
+import { readTextureTight, displayHalfToLinearExr, displayHalfToPng16 } from '../src/gpu-readback';
 import { DEFAULT_TONEMAP } from '../src/tonemap';
 import { deflateSync } from 'node:zlib';
 import {
@@ -333,60 +332,19 @@ async function main(): Promise<void> {
     // Display-referred PNG: read the presented texture. Bytes-per-row must be
     // 256-aligned. png16 = rgba16float (8 B/px half), png8 = rgba8unorm (4 B/px).
     const bytesPerPixel = gpuFormat === 'rgba16float' ? 8 : 4;
-    const unpaddedBytesPerRow = width * bytesPerPixel;
-    const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-    const readBuf = device.createBuffer({
-      label: 'pyr3-render.readback',
-      size: bytesPerRow * height,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder({ label: 'pyr3-render.encoder' });
-    encoder.copyTextureToBuffer(
-      { texture },
-      { buffer: readBuf, bytesPerRow, rowsPerImage: height },
-      { width, height },
-    );
-    device.queue.submit([encoder.finish()]);
-    await readBuf.mapAsync(GPUMapMode.READ);
-    const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-    readBuf.unmap();
-
-    // Strip row padding into a tight buffer.
-    const tight = new Uint8Array(width * height * bytesPerPixel);
-    for (let y = 0; y < height; y++) {
-      tight.set(
-        padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow),
-        y * unpaddedBytesPerRow,
-      );
-    }
+    const tight = await readTextureTight(device, texture, width, height, bytesPerPixel);
 
     if (outFormat === 'exr') {
       // Default EXR — the LINEAR LIGHT of the display image. The display texels
       // are sRGB-encoded; EXR viewers assume linear + apply sRGB on view, so we
       // store sRGB_to_linear(display) and the viewer round-trips to the editor
       // look. Looks like the flame on open everywhere; no double-gamma. (#334)
-      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
-      const rgba = new Float32Array(width * height * 4);
-      // #388 — clamp to [0,1] AND coerce non-finite to 0. `Math.max(0, Math.min(1,
-      // NaN))` is NaN; the png16 path self-heals (NaN→Uint16 coerces to 0) but the
-      // EXR Float32Array writes NaN verbatim → black/magenta holes in many viewers.
-      const cl = (f: number) => (Number.isFinite(f) ? Math.max(0, Math.min(1, f)) : 0);
-      for (let i = 0; i < width * height; i++) {
-        const o = i * 4;
-        rgba[o] = srgbToLinear(cl(halfToFloat(halfView[o]!)));
-        rgba[o + 1] = srgbToLinear(cl(halfToFloat(halfView[o + 1]!)));
-        rgba[o + 2] = srgbToLinear(cl(halfToFloat(halfView[o + 2]!)));
-        rgba[o + 3] = cl(halfToFloat(halfView[o + 3]!)); // alpha = coverage
-      }
+      // #388 NaN→0 guard lives inside displayHalfToLinearExr.
+      const rgba = displayHalfToLinearExr(tight, width, height);
       outBytes = encodeExr({ width, height, rgba });
     } else if (outFormat === 'png16') {
       // Decode the half-float texels → clamp [0,1] → 16-bit samples.
-      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
-      const rgba16 = new Uint16Array(width * height * 4);
-      for (let i = 0; i < rgba16.length; i++) {
-        const f = halfToFloat(halfView[i]!);
-        rgba16[i] = Math.round(Math.max(0, Math.min(1, f)) * 65535);
-      }
+      const rgba16 = displayHalfToPng16(tight, width, height);
       const pngBytes = await encodePng16(
         { width, height, rgba16 },
         (b) => new Uint8Array(deflateSync(b)),

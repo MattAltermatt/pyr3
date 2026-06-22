@@ -19,6 +19,7 @@ import { renderAnimationFrame, renderTimelineFrame } from '../../src/animate-ren
 import { DEFAULT_WALKER_JITTER } from '../../src/chaos';
 import { injectPngTextChunk } from '../../src/png-text-chunk';
 import { genomeToJson } from '../../src/serialize';
+import { stripRowPadding } from '../../src/gpu-readback';
 
 export interface AnimationFrameRequest {
   /** Frame time T — interpolate(animation, T) defines the visible genome. */
@@ -239,18 +240,13 @@ export class FrameSequenceRenderContext {
    *  pack + PNG encode + metadata inject. Runs concurrently with the next
    *  frame's GPU work when the caller submits ahead. */
   async finishFrame(frame: InFlightFrame): Promise<AnimationFramePng> {
-    const { readBuf, width, height, bytesPerRow, unpaddedBytesPerRow, centerGenome } = frame;
+    const { readBuf, width, height, centerGenome } = frame;
     await frame.mapped;
     const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
     readBuf.unmap();
     readBuf.destroy();
 
-    const tight = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; y++) {
-      const srcOff = y * bytesPerRow;
-      const dstOff = y * unpaddedBytesPerRow;
-      tight.set(padded.subarray(srcOff, srcOff + unpaddedBytesPerRow), dstOff);
-    }
+    const tight = stripRowPadding(padded, width, height, 4);
 
     const pngObj = new PNG({ width, height });
     pngObj.data = Buffer.from(tight.buffer, tight.byteOffset, tight.byteLength);

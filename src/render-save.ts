@@ -6,8 +6,7 @@ import { getCapability } from './capability';
 import { genomeToJson } from './serialize';
 import { encodePng, type Deflate } from './png16-encode';
 import { encodeExr } from './exr-encode';
-import { halfToFloat } from './half-float';
-import { srgbToLinear } from './srgb';
+import { readTextureTight, displayHalfToLinearExr, displayHalfToPng16 } from './gpu-readback';
 
 /** Output format for Save Render (#334). */
 export type ExportFormat = 'png8' | 'png16' | 'exr';
@@ -98,46 +97,6 @@ const browserDeflate: Deflate = async (raw: Uint8Array): Promise<Uint8Array> => 
   return new Uint8Array(buf);
 };
 
-/** Read an offscreen texture back into a tight RGBA byte buffer (256-aligned
- *  copy, padding stripped). `bytesPerPixel` = 4 (rgba8unorm) or 8 (rgba16float). */
-async function readbackTexture(
-  device: GPUDevice,
-  texture: GPUTexture,
-  width: number,
-  height: number,
-  bytesPerPixel: number,
-): Promise<Uint8Array> {
-  const unpaddedBytesPerRow = width * bytesPerPixel;
-  const bytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
-  const readBuf = device.createBuffer({
-    label: 'pyr3.export.readback',
-    size: bytesPerRow * height,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-  });
-  const encoder = device.createCommandEncoder({ label: 'pyr3.export.encoder' });
-  encoder.copyTextureToBuffer(
-    { texture },
-    { buffer: readBuf, bytesPerRow, rowsPerImage: height },
-    { width, height },
-  );
-  device.queue.submit([encoder.finish()]);
-  // #389 — destroy the MAP_READ scratch on EVERY exit, not just the success
-  // path: a mapAsync rejection (device-lost/abort) otherwise leaks it (~128 MB
-  // at 4K), and the caller has no handle to clean it up.
-  try {
-    await readBuf.mapAsync(GPUMapMode.READ);
-    const padded = new Uint8Array(readBuf.getMappedRange().slice(0));
-    readBuf.unmap();
-    const tight = new Uint8Array(width * height * bytesPerPixel);
-    for (let y = 0; y < height; y++) {
-      tight.set(padded.subarray(y * bytesPerRow, y * bytesPerRow + unpaddedBytesPerRow), y * unpaddedBytesPerRow);
-    }
-    return tight;
-  } finally {
-    readBuf.destroy();
-  }
-}
-
 async function saveRenderInBrowser(opts: SaveRenderToPngOpts): Promise<SaveRenderResult> {
   const format = opts.format ?? 'png8';
   const transparent = opts.transparent ?? false;
@@ -227,32 +186,19 @@ async function saveViaOffscreen(
     await opts.device.queue.onSubmittedWorkDone();
 
     const bytesPerPixel = gpuFormat === 'rgba16float' ? 8 : 4;
-    const tight = await readbackTexture(opts.device, offTex, width, height, bytesPerPixel);
+    const tight = await readTextureTight(opts.device, offTex, width, height, bytesPerPixel);
 
     if (format === 'exr') {
       // Store the LINEAR LIGHT of the display image so EXR viewers (which apply
       // sRGB on view) reproduce the editor look on open. See src/srgb.ts. (#334)
-      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
-      const rgba = new Float32Array(width * height * 4);
-      for (let i = 0; i < width * height; i++) {
-        const o = i * 4;
-        rgba[o] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o]!))));
-        rgba[o + 1] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 1]!))));
-        rgba[o + 2] = srgbToLinear(Math.max(0, Math.min(1, halfToFloat(halfView[o + 2]!))));
-        rgba[o + 3] = Math.max(0, Math.min(1, halfToFloat(halfView[o + 3]!)));
-      }
+      const rgba = displayHalfToLinearExr(tight, width, height);
       triggerDownload(encodeExr({ width, height, rgba }), withExt(opts.filename, 'exr'), 'image/x-exr');
       return 'completed';
     }
 
     let png: Uint8Array;
     if (format === 'png16') {
-      const halfView = new Uint16Array(tight.buffer, tight.byteOffset, width * height * 4);
-      const rgba16 = new Uint16Array(width * height * 4);
-      for (let i = 0; i < rgba16.length; i++) {
-        const f = halfToFloat(halfView[i]!);
-        rgba16[i] = Math.round(Math.max(0, Math.min(1, f)) * 65535);
-      }
+      const rgba16 = displayHalfToPng16(tight, width, height);
       png = await encodePng({ width, height, bitDepth: 16, data: rgba16 }, browserDeflate);
     } else {
       // png8 + transparent — tight is already 8-bit RGBA.
