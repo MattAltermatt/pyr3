@@ -26,17 +26,21 @@ npm run animate -- <in> <out-dir>                   #   env: width=W height=H (a
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 
-The nav is **5 top menus** (#264): **Viewer** · **Editor** (`/editor` — direct
+The nav is **6 top menus** (#264, expanded in #420) — the row is **left-aligned**
+right after the `pyr3` brand (#420 retired the old centered grid + the brand-cluster
+About link): **Viewer** · **Editor** (`/editor` — direct
 link; the old Gradient page `/gradient` was retired in #372 and now redirects
 to `/editor`, where the gradient editor is an in-lens overlay) · **Animate ▾** (Timeline `/animate` · Screensaver
 `/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/esf` +
 `/esf/gen/N/id/M` · Gallery `/esf/gallery` · Electric Sheep Fold ↗ source repo) ·
-**Discover ▾** (Variations `/variations` · About ·
-**How flames work** `/how-it-works` — the #347 interactive scrollytelling guide
-(chaos-game step-through + xform/variation/final-xform/colour demos, all CPU
-Canvas2D reusing the real `src/variations.ts`/`affine-decompose.ts` math; alias
-`/howitworks` redirects to it) · Render cost & quality (`/help/ifs-and-render-cost.html`)
-· Showcase · other help pages). Routes are **flat** (the `/v1/` prefix was dropped;
+**Discover ▾** (#420 — exploration only: Showcase · Variations `/variations` · Surprise `/surprise`) ·
+**Help ▾** (#420 — learn/reference: **How flames work** `/how-it-works` — the #347
+interactive scrollytelling guide (chaos-game step-through + xform/variation/final-xform/colour
+demos, all CPU Canvas2D reusing the real `src/variations.ts`/`affine-decompose.ts` math;
+alias `/howitworks` redirects to it) · Direct-color variations (`/help/direct-color-variations.html`)
+· Render cost & quality (`/help/ifs-and-render-cost.html`) · WebGPU (`/help/webgpu.html`)
+· About `/about`). The four static help pages share `public/help/help.css` + a branded
+header (#406). Routes are **flat** (the `/v1/` prefix was dropped;
 old `/v1/*` URLs redirect at boot via `src/route-redirects.ts`). The basic
 viewer (`/viewer`, also bare `/`) opens/views any flame (📂 Open + Save, no
 Surprise/loop); the ESF viewer (`/esf`) is the corpus browser (Surprise + loop,
