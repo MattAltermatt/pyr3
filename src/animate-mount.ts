@@ -20,7 +20,7 @@ import { createRenderer, DEFAULT_FILTER_RADIUS, type Renderer } from './renderer
 import { renderAnimationFrame } from './animate-render';
 import { DEFAULT_WALKER_JITTER } from './chaos';
 import { getCapability } from './capability';
-import { exportAnimate, type ExportAnimateProgress } from './animate-export';
+import { exportAnimate, type ExportAnimateProgress, type ExportAnimateParams } from './animate-export';
 import { openAnimateExportModal, type AnimateExportModalHandle } from './animate-export-modal';
 import { estimateExport, estimateTimelineExport } from './animate-estimate';
 import { buildEasingPanel } from './animate-easing-panel';
@@ -581,9 +581,8 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
   /** Rebuild the renderer at the current output size + re-render the current
    *  frame. Called when the user changes the output dimensions. */
   function rebuildAndRender(): void {
-    if (animation) buildRenderer();
-    else if (timeline) buildTimelineRenderer();
-    else return;
+    if (!animation && !timeline) return;
+    buildActiveRenderer();
     void renderAtTime(lastRenderedTime);
   }
 
@@ -704,10 +703,15 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     }
   }
 
-  function buildRenderer(): void {
-    // #274/#408 — the chosen output size (defaults to 4K; never overridden by a
-    // flame load) drives the framing; the preview canvas caps it to CANVAS_MAX_*.
-    const firstKf = animation!.keyframes[0]!;
+  // #423 — single renderer builder for both modes. The animation/timeline mutex
+  // (exactly one of the two is non-null) is sound — see enterSectionMode()
+  // (animation=null) and handleFile() (timeline=null) — so the first-genome source
+  // is picked by whichever is active. Was buildRenderer() + buildTimelineRenderer(),
+  // byte-identical except this one line.
+  // #274/#408 — the chosen output size (defaults to 4K; never overridden by a
+  // flame load) drives the framing; the preview canvas caps it to CANVAS_MAX_*.
+  function buildActiveRenderer(): void {
+    const firstGenome = animation ? animation.keyframes[0]! : timeline!.clips[0]!.flame.genome;
     const { width, height } = computeOutputAwarePreviewDims(outputSize!, CANVAS_MAX_W, CANVAS_MAX_H);
     canvas.width = width;
     canvas.height = height;
@@ -715,7 +719,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     context = canvas.getContext('webgpu') as GPUCanvasContext | null;
     if (!context) throw new Error('animate-mount: WebGPU canvas context unavailable');
     context.configure({ device, format, alphaMode: 'premultiplied' });
-    const filterRadius = firstKf.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
+    const filterRadius = firstGenome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
     renderer?.destroy();
     renderer = createRenderer(device, format, {
       width,
@@ -723,21 +727,6 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       oversample: 1,
       filterRadius,
     });
-  }
-
-  // #227c — size the renderer from the timeline's first clip and (re)acquire
-  // the canvas WebGPU context. Mirrors buildRenderer() for the timeline path.
-  function buildTimelineRenderer(): void {
-    const firstG = timeline!.clips[0]!.flame.genome;
-    const { width, height } = computeOutputAwarePreviewDims(outputSize!, CANVAS_MAX_W, CANVAS_MAX_H);
-    canvas.width = width;
-    canvas.height = height;
-    context = canvas.getContext('webgpu') as GPUCanvasContext | null;
-    if (!context) throw new Error('animate-mount: WebGPU canvas context unavailable');
-    context.configure({ device, format, alphaMode: 'premultiplied' });
-    const filterRadius = firstG.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
-    renderer?.destroy();
-    renderer = createRenderer(device, format, { width, height, oversample: 1, filterRadius });
   }
 
   // #227d — (re)mount the transport bar over [0, dur]. PlaybackBarHandle has no
@@ -790,7 +779,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
     if (easingPanel) { easingPanel.remove(); easingPanel = null; }
     empty.style.display = 'none';
     refreshSaveButton();
-    buildTimelineRenderer();
+    buildActiveRenderer();
 
     selection = null;
     sectionTrack?.destroy();
@@ -1053,7 +1042,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       });
       controls.insertBefore(easingPanel, scrubHost);
       empty.style.display = 'none';
-      buildRenderer();
+      buildActiveRenderer();
       mountPlaybackForAnimation();
       refreshExportButtonCapability();
       const tMin = animation.keyframes[0]!.time ?? 0;
@@ -1085,6 +1074,17 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus(`couldn't load sample: ${msg}`, 'error');
     }
+  }
+
+  // #423 — shared modal teardown for both export openers' onCancel/onClose.
+  // Aborts any in-flight export, then closes + nulls the modal and abort handles.
+  function closeExportModal(): void {
+    if (exportAbort) exportAbort.abort();
+    if (exportModal) {
+      exportModal.close();
+      exportModal = null;
+    }
+    exportAbort = null;
   }
 
   function openExportModal(): void {
@@ -1120,24 +1120,11 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         exportModal.showProgress();
         void runExport(flameXmlAtOpen, values);
       },
-      onCancel: () => {
-        if (exportAbort) exportAbort.abort();
-        // The runExport finally block calls modal.close() once the SSE
-        // stream finishes; for an immediate dismiss when the user cancels
-        // BEFORE Start, just close here.
-        if (exportModal) {
-          exportModal.close();
-          exportModal = null;
-        }
-        exportAbort = null;
-      },
-      onClose: () => {
-        if (exportModal) {
-          exportModal.close();
-          exportModal = null;
-        }
-        exportAbort = null;
-      },
+      // The runExport finally block calls modal.close() once the SSE stream
+      // finishes; for an immediate dismiss when the user cancels BEFORE Start,
+      // closeExportModal() aborts + closes here.
+      onCancel: closeExportModal,
+      onClose: closeExportModal,
     });
   }
 
@@ -1163,97 +1150,25 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
         exportModal.showProgress();
         void runTimelineExport(timelineToJson(tl), values);
       },
-      onCancel: () => {
-        if (exportAbort) exportAbort.abort();
-        if (exportModal) { exportModal.close(); exportModal = null; }
-        exportAbort = null;
-      },
-      onClose: () => {
-        if (exportModal) { exportModal.close(); exportModal = null; }
-        exportAbort = null;
-      },
+      onCancel: closeExportModal,
+      onClose: closeExportModal,
     });
   }
 
-  async function runTimelineExport(
-    timelineJson: string,
-    values: { fps: number; quality: number; prefix: string; outDir: string; resume: boolean },
+  // #423 — shared export skeleton for both run paths. The guard / signal /
+  // exportAnimate call / onProgress relay / showResult success+cancel+error
+  // handling are identical; only the `params` block differs (the caller builds
+  // it — runExport including #224 segmentEasing, which the timeline path lacks).
+  // `outDir` is threaded separately only for the success message text.
+  async function runExportWithParams(
+    params: ExportAnimateParams,
+    outDir: string,
   ): Promise<void> {
     if (!exportAbort || !exportModal) return;
     const signal = exportAbort.signal;
     try {
       const outcome = await exportAnimate({
-        params: {
-          timelineJson,
-          fps: values.fps,
-          quality: values.quality,
-          prefix: values.prefix,
-          outDir: values.outDir,
-          resume: values.resume,
-          ...(outputSize ? { outWidth: outputSize.width, outHeight: outputSize.height } : {}),
-        },
-        onProgress: (info: ExportAnimateProgress) => {
-          if (exportModal) {
-            exportModal.setProgress({
-              frame: info.frame, total: info.total, percent: info.percent,
-              written: info.written, elapsedSeconds: info.elapsedSeconds, etaSeconds: info.etaSeconds,
-              thumb: info.thumb,
-            });
-          }
-        },
-        abortSignal: signal,
-      });
-      if (exportModal) {
-        if (outcome.status === 'completed') {
-          exportModal.showResult(
-            `Wrote ${outcome.written.length} PNG${outcome.written.length === 1 ? '' : 's'} to ${values.outDir}.`,
-            'success',
-          );
-        } else {
-          exportModal.showResult(
-            `Cancelled — ${outcome.written.length} frame${outcome.written.length === 1 ? '' : 's'} written.`,
-            'info',
-          );
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (exportModal) exportModal.showResult(`Export failed: ${msg}`, 'error');
-    }
-  }
-
-  async function pickDirectoryViaBackend(): Promise<string | null> {
-    const res = await fetch('/api/pick-dir', { method: 'POST' });
-    const body = (await res.json().catch(() => ({}))) as { path?: string | null; error?: string };
-    if (!res.ok) {
-      throw new Error(body.error ?? `pick-dir failed: HTTP ${res.status}`);
-    }
-    if (body.error) throw new Error(body.error);
-    return body.path ?? null;
-  }
-
-  async function runExport(
-    flameXml: string,
-    values: { begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string; resume: boolean },
-  ): Promise<void> {
-    if (!exportAbort || !exportModal) return;
-    const signal = exportAbort.signal;
-    try {
-      const outcome = await exportAnimate({
-        params: {
-          flameXml,
-          begin: values.begin,
-          end: values.end,
-          dtime: values.dtime,
-          qs: values.qs,
-          prefix: values.prefix,
-          outDir: values.outDir,
-          resume: values.resume,
-          ...(outputSize ? { outWidth: outputSize.width, outHeight: outputSize.height } : {}),
-          // #224 — carry the in-memory per-segment easing into the backend
-          // export so the rendered sequence matches the scrubber preview.
-          ...(animation?.segmentEasing ? { segmentEasing: animation.segmentEasing } : {}),
-        },
+        params,
         onProgress: (info: ExportAnimateProgress) => {
           if (exportModal) {
             exportModal.setProgress({
@@ -1272,7 +1187,7 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       if (exportModal) {
         if (outcome.status === 'completed') {
           exportModal.showResult(
-            `Wrote ${outcome.written.length} PNG${outcome.written.length === 1 ? '' : 's'} to ${values.outDir}.`,
+            `Wrote ${outcome.written.length} PNG${outcome.written.length === 1 ? '' : 's'} to ${outDir}.`,
             'success',
           );
         } else {
@@ -1286,6 +1201,57 @@ export function mountAnimatePage(opts: MountAnimateOpts): AnimatePageHandle {
       const msg = err instanceof Error ? err.message : String(err);
       if (exportModal) exportModal.showResult(`Export failed: ${msg}`, 'error');
     }
+  }
+
+  async function runTimelineExport(
+    timelineJson: string,
+    values: { fps: number; quality: number; prefix: string; outDir: string; resume: boolean },
+  ): Promise<void> {
+    await runExportWithParams(
+      {
+        timelineJson,
+        fps: values.fps,
+        quality: values.quality,
+        prefix: values.prefix,
+        outDir: values.outDir,
+        resume: values.resume,
+        ...(outputSize ? { outWidth: outputSize.width, outHeight: outputSize.height } : {}),
+      },
+      values.outDir,
+    );
+  }
+
+  async function pickDirectoryViaBackend(): Promise<string | null> {
+    const res = await fetch('/api/pick-dir', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as { path?: string | null; error?: string };
+    if (!res.ok) {
+      throw new Error(body.error ?? `pick-dir failed: HTTP ${res.status}`);
+    }
+    if (body.error) throw new Error(body.error);
+    return body.path ?? null;
+  }
+
+  async function runExport(
+    flameXml: string,
+    values: { begin: number; end: number; dtime: number; qs: number; prefix: string; outDir: string; resume: boolean },
+  ): Promise<void> {
+    await runExportWithParams(
+      {
+        flameXml,
+        begin: values.begin,
+        end: values.end,
+        dtime: values.dtime,
+        qs: values.qs,
+        prefix: values.prefix,
+        outDir: values.outDir,
+        resume: values.resume,
+        ...(outputSize ? { outWidth: outputSize.width, outHeight: outputSize.height } : {}),
+        // #224 — carry the in-memory per-segment easing into the backend
+        // export so the rendered sequence matches the scrubber preview.
+        ...(animation?.segmentEasing ? { segmentEasing: animation.segmentEasing } : {}),
+      },
+      values.outDir,
+    );
   }
 
   // #276 — no-jump: mount the disabled section track + transport before any
