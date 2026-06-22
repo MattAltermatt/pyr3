@@ -65,7 +65,11 @@ jobs:
       # verified before `tar -xf` (covers the cached path too). Tag-pinning fixes
       # WHICH tag, not WHICH bytes — a same-tag asset can be deleted + re-uploaded,
       # and actions/cache would amplify a poisoned tar. Bump this WITH the tag above.
-      CHUNK_TAR_SHA256: 'ab27687aab069b381f81c1fce76f7c7bed91c8942bf95269b45b19e967698865'
+      # #405: same-tag re-upload — only features.flam3idx changed (schema v1→v2,
+      # variation bitset 128→512 bits; transcoded offline via
+      # bin/pyr3-convert-feature-index.ts, lossless across all 52,175 records, every
+      # other corpus file byte-identical). Bumped to unblock the #393-D v2-only client.
+      CHUNK_TAR_SHA256: '2ffa0f6bc14b03f12369b4ebded9e2e7557879822f025494a35c847601065971'
       # Pinned pyr3 Release tag carrying showcase-*.tar (the 4K /showcase
       # gallery: 54 4k.jpg + 54 thumb.jpg + index.html). Bump this ONE line
       # to ship a regenerated gallery. The bundle is gitignored
