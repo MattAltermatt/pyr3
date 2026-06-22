@@ -6,6 +6,7 @@ import { linear as linearVar, julian, V, type VariationIndex } from './variation
 import { PYRE_PALETTE } from './palette';
 import { expandGenomeForGPU } from './symmetry';
 import { type EasingCurve } from './easing';
+import { resolveSegmentPermutation } from './interpolate';
 
 // ── test helpers ───────────────────────────────────────────────────────────
 
@@ -1085,5 +1086,405 @@ describe('interpolate — cross-feature interaction matrix (#414)', () => {
       );
       expect(orig(permuted)).not.toEqual(orig(positional));
     });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// #393A CHARACTERIZATION NET — pins the CURRENT 2-keyframe interpolate() output
+// so the upcoming "collapse 2-kf helpers onto their N-keyframe twins" refactor
+// cannot silently change behavior. Every assertion below MUST pass against the
+// CURRENT code (it characterizes existing behavior, it does not change it). Off-
+// midpoint t (t=0.3) with ASYMMETRIC inputs is used throughout — at t=0.5 with
+// symmetric inputs many effects cancel and the tests would not discriminate.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// 1 ── xaos two-sided per-cell interp (interpolate.ts:476-479 / interpolateXaos)
+describe('#393A characterization — xaos interp', () => {
+  it('two-sided per-cell lerp at t=0.3; shorter side padded with 1.0', () => {
+    // k0 xaos = [0, 2, 4] (len 3); k1 xaos = [10, 20] (len 2, pad slot2 → 1.0).
+    // At t=0.3: c0=0.7, c1=0.3.
+    //   cell0: 0.7·0  + 0.3·10 = 3.0
+    //   cell1: 0.7·2  + 0.3·20 = 7.4
+    //   cell2: 0.7·4  + 0.3·1  = 3.1   (k1 cell2 padded to 1)
+    const x0: Xform = { ...id(), xaos: [0, 2, 4] };
+    const x1: Xform = { ...id(), xaos: [10, 20] };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3);
+    const xaos = r.xforms[0]!.xaos!;
+    expect(xaos).toHaveLength(3);
+    expect(xaos[0]!).toBeCloseTo(3.0);
+    expect(xaos[1]!).toBeCloseTo(7.4);
+    expect(xaos[2]!).toBeCloseTo(3.1);
+  });
+
+  it('all-ones result → xaos field undefined', () => {
+    // Both keyframes all-ones → blend is all-ones → identity xaos dropped.
+    const x0: Xform = { ...id(), xaos: [1, 1] };
+    const x1: Xform = { ...id(), xaos: [1, 1] };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3);
+    expect(r.xforms[0]!.xaos).toBeUndefined();
+  });
+
+  it('absent on both keyframes → xaos field undefined', () => {
+    const k0 = baseGenome({ time: 0, xforms: [id()] });
+    const k1 = baseGenome({ time: 1, xforms: [id()] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3);
+    expect(r.xforms[0]!.xaos).toBeUndefined();
+  });
+});
+
+// 2 ── palette 'sweep' mode (interpolate.ts:691-704). The cut is at
+// floor(256·c0)? No — the code picks lut0 for `i < PALETTE_SIZE * c0`, where
+// PALETTE_SIZE=256 and at t=0.3 c0=0.7 → cut at i < 179.2 → indices 0..179 from
+// k0, 180..255 from k1. (NOTE the prompt said floor(256·0.7)=179 → stops[0..178]
+// from k0; the actual boundary is `i < 179.2`, i.e. i=179 is ALSO from k0. We
+// pin the CURRENT behavior below.)
+describe('#393A characterization — palette sweep mode', () => {
+  // Solid single-color palettes so each per-index region is unambiguous.
+  const solid = (name: string, r: number, g: number, b: number) => ({
+    name, stops: [{ t: 0, r, g, b }, { t: 1, r, g, b }],
+  });
+  const red = () => solid('red', 1, 0, 0);
+  const blue = () => solid('blue', 0, 0, 1);
+
+  const sweepAt = (t: number) => {
+    const k0 = baseGenome({ time: 0, palette: red() });
+    const k1 = baseGenome({ time: 1, palette: blue() });
+    return interpolate(anim(k0, k1, { palette_interpolation: 'sweep' }), t).palette.stops;
+  };
+
+  it('t=0.3: low indices from k0 (red), high indices from k1 (blue); cut near 179', () => {
+    const stops = sweepAt(0.3);
+    // c0 = 0.7 → src = lut0 when i < 256·0.7 = 179.2 → i=179 still k0, i=180 → k1.
+    expect(stops[0]!.r).toBeCloseTo(1); expect(stops[0]!.b).toBeCloseTo(0);   // red
+    expect(stops[178]!.r).toBeCloseTo(1); expect(stops[178]!.b).toBeCloseTo(0); // red
+    expect(stops[179]!.r).toBeCloseTo(1); expect(stops[179]!.b).toBeCloseTo(0); // red (i<179.2)
+    expect(stops[180]!.r).toBeCloseTo(0); expect(stops[180]!.b).toBeCloseTo(1); // blue
+    expect(stops[255]!.r).toBeCloseTo(0); expect(stops[255]!.b).toBeCloseTo(1); // blue
+  });
+
+  it('t=0 (c0=1): every stop from k0 (red)', () => {
+    const stops = sweepAt(0);
+    expect(stops[0]!.r).toBeCloseTo(1);
+    expect(stops[255]!.r).toBeCloseTo(1);
+    expect(stops[255]!.b).toBeCloseTo(0);
+  });
+
+  it('t=0.5 (c0=0.5): split at index 128 (i<128 red, i>=128 blue)', () => {
+    const stops = sweepAt(0.5);
+    expect(stops[127]!.r).toBeCloseTo(1); expect(stops[127]!.b).toBeCloseTo(0); // red
+    expect(stops[128]!.r).toBeCloseTo(0); expect(stops[128]!.b).toBeCloseTo(1); // blue
+  });
+});
+
+// 3 ── palette 'hsv_circular' mode (interpolate.ts:735-747). red→blue at t=0.3
+// must take the SHORT hue arc (red↔blue is a 4/6 vs 2/6 wheel gap; the ±6
+// correction picks the short way). We pin that stops[0] stays reddish at t=0.3
+// (r > 0.5), i.e. NOT the long-arc purple, and identical palettes → identity.
+describe('#393A characterization — palette hsv_circular mode', () => {
+  const solid = (name: string, r: number, g: number, b: number) => ({
+    name, stops: [{ t: 0, r, g, b }, { t: 1, r, g, b }],
+  });
+
+  it('red→blue at t=0.3 takes the short arc (stops[0].r stays > 0.5)', () => {
+    const k0 = baseGenome({ time: 0, palette: solid('red', 1, 0, 0) });
+    const k1 = baseGenome({ time: 1, palette: solid('blue', 0, 0, 1) });
+    const r = interpolate(anim(k0, k1, { palette_interpolation: 'hsv_circular' }), 0.3);
+    expect(r.palette.stops[0]!.r).toBeGreaterThan(0.5);
+  });
+
+  it('identical palettes → identity (stops match the source color)', () => {
+    const k0 = baseGenome({ time: 0, palette: solid('red', 1, 0, 0) });
+    const k1 = baseGenome({ time: 1, palette: solid('red', 1, 0, 0) });
+    const r = interpolate(anim(k0, k1, { palette_interpolation: 'hsv_circular' }), 0.3);
+    expect(r.palette.stops[0]!.r).toBeCloseTo(1, 5);
+    expect(r.palette.stops[0]!.g).toBeCloseTo(0, 5);
+    expect(r.palette.stops[0]!.b).toBeCloseTo(0, 5);
+  });
+});
+
+// 4 ── post-affine interp (interpolate.ts:439-461). Result-identity → post
+// omitted; identity-on-both → no post; post on one side only → interp vs identity.
+describe('#393A characterization — post-affine interp', () => {
+  const post = (a: number, b: number, c: number, d: number, e: number, f: number) => ({ a, b, c, d, e, f });
+
+  it('non-identity post on both → interp at t=0.3 (linear interp_type)', () => {
+    // c0=0.7, c1=0.3.  post0=(2,0,1,0,2,1), post1=(4,0,3,0,4,3).
+    //   a: 0.7·2 + 0.3·4 = 2.6 ; c: 0.7·1 + 0.3·3 = 1.6
+    //   e: 0.7·2 + 0.3·4 = 2.6 ; f: 0.7·1 + 0.3·3 = 1.6
+    const x0: Xform = { ...id(), post: post(2, 0, 1, 0, 2, 1) };
+    const x1: Xform = { ...id(), post: post(4, 0, 3, 0, 4, 3) };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!;
+    expect(r.post).toBeDefined();
+    expect(r.post!.a).toBeCloseTo(2.6);
+    expect(r.post!.c).toBeCloseTo(1.6);
+    expect(r.post!.e).toBeCloseTo(2.6);
+    expect(r.post!.f).toBeCloseTo(1.6);
+  });
+
+  it('identity post on both → no post field', () => {
+    const x0: Xform = { ...id(), post: post(1, 0, 0, 0, 1, 0) };
+    const x1: Xform = { ...id(), post: post(1, 0, 0, 0, 1, 0) };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!;
+    expect(r.post).toBeUndefined();
+  });
+
+  it('post on k0 only → interp against identity at t=0.3', () => {
+    // post0=(2,0,4,0,2,0), post1 absent → IDENTITY_AFFINE (1,0,0,0,1,0).
+    //   a: 0.7·2 + 0.3·1 = 1.7 ; c: 0.7·4 + 0.3·0 = 2.8 ; e: 0.7·2 + 0.3·1 = 1.7
+    const x0: Xform = { ...id(), post: post(2, 0, 4, 0, 2, 0) };
+    const x1: Xform = { ...id() };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!;
+    expect(r.post).toBeDefined();
+    expect(r.post!.a).toBeCloseTo(1.7);
+    expect(r.post!.c).toBeCloseTo(2.8);
+    expect(r.post!.e).toBeCloseTo(1.7);
+  });
+
+  it('result lands on identity (post on k0, k1 identity, t=1) → post omitted', () => {
+    // At t=1 fully k1 (identity post) → interp == identity → field dropped.
+    const x0: Xform = { ...id(), post: post(2, 0, 4, 0, 2, 0) };
+    const x1: Xform = { ...id() };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 1).xforms[0]!;
+    expect(r.post).toBeUndefined();
+  });
+});
+
+// 5 ── xform opacity (interpolate.ts:426 / :471). Lerps; result==1.0 suppressed;
+// absent-both suppressed.
+describe('#393A characterization — xform opacity', () => {
+  it('lerps at t=0.3 (0.2 → 0.7 → 0.35)', () => {
+    // c0=0.7, c1=0.3 → 0.7·0.2 + 0.3·0.7 = 0.14 + 0.21 = 0.35.
+    const x0: Xform = { ...id(), opacity: 0.2 };
+    const x1: Xform = { ...id(), opacity: 0.7 };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!;
+    expect(r.opacity).toBeCloseTo(0.35);
+  });
+
+  it('result == 1.0 → opacity field suppressed', () => {
+    const x0: Xform = { ...id(), opacity: 1 };
+    const x1: Xform = { ...id(), opacity: 1 };
+    const k0 = baseGenome({ time: 0, xforms: [x0] });
+    const k1 = baseGenome({ time: 1, xforms: [x1] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!;
+    expect(r.opacity).toBeUndefined();
+  });
+
+  it('absent on both keyframes → opacity field suppressed (defaults to 1)', () => {
+    const k0 = baseGenome({ time: 0, xforms: [id()] });
+    const k1 = baseGenome({ time: 1, xforms: [id()] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!;
+    expect(r.opacity).toBeUndefined();
+  });
+});
+
+// 6 ── tonemap one-present fallback (interpolate.ts:171-173 / :804-823). Only k0
+// has tonemap → the missing side fills with INTERP_TONEMAP_FALLBACK
+// {gamma:4, brightness:4, vibrancy:1, highlightPower:-1, gammaThreshold:0.01}.
+describe('#393A characterization — tonemap one-present fallback', () => {
+  it('only k0 has tonemap → blends k0 vs INTERP_TONEMAP_FALLBACK at t=0.3', () => {
+    // c0=0.7, c1=0.3. k0 tonemap = {gamma:2, brightness:8, vibrancy:0,
+    //   highlightPower:1, gammaThreshold:0.05}. Fallback = {4,4,1,-1,0.01}.
+    //   gamma:          0.7·2    + 0.3·4    = 2.6
+    //   brightness:     0.7·8    + 0.3·4    = 6.8
+    //   vibrancy:       0.7·0    + 0.3·1    = 0.3
+    //   highlightPower: 0.7·1    + 0.3·(-1) = 0.4
+    //   gammaThreshold: 0.7·0.05 + 0.3·0.01 = 0.038
+    const k0 = baseGenome({
+      time: 0,
+      tonemap: { gamma: 2, brightness: 8, vibrancy: 0, highlightPower: 1, gammaThreshold: 0.05 },
+    });
+    const k1 = baseGenome({ time: 1 });
+    const r = interpolate(anim(k0, k1), 0.3);
+    expect(r.tonemap).toBeDefined();
+    expect(r.tonemap!.gamma).toBeCloseTo(2.6);
+    expect(r.tonemap!.brightness).toBeCloseTo(6.8);
+    expect(r.tonemap!.vibrancy).toBeCloseTo(0.3);
+    expect(r.tonemap!.highlightPower).toBeCloseTo(0.4);
+    expect(r.tonemap!.gammaThreshold).toBeCloseTo(0.038);
+  });
+
+  it('only k1 has tonemap → blends INTERP_TONEMAP_FALLBACK vs k1 at t=0.3', () => {
+    // c0=0.7 (fallback side), c1=0.3 (k1).
+    //   gamma:          0.7·4    + 0.3·2    = 3.4
+    //   brightness:     0.7·4    + 0.3·8    = 5.2
+    //   vibrancy:       0.7·1    + 0.3·0    = 0.7
+    //   highlightPower: 0.7·(-1) + 0.3·1    = -0.4
+    //   gammaThreshold: 0.7·0.01 + 0.3·0.05 = 0.022
+    const k0 = baseGenome({ time: 0 });
+    const k1 = baseGenome({
+      time: 1,
+      tonemap: { gamma: 2, brightness: 8, vibrancy: 0, highlightPower: 1, gammaThreshold: 0.05 },
+    });
+    const r = interpolate(anim(k0, k1), 0.3);
+    expect(r.tonemap!.gamma).toBeCloseTo(3.4);
+    expect(r.tonemap!.brightness).toBeCloseTo(5.2);
+    expect(r.tonemap!.vibrancy).toBeCloseTo(0.7);
+    expect(r.tonemap!.highlightPower).toBeCloseTo(-0.4);
+    expect(r.tonemap!.gammaThreshold).toBeCloseTo(0.022);
+  });
+});
+
+// 7 ── asymmetric wind (interpolation_type:'log', interpolate.ts:131 /
+// establishWind / blendPolarColumn wind branch). A stationary (animate:0) vs an
+// animated rotation xform winds the LONG way; a symmetric pair takes the short
+// arc. We pin the SIGN of result.a (and that the symmetric control stays a>0.99).
+describe('#393A characterization — asymmetric wind (log)', () => {
+  const rot = (deg: number, animate?: number): Xform => {
+    const th = (deg * Math.PI) / 180;
+    const x: Xform = {
+      a: Math.cos(th), b: -Math.sin(th), c: 0, d: Math.sin(th), e: Math.cos(th), f: 0,
+      weight: 1, color: 0, colorSpeed: 0.5, variations: [linearVar(1)],
+    };
+    if (animate !== undefined) x.animate = animate;
+    return x;
+  };
+
+  it('stationary(animate:0) vs animated at t=0.3 winds the long way (a < 0)', () => {
+    // k0 = rot(20, animate:1), k1 = rot(-20, animate:0). Wind constrains both
+    // angles into [refang, refang+2π] (refang = k0's angle since k1 stationary),
+    // so the blend sweeps the long arc → mid lands near 180° → a < 0.
+    const k0 = baseGenome({ time: 0, xforms: [rot(20, 1)] });
+    const k1 = baseGenome({ time: 1, xforms: [rot(-20, 0)] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0.3).xforms[0]!;
+    expect(r.a).toBeLessThan(0);   // SNAPSHOT: pins current behavior (long-arc wind)
+  });
+
+  it('symmetric control (both animated) takes the short arc (a > 0.99)', () => {
+    const k0 = baseGenome({ time: 0, xforms: [rot(20, 1)] });
+    const k1 = baseGenome({ time: 1, xforms: [rot(-20, 1)] });
+    const r = interpolate(anim(k0, k1, { interpolation_type: 'log' }), 0.3).xforms[0]!;
+    expect(r.a).toBeGreaterThan(0.99);
+  });
+});
+
+// 8 ── motion clock uses rawC1 not the eased c1 (interpolate.ts:142-143 — the
+// motion overlay is applied with rawC1, while the blend weights are eased). A
+// HILL motion (motion_func 3, peaks at raw t=0.5) under an easeIn segmentEasing
+// proves the motion sampled the RAW segment clock: with easeIn the eased weight
+// at raw t=0.5 is 0.25, so an EASED motion clock would sample HILL(0.25) ≠ peak,
+// whereas the RAW clock samples HILL(0.5) = peak.
+describe('#393A characterization — motion clock uses rawC1 (not eased c1)', () => {
+  // motion overlay adds c=5 with motion_func HILL (3), motion_freq 1. The base
+  // xform carries c=20; the motion adds a HILL-weighted +5. At raw t=0.5 HILL
+  // peaks → full +5 contribution on EACH keyframe → both keyframes read c=25,
+  // blend = 25. An eased clock (raw 0.5 → eased 0.25) would attenuate HILL.
+  const motionXform = (c: number): Xform => ({
+    a: 1, b: 0, c, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+    variations: [linearVar(1)],
+    motion: [{
+      a: 0, b: 0, c: 5, d: 0, e: 0, f: 0, weight: 0, color: 0, colorSpeed: 0,
+      variations: [], motion_func: 3, motion_freq: 1,
+    }],
+  });
+
+  it('HILL motion + easeIn: motion peaks at RAW t=0.5 (c=25, not the eased-clock 20)', () => {
+    // Evaluate at the segment midpoint t=0.5: rawC1=0.5 (HILL peak). easeIn warps
+    // the BLEND to eased c1=0.25, but the motion clock stays raw → HILL full.
+    // Both keyframes get +5 → c=20+5=25 on each → blend (any weights) = 25.
+    const k0 = baseGenome({ time: 0, xforms: [motionXform(20)] });
+    const k1 = baseGenome({ time: 1, xforms: [motionXform(20)] });
+    const r = interpolate(
+      anim(k0, k1, { segmentEasing: [{ kind: 'preset', name: 'easeIn' }] }),
+      0.5,
+    ).xforms[0]!;
+    expect(r.c).toBeCloseTo(25);   // SNAPSHOT: pins current behavior (raw motion clock)
+  });
+
+  it('control without motion: easeIn DOES warp the plain blend at t=0.3', () => {
+    // No motion → the eased blend applies. c0=20, c1=30; raw c1@t=0.3 = 0.3,
+    // easeIn(0.3) attenuates toward k0. Pin that easing actually moved it off the
+    // linear 23 (= 0.7·20 + 0.3·30) — proving easeIn is live in this harness.
+    const k0 = baseGenome({ time: 0, xforms: [{ ...id(), c: 20 }] });
+    const k1 = baseGenome({ time: 1, xforms: [{ ...id(), c: 30 }] });
+    const linear = interpolate(anim(k0, k1, { interpolation_type: 'linear' }), 0.3).xforms[0]!.c;
+    const eased = interpolate(
+      anim(k0, k1, { interpolation_type: 'linear', segmentEasing: [{ kind: 'preset', name: 'easeIn' }] }),
+      0.3,
+    ).xforms[0]!.c;
+    expect(linear).toBeCloseTo(23);
+    expect(eased).not.toBeCloseTo(linear, 2);
+    expect(eased).toBeLessThan(linear);  // easeIn pulls toward k0 (=20)
+  });
+});
+
+// 9 ── paletteMode carry-forward from k0, not k1 (interpolate.ts:223). Absent on
+// k0 → not emitted (even if present on k1).
+describe('#393A characterization — paletteMode carry-forward', () => {
+  it('carries paletteMode from k0 when both differ', () => {
+    const k0 = baseGenome({ time: 0, paletteMode: 'step' });
+    const k1 = baseGenome({ time: 1, paletteMode: 'smooth' });
+    const r = interpolate(anim(k0, k1), 0.3);
+    expect(r.paletteMode).toBe('step');   // from k0, not k1
+  });
+
+  it('absent on k0 (present on k1) → paletteMode not emitted', () => {
+    const k0 = baseGenome({ time: 0 });
+    const k1 = baseGenome({ time: 1, paletteMode: 'smooth' });
+    const r = interpolate(anim(k0, k1), 0.3);
+    expect(r.paletteMode).toBeUndefined();
+  });
+});
+
+// 10 ── spatialFilter.shape carry from k0 when both differ; radius still lerps
+// (interpolate.ts:198-204).
+describe('#393A characterization — spatialFilter shape carry / radius lerp', () => {
+  it('shape carries from k0 (gaussian over hamming); radius lerps at t=0.3', () => {
+    // c0=0.7, c1=0.3. radius: 0.7·1 + 0.3·5 = 0.7 + 1.5 = 2.2. shape from k0.
+    const k0 = baseGenome({ time: 0, spatialFilter: { radius: 1, shape: 'gaussian' } });
+    const k1 = baseGenome({ time: 1, spatialFilter: { radius: 5, shape: 'hamming' } });
+    const r = interpolate(anim(k0, k1), 0.3);
+    expect(r.spatialFilter!.shape).toBe('gaussian');   // from k0, not k1
+    expect(r.spatialFilter!.radius).toBeCloseTo(2.2);
+  });
+});
+
+// 11 ── resolveSegmentPermutation unit (exported; interpolate.ts:1349-1358).
+describe('#393A characterization — resolveSegmentPermutation unit', () => {
+  it('undefined → undefined', () => {
+    expect(resolveSegmentPermutation(undefined, 4)).toBeUndefined();
+  });
+
+  it('empty array → undefined', () => {
+    expect(resolveSegmentPermutation([], 4)).toBeUndefined();
+  });
+
+  it('full-length valid perm → returned verbatim', () => {
+    expect(resolveSegmentPermutation([2, 0, 1], 3)).toEqual([2, 0, 1]);
+  });
+
+  it('short valid perm → extended with identity tail ([1,0]/n=4 → [1,0,2,3])', () => {
+    expect(resolveSegmentPermutation([1, 0], 4)).toEqual([1, 0, 2, 3]);
+  });
+
+  it('duplicate index → undefined', () => {
+    expect(resolveSegmentPermutation([0, 0, 1], 3)).toBeUndefined();
+  });
+
+  it('out-of-range index → undefined', () => {
+    expect(resolveSegmentPermutation([0, 1, 5], 3)).toBeUndefined();
+  });
+
+  it('full-length perm with a duplicate → undefined', () => {
+    expect(resolveSegmentPermutation([1, 1, 2, 3], 4)).toBeUndefined();
+  });
+
+  it('short array that is not itself a permutation → undefined', () => {
+    // length 2 < n=4 but [0,3] is not a permutation of [0,1) range it covers
+    // (3 out of range for length-2 perm) → undefined.
+    expect(resolveSegmentPermutation([0, 3], 4)).toBeUndefined();
   });
 });
