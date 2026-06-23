@@ -749,6 +749,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     editRenderer.applyLane(lane === 'rebuild' ? 'slow' : lane, genome, state.seed, view, w, h, { targetSpp: previewCfg.quality });
     notifyStateChange();
     await awaitGpuThenMaybeHide(myTicket);
+    // Bar-driven rebuilds (PREVIEW tier/quality, RENDER size — setPreviewConfig,
+    // the slow-render nudge, setRenderSize) route through the scheduler, NOT
+    // onPathChange, so they must ALSO arm the settle timer that re-renders at
+    // full tier dims. Without this the preview never leaves the 384 LIVE dim —
+    // switching Fast/Balanced/Sharp (or quality) appears to do nothing.
+    if (lane === 'slow' || lane === 'rebuild') scheduleSettle();
   });
 
   // Common path-change handler — used by both UI sections and the canvas
