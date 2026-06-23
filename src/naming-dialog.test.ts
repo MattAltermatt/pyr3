@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   openNamingDialog,
   isPlaceholderName,
   formatSaveTimestamp,
   defaultFilenameBase,
+  readLastNick,
+  writeLastNick,
 } from './naming-dialog';
 
 function modal(): HTMLElement {
@@ -17,7 +19,16 @@ function field(role: string): HTMLInputElement | null {
   return document.querySelector(`.pyr3-naming-dialog [data-role="${role}"]`) as HTMLInputElement | null;
 }
 
-afterEach(() => { document.body.innerHTML = ''; });
+// happy-dom provides no localStorage; stub a fresh in-memory one per test so the
+// #434 sticky-nick pref has somewhere to live and never bleeds between cases.
+function makeStorageStub(): Storage {
+  const m = new Map<string, string>();
+  return { get length() { return m.size; }, clear: () => m.clear(),
+    getItem: (k) => m.get(k) ?? null, key: (i) => [...m.keys()][i] ?? null,
+    removeItem: (k) => { m.delete(k); }, setItem: (k, v) => { m.set(k, String(v)); } } as Storage;
+}
+beforeEach(() => vi.stubGlobal('localStorage', makeStorageStub()));
+afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals(); });
 
 describe('isPlaceholderName', () => {
   it('is true for empty / whitespace / undefined / generated placeholders', () => {
@@ -92,6 +103,62 @@ describe('openNamingDialog — default filename fallback (#368)', () => {
     field('filename')!.value = 'my-render';
     (modal().querySelector('[data-role="save"]') as HTMLElement).click();
     await expect(p).resolves.toMatchObject({ filename: 'my-render' });
+  });
+});
+
+// #434 — the save dialog remembers the last-entered nick across opens (a sticky
+// localStorage pref), so a nick the user typed survives to the next save even
+// when no flame name was given and the nick never landed on a genome.
+describe('sticky last-nick (#434)', () => {
+  it('readLastNick round-trips a written nick; empty by default', () => {
+    expect(readLastNick()).toBe('');
+    writeLastNick('mu');
+    expect(readLastNick()).toBe('mu');
+  });
+
+  it('writeLastNick stores trimmed; a blank/whitespace nick does NOT clobber a remembered one', () => {
+    writeLastNick('  erik  ');
+    expect(readLastNick()).toBe('erik');
+    writeLastNick('   ');
+    expect(readLastNick()).toBe('erik'); // blank save leaves the sticky nick intact
+    writeLastNick('');
+    expect(readLastNick()).toBe('erik');
+  });
+
+  it('pre-fills the nick field from the sticky pref when the seed has no nick', () => {
+    writeLastNick('mu');
+    void openNamingDialog({ kind: 'flame', seed: {} });
+    expect(field('nick')!.value).toBe('mu');
+  });
+
+  it('pre-fills the sticky nick even for a fresh/placeholder-named flame (no flame name given)', () => {
+    writeLastNick('mu');
+    void openNamingDialog({ kind: 'flame', seed: { name: 'Untitled flame' } });
+    expect(field('name')!.value).toBe(''); // #362 blank-slate name preserved
+    expect(field('nick')!.value).toBe('mu'); // …but the user's sticky nick persists
+  });
+
+  it("prefers a real flame's own nick over the sticky pref", () => {
+    writeLastNick('mu');
+    void openNamingDialog({ kind: 'flame', seed: { name: 'Spiral Galaxy', nick: 'erik' } });
+    expect(field('nick')!.value).toBe('erik');
+  });
+
+  it('persists a typed nick on Save so it pre-fills the next dialog', async () => {
+    const p = openNamingDialog({ kind: 'flame', seed: {} });
+    field('nick')!.value = 'cliff';
+    (modal().querySelector('[data-role="save"]') as HTMLElement).click();
+    await p;
+    expect(readLastNick()).toBe('cliff');
+  });
+
+  it('a Save with a blank nick does not wipe the remembered nick', async () => {
+    writeLastNick('mu');
+    const p = openNamingDialog({ kind: 'flame', seed: { name: 'Spiral Galaxy', nick: 'mu' } });
+    field('nick')!.value = '';
+    (modal().querySelector('[data-role="save"]') as HTMLElement).click();
+    await p;
+    expect(readLastNick()).toBe('mu');
   });
 });
 

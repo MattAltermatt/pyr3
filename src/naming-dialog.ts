@@ -52,6 +52,27 @@ export function defaultFilenameBase(id: { name?: string; nick?: string }, d: Dat
 
 export interface NamingResult { name: string; nick: string; filename: string }
 
+// #434 — remember the last-entered nick across save dialogs, so a nick the user
+// typed persists to the next save even when no flame name was given and the nick
+// never landed on a genome. Uses globalThis.localStorage (not bare localStorage)
+// to stay off the SEAM_EXEMPT list. Only non-empty nicks are stored; a blank save
+// leaves the remembered nick intact rather than wiping it.
+const LAST_NICK_KEY = 'pyr3.naming.lastNick';
+
+/** The last non-empty nick the user entered in any save dialog, or '' if none /
+ *  storage is unavailable. */
+export function readLastNick(): string {
+  try { return globalThis.localStorage?.getItem(LAST_NICK_KEY) ?? ''; } catch { return ''; }
+}
+
+/** Persist `nick` (trimmed) as the sticky last-nick. A blank/whitespace nick is
+ *  a no-op so it never clobbers a previously remembered one. */
+export function writeLastNick(nick: string): void {
+  const trimmed = nick.trim();
+  if (!trimmed) return;
+  try { globalThis.localStorage?.setItem(LAST_NICK_KEY, trimmed); } catch { /* storage disabled / quota */ }
+}
+
 /** #362 — a flame with no meaningful user/source name: empty, whitespace, or a
  *  generated placeholder (`generateRandomGenome` stamps `'Untitled flame'` on
  *  Surprise / reroll / new flames). These open the naming dialog with a blank
@@ -123,7 +144,16 @@ export function openNamingDialog(opts: NamingDialogOpts): Promise<NamingResult |
     const nameF = labeledInput(cfg.nameLabel, 'name', fresh ? '' : (opts.seed.name ?? ''));
     box.append(nameF.row);
     let nickF: { row: HTMLElement; input: HTMLInputElement } | null = null;
-    if (cfg.nick) { nickF = labeledInput('nick', 'nick', fresh ? '' : (opts.seed.nick ?? '')); box.append(nickF.row); }
+    if (cfg.nick) {
+      // #434 — precedence: a real flame's own nick wins; otherwise fall back to
+      // the sticky last-entered nick (which is '' if never set). #362 keeps a
+      // fresh flame's genome identity blank, but the user's sticky nick still
+      // persists — that's the "remember the nick even with no flame name" ask.
+      const seedNick = opts.seed.nick ?? '';
+      const initialNick = (!fresh && seedNick.trim()) ? seedNick : readLastNick();
+      nickF = labeledInput('nick', 'nick', initialNick);
+      box.append(nickF.row);
+    }
 
     // #368 — capture the dialog-open time once so the placeholder shown and the
     // value used on an empty submit are byte-identical.
@@ -173,9 +203,12 @@ export function openNamingDialog(opts: NamingDialogOpts): Promise<NamingResult |
       const resolvedFilename = filenameF
         ? (typedFilename || filenameF.input.placeholder)
         : typedFilename;
+      const nick = nickF?.input.value.trim() ?? '';
+      // #434 — remember a typed nick so the next save pre-fills it.
+      if (nick) writeLastNick(nick);
       settle({
         name: nameF.input.value.trim(),
-        nick: nickF?.input.value.trim() ?? '',
+        nick,
         filename: resolvedFilename,
       });
     }
