@@ -809,6 +809,31 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   waves4: [0.05, 0.05, 7.0, 13.0, 0, 0.1],
   scry2: [4, 0.15, 0.25],
   ennepers2: [1.0, 0.3333, 0.075],
+  // ── #441 backfill: 20 param-requiring variations that were missing here, so
+  // the generator (createVariation, edit-seed.ts) seeded no params and produced
+  // them at degenerate 0 (and the #440 crash via the strict fit oracle). Values
+  // are the catalog defaults (variation-catalog-data.ts), positionally aligned
+  // to VARIATION_PARAMS — the same vetted defaults the catalog previews use. ──
+  disc2: [1, 1],                                         // rot=1, twist=1
+  pdj: [-1, -1, -1, -1],                                 // a, b, c, d
+  rings2: [0.45],                                        // val=0.45
+  fan2: [0.5, 0.5],                                      // x=0.5, y=0.5
+  perspective: [0.24, 1],                                // angle=0.24, dist=1
+  bipolar: [0],                                          // shift=0
+  radial_blur: [0],                                      // angle=0
+  escher: [-0.49],                                       // beta=-0.49
+  modulus: [0.65, 0.25],                                 // x=0.65, y=0.25
+  split: [-0.8, -0.8],                                   // xsize, ysize
+  splits: [0.15, 0.15],                                  // x, y
+  stripes: [-0.58, 0.3],                                 // space, warp
+  whorl: [-0.1, -0.1],                                   // inside, outside
+  flux: [-1.1],                                          // spread=-1.1
+  popcorn2: [0.35, 0.35, 2.1],                           // x, y, c=2.1
+  lazysusan: [0, 0, 0.16, 0.21, 0],                      // x, y, spin, twist, space
+  waves2: [0.3, 1.2, 0.3, 1.2],                          // scalex, freqx, scaley, freqy
+  separation: [0.1, 0, 0.15, 0],                         // x, xinside, y, yinside
+  flower: [3, -0.6],                                     // petals=3, holes=-0.6
+  parabola: [0.55, 0.55],                                // height, width
 };
 
 /** Positional param slot keys on `Variation`. Index `i` ↔ `param${i}`.

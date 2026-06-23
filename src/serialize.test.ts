@@ -860,6 +860,35 @@ describe('variation param-table coupling (PYR3-069 invariant)', () => {
     }
     expect(violations, `unregistered param-bearing variations:\n${violations.join('\n')}`).toEqual([]);
   });
+
+  // #441 — every variation whose ts_var_* oracle THROWS on missing named params,
+  // and is an own-param variation registered in VARIATION_PARAMS, MUST have a
+  // VARIATION_DEFAULTS entry of matching arity. Otherwise createVariation
+  // (edit-seed.ts) seeds no params → the generator produces it at degenerate 0
+  // and it tripped the editor fit oracle (#440). Self-maintaining: a new throwing
+  // own-param variation added without a default fails here. (Affine-dependent
+  // throwers — waves/popcorn/rings/fan/oscope, which read the xform's b/c/e/f and
+  // are NOT in VARIATION_PARAMS — are out of scope; the fit oracle's try/catch
+  // handles them, #440.)
+  it('every throwing own-param variation has a matching-arity VARIATION_DEFAULTS entry (#441)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const varsrc = readFileSync(join(here, 'variations.ts'), 'utf8');
+    const throwing = [...new Set(
+      [...varsrc.matchAll(/ts_var_(\w+): requires params/g)].map((m) => m[1]!),
+    )];
+    const violations: string[] = [];
+    for (const name of throwing) {
+      const params = VARIATION_PARAMS[name];
+      if (!params) continue; // affine-dependent — not an own-param variation
+      const defaults = VARIATION_DEFAULTS[name];
+      if (!defaults) {
+        violations.push(`${name}: throws on missing params but has NO VARIATION_DEFAULTS entry`);
+      } else if (defaults.length !== params.length) {
+        violations.push(`${name}: VARIATION_DEFAULTS arity ${defaults.length} != VARIATION_PARAMS arity ${params.length}`);
+      }
+    }
+    expect(violations, `throwing own-param variations missing/mismatched defaults:\n${violations.join('\n')}`).toEqual([]);
+  });
 });
 
 // #120 batch B1 — first user of the post-#120 expanded 10-param seam.
