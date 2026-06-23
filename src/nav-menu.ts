@@ -10,7 +10,7 @@ export type NavSubKey =
   | 'esf' | 'gallery' | 'esf-source' | 'variations' | 'surprise' | 'about' | 'showcase'
   | 'help-color' | 'help-ifs' | 'help-cost' | 'help-webgpu';
 
-export type NavTopKey = 'viewer' | 'editor' | 'animate' | 'esf' | 'discover' | 'help';
+export type NavTopKey = 'viewer' | 'editor' | 'surprise' | 'animate' | 'esf' | 'discover' | 'help';
 
 export interface NavLeaf {
   key: NavSubKey;
@@ -34,6 +34,9 @@ export const NAV_MODEL: NavTop[] = [
   // #372 — the standalone Gradient page was retired (palette editing moved into
   // the Flame editor's Color lens), so Editor is now a direct link, not a menu.
   { key: 'editor', label: 'Editor', route: '/editor' },
+  // #437 — Surprise promoted out of the Discover dropdown to its own top-level
+  // "Creator" link. Keyed `surprise` so the /surprise surface lights it active.
+  { key: 'surprise', label: 'Creator', route: '/surprise' },
   { key: 'animate', label: 'Animate', items: [
     { key: 'animate',     label: 'Timeline',    route: '/animate' },
     { key: 'screensaver', label: 'Screensaver', route: '/screensaver' },
@@ -48,6 +51,7 @@ export const NAV_MODEL: NavTop[] = [
   ]},
   // #420 — Discover is now the *exploration* menu only (show me flames / the
   // engine). The learning/reference items moved to the new Help menu below.
+  // #437 — Surprise left here for its own top-level "Creator" link (above).
   { key: 'discover', label: 'Discover', items: [
     // #264 — trailing slash: /showcase/ is the deployed static dir (deploy.yml
     // extracts the showcase Release tar there). /showcase 301-redirects to it on
@@ -55,7 +59,6 @@ export const NAV_MODEL: NavTop[] = [
     // ships only at deploy time), so locally this falls back to the viewer.
     { key: 'showcase',    label: 'Showcase',        route: '/showcase/',                          newTab: true },
     { key: 'variations',  label: 'Variations',      route: '/variations' },
-    { key: 'surprise',    label: 'Surprise',        route: '/surprise' },
   ]},
   // #420 — Help: the learn/reference menu. "How flames work" leads (the in-app
   // interactive guide, same-tab SPA, #347); the three static help pages (#406)

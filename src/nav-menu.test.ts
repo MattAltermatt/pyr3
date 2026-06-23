@@ -3,15 +3,22 @@ import { describe, it, expect, vi } from 'vitest';
 import { buildNavMenu } from './nav-menu';
 
 describe('nav-menu structure (#264)', () => {
-  it('renders 6 top-level items in order (Help added, #420)', () => {
+  it('renders 7 top-level items in order (Creator added, #437)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     const tops = el.querySelectorAll('[data-nav-top]');
     expect([...tops].map((t) => t.getAttribute('data-nav-top')))
-      .toEqual(['viewer', 'editor', 'animate', 'esf', 'discover', 'help']);
+      .toEqual(['viewer', 'editor', 'surprise', 'animate', 'esf', 'discover', 'help']);
   });
   it('Editor is a direct link (no submenu — Gradient retired, #372)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     expect(el.querySelectorAll('[data-nav-top="editor"] [data-nav-sub]').length).toBe(0);
+  });
+  it('Creator is a direct link to /surprise (no submenu, #437)', () => {
+    const el = buildNavMenu('viewer', vi.fn());
+    const top = el.querySelector('[data-nav-top="surprise"]') as HTMLElement;
+    expect((top.querySelector('.pyr3-nav-toptab') as HTMLElement).textContent).toBe('Creator');
+    expect((top.querySelector('a.pyr3-nav-toptab') as HTMLAnchorElement).getAttribute('href')).toBe('/surprise');
+    expect(top.querySelectorAll('[data-nav-sub]').length).toBe(0);
   });
   it('Animate menu has Timeline + Screensaver', () => {
     const el = buildNavMenu('viewer', vi.fn());
@@ -34,11 +41,13 @@ describe('nav-menu structure (#264)', () => {
     el.dispatchEvent(new Event('pyr3:destroy'));
     el.remove();
   });
-  it('Discover is exploration only — Surprise + Variations + Showcase (#420)', () => {
+  it('Discover is exploration only — Showcase + Variations (Surprise promoted to Creator, #437)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     const subs = [...el.querySelectorAll('[data-nav-top="discover"] [data-nav-sub]')]
       .map((s) => s.getAttribute('data-nav-sub'));
-    expect(subs).toEqual(['showcase', 'variations', 'surprise']);
+    expect(subs).toEqual(['showcase', 'variations']);
+    // Surprise left Discover for its own top-level Creator link (#437).
+    expect(subs).not.toContain('surprise');
     // learning/reference items moved out to Help (#420)
     expect(subs).not.toContain('about');
     expect(subs).not.toContain('help-webgpu');
@@ -127,6 +136,7 @@ describe('nav-menu active-state (#264)', () => {
     ['screensaver', 'animate',  'screensaver'],
     ['esf',         'esf',      'esf'],
     ['gallery',     'esf',      'gallery'],
+    ['surprise',    'surprise', ''],
     ['variations',  'discover', 'variations'],
     ['about',       'help',     'about'],
   ];

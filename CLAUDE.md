@@ -26,14 +26,15 @@ npm run animate -- <in> <out-dir>                   #   env: width=W height=H (a
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
 ```
 
-The nav is **6 top menus** (#264, expanded in #420) — the row is **left-aligned**
+The nav is **7 top menus** (#264, expanded in #420, Creator added in #437) — the row is **left-aligned**
 right after the `pyr3` brand (#420 retired the old centered grid + the brand-cluster
 About link): **Viewer** · **Editor** (`/editor` — direct
 link; the old Gradient page `/gradient` was retired in #372 and now redirects
-to `/editor`, where the gradient editor is an in-lens overlay) · **Animate ▾** (Timeline `/animate` · Screensaver
+to `/editor`, where the gradient editor is an in-lens overlay) · **Creator** (#437 —
+direct link to `/surprise`, promoted out of the Discover dropdown) · **Animate ▾** (Timeline `/animate` · Screensaver
 `/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/esf` +
 `/esf/gen/N/id/M` · Gallery `/esf/gallery` · Electric Sheep Fold ↗ source repo) ·
-**Discover ▾** (#420 — exploration only: Showcase · Variations `/variations` · Surprise `/surprise`) ·
+**Discover ▾** (#420 — exploration only: Showcase · Variations `/variations`) ·
 **Help ▾** (#420 — learn/reference: **How flames work** `/how-it-works` — the #347
 interactive scrollytelling guide (chaos-game step-through + xform/variation/final-xform/colour
 demos, all CPU Canvas2D reusing the real `src/variations.ts`/`affine-decompose.ts` math;

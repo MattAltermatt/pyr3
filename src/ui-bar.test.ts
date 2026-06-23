@@ -378,15 +378,16 @@ describe('mountBarChrome', () => {
     handle.destroy();
   });
 
-  it('surface: "surprise" highlights the Discover menu (Surprise lives under Discover)', () => {
+  it('surface: "surprise" highlights the top-level Creator link (#437)', () => {
     document.body.innerHTML = '<div id="root"></div>';
     const root = document.getElementById('root')!;
     const handle = mountBarChrome(root, {
       surface: 'surprise',
       webgpu: { available: true } as WebGPUStatus,
     });
-    expect(root.querySelector('.pyr3-nav-top[data-nav-top="discover"].active')).toBeTruthy();
-    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="surprise"].active')).toBeTruthy();
+    // #437 — Surprise was promoted out of Discover to its own "Creator" top link.
+    expect(root.querySelector('.pyr3-nav-top[data-nav-top="surprise"].active')).toBeTruthy();
+    expect(root.querySelector('.pyr3-nav-item[data-nav-sub="surprise"]')).toBeNull();
     handle.destroy();
   });
 
