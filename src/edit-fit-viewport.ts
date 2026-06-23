@@ -44,13 +44,18 @@ function paramsFor(v: Variation): Record<string, number> {
   const out: Record<string, number> = {};
   const obj = v as unknown as Record<string, number | undefined>;
   for (let i = 0; i < keys.length; i++) {
-    const val = obj[`param${i}`];
-    if (typeof val === 'number' && Number.isFinite(val)) {
-      const bareKey = keys[i]!;
-      out[bareKey] = val;
-      if (!bareKey.startsWith(name + '_')) {
-        out[`${name}_${bareKey}`] = val;
-      }
+    const raw = obj[`param${i}`];
+    // #440 — default a missing / non-finite positional param to 0 (the GPU
+    // packer's behaviour) so the oracle gets a COMPLETE named-params object and
+    // never throws "requires params.*". The 25 throwing variations absent from
+    // VARIATION_DEFAULTS reach here with no param0/param1; fit is a UX estimate,
+    // so 0 is a safe stand-in (the GPU still renders them with their real 0
+    // defaults).
+    const val = (typeof raw === 'number' && Number.isFinite(raw)) ? raw : 0;
+    const bareKey = keys[i]!;
+    out[bareKey] = val;
+    if (!bareKey.startsWith(name + '_')) {
+      out[`${name}_${bareKey}`] = val;
     }
   }
   return out;
@@ -79,18 +84,28 @@ function dispatchVariation(
   }
   const fn = (TS as unknown as Record<string, TsVarFn | undefined>)[`ts_var_${name}`];
   if (!fn) return { x: v.weight * tx, y: v.weight * ty };
-  return fn({
-    tx,
-    ty,
-    weight: v.weight,
-    params: paramsFor(v),
-    randBranch: rng() < 0.5 ? 0 : 1,
-    // Six rand draws covers every randValues-consuming variation in the registry
-    // (noise/blur/gaussian_blur/arch/radial_blur/square/rays/blade/twintrian
-    // top out at 6). Cheap to allocate; per-iter cost is dominated by the
-    // variation math itself.
-    randValues: [rng(), rng(), rng(), rng(), rng(), rng()],
-  });
+  // #440 — the oracle is a UX fit estimate, NOT a render: it must be TOTAL.
+  // paramsFor zero-fills missing params, but a few variations still throw (the
+  // 5 absent from VARIATION_PARAMS — waves/popcorn/rings/fan/oscope — plus any
+  // degenerate-param math). Fall back to the same linear-identity used for
+  // unknown variations rather than letting the throw escape and crash editor
+  // init (the #432 fit-on-open path runs this unguarded).
+  try {
+    return fn({
+      tx,
+      ty,
+      weight: v.weight,
+      params: paramsFor(v),
+      randBranch: rng() < 0.5 ? 0 : 1,
+      // Six rand draws covers every randValues-consuming variation in the registry
+      // (noise/blur/gaussian_blur/arch/radial_blur/square/rays/blade/twintrian
+      // top out at 6). Cheap to allocate; per-iter cost is dominated by the
+      // variation math itself.
+      randValues: [rng(), rng(), rng(), rng(), rng(), rng()],
+    });
+  } catch {
+    return { x: v.weight * tx, y: v.weight * ty };
+  }
 }
 
 function applyAffineXform(xf: Pick<Xform, 'a' | 'b' | 'c' | 'd' | 'e' | 'f'>, x: number, y: number): { x: number; y: number } {

@@ -178,3 +178,58 @@ describe('refitGenomeToOutputSize (#432 fit-on-open)', () => {
     expect(g.scale).toBe(before);
   });
 });
+
+// #440 — a genome whose variation's ts_var_* oracle requires named params but
+// carries NONE — exactly what the Surprise generator produces for the 25
+// throwing variations missing from VARIATION_DEFAULTS (disc2, waves, popcorn …).
+// The GPU defaults missing params to 0 and renders fine; the fit oracle is a UX
+// helper ("not a render") and must be TOTAL — never throw and crash editor init.
+describe('param-less throwing variations do not crash the fit oracle (#440)', () => {
+  function disc2NoParamsGenome(): Genome {
+    return {
+      ...minimalGenome(),
+      xforms: [
+        // disc2 (index 22) with NO disc2_rot / disc2_twist — the repro shape.
+        { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+          variations: [{ index: V.disc2, weight: 1 }] } as Genome['xforms'][number],
+        { a: 0.5, b: 0, c: 0.3, d: 0, e: 0.5, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5,
+          variations: [{ index: V.linear, weight: 1 }] } as Genome['xforms'][number],
+      ],
+    };
+  }
+
+  it('computeFitViewport does not throw on a param-less disc2 xform', () => {
+    expect(() => computeFitViewport(disc2NoParamsGenome(), 1920, 1080, { seed: 3 })).not.toThrow();
+  });
+
+  it('refitGenomeToOutputSize does not throw (the #432 editor fit-on-open path)', () => {
+    const g = disc2NoParamsGenome();
+    g.size = { width: 3840, height: 2160 };
+    expect(() => refitGenomeToOutputSize(g, { seed: 3 })).not.toThrow();
+  });
+
+  // The whole class — not just disc2. `disc2/perspective/pdj/separation` are in
+  // VARIATION_PARAMS (exercise paramsFor's zero-fill); `waves/popcorn/rings/fan`
+  // are NOT (exercise dispatchVariation's try/catch linear-fallback). None may
+  // throw when their xform carries no params. (oscope is registered in V as
+  // `oscilloscope`, so REVERSE_V dispatch misses ts_var_oscope and already
+  // linear-falls-back — not reachable via this path.)
+  const PARAMLESS_VARIATIONS = [
+    'disc2', 'perspective', 'pdj', 'separation',
+    'waves', 'popcorn', 'rings', 'fan',
+  ];
+  it.each(PARAMLESS_VARIATIONS)('%s with no params does not crash the fit oracle', (vname) => {
+    const idx = (V as Record<string, number>)[vname];
+    expect(typeof idx).toBe('number');
+    const g: Genome = {
+      ...minimalGenome(),
+      xforms: [
+        { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0, colorSpeed: 0.5,
+          variations: [{ index: idx!, weight: 1 }] } as Genome['xforms'][number],
+        { a: 0.5, b: 0, c: 0.3, d: 0, e: 0.5, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5,
+          variations: [{ index: V.linear, weight: 1 }] } as Genome['xforms'][number],
+      ],
+    };
+    expect(() => computeFitViewport(g, 1920, 1080, { seed: 5 })).not.toThrow();
+  });
+});
