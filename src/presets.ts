@@ -1,33 +1,15 @@
 import type { Genome } from './genome';
 
-export type PresetName = 'quick' | '4k';
-
 export interface PresetSpec {
   maxDim: number;
   maxSpp: number;
   oversample: number;
   shortEdgeRound: 'round' | 'floor';
-  /** 'cap' shrinks only (no-op when maxDecl ≤ maxDim) — matches pre-v0.20
-   *  --quick semantics; FE QUICK_MAX_DIM is a ceiling, not a target.
-   *  'force' always rescales long-edge to exactly maxDim (upscales when
-   *  needed) — matches the reference SHOWCASE_4K preset + the pre-v0.20 4K wrapper
-   *  script; the 4K showcase is a TARGET dim, not a cap. */
+  /** 'cap' shrinks only (no-op when maxDecl ≤ maxDim) — a ceiling, not a target
+   *  (the viewer's Draft/Preview tiers). 'force' always rescales the long edge to
+   *  exactly maxDim (upscales when needed) — a TARGET dim, not a cap (the
+   *  Standard/High/4K tiers + the CLI's explicit `--long-edge`). */
   mode: 'cap' | 'force';
-}
-
-export const PRESETS: Record<PresetName, PresetSpec> = {
-  quick: {
-    maxDim: 1024, maxSpp: 16, oversample: 1,
-    shortEdgeRound: 'round', mode: 'cap',
-  },
-  '4k': {
-    maxDim: 3840, maxSpp: 200, oversample: 1,
-    shortEdgeRound: 'floor', mode: 'force',
-  },
-};
-
-export function isPresetName(s: string): s is PresetName {
-  return s === 'quick' || s === '4k';
 }
 
 export function applyPreset(genome: Genome, preset: PresetSpec): Genome {
@@ -106,27 +88,6 @@ export type QualityRequest =
   // like 1080×1080 (square) or 1290×2796 (iPhone). When omitted, the legacy
   // long-edge + preserve-genome-aspect path applies.
   | { kind: 'custom'; longEdge: number; spp: number; width?: number; height?: number };
-
-// #25 — CLI quality parity. The BE CLI consumes the SAME ladder as the FE so a
-// `--preset high` render produces identical dims/SPP to the viewer's High tier.
-
-/** Recognized quality-selector names for the CLI `--preset` flag (and any shared
- *  parser): the lowercased tier names plus the legacy `quick` alias (≡ Preview). */
-export const QUALITY_NAMES: string[] = [
-  'quick',
-  ...QUALITY_TIERS.map((t) => t.name.toLowerCase()),
-];
-
-/** Resolve a quality-selector name (case-insensitive) to a PresetSpec: any tier
- *  name (draft/preview/standard/high/4k) or the legacy `quick` alias (≡ Preview).
- *  Returns null for an unrecognized name. Lets the CLI and FE share one ladder via
- *  applyPreset(). `quick`/`4k` stay byte-identical to the legacy PRESETS entries. */
-export function specForQualityName(name: string): PresetSpec | null {
-  const lc = name.toLowerCase();
-  if (lc === 'quick') return tierToSpec(DEFAULT_TIER); // legacy alias ≡ Preview
-  const tier = QUALITY_TIERS.find((t) => t.name.toLowerCase() === lc);
-  return tier ? tierToSpec(tier) : null;
-}
 
 /** Build a PresetSpec for a custom render: explicit long edge + SPP, oversample 1,
  *  force-rescale — mirrors the FE's `QualityRequest` custom kind. */

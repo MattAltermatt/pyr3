@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Render the v1.0 showcase set via pyr3 BE at --preset 4k. One-shot script;
+// Render the v1.0 showcase set via pyr3 BE at 4K (--long-edge 3840 --quality 200,
+// #436 — was the removed `--preset 4k` alias). One-shot script;
 // output lands in fixtures/showcase-v1.0/ as `<id>.pyr3-4k.png`. Skips renders
 // that already exist (re-run safe).
 //
@@ -66,7 +67,11 @@ for (let i = 0; i < fixtures.length; i++) {
       '--import', 'tsx/esm',
       '--import', './bin/wgsl-loader-register.mjs',
       'bin/pyr3-render.ts',
-      '--preset', '4k',
+      // #436 — explicit flags replace the removed `--preset 4k` alias. These
+      // reproduce the 4K tier byte-for-byte: customSpec(3840, 200) === the old
+      // 4k preset spec {3840, 200, oversample 1, force, floor}.
+      '--long-edge', '3840',
+      '--quality', '200',
       fx.sourcePath,
       fx.outPath,
     ],

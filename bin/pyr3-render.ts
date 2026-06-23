@@ -27,9 +27,6 @@ import { deflateSync } from 'node:zlib';
 import {
   applyPreset,
   customSpec,
-  specForQualityName,
-  QUALITY_NAMES,
-  type PresetSpec,
 } from '../src/presets';
 import {
   installWebGPUHost,
@@ -79,7 +76,6 @@ async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
   const args: string[] = [];
   let forceDeOff = false;
-  let presetSpec: PresetSpec | null = null;
   let maxDim: number | null = null;
   let customLongEdge: number | null = null;
   let customQuality: number | null = null;
@@ -93,14 +89,6 @@ async function main(): Promise<void> {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
       forceDeOff = true;
-    } else if (a === '--preset') {
-      const v = rawArgs[++i];
-      const spec = v === undefined ? null : specForQualityName(v);
-      if (spec === null) {
-        console.error(`--preset requires one of: ${QUALITY_NAMES.join(', ')}`);
-        process.exit(1);
-      }
-      presetSpec = spec;
     } else if (a === '--long-edge') {
       customLongEdge = parsePositiveInt(rawArgs[++i], '--long-edge');
     } else if (a === '--quality') {
@@ -171,13 +159,13 @@ async function main(): Promise<void> {
     }
   }
   const custom = customLongEdge !== null || customQuality !== null;
-  if ([presetSpec !== null, maxDim !== null, custom].filter(Boolean).length > 1) {
-    console.error('--preset, --max-dim, and --long-edge/--quality are mutually exclusive');
+  if ([maxDim !== null, custom].filter(Boolean).length > 1) {
+    console.error('--max-dim and --long-edge/--quality are mutually exclusive');
     process.exit(1);
   }
   if (args.length < 1) {
     console.error(
-      `usage: npm run render [--no-de] [--preset {${QUALITY_NAMES.join('|')}}] ` +
+      'usage: npm run render [--no-de] ' +
         '[--long-edge N --quality N] [--max-dim N] [--sample-inflate=F] ' +
         '[--format png8|png16|exr|exr-linear] [--transparent] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
@@ -201,14 +189,12 @@ async function main(): Promise<void> {
   let genome: Genome = parsed.genome;
   const { kind, dropped, ignored } = parsed;
 
-  // Preset application (v0.20+). `--preset quick` mirrors src/main.ts
-  // rerender() (FE QUICK_MAX_DIM / QUICK_MAX_SPP / QUICK_OVERSAMPLE) for
-  // the FE↔BE parity gate (PYR3-026). `--preset 4k` mirrors the predecessor's
-  // Preset.SHOWCASE_4K for BE 4K showcase rendering. `--max-dim N` is a
-  // standalone cap (rejected alongside --preset above).
-  if (presetSpec !== null) {
-    genome = applyPreset(genome, presetSpec);
-  } else if (custom) {
+  // Explicit-flag render sizing (#436 — the hidden `--preset {quick|4k|…}` alias
+  // was removed; everything on the command line is now explicit). `--long-edge`/
+  // `--quality` force the output long edge / SPP; `--max-dim N` is a standalone
+  // cap (rejected alongside --long-edge/--quality above). Omit both to render at
+  // the genome's native dims/quality.
+  if (custom) {
     // #25: custom render — explicit long edge and/or SPP. Override quality so it
     // is SET (not merely capped); fall back to the genome's native long edge /
     // quality for whichever flag is omitted.

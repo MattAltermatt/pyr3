@@ -7,8 +7,9 @@
 //
 // Two renders through the bundled CJS, both exercising the linkedom-backed
 // .flame XML parse path (the load-bearing swap from #125 T2):
-//   1. --long-edge 512 --quality 50  (fast, minimal-render budget)
-//   2. --preset quick                 (1024 long-edge, full preset path)
+//   1. --long-edge 512 --quality 50   (fast, minimal-render budget)
+//   2. --long-edge 1024 --quality 16  (1024 long-edge — the explicit flags that
+//      replaced the removed `--preset quick` alias, #436; hero 1280×720 → 1024×576)
 //
 // Asserts each output is a valid PNG of the expected pixel dimensions. Not
 // bit-exact — every invocation picks a fresh ISAAC seed and #123 stamps a
@@ -62,9 +63,9 @@ runBundle(['--long-edge', '512', '--quality', '50', FLAME_HERO, out1]);
 const r1 = assertPng(out1, 512, 288);
 console.log(`    ✓ ${r1.w}×${r1.h}, ${r1.size} bytes`);
 
-console.log('2/2 .flame → PNG (--preset quick)');
-const out2 = join(TMP, 'flame-preset.png');
-runBundle(['--preset', 'quick', FLAME_HERO, out2]);
+console.log('2/2 .flame → PNG (long-edge 1024)');
+const out2 = join(TMP, 'flame-longedge-1024.png');
+runBundle(['--long-edge', '1024', '--quality', '16', FLAME_HERO, out2]);
 const r2 = assertPng(out2, 1024, 576);
 console.log(`    ✓ ${r2.w}×${r2.h}, ${r2.size} bytes`);
 

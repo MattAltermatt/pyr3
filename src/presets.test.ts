@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Genome } from './genome';
 import {
-  PRESETS,
   applyPreset,
-  isPresetName,
   QUALITY_TIERS,
   DEFAULT_TIER,
   tierToSpec,
-  specForQualityName,
   customSpec,
-  QUALITY_NAMES,
+  type PresetSpec,
 } from './presets';
 
 function makeGenome(opts: Partial<Genome> = {}): Genome {
@@ -25,49 +22,21 @@ function makeGenome(opts: Partial<Genome> = {}): Genome {
   } as Genome;
 }
 
-describe('PRESETS table', () => {
-  it('has exactly quick and 4k', () => {
-    expect(Object.keys(PRESETS).sort()).toEqual(['4k', 'quick']);
-  });
-
-  it('quick = 1024 / 16 / oversample=1 / round / cap', () => {
-    expect(PRESETS.quick).toEqual({
-      maxDim: 1024,
-      maxSpp: 16,
-      oversample: 1,
-      shortEdgeRound: 'round',
-      mode: 'cap',
-    });
-  });
-
-  it('4k = 3840 / 200 / oversample=1 / floor / force', () => {
-    expect(PRESETS['4k']).toEqual({
-      maxDim: 3840,
-      maxSpp: 200,
-      oversample: 1,
-      shortEdgeRound: 'floor',
-      mode: 'force',
-    });
-  });
-});
-
-describe('isPresetName', () => {
-  it('accepts quick and 4k', () => {
-    expect(isPresetName('quick')).toBe(true);
-    expect(isPresetName('4k')).toBe(true);
-  });
-  it('rejects others', () => {
-    expect(isPresetName('SHOWCASE_4K')).toBe(false);
-    expect(isPresetName('hd')).toBe(false);
-    expect(isPresetName('')).toBe(false);
-    expect(isPresetName('QUICK')).toBe(false);
-  });
-});
+// Local spec fixtures for the applyPreset behavior tests below — these are the
+// cap-mode (Preview/"quick") and force-mode (4K) specs the viewer's quality
+// ladder produces via tierToSpec. (#436 removed the named PRESETS table + the
+// CLI `--preset` alias; applyPreset itself stays, driven by tierToSpec/customSpec.)
+const QUICK_SPEC: PresetSpec = {
+  maxDim: 1024, maxSpp: 16, oversample: 1, shortEdgeRound: 'round', mode: 'cap',
+};
+const FOURK_SPEC: PresetSpec = {
+  maxDim: 3840, maxSpp: 200, oversample: 1, shortEdgeRound: 'floor', mode: 'force',
+};
 
 describe('applyPreset(quick) — cap mode (FE-parity, no-upscale)', () => {
   it('rescales 1280x720 down to 1024 long-edge with Math.round on the short edge', () => {
     const g = makeGenome({ size: { width: 1280, height: 720 }, scale: 100 });
-    const out = applyPreset(g, PRESETS.quick);
+    const out = applyPreset(g, QUICK_SPEC);
     // 1024 / 1280 = 0.8; short = round(1024 * 720 / 1280) = round(576) = 576
     expect(out.size).toEqual({ width: 1024, height: 576 });
     expect(out.scale).toBeCloseTo(80, 6);
@@ -77,7 +46,7 @@ describe('applyPreset(quick) — cap mode (FE-parity, no-upscale)', () => {
 
   it('does NOT upscale when long-edge ≤ maxDim (800x592 stays as-is)', () => {
     const g = makeGenome({ size: { width: 800, height: 592 }, scale: 100 });
-    const out = applyPreset(g, PRESETS.quick);
+    const out = applyPreset(g, QUICK_SPEC);
     expect(out.size).toEqual({ width: 800, height: 592 });
     expect(out.scale).toBe(100);
     expect(out.oversample).toBe(1);
@@ -86,22 +55,22 @@ describe('applyPreset(quick) — cap mode (FE-parity, no-upscale)', () => {
 
   it('does NOT rescale when long-edge already == maxDim', () => {
     const g = makeGenome({ size: { width: 1024, height: 768 }, scale: 50 });
-    const out = applyPreset(g, PRESETS.quick);
+    const out = applyPreset(g, QUICK_SPEC);
     expect(out.size).toEqual({ width: 1024, height: 768 });
     expect(out.scale).toBe(50);
   });
 
   it('caps quality at maxSpp=16 (Math.min)', () => {
     const g1 = makeGenome({ quality: 1000 });
-    expect(applyPreset(g1, PRESETS.quick).quality).toBe(16);
+    expect(applyPreset(g1, QUICK_SPEC).quality).toBe(16);
     const g2 = makeGenome({ quality: 8 });
-    expect(applyPreset(g2, PRESETS.quick).quality).toBe(8);
+    expect(applyPreset(g2, QUICK_SPEC).quality).toBe(8);
   });
 
   it('does not mutate input genome', () => {
     const g = makeGenome({ size: { width: 1280, height: 720 }, scale: 200, oversample: 4, quality: 500 });
     const before = JSON.stringify(g);
-    applyPreset(g, PRESETS.quick);
+    applyPreset(g, QUICK_SPEC);
     expect(JSON.stringify(g)).toBe(before);
   });
 });
@@ -109,7 +78,7 @@ describe('applyPreset(quick) — cap mode (FE-parity, no-upscale)', () => {
 describe('applyPreset(4k) — force mode (always-rescale, upscales when needed)', () => {
   it('upscales 800x592 to 3840 long-edge with Math.floor on the short edge', () => {
     const g = makeGenome({ size: { width: 800, height: 592 }, scale: 220 });
-    const out = applyPreset(g, PRESETS['4k']);
+    const out = applyPreset(g, FOURK_SPEC);
     // 3840 / 800 = 4.8; short = floor(3840 * 592 / 800) = floor(2841.6) = 2841
     // (matches the reference SHOWCASE_4K preset + pre-v0.20 wrapper script behavior)
     expect(out.size).toEqual({ width: 3840, height: 2841 });
@@ -120,7 +89,7 @@ describe('applyPreset(4k) — force mode (always-rescale, upscales when needed)'
 
   it('rescales 1280x720 to 3840 long-edge correctly', () => {
     const g = makeGenome({ size: { width: 1280, height: 720 }, scale: 355.352 });
-    const out = applyPreset(g, PRESETS['4k']);
+    const out = applyPreset(g, FOURK_SPEC);
     // 3840 / 1280 = 3.0; short = floor(3840 * 720 / 1280) = floor(2160) = 2160
     expect(out.size).toEqual({ width: 3840, height: 2160 });
     expect(out.scale).toBeCloseTo(355.352 * 3.0, 3);
@@ -128,21 +97,21 @@ describe('applyPreset(4k) — force mode (always-rescale, upscales when needed)'
 
   it('caps quality at maxSpp=200', () => {
     const g1 = makeGenome({ quality: 500 });
-    expect(applyPreset(g1, PRESETS['4k']).quality).toBe(200);
+    expect(applyPreset(g1, FOURK_SPEC).quality).toBe(200);
     const g2 = makeGenome({ quality: 100 });
-    expect(applyPreset(g2, PRESETS['4k']).quality).toBe(100);
+    expect(applyPreset(g2, FOURK_SPEC).quality).toBe(100);
   });
 
   it('forces oversample=1 even from supersample=4', () => {
     const g = makeGenome({ oversample: 4 });
-    expect(applyPreset(g, PRESETS['4k']).oversample).toBe(1);
+    expect(applyPreset(g, FOURK_SPEC).oversample).toBe(1);
   });
 });
 
 describe('applyPreset (both presets)', () => {
   it('defaults missing genome dims to 1024x1024', () => {
     const g = makeGenome({ size: undefined });
-    const out = applyPreset(g, PRESETS.quick);
+    const out = applyPreset(g, QUICK_SPEC);
     // 1024 is already at maxDim — no rescale.
     expect(out.size).toBeUndefined();
     expect(out.oversample).toBe(1);
@@ -150,8 +119,8 @@ describe('applyPreset (both presets)', () => {
 
   it('defaults missing quality to maxSpp (genome.quality ?? maxSpp)', () => {
     const g = makeGenome({ quality: undefined });
-    expect(applyPreset(g, PRESETS.quick).quality).toBe(16);
-    expect(applyPreset(g, PRESETS['4k']).quality).toBe(200);
+    expect(applyPreset(g, QUICK_SPEC).quality).toBe(16);
+    expect(applyPreset(g, FOURK_SPEC).quality).toBe(200);
   });
 });
 
@@ -186,7 +155,7 @@ describe('QUALITY_TIERS ladder (PYR3-050)', () => {
     }
   });
 
-  it('Preview tier maps to the legacy quick preset values', () => {
+  it('Preview tier maps to a 1024 / 16 / cap / round spec', () => {
     const preview = QUALITY_TIERS.find((t) => t.name === 'Preview')!;
     expect(tierToSpec(preview)).toEqual({
       maxDim: 1024,
@@ -195,25 +164,15 @@ describe('QUALITY_TIERS ladder (PYR3-050)', () => {
       shortEdgeRound: 'round',
       mode: 'cap',
     });
-    // ...and those match the legacy quick preset (dims/quality/oversample/mode).
-    expect(PRESETS.quick.maxDim).toBe(preview.longEdge);
-    expect(PRESETS.quick.maxSpp).toBe(preview.spp);
-    expect(PRESETS.quick.oversample).toBe(preview.oversample);
-    expect(PRESETS.quick.mode).toBe(preview.mode);
   });
 
-  it('4K tier maps to the legacy 4k preset values', () => {
+  it('4K tier maps to a 3840 / 200 / force / floor spec', () => {
     const fourK = QUALITY_TIERS.find((t) => t.name === '4K')!;
     const spec = tierToSpec(fourK);
     expect(spec.maxDim).toBe(3840);
     expect(spec.maxSpp).toBe(200);
     expect(spec.mode).toBe('force');
     expect(spec.shortEdgeRound).toBe('floor');
-    // ...and those match the legacy 4k preset.
-    expect(PRESETS['4k'].maxDim).toBe(fourK.longEdge);
-    expect(PRESETS['4k'].maxSpp).toBe(fourK.spp);
-    expect(PRESETS['4k'].mode).toBe(fourK.mode);
-    expect(PRESETS['4k'].shortEdgeRound).toBe('floor');
   });
 
   it('DEFAULT_TIER is the Preview tier', () => {
@@ -233,30 +192,7 @@ describe('QUALITY_TIERS ladder (PYR3-050)', () => {
   });
 });
 
-describe('#25 — CLI quality parity: tier-name + custom spec resolution', () => {
-  it('resolves every tier name (case-insensitive) to its tierToSpec', () => {
-    for (const t of QUALITY_TIERS) {
-      expect(specForQualityName(t.name.toLowerCase())).toEqual(tierToSpec(t));
-      expect(specForQualityName(t.name.toUpperCase())).toEqual(tierToSpec(t));
-    }
-  });
-
-  it('legacy "quick" === Preview spec; "4k" === 4K-tier spec (subsumes PRESETS)', () => {
-    expect(specForQualityName('quick')).toEqual(PRESETS.quick);
-    expect(specForQualityName('4k')).toEqual(PRESETS['4k']);
-  });
-
-  it('returns null for an unrecognized name', () => {
-    expect(specForQualityName('bogus')).toBeNull();
-  });
-
-  it('QUALITY_NAMES lists quick + all tier names (lowercased)', () => {
-    expect(QUALITY_NAMES).toContain('quick');
-    expect(QUALITY_NAMES).toContain('draft');
-    expect(QUALITY_NAMES).toContain('high');
-    expect(QUALITY_NAMES).toContain('4k');
-  });
-
+describe('customSpec — explicit --long-edge/--quality render spec (#25)', () => {
   it('customSpec builds a force-rescale spec at oversample 1', () => {
     expect(customSpec(1920, 50)).toEqual({
       maxDim: 1920,

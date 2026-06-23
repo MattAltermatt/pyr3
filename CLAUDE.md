@@ -13,8 +13,8 @@ npm run test:all                # union of test + parity (excludes the slow FE�
 npm run typecheck               # tsc --noEmit (full project)
 npm run typecheck:engine        # no-DOM kernel typecheck — enforces the FE/BE seam (#15)
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims (tsx ESM)
-npm run render -- --preset quick <in> <out>        # 1024-long-edge cap, q≤16, oversample=1 (FE quick-mode match)
-npm run render -- --preset 4k <in> <out>           # 3840-long-edge force, q≤200, oversample=1 (reference SHOWCASE_4K)
+npm run render -- --long-edge 1024 --quality 16 <in> <out>   # explicit output sizing (the `--preset` alias was removed in #436 — nothing hidden on the CLI; --long-edge/--quality force the long edge / SPP, --max-dim N caps)
+npm run render -- --long-edge 3840 --quality 200 <in> <out>  # 4K reference (the old `--preset 4k`)
 npm run render -- --format png8|png16|exr|exr-linear <in> <out>  # output format (default png8): png8/png16=display-referred PNG (what you see) · exr=display image stored as linear-light 32f OpenEXR → opens looking like the editor in any viewer (sRGB_to_linear of the display pixels; uncompressed) · exr-linear=ADVANCED raw scene-referred linear HDR (pre-log/pre-gamma, huge range — tonemap in post) (#334)
 npm run render -- --transparent <in> <out>         # transparent background for png8/png16 (no effect on exr) (#334)
 npm run bundle:cli render                           # produce build/.tmp/pyr3-render.cjs (esbuild bundle)
@@ -209,10 +209,12 @@ v0.1):
   module dual-modes between the tsx-driven `npm run render` path and the SEA-bundled
   `./build/pyr3-render` binary (#31) — Dawn-node is bundled as a SEA asset and extracted
   to `~/.cache/pyr3/dawn-<sha>.node` on first launch.
-- BE 4K (v0.20+): `bin/pyr3-render.ts --preset 4k` uses `src/presets.ts`
-  to bundle dim/quality/oversample (reference SHOWCASE_4K-matched). The
-  pre-v0.20 `scripts/pyr3-023-be-render-4k.mjs` wrapper was graduated
-  into the `--preset` flag family in v0.20.
+- BE 4K: `bin/pyr3-render.ts --long-edge 3840 --quality 200` renders the 4K
+  reference (force-rescale to a 3840 long edge, q200, oversample 1 — reference
+  SHOWCASE_4K-matched, what `scripts/render-showcase-v1.0.mjs` runs). The hidden
+  `--preset {quick|4k|…}` alias was removed in #436 (nothing hidden on the CLI —
+  explicit `--long-edge`/`--quality`/`--max-dim` only); `src/presets.ts`'s
+  `applyPreset` still does the aspect-preserving rescale behind those flags.
 
 Any code that breaks this seam should be loudly questioned before landing.
 
