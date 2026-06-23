@@ -74,10 +74,10 @@ npm test                    # unit suite (~2s)
 npm run render fixtures/electricsheep.247.19679.flam3 out.png
 
 # fast preview (1024px long edge, capped quality) — matches the viewer's quick mode
-npm run render -- --preset quick fixtures/electricsheep.247.19679.flam3 preview.png
+npm run render -- --long-edge 1024 --quality 16 fixtures/electricsheep.247.19679.flam3 preview.png
 
 # full 4K showcase render (3840px long edge) — the pyr3-native hero flame
-npm run render -- --preset 4k fixtures/pyr3-hero.pyr3.json hero-4k.png
+npm run render -- --long-edge 3840 --quality 200 fixtures/pyr3-hero.pyr3.json hero-4k.png
 ```
 
 **Windows (win32-x64):** the same `npm run render` path works — install
@@ -110,8 +110,8 @@ Same commands, shorter form:
 
 ```sh
 ./build/pyr3-render fixtures/electricsheep.247.19679.flam3 out.png
-./build/pyr3-render --preset quick fixtures/electricsheep.247.19679.flam3 preview.png
-./build/pyr3-render --preset 4k    fixtures/pyr3-hero.pyr3.json hero-4k.png
+./build/pyr3-render --long-edge 1024 --quality 16  fixtures/electricsheep.247.19679.flam3 preview.png
+./build/pyr3-render --long-edge 3840 --quality 200 fixtures/pyr3-hero.pyr3.json hero-4k.png
 ```
 
 Or put it on `$PATH`:
