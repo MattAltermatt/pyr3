@@ -9,6 +9,7 @@ import {
   FIT_MARGIN,
 } from './edit-fit-viewport';
 import { generateRandomGenome } from './edit-seed';
+import { bakeSymmetryXforms } from './symmetry';
 import { type Genome } from './genome';
 import { V } from './variations';
 import { paletteFromStops } from './palette';
@@ -143,6 +144,47 @@ describe('computeFitViewport', () => {
     expect(wide).not.toBeNull();
     expect(narrow).not.toBeNull();
     expect(wide!.scale).toBeGreaterThanOrEqual(narrow!.scale - 1e-9);
+  });
+});
+
+// #442 — the CPU fit oracle must frame the SAME attractor the GPU renders, which
+// means symmetry-expanded. A genome carries `symmetry` as a declarative field that
+// the GPU packer (expandGenomeForGPU → bakeSymmetryXforms) expands into rotation/
+// reflection xforms before rendering. If the oracle samples only the BASE xforms it
+// frames the off-origin base lobe, so a symmetric surprise flame opens off-center /
+// mis-zoomed in the editor versus its thumbnail. Fitting `g` must equal fitting the
+// pre-baked genome.
+describe('computeFitViewport is symmetry-aware (#442)', () => {
+  // A spread, deliberately OFF-ORIGIN base attractor + rotational symmetry. The
+  // base lobe sits near (3, 1); the n=4 rotational expansion mirrors it around the
+  // origin, so the rendered attractor is origin-centered with a much larger radius.
+  function offOriginSymmetricGenome(): Genome {
+    return {
+      ...minimalGenome(),
+      xforms: [
+        { a: 0.5, b: 0, c: 2.0, d: 0, e: 0.5, f: 0.6, weight: 1, color: 0, colorSpeed: 0,
+          variations: [{ index: V.linear, weight: 1 }] } as Genome['xforms'][number],
+        { a: 0.5, b: 0, c: 4.0, d: 0, e: 0.5, f: 1.4, weight: 1, color: 0.5, colorSpeed: 0,
+          variations: [{ index: V.linear, weight: 1 }] } as Genome['xforms'][number],
+      ],
+      symmetry: { kind: 'rotational', n: 4 },
+    };
+  }
+
+  it('frames the symmetry-expanded attractor, not the off-origin base lobe', () => {
+    const g = offOriginSymmetricGenome();
+    const viaField = computeFitViewport(g, 1024, 1024, { seed: 123 });
+    const viaBaked = computeFitViewport(bakeSymmetryXforms(g), 1024, 1024, { seed: 123 });
+    expect(viaField).not.toBeNull();
+    expect(viaBaked).not.toBeNull();
+    // The expanded attractor is centered near the origin; fitting the field-form
+    // genome must land on the same (cx, cy, scale) as fitting the pre-baked one.
+    expect(viaField!.cx).toBeCloseTo(viaBaked!.cx, 5);
+    expect(viaField!.cy).toBeCloseTo(viaBaked!.cy, 5);
+    expect(viaField!.scale).toBeCloseTo(viaBaked!.scale, 5);
+    // Sanity: the expanded center really is near origin, well away from the base
+    // lobe (~x=3) — proves the test would catch a symmetry-blind oracle.
+    expect(Math.abs(viaBaked!.cx)).toBeLessThan(0.5);
   });
 });
 

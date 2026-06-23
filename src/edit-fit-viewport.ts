@@ -17,6 +17,7 @@
 import { type Genome, type Xform } from './genome';
 import { type Variation, V } from './variations';
 import { VARIATION_PARAMS } from './serialize';
+import { bakeSymmetryXforms } from './symmetry';
 import * as TS from './variations';
 
 // Index → variation name (the reverse of V). Built once at module load.
@@ -149,7 +150,22 @@ export function sampleChaosForFit(
   opts: Partial<ChaosSamplerOpts> = {},
 ): Array<{ x: number; y: number }> {
   const { samples, warmup, seed } = { ...DEFAULT_OPTS, ...opts };
-  const xforms = genome.xforms;
+  // #442 — frame the SAME attractor the GPU renders. A genome carries `symmetry`
+  // as a declarative field that the GPU packer (expandGenomeForGPU) expands into
+  // rotation/reflection xforms before rendering. Sampling only the base xforms
+  // frames the off-origin base lobe, so a symmetric surprise flame opens off-center
+  // / mis-zoomed in the editor versus its thumbnail. Bake symmetry first (no-op
+  // same-reference when absent). Defensive: bakeSymmetryXforms throws past
+  // MAX_XFORMS — the oracle must stay total (#440), so fall back to the base genome.
+  let g = genome;
+  if (g.symmetry) {
+    try {
+      g = bakeSymmetryXforms(g);
+    } catch {
+      g = genome;
+    }
+  }
+  const xforms = g.xforms;
   if (xforms.length === 0) return [];
 
   // Cumulative xform selection distribution. Skip zero-weight xforms.
@@ -189,7 +205,7 @@ export function sampleChaosForFit(
     // Apply finalxform lens on the stored point. Trajectory continues from
     // the pre-lens point (chaos.wgsl + flam3.c:280-287) so the lens doesn't
     // perturb the walker — only the recorded sample.
-    const lens = genome.finalxform;
+    const lens = g.finalxform;
     if (lens) {
       const l = applyXform(lens, px, py, rng);
       if (Number.isFinite(l.x) && Number.isFinite(l.y)) {
