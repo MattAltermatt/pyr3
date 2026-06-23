@@ -51,9 +51,10 @@ not the default.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
 same" contract holds across engines too. Both gates went green for v1.0,
-and the v1.0 → v1.10 line has shipped — the viewer is live at
+and the v1.0 → v1.11 line has shipped — the viewer is live at
 [pyr3.app](https://pyr3.app/), tagged releases are published through
-**v1.10.0** (2026-06-14), and the
+**v1.11.0** (2026-06-19, the Editor IA rework milestone #27 — the 4-lens
+editor redesign), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
 tracks themed follow-on work. The **Apophysis and JWildfire** plugin
 pack (#114 / #117 / #120 / #121 / #170, plus the gradient editor #115)
