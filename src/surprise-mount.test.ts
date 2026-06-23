@@ -18,11 +18,14 @@ afterEach(() => vi.unstubAllGlobals());
 describe('mountSurprisePage (v2 #surprise-v2)', () => {
   const opts = { device: {} as unknown as GPUDevice, format: 'rgba8unorm' as GPUTextureFormat };
 
-  it('renders the 🎲 Reroll control + settings toggle + wall undo/redo, and NO tray', () => {
+  it('renders the 🎲 Reroll control + three bars + wall undo/redo, and NO tray/popover', () => {
     const host = document.createElement('div');
     const h = mountSurprisePage(host, opts);
     expect(host.querySelector('[data-role="reroll"]')?.textContent).toContain('Reroll');
-    expect(host.querySelector('[data-role="settings-toggle"]')).toBeTruthy();
+    // #433 — the ⚙ popover is gone; GENERATE + VARIATIONS are always-visible bars.
+    expect(host.querySelector('[data-role="settings-toggle"]')).toBeNull();
+    expect(host.querySelector('[data-bar="generate"]')).toBeTruthy();
+    expect(host.querySelector('[data-bar="variations"]')).toBeTruthy();
     expect(host.querySelector('[data-role="wall-undo"]')).toBeTruthy();
     expect(host.querySelector('[data-role="wall-redo"]')).toBeTruthy();
     expect(host.querySelector('[data-role="tray"]')).toBeNull(); // tray removed
@@ -47,13 +50,15 @@ describe('mountSurprisePage (v2 #surprise-v2)', () => {
     h.destroy();
   });
 
-  it('the settings toggle reveals the settings panel host', () => {
+  it('per-bar Reset commits without rerolling (#433)', () => {
     const host = document.createElement('div');
     const h = mountSurprisePage(host, opts);
-    const panelHost = host.querySelector('[data-role="panel-host"]') as HTMLElement;
-    expect(panelHost.style.display).toBe('none');
-    (host.querySelector('[data-role="settings-toggle"]') as HTMLElement).click();
-    expect(panelHost.style.display).not.toBe('none');
+    const tilesBefore = host.querySelectorAll('[data-role="tile"]').length;
+    // change a generation knob then reset it — wall must not regenerate (apply
+    // waits for 🎲 Reroll), so the dirty cue should be set, tiles unchanged.
+    (host.querySelector('[data-role="density-l"]') as HTMLButtonElement).click();
+    (host.querySelector('[data-role="reset-generation"]') as HTMLButtonElement).click();
+    expect(host.querySelectorAll('[data-role="tile"]').length).toBe(tilesBefore);
     h.destroy();
   });
 

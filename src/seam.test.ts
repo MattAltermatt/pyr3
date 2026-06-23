@@ -104,7 +104,7 @@ const SEAM_EXEMPT = new Set<string>([
   'palette-picker.ts',         // /editor docked palette picker (#103 Phase 9)
   'edit-slow-render-nudge.ts', // /editor slow-render UX nudge — owns toast DOM (#118)
   'surprise-mount.ts',            // /surprise wall page mount — owns DOM (#186)
-  'surprise-settings-panel.ts',   // /surprise wall generation settings panel — DOM-mounting (#surprise-v2)
+  'surprise-bars.ts',             // /surprise generation settings bars — DOM-mounting (#433)
   'variation-catalog-mount.ts',   // /variations page mount — owns DOM (#119)
   'variation-catalog-sidebar.ts', // /variations sidebar — DOM-mounting (#119)
   'variation-catalog-section.ts', // /variations per-section component (#119)

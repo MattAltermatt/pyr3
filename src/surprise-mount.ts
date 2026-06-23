@@ -1,11 +1,12 @@
 // src/surprise-mount.ts
 //
 // /surprise page — the Surprise Wall (v2, #surprise-v2). A full-bleed, viewport-
-// filling wall of steerable flame ideas: a generation settings panel drives the
-// recipe, clicking a tile opens it in the editor (new tab), and all settings
-// apply only on 🎲 Reroll (an "↑ apply settings" cue signals pending changes).
-// Dual undo/redo: wall batches (Ctrl+Z) and settings (panel ↶↷). DOM-mounting
-// module → on SEAM_EXEMPT.
+// filling wall of steerable flame ideas: three always-visible bars drive the
+// recipe (ACTIONS here + GENERATE/VARIATIONS from surprise-bars.ts, #433),
+// clicking a tile opens it in the editor (new tab), and all settings apply only
+// on 🎲 Reroll (the button becomes "Apply & Reroll" + pulses when pending).
+// Undo/redo is wall-batch only (Ctrl+Z); per-bar ↺ Reset replaced the old
+// settings-history (#433). DOM-mounting module → on SEAM_EXEMPT.
 
 import { type Genome } from './genome';
 import { VARIATION_NAMES } from './variations';
@@ -15,10 +16,11 @@ import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
 import { createSurpriseState } from './surprise-state';
 import {
   readWall, writeWall, loadSurpriseSettings, saveSurpriseSettings,
-  SURPRISE_SETTINGS_DEFAULT, type SurpriseSettings,
+  resetGeneration, resetVariations, type SurpriseSettings,
 } from './surprise-prefs';
 import { computeGrid, type Viewport, type GridMode } from './surprise-grid';
-import { mountSurpriseSettingsPanel, type SurpriseSettingsPanelHandle } from './surprise-settings-panel';
+import { mountSurpriseBars, type SurpriseBarsHandle } from './surprise-bars';
+import { buildInfoIcon } from './edit-tooltip';
 import { writePendingTransfer } from './edit-state';
 
 export interface SurpriseMountOptions { device: GPUDevice; format: GPUTextureFormat }
@@ -59,7 +61,13 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
 
   // ---- DOM skeleton (createElement only — never innerHTML) ----
   const root = document.createElement('div'); root.className = 'pyr3-surprise-root';
-  const controls = document.createElement('div'); controls.className = 'pyr3-surprise-controls';
+  // ACTIONS bar — reroll / stop / wall undo·redo / status. Styled as the first
+  // of the three #433 bars (GENERATE + VARIATIONS come from mountSurpriseBars).
+  const controls = document.createElement('div');
+  controls.className = 'pyr3-surprise-bar pyr3-surprise-controls';
+  const controlsLabel = document.createElement('span');
+  controlsLabel.className = 'pyr3-surprise-bar-label';
+  controlsLabel.textContent = 'Actions';
 
   // Reroll. When settings are pending the label becomes "Apply & Reroll" + a
   // pulse (a `.dirty` class), so the button itself tells the user clicking it
@@ -67,9 +75,6 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   // min-width is pinned (CSS) to the wider label so the text swap doesn't jump.
   const rerollBtn = document.createElement('button'); rerollBtn.className = 'pyr3-surprise-more';
   rerollBtn.dataset.role = 'reroll'; rerollBtn.textContent = '🎲 Reroll';
-
-  const settingsBtn = document.createElement('button'); settingsBtn.className = 'pyr3-surprise-settings-btn';
-  settingsBtn.dataset.role = 'settings-toggle'; settingsBtn.textContent = '⚙ Settings';
 
   // Stop — halts the in-flight generation + render. Enabled only while rendering.
   const stopBtn = document.createElement('button'); stopBtn.className = 'pyr3-surprise-stop-btn';
@@ -81,16 +86,27 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   const wallRedo = document.createElement('button'); wallRedo.className = 'pyr3-surprise-wall-redo';
   wallRedo.dataset.role = 'wall-redo'; wallRedo.textContent = '↷'; wallRedo.title = 'Redo reroll (Ctrl+⇧Z)';
 
+  // Tightened status: "<N> shown · <M> culled ⓘ" — the ⓘ explains culling (#433).
   const status = document.createElement('div'); status.className = 'pyr3-surprise-status';
-  controls.append(rerollBtn, stopBtn, settingsBtn, wallUndo, wallRedo, status);
+  const statusShown = document.createElement('strong'); statusShown.className = 'pyr3-surprise-status-shown';
+  const statusCulled = document.createElement('span'); statusCulled.className = 'pyr3-surprise-status-culled';
+  const cullHelp = buildInfoIcon({
+    title: 'Culled flames',
+    body: 'Each Reroll generates more flames than it shows. Mathematically degenerate ones — blank, divergent, or collapsed to a point — are detected and skipped before display.',
+    hint: '“culled” counts how many were skipped to fill this wall.',
+  });
+  cullHelp.classList.add('pyr3-surprise-status-help');
+  status.append(statusShown, document.createTextNode(' shown · '), statusCulled,
+    document.createTextNode(' '), cullHelp);
+  controls.append(controlsLabel, rerollBtn, stopBtn, wallUndo, wallRedo, status);
 
   const wall = document.createElement('div'); wall.className = 'pyr3-surprise-wall';
   wall.style.display = 'grid'; wall.style.gap = `${GAP_PX}px`;
 
-  const panelHost = document.createElement('div'); panelHost.className = 'pyr3-surprise-panel-host';
-  panelHost.dataset.role = 'panel-host'; panelHost.style.display = 'none';
+  // GENERATE + VARIATIONS bars mount here (#433).
+  const barsHost = document.createElement('div'); barsHost.className = 'pyr3-surprise-bars-mount';
 
-  root.append(controls, panelHost, wall);
+  root.append(controls, barsHost, wall);
   host.append(root);
 
   // ---- state mirrors ----
@@ -313,7 +329,8 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   }
 
   function updateStatus(): void {
-    status.textContent = `generated ${generated} · culled ${culled} degenerate · showing ${wallGenomes.length}`;
+    statusShown.textContent = String(wallGenomes.length);
+    statusCulled.textContent = `${culled} culled`;
     refreshStop();
   }
 
@@ -326,47 +343,21 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
     rerollBtn.classList.toggle('dirty', dirty);
   }
 
-  // ---- settings history wiring ----
-  function commitSettings(next: SurpriseSettings, pushHistory: boolean): void {
+  // ---- settings wiring (no settings-history; per-bar ↺ Reset only — #433) ----
+  function commitSettings(next: SurpriseSettings): void {
     settings = next;
-    if (pushHistory) state.settingsHistory.push(next);
     saveSurpriseSettings(next);
-    panel?.refresh();
+    bars?.refresh();
     refreshDirty();
-    refreshSettingsHistoryButtons();
   }
-  function refreshSettingsHistoryButtons(): void { panel?.refresh(); }
 
-  let panel: SurpriseSettingsPanelHandle | null = null;
-  panel = mountSurpriseSettingsPanel(panelHost, {
+  let bars: SurpriseBarsHandle | null = null;
+  bars = mountSurpriseBars(barsHost, {
     getSettings: () => settings,
-    onChange: (next) => commitSettings(next, true),
-    onReset: () => commitSettings({ ...SURPRISE_SETTINGS_DEFAULT }, true),
-    onUndo: () => { const s = state.settingsHistory.undo(); if (s) commitSettings(s, false); },
-    onRedo: () => { const s = state.settingsHistory.redo(); if (s) commitSettings(s, false); },
-    canUndo: () => state.settingsHistory.canUndo(),
-    canRedo: () => state.settingsHistory.canRedo(),
+    onChange: (next) => commitSettings(next),
+    onResetGeneration: () => commitSettings(resetGeneration(settings)),
+    onResetVariations: () => commitSettings(resetVariations(settings)),
   });
-  // Settings popover: anchored under the ⚙ button (position:fixed from its rect),
-  // dismissed on outside mousedown-origin (#283 — a re-render can detach the
-  // click target mid-click, so decide on mousedown not click).
-  function closeSettings(): void {
-    panelHost.style.display = 'none';
-    document.removeEventListener('mousedown', onSettingsOutside, true);
-  }
-  function onSettingsOutside(ev: MouseEvent): void {
-    const t = ev.target as Node;
-    if (!panelHost.contains(t) && t !== settingsBtn && !settingsBtn.contains(t)) closeSettings();
-  }
-  settingsBtn.onclick = () => {
-    if (panelHost.style.display !== 'none') { closeSettings(); return; }
-    const r = settingsBtn.getBoundingClientRect();
-    panelHost.style.left = `${Math.round(r.left)}px`;
-    panelHost.style.top = `${Math.round(r.bottom + 6)}px`;
-    panelHost.style.display = '';
-    panel?.refresh();
-    document.addEventListener('mousedown', onSettingsOutside, true);
-  };
 
   // ---- wall history wiring ----
   function refreshWallHistoryButtons(): void {
@@ -377,7 +368,6 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   wallRedo.onclick = () => { const b = state.wallHistory.redo(); if (b) restoreWallBatch(b); };
   function onKey(e: KeyboardEvent): void {
     if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
-    if (panelHost.style.display !== 'none') return; // panel focus → its own ↶↷ owns undo
     e.preventDefault();
     if (e.shiftKey) { const b = state.wallHistory.redo(); if (b) restoreWallBatch(b); }
     else { const b = state.wallHistory.undo(); if (b) restoreWallBatch(b); }
@@ -412,10 +402,9 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   return {
     destroy() {
       window.removeEventListener('keydown', onKey);
-      document.removeEventListener('mousedown', onSettingsOutside, true);
       if (resizeTimer) clearTimeout(resizeTimer);
       ro?.disconnect();
-      panel?.destroy();
+      bars?.destroy();
       queue.clear(); gpu.destroy(); host.replaceChildren();
     },
   };

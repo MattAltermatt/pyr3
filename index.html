@@ -966,20 +966,40 @@
       .pyr3-surprise-root {
         display: grid;
         grid-template-columns: 1fr; /* #surprise-v2 — tray removed; full-bleed single column */
-        grid-template-rows: auto 1fr;
-        grid-template-areas: "controls" "wall";
+        grid-template-rows: auto auto 1fr; /* #433 — ACTIONS + GENERATE/VARIATIONS bars + wall */
+        grid-template-areas: "controls" "bars" "wall";
         height: 100%;
         width: 100%;
       }
-      .pyr3-surprise-controls {
-        grid-area: controls;
+      /* #433 — shared bar shell: ACTIONS / GENERATE / VARIATIONS. Filled bar with
+         a structure-colored left rule on the uppercase label (section-header tier). */
+      .pyr3-surprise-bar {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        padding: 0.85rem 1.1rem;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        padding: 0.32rem 1.1rem;
         border-bottom: 1px solid var(--bar-border);
         background: var(--bar-bg-2);
+        min-height: 2.1rem;
       }
+      .pyr3-surprise-bar-label {
+        font-size: 0.66rem;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        font-weight: 700;
+        color: var(--text-dim);
+        border-left: 3px solid var(--structure);
+        padding-left: 0.5rem;
+        min-width: 5.4rem;
+      }
+      .pyr3-surprise-bar-field {
+        font-family: ui-monospace, monospace;
+        font-size: 0.74rem;
+        color: var(--text-dim);
+      }
+      .pyr3-surprise-controls { grid-area: controls; gap: 1rem; }
+      .pyr3-surprise-bars-mount { grid-area: bars; display: flex; flex-direction: column; }
       .pyr3-surprise-more {
         background: var(--accent, #c97);
         color: #1a1a1a;
@@ -1003,7 +1023,6 @@
         0%, 100% { box-shadow: 0 0 0 0 rgba(201, 119, 119, 0); }
         50% { box-shadow: 0 0 0 3px rgba(232, 168, 100, 0.55); }
       }
-      .pyr3-surprise-settings-btn,
       .pyr3-surprise-stop-btn,
       .pyr3-surprise-wall-undo,
       .pyr3-surprise-wall-redo {
@@ -1016,81 +1035,61 @@
       .pyr3-surprise-stop-btn:not(:disabled):hover { filter: brightness(1.2); }
       .pyr3-surprise-stop-btn:disabled { opacity: 0.35; cursor: default; }
       .pyr3-surprise-wall-undo, .pyr3-surprise-wall-redo { padding: 0.45rem 0.6rem; }
-      .pyr3-surprise-settings-btn:hover,
       .pyr3-surprise-wall-undo:not(:disabled):hover,
       .pyr3-surprise-wall-redo:not(:disabled):hover { filter: brightness(1.2); }
       .pyr3-surprise-wall-undo:disabled,
       .pyr3-surprise-wall-redo:disabled { opacity: 0.35; cursor: default; }
-      /* #surprise-v2 — settings popover, anchored under the ⚙ Settings button
-         (position set from the button rect in JS). */
-      .pyr3-surprise-panel-host {
-        position: fixed; z-index: 50;
-        background: var(--bar-bg-2); border: 1px solid var(--bar-border);
-        border-radius: 8px; padding: 0; min-width: 286px;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-      }
-      /* Settings panel — adopt the editor affordance ethos: aligned label column,
-         boxed fields, sectioned actions. */
-      .pyr3-surprise-settings {
-        padding: 0.7rem 0.85rem;
-        font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--text, #ddd);
-      }
-      .pyr3-surprise-settings-row {
-        display: flex; align-items: center; gap: 6px; padding: 5px 0;
-      }
-      .pyr3-surprise-settings-label {
-        width: 96px; flex: none; color: var(--text-dim, #888); font-size: 0.78rem;
-      }
-      .pyr3-surprise-settings-row label {
+      /* #433 — GENERATE/VARIATIONS bar controls (replace the retired ⚙ popover). */
+      .pyr3-surprise-bar-radio {
         display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+        font-family: ui-monospace, monospace; font-size: 0.76rem; color: var(--text, #ddd);
       }
-      .pyr3-surprise-settings-num {
-        width: 46px; background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
+      .pyr3-surprise-bar-num {
+        width: 3rem; background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
         border-radius: 3px; color: var(--text, #ddd); padding: 3px 6px;
-        font-family: inherit; font-size: 0.78rem; text-align: center;
+        font-family: ui-monospace, monospace; font-size: 0.78rem; text-align: center;
       }
-      .pyr3-surprise-settings-num:focus { outline: none; border-color: var(--accent, #c97); }
-      .pyr3-surprise-settings-density {
+      .pyr3-surprise-bar-num:focus { outline: none; border-color: var(--accent, #c97); }
+      .pyr3-surprise-bar-num:disabled { opacity: 0.4; }
+      .pyr3-surprise-bar-dash { color: var(--text-dim, #888); }
+      .pyr3-surprise-bar-spacer { flex: 1 1 auto; }
+      .pyr3-surprise-bar-seg { display: inline-flex; }
+      .pyr3-surprise-bar-density {
         background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
-        color: var(--text-dim, #888); border-radius: 3px; padding: 3px 11px; cursor: pointer;
-        font-family: inherit; font-size: 0.78rem;
+        color: var(--text-dim, #888); padding: 3px 11px; cursor: pointer;
+        font-family: ui-monospace, monospace; font-size: 0.78rem;
+        border-right-width: 0;
       }
-      .pyr3-surprise-settings-density.on {
+      .pyr3-surprise-bar-seg .pyr3-surprise-bar-density:first-child { border-radius: 3px 0 0 3px; }
+      .pyr3-surprise-bar-seg .pyr3-surprise-bar-density:last-child { border-radius: 0 3px 3px 0; border-right-width: 1px; }
+      .pyr3-surprise-bar-density.on {
         background: var(--accent, #c97); color: #1a1a1a; border-color: var(--accent, #c97); font-weight: 600;
       }
-      .pyr3-surprise-settings-pick {
+      .pyr3-surprise-bar-pick {
         background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
         color: var(--text, #ddd); border-radius: 3px; padding: 3px 9px; cursor: pointer;
-        font-family: inherit; font-size: 0.76rem;
+        font-family: ui-monospace, monospace; font-size: 0.76rem;
       }
-      .pyr3-surprise-settings-pick:hover { filter: brightness(1.2); }
-      .pyr3-surprise-settings-pref-count { color: var(--text-dim, #888); font-size: 0.72rem; }
-      .pyr3-surprise-settings-chips {
-        display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 2px 96px;
-      }
-      .pyr3-surprise-settings-chips:empty { display: none; }
-      .pyr3-surprise-settings-chip {
+      .pyr3-surprise-bar-pick:hover { filter: brightness(1.2); }
+      .pyr3-surprise-bar-pref-count { color: var(--text-dim, #888); font-size: 0.72rem; font-family: ui-monospace, monospace; }
+      .pyr3-surprise-bar-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+      .pyr3-surprise-bar-chips:empty { display: none; }
+      .pyr3-surprise-bar-chip {
         display: inline-flex; align-items: center; gap: 4px;
         background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
         border-radius: 10px; padding: 1px 4px 1px 8px; font-size: 0.72rem; color: var(--text, #ddd);
       }
-      .pyr3-surprise-settings-chip-rm {
+      .pyr3-surprise-bar-chip-rm {
         background: none; border: none; color: var(--text-dim, #888); cursor: pointer;
         font-size: 0.9rem; line-height: 1; padding: 0 2px; border-radius: 8px;
       }
-      .pyr3-surprise-settings-chip-rm:hover { color: #e8786a; }
-      .pyr3-surprise-settings-actions {
-        display: flex; gap: 6px; align-items: center;
-        margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--bar-border);
-      }
-      .pyr3-surprise-settings-actions [data-role="reset"] { margin-right: auto; }
-      .pyr3-surprise-settings-actions button {
+      .pyr3-surprise-bar-chip-rm:hover { color: #e8786a; }
+      .pyr3-surprise-bar-reset {
         background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
         color: var(--text, #ddd); border-radius: 3px; padding: 4px 11px; cursor: pointer;
-        font-family: inherit; font-size: 0.78rem;
+        font-family: ui-monospace, monospace; font-size: 0.76rem;
       }
-      .pyr3-surprise-settings-actions button:hover:not(:disabled) { filter: brightness(1.2); }
-      .pyr3-surprise-settings-actions button:disabled { opacity: 0.35; cursor: default; }
+      .pyr3-surprise-bar-reset:hover { filter: brightness(1.2); }
       .pyr3-surprise-status {
         font-family: ui-monospace, monospace;
         font-size: 0.78rem;
@@ -1098,6 +1097,10 @@
         letter-spacing: 0.02em;
         margin-left: auto;
       }
+      /* #433 — tightened "N shown · M culled ⓘ" status. */
+      .pyr3-surprise-status-shown { color: var(--text); font-weight: 700; }
+      .pyr3-surprise-status-culled { color: var(--accent); }
+      .pyr3-surprise-status-help { display: inline-flex; vertical-align: middle; }
       .pyr3-surprise-wall {
         grid-area: wall;
         display: grid;

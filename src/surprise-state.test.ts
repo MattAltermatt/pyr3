@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createSurpriseState } from './surprise-state';
-import { SURPRISE_SETTINGS_DEFAULT } from './surprise-prefs';
 import { type Genome } from './genome';
 
-// #surprise-v2 — surprise-state now holds two independent undo/redo histories
-// (settings + wall) and no keep-tray.
-describe('createSurpriseState (#surprise-v2)', () => {
-  it('exposes two independent histories', () => {
+// #433 — settings-history removed (per-bar ↺ Reset replaced it); surprise-state
+// now holds only the wall reroll history and no keep-tray.
+describe('createSurpriseState (#surprise-v2, #433)', () => {
+  it('exposes only the wall history (settingsHistory removed in #433)', () => {
     const s = createSurpriseState();
-    expect(s.settingsHistory).not.toBe(s.wallHistory);
+    expect(s.wallHistory).toBeDefined();
+    expect((s as unknown as Record<string, unknown>)['settingsHistory']).toBeUndefined();
   });
 
   it('wall history undo/redo over batches', () => {
@@ -21,14 +21,6 @@ describe('createSurpriseState (#surprise-v2)', () => {
     expect(s.wallHistory.undo()).toEqual(a);
     expect(s.wallHistory.canRedo()).toBe(true);
     expect(s.wallHistory.redo()).toEqual(b);
-  });
-
-  it('settings history seeded with the initial settings', () => {
-    const s = createSurpriseState(SURPRISE_SETTINGS_DEFAULT);
-    expect(s.settingsHistory.size()).toBe(1);
-    s.settingsHistory.push({ ...SURPRISE_SETTINGS_DEFAULT, setN: 30 });
-    expect(s.settingsHistory.canUndo()).toBe(true);
-    expect(s.settingsHistory.undo()).toEqual(SURPRISE_SETTINGS_DEFAULT);
   });
 
   it('has no keep-tray state', () => {

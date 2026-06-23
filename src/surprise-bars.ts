@@ -1,32 +1,33 @@
-// pyr3 — Surprise Wall generation settings panel (#surprise-v2). SEAM_EXEMPT.
+// pyr3 — Surprise Wall generation settings bars (#433). SEAM_EXEMPT.
 //
-// A presentational widget for the Surprise Wall generator knobs. It reads the
-// current SurpriseSettings via a getter and emits the FULL updated object
-// through `onChange` on every control edit — no persistence, no generation
-// here (those live in the prefs layer + the wall mount). Built with
-// createElement/textContent only — NEVER innerHTML (mirrors edit-compose-menu.ts).
+// Replaces the old `⚙ Settings` popover (surprise-settings-panel.ts, retired in
+// #433). The generator knobs are surfaced onto two always-visible labelled
+// bars — GENERATE (count / thumbnail / xforms / blend) and VARIATIONS
+// (preferred picker + bias/only) — each carrying its own SCOPED reset:
+//   - GENERATE ↺ Reset → resetGeneration() (count/thumbnail/xforms/blend only)
+//   - VARIATIONS ↺ Reset → resetVariations() (preferred/bias-only only)
+// The settings-history undo/redo is gone; the wall reroll undo/redo lives in
+// the ACTIONS bar (built by surprise-mount.ts). Built with createElement/
+// textContent only — NEVER innerHTML (mirrors edit-compose-menu.ts).
 //
 // Controls (each carries a stable `data-role` for tests + the wall mount):
-//   count-fill / count-set radios · set-n number · density S/M/L buttons ·
-//   xform-min / xform-max · blend-min / blend-max · pick-preferred (opens the
-//   multi-select variation picker) · mode-bias / mode-only radios · reset ·
-//   settings-undo / settings-redo.
+//   count-fill / count-set radios · set-n number · density-s/m/l buttons ·
+//   xform-min / xform-max · blend-min / blend-max · pick-preferred ·
+//   preferred-chips · mode-bias / mode-only radios · reset-generation ·
+//   reset-variations.
 
 import { openVariationPicker } from './edit-variation-picker';
 import { VARIATION_NAMES } from './variations';
 import { type SurpriseSettings } from './surprise-prefs';
 
-export interface SurpriseSettingsPanelCallbacks {
+export interface SurpriseBarsCallbacks {
   getSettings: () => SurpriseSettings;
   onChange: (next: SurpriseSettings) => void;  // fired on any control edit
-  onReset: () => void;                          // "reset to default" button
-  onUndo: () => void;                           // settings-history ↶
-  onRedo: () => void;                           // settings-history ↷
-  canUndo: () => boolean;                       // enable/disable ↶
-  canRedo: () => boolean;                       // enable/disable ↷
+  onResetGeneration: () => void;                // GENERATE bar ↺ Reset
+  onResetVariations: () => void;                // VARIATIONS bar ↺ Reset
 }
 
-export interface SurpriseSettingsPanelHandle {
+export interface SurpriseBarsHandle {
   refresh(): void;
   destroy(): void;
 }
@@ -43,53 +44,76 @@ const DENSITIES: Array<{ key: SurpriseSettings['density']; label: string }> = [
   { key: 'l', label: 'L' },
 ];
 
-export function mountSurpriseSettingsPanel(
+export function mountSurpriseBars(
   host: HTMLElement,
-  cb: SurpriseSettingsPanelCallbacks,
-): SurpriseSettingsPanelHandle {
+  cb: SurpriseBarsCallbacks,
+): SurpriseBarsHandle {
   const root = document.createElement('div');
-  root.className = 'pyr3-surprise-settings';
+  root.className = 'pyr3-surprise-bars-host';
 
-  // ── helpers ────────────────────────────────────────────────────────────
-  function fieldRow(labelText: string): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'pyr3-surprise-settings-row';
+  // ── shared builders ────────────────────────────────────────────────────
+  function makeBar(barKey: string, labelText: string): HTMLElement {
+    const bar = document.createElement('div');
+    bar.className = 'pyr3-surprise-bar';
+    bar.dataset.bar = barKey;
     const lab = document.createElement('span');
-    lab.className = 'pyr3-surprise-settings-label';
+    lab.className = 'pyr3-surprise-bar-label';
     lab.textContent = labelText;
-    row.appendChild(lab);
-    return row;
+    bar.appendChild(lab);
+    return bar;
   }
-
+  function fieldLabel(text: string): HTMLElement {
+    const s = document.createElement('span');
+    s.className = 'pyr3-surprise-bar-field';
+    s.textContent = text;
+    return s;
+  }
   function numInput(role: string, value: number): HTMLInputElement {
     const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.min = '1';
-    inp.step = '1';
+    inp.type = 'number'; inp.min = '1'; inp.step = '1';
     inp.dataset.role = role;
     inp.value = String(value);
-    inp.className = 'pyr3-surprise-settings-num';
+    inp.className = 'pyr3-surprise-bar-num';
     return inp;
   }
+  function dash(): HTMLElement {
+    const d = document.createElement('span');
+    d.className = 'pyr3-surprise-bar-dash'; d.textContent = '–';
+    return d;
+  }
+  function spacer(): HTMLElement {
+    const s = document.createElement('span');
+    s.className = 'pyr3-surprise-bar-spacer';
+    return s;
+  }
+  function resetButton(role: string, title: string): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.role = role;
+    b.className = 'pyr3-surprise-bar-reset';
+    b.textContent = '↺ Reset'; b.title = title;
+    return b;
+  }
 
-  // ── count mode (fill / set) + set N ────────────────────────────────────
-  const countRow = fieldRow('Count');
+  // ══ GENERATE bar ════════════════════════════════════════════════════════
+  const genBar = makeBar('generate', 'Generate');
+
+  // count mode (fill / set) + set N
+  genBar.appendChild(fieldLabel('Count'));
   const fillRadio = document.createElement('input');
-  fillRadio.type = 'radio';
-  fillRadio.name = 'pyr3-surprise-count';
+  fillRadio.type = 'radio'; fillRadio.name = 'pyr3-surprise-count';
   fillRadio.dataset.role = 'count-fill';
   const fillLabel = document.createElement('label');
+  fillLabel.className = 'pyr3-surprise-bar-radio';
   fillLabel.append(fillRadio, document.createTextNode(' Fill'));
 
   const setRadio = document.createElement('input');
-  setRadio.type = 'radio';
-  setRadio.name = 'pyr3-surprise-count';
+  setRadio.type = 'radio'; setRadio.name = 'pyr3-surprise-count';
   setRadio.dataset.role = 'count-set';
   const setLabel = document.createElement('label');
+  setLabel.className = 'pyr3-surprise-bar-radio';
   setLabel.append(setRadio, document.createTextNode(' Set'));
 
   const setN = numInput('set-n', cb.getSettings().setN);
-
   fillRadio.addEventListener('change', () => {
     if (fillRadio.checked) cb.onChange({ ...cb.getSettings(), countMode: 'fill' });
   });
@@ -101,29 +125,28 @@ export function mountSurpriseSettingsPanel(
     setN.value = String(n);
     cb.onChange({ ...cb.getSettings(), setN: n });
   });
-  countRow.append(fillLabel, setLabel, setN);
-  root.appendChild(countRow);
+  genBar.append(fillLabel, setLabel, setN);
 
-  // ── thumbnail size (S / M / L) ─────────────────────────────────────────
-  const densityRow = fieldRow('Thumbnail size');
+  // thumbnail size (S / M / L)
+  genBar.appendChild(fieldLabel('Thumb'));
   const densityBtns = new Map<SurpriseSettings['density'], HTMLButtonElement>();
+  const densityGroup = document.createElement('span');
+  densityGroup.className = 'pyr3-surprise-bar-seg';
   for (const d of DENSITIES) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.dataset.role = 'density';
+    btn.dataset.role = `density-${d.key}`;
     btn.dataset.density = d.key;
     btn.textContent = d.label;
-    btn.className = 'pyr3-surprise-settings-density';
-    btn.addEventListener('click', () => {
-      cb.onChange({ ...cb.getSettings(), density: d.key });
-    });
+    btn.className = 'pyr3-surprise-bar-density';
+    btn.addEventListener('click', () => cb.onChange({ ...cb.getSettings(), density: d.key }));
     densityBtns.set(d.key, btn);
-    densityRow.appendChild(btn);
+    densityGroup.appendChild(btn);
   }
-  root.appendChild(densityRow);
+  genBar.appendChild(densityGroup);
 
-  // ── # xforms range ─────────────────────────────────────────────────────
-  const xformRow = fieldRow('# xforms');
+  // # xforms range
+  genBar.appendChild(fieldLabel('Xforms'));
   const xformMin = numInput('xform-min', cb.getSettings().xformCount[0]);
   const xformMax = numInput('xform-max', cb.getSettings().xformCount[1]);
   xformMin.addEventListener('change', () => {
@@ -138,13 +161,10 @@ export function mountSurpriseSettingsPanel(
     xformMax.value = String(hi);
     cb.onChange({ ...cur, xformCount: [cur.xformCount[0], hi] });
   });
-  const xformDash = document.createElement('span');
-  xformDash.textContent = '–';
-  xformRow.append(xformMin, xformDash, xformMax);
-  root.appendChild(xformRow);
+  genBar.append(xformMin, dash(), xformMax);
 
-  // ── blend / xform range ────────────────────────────────────────────────
-  const blendRow = fieldRow('Blend / xform');
+  // blend / xform range
+  genBar.appendChild(fieldLabel('Blend'));
   const blendMin = numInput('blend-min', cb.getSettings().blendPerXform[0]);
   const blendMax = numInput('blend-max', cb.getSettings().blendPerXform[1]);
   blendMin.addEventListener('change', () => {
@@ -159,20 +179,25 @@ export function mountSurpriseSettingsPanel(
     blendMax.value = String(hi);
     cb.onChange({ ...cur, blendPerXform: [cur.blendPerXform[0], hi] });
   });
-  const blendDash = document.createElement('span');
-  blendDash.textContent = '–';
-  blendRow.append(blendMin, blendDash, blendMax);
-  root.appendChild(blendRow);
+  genBar.append(blendMin, dash(), blendMax);
 
-  // ── preferred variations (multi-select picker) + count ─────────────────
-  const prefRow = fieldRow('Preferred');
+  genBar.appendChild(spacer());
+  const genReset = resetButton('reset-generation',
+    'Reset generation knobs only (count / thumbnail / xforms / blend)');
+  genReset.addEventListener('click', () => cb.onResetGeneration());
+  genBar.appendChild(genReset);
+
+  // ══ VARIATIONS bar ══════════════════════════════════════════════════════
+  const varBar = makeBar('variations', 'Variations');
+
+  varBar.appendChild(fieldLabel('Preferred'));
   const pickBtn = document.createElement('button');
   pickBtn.type = 'button';
   pickBtn.dataset.role = 'pick-preferred';
-  pickBtn.textContent = 'Choose variations…';
-  pickBtn.className = 'pyr3-surprise-settings-pick';
+  pickBtn.textContent = 'Choose…';
+  pickBtn.className = 'pyr3-surprise-bar-pick';
   const prefCount = document.createElement('span');
-  prefCount.className = 'pyr3-surprise-settings-pref-count';
+  prefCount.className = 'pyr3-surprise-bar-pref-count';
   pickBtn.addEventListener('click', () => {
     openVariationPicker({
       mode: 'multi',
@@ -184,26 +209,24 @@ export function mountSurpriseSettingsPanel(
       onClose() { /* nothing to clean up; refresh is host-driven */ },
     });
   });
-  prefRow.append(pickBtn, prefCount);
-  root.appendChild(prefRow);
+  varBar.append(pickBtn, prefCount);
 
   // Selected preferred variations as removable chips. (#surprise-v2)
   const prefChips = document.createElement('div');
-  prefChips.className = 'pyr3-surprise-settings-chips';
+  prefChips.className = 'pyr3-surprise-bar-chips';
   prefChips.dataset.role = 'preferred-chips';
-  root.appendChild(prefChips);
+  varBar.appendChild(prefChips);
 
   function renderChips(): void {
     prefChips.replaceChildren();
-    const pref = cb.getSettings().preferred;
-    for (const idx of pref) {
+    for (const idx of cb.getSettings().preferred) {
       const chip = document.createElement('span');
-      chip.className = 'pyr3-surprise-settings-chip';
+      chip.className = 'pyr3-surprise-bar-chip';
       chip.dataset.vidx = String(idx);
       const name = document.createElement('span');
       name.textContent = VARIATION_NAMES[idx] ?? `#${idx}`;
       const rm = document.createElement('button');
-      rm.type = 'button'; rm.className = 'pyr3-surprise-settings-chip-rm';
+      rm.type = 'button'; rm.className = 'pyr3-surprise-bar-chip-rm';
       rm.textContent = '×'; rm.title = 'Remove';
       rm.addEventListener('click', () => {
         const cur = cb.getSettings();
@@ -214,20 +237,19 @@ export function mountSurpriseSettingsPanel(
     }
   }
 
-  // ── preferred mode (bias / only) ───────────────────────────────────────
-  const modeRow = fieldRow('Prefer mode');
+  // preferred mode (bias / only)
   const biasRadio = document.createElement('input');
-  biasRadio.type = 'radio';
-  biasRadio.name = 'pyr3-surprise-prefmode';
+  biasRadio.type = 'radio'; biasRadio.name = 'pyr3-surprise-prefmode';
   biasRadio.dataset.role = 'mode-bias';
   const biasLabel = document.createElement('label');
+  biasLabel.className = 'pyr3-surprise-bar-radio';
   biasLabel.append(biasRadio, document.createTextNode(' Bias'));
 
   const onlyRadio = document.createElement('input');
-  onlyRadio.type = 'radio';
-  onlyRadio.name = 'pyr3-surprise-prefmode';
+  onlyRadio.type = 'radio'; onlyRadio.name = 'pyr3-surprise-prefmode';
   onlyRadio.dataset.role = 'mode-only';
   const onlyLabel = document.createElement('label');
+  onlyLabel.className = 'pyr3-surprise-bar-radio';
   onlyLabel.append(onlyRadio, document.createTextNode(' Only'));
 
   biasRadio.addEventListener('change', () => {
@@ -236,35 +258,15 @@ export function mountSurpriseSettingsPanel(
   onlyRadio.addEventListener('change', () => {
     if (onlyRadio.checked) cb.onChange({ ...cb.getSettings(), preferMode: 'only' });
   });
-  modeRow.append(biasLabel, onlyLabel);
-  root.appendChild(modeRow);
+  varBar.append(biasLabel, onlyLabel);
 
-  // ── actions: reset + settings undo/redo ────────────────────────────────
-  const actionsRow = document.createElement('div');
-  actionsRow.className = 'pyr3-surprise-settings-actions';
+  varBar.appendChild(spacer());
+  const varReset = resetButton('reset-variations',
+    'Reset variation knobs only (preferred / bias-only)');
+  varReset.addEventListener('click', () => cb.onResetVariations());
+  varBar.appendChild(varReset);
 
-  const resetBtn = document.createElement('button');
-  resetBtn.type = 'button';
-  resetBtn.dataset.role = 'reset';
-  resetBtn.textContent = 'Reset';
-  resetBtn.addEventListener('click', () => cb.onReset());
-
-  const undoBtn = document.createElement('button');
-  undoBtn.type = 'button';
-  undoBtn.dataset.role = 'settings-undo';
-  undoBtn.textContent = '↶';
-  undoBtn.title = 'Undo settings change';
-  undoBtn.addEventListener('click', () => cb.onUndo());
-
-  const redoBtn = document.createElement('button');
-  redoBtn.type = 'button';
-  redoBtn.dataset.role = 'settings-redo';
-  redoBtn.textContent = '↷';
-  redoBtn.title = 'Redo settings change';
-  redoBtn.addEventListener('click', () => cb.onRedo());
-
-  actionsRow.append(resetBtn, undoBtn, redoBtn);
-  root.appendChild(actionsRow);
+  root.append(genBar, varBar);
 
   // ── refresh: re-read settings + re-apply every control's display ───────
   function refresh(): void {
@@ -272,6 +274,7 @@ export function mountSurpriseSettingsPanel(
     fillRadio.checked = s.countMode === 'fill';
     setRadio.checked = s.countMode === 'set';
     setN.value = String(s.setN);
+    setN.disabled = s.countMode !== 'set';
     for (const [key, btn] of densityBtns) {
       const on = key === s.density;
       btn.classList.toggle('on', on);
@@ -281,12 +284,10 @@ export function mountSurpriseSettingsPanel(
     xformMax.value = String(s.xformCount[1]);
     blendMin.value = String(s.blendPerXform[0]);
     blendMax.value = String(s.blendPerXform[1]);
-    prefCount.textContent = `(${s.preferred.length} preferred)`;
+    prefCount.textContent = `(${s.preferred.length})`;
     renderChips();
     biasRadio.checked = s.preferMode === 'bias';
     onlyRadio.checked = s.preferMode === 'only';
-    undoBtn.disabled = !cb.canUndo();
-    redoBtn.disabled = !cb.canRedo();
   }
 
   host.appendChild(root);

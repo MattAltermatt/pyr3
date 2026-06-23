@@ -5,6 +5,8 @@ import {
   writeWall,
   loadSurpriseSettings,
   saveSurpriseSettings,
+  resetGeneration,
+  resetVariations,
   SURPRISE_SETTINGS_DEFAULT,
   SURPRISE_SETTINGS_KEY,
   type SurpriseSettings,
@@ -78,5 +80,41 @@ describe('SurpriseSettings (#surprise-v2)', () => {
     expect(l.setN).toBe(13);
     expect(l.xformCount[0]).toBeGreaterThanOrEqual(1);
     expect(l.blendPerXform[0]).toBeGreaterThanOrEqual(1);
+  });
+});
+
+const CUSTOM: SurpriseSettings = {
+  countMode: 'set', setN: 40, density: 'l',
+  xformCount: [3, 6], blendPerXform: [2, 5],
+  preferred: [12, 88], preferMode: 'only',
+};
+
+describe('scoped resets (#433)', () => {
+  it('resetGeneration reverts generation knobs, preserves variation knobs', () => {
+    const out = resetGeneration(CUSTOM);
+    expect(out.countMode).toBe(SURPRISE_SETTINGS_DEFAULT.countMode);
+    expect(out.setN).toBe(SURPRISE_SETTINGS_DEFAULT.setN);
+    expect(out.density).toBe(SURPRISE_SETTINGS_DEFAULT.density);
+    expect(out.xformCount).toEqual(SURPRISE_SETTINGS_DEFAULT.xformCount);
+    expect(out.blendPerXform).toEqual(SURPRISE_SETTINGS_DEFAULT.blendPerXform);
+    expect(out.preferred).toEqual([12, 88]);
+    expect(out.preferMode).toBe('only');
+  });
+
+  it('resetVariations reverts variation knobs, preserves generation knobs', () => {
+    const out = resetVariations(CUSTOM);
+    expect(out.preferred).toEqual(SURPRISE_SETTINGS_DEFAULT.preferred);
+    expect(out.preferMode).toBe(SURPRISE_SETTINGS_DEFAULT.preferMode);
+    expect(out.countMode).toBe('set');
+    expect(out.setN).toBe(40);
+    expect(out.xformCount).toEqual([3, 6]);
+    expect(out.blendPerXform).toEqual([2, 5]);
+  });
+
+  it('returns fresh array copies (no shared reference into DEFAULT)', () => {
+    const out = resetGeneration(CUSTOM);
+    expect(out.xformCount).not.toBe(SURPRISE_SETTINGS_DEFAULT.xformCount);
+    expect(out.blendPerXform).not.toBe(SURPRISE_SETTINGS_DEFAULT.blendPerXform);
+    expect(resetVariations(CUSTOM).preferred).not.toBe(SURPRISE_SETTINGS_DEFAULT.preferred);
   });
 });

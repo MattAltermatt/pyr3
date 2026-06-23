@@ -70,6 +70,29 @@ export const SURPRISE_SETTINGS_DEFAULT: SurpriseSettings = {
   xformCount: [2, 4], blendPerXform: [1, 3], preferred: [], preferMode: 'bias',
 };
 
+/** Reset only the generation knobs (count / thumbnail / xforms / blend);
+ *  preserve the variation knobs. Scoped reset for the GENERATE bar (#433). */
+export function resetGeneration(s: SurpriseSettings): SurpriseSettings {
+  return {
+    ...s,
+    countMode: SURPRISE_SETTINGS_DEFAULT.countMode,
+    setN: SURPRISE_SETTINGS_DEFAULT.setN,
+    density: SURPRISE_SETTINGS_DEFAULT.density,
+    xformCount: [...SURPRISE_SETTINGS_DEFAULT.xformCount],
+    blendPerXform: [...SURPRISE_SETTINGS_DEFAULT.blendPerXform],
+  };
+}
+
+/** Reset only the variation knobs (preferred / bias-only); preserve all
+ *  generation knobs. Scoped reset for the VARIATIONS bar (#433). */
+export function resetVariations(s: SurpriseSettings): SurpriseSettings {
+  return {
+    ...s,
+    preferred: [...SURPRISE_SETTINGS_DEFAULT.preferred],
+    preferMode: SURPRISE_SETTINGS_DEFAULT.preferMode,
+  };
+}
+
 function coerceEnum<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
   return (typeof v === 'string' && (allowed as readonly string[]).includes(v)) ? (v as T) : fallback;
 }
