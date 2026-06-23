@@ -69,7 +69,7 @@ export type SectionKey =
 export type LensKey = 'xform' | 'scene' | 'color' | 'output';
 
 /** Sub-groups within the Color lens — static DEFINE→GRADE dividers (#358). */
-export type SectionGroup = 'palette' | 'grading';
+export type SectionGroup = 'palette' | 'grading' | 'xforms';
 const LENS_VALUES: readonly LensKey[] = ['xform', 'scene', 'color', 'output'];
 export const PANEL_WIDTH_MIN = 280;
 export const PANEL_WIDTH_MAX = 560;
@@ -567,10 +567,14 @@ export type XformDetailGroup = 'affine' | 'variations' | 'color' | 'xaos';
 export const XFORM_DETAIL_COLLAPSE_KEY = 'pyr3.editor.xformDetailCollapse';
 
 const DEFAULT_XFORM_DETAIL_COLLAPSE: Record<XformDetailGroup, boolean> = {
-  affine: false,     // open — the geometric core
-  variations: true,  // folded by default to keep the narrow panel uncluttered
-  color: true,
-  xaos: true,
+  // #438 — all subpanels open on load so a freshly-opened flame shows its own
+  // structure. Collapse is remembered only AFTER the user collapses a group:
+  // persistXformDetailCollapse fires on each toggle and restoreXformDetailCollapse
+  // merges the saved map over this default.
+  affine: false,
+  variations: false,
+  color: false,
+  xaos: false,
 };
 
 /** Persist the per-group detail-collapse map immediately (toggle events are

@@ -508,10 +508,10 @@ describe('persistXformDetailCollapse / restoreXformDetailCollapse (#350 P2.2)', 
     vi.unstubAllGlobals();
   });
 
-  it('default is Affine open, the rest folded', () => {
+  it('default is all subpanels open (#438)', () => {
     expect(XFORM_DETAIL_COLLAPSE_KEY).toBe('pyr3.editor.xformDetailCollapse');
     expect(restoreXformDetailCollapse()).toEqual({
-      affine: false, variations: true, color: true, xaos: true,
+      affine: false, variations: false, color: false, xaos: false,
     });
   });
 
@@ -522,16 +522,16 @@ describe('persistXformDetailCollapse / restoreXformDetailCollapse (#350 P2.2)', 
   });
 
   it('merges a partial / older shape over the default (all four keys present)', () => {
-    localStorage.setItem(XFORM_DETAIL_COLLAPSE_KEY, JSON.stringify({ variations: false }));
+    localStorage.setItem(XFORM_DETAIL_COLLAPSE_KEY, JSON.stringify({ variations: true }));
     expect(restoreXformDetailCollapse()).toEqual({
-      affine: false, variations: false, color: true, xaos: true,
+      affine: false, variations: true, color: false, xaos: false,
     });
   });
 
   it('returns the default on malformed JSON (does not crash)', () => {
     localStorage.setItem(XFORM_DETAIL_COLLAPSE_KEY, '{not valid');
     expect(restoreXformDetailCollapse()).toEqual({
-      affine: false, variations: true, color: true, xaos: true,
+      affine: false, variations: false, color: false, xaos: false,
     });
   });
 

@@ -31,6 +31,11 @@ export interface SectionMount {
    *  cross-DOM subscriptions (state.settledPixelsListeners, document-level
    *  listeners) that removing the section's own nodes would otherwise leak. */
   build(host: HTMLElement, state: EditState, onChange: (path: string) => void): void | (() => void);
+  /** Optional — mount PINNED chrome into the lens's sticky-head slot (#438), so
+   *  it stays fixed under the lens tabs while the section body scrolls. Used by
+   *  the XForms lens to keep the xform selector + action bar always visible.
+   *  Called once, before build(); its slot is shown/hidden with the lens. */
+  buildSticky?(host: HTMLElement, state: EditState, onChange: (path: string) => void): void;
 }
 
 export interface EditUiHandle {
@@ -64,6 +69,7 @@ export function groupByLens(sections: SectionMount[]): Record<LensKey, SectionMo
 const GROUP_HEADERS: Record<SectionGroup, { label: string; qualifier: string }> = {
   palette: { label: '🎨 Palette', qualifier: 'define what colors exist · pre-render' },
   grading: { label: '🎚️ Grading', qualifier: 'shape the rendered image · post-tonemap' },
+  xforms: { label: '🧬 XForms', qualifier: 'the transforms that build the fractal · pick one above to edit' },
 };
 
 function buildGroupHeader(group: SectionGroup): HTMLElement {
@@ -173,11 +179,21 @@ export function mountEditUi(
   lensBar.className = 'pyr3-edit-lensbar';
   const lensBtns = new Map<LensKey, HTMLButtonElement>();
   const lensWraps: Record<LensKey, HTMLElement[]> = { xform: [], scene: [], color: [], output: [] };
+  // #438 — one pinned slot per lens, living inside the sticky head below the
+  // lens bar. Only the active lens's slot is shown; empty slots collapse to 0
+  // height (no padding/border) so non-xform lenses leave no gap.
+  const lensSticky: Record<LensKey, HTMLElement> = {
+    xform: document.createElement('div'),
+    scene: document.createElement('div'),
+    color: document.createElement('div'),
+    output: document.createElement('div'),
+  };
   function showLens(lens: LensKey): void {
     state.activeLens = lens;
     for (const [k, b] of lensBtns) b.classList.toggle('on', k === lens);
     for (const k of ['xform', 'scene', 'color', 'output'] as LensKey[]) {
       for (const w of lensWraps[k]) w.style.display = k === lens ? 'block' : 'none';
+      lensSticky[k].style.display = k === lens ? 'block' : 'none';
     }
     persistActiveLens(lens);
   }
@@ -192,7 +208,18 @@ export function mountEditUi(
     lensBar.append(b);
   }
   stickyHead.appendChild(lensBar);
+  for (const k of ['xform', 'scene', 'color', 'output'] as LensKey[]) {
+    lensSticky[k].className = 'pyr3-edit-lenssticky';
+    stickyHead.appendChild(lensSticky[k]);
+  }
   host.appendChild(stickyHead);
+
+  // ── Pinned per-lens chrome (#438) ──────────────────────────────────────
+  // Run BEFORE the scrolling section loop so each section's sticky controller
+  // is registered before its detail body builds.
+  for (const sec of sections) {
+    sec.buildSticky?.(lensSticky[sec.lens], state, callbacks.onChange);
+  }
 
   // ── Section accordion ─────────────────────────────────────────────────
   const sectionEls: HTMLElement[] = [];
@@ -256,7 +283,7 @@ export function mountEditUi(
       // document keydown listeners across the editor's lifetime.
       for (const dispose of sectionDisposers) dispose();
       for (const el of sectionEls) el.remove();
-      stickyHead.remove(); // wraps topbar + lensBar (#350 sticky header)
+      stickyHead.remove(); // wraps topbar + lensBar + per-lens sticky slots (#350/#438)
     },
     setSettleDelayMs(ms: number): void {
       // setValue updates the scrubby's display + internal state but does
@@ -368,6 +395,10 @@ export const EDIT_CSS = `
      or beside the pinned header; padding restores the inner gap. */
   margin: -8px -8px 0 -8px;
   padding: 8px;
+  /* #438 — the -8px top margin shortens the head's flow footprint by 8px, which
+     rides the first scrolling section UP under the pinned head (its top edge got
+     clipped). Restore those 8px below so the first section bar shows fully. */
+  margin-bottom: 8px;
 }
 .pyr3-edit-lensbar {
   display: flex;
@@ -391,6 +422,10 @@ export const EDIT_CSS = `
   color: #fff;
   border-color: #3257a8;
 }
+/* #438 — per-lens pinned slot inside the sticky head. Populated only for the
+   XForms lens; an empty slot collapses to zero height (no gap for other
+   lenses). The top gap separates the pinned selector from the lens bar. */
+.pyr3-edit-lenssticky:not(:empty) { margin-top: 8px; }
 .pyr3-edit-group-header {
   display: flex;
   flex-direction: column;

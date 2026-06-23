@@ -41,7 +41,15 @@ function mount(genomeOrSeed: number | Genome = 1): {
       : genomeOrSeed;
   const state = createEditState(genome, 1);
   const onChange = vi.fn();
-  xformsSection.build(host, state, onChange);
+  // #438 — the selector + action bar mount into the PINNED sticky-head slot
+  // (buildSticky); the detail subpanels mount into the SCROLLING body (build).
+  // Both go inside one host so the queries below resolve either half. buildSticky
+  // runs first, mirroring mountEditUi's real ordering.
+  const sticky = document.createElement('div');
+  const body = document.createElement('div');
+  host.append(sticky, body);
+  xformsSection.buildSticky!(sticky, state, onChange);
+  xformsSection.build(body, state, onChange);
   document.body.appendChild(host); // text-mode swap needs the host in document
   return { host, state, onChange };
 }
@@ -50,10 +58,19 @@ const detail = (host: HTMLElement): HTMLElement =>
   host.querySelector('.pyr3-edit-xform-detail') as HTMLElement;
 const select = (host: HTMLElement): HTMLSelectElement =>
   host.querySelector('.pyr3-edit-xform-select') as HTMLSelectElement;
+// The final xform's folded-in <option> (#438), present in every dropdown.
+const finalOption = (host: HTMLElement): HTMLOptionElement =>
+  host.querySelector('option.pyr3-edit-final-option') as HTMLOptionElement;
+// Select the folded-in final entry (replaces the old final-row click).
+function selectFinal(host: HTMLElement): void {
+  fireChange(select(host), 'final');
+}
 const barButtons = (host: HTMLElement): HTMLButtonElement[] =>
   [...host.querySelectorAll('.pyr3-edit-xform-bar .pyr3-edit-bar-btn')] as HTMLButtonElement[];
 const barButton = (host: HTMLElement, glyph: string): HTMLButtonElement =>
   barButtons(host).find((b) => b.textContent === glyph)!;
+const arrowButton = (host: HTMLElement, glyph: string): HTMLButtonElement =>
+  [...host.querySelectorAll('.pyr3-edit-xform-arrow')].find((b) => b.textContent === glyph) as HTMLButtonElement;
 
 function fireChange(el: HTMLSelectElement, value: string): void {
   el.value = value;
@@ -85,19 +102,35 @@ describe('xformsSection — contract', () => {
   it('exposes the canonical SectionMount contract on the xform lens', () => {
     expect(xformsSection.key).toBe('xforms');
     expect(xformsSection.lens).toBe('xform');
-    expect(xformsSection.title).toBe('🧬 XFORMS');
+    expect(xformsSection.title).toBe('XFORMS');
+    expect(xformsSection.group).toBe('xforms'); // #438 — Palette-style group header
     expect(typeof xformsSection.build).toBe('function');
+    // #438 — selector + bar mount via buildSticky into the pinned sticky head.
+    expect(typeof xformsSection.buildSticky).toBe('function');
+  });
+
+  it('buildSticky mounts the selector + bar into the passed (pinned) host (#438)', () => {
+    const sticky = document.createElement('div');
+    const state = createEditState(generateRandomGenome(seededRng(1)), 1);
+    xformsSection.buildSticky!(sticky, state, vi.fn());
+    expect(sticky.querySelector('.pyr3-edit-xform-select')).toBeTruthy();
+    expect(sticky.querySelector('.pyr3-edit-xform-bar')).toBeTruthy();
+    expect(sticky.querySelector('.pyr3-edit-xform-arrow')).toBeTruthy();
+    // Detail belongs to build(), not buildSticky.
+    expect(sticky.querySelector('.pyr3-edit-xform-detail')).toBeNull();
   });
 });
 
 // ── Selector dropdown ────────────────────────────────────────────────────────
 
 describe('xformsSection — regular selector', () => {
-  it('dropdown lists one option per regular xform', () => {
+  it('dropdown lists one option per regular xform + the folded-in final (#438)', () => {
     const { host, state } = mount(1);
     const opts = [...select(host).options];
-    expect(opts.length).toBe(state.genome.xforms.length);
-    expect(opts[0]!.textContent).toBe(`xform 1 · of ${state.genome.xforms.length}`);
+    const n = state.genome.xforms.length;
+    expect(opts.length).toBe(n + 1); // N regular + 1 final
+    expect(opts[0]!.textContent).toBe(`xform 1 · of ${n}`);
+    expect(opts[n]!.value).toBe('final'); // final is last
   });
 
   it('dropdown value reflects selectedXformIndex (default 0)', () => {
@@ -233,31 +266,54 @@ describe('xformsSection — power toggle + solo', () => {
 
 // ── Final xform selector ─────────────────────────────────────────────────────
 
-describe('xformsSection — final selector', () => {
-  it('final row is always present (even with no finalxform)', () => {
+describe('xformsSection — folded-in final (#438)', () => {
+  const withFinal = (): Genome => {
+    const g = generateRandomGenome(seededRng(1));
+    g.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
+    return g;
+  };
+
+  it('final option is the permanent last dropdown entry, labelled (none) when absent', () => {
     const { host, state } = mount(1);
     expect(state.genome.finalxform).toBeUndefined();
-    const row = host.querySelector('.pyr3-edit-final-row') as HTMLElement;
-    expect(row).toBeTruthy();
-    expect(row.querySelector('.pyr3-edit-final-label')!.textContent).toBe('✨ final');
-    expect(row.querySelector('.pyr3-edit-final-tag')!.textContent).toBe('(none)');
+    const opts = select(host).options;
+    const opt = finalOption(host);
+    expect(opt).toBeTruthy();
+    expect(opt.value).toBe('final');
+    expect(opt).toBe(opts[opts.length - 1]); // last entry
+    expect(opt.textContent).toBe('✨ final xform · (none)');
+    // No separate final row/bar any more.
+    expect(host.querySelector('.pyr3-edit-final-row')).toBeNull();
   });
 
-  it('final ⏻ creates an identity finalxform + selects it', () => {
+  it('label reads ✨ final xform when active, · (inactive) when off', () => {
+    expect(finalOption(mount(withFinal()).host).textContent).toBe('✨ final xform');
+    const g = withFinal();
+    g.finalxform!.active = false;
+    expect(finalOption(mount(g).host).textContent).toBe('✨ final xform · (inactive)');
+  });
+
+  it('selecting the (none) final shows ＋ Add final xform, which creates an identity final', () => {
     const { host, state, onChange } = mount(1);
-    const finalPower = host.querySelector('.pyr3-edit-final-active') as HTMLElement;
-    finalPower.click();
+    selectFinal(host);
+    expect(state.selectedXformIndex).toBe(-1);
+    const addBtn = host.querySelector('.pyr3-edit-add-final-btn') as HTMLButtonElement;
+    expect(addBtn).toBeTruthy();
+    expect(addBtn.textContent).toBe('＋ Add final xform');
+    // Detail pane shows the empty-state hint until a final exists.
+    expect(detail(host).querySelector('.pyr3-edit-detail-hint')).toBeTruthy();
+    addBtn.click();
     expect(state.genome.finalxform).toBeDefined();
     expect(state.genome.finalxform!.a).toBe(1);
     expect(state.selectedXformIndex).toBe(-1);
-    expect(onChange).toHaveBeenCalledWith('finalxform.active');
+    expect(onChange).toHaveBeenCalledWith('finalxform.add');
+    // After creation, the ＋Add button is gone (swapped for active + clear).
+    expect(host.querySelector('.pyr3-edit-add-final-btn')).toBeNull();
   });
 
-  it('selecting final shows its detail with NO weight + NO xaos', () => {
-    const genome = generateRandomGenome(seededRng(1));
-    genome.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
-    const { host, state } = mount(genome);
-    (host.querySelector('.pyr3-edit-final-row') as HTMLElement).click();
+  it('selecting an existing final shows its detail with NO weight + NO xaos', () => {
+    const { host, state } = mount(withFinal());
+    selectFinal(host);
     expect(state.selectedXformIndex).toBe(-1);
     expect(detail(host).querySelector('.pyr3-edit-detail-header')!.textContent).toBe('Editing final xform');
     expect(detail(host).querySelector('.pyr3-edit-xform-weight')).toBeNull();
@@ -267,49 +323,70 @@ describe('xformsSection — final selector', () => {
     expect(detail(host).querySelector('.pyr3-edit-color-slider')).toBeTruthy();
   });
 
-  it('#374: while FINAL is selected the regular dropdown shows a placeholder, so re-picking the displayed xform fires a real change', () => {
-    const genome = generateRandomGenome(seededRng(1));
-    genome.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
-    const { host, state } = mount(genome);
-    (host.querySelector('.pyr3-edit-final-row') as HTMLElement).click();
+  it('with final selected, picking a regular index switches back (no #374 placeholder needed)', () => {
+    const { host, state } = mount(withFinal());
+    selectFinal(host);
     expect(state.selectedXformIndex).toBe(-1);
     const sel = select(host);
-    // The native <select> no-ops when the picked value equals the shown value;
-    // with FINAL active it must NOT claim a regular index, else re-picking the
-    // would-be-shown xform 1 fires nothing. A leading placeholder owns the
-    // selection instead — one extra option, value '', and it's the shown value.
-    expect(sel.value).toBe('');
+    // The dropdown genuinely shows the final entry selected — N regular options
+    // plus the one final option, no leading placeholder.
+    expect(sel.value).toBe('final');
     expect(sel.options.length).toBe(state.genome.xforms.length + 1);
-    expect(sel.options[0]!.value).toBe('');
     // The regular selector wrap loses its orange ring while FINAL owns selection.
     expect((host.querySelector('.pyr3-edit-select-wrap') as HTMLElement).classList.contains('pyr3-edit-selected')).toBe(false);
-    // Picking xform 1 (index 0) is now a genuine value change → it switches.
+    // Picking xform 1 (index 0) is a genuine value change → it switches.
     fireChange(sel, '0');
     expect(state.selectedXformIndex).toBe(0);
   });
 
-  it('#374: picking the placeholder option itself is a no-op (stays on FINAL)', () => {
-    const genome = generateRandomGenome(seededRng(1));
-    genome.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
-    const { host, state } = mount(genome);
-    (host.querySelector('.pyr3-edit-final-row') as HTMLElement).click();
-    fireChange(select(host), '');
+  it('final ⏻ toggles active; 🗑 clears the final + falls selection back to xform 0', () => {
+    const { host, state, onChange } = mount(withFinal());
+    selectFinal(host);
     expect(state.selectedXformIndex).toBe(-1);
-  });
-
-  it('final 🗑 clears the finalxform + falls selection back to xform 0', () => {
-    const genome = generateRandomGenome(seededRng(1));
-    genome.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
-    const { host, state, onChange } = mount(genome);
-    (host.querySelector('.pyr3-edit-final-row') as HTMLElement).click();
-    expect(state.selectedXformIndex).toBe(-1);
-    // The final bar's 🗑 is the trash button inside the SECOND xform bar.
-    const finalBar = host.querySelectorAll('.pyr3-edit-xform-bar')[1] as HTMLElement;
-    const clearBtn = [...finalBar.querySelectorAll('.pyr3-edit-bar-btn')].find((b) => b.textContent === '🗑') as HTMLButtonElement;
-    clearBtn.click();
+    const power = host.querySelector('.pyr3-edit-final-active') as HTMLButtonElement;
+    power.click();
+    expect(state.genome.finalxform!.active).toBe(false);
+    expect(onChange).toHaveBeenCalledWith('finalxform.active');
+    // Clear (the 🗑 in the now-singular context bar).
+    barButton(host, '🗑').click();
     expect(state.genome.finalxform).toBeUndefined();
     expect(state.selectedXformIndex).toBe(0);
     expect(onChange).toHaveBeenCalledWith('finalxform.clear');
+  });
+});
+
+describe('xformsSection — ◀▶ arrows (#438)', () => {
+  it('▶ advances selection and wraps past the last regular xform', () => {
+    const { host, state } = mount(1);
+    const n = state.genome.xforms.length;
+    expect(state.selectedXformIndex).toBe(0);
+    arrowButton(host, '▶').click();
+    expect(state.selectedXformIndex).toBe(1 % n);
+    // Walk to the last, then one more wraps to 0 (no final exists → skip it).
+    state.selectedXformIndex = n - 1;
+    xformsSection.buildSticky!(host.querySelector('.pyr3-edit-xform-selectors') as HTMLElement, state, vi.fn());
+    arrowButton(host, '▶').click();
+    expect(state.selectedXformIndex).toBe(0);
+  });
+
+  it('◀ wraps from the first regular xform to the last', () => {
+    const { host, state } = mount(1);
+    const n = state.genome.xforms.length;
+    arrowButton(host, '◀').click();
+    expect(state.selectedXformIndex).toBe(n - 1);
+  });
+
+  it('arrows include the final in the cycle only when one exists', () => {
+    const g = generateRandomGenome(seededRng(1));
+    g.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
+    const { host, state } = mount(g);
+    const n = state.genome.xforms.length;
+    state.selectedXformIndex = n - 1;
+    xformsSection.buildSticky!(host.querySelector('.pyr3-edit-xform-selectors') as HTMLElement, state, vi.fn());
+    arrowButton(host, '▶').click(); // last regular → final
+    expect(state.selectedXformIndex).toBe(-1);
+    arrowButton(host, '▶').click(); // final → wraps to xform 0
+    expect(state.selectedXformIndex).toBe(0);
   });
 });
 
@@ -664,22 +741,25 @@ describe('xformsSection — detail sub-accordions', () => {
     const genome = generateRandomGenome(seededRng(1));
     genome.finalxform = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0, weight: 1, color: 0.5, colorSpeed: 0.5, variations: [{ index: V.linear, weight: 1 }] };
     const { host } = mount(genome);
-    (host.querySelector('.pyr3-edit-final-row') as HTMLElement).click();
+    selectFinal(host);
     expect(accordions(host).map(groupOf)).toEqual(['affine', 'variations', 'color']);
   });
 
-  it('default collapse: Affine open, the rest folded', () => {
+  it('default collapse: all subpanels open (#438)', () => {
     const { host } = mount(1);
     const byGroup = Object.fromEntries(accordions(host).map((a) => [groupOf(a), bodyOf(a).style.display]));
     expect(byGroup['affine']).toBe('block');
-    expect(byGroup['variations']).toBe('none');
-    expect(byGroup['color']).toBe('none');
-    expect(byGroup['xaos']).toBe('none');
+    expect(byGroup['variations']).toBe('block');
+    expect(byGroup['color']).toBe('block');
+    expect(byGroup['xaos']).toBe('block');
   });
 
   it('content of a collapsed accordion is still in the DOM (display-toggle, not unmount)', () => {
     const { host } = mount(1);
-    // Variations is collapsed by default, yet its rows exist.
+    // Collapse Variations, then confirm its rows still exist (display toggle).
+    const variations = accordions(host).find((a) => groupOf(a) === 'variations')!;
+    headerOf(variations).click();
+    expect(bodyOf(variations).style.display).toBe('none');
     expect(detail(host).querySelector('.pyr3-edit-var-row')).toBeTruthy();
     expect(detail(host).querySelector('.pyr3-edit-color-slider')).toBeTruthy();
   });
@@ -696,16 +776,16 @@ describe('xformsSection — detail sub-accordions', () => {
     expect(raw.affine).toBe(true);
   });
 
-  it('collapse pref carries to the next mount', () => {
+  it('collapse pref carries to the next mount (#438: remember after collapse)', () => {
     const { host: h1, state: s1 } = mount(1);
     const variations = [...detail(h1).querySelectorAll('.pyr3-edit-accordion')].find((a) => (a as HTMLElement).dataset['group'] === 'variations') as HTMLElement;
-    // expand Variations (it defaults collapsed)
+    // collapse Variations (it defaults OPEN now)
     (variations.querySelector('.pyr3-edit-accordion-header') as HTMLElement).click();
-    expect(s1.xformDetailCollapse.variations).toBe(false);
-    // a fresh state reads the persisted pref
+    expect(s1.xformDetailCollapse.variations).toBe(true);
+    // a fresh state reads the persisted pref → Variations stays collapsed
     const { host: h2 } = mount(generateRandomGenome(seededRng(2)));
     const v2 = [...detail(h2).querySelectorAll('.pyr3-edit-accordion')].find((a) => (a as HTMLElement).dataset['group'] === 'variations') as HTMLElement;
-    expect((v2.querySelector('.pyr3-edit-accordion-body') as HTMLElement).style.display).toBe('block');
+    expect((v2.querySelector('.pyr3-edit-accordion-body') as HTMLElement).style.display).toBe('none');
   });
 });
 

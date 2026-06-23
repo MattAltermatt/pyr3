@@ -947,250 +947,285 @@ function buildXformDetail(
   }
 }
 
+// Sentinel <option> value for the folded-in final xform entry (#438). Distinct
+// from every numeric index string, so the change handler can tell them apart.
+const FINAL_OPT_VALUE = 'final';
+
+// ── #438 — XForm lens controller ─────────────────────────────────────────────
+// The selector + action bar live in the editor's PINNED sticky head
+// (`buildSticky`); the per-xform detail subpanels live in the SCROLLING section
+// body (`build`). The two halves coordinate through this per-`state` controller
+// so a selection change in the pinned selector rebuilds the scrolling detail
+// (and vice-versa). The WeakMap entry is GC'd with `state`; a remount overwrites
+// the closures (buildSticky runs before build, so the controller exists when
+// `build` attaches its detail host).
+interface XformLensCtl {
+  state: EditState;
+  onChange: (path: string) => void;
+  selectorHost?: HTMLElement;
+  detailHost?: HTMLElement;
+}
+const xformLensCtls = new WeakMap<EditState, XformLensCtl>();
+function xformCtlFor(state: EditState, onChange: (path: string) => void): XformLensCtl {
+  let c = xformLensCtls.get(state);
+  if (!c) {
+    c = { state, onChange };
+    xformLensCtls.set(state, c);
+  } else {
+    c.onChange = onChange; // freshest closure wins on remount
+  }
+  return c;
+}
+
+// Clamp the regular selection into range (a prior flame may have had more
+// xforms). The final sentinel (-1) is left untouched — #438 keeps the final
+// selectable even when none exists (selecting it surfaces the ＋ Add affordance),
+// so we no longer kick FINAL_SEL back to 0 on a missing final.
+function clampXformSelection(state: EditState): void {
+  const n = state.genome.xforms.length;
+  if (state.selectedXformIndex !== FINAL_SEL) {
+    state.selectedXformIndex = Math.max(0, Math.min(state.selectedXformIndex, n - 1));
+  }
+}
+
+// The regular bar always acts on a valid regular index, even while the final
+// detail shows (sentinel -1).
+function regXformIndex(state: EditState): number {
+  return state.selectedXformIndex === FINAL_SEL ? 0 : state.selectedXformIndex;
+}
+
+// Rebuild BOTH the pinned selector and the scrolling detail for the current
+// selection, then notify the on-canvas gizmo (#350 Phase 2.3).
+function rebuildXformLens(ctl: XformLensCtl): void {
+  clampXformSelection(ctl.state);
+  if (ctl.selectorHost) rebuildXformSelectors(ctl);
+  if (ctl.detailHost) rebuildXformDetailPane(ctl);
+  document.dispatchEvent(new CustomEvent('pyr3:xform-selection-changed'));
+}
+
+// Re-render just the scrolling detail pane for the current selection.
+function rebuildXformDetailPane(ctl: XformLensCtl): void {
+  const { state, onChange, detailHost } = ctl;
+  if (!detailHost) return;
+  const rebuildSelf = (): void => rebuildXformDetailPane(ctl);
+  const sel = state.selectedXformIndex;
+  if (sel === FINAL_SEL) {
+    if (state.genome.finalxform) {
+      buildXformDetail(detailHost, state, { kind: 'final' }, onChange, rebuildSelf);
+    } else {
+      detailHost.replaceChildren();
+      const hint = document.createElement('div');
+      hint.className = 'pyr3-edit-detail-hint';
+      hint.textContent = 'No final xform yet — use ＋ Add final xform above to create one.';
+      detailHost.appendChild(hint);
+    }
+  } else {
+    buildXformDetail(detailHost, state, { kind: 'regular', index: sel }, onChange, rebuildSelf);
+  }
+}
+
+// Solo a regular xform (turn off all others), or restore from a prior solo.
+function soloXform(ctl: XformLensCtl, index: number): void {
+  const { state, onChange } = ctl;
+  if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === index) {
+    restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+    state.soloXformSnapshot = undefined;
+  } else {
+    if (state.soloXformSnapshot) restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
+    state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, index);
+    for (let i = 0; i < state.genome.xforms.length; i++) {
+      if (i !== index) state.genome.xforms[i]!.active = false;
+    }
+    state.genome.xforms[index]!.active = undefined;
+  }
+  onChange(`xforms.${index}.solo`);
+  rebuildXformLens(ctl);
+}
+
+// Build the pinned selector row (◀ [dropdown] ▶) + context-aware action bar
+// into the sticky-head slot. The final xform is folded into the dropdown as a
+// permanent last entry (#438), so it has no separate row/bar any more.
+function rebuildXformSelectors(ctl: XformLensCtl): void {
+  const { state, onChange, selectorHost } = ctl;
+  if (!selectorHost) return;
+  selectorHost.replaceChildren();
+  const n = state.genome.xforms.length;
+  const sel = state.selectedXformIndex;
+  const finalSelected = sel === FINAL_SEL;
+  const fx = state.genome.finalxform;
+
+  // ── Selector row: ◀ [ select ] ▶ ─────────────────────────────────
+  const selRow = document.createElement('div');
+  selRow.className = 'pyr3-edit-xform-selrow';
+
+  // Arrow traversal order: every regular xform, then the final IFF it exists.
+  // (The dropdown always SHOWS the final entry for creation, but arrowing into
+  // an empty final is surprising, so the arrows skip it when none exists.)
+  const order: number[] = [];
+  for (let i = 0; i < n; i++) order.push(i);
+  if (fx !== undefined) order.push(FINAL_SEL);
+  const curPos = Math.max(0, order.indexOf(sel));
+  const stepTo = (delta: number): void => {
+    if (order.length === 0) return;
+    state.selectedXformIndex = order[(curPos + delta + order.length) % order.length]!;
+    rebuildXformLens(ctl);
+  };
+  const prevBtn = makeBarButton('◀', 'Previous xform.', () => stepTo(-1));
+  prevBtn.classList.add('pyr3-edit-xform-arrow');
+  const nextBtn = makeBarButton('▶', 'Next xform.', () => stepTo(1));
+  nextBtn.classList.add('pyr3-edit-xform-arrow');
+
+  const selectWrap = document.createElement('div');
+  selectWrap.className = 'pyr3-edit-select-wrap';
+  if (!finalSelected) selectWrap.classList.add('pyr3-edit-selected');
+  const select = document.createElement('select');
+  select.className = 'pyr3-edit-xform-select';
+  // #438 — the final xform is a real selectable option (appended below), so when
+  // it owns the selection the dropdown genuinely shows `final` selected. Picking
+  // any regular index is then a real value change — no #374 placeholder needed.
+  for (let i = 0; i < n; i++) {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `xform ${i + 1} · of ${n}`;
+    select.appendChild(opt);
+  }
+  // #438 — final folded in as the permanent last entry (always selectable, even
+  // when none exists — that's how you create one).
+  const finalOpt = document.createElement('option');
+  finalOpt.value = FINAL_OPT_VALUE;
+  finalOpt.className = 'pyr3-edit-final-option';
+  finalOpt.textContent =
+    fx === undefined ? '✨ final xform · (none)'
+    : fx.active === false ? '✨ final xform · (inactive)'
+    : '✨ final xform';
+  select.appendChild(finalOpt);
+  // Reflect the current selection AFTER all options exist (option.selected set
+  // before append doesn't stick reliably across DOM impls).
+  select.value = finalSelected ? FINAL_OPT_VALUE : String(regXformIndex(state));
+
+  select.addEventListener('change', () => {
+    state.selectedXformIndex = select.value === FINAL_OPT_VALUE ? FINAL_SEL : Number(select.value);
+    rebuildXformLens(ctl);
+  });
+  selectWrap.appendChild(select);
+  selRow.append(prevBtn, selectWrap, nextBtn);
+  selectorHost.appendChild(selRow);
+
+  // ── Action bar (context-aware) ────────────────────────────────────
+  const bar = document.createElement('div');
+  bar.className = 'pyr3-edit-xform-bar';
+
+  if (!finalSelected) {
+    // Regular xform: ⏻ active(+solo) · ＋ · 🗑 · ⧉ · spacer · ↑ ↓.
+    const i = regXformIndex(state);
+    const cur = state.genome.xforms[i]!;
+    const power = makePowerButton(
+      cur.active !== false,
+      () => {
+        cur.active = cur.active === false ? undefined : false;
+        onChange(`xforms.${i}.active`);
+        rebuildXformLens(ctl);
+      },
+      () => soloXform(ctl, i),
+    );
+    power.classList.add('pyr3-edit-xform-active'); // legacy hook for solo tests
+    bar.append(power, makeBarDiv());
+    bar.appendChild(makeBarButton('＋', 'Add a new xform.', () => {
+      state.selectedXformIndex = addXform(state.genome);
+      onChange('xforms.add');
+      rebuildXformLens(ctl);
+    }));
+    bar.appendChild(makeBarButton('🗑', 'Remove the selected xform.', () => {
+      state.selectedXformIndex = removeXform(state.genome, i);
+      onChange('xforms.remove');
+      rebuildXformLens(ctl);
+    }, { disabled: n <= 1 }));
+    bar.appendChild(makeBarButton('⧉', 'Duplicate the selected xform.', () => {
+      state.selectedXformIndex = duplicateXform(state.genome, i);
+      onChange('xforms.duplicate');
+      rebuildXformLens(ctl);
+    }));
+    const spacer = document.createElement('span');
+    spacer.className = 'pyr3-edit-bar-spacer';
+    bar.appendChild(spacer);
+    bar.appendChild(makeBarButton('↑', 'Move the selected xform up.', () => {
+      if (i <= 0) return;
+      swapXforms(state.genome, i, i - 1);
+      state.selectedXformIndex = i - 1;
+      onChange('xforms.reorder');
+      rebuildXformLens(ctl);
+    }, { disabled: i <= 0 }));
+    bar.appendChild(makeBarButton('↓', 'Move the selected xform down.', () => {
+      if (i >= n - 1) return;
+      swapXforms(state.genome, i, i + 1);
+      state.selectedXformIndex = i + 1;
+      onChange('xforms.reorder');
+      rebuildXformLens(ctl);
+    }, { disabled: i >= n - 1 }));
+  } else if (fx === undefined) {
+    // Final selected but none exists → single create action (#438).
+    const addFinal = document.createElement('button');
+    addFinal.type = 'button';
+    addFinal.className = 'pyr3-edit-add-final-btn';
+    addFinal.textContent = '＋ Add final xform';
+    addFinal.title = 'Create a final xform — the post-pick lens applied to every point after the chaos draw.';
+    addFinal.addEventListener('click', () => {
+      state.genome.finalxform = makeDefaultXform();
+      state.selectedXformIndex = FINAL_SEL;
+      onChange('finalxform.add');
+      rebuildXformLens(ctl);
+    });
+    bar.appendChild(addFinal);
+  } else {
+    // Final selected and exists → ⏻ active · 🗑 clear.
+    const finalPower = makePowerButton(fx.active !== false, () => {
+      fx.active = fx.active === false ? undefined : false;
+      onChange('finalxform.active');
+      rebuildXformLens(ctl);
+    });
+    finalPower.classList.add('pyr3-edit-final-active'); // legacy hook
+    bar.append(finalPower, makeBarDiv());
+    bar.appendChild(makeBarButton('🗑', 'Clear the final xform.', () => {
+      state.genome.finalxform = undefined;
+      state.selectedXformIndex = 0;
+      onChange('finalxform.clear');
+      rebuildXformLens(ctl);
+    }));
+  }
+  selectorHost.appendChild(bar);
+}
+
 export const xformsSection: SectionMount = {
   key: 'xforms',
   lens: 'xform',
-  title: '🧬 XFORMS',
+  // The 🧬 emoji + identity live on the group header (#438, matching the Color
+  // lens's 🎨 Palette → PALETTE pattern); the section header keeps the plain name.
+  title: 'XFORMS',
+  group: 'xforms',
 
+  // #438 — pinned selector + action bar live in the sticky-head slot.
+  buildSticky(host, state, onChange): void {
+    ensureXformStyles();
+    host.classList.add('pyr3-edit-xform-selectors');
+    const ctl = xformCtlFor(state, onChange);
+    ctl.selectorHost = host;
+    clampXformSelection(state);
+    rebuildXformSelectors(ctl);
+  },
+
+  // The scrolling detail pane for the selected xform.
   build(host, state, onChange): void {
     ensureXformStyles();
     host.replaceChildren();
-
-    // Clamp the regular selection into range (a prior flame may have had more
-    // xforms). The final sentinel (-1) is left untouched.
-    function clampSelection(): void {
-      const n = state.genome.xforms.length;
-      if (state.selectedXformIndex !== FINAL_SEL) {
-        state.selectedXformIndex = Math.max(0, Math.min(state.selectedXformIndex, n - 1));
-      } else if (state.genome.finalxform === undefined) {
-        // Final selected but none exists (e.g. cleared) → fall back to xform 0.
-        state.selectedXformIndex = 0;
-      }
-    }
-
-    // The regular dropdown always reflects a valid regular index, even while
-    // the final detail is showing (sentinel -1). Regular-bar ops act on this.
-    const regIndex = (): number =>
-      state.selectedXformIndex === FINAL_SEL ? 0 : state.selectedXformIndex;
-
-    const selectorHost = document.createElement('div');
-    selectorHost.className = 'pyr3-edit-xform-selectors';
+    const ctl = xformCtlFor(state, onChange);
     const detailHost = document.createElement('div');
     detailHost.className = 'pyr3-edit-xform-detail';
-    host.append(selectorHost, detailHost);
-
-    function rebuildDetail(): void {
-      const sel = state.selectedXformIndex;
-      if (sel === FINAL_SEL) {
-        if (state.genome.finalxform) {
-          buildXformDetail(detailHost, state, { kind: 'final' }, onChange, rebuildDetail);
-        } else {
-          detailHost.replaceChildren();
-          const hint = document.createElement('div');
-          hint.className = 'pyr3-edit-detail-hint';
-          hint.textContent = 'No final xform. Toggle ⏻ to add one.';
-          detailHost.appendChild(hint);
-        }
-      } else {
-        buildXformDetail(detailHost, state, { kind: 'regular', index: sel }, onChange, rebuildDetail);
-      }
-    }
-
-    function rebuildAll(): void {
-      clampSelection();
-      rebuildSelectors();
-      rebuildDetail();
-      // #350 Phase 2.3 — notify the on-canvas gizmo that the selected xform
-      // (or the xform list) changed so it can redraw its live square/handles.
-      document.dispatchEvent(new CustomEvent('pyr3:xform-selection-changed'));
-    }
-
-    function rebuildSelectors(): void {
-      selectorHost.replaceChildren();
-      const n = state.genome.xforms.length;
-      const sel = state.selectedXformIndex;
-
-      // ── Regular xform selector ──────────────────────────────────────
-      selectorHost.appendChild(makeSelectorLabel('xform'));
-
-      const selectWrap = document.createElement('div');
-      selectWrap.className = 'pyr3-edit-select-wrap';
-      const finalSelected = sel === FINAL_SEL;
-      if (!finalSelected) selectWrap.classList.add('pyr3-edit-selected');
-      const select = document.createElement('select');
-      select.className = 'pyr3-edit-xform-select';
-      // #374 — while the FINAL detail owns the selection, the regular <select>
-      // must not pre-select a regular index. A native select fires no `change`
-      // when the picked value equals the shown value, so if it claimed "xform 1"
-      // the user couldn't re-pick xform 1 to switch back to it. A leading
-      // placeholder owns the shown value instead, making EVERY regular pick a
-      // genuine value change. The placeholder is disabled so it can't be chosen.
-      if (finalSelected) {
-        const ph = document.createElement('option');
-        ph.value = '';
-        ph.textContent = '— pick an xform —';
-        ph.disabled = true;
-        ph.selected = true;
-        select.appendChild(ph);
-      }
-      for (let i = 0; i < n; i++) {
-        const opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = `xform ${i + 1} · of ${n}`;
-        if (!finalSelected && i === regIndex()) opt.selected = true;
-        select.appendChild(opt);
-      }
-      select.addEventListener('change', () => {
-        if (select.value === '') return; // placeholder — no selection change
-        state.selectedXformIndex = Number(select.value);
-        rebuildAll();
-      });
-      selectWrap.appendChild(select);
-      selectorHost.appendChild(selectWrap);
-
-      // ── Regular action bar ──────────────────────────────────────────
-      const bar = document.createElement('div');
-      bar.className = 'pyr3-edit-xform-bar';
-
-      const cur = state.genome.xforms[regIndex()]!;
-      const power = makePowerButton(
-        cur.active !== false,
-        () => {
-          cur.active = cur.active === false ? undefined : false;
-          onChange(`xforms.${regIndex()}.active`);
-          rebuildAll();
-        },
-        () => soloXform(regIndex()),
-      );
-      power.classList.add('pyr3-edit-xform-active'); // legacy hook for solo tests
-      bar.append(power, makeBarDiv());
-
-      bar.appendChild(makeBarButton('＋', 'Add a new xform.', () => {
-        state.selectedXformIndex = addXform(state.genome);
-        onChange('xforms.add');
-        rebuildAll();
-      }));
-      bar.appendChild(makeBarButton('🗑', 'Remove the selected xform.', () => {
-        state.selectedXformIndex = removeXform(state.genome, regIndex());
-        onChange('xforms.remove');
-        rebuildAll();
-      }, { disabled: n <= 1 }));
-      bar.appendChild(makeBarButton('⧉', 'Duplicate the selected xform.', () => {
-        state.selectedXformIndex = duplicateXform(state.genome, regIndex());
-        onChange('xforms.duplicate');
-        rebuildAll();
-      }));
-
-      const spacer = document.createElement('span');
-      spacer.className = 'pyr3-edit-bar-spacer';
-      bar.appendChild(spacer);
-
-      bar.appendChild(makeBarButton('↑', 'Move the selected xform up.', () => {
-        const i = regIndex();
-        if (i <= 0) return;
-        swapXforms(state.genome, i, i - 1);
-        state.selectedXformIndex = i - 1;
-        onChange('xforms.reorder');
-        rebuildAll();
-      }, { disabled: regIndex() <= 0 }));
-      bar.appendChild(makeBarButton('↓', 'Move the selected xform down.', () => {
-        const i = regIndex();
-        if (i >= n - 1) return;
-        swapXforms(state.genome, i, i + 1);
-        state.selectedXformIndex = i + 1;
-        onChange('xforms.reorder');
-        rebuildAll();
-      }, { disabled: regIndex() >= n - 1 }));
-
-      selectorHost.appendChild(bar);
-
-      // ── Final xform selector (always present) ───────────────────────
-      selectorHost.appendChild(makeSelectorLabel('final xform'));
-
-      const fx = state.genome.finalxform;
-      const finalActive = fx !== undefined && fx.active !== false;
-      const finalRow = document.createElement('div');
-      finalRow.className = 'pyr3-edit-final-row';
-      if (sel === FINAL_SEL) finalRow.classList.add('pyr3-edit-selected');
-      if (!finalActive) finalRow.classList.add('pyr3-edit-final-dim');
-      const finalLabel = document.createElement('span');
-      finalLabel.className = 'pyr3-edit-final-label';
-      finalLabel.textContent = '✨ final';
-      finalRow.appendChild(finalLabel);
-      if (fx === undefined) {
-        const tag = document.createElement('span');
-        tag.className = 'pyr3-edit-final-tag';
-        tag.textContent = '(none)';
-        finalRow.appendChild(tag);
-      } else if (fx.active === false) {
-        const tag = document.createElement('span');
-        tag.className = 'pyr3-edit-final-tag';
-        tag.textContent = '(inactive)';
-        finalRow.appendChild(tag);
-      }
-      finalRow.title = 'The post-pick lens applied to every point after the chaos draw. Click to edit.';
-      finalRow.addEventListener('click', () => {
-        state.selectedXformIndex = FINAL_SEL;
-        rebuildAll();
-      });
-      selectorHost.appendChild(finalRow);
-
-      // Final action bar: ⏻ active · delimiter · 🗑 clear.
-      const finalBar = document.createElement('div');
-      finalBar.className = 'pyr3-edit-xform-bar';
-      const finalPower = makePowerButton(finalActive, () => {
-        if (state.genome.finalxform === undefined) {
-          state.genome.finalxform = makeDefaultXform();
-          state.selectedXformIndex = FINAL_SEL;
-        } else {
-          const f = state.genome.finalxform;
-          f.active = f.active === false ? undefined : false;
-        }
-        onChange('finalxform.active');
-        rebuildAll();
-      });
-      finalPower.classList.add('pyr3-edit-final-active');
-      finalBar.append(finalPower, makeBarDiv());
-      finalBar.appendChild(makeBarButton('🗑', 'Clear the final xform.', () => {
-        state.genome.finalxform = undefined;
-        if (state.selectedXformIndex === FINAL_SEL) state.selectedXformIndex = 0;
-        onChange('finalxform.clear');
-        rebuildAll();
-      }, { disabled: fx === undefined }));
-      selectorHost.appendChild(finalBar);
-    }
-
-    // Solo a regular xform (turn off all others), or restore from a prior solo.
-    function soloXform(index: number): void {
-      if (state.soloXformSnapshot && state.soloXformSnapshot.targetIndex === index) {
-        restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
-        state.soloXformSnapshot = undefined;
-      } else {
-        if (state.soloXformSnapshot) {
-          restoreFromSolo(state.genome.xforms, state.soloXformSnapshot);
-        }
-        state.soloXformSnapshot = snapshotForSolo(state.genome.xforms, index);
-        for (let i = 0; i < state.genome.xforms.length; i++) {
-          if (i !== index) state.genome.xforms[i]!.active = false;
-        }
-        state.genome.xforms[index]!.active = undefined;
-      }
-      onChange(`xforms.${index}.solo`);
-      rebuildAll();
-    }
-
-    clampSelection();
-    rebuildSelectors();
-    rebuildDetail();
+    host.appendChild(detailHost);
+    ctl.detailHost = detailHost;
+    clampXformSelection(state);
+    rebuildXformDetailPane(ctl);
   },
 };
-
-function makeSelectorLabel(text: string): HTMLDivElement {
-  const lbl = document.createElement('div');
-  lbl.className = 'pyr3-edit-selector-label';
-  lbl.textContent = text;
-  return lbl;
-}
 
 // One-time style injection for the xforms section. Idempotent so HMR + repeat
 // mounts don't double-inject.
@@ -1206,14 +1241,27 @@ function ensureXformStyles(): void {
 const ACCENT = '#ff8c1a';
 
 const XFORM_CSS = `
-.pyr3-edit-xform-selectors { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.pyr3-edit-selector-label {
-  color: var(--text-dim, #888);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-top: 4px;
+/* #438 — pinned selector lives in the sticky-head slot; no bottom margin (the
+   slot supplies the top gap). */
+.pyr3-edit-xform-selectors { display: flex; flex-direction: column; gap: 6px; }
+/* ◀ [ dropdown ] ▶ row. The select flexes; arrows are fixed-width. */
+.pyr3-edit-xform-selrow { display: flex; align-items: stretch; gap: 4px; }
+.pyr3-edit-xform-selrow .pyr3-edit-select-wrap { flex: 1 1 auto; min-width: 0; }
+.pyr3-edit-xform-arrow { flex: 0 0 auto; min-width: 30px; height: auto; font-size: 12px; }
+.pyr3-edit-add-final-btn {
+  flex: 1 1 auto;
+  background: var(--bar-bg-2, #1a1a20);
+  color: #ffd27a;
+  border: 1px solid var(--accent-border, #884a1a);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
+.pyr3-edit-add-final-btn:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); }
+.pyr3-edit-final-option { color: #ffd27a; }
 .pyr3-edit-select-wrap {
   border: 1px solid transparent;
   border-radius: 3px;
@@ -1260,23 +1308,6 @@ const XFORM_CSS = `
 .pyr3-edit-bar-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .pyr3-edit-power.on { color: #4ade80; border-color: #2f6f49; }
 .pyr3-edit-power:not(.on) { color: var(--text-dim, #888); }
-.pyr3-edit-final-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  background: var(--bar-bg-3, #0f0f13);
-  border: 1px solid transparent;
-  border-radius: 3px;
-  cursor: pointer;
-  user-select: none;
-}
-.pyr3-edit-final-row:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); }
-.pyr3-edit-final-row.pyr3-edit-selected { border-color: ${ACCENT}; box-shadow: 0 0 0 1px ${ACCENT}; }
-.pyr3-edit-final-row.pyr3-edit-final-dim { opacity: 0.5; }
-.pyr3-edit-final-label { font-weight: 600; font-size: 12px; color: #ffd27a; }
-.pyr3-edit-final-row.pyr3-edit-final-dim .pyr3-edit-final-label { color: var(--text-dim, #888); }
-.pyr3-edit-final-tag { font-size: 10px; color: var(--text-dim, #888); }
 .pyr3-edit-detail-header {
   font-weight: 600;
   font-size: 11px;
