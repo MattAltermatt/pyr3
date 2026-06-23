@@ -232,6 +232,23 @@ describe('computeFitBox / scaleForBox (#443)', () => {
     expect(box.bbW).toBeLessThan(2);
     expect(box.bbW).toBeGreaterThan(0);
   });
+
+  it('returns null on a collapsed sample (degenerate) instead of an absurd zoom', () => {
+    // A single strongly-contractive linear xform pulls every walker to the
+    // origin → the sample collapses to a near-point. Without the guard the bbox
+    // hits the 1e-3 floor and scaleForBox yields ~1.9M. computeFitBox must reject
+    // it (null) so the caller keeps the authored framing. #443.
+    const g: Genome = {
+      ...minimalGenome(),
+      xforms: [
+        { a: 1e-4, b: 0, c: 0, d: 0, e: 1e-4, f: 0, weight: 1, color: 0, colorSpeed: 0,
+          variations: [{ index: V.linear, weight: 1 }] } as Genome['xforms'][number],
+      ],
+    };
+    expect(computeFitBox(g)).toBeNull();
+    // ...and computeFitViewport propagates the null (no 1.9M scale leaks out).
+    expect(computeFitViewport(g, 3840, 2160)).toBeNull();
+  });
 });
 
 describe('refitGenomeToOutputSize (#432 fit-on-open)', () => {

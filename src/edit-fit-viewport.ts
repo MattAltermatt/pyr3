@@ -260,6 +260,13 @@ export const DROP_FRAC = 0.005;
  *  K=3 is conservative — only points beyond 3× the interquartile range are cut. */
 export const IQR_FENCE_K = 3;
 
+/** Below this world-space extent on BOTH axes the sampled bbox is treated as a
+ *  collapsed sample (degenerate), not a real flame — `computeFitBox` returns
+ *  null so the caller keeps the genome's authored framing rather than zooming
+ *  to the framing floor. Comfortably below any sane surprise/editor flame
+ *  (generateRandomGenome's isSaneScale keeps real flames at bbox ≳ 0.04). #443. */
+export const FIT_MIN_EXTENT = 1e-2;
+
 /** Compute the viewport that fits the flame into a (canvasW, canvasH) frame.
  *  Returns null when the genome can't be fit (empty xforms, all-zero weight,
  *  all-NaN samples, zero-area bbox). Caller should no-op on null.
@@ -321,8 +328,16 @@ export function computeFitBox(
 
   const bbW = ex.hi - ex.lo;
   const bbH = ey.hi - ey.lo;
-  // Singleton-attractor (all samples at one point) → fit would be infinite zoom.
-  if (bbW < 1e-9 && bbH < 1e-9) return null;
+  // Collapsed sample → can't be framed sanely. #443: the deterministic CPU
+  // sampler (no walker-jitter, unlike the GPU kernel #43) can converge to a
+  // near-point for some attractors the GPU renders spread, so BOTH axes fall
+  // below the framing floor. Without this guard scaleForBox clamps to the 1e-3
+  // floor and returns an absurd scale (e.g. 2160×0.9/1e-3 = 1944000 — the flame
+  // opens zoomed past oblivion). Real surprise flames never reach here (they pass
+  // generateRandomGenome's isSaneScale, bbox ≳ 0.04); returning null lets the
+  // caller keep the genome's authored framing instead. A line attractor (one
+  // axis ~0) is NOT degenerate — scaleForBox pads it and frames the other axis.
+  if (bbW < FIT_MIN_EXTENT && bbH < FIT_MIN_EXTENT) return null;
 
   const cxRot = (ex.lo + ex.hi) / 2;
   const cyRot = (ey.lo + ey.hi) / 2;
