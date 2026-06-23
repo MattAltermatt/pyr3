@@ -1,69 +1,39 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { createSurpriseState, MAX_KEEP_TRAY } from './surprise-state';
-import { generateRandomGenome } from './edit-seed';
+import { describe, expect, it } from 'vitest';
+import { createSurpriseState } from './surprise-state';
+import { SURPRISE_SETTINGS_DEFAULT } from './surprise-prefs';
+import { type Genome } from './genome';
 
-const stubTile = (g = generateRandomGenome()) => ({ genome: g });
-
-function makeStorageStub(): Storage {
-  const m = new Map<string, string>();
-  return { get length() { return m.size; }, clear: () => m.clear(), getItem: (k) => m.get(k) ?? null,
-    key: (i) => [...m.keys()][i] ?? null, removeItem: (k) => { m.delete(k); }, setItem: (k, v) => { m.set(k, String(v)); } } as Storage;
-}
-beforeEach(() => vi.stubGlobal('localStorage', makeStorageStub()));
-afterEach(() => vi.unstubAllGlobals());
-
-describe('surprise state', () => {
-  it('keep() moves a wall tile into the tray and persists it', () => {
+// #surprise-v2 — surprise-state now holds two independent undo/redo histories
+// (settings + wall) and no keep-tray.
+describe('createSurpriseState (#surprise-v2)', () => {
+  it('exposes two independent histories', () => {
     const s = createSurpriseState();
-    const g = generateRandomGenome();
-    s.setTile(0, { genome: g });
-    s.keep(0);
-    expect(s.tray()).toHaveLength(1);
-    expect(s.tray()[0]!.genome).toBe(g);
-  });
-  it('loads a previously-persisted tray on init', () => {
-    const s1 = createSurpriseState();
-    const g = generateRandomGenome();
-    s1.setTile(0, { genome: g });
-    s1.keep(0);
-    const s2 = createSurpriseState();
-    expect(s2.tray()).toHaveLength(1);
-  });
-  it('removeFromTray() drops the entry and re-persists', () => {
-    const s = createSurpriseState();
-    const g = generateRandomGenome();
-    s.setTile(0, { genome: g });
-    s.keep(0); s.removeFromTray(0);
-    expect(s.tray()).toEqual([]);
+    expect(s.settingsHistory).not.toBe(s.wallHistory);
   });
 
-  // #304 — cap the tray so an unbounded in-memory list can't overflow quota
-  // and silently lose keepers on reload.
-  it('keep() caps the tray at MAX_KEEP_TRAY and reports tray-full', () => {
+  it('wall history undo/redo over batches', () => {
     const s = createSurpriseState();
-    for (let i = 0; i < MAX_KEEP_TRAY; i++) {
-      s.setTile(0, stubTile());
-      expect(s.keep(0)).not.toBe('tray-full');
-    }
-    expect(s.tray()).toHaveLength(MAX_KEEP_TRAY);
-    s.setTile(0, stubTile());
-    expect(s.keep(0)).toBe('tray-full');
-    expect(s.tray()).toHaveLength(MAX_KEEP_TRAY); // not exceeded
+    const a = [] as Genome[];
+    const b = [{ size: { width: 1, height: 1 } } as unknown as Genome];
+    s.wallHistory.push(a);
+    s.wallHistory.push(b);
+    expect(s.wallHistory.canUndo()).toBe(true);
+    expect(s.wallHistory.undo()).toEqual(a);
+    expect(s.wallHistory.canRedo()).toBe(true);
+    expect(s.wallHistory.redo()).toEqual(b);
   });
 
-  it('keep() reports no-tile for an empty slot', () => {
-    expect(createSurpriseState().keep(3)).toBe('no-tile');
+  it('settings history seeded with the initial settings', () => {
+    const s = createSurpriseState(SURPRISE_SETTINGS_DEFAULT);
+    expect(s.settingsHistory.size()).toBe(1);
+    s.settingsHistory.push({ ...SURPRISE_SETTINGS_DEFAULT, setN: 30 });
+    expect(s.settingsHistory.canUndo()).toBe(true);
+    expect(s.settingsHistory.undo()).toEqual(SURPRISE_SETTINGS_DEFAULT);
   });
 
-  // #304 — a persist failure (quota) rolls back the in-memory add so the tray
-  // never claims a keep that didn't survive, and signals persist-failed.
-  it('keep() rolls back + reports persist-failed when the write throws', () => {
-    const stub = makeStorageStub();
-    stub.setItem = () => { throw new DOMException('quota', 'QuotaExceededError'); };
-    vi.stubGlobal('localStorage', stub);
-    const s = createSurpriseState();
-    s.setTile(0, stubTile());
-    expect(s.keep(0)).toBe('persist-failed');
-    expect(s.tray()).toEqual([]); // rolled back — no phantom keeper
+  it('has no keep-tray state', () => {
+    const s = createSurpriseState() as unknown as Record<string, unknown>;
+    expect(s['keep']).toBeUndefined();
+    expect(s['tray']).toBeUndefined();
   });
 });

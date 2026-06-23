@@ -192,27 +192,47 @@ function writeFavorites(set: Set<string>): void {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface VariationPickerOpts {
-  /** Where to append the picker — usually `document.body`. */
-  host: HTMLElement;
+  /** Where to append the picker. Defaults to `document.body`. */
+  host?: HTMLElement;
+  /** Picker mode (#surprise-v2):
+   *   - `'single'` (default): today's fitting-room behavior — clicking a tile
+   *     selects a SINGLE variation, live-previews it via `onPreview`, and the
+   *     footer apply/revert commit/abandon that preview.
+   *   - `'multi'`: build a SET of preferred variations. Clicking a tile TOGGLES
+   *     its index in `selected` and calls `onChange(new Set(...))`. No live
+   *     preview (`onPreview`/`onCommit`/`onRevert` are ignored), no auto-close;
+   *     the picker stays open to build the set. Active outlines reflect SET
+   *     membership (every selected tile is highlighted). */
+  mode?: 'single' | 'multi';
   /** The variation index that's currently in the slot, used as the
-   *  snapshot to revert to. */
-  initialIndex: number;
+   *  snapshot to revert to (single mode). */
+  initialIndex?: number;
   /** Which xform the picker is editing — drives the title suffix. */
   xformIndex?: number;
-  /** Called on each cell click. The host should write to genome and fire
-   *  the slow lane so the flame canvas updates behind the picker. */
-  onPreview: (index: number) => void;
-  /** Called when the user clicks "apply & close". The current preview wins. */
-  onCommit: () => void;
-  /** Called when the user cancels (×, Escape). Host should treat as
-   *  "abandon picker state" — the most recent preview was a no-op in
-   *  retrospect. */
-  onCancel: () => void;
-  /** Called when the user clicks ⟲ revert (picker stays open). When provided,
-   *  the host restores its full pre-picker state — index AND params (#237) —
-   *  instead of the picker re-previewing `initialIndex`, which would re-stamp
-   *  defaults and lose tuned params. Falls back to `onPreview(initialIndex)`. */
+  /** Called on each cell click in single mode. The host should write to genome
+   *  and fire the slow lane so the flame canvas updates behind the picker.
+   *  Ignored in multi mode. */
+  onPreview?: (index: number) => void;
+  /** Called when the user clicks "apply & close" (single mode). The current
+   *  preview wins. Ignored in multi mode. */
+  onCommit?: () => void;
+  /** Called when the user cancels (×, Escape) in single mode. Host should treat
+   *  as "abandon picker state". In multi mode the same gestures fire `onClose`. */
+  onCancel?: () => void;
+  /** Called when the user clicks ⟲ revert (single mode, picker stays open). When
+   *  provided, the host restores its full pre-picker state — index AND params
+   *  (#237) — instead of the picker re-previewing `initialIndex`. Falls back to
+   *  `onPreview(initialIndex)`. Ignored in multi mode. */
   onRevert?: () => void;
+  /** (multi mode) The current preferred-variation set. Cells whose index is in
+   *  this set render with the active outline. The picker mutates a private copy,
+   *  emitting each change through `onChange`. */
+  selected?: Set<number>;
+  /** (multi mode) Called with a fresh `Set<number>` snapshot every time a tile
+   *  is toggled. */
+  onChange?: (next: Set<number>) => void;
+  /** (multi mode) Called when the picker closes (× / Escape / done). */
+  onClose?: () => void;
 }
 
 export interface VariationPickerHandle {
@@ -246,10 +266,18 @@ function buildEntries(): VariationEntry[] {
 export function openVariationPicker(opts: VariationPickerOpts): VariationPickerHandle {
   ensurePickerStyles();
 
-  // Snapshot the index the picker opened on; revert restores to this.
-  const snapshot = opts.initialIndex;
-  let currentIndex = opts.initialIndex;
+  const host = opts.host ?? document.body;
+  const isMulti = opts.mode === 'multi';
+
+  // Snapshot the index the picker opened on; revert restores to this (single mode).
+  const snapshot = opts.initialIndex ?? 0;
+  let currentIndex = opts.initialIndex ?? 0;
   let autoApplyOn = false;
+
+  // (multi mode) private mutable copy of the preferred-variation set. We emit a
+  // fresh Set snapshot through opts.onChange on every toggle so the host never
+  // sees our internal reference.
+  const selectedSet = new Set<number>(opts.selected ?? []);
 
   const entries = buildEntries();
   const totalCount = entries.length;
@@ -424,15 +452,25 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     cell.style.background = 'transparent';
     cell.style.position = 'relative';
 
-    if (entry.idx === currentIndex) {
+    const initiallyActive = isMulti ? selectedSet.has(entry.idx) : entry.idx === currentIndex;
+    if (initiallyActive) {
       cell.classList.add('active');
       cell.style.borderColor = COLORS.flame.top;
       cell.style.background = COLORS.bg.action;
     }
 
     cell.addEventListener('click', () => {
+      if (isMulti) {
+        // Toggle set membership; emit a fresh Set snapshot. No live preview,
+        // no auto-close — the picker stays open to keep building the set.
+        if (selectedSet.has(entry.idx)) selectedSet.delete(entry.idx);
+        else selectedSet.add(entry.idx);
+        paintMultiActive();
+        opts.onChange?.(new Set(selectedSet));
+        return;
+      }
       currentIndex = entry.idx;
-      opts.onPreview(entry.idx);
+      opts.onPreview?.(entry.idx);
       paintActive(entry.idx);
       refreshSelectedInfo();
       updateCatalogLink(entry.idx);
@@ -539,6 +577,17 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     }
   }
 
+  // (multi mode) Active outline reflects SET membership — every selected tile
+  // is highlighted, not a single current index.
+  function paintMultiActive(): void {
+    for (const [i, cell] of cellByIdx) {
+      const isActive = selectedSet.has(i);
+      cell.classList.toggle('active', isActive);
+      cell.style.borderColor = isActive ? COLORS.flame.top : 'transparent';
+      cell.style.background = isActive ? COLORS.bg.action : 'transparent';
+    }
+  }
+
   function applySort(): void {
     const sorted = [...entries].sort((a, b) => {
       if (activeSort === 'name-asc') return a.searchName.localeCompare(b.searchName);
@@ -588,6 +637,11 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   const selected = document.createElement('div');
   selected.className = 'pyr3-picker-selected';
   function refreshSelectedInfo(): void {
+    if (isMulti) {
+      const n = selectedSet.size;
+      selected.textContent = `${n} selected`;
+      return;
+    }
     const name = VARIATION_NAMES[currentIndex] ?? `var${currentIndex}`;
     selected.textContent = name;
   }
@@ -596,35 +650,46 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   const footActions = document.createElement('div');
   footActions.className = 'pyr3-picker-foot-actions';
 
-  const revertBtn = buildButton({
-    variant: 'accent',
-    label: 'revert',
-    icon: '⟲',
-    onClick: () => {
-      currentIndex = snapshot;
-      // Restore the host's full pre-picker variation (index + params, #237)
-      // when it supplied onRevert; otherwise fall back to re-previewing the
-      // opened-on index.
-      if (opts.onRevert) opts.onRevert();
-      else opts.onPreview(snapshot);
-      paintActive(snapshot);
-      refreshSelectedInfo();
-    },
-  });
-  revertBtn.classList.add('pyr3-picker-revert');
+  if (isMulti) {
+    // Multi mode: no live preview to revert; a single "done" closes the picker.
+    const doneBtn = buildButton({
+      variant: 'primary',
+      label: 'done',
+      onClick: () => cancel(),
+    });
+    doneBtn.classList.add('pyr3-picker-done');
+    footActions.append(doneBtn);
+  } else {
+    const revertBtn = buildButton({
+      variant: 'accent',
+      label: 'revert',
+      icon: '⟲',
+      onClick: () => {
+        currentIndex = snapshot;
+        // Restore the host's full pre-picker variation (index + params, #237)
+        // when it supplied onRevert; otherwise fall back to re-previewing the
+        // opened-on index.
+        if (opts.onRevert) opts.onRevert();
+        else opts.onPreview?.(snapshot);
+        paintActive(snapshot);
+        refreshSelectedInfo();
+      },
+    });
+    revertBtn.classList.add('pyr3-picker-revert');
 
-  const applyBtn = buildButton({
-    variant: 'primary',
-    label: 'apply & close',
-    onClick: () => commit(),
-  });
-  applyBtn.classList.add('pyr3-picker-apply');
+    const applyBtn = buildButton({
+      variant: 'primary',
+      label: 'apply & close',
+      onClick: () => commit(),
+    });
+    applyBtn.classList.add('pyr3-picker-apply');
 
-  footActions.append(revertBtn, applyBtn);
+    footActions.append(revertBtn, applyBtn);
+  }
   foot.append(selected, footActions);
   picker.appendChild(foot);
 
-  opts.host.appendChild(picker);
+  host.appendChild(picker);
 
   // ── Lifecycle ────────────────────────────────────────────────────
   function close(): void {
@@ -634,12 +699,15 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
 
   function commit(): void {
     pushRecentlyUsed(currentIndex);
-    opts.onCommit();
+    opts.onCommit?.();
     close();
   }
 
   function cancel(): void {
-    opts.onCancel();
+    // Multi mode has no abandon-preview semantics — closing just notifies the
+    // host via onClose. Single mode fires onCancel (abandon picker state).
+    if (isMulti) opts.onClose?.();
+    else opts.onCancel?.();
     close();
   }
 

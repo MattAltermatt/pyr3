@@ -124,6 +124,57 @@ type XformRole = 'shape' | 'detail' | 'duplicator';
  *  `primaryOverride` to inject a specific lead variation per genome. */
 export interface SeedOptions {
   primaryOverride?: VariationIndex;
+  /** #surprise-v2 — exact xform count, or an inclusive [min,max] range. When
+   *  omitted the default role-based 4-xform roll is used unchanged. */
+  xformCount?: number | [number, number];
+  /** #surprise-v2 — how many variation kinds blend per non-duplicator xform
+   *  (capped at 3), exact or [min,max]. When omitted the default per-role
+   *  variation recipe is used unchanged. */
+  blendPerXform?: number | [number, number];
+  /** #surprise-v2 — pool the blend extras are drawn from (the Surprise Wall's
+   *  preferred set, plain variation indices). Falls back to the classical family
+   *  when absent/empty. */
+  preferred?: number[];
+}
+
+/** Resolve an exact value or [min,max] range to a single int ≥ 1. Consumes one
+ *  rng draw only for a range (so the no-options path's rng stream is untouched). */
+function resolveRange(rng: () => number, v: number | [number, number] | undefined, fallback: number): number {
+  if (v === undefined) return fallback;
+  if (typeof v === 'number') return Math.max(1, Math.round(v));
+  const min = Math.max(1, Math.round(Math.min(v[0], v[1])));
+  const max = Math.max(min, Math.round(Math.max(v[0], v[1])));
+  return min + Math.floor(rng() * (max - min + 1));
+}
+
+/** Build a roles array of the requested length: first = shape, last = duplicator
+ *  (when count ≥ 2), middle a shape/detail mix. Used only on the explicit-count path. */
+function buildRoles(rng: () => number, count: number): XformRole[] {
+  if (count <= 1) return ['shape'];
+  const roles: XformRole[] = ['shape'];
+  for (let i = 1; i < count - 1; i++) roles.push(rng() < 0.5 ? 'shape' : 'detail');
+  roles.push('duplicator');
+  return roles;
+}
+
+/** Build `n` (≤3) blended variations: the primary leads, extras drawn from
+ *  `preferred` (or the classical family), with tapered weights NORMALIZED to sum
+ *  to 1.0. Normalization is load-bearing: an xform whose variation weights sum to
+ *  >1 expands rather than contracts, pushing the IFS past its contraction
+ *  threshold → the attractor diverges → computeFitViewport returns an enormous
+ *  scale → the GPU chaos kernel thrashes its bad-value retry loop and the render
+ *  hangs. v1's recipe always summed to 1.0; keep it that way. (#surprise-v2) */
+function buildBlend(rng: () => number, primary: VariationIndex, n: number, preferred?: number[]): Variation[] {
+  const count = Math.max(1, Math.min(n, 3));
+  const taper = [1.0, 0.5, 0.3].slice(0, count);
+  const sum = taper.reduce((a, b) => a + b, 0);
+  const weights = taper.map((w) => w / sum); // sum to 1.0 — preserve contraction
+  const pool: readonly number[] = preferred && preferred.length > 0 ? preferred : FAMILY_CLASSICAL_FLAM3;
+  const vars: Variation[] = [createVariation(primary, weights[0]!)];
+  for (let k = 1; k < count; k++) {
+    vars.push(createVariation(pickFromSet(rng, pool) as VariationIndex, weights[k]!));
+  }
+  return vars;
 }
 
 export function generateRandomGenome(
@@ -161,8 +212,13 @@ export function generateRandomGenome(
   }
 
   // 3. Structured Xform Roles (Archetypes) & 4. Variable Color Speeds
+  //    #surprise-v2: an explicit xformCount drives a generated roles array of
+  //    that length; without it the default 4-xform role roll is unchanged (and
+  //    consumes rng identically — guard the new branch so determinism holds).
   let roles: XformRole[];
-  if (rng() < 0.3) {
+  if (opts.xformCount !== undefined) {
+    roles = buildRoles(rng, resolveRange(rng, opts.xformCount, 4));
+  } else if (rng() < 0.3) {
     if (rng() < 0.5) {
       roles = ['shape', 'shape', 'detail', 'duplicator'];
     } else {
@@ -173,7 +229,7 @@ export function generateRandomGenome(
   }
 
   const xforms: Xform[] = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < roles.length; i++) {
     const role = roles[i]!;
     const color = (i + uniform(rng, 0.05, 0.95)) / 4;
     const weight = uniform(rng, 0.5, 1.0);
@@ -192,7 +248,9 @@ export function generateRandomGenome(
       e = Math.cos(theta) * s;
       f = 0;
       colorSpeed = 0.9;
-      variations = [createVariation(primaryVar, 1.0)];
+      variations = opts.blendPerXform !== undefined
+        ? buildBlend(rng, primaryVar, resolveRange(rng, opts.blendPerXform, 1), opts.preferred)
+        : [createVariation(primaryVar, 1.0)];
     } else if (role === 'detail') {
       const theta = rng() * Math.PI * 2;
       const s = uniform(rng, 0.4, 0.75);
@@ -203,10 +261,12 @@ export function generateRandomGenome(
       e = Math.cos(theta) * s;
       f = uniform(rng, -0.4, 0.4);
       colorSpeed = 0.4;
-      variations = [
-        createVariation(primaryVar, 0.8),
-        createVariation(V.linear, 0.2),
-      ];
+      variations = opts.blendPerXform !== undefined
+        ? buildBlend(rng, primaryVar, resolveRange(rng, opts.blendPerXform, 2), opts.preferred)
+        : [
+            createVariation(primaryVar, 0.8),
+            createVariation(V.linear, 0.2),
+          ];
     } else { // duplicator
       const theta = rng() * Math.PI * 2;
       const s = rng() < 0.5 ? 0.5 : 1.0;

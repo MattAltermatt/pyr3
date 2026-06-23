@@ -465,3 +465,57 @@ describe('variation picker — favorites', () => {
     expect(favTab.textContent).toContain('(2)');
   });
 });
+
+// ── Multi-select mode (#surprise-v2) ─────────────────────────────────────
+// The picker tiles carry their variation index on `data-vidx` (see buildCell);
+// the upstream spec stub referenced `data-idx`, but the real attribute is
+// `data-vidx`, so the selectors below address that.
+
+describe('variation picker multi-select mode (#surprise-v2)', () => {
+  it('toggles a Set and fires onChange, never onPreview, in multi mode', () => {
+    const selected = new Set<number>([V.spherical]);
+    const onChange = vi.fn();
+    const onPreview = vi.fn();
+    const h = openVariationPicker({ mode: 'multi', selected, onChange, onPreview,
+      onApply: vi.fn(), onClose: vi.fn() } as any);
+    // find a thumb tile (cells carry a data-vidx); click one that's NOT spherical
+    const tiles = Array.from(document.querySelectorAll('[data-vidx]')) as HTMLElement[];
+    const tile = tiles.find(t => Number(t.dataset.vidx) !== V.spherical)!;
+    tile.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onChange).toHaveBeenCalled();
+    const arg = onChange.mock.calls[0]![0] as Set<number>;
+    expect(arg.has(Number(tile.dataset.vidx))).toBe(true); // newly added
+    expect(onPreview).not.toHaveBeenCalled();
+    h.close();
+  });
+
+  it('clicking an already-selected tile removes it from the set', () => {
+    const selected = new Set<number>([V.spherical]);
+    const onChange = vi.fn();
+    const h = openVariationPicker({ mode: 'multi', selected, onChange, onApply: vi.fn(), onClose: vi.fn() } as any);
+    const tile = document.querySelector(`[data-vidx="${V.spherical}"]`) as HTMLElement;
+    tile.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const arg = onChange.mock.calls[0]![0] as Set<number>;
+    expect(arg.has(V.spherical)).toBe(false);
+    h.close();
+  });
+
+  it('multi mode paints every selected tile active (set membership, not single index)', () => {
+    const selected = new Set<number>([V.spherical, V.heart, V.swirl]);
+    const onChange = vi.fn();
+    const h = openVariationPicker({ mode: 'multi', selected, onChange, onApply: vi.fn(), onClose: vi.fn() } as any);
+    const active = document.querySelectorAll('.pyr3-picker-cell.active');
+    const activeIdx = new Set([...active].map(c => Number((c as HTMLElement).dataset['vidx'])));
+    expect(activeIdx).toEqual(new Set([V.spherical, V.heart, V.swirl]));
+    h.close();
+  });
+
+  it('single mode is unchanged — still previews', () => {
+    const onPreview = vi.fn();
+    const h = openVariationPicker({ host: document.body, initialIndex: V.spherical, onPreview, onApply: vi.fn(), onClose: vi.fn() } as any);
+    const tiles = Array.from(document.querySelectorAll('[data-vidx]')) as HTMLElement[];
+    tiles[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onPreview).toHaveBeenCalled();
+    h.close();
+  });
+});

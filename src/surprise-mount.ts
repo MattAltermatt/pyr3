@@ -1,190 +1,422 @@
 // src/surprise-mount.ts
 //
-// /surprise page — the Surprise Wall. Generates diverse flame batches, renders
-// thumbnails through the serial GPU queue, auto-culls degenerates, shows a wall +
-// a persistent keep tray. DOM-mounting module → on SEAM_EXEMPT.
+// /surprise page — the Surprise Wall (v2, #surprise-v2). A full-bleed, viewport-
+// filling wall of steerable flame ideas: a generation settings panel drives the
+// recipe, clicking a tile opens it in the editor (new tab), and all settings
+// apply only on 🎲 Reroll (an "↑ apply settings" cue signals pending changes).
+// Dual undo/redo: wall batches (Ctrl+Z) and settings (panel ↶↷). DOM-mounting
+// module → on SEAM_EXEMPT.
 
 import { type Genome } from './genome';
 import { VARIATION_NAMES } from './variations';
-import { generateSurpriseBatch } from './surprise-seed';
+import { generateSurpriseBatch, type SurpriseGenParams } from './surprise-seed';
 import { createSurpriseQueue } from './surprise-queue';
 import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
-import { createSurpriseState, MAX_KEEP_TRAY } from './surprise-state';
-import { readWall, writeWall } from './surprise-prefs';
+import { createSurpriseState } from './surprise-state';
+import {
+  readWall, writeWall, loadSurpriseSettings, saveSurpriseSettings,
+  SURPRISE_SETTINGS_DEFAULT, type SurpriseSettings,
+} from './surprise-prefs';
+import { computeGrid, type Viewport, type GridMode } from './surprise-grid';
+import { mountSurpriseSettingsPanel, type SurpriseSettingsPanelHandle } from './surprise-settings-panel';
 import { writePendingTransfer } from './edit-state';
 
 export interface SurpriseMountOptions { device: GPUDevice; format: GPUTextureFormat }
 export interface SurpriseMountHandle { destroy(): void }
 
-const BATCH = 16;
-// Canvas backing store must equal the renderer's output dims (THUMB_DIM) so the
-// readback ImageData maps 1:1 onto the canvas. CSS scales it to the grid cell.
-const TILE_PX = THUMB_DIM;
+const GAP_PX = 8;
+// Hard cap on tiles per wall. Each thumbnail is a full GPU fractal render (heavy),
+// so an unbounded screen-scaled count (a 4K monitor in fill mode wants ~120) would
+// peg the GPU for minutes. 60 fills common displays while staying responsive; Set #
+// above this is clamped. (#surprise-v2 perf fix)
+const MAX_TILES = 60;
+// Pause between renders so a long wall fill gives the GPU/OS relief instead of
+// pegging the machine. (#surprise-v2)
+const RELIEF_MS = 40;
+
+/** Tile caption: xform count + the distinct variations used (#surprise-v2). */
+function tileCaption(g: Genome): string {
+  const names = [...new Set(
+    g.xforms.flatMap((x) => x.variations.map((v) => VARIATION_NAMES[v.index] ?? `#${v.index}`)),
+  )];
+  const nxf = g.xforms.length;
+  return `${nxf} xform${nxf === 1 ? '' : 's'} · ${names.join(', ')}`;
+}
+
+/** Map the user's settings onto the generator's params. */
+function settingsToParams(s: SurpriseSettings): SurpriseGenParams {
+  return {
+    xformCount: s.xformCount, blendPerXform: s.blendPerXform,
+    preferred: s.preferred, preferMode: s.preferMode,
+  };
+}
 
 export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions): SurpriseMountHandle {
   host.replaceChildren();
-  const state = createSurpriseState();
+  let settings = loadSurpriseSettings();
+  const state = createSurpriseState(settings);
   const gpu = makeGpuRenderThumb(opts.device, opts.format);
 
   // ---- DOM skeleton (createElement only — never innerHTML) ----
   const root = document.createElement('div'); root.className = 'pyr3-surprise-root';
   const controls = document.createElement('div'); controls.className = 'pyr3-surprise-controls';
-  const moreBtn = document.createElement('button'); moreBtn.className = 'pyr3-surprise-more';
-  moreBtn.textContent = '🎲 Surprise more';
+
+  // Reroll. When settings are pending the label becomes "Apply & Reroll" + a
+  // pulse (a `.dirty` class), so the button itself tells the user clicking it
+  // applies the changes — no separate cue line that would grow the controls bar.
+  // min-width is pinned (CSS) to the wider label so the text swap doesn't jump.
+  const rerollBtn = document.createElement('button'); rerollBtn.className = 'pyr3-surprise-more';
+  rerollBtn.dataset.role = 'reroll'; rerollBtn.textContent = '🎲 Reroll';
+
+  const settingsBtn = document.createElement('button'); settingsBtn.className = 'pyr3-surprise-settings-btn';
+  settingsBtn.dataset.role = 'settings-toggle'; settingsBtn.textContent = '⚙ Settings';
+
+  // Stop — halts the in-flight generation + render. Enabled only while rendering.
+  const stopBtn = document.createElement('button'); stopBtn.className = 'pyr3-surprise-stop-btn';
+  stopBtn.dataset.role = 'stop'; stopBtn.textContent = '■ Stop'; stopBtn.disabled = true;
+  stopBtn.title = 'Stop rendering the current wall';
+
+  const wallUndo = document.createElement('button'); wallUndo.className = 'pyr3-surprise-wall-undo';
+  wallUndo.dataset.role = 'wall-undo'; wallUndo.textContent = '↶'; wallUndo.title = 'Undo reroll (Ctrl+Z)';
+  const wallRedo = document.createElement('button'); wallRedo.className = 'pyr3-surprise-wall-redo';
+  wallRedo.dataset.role = 'wall-redo'; wallRedo.textContent = '↷'; wallRedo.title = 'Redo reroll (Ctrl+⇧Z)';
+
   const status = document.createElement('div'); status.className = 'pyr3-surprise-status';
-  controls.append(moreBtn, status);
+  controls.append(rerollBtn, stopBtn, settingsBtn, wallUndo, wallRedo, status);
 
   const wall = document.createElement('div'); wall.className = 'pyr3-surprise-wall';
-  const tray = document.createElement('aside'); tray.className = 'pyr3-surprise-tray';
-  tray.dataset.role = 'tray';
-  root.append(controls, wall, tray);
+  wall.style.display = 'grid'; wall.style.gap = `${GAP_PX}px`;
+
+  const panelHost = document.createElement('div'); panelHost.className = 'pyr3-surprise-panel-host';
+  panelHost.dataset.role = 'panel-host'; panelHost.style.display = 'none';
+
+  root.append(controls, panelHost, wall);
   host.append(root);
 
-  // wallGenomes mirrors what each slot currently shows (assigned the moment a
-  // genome is queued, before it renders) so the wall can persist + restore.
-  const wallGenomes: (Genome | null)[] = new Array(BATCH).fill(null);
-  function persistWall(): void { writeWall(wallGenomes.filter((g): g is Genome => g !== null)); }
-  function openInEditor(slot: number): void {
-    const genome = wallGenomes[slot] ?? state.getTile(slot)?.genome;
-    if (!genome) return;
-    // Stash the genome, then open the editor in a NEW TAB. pending-transfer is a
-    // localStorage handoff (shared across tabs, single-shot consume), so the new
-    // tab picks it up on load while the wall stays put in this tab. The click is
-    // a direct user gesture, so window.open isn't popup-blocked.
-    writePendingTransfer({ genome, corpusId: null, timestamp: Date.now() });
-    window.open('/editor', '_blank', 'noopener');
-  }
-
-  // ---- tiles: pre-create BATCH slots so the grid never reflows (no-jump) ----
-  const slots: HTMLElement[] = [];
+  // ---- state mirrors ----
+  // wallGenomes mirrors what each slot shows; appliedSettings is the snapshot that
+  // produced the current wall (the dirty cue compares live settings against it).
+  let wallGenomes: Genome[] = [];
+  let appliedSettings: SurpriseSettings = settings;
   let generated = 0, culled = 0;
-  function makeSlot(i: number): HTMLElement {
-    const cell = document.createElement('div'); cell.className = 'pyr3-surprise-tile pending';
-    cell.dataset.role = 'tile'; cell.dataset.slot = String(i);
-    const cv = document.createElement('canvas'); cv.width = TILE_PX; cv.height = TILE_PX;
-    // ↗ link-out — opens this flame in the editor immediately (upper-right corner).
-    const open = document.createElement('button'); open.className = 'pyr3-tile-open'; open.textContent = '↗';
-    open.title = 'Open in editor';
-    open.onclick = () => openInEditor(i);
-    const keep = document.createElement('button'); keep.className = 'pyr3-tile-keep'; keep.textContent = '⭐';
-    keep.title = 'Keep this flame';
-    keep.onclick = () => {
-      const r = state.keep(i);
-      // #304 — surface a non-fatal warning instead of silently losing the star.
-      if (r === 'tray-full') status.textContent = `keep tray full (max ${MAX_KEEP_TRAY}) — remove some to keep more`;
-      else if (r === 'persist-failed') status.textContent = 'could not save keep — browser storage full';
-      renderTray();
-    };
-    const reroll = document.createElement('button'); reroll.className = 'pyr3-tile-reroll'; reroll.textContent = '✕';
-    reroll.title = 'Reroll this tile';
-    reroll.onclick = () => fillSlot(i);
-    const label = document.createElement('div'); label.className = 'pyr3-tile-label';
-    cell.append(cv, open, keep, reroll, label);
-    return cell;
-  }
-  for (let i = 0; i < BATCH; i++) { const s = makeSlot(i); slots.push(s); wall.append(s); }
 
-  // ---- render queue: paint surviving tiles to their slot canvas via putImageData ----
-  // pendingGenomes is a FIFO that maps each dequeued thumb back to its slot. The
-  // queue is serial + FIFO and every enqueue is paired with exactly one push here,
-  // so the head always corresponds to the genome being reported.
+  function viewport(): Viewport {
+    const r = wall.getBoundingClientRect();
+    return { w: Math.max(1, r.width), h: Math.max(1, r.height || window.innerHeight - r.top), gap: GAP_PX };
+  }
+  function gridMode(count?: number): GridMode {
+    // Reroll uses the settings; resize re-fits the CURRENT count (set-mode) so a
+    // resize never changes how many flames are shown (that waits for Reroll, #C).
+    if (count !== undefined) return { mode: 'set', n: count };
+    return settings.countMode === 'fill'
+      ? { mode: 'fill', density: settings.density }
+      : { mode: 'set', n: Math.min(MAX_TILES, Math.max(1, settings.setN)) };
+  }
+
+  // ---- render queue ----
   const pendingGenomes: { genome: Genome; slot: number }[] = [];
   const queue = createSurpriseQueue({
     renderThumb: gpu.renderThumb,
+    reliefMs: RELIEF_MS,
+    // Mark the tile whose render is starting now (it's the FIFO head). #surprise-v2
+    onRenderStart: () => {
+      const head = pendingGenomes[0];
+      if (head) slots[head.slot]?.classList.add('rendering');
+    },
     onReady: (t) => {
       const item = pendingGenomes.shift(); if (!item) return;
-      const cell = slots[item.slot]!; const cv = cell.querySelector('canvas') as HTMLCanvasElement | null;
+      const cell = slots[item.slot]; if (!cell) return;
+      const cv = cell.querySelector('canvas') as HTMLCanvasElement | null;
       const ctx = cv?.getContext('2d');
-      // Copy into a fresh (non-shared) ArrayBuffer-backed array — ImageData's
-      // lib types reject the ArrayBufferLike union the readback produces.
       if (ctx) ctx.putImageData(new ImageData(new Uint8ClampedArray(t.rgba), t.w, t.h), 0, 0);
-      const name = VARIATION_NAMES[t.genome.xforms[0]?.variations[0]?.index ?? 0] ?? '';
-      state.setTile(item.slot, { genome: t.genome });
-      cell.classList.remove('pending');
+      cell.classList.remove('pending', 'rendering');
+      const cap = tileCaption(t.genome);
       const labelEl = cell.querySelector('.pyr3-tile-label') as HTMLElement | null;
-      if (labelEl) labelEl.textContent = name;
+      if (labelEl) labelEl.textContent = cap;
+      cell.title = cap; // hover shows the full caption when truncated
       updateStatus();
     },
     onCulled: () => {
       culled++;
       const item = pendingGenomes.shift();
-      if (item) fillSlot(item.slot);
+      if (item) slots[item.slot]?.classList.remove('rendering');
+      if (item) refillSlot(item.slot);
       updateStatus();
     },
   });
 
-  function fillSlot(slot: number): void {
+  // ---- tiles ----
+  let slots: HTMLElement[] = [];
+  function makeSlot(i: number): HTMLElement {
+    const cell = document.createElement('div'); cell.className = 'pyr3-surprise-tile pending';
+    cell.dataset.role = 'tile'; cell.dataset.slot = String(i);
+    cell.style.cursor = 'pointer';
+    const cv = document.createElement('canvas'); cv.width = THUMB_DIM; cv.height = THUMB_DIM;
+    const label = document.createElement('div'); label.className = 'pyr3-tile-label';
+    cell.append(cv, label);
+    // Whole-tile click → open in the editor (new tab). #surprise-v2.
+    cell.addEventListener('click', () => openInEditor(i));
+    return cell;
+  }
+  function rebuildSlots(count: number): void {
+    slots = [];
+    wall.replaceChildren();
+    for (let i = 0; i < count; i++) { const s = makeSlot(i); slots.push(s); wall.append(s); }
+  }
+  /** Lay the grid columns/tile-size out for the given mode (snap-to-fit). */
+  function applyGridLayout(mode: GridMode): void {
+    const g = computeGrid(viewport(), mode);
+    wall.style.gridTemplateColumns = `repeat(${g.cols}, ${g.tile}px)`;
+  }
+
+  function openInEditor(slot: number): void {
+    const genome = wallGenomes[slot];
+    if (!genome) return;
+    // pending-transfer is a localStorage handoff (shared across tabs, single-shot
+    // consume) so the new tab picks it up on load while the wall stays put here.
+    writePendingTransfer({ genome, corpusId: null, timestamp: Date.now() });
+    window.open('/editor', '_blank', 'noopener');
+  }
+
+  function refillSlot(slot: number): void {
+    if (!slots[slot]) return;
     slots[slot]!.classList.add('pending');
-    const [genome] = generateSurpriseBatch(Math.random, 1);
+    const [genome] = generateSurpriseBatch(Math.random, 1, settingsToParams(appliedSettings));
     generated++; wallGenomes[slot] = genome!; persistWall();
     pendingGenomes.push({ genome: genome!, slot });
     queue.enqueue([genome!]);
   }
 
-  function surpriseMore(): void {
-    // One stratified batch of BATCH so the wall spans the catalog (the whole
-    // point of the broadened pool) rather than 16 independent single-picks.
-    const batch = generateSurpriseBatch(Math.random, BATCH);
+  function persistWall(): void { writeWall(wallGenomes.filter((g): g is Genome => g != null)); }
+
+  // Generation epoch — bumped by every fillWall() so an in-flight chunked fill
+  // (from a prior Reroll) cancels the moment a newer one starts.
+  let genEpoch = 0;
+  let genActive = false; // chunked generation still producing genomes
+  const GEN_CHUNK = 4; // genomes generated per tick
+
+  /** Rendering while genomes are still being generated OR tiles still queued. */
+  function isRendering(): boolean { return genActive || pendingGenomes.length > 0; }
+  function refreshStop(): void { stopBtn.disabled = !isRendering(); }
+
+  /** Fill the wall with `count` tiles. When `provided` is given (restore / undo)
+   *  those genomes are used; otherwise genomes are generated in small YIELDING
+   *  chunks — generateRandomGenome runs a CPU fit-oracle per genome, so generating
+   *  a whole screen-sized batch synchronously would freeze the page. Chunking +
+   *  setTimeout keeps the main thread responsive and lets the first tiles render
+   *  almost immediately while the rest stream in. (#surprise-v2 perf fix) */
+  function fillWall(count: number, provided: Genome[] | null): void {
+    const myEpoch = ++genEpoch;
     queue.clear(); pendingGenomes.length = 0;
-    for (let i = 0; i < BATCH; i++) {
-      slots[i]!.classList.add('pending');
-      generated++;
-      wallGenomes[i] = batch[i]!;
-      pendingGenomes.push({ genome: batch[i]!, slot: i });
-    }
-    persistWall();
-    queue.enqueue(batch);
+    wallGenomes = new Array<Genome>(count);
+    rebuildSlots(count);
+    applyGridLayout(gridMode(count));
+    genActive = true; refreshStop();
+    let i = 0;
+    const step = (): void => {
+      if (myEpoch !== genEpoch) return; // superseded by a newer fill
+      const end = Math.min(count, i + GEN_CHUNK);
+      const chunk = provided
+        ? provided.slice(i, end)
+        : generateSurpriseBatch(Math.random, end - i, settingsToParams(appliedSettings));
+      for (let k = 0; k < chunk.length; k++, i++) {
+        wallGenomes[i] = chunk[k]!;
+        generated++;
+        pendingGenomes.push({ genome: chunk[k]!, slot: i });
+      }
+      queue.enqueue(chunk);
+      persistWall();
+      updateStatus();
+      if (i < count) { setTimeout(step, 0); }
+      else { genActive = false; refreshStop(); if (!provided) { state.wallHistory.push(wallGenomes.slice()); refreshWallHistoryButtons(); } }
+    };
+    step();
   }
 
-  // Re-render a previously-persisted wall (genomes restored from localStorage)
-  // into the same slots, so a page reload returns the user to the same flames.
-  function restoreWall(genomes: Genome[]): void {
-    queue.clear(); pendingGenomes.length = 0;
-    const n = Math.min(genomes.length, BATCH);
-    for (let i = 0; i < n; i++) {
-      slots[i]!.classList.add('pending');
-      wallGenomes[i] = genomes[i]!;
-      pendingGenomes.push({ genome: genomes[i]!, slot: i });
-    }
-    queue.enqueue(genomes.slice(0, n));
-    // Top up any remaining empty slots (older saved walls < BATCH).
-    for (let i = n; i < BATCH; i++) fillSlot(i);
+  /** Halt the in-flight generation + queued renders (Stop button). */
+  function stopRendering(): void {
+    genEpoch++;            // cancel any pending chunked-gen step
+    genActive = false;
+    queue.clear();         // drop everything not yet started (#295 epoch drop)
+    pendingGenomes.length = 0;
+    for (const cell of slots) cell.classList.remove('rendering');
+    refreshStop();
+    updateStatus();
+  }
+  stopBtn.onclick = stopRendering;
+
+  /** Resolve how many tiles a Reroll should produce (capped). */
+  function rerollCount(): number {
+    const m = gridMode();
+    const raw = m.mode === 'set' ? m.n : computeGrid(viewport(), m).count;
+    return Math.min(MAX_TILES, Math.max(1, raw));
+  }
+
+  /** Apply pending settings + roll a fresh wall (the 🎲 Reroll action). */
+  function reroll(): void {
+    appliedSettings = settings;
+    fillWall(rerollCount(), null);
+    refreshDirty();
+    refreshWallHistoryButtons();
+  }
+
+  function restoreWallBatch(batch: Genome[]): void {
+    fillWall(Math.min(MAX_TILES, batch.length), batch.slice(0, MAX_TILES));
+    refreshWallHistoryButtons();
+  }
+
+  // ---- resize re-fill (Fill mode): keep existing tiles, append/trim to match
+  //      the new viewport. Gated on the wall being idle so it never disturbs an
+  //      in-flight fill, and only the viewport-driven count tracks the window —
+  //      generation SETTINGS still wait for Reroll. (#surprise-v2)
+  function growWall(from: number, to: number): void {
+    const myEpoch = ++genEpoch; genActive = true; refreshStop();
+    for (let idx = from; idx < to; idx++) { const s = makeSlot(idx); slots.push(s); wall.append(s); }
+    applyGridLayout(gridMode(to));
+    let i = from;
+    const step = (): void => {
+      if (myEpoch !== genEpoch) return;
+      const end = Math.min(to, i + GEN_CHUNK);
+      const chunk = generateSurpriseBatch(Math.random, end - i, settingsToParams(appliedSettings));
+      for (let k = 0; k < chunk.length; k++, i++) {
+        wallGenomes[i] = chunk[k]!; generated++;
+        pendingGenomes.push({ genome: chunk[k]!, slot: i });
+      }
+      queue.enqueue(chunk); persistWall(); updateStatus();
+      if (i < to) setTimeout(step, 0);
+      else { genActive = false; refreshStop(); }
+    };
+    step();
+  }
+  function shrinkWall(to: number): void {
+    for (let idx = slots.length - 1; idx >= to; idx--) slots[idx]?.remove();
+    slots.length = to;
+    wallGenomes.length = to;
+    applyGridLayout(gridMode(to));
+    persistWall(); updateStatus();
+  }
+  /** Re-fill the wall to the current Fill-mode viewport — only once the wall is
+   *  idle (no gen, no queued renders), so existing tiles are never disturbed. */
+  function refillToFit(): void {
+    if (settings.countMode !== 'fill') return;
+    if (genActive || pendingGenomes.length > 0) { scheduleRefill(); return; } // retry when idle
+    const target = Math.min(MAX_TILES, Math.max(1,
+      computeGrid(viewport(), { mode: 'fill', density: settings.density }).count));
+    const current = wallGenomes.length;
+    if (target > current) growWall(current, target);
+    else if (target < current) shrinkWall(target);
+  }
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleRefill(): void {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(refillToFit, 250); // debounce — refill after dragging stops
   }
 
   function updateStatus(): void {
-    status.textContent = `generated ${generated} · culled ${culled} degenerate · showing ${BATCH}`;
-  }
-  moreBtn.onclick = surpriseMore;
-
-  // ---- tray rendering ----
-  function renderTray(): void {
-    tray.replaceChildren();
-    const title = document.createElement('h2'); title.textContent = '⭐ Keep tray'; tray.append(title);
-    const entries = state.tray();
-    if (!entries.length) {
-      const empty = document.createElement('div'); empty.className = 'pyr3-tray-empty';
-      empty.dataset.role = 'tray-empty'; empty.textContent = 'No keepers yet — hover a flame & tap ⭐';
-      tray.append(empty); return;
-    }
-    entries.forEach((e, idx) => {
-      const card = document.createElement('div'); card.className = 'pyr3-kept';
-      const name = VARIATION_NAMES[e.genome.xforms[0]?.variations[0]?.index ?? 0] ?? 'flame';
-      const cap = document.createElement('span'); cap.className = 'pyr3-kept-label'; cap.textContent = name;
-      const edit = document.createElement('button'); edit.textContent = '✏️'; edit.title = 'Edit this flame';
-      edit.onclick = () => {
-        writePendingTransfer({ genome: e.genome, corpusId: null, timestamp: Date.now() });
-        window.location.href = '/editor';
-      };
-      const rm = document.createElement('button'); rm.textContent = '🗑️'; rm.title = 'Remove from tray';
-      rm.onclick = () => { state.removeFromTray(idx); renderTray(); };
-      card.append(cap, edit, rm); tray.append(card);
-    });
+    status.textContent = `generated ${generated} · culled ${culled} degenerate · showing ${wallGenomes.length}`;
+    refreshStop();
   }
 
-  renderTray(); updateStatus();
-  // Restore the last wall on load; only generate fresh on a first-ever visit.
+  // ---- dirty signal: when settings differ from the wall's, the Reroll button
+  //      becomes "Apply & Reroll" + pulses so clicking it clearly applies them. ----
+  function isDirty(): boolean { return JSON.stringify(settings) !== JSON.stringify(appliedSettings); }
+  function refreshDirty(): void {
+    const dirty = isDirty();
+    rerollBtn.textContent = dirty ? '🎲 Apply & Reroll' : '🎲 Reroll';
+    rerollBtn.classList.toggle('dirty', dirty);
+  }
+
+  // ---- settings history wiring ----
+  function commitSettings(next: SurpriseSettings, pushHistory: boolean): void {
+    settings = next;
+    if (pushHistory) state.settingsHistory.push(next);
+    saveSurpriseSettings(next);
+    panel?.refresh();
+    refreshDirty();
+    refreshSettingsHistoryButtons();
+  }
+  function refreshSettingsHistoryButtons(): void { panel?.refresh(); }
+
+  let panel: SurpriseSettingsPanelHandle | null = null;
+  panel = mountSurpriseSettingsPanel(panelHost, {
+    getSettings: () => settings,
+    onChange: (next) => commitSettings(next, true),
+    onReset: () => commitSettings({ ...SURPRISE_SETTINGS_DEFAULT }, true),
+    onUndo: () => { const s = state.settingsHistory.undo(); if (s) commitSettings(s, false); },
+    onRedo: () => { const s = state.settingsHistory.redo(); if (s) commitSettings(s, false); },
+    canUndo: () => state.settingsHistory.canUndo(),
+    canRedo: () => state.settingsHistory.canRedo(),
+  });
+  // Settings popover: anchored under the ⚙ button (position:fixed from its rect),
+  // dismissed on outside mousedown-origin (#283 — a re-render can detach the
+  // click target mid-click, so decide on mousedown not click).
+  function closeSettings(): void {
+    panelHost.style.display = 'none';
+    document.removeEventListener('mousedown', onSettingsOutside, true);
+  }
+  function onSettingsOutside(ev: MouseEvent): void {
+    const t = ev.target as Node;
+    if (!panelHost.contains(t) && t !== settingsBtn && !settingsBtn.contains(t)) closeSettings();
+  }
+  settingsBtn.onclick = () => {
+    if (panelHost.style.display !== 'none') { closeSettings(); return; }
+    const r = settingsBtn.getBoundingClientRect();
+    panelHost.style.left = `${Math.round(r.left)}px`;
+    panelHost.style.top = `${Math.round(r.bottom + 6)}px`;
+    panelHost.style.display = '';
+    panel?.refresh();
+    document.addEventListener('mousedown', onSettingsOutside, true);
+  };
+
+  // ---- wall history wiring ----
+  function refreshWallHistoryButtons(): void {
+    wallUndo.disabled = !state.wallHistory.canUndo();
+    wallRedo.disabled = !state.wallHistory.canRedo();
+  }
+  wallUndo.onclick = () => { const b = state.wallHistory.undo(); if (b) restoreWallBatch(b); };
+  wallRedo.onclick = () => { const b = state.wallHistory.redo(); if (b) restoreWallBatch(b); };
+  function onKey(e: KeyboardEvent): void {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+    if (panelHost.style.display !== 'none') return; // panel focus → its own ↶↷ owns undo
+    e.preventDefault();
+    if (e.shiftKey) { const b = state.wallHistory.redo(); if (b) restoreWallBatch(b); }
+    else { const b = state.wallHistory.undo(); if (b) restoreWallBatch(b); }
+  }
+  window.addEventListener('keydown', onKey);
+
+  rerollBtn.onclick = reroll;
+
+  // ---- resize: live re-fit the current tiles (cheap), then debounced re-fill
+  //      to the new viewport in Fill mode (Set # keeps its explicit count). ----
+  const ro = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => {
+        if (wallGenomes.length > 0) applyGridLayout(gridMode(wallGenomes.length));
+        scheduleRefill();
+      })
+    : null;
+  ro?.observe(wall);
+
+  // ---- boot: restore the last wall, else roll a fresh one ----
+  updateStatus();
+  refreshDirty();
+  refreshWallHistoryButtons();
   const saved = readWall();
-  if (saved.length) restoreWall(saved); else surpriseMore();
+  if (saved.length) {
+    appliedSettings = settings;
+    const batch = saved.slice(0, MAX_TILES);
+    state.wallHistory.push(batch);
+    fillWall(batch.length, batch);
+    refreshWallHistoryButtons();
+  } else reroll();
 
-  return { destroy() { queue.clear(); gpu.destroy(); host.replaceChildren(); } };
+  return {
+    destroy() {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onSettingsOutside, true);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      ro?.disconnect();
+      panel?.destroy();
+      queue.clear(); gpu.destroy(); host.replaceChildren();
+    },
+  };
 }

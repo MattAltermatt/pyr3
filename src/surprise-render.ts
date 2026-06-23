@@ -15,8 +15,17 @@ import { type ThumbResult } from './surprise-queue';
  *  this so the readback ImageData matches the canvas dims exactly. */
 export const THUMB_DIM = 320;
 const DIM = THUMB_DIM;
-const QUALITY = 256;      // samples/px — the wall drives iterate() directly, so
-                          // the ESF ≤16 browser-preview cap doesn't apply here.
+// samples/px for the wall's discovery thumbnails. Lowered 256 → 96 (#surprise-v2
+// perf): a 320px preview reads fine at 96, and the wall renders many candidates
+// (incl. culled ones) serially — full quality lives in the editor you click through
+// to. ~2.7× faster per thumbnail. The ESF ≤16 browser-preview cap doesn't apply.
+const QUALITY = 96;
+// #surprise-v2 cull pre-pass: most generated candidates are degenerate and get
+// rendered-then-culled. Classify each at a cheap low spp first, and only pay the
+// full QUALITY render for survivors. present() normalizes by totalSamples, so a
+// low-spp render has the SAME brightness as full (just noisier) — the cull signal
+// (sparse / black / low-coverage) is unaffected. ~4× cheaper per culled candidate.
+const CULL_QUALITY = 24;
 const WALKERS = 4096;
 
 export interface GpuThumbRenderer {
@@ -45,36 +54,21 @@ export function makeGpuRenderThumb(device: GPUDevice, format: GPUTextureFormat):
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
 
-  async function renderThumb(genome: Genome): Promise<ThumbResult> {
-    // #361 — the genome was framed by generateRandomGenome for FIT_REF
-    // (1920×1080, 16:9); rendering it untouched into the square tile keeps that
-    // scale and zoom-crops the attractor. Re-fit to the square tile so the whole
-    // flame frames inside it. Only the local render copy is reframed — the stored
-    // genome keeps its authored framing for click-through to the editor/viewer.
-    // The CPU oracle can throw on exotic variations (mirrors edit-seed's guard)
-    // → fall back to the authored framing.
-    let framed = genome;
-    try {
-      const fit = computeFitViewport(genome, DIM, DIM);
-      if (fit) framed = { ...genome, scale: fit.scale, cx: fit.cx, cy: fit.cy };
-    } catch { /* oracle blew up on an exotic variation → render authored framing */ }
+  const itersForQuality = (q: number): number => Math.max(64, Math.ceil((q * DIM * DIM) / WALKERS));
+  const freshSeed = (): number => (Math.random() * 0xffffffff) >>> 0;
 
-    // 1. iterate the chaos game for this genome (screensaver pattern)
-    const iters = Math.max(64, Math.ceil((QUALITY * DIM * DIM) / WALKERS));
-    renderer.reset(framed);
-    renderer.iterate({ genome: framed, seed: (Math.random() * 0xffffffff) >>> 0, walkers: WALKERS, itersPerWalker: iters });
-
-    // 2. present into the scratch COPY_SRC texture (swap-chain textures are not readable)
-    renderer.present({ genome: framed, outputView: scratchTex.createView(), totalSamples: WALKERS * iters, forceDeOff: false });
-
-    // 3. copy → mappable buffer → read RGBA (edit-mount.ts scratch-readback pattern)
+  /** Present the CURRENT accumulated histogram (normalized by `totalSamples`),
+   *  read it back, and classify. Does NOT reset — so it reflects however many
+   *  iterate() calls have accumulated since the last reset. */
+  async function presentAndClassify(framed: Genome, totalSamples: number): Promise<ThumbResult> {
+    // present into the scratch COPY_SRC texture (swap-chain textures are not readable)
+    renderer.present({ genome: framed, outputView: scratchTex.createView(), totalSamples, forceDeOff: false });
+    // copy → mappable buffer → read RGBA (edit-mount.ts scratch-readback pattern)
     const enc = device.createCommandEncoder();
     enc.copyTextureToBuffer({ texture: scratchTex }, { buffer: scratchBuf, bytesPerRow, rowsPerImage: DIM }, { width: DIM, height: DIM });
     device.queue.submit([enc.finish()]);
     await scratchBuf.mapAsync(GPUMapMode.READ);
-    // #389 — always unmap after a successful map so the buffer is reusable next
-    // call (and never left mapped if the copy/classify loop throws). On a mapAsync
-    // rejection we never enter this try, so unmap() always has a mapped buffer.
+    // #389 — always unmap after a successful map so the buffer is reusable next call.
     try {
       const padded = new Uint8Array(scratchBuf.getMappedRange());
       const rgba = new Uint8ClampedArray(DIM * DIM * 4);
@@ -90,6 +84,41 @@ export function makeGpuRenderThumb(device: GPUDevice, format: GPUTextureFormat):
     } finally {
       scratchBuf.unmap();
     }
+  }
+
+  async function renderThumb(genome: Genome): Promise<ThumbResult> {
+    // #361 — the genome was framed by generateRandomGenome for FIT_REF
+    // (1920×1080, 16:9); rendering it untouched into the square tile keeps that
+    // scale and zoom-crops the attractor. Re-fit to the square tile so the whole
+    // flame frames inside it. Only the local render copy is reframed — the stored
+    // genome keeps its authored framing for click-through to the editor/viewer.
+    // The CPU oracle can throw on exotic variations (mirrors edit-seed's guard)
+    // → fall back to the authored framing.
+    let framed = genome;
+    try {
+      const fit = computeFitViewport(genome, DIM, DIM);
+      if (fit) framed = { ...genome, scale: fit.scale, cx: fit.cx, cy: fit.cy };
+    } catch { /* oracle blew up on an exotic variation → render authored framing */ }
+
+    // #surprise-v2 two-stage with a HOT histogram. Most candidates are
+    // degenerate, so accumulate only CULL_QUALITY samples and classify. If it's
+    // a keeper, KEEP the histogram (no reset) and iterate the remaining samples
+    // on top to reach full QUALITY — the cull probe's samples become part of the
+    // final image instead of being thrown away. (saves CULL_QUALITY per survivor)
+    const probeIters = itersForQuality(CULL_QUALITY);
+    renderer.reset(framed);
+    renderer.iterate({ genome: framed, seed: freshSeed(), walkers: WALKERS, itersPerWalker: probeIters });
+    let totalSamples = WALKERS * probeIters;
+    const probe = await presentAndClassify(framed, totalSamples);
+    if (!probe.verdict.ok) return probe; // degenerate — skip the rest
+
+    // Survivor: continue accumulating into the same hot histogram to full quality.
+    const moreIters = itersForQuality(QUALITY) - probeIters;
+    if (moreIters > 0) {
+      renderer.iterate({ genome: framed, seed: freshSeed(), walkers: WALKERS, itersPerWalker: moreIters });
+      totalSamples += WALKERS * moreIters;
+    }
+    return presentAndClassify(framed, totalSamples);
   }
 
   return {

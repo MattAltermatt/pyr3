@@ -961,13 +961,13 @@
         position: relative;
         height: calc(100vh - 44px);
         width: 100%;
-        overflow: auto;
+        overflow: hidden; /* #surprise-v2 — full-bleed wall fills the viewport, no scroll */
       }
       .pyr3-surprise-root {
         display: grid;
-        grid-template-columns: 1fr 280px;
+        grid-template-columns: 1fr; /* #surprise-v2 — tray removed; full-bleed single column */
         grid-template-rows: auto 1fr;
-        grid-template-areas: "controls tray" "wall tray";
+        grid-template-areas: "controls" "wall";
         height: 100%;
         width: 100%;
       }
@@ -986,41 +986,144 @@
         border: none;
         border-radius: 4px;
         padding: 0.5rem 0.95rem;
+        /* #surprise-v2 — pinned to fit "🎲 Apply & Reroll" so the dirty-state
+           label swap doesn't shift the controls. */
+        min-width: 11.5rem;
         font-family: ui-monospace, monospace;
         font-size: 0.85rem;
         font-weight: 600;
         cursor: pointer;
-        transition: filter 0.12s;
+        transition: filter 0.12s, box-shadow 0.2s;
       }
       .pyr3-surprise-more:hover { filter: brightness(1.12); }
+      /* #surprise-v2 — settings pending: pulse the Reroll button so "Apply &
+         Reroll" reads as the action that applies them (no layout-growing cue). */
+      .pyr3-surprise-more.dirty { animation: pyr3-reroll-pulse 1.3s ease-in-out infinite; }
+      @keyframes pyr3-reroll-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(201, 119, 119, 0); }
+        50% { box-shadow: 0 0 0 3px rgba(232, 168, 100, 0.55); }
+      }
+      .pyr3-surprise-settings-btn,
+      .pyr3-surprise-stop-btn,
+      .pyr3-surprise-wall-undo,
+      .pyr3-surprise-wall-redo {
+        background: var(--bar-bg-3, #2a2a2e); color: var(--text, #ddd);
+        border: 1px solid var(--bar-border); border-radius: 4px;
+        padding: 0.45rem 0.7rem; font-family: ui-monospace, monospace; font-size: 0.82rem;
+        cursor: pointer; transition: filter 0.12s;
+      }
+      .pyr3-surprise-stop-btn:not(:disabled) { color: #e8786a; border-color: #e8786a55; }
+      .pyr3-surprise-stop-btn:not(:disabled):hover { filter: brightness(1.2); }
+      .pyr3-surprise-stop-btn:disabled { opacity: 0.35; cursor: default; }
+      .pyr3-surprise-wall-undo, .pyr3-surprise-wall-redo { padding: 0.45rem 0.6rem; }
+      .pyr3-surprise-settings-btn:hover,
+      .pyr3-surprise-wall-undo:not(:disabled):hover,
+      .pyr3-surprise-wall-redo:not(:disabled):hover { filter: brightness(1.2); }
+      .pyr3-surprise-wall-undo:disabled,
+      .pyr3-surprise-wall-redo:disabled { opacity: 0.35; cursor: default; }
+      /* #surprise-v2 — settings popover, anchored under the ⚙ Settings button
+         (position set from the button rect in JS). */
+      .pyr3-surprise-panel-host {
+        position: fixed; z-index: 50;
+        background: var(--bar-bg-2); border: 1px solid var(--bar-border);
+        border-radius: 8px; padding: 0; min-width: 286px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      }
+      /* Settings panel — adopt the editor affordance ethos: aligned label column,
+         boxed fields, sectioned actions. */
+      .pyr3-surprise-settings {
+        padding: 0.7rem 0.85rem;
+        font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--text, #ddd);
+      }
+      .pyr3-surprise-settings-row {
+        display: flex; align-items: center; gap: 6px; padding: 5px 0;
+      }
+      .pyr3-surprise-settings-label {
+        width: 96px; flex: none; color: var(--text-dim, #888); font-size: 0.78rem;
+      }
+      .pyr3-surprise-settings-row label {
+        display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+      }
+      .pyr3-surprise-settings-num {
+        width: 46px; background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
+        border-radius: 3px; color: var(--text, #ddd); padding: 3px 6px;
+        font-family: inherit; font-size: 0.78rem; text-align: center;
+      }
+      .pyr3-surprise-settings-num:focus { outline: none; border-color: var(--accent, #c97); }
+      .pyr3-surprise-settings-density {
+        background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
+        color: var(--text-dim, #888); border-radius: 3px; padding: 3px 11px; cursor: pointer;
+        font-family: inherit; font-size: 0.78rem;
+      }
+      .pyr3-surprise-settings-density.on {
+        background: var(--accent, #c97); color: #1a1a1a; border-color: var(--accent, #c97); font-weight: 600;
+      }
+      .pyr3-surprise-settings-pick {
+        background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
+        color: var(--text, #ddd); border-radius: 3px; padding: 3px 9px; cursor: pointer;
+        font-family: inherit; font-size: 0.76rem;
+      }
+      .pyr3-surprise-settings-pick:hover { filter: brightness(1.2); }
+      .pyr3-surprise-settings-pref-count { color: var(--text-dim, #888); font-size: 0.72rem; }
+      .pyr3-surprise-settings-chips {
+        display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 2px 96px;
+      }
+      .pyr3-surprise-settings-chips:empty { display: none; }
+      .pyr3-surprise-settings-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
+        border-radius: 10px; padding: 1px 4px 1px 8px; font-size: 0.72rem; color: var(--text, #ddd);
+      }
+      .pyr3-surprise-settings-chip-rm {
+        background: none; border: none; color: var(--text-dim, #888); cursor: pointer;
+        font-size: 0.9rem; line-height: 1; padding: 0 2px; border-radius: 8px;
+      }
+      .pyr3-surprise-settings-chip-rm:hover { color: #e8786a; }
+      .pyr3-surprise-settings-actions {
+        display: flex; gap: 6px; align-items: center;
+        margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--bar-border);
+      }
+      .pyr3-surprise-settings-actions [data-role="reset"] { margin-right: auto; }
+      .pyr3-surprise-settings-actions button {
+        background: var(--bar-bg-3, #2a2a2e); border: 1px solid var(--bar-border);
+        color: var(--text, #ddd); border-radius: 3px; padding: 4px 11px; cursor: pointer;
+        font-family: inherit; font-size: 0.78rem;
+      }
+      .pyr3-surprise-settings-actions button:hover:not(:disabled) { filter: brightness(1.2); }
+      .pyr3-surprise-settings-actions button:disabled { opacity: 0.35; cursor: default; }
       .pyr3-surprise-status {
         font-family: ui-monospace, monospace;
         font-size: 0.78rem;
         color: var(--text-dim);
         letter-spacing: 0.02em;
+        margin-left: auto;
       }
       .pyr3-surprise-wall {
         grid-area: wall;
         display: grid;
-        /* Fixed 320px columns = the thumbnail's native render size (THUMB_DIM),
-           so tiles never stretch/shrink with the window — they stay 1:1 with the
-           rendered pixels regardless of viewport width. */
-        grid-template-columns: repeat(auto-fill, 320px);
+        /* #surprise-v2 — grid-template-columns is set inline by the mount from
+           computeGrid (snap-to-fit). Tiles fill their cell + stay square; the
+           wall fills the viewport with no scroll. */
         grid-auto-rows: min-content;
-        gap: 0.6rem;
-        padding: 0.9rem 1.1rem;
+        padding: 0.6rem;
         align-content: start;
-        justify-content: start;
-        overflow-y: auto;
+        justify-content: center;
+        overflow: hidden;
       }
       .pyr3-surprise-tile {
         position: relative;
-        width: 320px;
-        height: 320px;
+        width: 100%;
+        aspect-ratio: 1 / 1; /* #surprise-v2 — square, sized to the computed grid cell */
         background: #000;
         border: 1px solid var(--bar-border);
         border-radius: 3px;
         overflow: hidden;
+        transition: border-color 0.12s, transform 0.12s;
+      }
+      .pyr3-surprise-tile:hover {
+        border-color: var(--accent, #c97);
+        transform: scale(1.015);
+        z-index: 1;
       }
       .pyr3-surprise-tile canvas {
         width: 100%;
@@ -1038,6 +1141,22 @@
         color: var(--text-dim);
         font-family: ui-monospace, monospace;
         font-size: 1.4rem;
+      }
+      /* #surprise-v2 — the tile whose render is in flight: accent border + a
+         pulsing "rendering…" label (overrides the queued "…"). */
+      .pyr3-surprise-tile.rendering { border-color: var(--accent, #c97); }
+      .pyr3-surprise-tile.rendering::after {
+        content: "rendering…";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent, #c97);
+        font-family: ui-monospace, monospace;
+        font-size: 0.82rem;
+        letter-spacing: 0.04em;
+        animation: pyr3-cue-pulse 1s ease-in-out infinite;
       }
       .pyr3-surprise-tile .pyr3-tile-open,
       .pyr3-surprise-tile .pyr3-tile-keep,
@@ -1069,8 +1188,10 @@
         padding: 3px 6px;
         font-family: ui-monospace, monospace;
         font-size: 0.68rem;
-        color: #eee;
-        background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+        color: #fff;
+        /* #surprise-v2 — solid black bar so the caption is legible over any flame
+           (a faint gradient washed out over bright tiles). */
+        background: rgba(0, 0, 0, 0.82);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;

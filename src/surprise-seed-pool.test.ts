@@ -47,3 +47,22 @@ describe('pickStratifiedPrimaries', () => {
     for (const idx of pickStratifiedPrimaries(seededRng(9), 24)) expect(PRIMARY_ELIGIBLE).toContain(idx);
   });
 });
+
+describe('preferred bias|only (#surprise-v2)', () => {
+  const rng = () => 0.5;
+  it('only-mode draws exclusively from the preferred set', () => {
+    const pref = [V.spherical, V.swirl];
+    const got = pickStratifiedPrimaries(rng, 8, { preferred: pref, preferMode: 'only' });
+    for (const idx of got) expect(pref).toContain(idx);
+  });
+  it('bias-mode still spans beyond the preferred set (diversity preserved)', () => {
+    const got = pickStratifiedPrimaries(() => Math.random(), 32, { preferred: [V.spherical], preferMode: 'bias' });
+    expect(new Set(got).size).toBeGreaterThan(1);
+  });
+  it('empty preferred + only → falls back to the broad pool (never empty)', () => {
+    expect(pickStratifiedPrimaries(rng, 8, { preferred: [], preferMode: 'only' }).length).toBe(8);
+  });
+  it('no options → unchanged broad stratified behavior', () => {
+    expect(pickStratifiedPrimaries(rng, 8).length).toBe(8);
+  });
+});

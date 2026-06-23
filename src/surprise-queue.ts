@@ -14,6 +14,12 @@ export interface SurpriseQueueOpts {
   renderThumb: (genome: Genome) => Promise<ThumbResult>;
   onReady: (tile: ReadyTile) => void;
   onCulled: (genome: Genome, verdict: CullVerdict) => void;
+  /** Fired just before a genome's render starts — lets the UI mark which tile is
+   *  currently rendering. (#surprise-v2) */
+  onRenderStart?: (genome: Genome) => void;
+  /** Optional pause (ms) AFTER each render to give the GPU/system relief so a long
+   *  wall fill doesn't peg the machine. Default 0 (back-to-back). (#surprise-v2) */
+  reliefMs?: number;
 }
 
 export interface SurpriseQueue {
@@ -43,11 +49,17 @@ export function createSurpriseQueue(opts: SurpriseQueueOpts): SurpriseQueue {
     while (pending.length) {
       const genome = pending.shift()!;
       const startEpoch = epoch;
+      opts.onRenderStart?.(genome);
       let res: ThumbResult | null = null;
       try {
         res = await opts.renderThumb(genome);
       } catch {
         res = null;
+      }
+      // GPU/system relief between renders so a long wall fill stays responsive
+      // and doesn't peg the machine. (#surprise-v2)
+      if (opts.reliefMs && opts.reliefMs > 0) {
+        await new Promise<void>((r) => setTimeout(r, opts.reliefMs));
       }
       // Batch was cleared mid-render — discard so its slot mapping survives
       // intact for the new batch. (#295)

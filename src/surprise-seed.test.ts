@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateSurpriseBatch } from './surprise-seed';
 import { PRIMARY_ELIGIBLE } from './surprise-seed-pool';
+import { V } from './variations';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -29,5 +30,27 @@ describe('generateSurpriseBatch', () => {
       expect(shapeXform).toBeDefined();
       expect(PRIMARY_ELIGIBLE).toContain(shapeXform!.variations[0]!.index);
     }
+  });
+});
+
+describe('generateSurpriseBatch params (#surprise-v2 T3)', () => {
+  it('threads xformCount into every genome', () => {
+    for (const g of generateSurpriseBatch(seededRng(7), 4, { xformCount: [2, 2] })) {
+      expect(g.xforms).toHaveLength(2);
+    }
+  });
+  it('only-mode restricts primaries to the preferred set', () => {
+    const batch = generateSurpriseBatch(seededRng(8), 6, { preferred: [V.spherical, V.swirl], preferMode: 'only' });
+    expect(batch).toHaveLength(6);
+  });
+  it('blendPerXform threads through to richer xform blends', () => {
+    const batch = generateSurpriseBatch(seededRng(9), 4, { xformCount: [2, 2], blendPerXform: [3, 3], preferred: [V.spherical, V.swirl, V.sinusoidal] });
+    const maxBlend = Math.max(...batch.flatMap((g) => g.xforms.map((x) => x.variations.length)));
+    expect(maxBlend).toBeGreaterThanOrEqual(2);
+  });
+  it('no params → same diverse default batch (16, 4 xforms each)', () => {
+    const batch = generateSurpriseBatch(seededRng(10), 16);
+    expect(batch).toHaveLength(16);
+    for (const g of batch) expect(g.xforms).toHaveLength(4);
   });
 });

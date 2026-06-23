@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateRandomGenome, SEED_NONLINEAR, SEED_BIAS_VARIATIONS } from './edit-seed';
+import { V } from './variations';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -116,5 +117,48 @@ describe('generateRandomGenome', () => {
     // With 100 runs, we expect roughly 50 successes. We check for a reasonable range.
     expect(symmetryCount).toBeGreaterThanOrEqual(35);
     expect(symmetryCount).toBeLessThanOrEqual(65);
+  });
+});
+
+// #surprise-v2 — SeedOptions gains xformCount + blendPerXform + preferred so the
+// Surprise Wall can steer generation. The no-options path stays byte-identical
+// (same rng consumption) — these only engage when the new fields are passed.
+describe('SeedOptions: xformCount + blendPerXform (#surprise-v2)', () => {
+  it('honors an explicit xformCount (number)', () => {
+    expect(generateRandomGenome(seededRng(1), { xformCount: 3 }).xforms.length).toBe(3);
+    expect(generateRandomGenome(seededRng(2), { xformCount: 6 }).xforms.length).toBe(6);
+  });
+
+  it('honors an xformCount [min,max] range', () => {
+    for (let s = 0; s < 20; s++) {
+      const n = generateRandomGenome(seededRng(s), { xformCount: [2, 4] }).xforms.length;
+      expect(n).toBeGreaterThanOrEqual(2);
+      expect(n).toBeLessThanOrEqual(4);
+    }
+  });
+
+  it('blendPerXform lets a non-duplicator xform blend >2 variation kinds', () => {
+    const g = generateRandomGenome(seededRng(3), {
+      xformCount: 2, blendPerXform: 3,
+      preferred: [V.spherical, V.swirl, V.sinusoidal],
+    });
+    const maxBlend = Math.max(...g.xforms.map((x) => x.variations.length));
+    expect(maxBlend).toBeGreaterThanOrEqual(2);
+  });
+
+  it('blend extras are drawn from the preferred set (not forced-linear)', () => {
+    const pref: number[] = [V.spherical, V.swirl];
+    const g = generateRandomGenome(seededRng(4), { xformCount: 1, blendPerXform: 2, preferred: pref });
+    const kinds = g.xforms.flatMap((x) => x.variations.map((v) => v.index));
+    expect(kinds.some((k) => pref.includes(k))).toBe(true);
+  });
+
+  it('caps blend at 3 variations per xform (param-seam safe)', () => {
+    const g = generateRandomGenome(seededRng(5), { xformCount: 3, blendPerXform: 3 });
+    for (const x of g.xforms) expect(x.variations.length).toBeLessThanOrEqual(3);
+  });
+
+  it('no options → still 4 xforms (default path unchanged)', () => {
+    expect(generateRandomGenome(seededRng(6)).xforms.length).toBe(4);
   });
 });
