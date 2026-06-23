@@ -228,6 +228,18 @@ export interface FitViewport {
   scale: number;
 }
 
+/** Dims-independent fit box: the world-space center + per-axis extent of the
+ *  flame's dense core. Compute it ONCE (e.g. when the surprise thumbnail renders)
+ *  and derive a scale for ANY canvas via `scaleForBox` — so a transferred flame
+ *  frames identically wherever it's shown instead of re-running the (fragile)
+ *  oracle per surface. #443. */
+export interface FitBox {
+  cx: number;
+  cy: number;
+  bbW: number;
+  bbH: number;
+}
+
 /** Padding around the bbox. 0.9 = 10% margin so the flame doesn't kiss the
  *  canvas edges. Subjective; Apophysis defaults to a similar ratio. */
 export const FIT_MARGIN = 0.9;
@@ -237,6 +249,16 @@ export const FIT_MARGIN = 0.9;
  *  Required because fractal flames are formally unbounded — a faraway rare
  *  outlier should not force the user to zoom out off the bulk of the flame. */
 export const DROP_FRAC = 0.005;
+
+/** Tukey IQR fence multiplier (#443). A FIXED DROP_FRAC trims the same fraction
+ *  off every flame, which fails heavy-tailed variations: `cross` scatters a
+ *  SPARSE, invisible halo across ~145 units while its dense visible core is ~10,
+ *  and >0.5% of samples land in the halo — so the percentile bbox frames mostly
+ *  empty space and the flame renders as a speck. The IQR fence adapts per-flame:
+ *  it clamps each axis to [Q1−K·IQR, Q3+K·IQR], so a tight flame (fence wider
+ *  than its data) is untouched while a heavy-tailed one is trimmed to its core.
+ *  K=3 is conservative — only points beyond 3× the interquartile range are cut. */
+export const IQR_FENCE_K = 3;
 
 /** Compute the viewport that fits the flame into a (canvasW, canvasH) frame.
  *  Returns null when the genome can't be fit (empty xforms, all-zero weight,
@@ -251,13 +273,32 @@ export const DROP_FRAC = 0.005;
  *
  *  The rotation step matters: a 45°-rotated flame fit using an unrotated
  *  bbox gives extra slack on the diagonal. Rotating first makes the fit tight. */
-export function computeFitViewport(
+/** Robust per-axis extent: the DROP_FRAC percentile range, then clamped inward
+ *  to the Tukey IQR fence. `sorted` is ascending. See IQR_FENCE_K. */
+function robustExtent(sorted: Float64Array): { lo: number; hi: number } {
+  const n = sorted.length;
+  const dropN = Math.floor(n * DROP_FRAC);
+  const pLo = sorted[dropN]!;
+  const pHi = sorted[n - 1 - dropN]!;
+  const q1 = sorted[Math.floor(n * 0.25)]!;
+  const q3 = sorted[Math.floor(n * 0.75)]!;
+  const iqr = q3 - q1;
+  // Fence only ever tightens (max on lo, min on hi) — a tight flame whose fence
+  // is wider than its percentile range is left exactly as the percentile bbox.
+  return {
+    lo: Math.max(pLo, q1 - IQR_FENCE_K * iqr),
+    hi: Math.min(pHi, q3 + IQR_FENCE_K * iqr),
+  };
+}
+
+/** Dims-independent fit box (center + per-axis extent) of the flame's dense core.
+ *  Returns null when the genome can't be fit (empty xforms, all-zero weight,
+ *  non-finite samples, singleton attractor). #443 — split out of the old
+ *  `computeFitViewport` so a single box can be reused across surfaces. */
+export function computeFitBox(
   genome: Genome,
-  canvasW: number,
-  canvasH: number,
   opts: Partial<ChaosSamplerOpts> = {},
-): FitViewport | null {
-  if (canvasW <= 0 || canvasH <= 0) return null;
+): FitBox | null {
   const pts = sampleChaosForFit(genome, opts);
   if (pts.length === 0) return null;
 
@@ -274,32 +315,45 @@ export function computeFitViewport(
   xs.sort();
   ys.sort();
 
-  const dropN = Math.floor(pts.length * DROP_FRAC);
-  const xmin = xs[dropN]!;
-  const xmax = xs[xs.length - 1 - dropN]!;
-  const ymin = ys[dropN]!;
-  const ymax = ys[ys.length - 1 - dropN]!;
-  if (![xmin, xmax, ymin, ymax].every(Number.isFinite)) return null;
+  const ex = robustExtent(xs);
+  const ey = robustExtent(ys);
+  if (![ex.lo, ex.hi, ey.lo, ey.hi].every(Number.isFinite)) return null;
 
-  const bbW = xmax - xmin;
-  const bbH = ymax - ymin;
+  const bbW = ex.hi - ex.lo;
+  const bbH = ey.hi - ey.lo;
   // Singleton-attractor (all samples at one point) → fit would be infinite zoom.
   if (bbW < 1e-9 && bbH < 1e-9) return null;
-  // Single-axis-zero (line attractor) → pad so the other axis still fits.
-  const safeW = Math.max(bbW, 1e-3);
-  const safeH = Math.max(bbH, 1e-3);
 
-  const scaleX = canvasW / safeW;
-  const scaleY = canvasH / safeH;
-  const scale = Math.min(scaleX, scaleY) * FIT_MARGIN;
-
-  const cxRot = (xmin + xmax) / 2;
-  const cyRot = (ymin + ymax) / 2;
+  const cxRot = (ex.lo + ex.hi) / 2;
+  const cyRot = (ey.lo + ey.hi) / 2;
   // Inverse rotation R(-θ): (x cos + y sin, -x sin + y cos).
   const cx = cosR * cxRot + sinR * cyRot;
   const cy = -sinR * cxRot + cosR * cyRot;
 
-  return { cx, cy, scale };
+  return { cx, cy, bbW, bbH };
+}
+
+/** Derive the fit scale for a (canvasW, canvasH) frame from a dims-independent
+ *  box. Single-axis-zero (line attractor) is padded so the other axis fits. */
+export function scaleForBox(box: FitBox, canvasW: number, canvasH: number): number {
+  const safeW = Math.max(box.bbW, 1e-3);
+  const safeH = Math.max(box.bbH, 1e-3);
+  return Math.min(canvasW / safeW, canvasH / safeH) * FIT_MARGIN;
+}
+
+/** Compute the viewport that fits the flame into a (canvasW, canvasH) frame.
+ *  Returns null when the genome can't be fit. Thin wrapper over computeFitBox +
+ *  scaleForBox (kept for callers that fit a single surface in one shot). */
+export function computeFitViewport(
+  genome: Genome,
+  canvasW: number,
+  canvasH: number,
+  opts: Partial<ChaosSamplerOpts> = {},
+): FitViewport | null {
+  if (canvasW <= 0 || canvasH <= 0) return null;
+  const box = computeFitBox(genome, opts);
+  if (!box) return null;
+  return { cx: box.cx, cy: box.cy, scale: scaleForBox(box, canvasW, canvasH) };
 }
 
 /** #432 — fit-on-open. Re-frame a genome's camera (`scale`/`cx`/`cy`) to its own

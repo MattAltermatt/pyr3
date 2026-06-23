@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import {
   sampleChaosForFit,
   computeFitViewport,
+  computeFitBox,
+  scaleForBox,
   refitGenomeToOutputSize,
   FIT_MARGIN,
 } from './edit-fit-viewport';
@@ -185,6 +187,50 @@ describe('computeFitViewport is symmetry-aware (#442)', () => {
     // Sanity: the expanded center really is near origin, well away from the base
     // lobe (~x=3) — proves the test would catch a symmetry-blind oracle.
     expect(Math.abs(viaBaked!.cx)).toBeLessThan(0.5);
+  });
+});
+
+describe('computeFitBox / scaleForBox (#443)', () => {
+  function lcg(seed: number): () => number {
+    let s = (seed >>> 0) || 1;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  }
+
+  it('scaleForBox: scale = min(W/safeW, H/safeH) × FIT_MARGIN', () => {
+    expect(scaleForBox({ cx: 0, cy: 0, bbW: 2, bbH: 1 }, 3840, 2160)).toBeCloseTo(Math.min(3840 / 2, 2160 / 1) * FIT_MARGIN, 6);
+    // Line attractor (one axis ~0) → padded to the 1e-3 floor on that axis.
+    expect(scaleForBox({ cx: 0, cy: 0, bbW: 0, bbH: 1 }, 1000, 1000)).toBeCloseTo(Math.min(1000 / 1e-3, 1000 / 1) * FIT_MARGIN, 6);
+  });
+
+  it('computeFitViewport == computeFitBox + scaleForBox (same box, any dims)', () => {
+    const g = generateRandomGenome(lcg(7000), { primaryOverride: V.linear }) as Genome;
+    const box = computeFitBox(g)!;
+    const vp = computeFitViewport(g, 3840, 2160)!;
+    expect(vp.cx).toBeCloseTo(box.cx, 9);
+    expect(vp.cy).toBeCloseTo(box.cy, 9);
+    expect(vp.scale).toBeCloseTo(scaleForBox(box, 3840, 2160), 9);
+  });
+
+  it('IQR fence trims a heavy-tailed cross flame to its dense core, not its sparse halo', () => {
+    // cross (var 29) scatters a sparse, invisible halo across ~145 world units
+    // while its dense visible core is ~10–15. The fixed 0.5% percentile bbox
+    // framed the halo (flame → speck); the fence frames the core. #443.
+    const g = generateRandomGenome(lcg(7000), { primaryOverride: V.cross }) as Genome;
+    const box = computeFitBox(g)!;
+    expect(box).not.toBeNull();
+    // Core, not halo: the old percentile bbox was ~145; the fenced one is ~14.
+    expect(box.bbW).toBeLessThan(40);
+    expect(box.bbW).toBeGreaterThan(2);
+    expect(box.bbH).toBeLessThan(40);
+  });
+
+  it('leaves a tight flame (no heavy tail) essentially untouched', () => {
+    const g = generateRandomGenome(lcg(7001), { primaryOverride: V.linear }) as Genome;
+    const box = computeFitBox(g)!;
+    // A linear flame's core fills its whole (small) extent — the fence must NOT
+    // crop it; bbW stays sub-1 as before the fence.
+    expect(box.bbW).toBeLessThan(2);
+    expect(box.bbW).toBeGreaterThan(0);
   });
 });
 
