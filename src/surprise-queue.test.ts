@@ -64,6 +64,24 @@ describe('createSurpriseQueue', () => {
     expect(ready).toEqual(['g3', 'g4']);
   });
 
+  it('fires onRenderStart before each render, in order (#surprise-v2)', async () => {
+    const started: string[] = [];
+    const q = createSurpriseQueue({
+      renderThumb: stubRender(),
+      onRenderStart: (genome) => started.push(genome.name),
+      onReady: () => {}, onCulled: () => {},
+    });
+    await q.enqueueAndDrain([g(1), g(2), g(3)]);
+    expect(started).toEqual(['g1', 'g2', 'g3']);
+  });
+
+  it('applies a relief pause after each render when reliefMs is set (#surprise-v2)', async () => {
+    const t0 = Date.now();
+    const q = createSurpriseQueue({ renderThumb: stubRender(), onReady: () => {}, onCulled: () => {}, reliefMs: 15 });
+    await q.enqueueAndDrain([g(1), g(2)]);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(25); // ~2 × 15ms relief
+  });
+
   it('renders strictly one at a time (no overlap)', async () => {
     let inFlight = 0, maxConcurrent = 0;
     const slow = async (genome: Genome): Promise<ThumbResult> => {
