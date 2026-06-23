@@ -204,8 +204,10 @@ export function sampleChaosForFit(
     if (i < warmup) continue;
     // Apply finalxform lens on the stored point. Trajectory continues from
     // the pre-lens point (chaos.wgsl + flam3.c:280-287) so the lens doesn't
-    // perturb the walker — only the recorded sample.
-    const lens = g.finalxform;
+    // perturb the walker — only the recorded sample. An INACTIVE final is
+    // skipped so framing matches the render (#438 — the GPU gate is
+    // `finalXformSlot`, which returns -1 for an inactive final).
+    const lens = g.finalxform && g.finalxform.active !== false ? g.finalxform : undefined;
     if (lens) {
       const l = applyXform(lens, px, py, rng);
       if (Number.isFinite(l.x) && Number.isFinite(l.y)) {

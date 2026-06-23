@@ -13,6 +13,7 @@ import {
   type Genome,
   MAX_XFORMS,
   packXforms,
+  finalXformSlot,
   packXformDistrib,
   XFORM_BYTES,
   XFORM_DISTRIB_BYTES,
@@ -374,7 +375,7 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // neither, so every dispatch wrote two dead slots. Downstream slots shifted
       // down by 2; the WGSL Uniforms struct mirrors this new numbering.
       u32[7] = seed >>> 0;
-      i32[8] = g.finalxform ? g.xforms.length : -1;
+      i32[8] = finalXformSlot(g); // -1 when no final OR final is inactive (#438)
       f32[9] = ((g.rotate ?? 0) * Math.PI) / 180.0; // rotation_rad — Phase 9-rotate
       // Phase 9-bg-palmode: 0 = step (flam3 default), 1 = linear. Default
       // applied at this consumer boundary so the genome stays a faithful

@@ -414,6 +414,21 @@ export function packXforms(genome: Genome): ArrayBuffer {
   return ab;
 }
 
+/** GPU slot index of the finalxform lens (the shader's `final_xform_idx`
+ *  uniform), or -1 when there is no ACTIVE final. `packXforms` stores the final
+ *  at `xforms.length` (right after the regular xforms), so that's its slot.
+ *
+ *  An INACTIVE final (`active === false`) gates to -1 so the shader skips the
+ *  lens entirely — unlike regular xforms (whose inactivity is expressed by a
+ *  zeroed selection weight in `expandGenomeForGPU`), the final has no selection
+ *  weight, so this idx gate is the only thing that can turn it off. Without the
+ *  active check an inactive final still lensed every splat (#438 follow-up). */
+export function finalXformSlot(genome: Genome): number {
+  return genome.finalxform && genome.finalxform.active !== false
+    ? genome.xforms.length
+    : -1;
+}
+
 export function totalWeight(genome: Genome): number {
   return genome.xforms.reduce((s, x) => s + x.weight, 0);
 }

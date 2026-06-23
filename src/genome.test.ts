@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { packXforms, distinctVariationNames, MAX_XFORMS, XFORM_BYTES, type Genome, type Xform } from './genome';
+import { packXforms, finalXformSlot, distinctVariationNames, MAX_XFORMS, XFORM_BYTES, type Genome, type Xform } from './genome';
 
 // Minimal valid xform — packXforms only reads the affine + weight + variations.
 function xf(): Xform {
@@ -21,6 +21,26 @@ describe('packXforms — GPU xform-buffer fit (PYR3-033)', () => {
   it('packs exactly MAX_XFORMS regular xforms + finalxform to the full buffer size', () => {
     const genome = { xforms: Array.from({ length: MAX_XFORMS }, xf), finalxform: xf() } as unknown as Genome;
     expect(packXforms(genome).byteLength).toBe((MAX_XFORMS + 1) * XFORM_BYTES);
+  });
+});
+
+describe('finalXformSlot — finalxform active gate (#438 follow-up)', () => {
+  const g3 = (final?: Partial<Xform>): Genome =>
+    ({ xforms: [xf(), xf(), xf()], finalxform: final === undefined ? undefined : { ...xf(), ...final } } as unknown as Genome);
+
+  it('returns -1 when there is no finalxform', () => {
+    expect(finalXformSlot(g3())).toBe(-1);
+  });
+
+  it('returns the slot (= regular count) for an ACTIVE final', () => {
+    expect(finalXformSlot(g3({}))).toBe(3);                  // active undefined = active
+    expect(finalXformSlot(g3({ active: true }))).toBe(3);
+  });
+
+  it('returns -1 for an INACTIVE final so the shader skips the lens', () => {
+    // The bug: an inactive final still lensed every splat because the idx gate
+    // ignored `active`. Gating to -1 is the only off-switch the final has.
+    expect(finalXformSlot(g3({ active: false }))).toBe(-1);
   });
 });
 
