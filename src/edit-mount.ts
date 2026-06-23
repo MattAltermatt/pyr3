@@ -31,6 +31,7 @@ import {
   type SettledPixels,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
+import { refitGenomeToOutputSize } from './edit-fit-viewport';
 import { unpackSettledRgba } from './edit-pixel-readback';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
@@ -265,6 +266,7 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     if (genome.quality === undefined) genome.quality = renderSettings.quality;
   }
 
+
   // Initial genome + state.
   // #103 Phase 6 Task 6.5 — cold-start hydration. Three possible sources:
   //   pending — viewer→editor transfer (user's explicit handoff)
@@ -281,8 +283,16 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     ? { genome: opts.initialGenome, source: 'pending' as const }
     : resolveColdStartGenomeWithSource(() => generateRandomGenome());
   const initialGenome = initial.genome;
+  // #432 — a sizeless genome was never framed for full output (surprise/corpus
+  // thumbnails fit at small/HD reference dims). Note it BEFORE applyEditorDefaults
+  // stamps the sticky size, so we can re-fit afterward.
+  const wasSizeless = initialGenome.size === undefined;
   if (initial.source === 'reroll') applyDefaultNick(initialGenome);
   applyEditorDefaults(initialGenome);
+  // #432 fit-on-open — re-fit only on a transfer (pending/catalog) of a sizeless
+  // flame; a viewer→editor transfer that already carried its own size+framing is
+  // left untouched. refitGenomeToOutputSize frames to the just-stamped output dims.
+  if (wasSizeless && initial.source === 'pending') refitGenomeToOutputSize(initialGenome);
   // #344 — persist a fresh reroll immediately (after nick + defaults are applied)
   // so a reload restores THIS flame instead of generating a brand-new one. The
   // wip/pending sources don't need it (wip is already stored; pending is

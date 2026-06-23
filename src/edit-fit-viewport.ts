@@ -268,3 +268,22 @@ export function computeFitViewport(
 
   return { cx, cy, scale };
 }
+
+/** #432 — fit-on-open. Re-frame a genome's camera (`scale`/`cx`/`cy`) to its own
+ *  output `size`. A transferred flame (surprise tile / corpus ✏️ Edit / catalog)
+ *  carries a camera fit for a DIFFERENT reference frame — generateRandomGenome
+ *  fits at 1920×1080, the surprise thumbnail at 320². Once the editor stamps its
+ *  sticky output size (e.g. 4K), that old scale renders the attractor tiny. This
+ *  re-fits to the genome's own dims so it opens framed like the thumbnail; the
+ *  output size itself is untouched. No-op when `size` is missing or the chaos
+ *  oracle can't frame the attractor (divergent / singleton). Mutates in place. */
+export function refitGenomeToOutputSize(genome: Genome, opts: Partial<ChaosSamplerOpts> = {}): void {
+  const w = genome.size?.width;
+  const h = genome.size?.height;
+  if (!w || !h) return;
+  const fit = computeFitViewport(genome, w, h, opts);
+  if (!fit) return;
+  genome.scale = fit.scale;
+  genome.cx = fit.cx;
+  genome.cy = fit.cy;
+}

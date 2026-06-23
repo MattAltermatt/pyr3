@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sampleChaosForFit,
   computeFitViewport,
+  refitGenomeToOutputSize,
   FIT_MARGIN,
 } from './edit-fit-viewport';
 import { generateRandomGenome } from './edit-seed';
@@ -142,5 +143,38 @@ describe('computeFitViewport', () => {
     expect(wide).not.toBeNull();
     expect(narrow).not.toBeNull();
     expect(wide!.scale).toBeGreaterThanOrEqual(narrow!.scale - 1e-9);
+  });
+});
+
+describe('refitGenomeToOutputSize (#432 fit-on-open)', () => {
+  it('re-frames a sizeless-origin genome to its stamped output size', () => {
+    // generateRandomGenome fits scale at 1920x1080 and leaves size undefined —
+    // exactly the surprise/corpus transfer case. Stamp a 4K size, then re-fit.
+    const g = generateRandomGenome(seededRng(7));
+    const scaleAt1080 = g.scale;
+    g.size = { width: 3840, height: 2160 }; // editor's sticky 4K, same 16:9 aspect
+    refitGenomeToOutputSize(g, { seed: 7 });
+    // 4K is 2x the 1920 fit reference at matching aspect → scale roughly doubles
+    // so the attractor fills the bigger frame instead of rendering tiny.
+    expect(g.scale).toBeGreaterThan(scaleAt1080 * 1.6);
+    expect(g.scale).toBeLessThan(scaleAt1080 * 2.4);
+  });
+
+  it('is a no-op when the genome has no size', () => {
+    const g = generateRandomGenome(seededRng(9));
+    const before = { scale: g.scale, cx: g.cx, cy: g.cy };
+    g.size = undefined;
+    refitGenomeToOutputSize(g, { seed: 9 });
+    expect(g.scale).toBe(before.scale);
+    expect(g.cx).toBe(before.cx);
+    expect(g.cy).toBe(before.cy);
+  });
+
+  it('leaves scale untouched when the chaos oracle cannot frame (empty xforms)', () => {
+    const g = minimalGenome(); // no xforms → sampleChaosForFit yields nothing
+    g.size = { width: 4000, height: 4000 };
+    const before = g.scale;
+    refitGenomeToOutputSize(g, { seed: 1 });
+    expect(g.scale).toBe(before);
   });
 });
