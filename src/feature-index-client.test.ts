@@ -36,6 +36,17 @@ function buildIndexResponse(
   return new Response(ab);
 }
 
+// The native sidecar (`chunks/pyr3-features.flam3idx`) is fetched separately
+// by buildIndex (#435). These ESF-focused tests use URL-agnostic mocks that
+// would otherwise serve the ESF blob to the native fetch too (double-count).
+// Wrap a fetch impl so the native URL 404s → fail-soft, no native records.
+function esfOnly(impl: typeof fetch): typeof fetch {
+  return (async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    if (String(url).includes('pyr3-features')) return new Response(null, { status: 404 });
+    return impl(url, init);
+  }) as typeof fetch;
+}
+
 const sample: FeatureRecord[] = [
   {
     gen: 245,
@@ -86,7 +97,7 @@ describe('loadFeatureIndex', () => {
 
   it('happy path: header fields + has/get round-trip + filter', async () => {
     const f = vi.fn(async () => buildIndexResponse(sample));
-    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    const idx = await loadFeatureIndex(esfOnly(f as unknown as typeof fetch));
     expect(idx.schemaVersion).toBe(FEATURE_INDEX_SCHEMA_CURRENT);
     expect(idx.corpusTag).toBe('test-corpus');
     expect(idx.recordCount).toBe(sample.length);
@@ -122,8 +133,9 @@ describe('loadFeatureIndex', () => {
 
   it('caches the result — second call does not re-fetch', async () => {
     const f = vi.fn(async () => buildIndexResponse(sample));
-    const a = await loadFeatureIndex(f as unknown as typeof fetch);
-    const b = await loadFeatureIndex(f as unknown as typeof fetch);
+    const fe = esfOnly(f as unknown as typeof fetch);
+    const a = await loadFeatureIndex(fe);
+    const b = await loadFeatureIndex(fe);
     expect(f).toHaveBeenCalledTimes(1);
     expect(a).toBe(b);
   });
@@ -231,11 +243,12 @@ describe('loadFeatureIndex', () => {
       if (attempt === 1) return new Response(null, { status: 503 }); // transient
       return buildIndexResponse(sample);
     });
-    const a = await loadFeatureIndex(f as unknown as typeof fetch);
+    const fe = esfOnly(f as unknown as typeof fetch);
+    const a = await loadFeatureIndex(fe);
     expect(a.schemaVersion).toBe(0);
     // Second call must NOT return the same dead sentinel — it should retry
     // because the first failure was transient.
-    const b = await loadFeatureIndex(f as unknown as typeof fetch);
+    const b = await loadFeatureIndex(fe);
     expect(b.schemaVersion).toBe(FEATURE_INDEX_SCHEMA_CURRENT);
     expect(b.recordCount).toBe(sample.length);
     expect(f).toHaveBeenCalledTimes(2);
@@ -260,10 +273,11 @@ describe('loadFeatureIndex', () => {
 
   it('_resetFeatureIndexCache lets a subsequent load re-fetch', async () => {
     const f = vi.fn(async () => buildIndexResponse(sample));
-    await loadFeatureIndex(f as unknown as typeof fetch);
+    const fe = esfOnly(f as unknown as typeof fetch);
+    await loadFeatureIndex(fe);
     expect(f).toHaveBeenCalledTimes(1);
     _resetFeatureIndexCache();
-    await loadFeatureIndex(f as unknown as typeof fetch);
+    await loadFeatureIndex(fe);
     expect(f).toHaveBeenCalledTimes(2);
   });
 });
@@ -275,7 +289,7 @@ describe('FeatureIndex.forEachRecord', () => {
 
   it('visits every record exactly once in ascending (gen,id) order', async () => {
     const f = vi.fn(async () => buildIndexResponse(sample));
-    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    const idx = await loadFeatureIndex(esfOnly(f as unknown as typeof fetch));
     const seen: Array<{ gen: number; id: number }> = [];
     idx.forEachRecord((rec) => {
       seen.push({ gen: rec.gen, id: rec.id });
@@ -298,7 +312,7 @@ describe('FeatureIndex.forEachRecord', () => {
 
   it('returns early when visitor returns false', async () => {
     const f = vi.fn(async () => buildIndexResponse(sample));
-    const idx = await loadFeatureIndex(f as unknown as typeof fetch);
+    const idx = await loadFeatureIndex(esfOnly(f as unknown as typeof fetch));
     const seen: Array<{ gen: number; id: number }> = [];
     idx.forEachRecord((rec) => {
       seen.push({ gen: rec.gen, id: rec.id });
@@ -309,5 +323,69 @@ describe('FeatureIndex.forEachRecord', () => {
       { gen: sample[0]!.gen, id: sample[0]!.id },
       { gen: sample[1]!.gen, id: sample[1]!.id },
     ]);
+  });
+});
+
+function idxBlob(recs: FeatureRecord[], tag: string): ArrayBuffer {
+  // NOTE: encodeHeader hardcodes the "pyf3" magic; FeatureIndexHeader has no
+  // `magic` field (the plan's draft passed one — a no-op that fails tsc's
+  // excess-property check). Dropped here; the encoded magic is unchanged.
+  const header = encodeHeader({
+    schemaVersion: FEATURE_INDEX_SCHEMA_CURRENT,
+    corpusTag: tag, recordCount: recs.length,
+  });
+  const body = recs.map((r) => encodeRecord(r));
+  const flat = Buffer.concat([Buffer.from(header), ...body.map((b) => Buffer.from(b))]);
+  const z = brotliCompressSync(flat);
+  return z.buffer.slice(z.byteOffset, z.byteOffset + z.byteLength);
+}
+const rec = (gen: number, id: number): FeatureRecord => ({
+  gen, id, variations: [0], xforms: 2,
+  coverage: 0.5, meanLum: 0.5, entropy: 0.5, colorVar: 0.5,
+});
+
+describe('feature index native sidecar merge', () => {
+  beforeEach(() => _resetFeatureIndexCache());
+
+  it('unions native (gen 1) records with the ESF index', async () => {
+    const esf = idxBlob([rec(248, 7)], 'esf');
+    const nat = idxBlob([rec(1, 0), rec(1, 1)], 'pyr3-natives');
+    const f = (async (url: string) =>
+      ({ ok: true, arrayBuffer: async () => String(url).includes('pyr3-features') ? nat : esf } as Response)
+    ) as unknown as typeof fetch;
+    const idx = await loadFeatureIndex(f);
+    expect(idx.has(1, 0)).toBe(true);
+    expect(idx.has(1, 1)).toBe(true);
+    expect(idx.has(248, 7)).toBe(true);
+    expect(idx.recordCount).toBe(3);
+  });
+
+  it('appends native records when the pyr3 gen is above all ESF gens (gen 1000)', async () => {
+    // The shipped layout: pyr3 gen 1000 > ESF max 248 → native block sorts
+    // AFTER ESF, so the merged index stays ascending for binary search.
+    const esf = idxBlob([rec(165, 3), rec(248, 7)], 'esf');
+    const nat = idxBlob([rec(1000, 0), rec(1000, 1)], 'pyr3-natives');
+    const f = (async (url: string) =>
+      ({ ok: true, arrayBuffer: async () => String(url).includes('pyr3-features') ? nat : esf } as Response)
+    ) as unknown as typeof fetch;
+    const idx = await loadFeatureIndex(f);
+    expect(idx.has(165, 3)).toBe(true);
+    expect(idx.has(248, 7)).toBe(true);
+    expect(idx.has(1000, 0)).toBe(true);
+    expect(idx.has(1000, 1)).toBe(true);
+    expect(idx.has(999, 0)).toBe(false);
+    expect(idx.recordCount).toBe(4);
+  });
+
+  it('falls back to ESF-only when the native sidecar 404s', async () => {
+    const esf = idxBlob([rec(248, 7)], 'esf');
+    const f = (async (url: string) =>
+      String(url).includes('pyr3-features')
+        ? ({ ok: false, status: 404 } as Response)
+        : ({ ok: true, arrayBuffer: async () => esf } as Response)
+    ) as unknown as typeof fetch;
+    const idx = await loadFeatureIndex(f);
+    expect(idx.has(248, 7)).toBe(true);
+    expect(idx.recordCount).toBe(1);
   });
 });

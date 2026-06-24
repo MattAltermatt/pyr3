@@ -24,6 +24,7 @@ npm run serve                                       # `pyr3 serve` — local CLI
 npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /animate viewer (#209)
 npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275) · nsteps=N (motion-blur sub-frames/frame; DEFAULT 1 — NOT the imported ntemporal_samples, which is up-to-1000 for ESF/timeline; #294)
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
+npm run bake:natives -- --src ~/pyr3-flames        # ingest pyr3-native flames (PNGs w/ embedded `pyr3` genome) into the gen-1000 gallery surface (#435); idempotent (content-hash ledger → stable ids + dedup); commit public/chunks/1000 + public/chunks/pyr3-*.* + flames/pyr3-natives/ledger.json
 ```
 
 The nav is **7 top menus** (#264, expanded in #420, Creator added in #437) — the row is **left-aligned**
@@ -33,8 +34,20 @@ link; the old Gradient page `/gradient` was retired in #372 and now redirects
 to `/editor`, where the gradient editor is an in-lens overlay) · **Creator** (#437 —
 direct link to `/creator` (route renamed from `/surprise`, which now redirects
 here), promoted out of the Discover dropdown) · **Animate ▾** (Timeline `/animate` · Screensaver
-`/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/esf` +
-`/esf/gen/N/id/M` · Gallery `/esf/gallery` · Electric Sheep Fold ↗ source repo) ·
+`/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/browse` +
+`/browse/gen/N/id/M` · Gallery `/gallery` · Electric Sheep Fold ↗ source repo; the
+`/esf/*` prefix was flattened to `/browse` + `/gallery` in #449 — old `/esf/*`
+URLs redirect at boot via `src/route-redirects.ts`). The
+gallery is the ESF corpus PLUS **pyr3-native originals under reserved gen 1000** (#435) —
+gen 1000 > every ESF gen, so under the gallery's newest-first order the natives **lead page 1**.
+Natives are pyr3-JSON-in-chunk (not flam3 XML; `src/corpus-genome-codec.ts` sniffs which), their
+gens + feature-index entries are merged client-side from committed `public/chunks/pyr3-*.*`
+sidecars (the ESF Release tar clobbers `gens.json`/`features.flam3idx` on deploy), and they're
+filterable by variation like any sheep. **On-wire the gen is the integer 1000** (chunk paths,
+feature records), but **every user-facing surface maps it to `pyr3`** — gallery labels, the viewer
+URL `/browse/gen/pyr3/id/M`, tab title, and nav pills — via `src/native-gen.ts`
+(`formatGenLabel` / `parseGenSegment`, which still accepts the numeric form). Add more with
+`npm run bake:natives` (see Quick commands).
 **Discover ▾** (#420 — exploration only: Showcase · Variations `/variations`) ·
 **Help ▾** (#420 — learn/reference: **How flames work** `/how-it-works` — the #347
 interactive scrollytelling guide (chaos-game step-through + xform/variation/final-xform/colour
@@ -45,8 +58,8 @@ alias `/howitworks` redirects to it) · Direct-color variations (`/help/direct-c
 header (#406). Routes are **flat** (the `/v1/` prefix was dropped;
 old `/v1/*` URLs redirect at boot via `src/route-redirects.ts`). The basic
 viewer (`/viewer`, also bare `/`) opens/views any flame (📂 Open + Save, no
-Surprise/loop); the ESF viewer (`/esf`) is the corpus browser (Surprise + loop,
-no file open). Flames move between surfaces only via the explicit **✏️ Edit
+Surprise/loop); the corpus browser (`/browse`) is the ESF + pyr3-native viewer
+(Surprise + loop, no file open). Flames move between surfaces only via the explicit **✏️ Edit
 this flame** button — never an implicit transfer-on-navigate.
 
 **Mobile is consumption-only (#66).** On a mobile viewport (`isMobile()` in

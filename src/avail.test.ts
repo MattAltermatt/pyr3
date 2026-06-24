@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { decodeAvail, exists, readVarints } from './avail';
+import { brotliCompressSync } from 'node:zlib';
+import { decodeAvail, exists, readVarints, encodeAvailRaw } from './avail';
+
+// encodeAvailRaw emits PRE-brotli delta varints; the bake brotli-compresses
+// them into avail.flam3idx, which decodeAvail brotli-decompresses + cumsums
+// back to ids. Exercise that full round-trip.
+async function roundTrip(ids: number[]): Promise<number[]> {
+  const z = brotliCompressSync(Buffer.from(encodeAvailRaw(ids)));
+  return decodeAvail(z.buffer.slice(z.byteOffset, z.byteOffset + z.byteLength));
+}
+
+describe('encodeAvailRaw', () => {
+  it('round-trips a sorted id list through brotli + decodeAvail', async () => {
+    const ids = [0, 1, 5, 256, 257, 1000, 40000, 41234];
+    expect(await roundTrip(ids)).toEqual(ids);
+  });
+  it('handles an empty list', async () => {
+    expect(await roundTrip([])).toEqual([]);
+  });
+  it('handles a single id', async () => {
+    expect(await roundTrip([42])).toEqual([42]);
+  });
+  it('stays exact for ids beyond 2^28', async () => {
+    const ids = [0, 2 ** 28, 2 ** 28 + 1, 2 ** 30];
+    expect(await roundTrip(ids)).toEqual(ids);
+  });
+  it('emits raw deltas readVarints can read directly', () => {
+    expect(readVarints(encodeAvailRaw([0, 1, 5, 256]))).toEqual([0, 1, 4, 251]);
+  });
+});
 
 // base64 of REAL output from the ESF Python encode_avail(ids) — DO NOT CHANGE.
 const FIX = {

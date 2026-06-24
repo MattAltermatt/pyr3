@@ -51,8 +51,8 @@ export const NAV_MODEL: NavTop[] = [
   // #340 — renamed from the opaque "ESF" acronym. The Electric Sheep Fold
   // name keeps a home via the provenance link at the bottom of the menu.
   { key: 'esf', label: 'Flame Gallery', items: [
-    { key: 'esf',        label: 'Browse',  route: '/esf' },
-    { key: 'gallery',    label: 'Gallery', route: '/esf/gallery' },
+    { key: 'esf',        label: 'Browse',  route: '/browse' },
+    { key: 'gallery',    label: 'Gallery', route: '/gallery' },
     { key: 'esf-source', label: 'Electric Sheep Fold ↗',
       route: 'https://github.com/MattAltermatt/electric-sheep-fold', newTab: true, divider: true },
   ]},

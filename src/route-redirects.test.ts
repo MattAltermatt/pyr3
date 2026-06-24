@@ -2,15 +2,32 @@ import { describe, it, expect } from 'vitest';
 import { redirectLegacyPath } from './route-redirects';
 
 describe('redirectLegacyPath (#264)', () => {
-  it('/v1 → /esf', () => expect(redirectLegacyPath('/v1', '')).toBe('/esf'));
-  it('/v1/viewer → /esf', () => expect(redirectLegacyPath('/v1/viewer', '')).toBe('/esf'));
-  it('/v1/gen/247/id/19679 → /esf/gen/247/id/19679', () =>
-    expect(redirectLegacyPath('/v1/gen/247/id/19679', '')).toBe('/esf/gen/247/id/19679'));
-  it('/v1/gallery → /esf/gallery', () => expect(redirectLegacyPath('/v1/gallery', '')).toBe('/esf/gallery'));
-  it('/v1/gallery/p/3 → /esf/gallery/p/3', () =>
-    expect(redirectLegacyPath('/v1/gallery/p/3', '')).toBe('/esf/gallery/p/3'));
+  // #449 — legacy /v1/* repointed straight at the flat routes (/browse, /gallery).
+  it('/v1 → /browse', () => expect(redirectLegacyPath('/v1', '')).toBe('/browse'));
+  it('/v1/viewer → /browse', () => expect(redirectLegacyPath('/v1/viewer', '')).toBe('/browse'));
+  it('/v1/gen/247/id/19679 → /browse/gen/247/id/19679', () =>
+    expect(redirectLegacyPath('/v1/gen/247/id/19679', '')).toBe('/browse/gen/247/id/19679'));
+  it('/v1/gallery → /gallery', () => expect(redirectLegacyPath('/v1/gallery', '')).toBe('/gallery'));
+  it('/v1/gallery/p/3 → /gallery/p/3', () =>
+    expect(redirectLegacyPath('/v1/gallery/p/3', '')).toBe('/gallery/p/3'));
   it('preserves gallery query', () =>
-    expect(redirectLegacyPath('/v1/gallery', '?sort=interest')).toBe('/esf/gallery?sort=interest'));
+    expect(redirectLegacyPath('/v1/gallery', '?sort=interest')).toBe('/gallery?sort=interest'));
+
+  // #449 — old /esf/* flat URLs redirect to /browse + /gallery.
+  it('/esf → /browse', () => expect(redirectLegacyPath('/esf', '')).toBe('/browse'));
+  it('/esf/gen/247/id/19679 → /browse/gen/247/id/19679', () =>
+    expect(redirectLegacyPath('/esf/gen/247/id/19679', '')).toBe('/browse/gen/247/id/19679'));
+  it('/esf/gen/pyr3/id/118 → /browse/gen/pyr3/id/118', () =>
+    expect(redirectLegacyPath('/esf/gen/pyr3/id/118', '')).toBe('/browse/gen/pyr3/id/118'));
+  it('/esf/gallery → /gallery', () => expect(redirectLegacyPath('/esf/gallery', '')).toBe('/gallery'));
+  it('/esf/gallery/p/3 → /gallery/p/3', () =>
+    expect(redirectLegacyPath('/esf/gallery/p/3', '')).toBe('/gallery/p/3'));
+  it('/esf/gallery preserves query', () =>
+    expect(redirectLegacyPath('/esf/gallery', '?sort=interest')).toBe('/gallery?sort=interest'));
+  it('canonical /browse + /gallery → null (no redirect)', () => {
+    expect(redirectLegacyPath('/browse', '')).toBeNull();
+    expect(redirectLegacyPath('/gallery', '')).toBeNull();
+  });
   it('/v1/edit → /editor', () => expect(redirectLegacyPath('/v1/edit', '')).toBe('/editor'));
   it('/v1/edit?gen=1&id=2 → /editor?gen=1&id=2', () =>
     expect(redirectLegacyPath('/v1/edit', '?gen=1&id=2')).toBe('/editor?gen=1&id=2'));

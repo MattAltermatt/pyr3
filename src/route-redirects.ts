@@ -25,14 +25,26 @@ export function redirectLegacyPath(pathname: string, search: string, hash = ''):
   // /creator. Redirect old bookmarks / shared links to the new path.
   if (parts[0] === 'surprise') return '/creator' + search + hash;
 
+  // #449 — the /esf/* namespace was flattened: the corpus player + leaf moved
+  // to /browse, the grid to /gallery (the corpus is still Electric Sheep data,
+  // but the URL prefix was misleading once pyr3-native flames joined it, #435).
+  if (parts[0] === 'esf') {
+    if (parts.length === 1) return '/browse' + search + hash;
+    if (parts[1] === 'gen') return '/browse/' + parts.slice(1).join('/') + search + hash;
+    // /esf/gallery[/p/N] → /gallery[/p/N] (drop the prefix)
+    return '/' + parts.slice(1).join('/') + search + hash;
+  }
+
   if (parts[0] !== 'v1') return null;
 
   const sub = parts[1];
   let dest: string | null = null;
 
-  if (sub === undefined || sub === 'viewer') dest = '/esf';
-  else if (sub === 'gen') dest = `/esf/${parts.slice(1).join('/')}`;
-  else if (sub === 'gallery') dest = `/esf/${parts.slice(1).join('/')}`;
+  // #449 — repoint the legacy /v1/* targets straight at the new flat routes so
+  // old links hop once (not /v1 → /esf → /browse).
+  if (sub === undefined || sub === 'viewer') dest = '/browse';
+  else if (sub === 'gen') dest = `/browse/${parts.slice(1).join('/')}`;
+  else if (sub === 'gallery') dest = `/${parts.slice(1).join('/')}`;
   else if (sub === 'edit') dest = '/editor';
   else if (sub === 'gradient') dest = '/editor';  // #372 — /gradient retired → editor
   else if (sub === 'animate') dest = '/animate';

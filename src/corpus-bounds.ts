@@ -58,8 +58,20 @@ export async function loadGensManifest(
         const resp = await fetchImpl(manifestUrl());
         if (!resp.ok) return null;
         const data = (await resp.json()) as GensManifest;
-        // Defensive: ensure gens is sorted by .gen ascending so the walks below
-        // work even if a future manifest writer forgets.
+        // Merge the committed pyr3-native sidecar (gen 1). The ESF Release
+        // tar clobbers gens.json on deploy, so native gens MUST be merged
+        // client-side from a distinct file the tar never touches (#435).
+        try {
+          const sresp = await fetchImpl(
+            `${import.meta.env.BASE_URL}chunks/pyr3-gens.json`,
+          );
+          if (sresp.ok) {
+            const side = (await sresp.json()) as { gens?: GenEntry[] };
+            if (Array.isArray(side.gens)) data.gens = [...data.gens, ...side.gens];
+          }
+        } catch {
+          // sidecar missing/offline → ESF-only manifest (current behaviour)
+        }
         data.gens = [...data.gens].sort((a, b) => a.gen - b.gen);
         return data;
       } catch {

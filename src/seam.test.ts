@@ -264,8 +264,8 @@ describe('seam invariant — engine module surface is stable', () => {
   it('load-intent exports the gallery URL shape used by both surfaces', () => {
     expect(typeof galleryUrl).toBe('function');
     expect(GALLERY_PAGE_SIZE).toBe(9);
-    expect(galleryUrl(1)).toMatch(/esf\/gallery$/);
-    expect(galleryUrl(27)).toMatch(/esf\/gallery\/p\/27$/);
+    expect(galleryUrl(1)).toMatch(/\/gallery$/);
+    expect(galleryUrl(27)).toMatch(/\/gallery\/p\/27$/);
   });
 });
 

@@ -62,4 +62,11 @@ public/showcase/
 # route. Production bakes these from the ESF Release at deploy time
 # (deploy.yml) — they are deploy artifacts and must NEVER be committed.
 # Copy in locally with: cp -R dist/chunks public/chunks
-public/chunks/
+public/chunks/*
+# ...EXCEPT the pyr3-native corpus data (gen 1000). It is NOT in the ESF
+# Release tar, so it must be committed — the client merges the gens +
+# feature sidecars at runtime, and the gen-1000 chunk/avail survive the
+# tar extraction at their distinct path (#435).
+!public/chunks/1000/
+!public/chunks/pyr3-gens.json
+!public/chunks/pyr3-features.flam3idx

@@ -102,11 +102,12 @@ export function checkHtml(
     }
   }
 
-  // Audit legacy /v1/* routes — the #264 migration dropped the /v1/ prefix for
-  // flat routes (redirect map in src/route-redirects.ts). Any live href/src/text
-  // still pointing at /v1/* (or ../v1/*) is stale: on gh-pages it bounces through
-  // the 404 SPA shell, and on a stricter static host it hard-404s.
-  const legacyRouteRegex = /\.{0,2}\/v1\/[^\s"'<>)]*/g;
+  // Audit legacy routes — the #264 migration dropped the /v1/ prefix, and #449
+  // flattened /esf/* to /browse + /gallery (redirect map in
+  // src/route-redirects.ts). Any live href/src/text still pointing at /v1/* or
+  // /esf/* (or ../-relative) is stale: on gh-pages it bounces through the 404
+  // SPA shell, and on a stricter static host it hard-404s.
+  const legacyRouteRegex = /\.{0,2}\/(v1|esf)\/[^\s"'<>)]*/g;
   const seenLegacy = new Set<string>();
   let legacyMatch;
   while ((legacyMatch = legacyRouteRegex.exec(html)) !== null) {
@@ -115,9 +116,9 @@ export function checkHtml(
     seenLegacy.add(token);
     findings.push({
       type: 'legacy-route',
-      message: `Legacy /v1/ route reference found: "${token}"`,
+      message: `Legacy route reference found: "${token}"`,
       found: token,
-      expected: 'flat route (e.g. /editor, /esf/gen/.../id/...)',
+      expected: 'flat route (e.g. /editor, /browse/gen/.../id/..., /gallery)',
     });
   }
 

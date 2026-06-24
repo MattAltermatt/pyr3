@@ -48,6 +48,30 @@ export function readVarints(buf: Uint8Array): number[] {
 }
 
 /**
+ * Encode a sorted, ascending id list as LEB128 delta varints — the raw
+ * (pre-brotli) form `readVarints` decodes. Stream is
+ * `varint(ids[0]) || varint(ids[1]-ids[0]) || …` with no leading count, the
+ * exact inverse of `readVarints`. The bake CLI brotli-compresses the result
+ * (`node:zlib`) into a gen's `avail.flam3idx` (#435). Uses division (not
+ * 32-bit shifts) so ids beyond 2^28 stay exact — symmetric to the decoder.
+ */
+export function encodeAvailRaw(ids: number[]): Uint8Array {
+  const out: number[] = [];
+  let prev = 0;
+  for (const id of ids) {
+    let delta = id - prev; // first iter: id - 0 = id
+    prev = id;
+    do {
+      let byte = delta % 128;
+      delta = Math.floor(delta / 128);
+      if (delta > 0) byte += 128;
+      out.push(byte);
+    } while (delta > 0);
+  }
+  return Uint8Array.from(out);
+}
+
+/**
  * Decode a per-gen availability manifest into a sorted list of present sheep ids.
  *
  * The manifest bytes are brotli-compressed LEB128 delta-encoded varints

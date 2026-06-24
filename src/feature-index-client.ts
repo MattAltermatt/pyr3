@@ -120,6 +120,30 @@ interface BuiltIndex extends FeatureIndex {
   _terminal: boolean;
 }
 
+function nativeFeatureIndexUrl(): string {
+  return `${import.meta.env.BASE_URL}chunks/pyr3-features.flam3idx`;
+}
+
+/** Fetch + decode the committed pyr3-native feature sidecar, returning its
+ *  record-section bytes (header stripped) or null on any problem. Native gen
+ *  1 < all ESF gens, so these records prepend cleanly to keep (gen,id) order.
+ *  Fail-soft: a missing/bogus sidecar must never disable ESF filtering (#435). */
+async function fetchNativeRecordBytes(fetchImpl: typeof fetch): Promise<Uint8Array | null> {
+  try {
+    const resp = await fetchImpl(nativeFeatureIndexUrl());
+    if (!resp.ok) return null;
+    const bytes = await inflateBrotliBytes(await resp.arrayBuffer());
+    const header = decodeHeader(bytes); // throws on bad magic/truncation
+    if (header.schemaVersion !== FEATURE_INDEX_SCHEMA_CURRENT) return null;
+    const start = FEATURE_INDEX_HEADER_BYTES;
+    const end = start + header.recordCount * FEATURE_INDEX_RECORD_BYTES;
+    if (bytes.length < end) return null;
+    return bytes.subarray(start, end);
+  } catch {
+    return null;
+  }
+}
+
 async function buildIndex(fetchImpl: typeof fetch): Promise<BuiltIndex> {
   let bytes: Uint8Array;
   try {
@@ -188,18 +212,55 @@ async function buildIndex(fetchImpl: typeof fetch): Promise<BuiltIndex> {
   }
 
   const recordsStart = FEATURE_INDEX_HEADER_BYTES;
-  const recordsBytes = bytes.subarray(
+  const esfRecordsBytes = bytes.subarray(
     recordsStart,
     recordsStart + header.recordCount * FEATURE_INDEX_RECORD_BYTES,
   );
-  // Take a DataView over the records-only slice for the binary-search
-  // (zero-alloc) comparison path used by has()/get().
+
+  // Merge the committed pyr3-native records (deploy-clobber workaround). The
+  // binary search requires the merged buffer stay sorted by (gen,id). pyr3
+  // natives are a single reserved gen distinct from every ESF gen, so the
+  // native block is entirely below or entirely above the ESF range — order
+  // the two blocks by gen rather than hardcoding a side (#435).
+  let recordsBytes = esfRecordsBytes;
+  let mergedCount = header.recordCount;
+  const nativeBytes = await fetchNativeRecordBytes(fetchImpl);
+  if (nativeBytes && nativeBytes.length > 0 && header.recordCount > 0) {
+    const nCount = Math.floor(nativeBytes.length / FEATURE_INDEX_RECORD_BYTES);
+    const nativeFirstGen = new DataView(
+      nativeBytes.buffer,
+      nativeBytes.byteOffset,
+      nativeBytes.byteLength,
+    ).getUint16(0, true);
+    const esfLastGen = new DataView(
+      esfRecordsBytes.buffer,
+      esfRecordsBytes.byteOffset,
+      esfRecordsBytes.byteLength,
+    ).getUint16((header.recordCount - 1) * FEATURE_INDEX_RECORD_BYTES, true);
+    const m = new Uint8Array(nativeBytes.length + esfRecordsBytes.length);
+    if (nativeFirstGen > esfLastGen) {
+      m.set(esfRecordsBytes, 0); // native gen above all ESF → append
+      m.set(nativeBytes, esfRecordsBytes.length);
+    } else {
+      m.set(nativeBytes, 0); // native gen below all ESF → prepend
+      m.set(esfRecordsBytes, nativeBytes.length);
+    }
+    recordsBytes = m;
+    mergedCount = header.recordCount + nCount;
+  } else if (nativeBytes && nativeBytes.length > 0) {
+    // No ESF records (degenerate) — native records stand alone.
+    recordsBytes = nativeBytes;
+    mergedCount = Math.floor(nativeBytes.length / FEATURE_INDEX_RECORD_BYTES);
+  }
+
+  // Take a DataView over the (possibly merged) records buffer for the
+  // binary-search (zero-alloc) comparison path used by has()/get().
   const dv = new DataView(
     recordsBytes.buffer,
     recordsBytes.byteOffset,
     recordsBytes.byteLength,
   );
-  const count = header.recordCount;
+  const count = mergedCount;
 
   // Records are sorted (gen ↑, id ↑). Find lower bound by (gen, id).
   function lowerBound(gen: number, id: number): number {

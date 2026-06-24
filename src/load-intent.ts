@@ -16,6 +16,7 @@ import {
   type FilterSpec,
 } from './gallery-filter';
 import { parseCatalogEntry, type CatalogEntry } from './variation-catalog-link';
+import { formatGenLabel, parseGenSegment } from './native-gen';
 
 // The ESF corpus viewer's landing sheep. #339 moved the bare-root hero to a
 // pyr3-native flame (see WELCOME_FLAME_URL in main.ts); `/esf` still lands here
@@ -191,30 +192,35 @@ export function parseLoadIntent(input: string): LoadIntent | null {
   // Creator page: public route renamed /surprise → /creator (the internal
   // intent kind stays 'surprise'). /surprise is redirected to /creator at boot.
   if (head === 'creator' && parts.length === 1) return { kind: 'surprise' };
-  if (head === 'esf') {
+  // #449 — flat routes: the corpus player lives at /browse (bare) + the corpus
+  // leaf at /browse/gen/{gen}/id/{id}; the grid at /gallery (+ /gallery/p/N).
+  // Old /esf/* URLs are rewritten to these at boot by route-redirects.ts.
+  if (head === 'browse') {
     if (parts.length === 1) return { kind: 'esf' };
     if (
       parts[1] === 'gen' &&
       parts.length === 5 &&
-      isNonNegInt(parts[2]!) &&
       parts[3] === 'id' &&
       isNonNegInt(parts[4]!)
     ) {
-      return { kind: 'corpus', gen: Number(parts[2]), id: Number(parts[4]) };
+      // gen segment is numeric for ESF, or "pyr3" for the native gen (#435).
+      const gen = parseGenSegment(parts[2]!);
+      if (gen !== null) return { kind: 'corpus', gen, id: Number(parts[4]) };
     }
-    if (parts[1] === 'gallery') {
-      const filter = parseFilterSpec(new URLSearchParams(search));
-      if (parts.length === 2) return { kind: 'gallery', page: 1, filter };
-      if (
-        parts.length === 4 &&
-        parts[2] === 'p' &&
-        isNonNegInt(parts[3]!) &&
-        Number(parts[3]) >= 1
-      ) {
-        return { kind: 'gallery', page: Number(parts[3]), filter };
-      }
+    // Malformed /browse/... — fall through to default.
+  }
+  if (head === 'gallery') {
+    const filter = parseFilterSpec(new URLSearchParams(search));
+    if (parts.length === 1) return { kind: 'gallery', page: 1, filter };
+    if (
+      parts.length === 3 &&
+      parts[1] === 'p' &&
+      isNonNegInt(parts[2]!) &&
+      Number(parts[2]) >= 1
+    ) {
+      return { kind: 'gallery', page: Number(parts[2]), filter };
     }
-    // Malformed /esf/... — fall through to default.
+    // Malformed /gallery/... — fall through to default.
   }
 
   // Only handle /v1/... paths (legacy — redirected at boot, kept for direct parse)
@@ -300,12 +306,13 @@ export function parseLoadIntent(input: string): LoadIntent | null {
 
 /**
  * Canonical base-aware corpus share URL for a sheep. Single source of truth for
- * the flat `/esf/gen/{gen}/id/{id}` route shape (#264, parsed by parseLoadIntent
- * above) — used by both the pushState navigation and the action-bar nav pills so
- * they can never drift from the parser.
+ * the flat `/browse/gen/{gen}/id/{id}` route shape (#449, parsed by
+ * parseLoadIntent above) — used by both the pushState navigation and the
+ * action-bar nav pills so they can never drift from the parser.
  */
 export function corpusUrl(gen: number, id: number): string {
-  return `${import.meta.env.BASE_URL}esf/gen/${gen}/id/${id}`;
+  // gen segment is "pyr3" for the native gen, numeric for ESF (#435).
+  return `${import.meta.env.BASE_URL}browse/gen/${formatGenLabel(gen)}/id/${id}`;
 }
 
 /**
@@ -320,7 +327,7 @@ export function viewerUrl(): string {
 
 /**
  * Canonical base-aware gallery share URL. Page 1 produces the bare
- * `/esf/gallery` URL (#264, no `/p/1` suffix); page ≥ 2 includes `/p/N`. Single
+ * `/gallery` URL (#449, no `/p/1` suffix); page ≥ 2 includes `/p/N`. Single
  * source of truth for the gallery route shape — round-trips through
  * parseLoadIntent (guarded in load-intent.test.ts). Mirrors corpusUrl's
  * relationship with the corpus route.
@@ -328,8 +335,8 @@ export function viewerUrl(): string {
 export function galleryUrl(page: number, filter?: FilterSpec): string {
   const base =
     page <= 1
-      ? `${import.meta.env.BASE_URL}esf/gallery`
-      : `${import.meta.env.BASE_URL}esf/gallery/p/${page}`;
+      ? `${import.meta.env.BASE_URL}gallery`
+      : `${import.meta.env.BASE_URL}gallery/p/${page}`;
   if (!filter) return base;
   const qs = encodeFilterSpec(filter).toString();
   return qs.length === 0 ? base : `${base}?${qs}`;
@@ -353,8 +360,8 @@ export function pageForCorpusIndex(corpusIndex: number, perPage = GALLERY_PAGE_S
  * corpusId as query params so the editor preloads it; galleryUrlForFlame
  * resolves the page that contains the flame so the gallery centers on it.
  *
- * These helpers are intentionally framework-agnostic (`/editor` / `/esf/gallery`
- * are the locked flat surface paths, #264) — they do NOT touch
+ * These helpers are intentionally framework-agnostic (`/editor` / `/gallery`
+ * are the locked flat surface paths, #449) — they do NOT touch
  * import.meta.env.BASE_URL because the consumers (main.ts handleTabClick)
  * navigate via window.location.href which is base-aware on its own.
  */
@@ -368,5 +375,5 @@ export function galleryUrlForFlame(
   flameCorpusIndex: number,
 ): string {
   const page = pageForCorpusIndex(flameCorpusIndex);
-  return `/esf/gallery/p/${page}`;
+  return `/gallery/p/${page}`;
 }

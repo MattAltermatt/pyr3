@@ -27,12 +27,22 @@ const SAMPLE: GensManifest = {
 describe('loadGensManifest (#38) — fetch + cache', () => {
   beforeEach(() => _resetGensManifestCache());
 
+  // The pyr3-native sidecar (chunks/pyr3-gens.json) is merged in addition to
+  // the primary gens.json (#435). These #38 fetch/cache tests only exercise the
+  // primary manifest, so they 404 the sidecar (counting only the primary fetch)
+  // — the merge itself is covered by the dedicated sidecar suite below.
+  const gensOnly = (body: string, onCall?: () => void): typeof fetch =>
+    (async (url: string) => {
+      if (String(url).endsWith('chunks/pyr3-gens.json')) {
+        return new Response('not found', { status: 404 }) as Response;
+      }
+      onCall?.();
+      return new Response(body, { status: 200 }) as Response;
+    }) as typeof fetch;
+
   it('fetches + parses on the first call', async () => {
     let calls = 0;
-    const fakeFetch = (async () => {
-      calls += 1;
-      return new Response(JSON.stringify(SAMPLE), { status: 200 }) as Response;
-    }) as typeof fetch;
+    const fakeFetch = gensOnly(JSON.stringify(SAMPLE), () => { calls += 1; });
     const m = await loadGensManifest(fakeFetch);
     expect(m).not.toBeNull();
     expect(m?.gens.length).toBe(7);
@@ -41,10 +51,7 @@ describe('loadGensManifest (#38) — fetch + cache', () => {
 
   it('caches across calls — second call doesn\'t hit fetch', async () => {
     let calls = 0;
-    const fakeFetch = (async () => {
-      calls += 1;
-      return new Response(JSON.stringify(SAMPLE), { status: 200 }) as Response;
-    }) as typeof fetch;
+    const fakeFetch = gensOnly(JSON.stringify(SAMPLE), () => { calls += 1; });
     await loadGensManifest(fakeFetch);
     await loadGensManifest(fakeFetch);
     await loadGensManifest(fakeFetch);
@@ -60,8 +67,7 @@ describe('loadGensManifest (#38) — fetch + cache', () => {
         { gen: 247, count: 1, min_id: 0, max_id: 0 },
       ],
     };
-    const fakeFetch = (async () =>
-      new Response(JSON.stringify(unsorted), { status: 200 }) as Response) as typeof fetch;
+    const fakeFetch = gensOnly(JSON.stringify(unsorted));
     const m = await loadGensManifest(fakeFetch);
     expect(m?.gens.map((e) => e.gen)).toEqual([165, 247, 248]);
   });
@@ -208,5 +214,34 @@ describe('resolveCorpusNeighbors (#38) — cross-gen prev/next', () => {
     // From gen 247 going prev: 244 empty → skip → 243 last id 17686.
     const r = await resolveCorpusNeighbors(247, 19679, stubWithGap, stubLoadManifest, neighbors);
     expect(r.prev).toEqual({ gen: 243, id: 17686 });
+  });
+});
+
+function fakeFetch(map: Record<string, unknown>): typeof fetch {
+  return (async (url: string) => {
+    const key = Object.keys(map).find((k) => String(url).endsWith(k));
+    if (!key) return { ok: false, status: 404 } as Response;
+    return { ok: true, json: async () => map[key] } as Response;
+  }) as unknown as typeof fetch;
+}
+
+describe('loadGensManifest native sidecar merge', () => {
+  beforeEach(() => _resetGensManifestCache());
+
+  it('merges the pyr3-gens sidecar and re-sorts ascending', async () => {
+    const f = fakeFetch({
+      'chunks/gens.json': { schema: 2, build_date: 'x', chunk_size: 256, gens: [{ gen: 248, count: 1, min_id: 0, max_id: 0 }] },
+      'chunks/pyr3-gens.json': { gens: [{ gen: 1, count: 2, min_id: 0, max_id: 1 }] },
+    });
+    const m = await loadGensManifest(f);
+    expect(m?.gens.map((g) => g.gen)).toEqual([1, 248]);
+  });
+
+  it('falls back to ESF-only when the sidecar is missing', async () => {
+    const f = fakeFetch({
+      'chunks/gens.json': { schema: 2, build_date: 'x', chunk_size: 256, gens: [{ gen: 248, count: 1, min_id: 0, max_id: 0 }] },
+    });
+    const m = await loadGensManifest(f);
+    expect(m?.gens.map((g) => g.gen)).toEqual([248]);
   });
 });

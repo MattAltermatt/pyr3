@@ -35,6 +35,7 @@ import { PRESET_WEIGHTS, DEFAULT_SCORE_WEIGHTS, type ScoreWeights } from './feat
 import type { FeatureIndex } from './feature-index-client';
 import type { FeatureRecord } from './feature-index';
 import { COLORS } from './ui-tokens';
+import { formatGenLabel } from './native-gen';
 
 export interface SheepRef {
   gen: number;
@@ -535,7 +536,7 @@ function buildCell(cellDim: number): CellHandle {
     },
     setRef(gen, id) {
       root.href = corpusUrl(gen, id);
-      label.textContent = `${gen}/${String(id).padStart(5, '0')}`;
+      label.textContent = `${formatGenLabel(gen)}/${String(id).padStart(5, '0')}`;
       root.classList.remove('empty', 'missing');
       // The wave-fill calls setLoading() before setRef, so .loading stays;
       // it's cleared by clearLoading() after the render lands.
@@ -551,7 +552,7 @@ function buildCell(cellDim: number): CellHandle {
     },
     setMissing(gen, id) {
       root.removeAttribute('href');
-      label.textContent = `${gen}/${String(id).padStart(5, '0')} (missing)`;
+      label.textContent = `${formatGenLabel(gen)}/${String(id).padStart(5, '0')} (missing)`;
       root.classList.add('missing');
       root.classList.remove('empty', 'loading');
     },
@@ -650,6 +651,30 @@ export async function mountGallery(
     currentRun: null as RunHandle | null,
   };
 
+  /** Clear a cell's WebGPU canvas to the empty-placeholder colour. A
+   *  WebGPU canvas paints its drawing buffer OVER the CSS background, so the
+   *  `.empty`/`.missing` background style alone leaves the prior render
+   *  visible — when a filter/page yields fewer than 9 refs the stale flames
+   *  linger in the unused cells. An explicit clear pass (matching the
+   *  `#15151a` placeholder) is the only thing that actually blanks them. */
+  function clearCellCanvas(cell: CellHandle): void {
+    if (cell.ctx === null) return;
+    const enc = deps.device.createCommandEncoder();
+    enc
+      .beginRenderPass({
+        colorAttachments: [
+          {
+            view: cell.ctx.getCurrentTexture().createView(),
+            clearValue: { r: 21 / 255, g: 21 / 255, b: 26 / 255, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+      })
+      .end();
+    deps.device.queue.submit([enc.finish()]);
+  }
+
   async function runWave(page: number): Promise<void> {
     // Page-switch clear: flip every cell to the loading overlay BEFORE we
     // await pageOfSheep. The visitor sees the old page replaced instantly
@@ -679,8 +704,12 @@ export async function mountGallery(
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i]!;
       const ref = refs[i];
-      if (ref) cell.setRef(ref.gen, ref.id);
-      else cell.setEmpty();
+      if (ref) {
+        cell.setRef(ref.gen, ref.id);
+      } else {
+        cell.setEmpty();
+        clearCellCanvas(cell); // blank any stale render in the unused slot
+      }
     }
 
     // Wave fill: one cell at a time, top-left → bottom-right.
@@ -699,6 +728,7 @@ export async function mountGallery(
 
       if (genome === null) {
         cell.setMissing(ref.gen, ref.id);
+        clearCellCanvas(cell); // blank any stale render under the missing box
         continue;
       }
 

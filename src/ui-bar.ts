@@ -17,6 +17,7 @@ import type { QualityRequest } from './presets';
 import { composeFlameFilename } from './save-flame';
 import { composeSaveFilename } from './save-image';
 import { COLORS } from './ui-tokens';
+import { formatGenLabel } from './native-gen';
 import type { WebGPUStatus } from './webgpu-check';
 
 export interface BarMeta {
@@ -858,7 +859,7 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
         a.title = title;
         return a; // intentionally no href / no onclick — pure placeholder
       };
-      const fmt = (gen: number, id: number) => `${gen}.${String(id).padStart(5, '0')}`;
+      const fmt = (gen: number, id: number) => `${formatGenLabel(gen)}.${String(id).padStart(5, '0')}`;
       // #38: prev/next pills carry their OWN (gen, id) so the cluster can cross
       // gen boundaries at corpus edges without dead-ending.
       const prevEl = nav.prev !== null

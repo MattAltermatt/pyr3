@@ -361,13 +361,13 @@ describe('mountGallery — 3×3 square tiles with <gen>/<id> link (#103 Phase 4 
     // resolve to the same corpus URL).
     const firstWrap = container.querySelectorAll('.pyr3-tile-wrap')[0] as HTMLAnchorElement;
     expect(firstWrap.tagName).toBe('A');
-    expect(firstWrap.getAttribute('href')).toMatch(/esf\/gen\/100\/id\/1$/);
+    expect(firstWrap.getAttribute('href')).toMatch(/browse\/gen\/100\/id\/1$/);
     const label = firstWrap.querySelector('.pyr3-tile-id') as HTMLElement;
     // closest('a') walks up to the wrap anchor — confirms the label click
     // bubbles to the same navigation target.
     const labelAnchor = label.closest('a') as HTMLAnchorElement;
     expect(labelAnchor).toBe(firstWrap);
-    expect(labelAnchor.getAttribute('href')).toMatch(/esf\/gen\/100\/id\/1$/);
+    expect(labelAnchor.getAttribute('href')).toMatch(/browse\/gen\/100\/id\/1$/);
     handle.destroy();
   });
 });
@@ -416,9 +416,9 @@ describe('mountGallery — DOM grid', () => {
 
     const cells = container.querySelectorAll<HTMLAnchorElement>('.pyr3-gallery-cell');
     // Page 1 of the 12-sheep corpus: sheep id 1-9.
-    expect(cells[0]!.getAttribute('href')).toMatch(/esf\/gen\/100\/id\/1$/);
+    expect(cells[0]!.getAttribute('href')).toMatch(/browse\/gen\/100\/id\/1$/);
     expect(cells[0]!.querySelector('.pyr3-gallery-cell-label')!.textContent).toBe('100/00001');
-    expect(cells[8]!.getAttribute('href')).toMatch(/esf\/gen\/100\/id\/9$/);
+    expect(cells[8]!.getAttribute('href')).toMatch(/browse\/gen\/100\/id\/9$/);
     expect(cells[8]!.querySelector('.pyr3-gallery-cell-label')!.textContent).toBe('100/00009');
 
     handle.destroy();

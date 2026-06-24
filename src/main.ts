@@ -11,7 +11,8 @@ import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { acquireGpu, initDevice, showError } from './device';
 import { isMobile } from './mobile';
 import { buildMobileInterstitial, type HiddenSurface } from './mobile-interstitial';
-import { parseFlame } from './flame-import';
+import { genomeFromCorpusString, corpusStringIsJson } from './corpus-genome-codec';
+import { formatGenLabel } from './native-gen';
 import {
   clampGalleryPage,
   coalesce,
@@ -141,7 +142,7 @@ function setDocTitle(label: string | null): void {
 // Compact `gen/id` label for the document title (id zero-padded to 5, matching
 // the corpus URL + nav-pill formatting).
 function corpusTitleLabel(gen: number, id: number): string {
-  return `${gen}/${String(id).padStart(5, '0')}`;
+  return `${formatGenLabel(gen)}/${String(id).padStart(5, '0')}`;
 }
 
 async function main(): Promise<void> {
@@ -245,18 +246,18 @@ async function main(): Promise<void> {
   function currentTabSurface(): TabSurface {
     const p = window.location.pathname;
     // Uniform rule: a surface matches its exact root OR a deep-link beneath it
-    // (`root + '/'`). Only ESF actually owns sub-paths today (/esf/gen/.../id/...,
-    // /esf/gallery); the rest are flat singletons, but the same form keeps the
+    // (`root + '/'`). The corpus owns sub-paths (/browse/gen/.../id/...,
+    // /gallery/p/N); the rest are flat singletons, but the same form keeps the
     // classifier consistent and avoids `startsWith('/editor')` matching `/editorz`.
     const is = (root: string): boolean => p === root || p.startsWith(root + '/');
-    if (is('/esf/gallery')) return 'gallery';
+    if (is('/gallery')) return 'gallery';
     if (is('/editor')) return 'editor';
     if (is('/animate')) return 'animate';
     if (is('/about')) return 'about';
     if (is('/screensaver')) return 'screensaver';
     if (is('/viewer')) return 'viewer';
     // bare `/` and any unrecognized path resolve to the basic viewer.
-    if (is('/esf')) return 'esf';
+    if (is('/browse')) return 'esf';
     return 'viewer';
   }
 
@@ -1726,7 +1727,15 @@ async function main(): Promise<void> {
       return;
     }
 
-    const file = new File([xml], `electricsheep.${gen}.${id}.flam3`, { type: 'text/xml' });
+    // Corpus values are flam3 XML (ESF) or pyr3-JSON (pyr3-native gen 1, #435).
+    // Name the File by content so the loader's suffix dispatch picks the right
+    // codec (genomeFromJson vs parseFlame).
+    const isJson = corpusStringIsJson(xml);
+    const file = new File(
+      [xml],
+      `electricsheep.${gen}.${id}.${isJson ? 'pyr3.json' : 'flam3'}`,
+      { type: isJson ? 'application/json' : 'text/xml' },
+    );
     await loadFromFile(file); // hides the missing panel on success
     // #103 Phase 2 Task 2.3 — refine the just-stored currentFlame entry
     // with its corpus identity. applyLoadResult wrote the bare {genome};
@@ -1785,7 +1794,7 @@ async function main(): Promise<void> {
   const galleryFetchGenome = async (gen: number, id: number): Promise<Genome | null> => {
     try {
       const xml = await fetchFlameXml(gen, id);
-      return parseFlame(xml).genome;
+      return genomeFromCorpusString(xml);
     } catch (err) {
       // FlameNotFound is expected for sparse-corpus gaps — the cell renders
       // a "(missing)" placeholder. Any other failure is logged but treated
@@ -2186,7 +2195,7 @@ async function main(): Promise<void> {
   // #199 — the deferred v1 §12 routes (gen-list / gen-browse / custom-reserved)
   // were superseded by the gallery (#39, 2026-05-30). They previously
   // silently painted the welcome flame with only a console.info — soft UX
-  // cliff. Redirect to /esf/gallery (the modern equivalent) so the URL the
+  // cliff. Redirect to /gallery (the modern equivalent) so the URL the
   // user lands on is real + shareable + nav-wired, instead of staying on a
   // dead route while a placeholder loads.
   if (
@@ -2196,9 +2205,9 @@ async function main(): Promise<void> {
   ) {
     console.info(
       `pyr3: ${intent.kind} route is deferred (v1 §12, superseded by #39 gallery)`
-      + ' — redirecting to /esf/gallery.',
+      + ' — redirecting to /gallery.',
     );
-    history.replaceState(null, '', `${import.meta.env.BASE_URL}esf/gallery`);
+    history.replaceState(null, '', `${import.meta.env.BASE_URL}gallery`);
     intent = parseLoadIntent(window.location.pathname + window.location.search)
       ?? { kind: 'default' as const };
   }
@@ -2361,7 +2370,7 @@ async function resolveLoadIntent(intent: LoadIntent): Promise<File | null> {
     case 'gen-list':
     case 'gen-browse':
     case 'custom-reserved':
-      // #199 — these deferred routes are now redirected to /esf/gallery at
+      // #199 — these deferred routes are now redirected to /gallery at
       // the top of main() before this dispatch runs. Reaching here means
       // the redirect block was bypassed (routing bug) — log loudly + paint
       // welcome as a safe fallback so the page isn't blank.

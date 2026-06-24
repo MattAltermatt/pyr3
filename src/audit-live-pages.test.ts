@@ -12,7 +12,7 @@ describe('audit-live-pages checkHtml', () => {
         <body>
           <h1>pyr3 version ${version}</h1>
           <p>We support ${varCount} different variations!</p>
-          <a href="/esf/gen/247/id/19679">Open ${hero}</a>
+          <a href="/browse/gen/247/id/19679">Open ${hero}</a>
         </body>
       </html>
     `;
@@ -84,26 +84,33 @@ describe('audit-live-pages checkHtml', () => {
   it('does not flag electricsheep.248.31324 — a legit /showcase gallery card', () => {
     const html = `
       <div class="card">
-        <a class="idlink" href="../esf/gen/248/id/31324">electricsheep.248.31324</a>
+        <a class="idlink" href="../browse/gen/248/id/31324">electricsheep.248.31324</a>
       </div>
     `;
     const findings = checkHtml(html, version, varCount, hero);
     expect(findings.filter(f => f.type === 'hero')).toHaveLength(0);
   });
 
-  it('flags legacy /v1/ route links (#264 dropped the prefix)', () => {
+  it('flags legacy /v1/ + /esf/ route links (#264 dropped /v1, #449 flattened /esf)', () => {
     const html = `
       <html>
         <body>
           <a href="/v1/edit">editor</a>
           <a href="../v1/variations">catalog</a>
+          <a href="/esf/gen/247/id/19679">old corpus leaf</a>
+          <a href="/esf/gallery">old gallery</a>
         </body>
       </html>
     `;
     const findings = checkHtml(html, version, varCount, hero);
     const legacy = findings.filter(f => f.type === 'legacy-route');
     expect(legacy.map(f => f.found)).toEqual(
-      expect.arrayContaining(['/v1/edit', '../v1/variations']),
+      expect.arrayContaining([
+        '/v1/edit',
+        '../v1/variations',
+        '/esf/gen/247/id/19679',
+        '/esf/gallery',
+      ]),
     );
   });
 
@@ -113,7 +120,7 @@ describe('audit-live-pages checkHtml', () => {
         <body>
           <a href="/editor">editor</a>
           <a href="../variations">catalog</a>
-          <a href="/esf/gen/247/id/19679">hero</a>
+          <a href="/browse/gen/247/id/19679">hero</a>
         </body>
       </html>
     `;
