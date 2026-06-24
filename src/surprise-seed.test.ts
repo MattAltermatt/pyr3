@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateSurpriseBatch } from './surprise-seed';
+import { generateSurpriseBatch, isCollapsed } from './surprise-seed';
+import { generateRandomGenome } from './edit-seed';
 import { PRIMARY_ELIGIBLE } from './surprise-seed-pool';
 import { V } from './variations';
+import { type Genome } from './genome';
 
 function seededRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -29,6 +31,35 @@ describe('generateSurpriseBatch', () => {
       const shapeXform = g.xforms.find((x) => x.variations[0] && x.variations[0].weight >= 0.99);
       expect(shapeXform).toBeDefined();
       expect(PRIMARY_ELIGIBLE).toContain(shapeXform!.variations[0]!.index);
+    }
+  });
+});
+
+describe('collapse-to-point guard (#446)', () => {
+  // A flame whose every affine shares the origin fixed point (c=f=0) and is
+  // contractive collapses to a point — the #445 repro shape. Build one by
+  // forcing those affines + pure-linear variations onto a valid skeleton.
+  function makeCollapsed(seed: number): Genome {
+    const g = generateRandomGenome(seededRng(seed));
+    for (const x of g.xforms) {
+      x.c = 0; x.f = 0; x.a = 0.4; x.b = 0.1; x.d = -0.1; x.e = 0.4;
+      x.variations = [{ index: V.linear, weight: 1 }];
+      delete x.post;
+    }
+    return g;
+  }
+
+  it('flags a collapse-to-origin genome as degenerate', () => {
+    expect(isCollapsed(makeCollapsed(99))).toBe(true);
+  });
+  it('does NOT flag normal generated flames (no false positives)', () => {
+    for (let s = 0; s < 20; s++) {
+      expect(isCollapsed(generateRandomGenome(seededRng(200 + s)))).toBe(false);
+    }
+  });
+  it('generateSurpriseBatch never emits a collapsed genome', () => {
+    for (const g of generateSurpriseBatch(seededRng(3), 16)) {
+      expect(isCollapsed(g)).toBe(false);
     }
   });
 });

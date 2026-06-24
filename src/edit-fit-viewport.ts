@@ -371,6 +371,18 @@ export function computeFitViewport(
   return { cx: box.cx, cy: box.cy, scale: scaleForBox(box, canvasW, canvasH) };
 }
 
+/** #446 — does this genome's attractor collapse to ~a point? `computeFitBox`
+ *  returns null exactly when the CPU-sampled attractor falls below the framing
+ *  floor (FIT_MIN_EXTENT) on BOTH axes — i.e. every map shares a contractive
+ *  fixed point (the #445 shape). Such a flame renders pathologically slowly: all
+ *  its histogram deposits serialize onto one atomic cell. The Surprise generator
+ *  reject+re-rolls on this; the editor warns on it (collapse can still arrive via
+ *  open-file / reroll / corpus transfer, none of which the generator guards). A
+ *  line attractor (one axis ~0) is NOT collapsed — it yields a non-null box. */
+export function isAttractorCollapsed(genome: Genome, opts: Partial<ChaosSamplerOpts> = {}): boolean {
+  return computeFitBox(genome, opts) === null;
+}
+
 /** #432 — fit-on-open. Re-frame a genome's camera (`scale`/`cx`/`cy`) to its own
  *  output `size`. A transferred flame (surprise tile / corpus ✏️ Edit / catalog)
  *  carries a camera fit for a DIFFERENT reference frame — generateRandomGenome

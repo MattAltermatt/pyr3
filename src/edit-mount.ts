@@ -31,7 +31,7 @@ import {
   type SettledPixels,
 } from './edit-state';
 import { generateRandomGenome } from './edit-seed';
-import { refitGenomeToOutputSize } from './edit-fit-viewport';
+import { refitGenomeToOutputSize, isAttractorCollapsed } from './edit-fit-viewport';
 import { unpackSettledRgba } from './edit-pixel-readback';
 import { createRenderer, type Renderer, DEFAULT_FILTER_RADIUS } from './renderer';
 import { createEditRenderer, type EditRenderer } from './edit-render';
@@ -1322,12 +1322,33 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     },
   });
 
+  // #446 — proactive warning when a loaded flame's attractor collapses to ~a
+  // point (the #445 shape). Such a flame renders pathologically slowly (all its
+  // histogram deposits serialize onto one atomic cell), so we flag it at load
+  // rather than let the user wait minutes on a near-blank render. The Surprise
+  // generator already reject+re-rolls these, but they still arrive via open-file,
+  // editor reroll, and corpus ✏️ Edit transfers — none of which the generator
+  // guards. Soft + non-blocking: the render still proceeds (the slow-render nudge
+  // reinforces if it does crawl). One sampling pass (~5k CPU iters) per load only.
+  function maybeWarnDegenerate(genome: Genome): void {
+    // Host on canvasHost, NOT panelHost: both callers run rebuildPanel() right
+    // after, which replaceChildren()s panelHost and would wipe the toast. canvasHost
+    // survives panel rebuilds (it's where the slow-render nudge lives for the same
+    // reason) and sits over the render area where the user is looking.
+    if (isAttractorCollapsed(genome)) {
+      showToast(canvasHost, '⚠ Collapsed attractor — this flame renders to ~a point and may be very slow (geometry, not a quality setting).');
+    }
+  }
+
   async function applyNewGenome(
     genome: Genome,
     seed?: number,
     historyAction: 'reset' | 'preserve' = 'reset',
   ): Promise<void> {
     state.genome = genome;
+    // #446 — warn on genuine loads (reroll / open-file / transfer); NOT on
+    // undo/redo 'preserve' navigation, which would re-warn on every step.
+    if (historyAction === 'reset') maybeWarnDegenerate(genome);
     // #103 Phase 2 Task 2.3 — re-publish the editor's WIP genome whenever
     // a fresh genome lands (reroll / open file). In-place mutations of
     // existing fields don't need a re-publish: app-state stores the
@@ -1661,6 +1682,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   }
 
   // Initial mount + first paint. Same "settled" path as open/reroll.
+  // #446 — the cold-start / transferred genome doesn't route through
+  // applyNewGenome, so warn here too if it opens collapsed (e.g. a corpus
+  // ✏️ Edit transfer of a degenerate flame).
+  maybeWarnDegenerate(state.genome);
   rebuildPanel();
   inflightTicket++;
   {

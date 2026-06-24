@@ -8,6 +8,7 @@ import {
   computeFitBox,
   scaleForBox,
   refitGenomeToOutputSize,
+  isAttractorCollapsed,
   FIT_MARGIN,
 } from './edit-fit-viewport';
 import { generateRandomGenome } from './edit-seed';
@@ -69,6 +70,33 @@ describe('sampleChaosForFit', () => {
     const a = sampleChaosForFit(g, { samples: 500, warmup: 20, seed: 99 });
     const b = sampleChaosForFit(g, { samples: 500, warmup: 20, seed: 99 });
     expect(a).toEqual(b);
+  });
+});
+
+describe('isAttractorCollapsed (#446)', () => {
+  // Force the #445 shape: every affine shares the origin fixed point (c=f=0)
+  // and contracts, with pure-linear variations → the attractor collapses to a
+  // point. computeFitBox returns null → isAttractorCollapsed true.
+  function makeCollapsed(seed: number): Genome {
+    const g = generateRandomGenome(seededRng(seed));
+    for (const x of g.xforms) {
+      x.c = 0; x.f = 0; x.a = 0.4; x.b = 0.1; x.d = -0.1; x.e = 0.4;
+      x.variations = [{ index: V.linear, weight: 1 }];
+      delete x.post;
+    }
+    return g;
+  }
+
+  it('flags a collapse-to-origin genome', () => {
+    expect(isAttractorCollapsed(makeCollapsed(11))).toBe(true);
+  });
+  it('flags an empty / zero-weight genome (no samples)', () => {
+    expect(isAttractorCollapsed(minimalGenome())).toBe(true);
+  });
+  it('does NOT flag normal generated flames', () => {
+    for (let s = 0; s < 15; s++) {
+      expect(isAttractorCollapsed(generateRandomGenome(seededRng(300 + s)))).toBe(false);
+    }
   });
 });
 
