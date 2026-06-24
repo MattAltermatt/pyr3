@@ -49,6 +49,21 @@ Surprise/loop); the ESF viewer (`/esf`) is the corpus browser (Surprise + loop,
 no file open). Flames move between surfaces only via the explicit **✏️ Edit
 this flame** button — never an implicit transfer-on-navigate.
 
+**Mobile is consumption-only (#66).** On a mobile viewport (`isMobile()` in
+`src/mobile.ts` — viewport width ≤ 820px, or a coarse pointer just past it) the
+app strips down to *looking at* flames; creation surfaces are removed. The nav
+shows only **Viewer · Creator · Flame Gallery · Discover · Help** — **Editor**,
+**Animate**, and **Screensaver** are dropped from the menu, and direct
+navigation to those URLs mounts a lightweight "needs a bigger screen"
+interstitial (`src/mobile-interstitial.ts`) instead of the heavy surface (no GPU
+acquired). **Creator** stays, but a tile tap-through routes to the **viewer**
+(not the editor) via the same pending-transfer seam. Kept pages also shed
+creation/tuning chrome on mobile: the viewer drops the whole PREVIEW/RENDER bar
+(tier · quality · size · format · Save Render) + ✏️ Edit, keeping 📂 Open +
+🧬 Save Flame; Creator drops the GENERATE/VARIATIONS steering bars + undo/redo
+(keeps 🎲 Reroll + the wall); the gallery drops the ⚙ filter drawer. The engine
+(`createRenderer`/WGSL) is untouched — this is a pure presentation-layer branch.
+
 The `pyr3` global command (via `npm link`) boots
 `pyr3 serve`, whose backend exposes `/api/render` + `/api/animate` (SSE-
 streamed) for renders past the browser's quality cap. `/api/animate` accepts

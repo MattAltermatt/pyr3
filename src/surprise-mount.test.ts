@@ -2,6 +2,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { mountSurprisePage } from './surprise-mount';
 import * as render from './surprise-render';
+import { isMobile } from './mobile';
+
+vi.mock('./mobile', () => ({ isMobile: vi.fn(() => false) }));
+const mobileMock = isMobile as ReturnType<typeof vi.fn>;
 
 function makeStorageStub(): Storage {
   const m = new Map<string, string>();
@@ -35,6 +39,20 @@ describe('mountSurprisePage (v2 #surprise-v2)', () => {
     h.destroy();
   });
 
+  it('mobile: reduces to 🎲 Reroll + wall — no GENERATE/VARIATIONS bars, no undo/redo (#66)', () => {
+    mobileMock.mockReturnValue(true);
+    const host = document.createElement('div');
+    const h = mountSurprisePage(host, opts);
+    expect(host.querySelector('[data-role="reroll"]')).toBeTruthy();   // kept
+    expect(host.querySelector('[data-role="tile"]')).toBeTruthy();      // wall kept
+    expect(host.querySelector('[data-bar="generate"]')).toBeNull();     // steering dropped
+    expect(host.querySelector('[data-bar="variations"]')).toBeNull();
+    expect(host.querySelector('[data-role="wall-undo"]')).toBeNull();   // history dropped
+    expect(host.querySelector('[data-role="wall-redo"]')).toBeNull();
+    h.destroy();
+    mobileMock.mockReturnValue(false);
+  });
+
   it('lays out at least one tile slot on boot', () => {
     const host = document.createElement('div');
     const h = mountSurprisePage(host, opts);
@@ -42,7 +60,8 @@ describe('mountSurprisePage (v2 #surprise-v2)', () => {
     h.destroy();
   });
 
-  it('clicking a tile opens the editor in a new tab (window.open)', () => {
+  it('desktop: clicking a tile opens the editor in a new tab (window.open)', () => {
+    mobileMock.mockReturnValue(false);
     const open = vi.fn();
     vi.stubGlobal('open', open);
     const host = document.createElement('div');
@@ -51,6 +70,21 @@ describe('mountSurprisePage (v2 #surprise-v2)', () => {
     tile.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(open).toHaveBeenCalledWith('/editor', '_blank', 'noopener');
     h.destroy();
+  });
+
+  it('mobile: clicking a tile navigates same-tab to the viewer, no new tab (#66)', () => {
+    mobileMock.mockReturnValue(true);
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    window.location.href = '/creator';
+    const host = document.createElement('div');
+    const h = mountSurprisePage(host, opts);
+    const tile = host.querySelector('[data-role="tile"]') as HTMLElement;
+    tile.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(open).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/viewer');
+    h.destroy();
+    mobileMock.mockReturnValue(false);
   });
 
   it('per-bar Reset commits without rerolling (#433)', () => {

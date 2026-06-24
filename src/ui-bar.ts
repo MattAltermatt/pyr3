@@ -12,6 +12,7 @@
 
 import { corpusUrl, QUALITY_PRESETS, SIZE_PRESETS } from './load-intent';
 import { buildNavMenu } from './nav-menu';
+import { isMobile } from './mobile';
 import type { QualityRequest } from './presets';
 import { composeFlameFilename } from './save-flame';
 import { composeSaveFilename } from './save-image';
@@ -520,7 +521,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   const metaVariations = el('span', 'pyr3-bar-variations');
   // Toast rides in the info zone next to the meta name.
   const toast = el('span', 'pyr3-bar-toast');
-  infoLeft.append(metaName, metaQuality, metaVariations, toast);
+  // #66 — mobile keeps just the flame name + toast; the render-detail metadata
+  // (· dims · q · tier · variation list) is desktop noise that overflows into
+  // the action buttons at phone width. metaQuality/metaVariations are still
+  // built (the BarHandle setters write to them) but stay detached on mobile.
+  if (isMobile()) infoLeft.append(metaName, toast);
+  else infoLeft.append(metaName, metaQuality, metaVariations, toast);
 
   // #367 — the basic viewer hosts its action buttons on the RIGHT of the
   // identity row (the standalone action bar below is dropped). Filled in the
@@ -602,10 +608,18 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
   // the shared render-mode-bar in #176. They remain mounted so the BarHandle
   // setters keep resolving them regardless of which container holds them.
   // #264 — 📂 Open is basic-viewer-only; ESF is corpus-only (no local load).
+  // #66 — mobile is consumption-only. Drop ✏️ Edit (no editor on mobile) and the
+  // render-mode-bar placeholders (Size / QUALITY / Save Render) — those are
+  // normally hidden by the `body.pyr3-has-render-mode-bar` class, but that class
+  // isn't set on mobile (the render bar isn't mounted), so they must NOT be
+  // appended here or they'd reappear. The placeholder elements still exist as
+  // detached nodes, so the BarHandle setters keep resolving them.
+  const mobile = isMobile();
   if (opts.mode === 'basic') {
     // #367 — basic viewer: actions live in the identity row's right zone; the
     // standalone action bar is omitted from middleSlot below.
-    infoRight.append(openBtn, saveFlameBtn, editFlameBtn, sizeBtn, qualityLabel, qualityGroup, saveBtn);
+    if (mobile) infoRight.append(openBtn, saveFlameBtn);
+    else infoRight.append(openBtn, saveFlameBtn, editFlameBtn, sizeBtn, qualityLabel, qualityGroup, saveBtn);
   } else {
     // #356 — esf: the verbs (🧬 Save Flame + ✏️ Edit) join the identity row's
     // right gutter, matching the basic viewer. The slim action row below keeps
@@ -613,8 +627,12 @@ export function mountBar(root: HTMLElement, opts: BarOpts): BarHandle {
     // browser's primary affordance — not buried among the verbs. The hidden
     // render-mode-bar placeholders (Size / QUALITY / Save Render) stay in
     // actionLeft so the BarHandle setters keep resolving them.
-    infoRight.append(saveFlameBtn, editFlameBtn);
-    actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveBtn);
+    if (mobile) {
+      infoRight.append(saveFlameBtn);
+    } else {
+      infoRight.append(saveFlameBtn, editFlameBtn);
+      actionLeft.append(sizeBtn, qualityLabel, qualityGroup, saveBtn);
+    }
   }
 
   // #23: viewer-side 🎲 surprise-me pill. Picks a random flame from the
@@ -938,6 +956,14 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   bar.style.justifyContent = 'space-between';
   bar.style.alignItems = 'center';
   bar.style.gap = '16px';
+  // #66 — on mobile the bar must reflow: allow it to wrap so the brand + the
+  // (reduced) nav don't collide, and tighten the padding for the narrow viewport.
+  const mobile = isMobile();
+  if (mobile) {
+    bar.style.flexWrap = 'wrap';
+    bar.style.rowGap = '4px';
+    bar.style.padding = '4px 10px';
+  }
 
   // Left cluster: brand + the top-nav menus, left-aligned together.
   // #264 — buildNavMenu replaces the flat tab row. Leaf clicks navigate
@@ -950,10 +976,12 @@ export function mountBarChrome(root: HTMLElement, opts: ChromeOpts): ChromeHandl
   const left = el('div', 'pyr3-left-cluster');
   left.append(buildBrand(), tabs);
 
-  // Right cluster: WebGPU pill + fork-it octocat + more-flames octocat
-  const right = buildRightCluster(opts.webgpu);
-
-  bar.append(left, right);
+  // Right cluster: WebGPU pill + fork-it octocat + more-flames octocat.
+  // #66 — these are desktop-context adornments (capability badge + outbound
+  // "run offline" / "more flames" links). They're the main source of bar clutter
+  // at phone width, so they're omitted on mobile — the brand + nav carry the bar.
+  bar.append(left);
+  if (!mobile) bar.append(buildRightCluster(opts.webgpu));
   root.append(bar);
 
   // Per-surface mount fns drop their info-row / action-row content here.
@@ -1339,13 +1367,25 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   // Page label has a pinned `min-width: 160px` so digit-count changes
   // ("page 1 of 5798" → "page 4278 of 5798") never shift the prev/next
   // pills under the cursor.
+  const galleryMobile = isMobile();
   const infoRow = el('div', 'pyr3-bar-info pyr3-bar-info-gallery');
-  // Inline-style the grid contract so the test asserting layout (and the
-  // visual centering) holds independent of the stylesheet load order.
-  infoRow.style.display = 'grid';
-  infoRow.style.gridTemplateColumns = '1fr auto 1fr';
-  infoRow.style.alignItems = 'center';
-  infoRow.style.gap = '16px';
+  if (galleryMobile) {
+    // #66 — mobile: the empty side columns + the 160px-pinned page label push
+    // the cluster past a phone width and clip "random page". Collapse to a
+    // centered flex row that wraps, with tight gaps.
+    infoRow.style.display = 'flex';
+    infoRow.style.flexWrap = 'wrap';
+    infoRow.style.justifyContent = 'center';
+    infoRow.style.alignItems = 'center';
+    infoRow.style.gap = '6px 10px';
+  } else {
+    // Inline-style the grid contract so the test asserting layout (and the
+    // visual centering) holds independent of the stylesheet load order.
+    infoRow.style.display = 'grid';
+    infoRow.style.gridTemplateColumns = '1fr auto 1fr';
+    infoRow.style.alignItems = 'center';
+    infoRow.style.gap = '16px';
+  }
 
   // Left column — empty placeholder; keeps the centered grid truly centered.
   const infoLeft = el('div', 'pyr3-zone-left');
@@ -1363,13 +1403,18 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
   // not depend on the stylesheet attaching first. Spec § Gallery info row:
   // `min-width: 160px` so prev/next pills do not shift horizontally as the
   // page-number digit count changes.
-  pageLabel.style.minWidth = '160px';
+  // #66 — the 160px pin exists only to stop prev/next shifting under a desktop
+  // cursor as the digit count changes; on touch there's no cursor, and the pin
+  // is the main reason the cluster overflows. Drop it on mobile.
+  pageLabel.style.minWidth = galleryMobile ? '0' : '160px';
   pageLabel.style.textAlign = 'center';
   const nextPill = el('a', 'pyr3-nav-pill') as HTMLAnchorElement;
   nextPill.textContent = 'next ›';
   nextPill.title = 'next page';
   const dicePill = el('a', 'pyr3-nav-pill pyr3-bar-gallery-dice') as HTMLAnchorElement;
-  dicePill.textContent = '🎲 random page';
+  // #66 — condense the wording on mobile ("random page" → "random") to help the
+  // cluster fit; it stays a word label, not an icon-only control.
+  dicePill.textContent = galleryMobile ? '🎲 random' : '🎲 random page';
   dicePill.title = 'jump to a random page in the gallery';
   infoCenter.append(prevPill, pageLabel, nextPill, dicePill);
 
@@ -1403,7 +1448,10 @@ export function mountGalleryBar(root: HTMLElement, opts: GalleryBarOpts): Galler
     e.preventDefault();
     opts.onFilterToggle();
   };
-  infoRight.append(filterPill);
+  // #66 — mobile is consumption-only: the gallery keeps its browse grid +
+  // page-nav + Surprise/loop, but drops the ⚙ filter drawer toggle (the heavy
+  // faceted-filter chrome is desktop-only; the drawer itself isn't mounted).
+  if (!isMobile()) infoRight.append(filterPill);
 
   infoRow.append(infoLeft, infoCenter, infoRight);
   // #419 — gallery: the page-nav row mounts into the bottom-bar host (directly

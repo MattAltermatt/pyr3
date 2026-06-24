@@ -2,6 +2,10 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { mountWelcomeCard, welcomeAlreadySeen } from './welcome-card';
+import { isMobile } from './mobile';
+
+vi.mock('./mobile', () => ({ isMobile: vi.fn(() => false) }));
+const mobileMock = isMobile as ReturnType<typeof vi.fn>;
 
 function fakeStorage(init: Record<string, string> = {}) {
   const m = new Map(Object.entries(init));
@@ -44,6 +48,20 @@ describe('welcome-card (#338)', () => {
     expect(zone.querySelector('[data-role="welcome-edit"]')).toBeTruthy();
     expect(zone.querySelector('[data-role="welcome-ifs"]')).toBeTruthy();
     expect(zone.querySelector('[data-role="welcome-dismiss"]')).toBeTruthy();
+  });
+
+  it('omits the "Edit this flame" link on mobile (#66)', () => {
+    mobileMock.mockReturnValue(true);
+    document.body.innerHTML = '<div id="zone"></div>';
+    const zone = document.getElementById('zone')!;
+    const h = mountWelcomeCard(zone, makeOpts());
+    expect(zone.querySelector('[data-role="welcome-edit"]')).toBeNull();
+    // the other three discovery links remain
+    expect(zone.querySelector('[data-role="welcome-gallery"]')).toBeTruthy();
+    expect(zone.querySelector('[data-role="welcome-open"]')).toBeTruthy();
+    expect(zone.querySelector('[data-role="welcome-ifs"]')).toBeTruthy();
+    expect(h).not.toBeNull();
+    mobileMock.mockReturnValue(false);
   });
 
   it('does NOT mount (returns null, no DOM) when the seen flag is already set', () => {

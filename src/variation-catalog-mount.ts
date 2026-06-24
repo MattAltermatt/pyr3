@@ -16,6 +16,7 @@ import { getCatalogDoc } from './variation-catalog-data';
 import { buildCatalogGenome } from './variation-catalog-scaffold';
 import { catalogAnchorSlug, getDisplayLabel } from './variations';
 import { createRenderer, type Renderer } from './renderer';
+import { isMobile } from './mobile';
 import type { Genome } from './genome';
 
 export interface MountOptions {
@@ -92,7 +93,34 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     }
   }
 
-  root.append(sidebarHost, catalogHost);
+  // #66 — mobile single-pane master-detail. The desktop two-pane layout is too
+  // cramped on a phone, so on mobile we show ONE full-width pane at a time: the
+  // variation LIST by default, switching to the DETAIL (catalog) when a variation
+  // is tapped (wired into onJump below), with a back bar to return to the list.
+  const mobile = isMobile();
+  const backBar = document.createElement('button');
+  backBar.type = 'button';
+  backBar.className = 'pyr3-cat-back';
+  backBar.textContent = '← all variations';
+  const enterListMode = (): void => {
+    root.classList.remove('pyr3-mode-detail');
+    root.classList.add('pyr3-mode-list');
+  };
+  const enterDetailMode = (): void => {
+    root.classList.remove('pyr3-mode-list');
+    root.classList.add('pyr3-mode-detail');
+  };
+  backBar.addEventListener('click', enterListMode);
+
+  if (mobile) {
+    // #66 — land on the DETAIL of the first variation (images > a long text
+    // list). The list is one "← all variations" tap away. Initial V0 selection +
+    // #v0-linear sync happens after mount (below), matching the desktop deep-link.
+    root.classList.add('pyr3-variations-mobile', 'pyr3-mode-detail');
+    root.append(backBar, sidebarHost, catalogHost);
+  } else {
+    root.append(sidebarHost, catalogHost);
+  }
   host.append(root);
 
   // ────────────────────────────────────────────────────────────
@@ -216,11 +244,18 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     }
   }
 
+  // #66 — suppress the scroll-sync observer during a programmatic mobile jump.
+  // Entering detail mode flips the catalog from display:none to visible at
+  // scrollTop 0; without this guard the observer fires for the top section (V0)
+  // and overrides the jump before our scroll lands.
+  let suppressIo = false;
+
   // IntersectionObserver picks the section closest to viewport center.
   // The catalog scroll container is the root; threshold steps make us
   // re-evaluate at multiple visibility crossings.
   const io = new IntersectionObserver(
     (entries) => {
+      if (suppressIo) return;
       let best: IntersectionObserverEntry | null = null;
       for (const e of entries) {
         if (!e.isIntersecting) continue;
@@ -247,13 +282,27 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   const sidebar: SidebarHandle = mountSidebar(sidebarHost, {
     onJump: (idx) => {
       const target = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
-      if (target) {
-        // Instant jump — over 131 variations a smooth scroll is too long
-        // to be useful. Matches deep-link initial load behavior.
-        catalogHost.scrollTo({
-          top: target.offsetTop - 16,
-          behavior: 'auto',
+      if (!target) return;
+      // Instant jump — over 131 variations a smooth scroll is too long
+      // to be useful. Matches deep-link initial load behavior.
+      if (mobile) {
+        // #66 — show the detail pane FIRST, THEN scroll. A display:none catalog
+        // has no scroll height, so scrolling it (as the desktop path below does)
+        // clamps to 0, and the scroll-sync observer then snaps the active section
+        // back to the top (V0) the moment the pane appears. Suppress the observer
+        // across the visibility flip, scroll on the next frame (after layout has
+        // a real scroll height), then re-arm it.
+        suppressIo = true;
+        enterDetailMode();
+        requestAnimationFrame(() => {
+          const t = catalogHost.querySelector(`[data-idx="${idx}"]`) as HTMLElement | null;
+          if (t) catalogHost.scrollTo({ top: t.offsetTop - 16, behavior: 'auto' });
+          setActive(idx);
+          syncUrlHashTo(idx);
+          requestAnimationFrame(() => { suppressIo = false; });
         });
+      } else {
+        catalogHost.scrollTo({ top: target.offsetTop - 16, behavior: 'auto' });
         setActive(idx);
         syncUrlHashTo(idx);
       }
@@ -319,6 +368,18 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   // has registered all sections (so the scroll lands cleanly).
   if (window.location.hash) {
     queueMicrotask(() => jumpToHash(window.location.hash));
+  } else if (mobile) {
+    // #66 — no deep-link: open the first variation's detail (#v0-linear) so the
+    // mobile landing is an image-rich section, not the bare list. The list is
+    // one "← all variations" tap away.
+    const firstIdx = listVariations()[0]?.idx;
+    if (firstIdx !== undefined) {
+      queueMicrotask(() => {
+        catalogHost.scrollTo({ top: 0, behavior: 'auto' });
+        setActive(firstIdx);
+        syncUrlHashTo(firstIdx);
+      });
+    }
   }
 
   function onKey(e: KeyboardEvent): void {

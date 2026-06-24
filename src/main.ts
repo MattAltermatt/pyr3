@@ -9,6 +9,8 @@ import { loadAvail, neighbors } from './avail-client';
 import { loadGensManifest, resolveCorpusNeighbors } from './corpus-bounds';
 import { fetchFlameXml, FlameNotFound } from './chunk-fetch';
 import { acquireGpu, initDevice, showError } from './device';
+import { isMobile } from './mobile';
+import { buildMobileInterstitial, type HiddenSurface } from './mobile-interstitial';
 import { parseFlame } from './flame-import';
 import {
   clampGalleryPage,
@@ -49,7 +51,7 @@ import {
 import { redirectLegacyPath } from './route-redirects';
 import { loadLastFlame, saveLastFlame } from './last-flame-store';
 import { getCurrentFlame, setCurrentFlame } from './app-state';
-import { writePendingTransfer } from './edit-state';
+import { writePendingTransfer, consumePendingTransfer } from './edit-state';
 import { load as loadFileFromUser, type LoadResult } from './loader';
 import { createLoadSequencer } from './load-sequencer';
 import { installDevHooks } from './main-dev-hooks';
@@ -330,6 +332,37 @@ async function main(): Promise<void> {
   // editing now lives in the editor's Color lens (on-canvas overlay). Old
   // /gradient and /v1/gradient URLs are redirected to /editor by
   // redirectLegacyPath at boot (above), so no route block remains here.
+
+  // #66 — mobile is consumption-only. The editor / animate / screensaver routes
+  // aren't in the mobile nav, but their URLs still resolve (shared links,
+  // bookmarks). On a mobile viewport, short-circuit them to a lightweight
+  // "needs a bigger screen" card instead of mounting the heavy surface — no GPU
+  // device acquired, content-only (mirrors the /how-it-works pattern above).
+  {
+    const path = window.location.pathname;
+    const hiddenSurface: HiddenSurface | null =
+      path === '/editor' ? 'editor'
+        : path === '/animate' || path.startsWith('/animate/') ? 'animate'
+          : path === '/screensaver' || path.startsWith('/screensaver/') ? 'screensaver'
+            : null;
+    if (hiddenSurface && isMobile()) {
+      const barRoot = document.getElementById('pyr3-bar');
+      if (!barRoot) {
+        console.error('pyr3: mobile interstitial — #pyr3-bar missing');
+        return;
+      }
+      const { mountBarChrome } = await import('./ui-bar');
+      const chrome = mountBarChrome(barRoot, { surface: 'viewer', webgpu });
+      const canvas = document.getElementById('pyr3-canvas');
+      if (canvas) canvas.hidden = true;
+      const firstPaint = document.getElementById('pyr3-firstpaint');
+      if (firstPaint) firstPaint.remove();
+      const card = buildMobileInterstitial(hiddenSurface, () => { window.location.href = '/viewer'; });
+      chrome.middleSlot.appendChild(card);
+      setDocTitle(hiddenSurface);
+      return;
+    }
+  }
 
   // #109 — /screensaver short-circuit. Mirrors the /about pattern:
   // mountScreensaverBar into #pyr3-bar; screensaver page body into the
@@ -1123,7 +1156,12 @@ async function main(): Promise<void> {
     }
   }
 
-  viewerRenderModeBarHandle = mountRenderModeBar({
+  // #66 — mobile is consumption-only: hide the entire PREVIEW/RENDER tuning bar
+  // (tier picker, quality, size presets, output format, Save Render). The live
+  // preview still renders from viewerPreviewCfg's defaults; the handle stays
+  // undefined and every consumer reads it via `?.`. Mobile keeps 📂 Open +
+  // 🧬 Save Flame; full-quality image export lives on desktop.
+  if (!isMobile()) viewerRenderModeBarHandle = mountRenderModeBar({
     host: renderModeBarHost,
     getPreviewConfig: () => viewerPreviewCfg,
     setPreviewConfig: (cfg) => {
@@ -1916,7 +1954,10 @@ async function main(): Promise<void> {
     // #419 — anchor the filter drawer below the page-nav host so it opens
     // beneath the page-nav bar (was: afterend of #pyr3-bar).
     galleryBottomBarHost.insertAdjacentElement('afterend', drawerRoot);
-    drawerHandle = mountFilterDrawer(drawerRoot, {
+    // #66 — the faceted filter drawer is desktop-only. On mobile the gallery
+    // stays a browse-only grid (page-nav + Surprise/loop); drawerHandle is left
+    // null and every consumer reads it via `drawerHandle?.`.
+    if (!isMobile()) drawerHandle = mountFilterDrawer(drawerRoot, {
       initialFilter: currentFilter,
       facetCounts: {
         variations: new Map(), xforms: new Map(),
@@ -2006,9 +2047,11 @@ async function main(): Promise<void> {
     setDocTitle(`gallery · p${page}`);
 
     galleryBar.setPage(page, galleryTotalPages);
-    drawerHandle.setFacetCounts(counts);
-    drawerHandle.setMatchCount(counts.total);
-    drawerHandle.setLoading(false);
+    // #66 — drawerHandle is null on mobile (no filter drawer). The grid still
+    // paints; facet/match counts simply have no drawer to update.
+    drawerHandle?.setFacetCounts(counts);
+    drawerHandle?.setMatchCount(counts.total);
+    drawerHandle?.setLoading(false);
     if (emptyBanner !== null) {
       emptyBanner.style.display = counts.total === 0 ? 'flex' : 'none';
     }
@@ -2183,11 +2226,13 @@ async function main(): Promise<void> {
     // routing-wise this mirrors the default landing.
     await loadHeroFallback();
   } else if (intent.kind === 'viewer') {
-    // #203 — /viewer cold start: rehydrate the last-loaded custom flame from
+    // #66 — a Creator tap-through on mobile hands the chosen flame to the viewer
+    // via the single-shot pending-transfer slot. Consume it first so the viewer
+    // opens THAT flame. #203 — else rehydrate the last-loaded custom flame from
     // the store (a refresh after 📂 Open reloads what the user was viewing). No
     // stored flame (e.g. a shared /viewer link, or storage was cleared) → fall
     // back to the hero as a BASIC viewer flame (#264 — not the ESF corpus leaf).
-    const stored = loadLastFlame();
+    const stored = consumePendingTransfer()?.genome ?? loadLastFlame();
     if (stored) {
       await applyLoadResult({ kind: 'pyr3-json', genome: stored }, stored.name || 'Untitled');
       setNav(null); // rehydrated custom flame is not a corpus sheep

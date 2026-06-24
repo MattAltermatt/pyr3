@@ -5,12 +5,18 @@
 // owns its dropdown open/close state + document-level dismiss listeners, which
 // it tears down when the host dispatches a `pyr3:destroy` event on the <nav>.
 
+import { isMobile } from './mobile';
+
 export type NavSubKey =
   | 'editor' | 'animate' | 'screensaver'
   | 'esf' | 'gallery' | 'esf-source' | 'variations' | 'surprise' | 'about' | 'showcase'
   | 'help-color' | 'help-ifs' | 'help-cost' | 'help-webgpu';
 
 export type NavTopKey = 'viewer' | 'editor' | 'surprise' | 'animate' | 'esf' | 'discover' | 'help';
+
+/** #66 — top-nav keys hidden on mobile (creation surfaces). The routes still
+ *  resolve to a "needs desktop" interstitial; they're just not advertised. */
+const MOBILE_HIDDEN_TOP_KEYS: ReadonlySet<NavTopKey> = new Set(['editor', 'animate']);
 
 export interface NavLeaf {
   key: NavSubKey;
@@ -113,6 +119,18 @@ function injectNavStylesOnce(): void {
 .pyr3-nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
 .pyr3-nav-item.active { color: #ffbe3e; }
 .pyr3-nav-divider { height: 1px; margin: 4px 6px; background: #2c2c34; }
+/* #66 — mobile hamburger. The ☰ toggle is a touch-sized tap target; its panel
+   is a scrollable vertical list of every destination (dropdown tops flatten to
+   a caption + their leaves). */
+.pyr3-nav-hamburger-btn { font-size: 18px; padding: 4px 10px; line-height: 1; }
+.pyr3-nav-panel-mobile {
+  min-width: 200px; max-height: 70vh; overflow-y: auto;
+}
+.pyr3-nav-mobile-header {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #7d7d88; padding: 8px 10px 3px;
+}
+.pyr3-nav-mobile-leaf { padding-left: 18px; }
 `;
   document.head.append(style);
 }
@@ -146,8 +164,18 @@ export function buildNavMenu(
     if (willOpen) { panel.hidden = false; wrap.classList.add('open'); openWrap = wrap; }
   }
 
-  for (const top of NAV_MODEL) {
-    nav.append(buildTop(top, currentSurface, onNavigate, toggle, closeAll));
+  const mobile = isMobile();
+  const visibleTops = NAV_MODEL.filter((t) => !(mobile && MOBILE_HIDDEN_TOP_KEYS.has(t.key)));
+  if (mobile) {
+    // #66 — on mobile the nav collapses to a single ☰ hamburger: the 5 reduced
+    // destinations don't fit a 320px row, so they live in a tap-to-open vertical
+    // panel (dropdown tops flatten into a section header + their leaves).
+    nav.classList.add('pyr3-nav-mobile');
+    nav.append(buildHamburger(visibleTops, currentSurface, onNavigate, toggle, closeAll));
+  } else {
+    for (const top of visibleTops) {
+      nav.append(buildTop(top, currentSurface, onNavigate, toggle, closeAll));
+    }
   }
 
   const onDocMouseDown = (e: MouseEvent): void => {
@@ -177,6 +205,78 @@ export function isPlainLeftClick(e: MouseEvent): boolean {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
   if (e.button !== undefined && e.button !== 0) return false;
   return true;
+}
+
+/**
+ * #66 — the mobile hamburger. A single ☰ toggle whose dropdown panel flattens
+ * every visible top entry into a vertical list: direct links (Viewer / Creator)
+ * become items; dropdown tops (Flame Gallery / Discover / Help) become a section
+ * header followed by their leaves. Reuses the same toggle/closeAll machinery and
+ * `.pyr3-nav-item` styling as the desktop menus.
+ */
+function buildHamburger(
+  tops: NavTop[],
+  current: string,
+  onNavigate: (r: string, n?: boolean) => void,
+  toggle: (wrap: HTMLElement) => void,
+  closeAll: () => void,
+): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'pyr3-nav-top pyr3-nav-hamburger';
+  wrap.dataset.navTop = 'menu';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pyr3-nav-toptab pyr3-nav-hamburger-btn';
+  btn.textContent = '☰';
+  btn.setAttribute('aria-label', 'Menu');
+  wrap.append(btn);
+
+  const panel = document.createElement('div');
+  panel.className = 'pyr3-nav-panel pyr3-nav-panel-mobile';
+  panel.hidden = true;
+
+  const linkItem = (label: string, route: string, key: string, newTab?: boolean): HTMLAnchorElement => {
+    const item = document.createElement('a');
+    item.className = 'pyr3-nav-item';
+    item.dataset.navSub = key;
+    item.href = route;
+    item.textContent = label;
+    if (newTab) { item.target = '_blank'; item.rel = 'noopener'; }
+    if (key === current) item.classList.add('active');
+    item.addEventListener('click', (e) => {
+      if (!isPlainLeftClick(e)) return;     // let the browser open a new tab
+      e.preventDefault();
+      closeAll();
+      onNavigate(route, newTab);
+    });
+    return item;
+  };
+
+  for (const top of tops) {
+    if (top.route && !top.items) {
+      panel.append(linkItem(top.label, top.route, top.key, undefined));
+    } else if (top.items) {
+      const header = document.createElement('div');
+      header.className = 'pyr3-nav-mobile-header';
+      header.textContent = top.label;
+      panel.append(header);
+      for (const leaf of top.items) {
+        // #66 — on mobile, the in-app static help pages (/help/*.html) open
+        // SAME-TAB: new tabs are awkward on phones and the back button returns
+        // cleanly. Genuinely-external links (github ↗) and the separate Showcase
+        // build keep their new-tab behaviour.
+        const newTab = leaf.route.startsWith('/help/') ? false : leaf.newTab;
+        const item = linkItem(leaf.label, leaf.route, leaf.key, newTab);
+        item.classList.add('pyr3-nav-mobile-leaf');
+        panel.append(item);
+      }
+    }
+  }
+
+  wrap.append(panel);
+  btn.addEventListener('click', () => toggle(wrap));
+  return wrap;
 }
 
 function buildTop(

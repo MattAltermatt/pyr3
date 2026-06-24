@@ -12,6 +12,8 @@
 // affordance can read the same key. DOM-mounting module (uses document) →
 // listed in seam.test SEAM_EXEMPT.
 
+import { isMobile } from './mobile';
+
 const SEEN_KEY = 'pyr3.welcome.seen';
 
 type MiniStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -69,6 +71,9 @@ function injectStylesOnce(): void {
   style.textContent = `
     .pyr3-welcome {
       position: absolute; left: 18px; bottom: 18px; z-index: 40; width: 318px;
+      /* #66 — never exceed the viewport: on narrow/mobile screens the card
+         shrinks to fit within an 18px gutter on each side instead of clipping. */
+      max-width: calc(100vw - 36px); box-sizing: border-box;
       background: rgba(18,18,22,0.94); border: 1px solid var(--accent-border, #884a1a);
       border-radius: 11px; padding: 15px 16px 14px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.55); backdrop-filter: blur(3px);
@@ -144,7 +149,10 @@ export function mountWelcomeCard(parent: HTMLElement, opts: WelcomeCardOpts): We
 
   const links = document.createElement('div');
   links.className = 'pyr3-welcome-links';
-  for (const link of LINKS) {
+  // #66 — mobile is consumption-only: the editor isn't reachable, so drop the
+  // "Edit this flame" discovery link from the welcome card on mobile.
+  const shownLinks = isMobile() ? LINKS.filter((l) => l.role !== 'welcome-edit') : LINKS;
+  for (const link of shownLinks) {
     const a = document.createElement('button');
     a.type = 'button';
     a.className = link.lead ? 'pyr3-welcome-link lead' : 'pyr3-welcome-link';

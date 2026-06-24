@@ -22,6 +22,7 @@ import { computeGrid, type Viewport, type GridMode } from './surprise-grid';
 import { mountSurpriseBars, type SurpriseBarsHandle } from './surprise-bars';
 import { buildInfoIcon } from './edit-tooltip';
 import { writePendingTransfer } from './edit-state';
+import { isMobile } from './mobile';
 
 export interface SurpriseMountOptions { device: GPUDevice; format: GPUTextureFormat }
 export interface SurpriseMountHandle { destroy(): void }
@@ -95,7 +96,12 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   cullHelp.classList.add('pyr3-surprise-status-help');
   status.append(statusShown, document.createTextNode(' shown · '), statusCulled,
     document.createTextNode(' '), cullHelp);
-  controls.append(controlsLabel, rerollBtn, wallUndo, wallRedo, status);
+  // #66 — mobile is consumption-only: the wall reduces to "shuffle → tap → view".
+  // Drop the GENERATE/VARIATIONS steering bars, the undo/redo reroll history, and
+  // the "Actions" label — keep just 🎲 Reroll + the shown/culled status.
+  const mobile = isMobile();
+  if (mobile) controls.append(rerollBtn, status);
+  else controls.append(controlsLabel, rerollBtn, wallUndo, wallRedo, status);
 
   const wall = document.createElement('div'); wall.className = 'pyr3-surprise-wall';
   wall.style.display = 'grid'; wall.style.gap = `${GAP_PX}px`;
@@ -104,8 +110,10 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   const barsHost = document.createElement('div'); barsHost.className = 'pyr3-surprise-bars-mount';
 
   // Actions bar renders below the GENERATE/VARIATIONS bars (grid-template-areas);
-  // append in that order too so tab-order matches the visual order.
-  root.append(barsHost, controls, wall);
+  // append in that order too so tab-order matches the visual order. #66 — on
+  // mobile the steering bars aren't mounted, so barsHost is omitted entirely.
+  if (mobile) root.append(controls, wall);
+  else root.append(barsHost, controls, wall);
   host.append(root);
 
   // ---- state mirrors ----
@@ -187,9 +195,15 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   function openInEditor(slot: number): void {
     const genome = wallGenomes[slot];
     if (!genome) return;
-    // pending-transfer is a localStorage handoff (shared across tabs, single-shot
-    // consume) so the new tab picks it up on load while the wall stays put here.
+    // pending-transfer is a localStorage handoff (single-shot consume) so the
+    // destination picks it up on load while the wall stays put here.
     writePendingTransfer({ genome, corpusId: null, timestamp: Date.now() });
+    if (isMobile()) {
+      // #66 — mobile has no editor. Tap-through is a "view this flame full-size"
+      // action: navigate SAME-TAB to the viewer (new tabs are awkward on phones).
+      window.location.href = '/viewer';
+      return;
+    }
     window.open('/editor', '_blank', 'noopener');
   }
 
@@ -362,13 +376,18 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
     refreshRerollBtn();
   }
 
+  // #66 — the GENERATE/VARIATIONS steering bars are desktop-only. On mobile the
+  // wall stays a pure "shuffle → tap → view" surface; bars is left null (every
+  // consumer reads it via `bars?.`).
   let bars: SurpriseBarsHandle | null = null;
-  bars = mountSurpriseBars(barsHost, {
-    getSettings: () => settings,
-    onChange: (next) => commitSettings(next),
-    onResetGeneration: () => commitSettings(resetGeneration(settings)),
-    onResetVariations: () => commitSettings(resetVariations(settings)),
-  });
+  if (!mobile) {
+    bars = mountSurpriseBars(barsHost, {
+      getSettings: () => settings,
+      onChange: (next) => commitSettings(next),
+      onResetGeneration: () => commitSettings(resetGeneration(settings)),
+      onResetVariations: () => commitSettings(resetVariations(settings)),
+    });
+  }
 
   // ---- wall history wiring ----
   function refreshWallHistoryButtons(): void {

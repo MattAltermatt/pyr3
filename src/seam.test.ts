@@ -67,6 +67,8 @@ const SEAM_EXEMPT = new Set<string>([
   'webgpu-check.ts',      // probes navigator.gpu — checking is its job
   'brotli.ts',            // platform-aware decoder probe (native vs wasm)
   'device.ts',            // viewer-side device acquisition uses navigator.gpu
+  'mobile.ts',            // device-TYPE detection (viewport width / pointer) for the mobile consumption UI (#66)
+  'mobile-interstitial.ts', // "needs desktop" card shown for hidden routes on mobile — DOM-mounting (#66)
   'save-image.ts',        // unrelated — exports a pure helper, no env access
   'save-flame.ts',        // viewer .pyr3.json export — uses URL.createObjectURL + anchor download (#103 visual overhaul)
   'gpu-test-harness.ts',  // node-only *.gpu.test.ts support helper (create([]) + node:fs read); never imported by engine code (#428)

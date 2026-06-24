@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
 import { buildNavMenu } from './nav-menu';
+import { isMobile } from './mobile';
+
+vi.mock('./mobile', () => ({ isMobile: vi.fn(() => false) }));
 
 describe('nav-menu structure (#264)', () => {
   it('renders 7 top-level items in order (Creator added, #437)', () => {
@@ -8,6 +11,51 @@ describe('nav-menu structure (#264)', () => {
     const tops = el.querySelectorAll('[data-nav-top]');
     expect([...tops].map((t) => t.getAttribute('data-nav-top')))
       .toEqual(['viewer', 'editor', 'surprise', 'animate', 'esf', 'discover', 'help']);
+  });
+  it('collapses to a single ☰ hamburger on mobile (#66)', () => {
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    const nav = buildNavMenu('viewer', () => {});
+    // The horizontal nav is replaced by ONE hamburger top.
+    const tops = [...nav.querySelectorAll('[data-nav-top]')].map((e) => (e as HTMLElement).dataset.navTop);
+    expect(tops).toEqual(['menu']);
+    const burger = nav.querySelector('.pyr3-nav-hamburger-btn');
+    expect(burger?.textContent).toBe('☰');
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(false);
+  });
+  it('hamburger panel lists the reduced destinations, not editor/animate (#66)', () => {
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    const nav = buildNavMenu('viewer', () => {});
+    const subs = [...nav.querySelectorAll('.pyr3-nav-panel-mobile [data-nav-sub]')]
+      .map((e) => (e as HTMLElement).dataset.navSub);
+    // direct links (viewer/surprise) + flattened dropdown leaves (esf/gallery,
+    // showcase/variations, help leaves) are present; editor/animate/screensaver
+    // (the hidden creation surfaces) are not.
+    expect(subs).toContain('viewer');
+    expect(subs).toContain('surprise');
+    expect(subs).toContain('esf');
+    expect(subs).toContain('variations');
+    expect(subs).not.toContain('editor');
+    expect(subs).not.toContain('animate');
+    expect(subs).not.toContain('screensaver');
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(false);
+  });
+  it('mobile hamburger opens in-app /help/ pages same-tab, external new-tab (#66)', () => {
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    const nav = buildNavMenu('viewer', () => {});
+    const leaf = (key: string) =>
+      nav.querySelector(`.pyr3-nav-panel-mobile [data-nav-sub="${key}"]`) as HTMLAnchorElement | null;
+    // in-app static help pages → same-tab (no target=_blank)
+    expect(leaf('help-color')?.target).toBe('');
+    expect(leaf('help-webgpu')?.target).toBe('');
+    // genuinely external (github) keeps new-tab
+    expect(leaf('esf-source')?.target).toBe('_blank');
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(false);
+  });
+  it('shows the full 7-entry nav on desktop', () => {
+    (isMobile as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    const nav = buildNavMenu('viewer', () => {});
+    const tops = [...nav.querySelectorAll('[data-nav-top]')].map((e) => (e as HTMLElement).dataset.navTop);
+    expect(tops).toEqual(['viewer', 'editor', 'surprise', 'animate', 'esf', 'discover', 'help']);
   });
   it('Editor is a direct link (no submenu — Gradient retired, #372)', () => {
     const el = buildNavMenu('viewer', vi.fn());

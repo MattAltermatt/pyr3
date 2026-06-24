@@ -471,6 +471,31 @@
 
       /* Catalog column inner content — sections + stubs */
       .pyr3-cat-catalog > * { max-width: 880px; margin: 0 auto; padding-left: 2rem; padding-right: 2rem; }
+
+      /* #66 — mobile single-pane master-detail. The desktop two-pane layout
+         (280px list + detail) is too cramped on a phone, so it stacks to ONE
+         full-width pane at a time: the variation LIST by default, switching to
+         the DETAIL when a variation is tapped, with a "← all variations" back
+         bar. Keyed on .pyr3-variations-mobile (added by JS via isMobile()), so
+         detection stays in one place — no media-query/JS split. */
+      .pyr3-variations-root.pyr3-variations-mobile { flex-direction: column; }
+      .pyr3-variations-mobile .pyr3-cat-sidebar {
+        flex: 1 1 auto; width: 100%; height: auto; min-height: 0; border-right: none;
+      }
+      .pyr3-variations-mobile .pyr3-cat-catalog {
+        flex: 1 1 auto; width: 100%; height: auto; min-height: 0;
+      }
+      .pyr3-variations-mobile .pyr3-cat-catalog > * { padding-left: 1rem; padding-right: 1rem; }
+      .pyr3-cat-back {
+        display: none; flex: 0 0 auto; align-items: center; gap: 6px;
+        font: inherit; font-size: 14px; color: var(--accent, #ffbe3e);
+        background: var(--bar-bg-2); border: none;
+        border-bottom: 1px solid var(--bar-border);
+        padding: 12px 14px; cursor: pointer; text-align: left; width: 100%;
+      }
+      .pyr3-variations-mobile.pyr3-mode-list .pyr3-cat-catalog { display: none; }
+      .pyr3-variations-mobile.pyr3-mode-detail .pyr3-cat-sidebar { display: none; }
+      .pyr3-variations-mobile.pyr3-mode-detail .pyr3-cat-back { display: flex; }
       .pyr3-cat-section {
         padding-top: 2.5rem;
         padding-bottom: 2.5rem;
