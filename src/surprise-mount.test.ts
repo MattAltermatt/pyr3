@@ -18,10 +18,13 @@ afterEach(() => vi.unstubAllGlobals());
 describe('mountSurprisePage (v2 #surprise-v2)', () => {
   const opts = { device: {} as unknown as GPUDevice, format: 'rgba8unorm' as GPUTextureFormat };
 
-  it('renders the 🎲 Reroll control + three bars + wall undo/redo, and NO tray/popover', () => {
+  it('renders the 🎲 Reroll control + three bars + wall undo/redo, and NO tray/popover/standalone-stop', () => {
     const host = document.createElement('div');
     const h = mountSurprisePage(host, opts);
-    expect(host.querySelector('[data-role="reroll"]')?.textContent).toContain('Reroll');
+    // Reroll exists (text is state-dependent — "■ Stop" while the boot wall renders).
+    expect(host.querySelector('[data-role="reroll"]')).toBeTruthy();
+    // The standalone Stop button was retired — Reroll doubles as Stop.
+    expect(host.querySelector('[data-role="stop"]')).toBeNull();
     // #433 — the ⚙ popover is gone; GENERATE + VARIATIONS are always-visible bars.
     expect(host.querySelector('[data-role="settings-toggle"]')).toBeNull();
     expect(host.querySelector('[data-bar="generate"]')).toBeTruthy();
@@ -65,20 +68,24 @@ describe('mountSurprisePage (v2 #surprise-v2)', () => {
   it('the Reroll button is not in the dirty/apply state on boot', () => {
     const host = document.createElement('div');
     const h = mountSurprisePage(host, opts);
-    const reroll = host.querySelector('[data-role="reroll"]') as HTMLElement;
+    const reroll = host.querySelector('[data-role="reroll"]') as HTMLButtonElement;
     expect(reroll.classList.contains('dirty')).toBe(false);
+    reroll.click(); // halt the boot render → idle
     expect(reroll.textContent).toBe('🎲 Reroll');
+    expect(reroll.classList.contains('dirty')).toBe(false);
     h.destroy();
   });
 
-  it('Stop is enabled while rendering and disabled after it halts (#surprise-v2)', () => {
+  it('Reroll doubles as Stop: shows ■ Stop while rendering, halts on click, then idles to 🎲 Reroll', () => {
     const host = document.createElement('div');
     const h = mountSurprisePage(host, opts);
-    const stop = host.querySelector('[data-role="stop"]') as HTMLButtonElement;
+    const reroll = host.querySelector('[data-role="reroll"]') as HTMLButtonElement;
     // GPU stub never resolves → tiles stay queued → rendering in progress.
-    expect(stop.disabled).toBe(false);
-    stop.click();
-    expect(stop.disabled).toBe(true); // halted → idle
+    expect(reroll.textContent).toBe('■ Stop');
+    expect(reroll.classList.contains('stopping')).toBe(true);
+    reroll.click(); // halt
+    expect(reroll.textContent).toBe('🎲 Reroll');
+    expect(reroll.classList.contains('stopping')).toBe(false);
     h.destroy();
   });
 

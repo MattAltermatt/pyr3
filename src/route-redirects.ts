@@ -21,6 +21,10 @@ export function redirectLegacyPath(pathname: string, search: string, hash = ''):
   // #347 — poppy no-hyphen alias for the interactive guide page.
   if (parts[0] === 'howitworks') return '/how-it-works' + search + hash;
 
+  // The Creator page's old path was /surprise; the route was renamed to
+  // /creator. Redirect old bookmarks / shared links to the new path.
+  if (parts[0] === 'surprise') return '/creator' + search + hash;
+
   if (parts[0] !== 'v1') return null;
 
   const sub = parts[1];
@@ -34,7 +38,7 @@ export function redirectLegacyPath(pathname: string, search: string, hash = ''):
   else if (sub === 'animate') dest = '/animate';
   else if (sub === 'screensaver') dest = '/screensaver';
   else if (sub === 'variations') dest = '/variations';
-  else if (sub === 'surprise') dest = '/surprise';
+  else if (sub === 'surprise') dest = '/creator';  // Creator page renamed /surprise → /creator
 
   if (dest === null) return null;
   return dest + search + hash;

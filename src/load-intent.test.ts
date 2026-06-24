@@ -36,6 +36,9 @@ describe('parseLoadIntent — flat routes (#264)', () => {
   it('/variations → variations', () => {
     expect(p('/variations')).toEqual({ kind: 'variations' });
   });
+  it('/creator → surprise (Creator route renamed from /surprise)', () => {
+    expect(p('/creator')).toEqual({ kind: 'surprise' });
+  });
   it('/esf → esf viewer (bare)', () => {
     expect(p('/esf')).toEqual({ kind: 'esf' });
   });

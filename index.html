@@ -945,7 +945,7 @@
         display: flex;
       }
 
-      /* ── Surprise Wall (/surprise) ───────────────────────────────────── */
+      /* ── Creator Wall (/creator; was /surprise) ──────────────────────── */
       #pyr3-surprise[hidden] { display: none; }
       body.pyr3-surprise-mode #pyr3-canvas,
       body.pyr3-surprise-mode #pyr3-firstpaint,
@@ -966,8 +966,8 @@
       .pyr3-surprise-root {
         display: grid;
         grid-template-columns: 1fr; /* #surprise-v2 — tray removed; full-bleed single column */
-        grid-template-rows: auto auto 1fr; /* #433 — ACTIONS + GENERATE/VARIATIONS bars + wall */
-        grid-template-areas: "controls" "bars" "wall";
+        grid-template-rows: auto auto 1fr; /* GENERATE/VARIATIONS bars + ACTIONS + wall */
+        grid-template-areas: "bars" "controls" "wall";
         height: 100%;
         width: 100%;
       }
@@ -1023,7 +1023,12 @@
         0%, 100% { box-shadow: 0 0 0 0 rgba(201, 119, 119, 0); }
         50% { box-shadow: 0 0 0 3px rgba(232, 168, 100, 0.55); }
       }
-      .pyr3-surprise-stop-btn,
+      /* Reroll doubles as Stop while a wall is rendering — the standalone Stop
+         button was retired so the one primary action both starts and halts. */
+      .pyr3-surprise-more.stopping {
+        background: var(--bar-bg-3, #2a2a2e); color: #e8786a;
+        border: 1px solid #e8786a55; animation: none;
+      }
       .pyr3-surprise-wall-undo,
       .pyr3-surprise-wall-redo {
         background: var(--bar-bg-3, #2a2a2e); color: var(--text, #ddd);
@@ -1031,9 +1036,6 @@
         padding: 0.45rem 0.7rem; font-family: ui-monospace, monospace; font-size: 0.82rem;
         cursor: pointer; transition: filter 0.12s;
       }
-      .pyr3-surprise-stop-btn:not(:disabled) { color: #e8786a; border-color: #e8786a55; }
-      .pyr3-surprise-stop-btn:not(:disabled):hover { filter: brightness(1.2); }
-      .pyr3-surprise-stop-btn:disabled { opacity: 0.35; cursor: default; }
       .pyr3-surprise-wall-undo, .pyr3-surprise-wall-redo { padding: 0.45rem 0.6rem; }
       .pyr3-surprise-wall-undo:not(:disabled):hover,
       .pyr3-surprise-wall-redo:not(:disabled):hover { filter: brightness(1.2); }

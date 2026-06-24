@@ -429,14 +429,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  // #186 / #354 — /surprise wall. Sibling of /variations above: own shared
-  // chrome (Discover ▸ Surprise lit), wall body reparented into
-  // chrome.middleSlot. A device is acquired here for the thumbnail queue.
-  if (window.location.pathname === '/surprise') {
+  // #186 / #354 — Creator wall (route renamed /surprise → /creator; old path
+  // redirects here at boot). Sibling of /variations above: own shared chrome
+  // (Creator nav link lit), wall body reparented into chrome.middleSlot. A
+  // device is acquired here for the thumbnail queue.
+  if (window.location.pathname === '/creator') {
     const barRoot = document.getElementById('pyr3-bar');
     const spRoot = document.getElementById('pyr3-surprise');
     if (!barRoot || !spRoot) {
-      console.error('pyr3: /surprise — required DOM nodes missing');
+      console.error('pyr3: /creator — required DOM nodes missing');
       return;
     }
     const { device: spDevice, format: spFormat } = await acquireGpu();
@@ -445,7 +446,7 @@ async function main(): Promise<void> {
     document.body.classList.add('pyr3-surprise-mode');
     spRoot.hidden = false;
     chrome.middleSlot.appendChild(spRoot);
-    setDocTitle('surprise');
+    setDocTitle('Creator');
     const { mountSurprisePage } = await import('./surprise-mount');
     const handle = mountSurprisePage(spRoot, { device: spDevice, format: spFormat });
     window.addEventListener('pagehide', () => { handle.destroy(); chrome.destroy(); }, { once: true });

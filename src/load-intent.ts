@@ -1,6 +1,6 @@
 // What pyr3 should load when the page boots. Driven by the flat path grammar
 // (#264): flat routes are canonical — /viewer, /editor, /animate, /screensaver,
-// /variations, /surprise, /esf/... — with corpus leaves under
+// /variations, /creator, /esf/... — with corpus leaves under
 // /esf/gen/{gen}/id/{id} (gen, id are non-negative integers). The legacy
 // ?flame=<encoded> share-link codec was removed in v0.32 (see PYR3-020).
 //
@@ -188,7 +188,9 @@ export function parseLoadIntent(input: string): LoadIntent | null {
   if (head === 'animate' && parts.length === 1) return { kind: 'animate' };
   if (head === 'screensaver' && parts.length === 1) return { kind: 'screensaver' };
   if (head === 'variations' && parts.length === 1) return { kind: 'variations' };
-  if (head === 'surprise' && parts.length === 1) return { kind: 'surprise' };
+  // Creator page: public route renamed /surprise → /creator (the internal
+  // intent kind stays 'surprise'). /surprise is redirected to /creator at boot.
+  if (head === 'creator' && parts.length === 1) return { kind: 'surprise' };
   if (head === 'esf') {
     if (parts.length === 1) return { kind: 'esf' };
     if (

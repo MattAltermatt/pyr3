@@ -61,25 +61,22 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
 
   // ---- DOM skeleton (createElement only — never innerHTML) ----
   const root = document.createElement('div'); root.className = 'pyr3-surprise-root';
-  // ACTIONS bar — reroll / stop / wall undo·redo / status. Styled as the first
-  // of the three #433 bars (GENERATE + VARIATIONS come from mountSurpriseBars).
+  // ACTIONS bar — reroll (doubles as stop) / wall undo·redo / status. Renders
+  // below the two #433 bars (GENERATE + VARIATIONS come from mountSurpriseBars).
   const controls = document.createElement('div');
   controls.className = 'pyr3-surprise-bar pyr3-surprise-controls';
   const controlsLabel = document.createElement('span');
   controlsLabel.className = 'pyr3-surprise-bar-label';
   controlsLabel.textContent = 'Actions';
 
-  // Reroll. When settings are pending the label becomes "Apply & Reroll" + a
+  // Reroll doubles as Stop. While a wall is rendering the button becomes
+  // "■ Stop" and halts the in-flight gen+render; idle, it rolls a fresh wall.
+  // When settings are pending (idle) the label becomes "Apply & Reroll" + a
   // pulse (a `.dirty` class), so the button itself tells the user clicking it
   // applies the changes — no separate cue line that would grow the controls bar.
-  // min-width is pinned (CSS) to the wider label so the text swap doesn't jump.
+  // min-width is pinned (CSS) to the widest label so the swaps don't jump.
   const rerollBtn = document.createElement('button'); rerollBtn.className = 'pyr3-surprise-more';
   rerollBtn.dataset.role = 'reroll'; rerollBtn.textContent = '🎲 Reroll';
-
-  // Stop — halts the in-flight generation + render. Enabled only while rendering.
-  const stopBtn = document.createElement('button'); stopBtn.className = 'pyr3-surprise-stop-btn';
-  stopBtn.dataset.role = 'stop'; stopBtn.textContent = '■ Stop'; stopBtn.disabled = true;
-  stopBtn.title = 'Stop rendering the current wall';
 
   const wallUndo = document.createElement('button'); wallUndo.className = 'pyr3-surprise-wall-undo';
   wallUndo.dataset.role = 'wall-undo'; wallUndo.textContent = '↶'; wallUndo.title = 'Undo reroll (Ctrl+Z)';
@@ -98,7 +95,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   cullHelp.classList.add('pyr3-surprise-status-help');
   status.append(statusShown, document.createTextNode(' shown · '), statusCulled,
     document.createTextNode(' '), cullHelp);
-  controls.append(controlsLabel, rerollBtn, stopBtn, wallUndo, wallRedo, status);
+  controls.append(controlsLabel, rerollBtn, wallUndo, wallRedo, status);
 
   const wall = document.createElement('div'); wall.className = 'pyr3-surprise-wall';
   wall.style.display = 'grid'; wall.style.gap = `${GAP_PX}px`;
@@ -106,7 +103,9 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   // GENERATE + VARIATIONS bars mount here (#433).
   const barsHost = document.createElement('div'); barsHost.className = 'pyr3-surprise-bars-mount';
 
-  root.append(controls, barsHost, wall);
+  // Actions bar renders below the GENERATE/VARIATIONS bars (grid-template-areas);
+  // append in that order too so tab-order matches the visual order.
+  root.append(barsHost, controls, wall);
   host.append(root);
 
   // ---- state mirrors ----
@@ -213,7 +212,23 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
 
   /** Rendering while genomes are still being generated OR tiles still queued. */
   function isRendering(): boolean { return genActive || pendingGenomes.length > 0; }
-  function refreshStop(): void { stopBtn.disabled = !isRendering(); }
+  /** The Reroll button doubles as Stop. While a wall is rendering it shows
+   *  "■ Stop" and halts; idle it shows "🎲 Reroll" (or "🎲 Apply & Reroll" when
+   *  settings are pending). The standalone Stop button was retired. */
+  function refreshRerollBtn(): void {
+    if (isRendering()) {
+      rerollBtn.textContent = '■ Stop';
+      rerollBtn.title = 'Stop rendering the current wall';
+      rerollBtn.classList.add('stopping');
+      rerollBtn.classList.remove('dirty');
+    } else {
+      const dirty = isDirty();
+      rerollBtn.textContent = dirty ? '🎲 Apply & Reroll' : '🎲 Reroll';
+      rerollBtn.title = '';
+      rerollBtn.classList.toggle('dirty', dirty);
+      rerollBtn.classList.remove('stopping');
+    }
+  }
 
   /** Fill the wall with `count` tiles. When `provided` is given (restore / undo)
    *  those genomes are used; otherwise genomes are generated in small YIELDING
@@ -227,7 +242,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
     wallGenomes = new Array<Genome>(count);
     rebuildSlots(count);
     applyGridLayout(gridMode(count));
-    genActive = true; refreshStop();
+    genActive = true; refreshRerollBtn();
     let i = 0;
     const step = (): void => {
       if (myEpoch !== genEpoch) return; // superseded by a newer fill
@@ -244,22 +259,21 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
       persistWall();
       updateStatus();
       if (i < count) { setTimeout(step, 0); }
-      else { genActive = false; refreshStop(); if (!provided) { state.wallHistory.push(wallGenomes.slice()); refreshWallHistoryButtons(); } }
+      else { genActive = false; refreshRerollBtn(); if (!provided) { state.wallHistory.push(wallGenomes.slice()); refreshWallHistoryButtons(); } }
     };
     step();
   }
 
-  /** Halt the in-flight generation + queued renders (Stop button). */
+  /** Halt the in-flight generation + queued renders (Reroll's Stop state). */
   function stopRendering(): void {
     genEpoch++;            // cancel any pending chunked-gen step
     genActive = false;
     queue.clear();         // drop everything not yet started (#295 epoch drop)
     pendingGenomes.length = 0;
     for (const cell of slots) cell.classList.remove('rendering');
-    refreshStop();
+    refreshRerollBtn();
     updateStatus();
   }
-  stopBtn.onclick = stopRendering;
 
   /** Resolve how many tiles a Reroll should produce (capped). */
   function rerollCount(): number {
@@ -271,8 +285,9 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   /** Apply pending settings + roll a fresh wall (the 🎲 Reroll action). */
   function reroll(): void {
     appliedSettings = settings;
+    culled = 0; // the culled count is per-reroll, not cumulative across walls
     fillWall(rerollCount(), null);
-    refreshDirty();
+    refreshRerollBtn();
     refreshWallHistoryButtons();
   }
 
@@ -286,7 +301,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   //      in-flight fill, and only the viewport-driven count tracks the window —
   //      generation SETTINGS still wait for Reroll. (#surprise-v2)
   function growWall(from: number, to: number): void {
-    const myEpoch = ++genEpoch; genActive = true; refreshStop();
+    const myEpoch = ++genEpoch; genActive = true; refreshRerollBtn();
     for (let idx = from; idx < to; idx++) { const s = makeSlot(idx); slots.push(s); wall.append(s); }
     applyGridLayout(gridMode(to));
     let i = from;
@@ -300,7 +315,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
       }
       queue.enqueue(chunk); persistWall(); updateStatus();
       if (i < to) setTimeout(step, 0);
-      else { genActive = false; refreshStop(); }
+      else { genActive = false; refreshRerollBtn(); }
     };
     step();
   }
@@ -331,24 +346,20 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   function updateStatus(): void {
     statusShown.textContent = String(wallGenomes.length);
     statusCulled.textContent = `${culled} culled`;
-    refreshStop();
+    refreshRerollBtn();
   }
 
   // ---- dirty signal: when settings differ from the wall's, the Reroll button
-  //      becomes "Apply & Reroll" + pulses so clicking it clearly applies them. ----
+  //      becomes "Apply & Reroll" + pulses so clicking it clearly applies them
+  //      (rendered by refreshRerollBtn, which also owns the Stop state). ----
   function isDirty(): boolean { return JSON.stringify(settings) !== JSON.stringify(appliedSettings); }
-  function refreshDirty(): void {
-    const dirty = isDirty();
-    rerollBtn.textContent = dirty ? '🎲 Apply & Reroll' : '🎲 Reroll';
-    rerollBtn.classList.toggle('dirty', dirty);
-  }
 
   // ---- settings wiring (no settings-history; per-bar ↺ Reset only — #433) ----
   function commitSettings(next: SurpriseSettings): void {
     settings = next;
     saveSurpriseSettings(next);
     bars?.refresh();
-    refreshDirty();
+    refreshRerollBtn();
   }
 
   let bars: SurpriseBarsHandle | null = null;
@@ -374,7 +385,8 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   }
   window.addEventListener('keydown', onKey);
 
-  rerollBtn.onclick = reroll;
+  // One button, two jobs: halt while rendering, else roll a fresh wall.
+  rerollBtn.onclick = () => { if (isRendering()) stopRendering(); else reroll(); };
 
   // ---- resize: live re-fit the current tiles (cheap), then debounced re-fill
   //      to the new viewport in Fill mode (Set # keeps its explicit count). ----
@@ -388,7 +400,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
 
   // ---- boot: restore the last wall, else roll a fresh one ----
   updateStatus();
-  refreshDirty();
+  refreshRerollBtn();
   refreshWallHistoryButtons();
   const saved = readWall();
   if (saved.length) {

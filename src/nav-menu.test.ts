@@ -13,11 +13,11 @@ describe('nav-menu structure (#264)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     expect(el.querySelectorAll('[data-nav-top="editor"] [data-nav-sub]').length).toBe(0);
   });
-  it('Creator is a direct link to /surprise (no submenu, #437)', () => {
+  it('Creator is a direct link to /creator (no submenu, #437; route renamed from /surprise)', () => {
     const el = buildNavMenu('viewer', vi.fn());
     const top = el.querySelector('[data-nav-top="surprise"]') as HTMLElement;
     expect((top.querySelector('.pyr3-nav-toptab') as HTMLElement).textContent).toBe('Creator');
-    expect((top.querySelector('a.pyr3-nav-toptab') as HTMLAnchorElement).getAttribute('href')).toBe('/surprise');
+    expect((top.querySelector('a.pyr3-nav-toptab') as HTMLAnchorElement).getAttribute('href')).toBe('/creator');
     expect(top.querySelectorAll('[data-nav-sub]').length).toBe(0);
   });
   it('Animate menu has Timeline + Screensaver', () => {

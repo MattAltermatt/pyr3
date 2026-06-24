@@ -31,7 +31,8 @@ right after the `pyr3` brand (#420 retired the old centered grid + the brand-clu
 About link): **Viewer** · **Editor** (`/editor` — direct
 link; the old Gradient page `/gradient` was retired in #372 and now redirects
 to `/editor`, where the gradient editor is an in-lens overlay) · **Creator** (#437 —
-direct link to `/surprise`, promoted out of the Discover dropdown) · **Animate ▾** (Timeline `/animate` · Screensaver
+direct link to `/creator` (route renamed from `/surprise`, which now redirects
+here), promoted out of the Discover dropdown) · **Animate ▾** (Timeline `/animate` · Screensaver
 `/screensaver`) · **Flame Gallery ▾** (#340 — was "ESF": Browse `/esf` +
 `/esf/gen/N/id/M` · Gallery `/esf/gallery` · Electric Sheep Fold ↗ source repo) ·
 **Discover ▾** (#420 — exploration only: Showcase · Variations `/variations`) ·

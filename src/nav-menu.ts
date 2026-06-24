@@ -35,8 +35,9 @@ export const NAV_MODEL: NavTop[] = [
   // the Flame editor's Color lens), so Editor is now a direct link, not a menu.
   { key: 'editor', label: 'Editor', route: '/editor' },
   // #437 — Surprise promoted out of the Discover dropdown to its own top-level
-  // "Creator" link. Keyed `surprise` so the /surprise surface lights it active.
-  { key: 'surprise', label: 'Creator', route: '/surprise' },
+  // "Creator" link. Keyed `surprise` (internal surface id) so the surface lights
+  // it active; the public route was renamed /surprise → /creator.
+  { key: 'surprise', label: 'Creator', route: '/creator' },
   { key: 'animate', label: 'Animate', items: [
     { key: 'animate',     label: 'Timeline',    route: '/animate' },
     { key: 'screensaver', label: 'Screensaver', route: '/screensaver' },

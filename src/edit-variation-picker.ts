@@ -287,8 +287,12 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   // `.pyr3-picker` = shared shell class (matches palette picker's parallel
   // contract). `.pyr3-var-picker` = legacy qualifier so any external
   // selectors / styles addressing the modal-era variation picker still
-  // resolve to this picker.
-  picker.className = 'pyr3-picker pyr3-var-picker';
+  // resolve to this picker. `.pyr3-var-picker-multi` (multi mode) floats the
+  // picker centered + wide: in multi mode it isn't previewing the flame behind
+  // it (no live preview to keep visible), so it doesn't need to stay a slim
+  // editor-docked rail — a roomy grid of tiles is easier to browse.
+  picker.className = isMulti ? 'pyr3-picker pyr3-var-picker pyr3-var-picker-multi'
+                            : 'pyr3-picker pyr3-var-picker';
 
   // ── Header ───────────────────────────────────────────────────────
   const head = document.createElement('div');
@@ -402,7 +406,11 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   // ── Body — 3-col cell grid ───────────────────────────────────────
   const body = document.createElement('div');
   body.className = 'pyr3-picker-body';
-  body.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+  // Single (docked) mode: fixed 3 columns for the slim rail. Multi mode: the
+  // panel is wide, so let columns auto-fill to the available width.
+  body.style.gridTemplateColumns = isMulti
+    ? 'repeat(auto-fill, minmax(120px, 1fr))'
+    : 'repeat(3, minmax(0, 1fr))';
 
   const cellByIdx = new Map<number, HTMLElement>();
   const starByIdx = new Map<number, HTMLElement>();
@@ -694,6 +702,7 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
   // ── Lifecycle ────────────────────────────────────────────────────
   function close(): void {
     document.removeEventListener('keydown', onKeyDown);
+    if (isMulti) document.removeEventListener('mousedown', onOutsideMouseDown, true);
     if (picker.parentElement) picker.remove();
   }
 
@@ -715,6 +724,18 @@ export function openVariationPicker(opts: VariationPickerOpts): VariationPickerH
     if (ev.key === 'Escape') cancel();
   }
   document.addEventListener('keydown', onKeyDown);
+
+  // (multi mode) Click outside the picker dismisses it. We key off mousedown,
+  // not click: a re-render can detach the original target node between
+  // mousedown and mouseup so the synthesized click never fires / lands on a
+  // stale node (see outside-click-dismiss-mousedown-origin). The picker opened
+  // from a click whose mousedown already completed before this listener
+  // attached, so it never self-closes on the opening gesture. Capture phase so
+  // it runs even if an inner handler stops propagation.
+  function onOutsideMouseDown(ev: MouseEvent): void {
+    if (!picker.contains(ev.target as Node)) cancel();
+  }
+  if (isMulti) document.addEventListener('mousedown', onOutsideMouseDown, true);
 
   return { close: () => cancel() };
 }
@@ -754,6 +775,21 @@ const PICKER_CSS = `
   color: ${COLORS.text.primary};
   font-size: 12px;
   z-index: 1001;
+}
+/* Multi mode (Creator preferred-variation set): float centered + wide. Not
+   docked to the editor's left panel — it isn't previewing a flame behind it,
+   so a roomy tile grid is the priority. Centered via fixed left/right:0 +
+   margin auto (no transform, to avoid trapping any fixed descendants). */
+.pyr3-picker.pyr3-var-picker.pyr3-var-picker-multi {
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: min(960px, 92vw);
+  top: 64px;
+  bottom: 32px;
+  border-left: 1px solid ${COLORS.border};
+  border-radius: 8px;
+  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.6);
 }
 .pyr3-picker-head {
   padding: 10px 12px;

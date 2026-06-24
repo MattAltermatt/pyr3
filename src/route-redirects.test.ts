@@ -22,7 +22,12 @@ describe('redirectLegacyPath (#264)', () => {
   it('/v1/animate → /animate', () => expect(redirectLegacyPath('/v1/animate', '')).toBe('/animate'));
   it('/v1/screensaver → /screensaver', () => expect(redirectLegacyPath('/v1/screensaver', '')).toBe('/screensaver'));
   it('/v1/variations → /variations', () => expect(redirectLegacyPath('/v1/variations', '')).toBe('/variations'));
-  it('/v1/surprise → /surprise', () => expect(redirectLegacyPath('/v1/surprise', '')).toBe('/surprise'));
+  it('/v1/surprise → /creator', () => expect(redirectLegacyPath('/v1/surprise', '')).toBe('/creator'));
+  // Creator page route renamed /surprise → /creator; old flat path redirects.
+  it('/surprise → /creator', () => expect(redirectLegacyPath('/surprise', '')).toBe('/creator'));
+  it('/surprise preserves search + hash', () =>
+    expect(redirectLegacyPath('/surprise', '?x=1', '#y')).toBe('/creator?x=1#y'));
+  it('canonical /creator → null', () => expect(redirectLegacyPath('/creator', '')).toBeNull());
   it('already-new path → null', () => expect(redirectLegacyPath('/editor', '')).toBeNull());
   it('/about (unchanged) → null', () => expect(redirectLegacyPath('/about', '')).toBeNull());
 
