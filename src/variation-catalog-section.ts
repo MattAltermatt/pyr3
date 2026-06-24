@@ -41,6 +41,9 @@ export interface SectionState {
 
 export interface SectionOptions {
   onParamsChange(state: SectionState): void;
+  /** #66 — on mobile the flame is a converged still (the loop stops after
+   *  convergence), so the pane is labelled "flame", not "flame · live". */
+  mobile?: boolean;
 }
 
 export interface SectionHandle {
@@ -173,7 +176,7 @@ export function mountSection(
   flameCanvas.width = 384;
   flameCanvas.height = 384;
   flamePane.append(flameCanvas);
-  flamePane.append(el('span', 'pyr3-cat-pane-label', 'flame · live'));
+  flamePane.append(el('span', 'pyr3-cat-pane-label', opts.mobile ? 'flame' : 'flame · live'));
   const liveDot = el('span', 'pyr3-cat-live-dot hidden', 'iterating');
   flamePane.append(liveDot);
   rightCol.append(flamePane);

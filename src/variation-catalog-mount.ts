@@ -38,9 +38,14 @@ const CANVAS_DIM = 384;
 // 128k is plenty to converge a 384² catalog tile over a few seconds.
 const WALKERS_PER_FRAME = 1024;
 const ITERS_PER_WALKER = 128;
+// #66 — on mobile the catalog flame is NOT a perpetual live demo (battery / heat
+// on a phone). It iterates to a converged still, then freezes. ~8M samples
+// (~61 frames, ≈1s) gives a clean 384² tile. Desktop keeps the infinite loop.
+const MOBILE_CONVERGE_SAMPLES = 8_000_000;
 
 export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): MountHandle {
   host.replaceChildren();
+  const mobile = isMobile();
   const root = document.createElement('div');
   root.className = 'pyr3-variations-root';
 
@@ -62,6 +67,7 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
     const doc = getCatalogDoc(row.idx);
     if (doc) {
       const h = mountSection(wrap, doc, {
+        mobile,
         onParamsChange: () => {
           // User interaction always wins: if THIS section's slider moved,
           // make it the active iterator immediately. Without this, a
@@ -97,7 +103,6 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
   // cramped on a phone, so on mobile we show ONE full-width pane at a time: the
   // variation LIST by default, switching to the DETAIL (catalog) when a variation
   // is tapped (wired into onJump below), with a back bar to return to the list.
-  const mobile = isMobile();
   const backBar = document.createElement('button');
   backBar.type = 'button';
   backBar.className = 'pyr3-cat-back';
@@ -186,6 +191,13 @@ export function mountVariationCatalog(host: HTMLElement, opts: MountOptions): Mo
       return;
     }
     r.present({ genome: active.genome, outputView: view, totalSamples: active.totalSamples });
+    // #66 — mobile: stop once the still has converged. Freezes the image and
+    // ends the GPU loop instead of iterating forever.
+    if (mobile && active.totalSamples >= MOBILE_CONVERGE_SAMPLES) {
+      active.section.setIterating(false);
+      rafHandle = null;
+      return;
+    }
     rafHandle = requestAnimationFrame(loop);
   }
 

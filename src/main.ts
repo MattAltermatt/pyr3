@@ -291,7 +291,7 @@ async function main(): Promise<void> {
       overflowY: 'auto',
       // Fill the remaining viewport under the 44px topbar. The bar's
       // `position: sticky` keeps it visible while the body scrolls.
-      height: 'calc(100vh - 44px)',
+      height: 'calc(100dvh - 44px)',
     });
     aboutBar.middleSlot.appendChild(aboutContainer);
     mountAbout(aboutContainer, {
@@ -321,7 +321,7 @@ async function main(): Promise<void> {
     if (firstPaint) firstPaint.remove();
     const hiwContainer = document.createElement('div');
     hiwContainer.id = 'pyr3-howitworks-scroll';
-    Object.assign(hiwContainer.style, { overflowY: 'auto', height: 'calc(100vh - 44px)' });
+    Object.assign(hiwContainer.style, { overflowY: 'auto', height: 'calc(100dvh - 44px)' });
     hiwBar.middleSlot.appendChild(hiwContainer);
     mountHowItWorks(hiwContainer, { nav: (route) => { window.location.href = route; } });
     setDocTitle('how it works');
@@ -387,7 +387,7 @@ async function main(): Promise<void> {
     ssContainer.id = 'pyr3-screensaver';
     Object.assign(ssContainer.style, {
       position: 'relative',
-      height: 'calc(100vh - 44px)',
+      height: 'calc(100dvh - 44px)',
       overflow: 'hidden',
     });
     screensaverBar.middleSlot.appendChild(ssContainer);
@@ -425,7 +425,7 @@ async function main(): Promise<void> {
     animContainer.id = 'pyr3-animate';
     Object.assign(animContainer.style, {
       position: 'relative',
-      height: 'calc(100vh - 44px)',
+      height: 'calc(100dvh - 44px)',
       overflow: 'hidden',
       background: '#000',
     });
