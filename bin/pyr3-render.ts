@@ -79,6 +79,7 @@ async function main(): Promise<void> {
   let maxDim: number | null = null;
   let customLongEdge: number | null = null;
   let customQuality: number | null = null;
+  let customOversample: number | null = null;
   let sampleInflate = 1;
   let seedOverride: number | null = null;
   let walkerJitter: number = DEFAULT_WALKER_JITTER;
@@ -101,6 +102,11 @@ async function main(): Promise<void> {
       customQuality = n;
     } else if (a === '--max-dim') {
       maxDim = parsePositiveInt(rawArgs[++i], '--max-dim');
+    } else if (a === '--oversample') {
+      // Supersampling: render the internal histogram at oversample× linear, then
+      // box-downsample to the output → spatial antialiasing + sub-pixel detail
+      // (flam3 `supersample`). Overrides genome.oversample. 1 = off.
+      customOversample = parsePositiveInt(rawArgs[++i], '--oversample');
     } else if (a === '--seed') {
       // #35: deterministic seed for FE↔BE parity (test rig pins both sides to
       // the same seed so R(FE,BE) measures only systematic engine drift).
@@ -166,7 +172,7 @@ async function main(): Promise<void> {
   if (args.length < 1) {
     console.error(
       'usage: npm run render [--no-de] ' +
-        '[--long-edge N --quality N] [--max-dim N] [--sample-inflate=F] ' +
+        '[--long-edge N --quality N] [--max-dim N] [--oversample N] [--sample-inflate=F] ' +
         '[--format png8|png16|exr|exr-linear] [--transparent] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
     );
@@ -223,7 +229,7 @@ async function main(): Promise<void> {
 
   const width = genome.size?.width ?? 1024;
   const height = genome.size?.height ?? 1024;
-  const oversample = Math.max(1, Math.floor(genome.oversample ?? 1));
+  const oversample = Math.max(1, Math.floor(customOversample ?? genome.oversample ?? 1));
   const filterRadius = genome.spatialFilter?.radius ?? DEFAULT_FILTER_RADIUS;
   console.log(
     `[pyr3-render] genome="${genome.name}" ${width}×${height} oversample=${oversample} ` +

@@ -14,6 +14,7 @@ npm run typecheck               # tsc --noEmit (full project)
 npm run typecheck:engine        # no-DOM kernel typecheck — enforces the FE/BE seam (#15)
 npm run render <in.flam3> <out.png>                # BE CLI render at genome-native dims (tsx ESM)
 npm run render -- --long-edge 1024 --quality 16 <in> <out>   # explicit output sizing (the `--preset` alias was removed in #436 — nothing hidden on the CLI; --long-edge/--quality force the long edge / SPP, --max-dim N caps)
+npm run render -- --oversample 2 <in> <out>                  # supersampling: render internal histogram at N× linear then box-downsample to output → spatial AA + sub-pixel detail (flam3 `supersample`; overrides genome.oversample, 1=off). Total samples are per OUTPUT pixel (constant in N), so DE + downsample recover density
 npm run render -- --long-edge 3840 --quality 200 <in> <out>  # 4K reference (the old `--preset 4k`)
 npm run render -- --format png8|png16|exr|exr-linear <in> <out>  # output format (default png8): png8/png16=display-referred PNG (what you see) · exr=display image stored as linear-light 32f OpenEXR → opens looking like the editor in any viewer (sRGB_to_linear of the display pixels; uncompressed) · exr-linear=ADVANCED raw scene-referred linear HDR (pre-log/pre-gamma, huge range — tonemap in post) (#334)
 npm run render -- --transparent <in> <out>         # transparent background for png8/png16 (no effect on exr) (#334)
@@ -28,7 +29,8 @@ npm run bake:natives                                # ingest pyr3-native flames 
 # --- ~/pyr3-flames curate + publish pipeline (the user's own flames → the live gallery) ---
 npm run flames:ingest                               # Pass 1/3: incoming/ → json/<id>.pyr3.json (id = gallery ledger id, 5-pad bare). Default match-only + dry-run; `-- --add-new` mints new ids for not-yet-gallery flames; `-- --apply` writes+deletes consumed sources. Writes RAW parsed pyr3-JSON (never genomeToJson — ids can't drift)
 npm run flames:backfill                             # Pass 2: materialize any ledger id missing from json/ from the committed chunks (`-- --apply`); throws on hash/id drift (skips the `_v` chunk sentinel)
-# Pass 3 (recurring publish): the /pyr3-publish-flames skill — flames:ingest --add-new → bake:natives → typecheck+test → commit → push → verify pyr3.app. Pass 4 (future): 4K q2000 reference renders → renders/<id>.png
+npm run flames:render                               # Pass 4: HQ reference renders json/<id>.pyr3.json → renders/<id>.{png,exr} (default 3840px long-edge, q2000, png16 16-bit master, oversample 2 supersampling). RESUMABLE — skips ids already rendered, atomic .tmp→rename so Ctrl-C never leaves a corrupt file; per-render progress [n/total] · remaining · measured ETA. Flags: `-- --long-edge N --quality N --oversample N --format png16|png8|exr|exr-linear --limit N`
+# Pass 3 (recurring publish): the /pyr3-publish-flames skill — flames:ingest --add-new → bake:natives → typecheck+test → commit → push → verify pyr3.app
 ```
 
 The nav is **7 top menus** (#264, expanded in #420, Creator added in #437) — the row is **left-aligned**

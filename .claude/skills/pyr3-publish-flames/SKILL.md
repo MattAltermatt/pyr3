@@ -59,6 +59,8 @@ NOT part of this skill — they ran once. This skill is steady-state only.
   the derived `ledger.json` + `public/chunks/*` ship to GitHub.
 - **Dry-run first:** always run step 1 before step 2; never `--apply` blind.
 
-## Future (not yet built)
-Pass 4 — 4K quality-2000 reference renders of every `json/<id>.pyr3.json` into
-`~/pyr3-flames/renders/<id>.png`. Separate, resumable phase.
+## Companion — Pass 4 HQ renders
+`npm run flames:render` renders every `json/<id>.pyr3.json` → `~/pyr3-flames/renders/<id>.png`
+at 4K (long-edge 3840), quality 2000. Resumable (skips existing, atomic temp→rename),
+shows per-render progress + ETA. Independent of publishing — run it whenever, stop/resume
+freely. `renders/` is private (not committed).
