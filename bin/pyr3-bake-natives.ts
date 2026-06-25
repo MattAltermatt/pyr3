@@ -15,7 +15,9 @@
 //   public/chunks/pyr3-features.flam3idx    gen feature records (merged client-side)
 //   flames/pyr3-natives/ledger.json         hash→id ledger
 //
-// Usage: npm run bake:natives -- [--src <dir>]   (default src: ~/pyr3-flames)
+// Usage: npm run bake:natives -- [--src <dir>]   (default src: ~/pyr3-flames/json —
+//   the curated library produced by `npm run flames:ingest`; a bare flat-root scan
+//   would now hit incoming/ + renders/ subdirs, so the default points at json/)
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -97,7 +99,7 @@ function pad5(n: number): string {
 
 async function main(): Promise<void> {
   const srcIdx = process.argv.indexOf('--src');
-  const src = srcIdx >= 0 ? process.argv[srcIdx + 1]! : join(homedir(), 'pyr3-flames');
+  const src = srcIdx >= 0 ? process.argv[srcIdx + 1]! : join(homedir(), 'pyr3-flames', 'json');
   console.log(`bake:natives — src=${src}`);
 
   // 1. Load ledger + scan source PNGs. The folder is the full collection.

@@ -24,7 +24,11 @@ npm run serve                                       # `pyr3 serve` — local CLI
 npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /animate viewer (#209)
 npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275) · nsteps=N (motion-blur sub-frames/frame; DEFAULT 1 — NOT the imported ntemporal_samples, which is up-to-1000 for ESF/timeline; #294)
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
-npm run bake:natives -- --src ~/pyr3-flames        # ingest pyr3-native flames (`.png` w/ embedded `pyr3` genome AND raw `.pyr3.json` files) into the gen-1000 gallery surface (#435); idempotent (canonical-genome-hash ledger → stable ids + dedup; a PNG and its `.pyr3.json` twin collapse to one); commit public/chunks/1000 + public/chunks/pyr3-*.* + flames/pyr3-natives/ledger.json
+npm run bake:natives                                # ingest pyr3-native flames into the gen-1000 gallery surface (#435). DEFAULT src is now `~/pyr3-flames/json` (the curated library from `flames:ingest`); pass `-- --src <dir>` to override. Accepts `.png` w/ embedded `pyr3` genome AND raw `.pyr3.json`; idempotent (canonical-genome-hash ledger → stable ids + dedup; a PNG and its `.pyr3.json` twin collapse to one); commit public/chunks/1000 + public/chunks/pyr3-*.* + flames/pyr3-natives/ledger.json
+# --- ~/pyr3-flames curate + publish pipeline (the user's own flames → the live gallery) ---
+npm run flames:ingest                               # Pass 1/3: incoming/ → json/<id>.pyr3.json (id = gallery ledger id, 5-pad bare). Default match-only + dry-run; `-- --add-new` mints new ids for not-yet-gallery flames; `-- --apply` writes+deletes consumed sources. Writes RAW parsed pyr3-JSON (never genomeToJson — ids can't drift)
+npm run flames:backfill                             # Pass 2: materialize any ledger id missing from json/ from the committed chunks (`-- --apply`); throws on hash/id drift (skips the `_v` chunk sentinel)
+# Pass 3 (recurring publish): the /pyr3-publish-flames skill — flames:ingest --add-new → bake:natives → typecheck+test → commit → push → verify pyr3.app. Pass 4 (future): 4K q2000 reference renders → renders/<id>.png
 ```
 
 The nav is **7 top menus** (#264, expanded in #420, Creator added in #437) — the row is **left-aligned**
