@@ -1,6 +1,8 @@
-// npm run bake:natives — ingest pyr3-native flames (PNGs with an embedded
-// `pyr3` tEXt-chunk genome) into the reserved gen-1000 corpus surface for the
-// Flame Gallery (#435). Idempotent: an append-only content-hash ledger gives
+// npm run bake:natives — ingest pyr3-native flames into the reserved gen-1000
+// corpus surface for the Flame Gallery (#435). Accepts BOTH `.png` files with
+// an embedded `pyr3` tEXt-chunk genome AND raw `.pyr3.json` genome files; both
+// dedup against each other by canonical genome hash (a PNG and its `.pyr3.json`
+// twin collapse to one ledger entry). Idempotent: an append-only content-hash ledger gives
 // every flame a STABLE id (so /esf/gen/1000/id/M share URLs never break) and
 // dedups identical flames. The source folder is the full collection —
 // re-running scans it all and re-emits the gen-1000 data. (Gen is 1000 — above
@@ -107,14 +109,42 @@ async function main(): Promise<void> {
   let skippedNonPyr3 = 0;
 
   for (const f of readdirSync(src)) {
-    if (!f.toLowerCase().endsWith('.png')) continue;
-    const buf = readFileSync(join(src, f));
-    const embedded = readPngTextChunks(new Uint8Array(buf))['pyr3'];
-    if (!embedded) {
+    const lower = f.toLowerCase();
+    const isPng = lower.endsWith('.png');
+    const isJson = lower.endsWith('.json');
+    if (!isPng && !isJson) continue;
+
+    // Extract the pyr3-JSON genome from either source: a PNG's `pyr3` tEXt
+    // chunk, or a raw `.pyr3.json` file. A bad/non-pyr3 file is skipped, not
+    // fatal — the collection can hold stray PNGs or unrelated JSON.
+    let parsed: Pyr3JsonV1;
+    try {
+      if (isPng) {
+        const embedded = readPngTextChunks(new Uint8Array(readFileSync(join(src, f))))['pyr3'];
+        if (!embedded) {
+          skippedNonPyr3++;
+          continue;
+        }
+        parsed = JSON.parse(embedded) as Pyr3JsonV1;
+      } else {
+        parsed = JSON.parse(readFileSync(join(src, f), 'utf8')) as Pyr3JsonV1;
+      }
+    } catch {
       skippedNonPyr3++;
       continue;
     }
-    const parsed = JSON.parse(embedded) as Pyr3JsonV1;
+
+    // Validate it parses to a real genome before it earns a ledger id.
+    let genome: Genome;
+    try {
+      genome = genomeFromJson(parsed);
+    } catch {
+      skippedNonPyr3++;
+      continue;
+    }
+
+    // Dedup by canonical genome hash — a PNG and its `.pyr3.json` twin (same
+    // visual definition, differing only by name/size/quality) collapse to one.
     const hash = canonicalFlameHash(parsed);
     if (seenHash.has(hash)) {
       dup++;
@@ -126,7 +156,6 @@ async function main(): Promise<void> {
       added++;
     }
     const id = ledger.entries[hash]!.id;
-    const genome = genomeFromJson(parsed);
     genome.nick = 'pyr3'; // provenance badge (#435)
     flames.push({ id, genome, json: JSON.stringify(genomeToJson(genome)) });
   }

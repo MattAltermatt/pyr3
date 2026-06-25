@@ -24,7 +24,7 @@ npm run serve                                       # `pyr3 serve` — local CLI
 npm run animate <in.flam3> <out-dir>                # headless keyframe-animation render — companion to the /animate viewer (#209)
 npm run animate -- <in> <out-dir>                   #   env: width=W height=H (absolute output dims, long-edge rescale; #274) · resume=1 (skip frames already on disk; #275) · nsteps=N (motion-blur sub-frames/frame; DEFAULT 1 — NOT the imported ntemporal_samples, which is up-to-1000 for ESF/timeline; #294)
 npm run build:cli:serve                             # produce ./build/pyr3-serve — standalone SEA (bundles the render + animate subcommands)
-npm run bake:natives -- --src ~/pyr3-flames        # ingest pyr3-native flames (PNGs w/ embedded `pyr3` genome) into the gen-1000 gallery surface (#435); idempotent (content-hash ledger → stable ids + dedup); commit public/chunks/1000 + public/chunks/pyr3-*.* + flames/pyr3-natives/ledger.json
+npm run bake:natives -- --src ~/pyr3-flames        # ingest pyr3-native flames (`.png` w/ embedded `pyr3` genome AND raw `.pyr3.json` files) into the gen-1000 gallery surface (#435); idempotent (canonical-genome-hash ledger → stable ids + dedup; a PNG and its `.pyr3.json` twin collapse to one); commit public/chunks/1000 + public/chunks/pyr3-*.* + flames/pyr3-natives/ledger.json
 ```
 
 The nav is **7 top menus** (#264, expanded in #420, Creator added in #437) — the row is **left-aligned**
