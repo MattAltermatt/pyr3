@@ -700,6 +700,43 @@ describe('xformsSection — detail xaos row', () => {
     const { host } = mount(genome);
     expect(detail(host).querySelector('.pyr3-edit-xaos-row')).toBeNull();
   });
+
+  it('labels destinations "→ XForm N" (1-based), not xfN', () => {
+    const { host } = mount(1);
+    const labels = [...detail(host).querySelectorAll('.pyr3-xaos-dst')].map((e) => e.textContent);
+    expect(labels[0]).toBe('→ XForm 1');
+    expect(labels[1]).toBe('→ XForm 2');
+    expect(labels.some((t) => /xf\d/.test(t ?? ''))).toBe(false);
+  });
+
+  it('opens with the "After XForm M fires, jump to…" caption for the selected xform', () => {
+    const { host } = mount(1);   // selection defaults to xform 0
+    expect(detail(host).querySelector('.pyr3-xaos-caption')?.textContent)
+      .toBe('After XForm 1 fires, jump to…');
+  });
+
+  it('lights the matching preset and rings a custom value', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    const n = genome.xforms.length;
+    expect(n).toBeGreaterThanOrEqual(2);
+    genome.xforms[0]!.xaos = new Array<number>(n).fill(1);  // all normal
+    genome.xforms[0]!.xaos[n - 1] = 1.7;                    // last = custom (off-preset)
+    const { host } = mount(genome);
+    const rows = [...detail(host).querySelectorAll('.pyr3-edit-xaos-row > .pyr3-xaos-row-item')];
+    const onLabel = (r: Element): string | null => r.querySelector('.pyr3-xaos-on')?.textContent ?? null;
+    expect(onLabel(rows[0]!)).toBe('normal');
+    expect(onLabel(rows[n - 1]!)).toBeNull();                                  // 1.7 → no preset
+    expect(rows[n - 1]!.querySelector('.pyr3-xaos-num-custom')).not.toBeNull(); // …gets the ring
+  });
+
+  it('tapping a preset writes its weight + fires the xaos onChange path', () => {
+    const { host, state, onChange } = mount(1);
+    const row1 = detail(host).querySelectorAll('.pyr3-edit-xaos-row > .pyr3-xaos-row-item')[1]!;
+    const never = [...row1.querySelectorAll('.pyr3-xaos-seg-cell')].find((c) => c.textContent === 'never')!;
+    (never as HTMLElement).click();
+    expect(state.genome.xforms[0]!.xaos![1]).toBe(0);
+    expect(onChange).toHaveBeenCalledWith('xforms.0.xaos.1');
+  });
 });
 
 // ── Detail sub-accordions (#350 Phase 2.2) ──────────────────────────────────

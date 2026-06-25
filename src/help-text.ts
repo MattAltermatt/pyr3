@@ -30,12 +30,12 @@ export const HELP: Record<HelpKey, InfoIconOpts> = {
   'xform.xaos': {
     title: 'Xaos (transition weights)',
     body:
-      'Normally the chaos game picks the next xform purely by each xform’s '
-      + 'weight. Xaos adds a per-pair multiplier so the pick depends on which '
-      + 'xform fired last. Each row →xfN scales how likely xform N is chosen '
-      + 'as the NEXT xform right after THIS (selected) one fires.',
-    hint: '1 = neutral · 0 = forbidden (xfN can never directly follow this '
-      + 'xform) · >1 = favored. Defaults are all 1. Lets you shape the flow '
+      'After this xform fires, each row sets how likely each XForm is picked '
+      + 'as the NEXT one. Pick a word — never / less / normal / more — or set '
+      + 'the exact weight beside it. Without xaos the next xform depends only '
+      + 'on each xform’s weight; xaos makes it depend on which xform fired last.',
+    hint: 'never = 0 (can never directly follow this xform) · normal = 1 '
+      + '(neutral, the default) · more > 1 (favored). Lets you shape the flow '
       + '/ sequencing of the fractal, beyond what weights alone can do.',
   },
 

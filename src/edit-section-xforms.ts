@@ -707,6 +707,82 @@ function buildAccordion(
   return wrap;
 }
 
+// ── Xaos plain-language presets (#371) ───────────────────────────────────────
+// The number box is the source of truth; these are one-tap quick-sets. The eps
+// match means a hand-typed value off-preset (e.g. 1.7) lights no segment.
+// `less = 0.5` is a tunable default (🎚️).
+const XAOS_PRESETS: ReadonlyArray<{ label: string; weight: number }> = [
+  { label: 'never', weight: 0 },
+  { label: 'less', weight: 0.5 },
+  { label: 'normal', weight: 1 },
+  { label: 'more', weight: 2 },
+];
+
+/** Index of the preset whose weight equals `v`, or -1 (custom / off-preset). */
+function xaosPresetIndex(v: number): number {
+  return XAOS_PRESETS.findIndex((p) => Math.abs(p.weight - v) < 1e-9);
+}
+
+// One destination row: "→ XForm N" + never/less/normal/more presets + the
+// adjustable weight box. `apply` writes the genome + fires onChange; the box is
+// the source of truth, presets just setValue() it (setValue is programmatic and
+// does NOT itself fire onChange — see edit-scrubby-input.ts).
+function buildXaosRow(
+  destIndex: number,
+  current: number,
+  apply: (weight: number) => void,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'pyr3-xaos-row-item';
+
+  const label = document.createElement('span');
+  label.className = 'pyr3-xaos-dst';
+  label.textContent = `→ XForm ${destIndex + 1}`;
+
+  const num = buildNumberInput({
+    value: current,
+    kind: 'weight',
+    min: 0,
+    onChange: (n) => { apply(n); refresh(n); },
+  });
+  num.el.classList.add('pyr3-xaos-num');
+  // buildNumberInput sets an inline `flex: 1 1 0` (greedy) that a CSS class
+  // can't beat — pin the box narrow inline so the segmented control gets the
+  // rest of the row and the preset words stop truncating (#371).
+  num.el.style.flex = '0 0 64px';
+  num.el.style.width = '64px';
+  num.el.title = 'Drag to scrub or double-click to type an exact weight (≥ 0).';
+
+  const seg = document.createElement('div');
+  seg.className = 'pyr3-xaos-seg';
+  const segCells: HTMLElement[] = [];
+  for (const p of XAOS_PRESETS) {
+    const cell = document.createElement('span');
+    cell.className = 'pyr3-xaos-seg-cell';
+    if (p.label === 'never') cell.classList.add('pyr3-xaos-seg-never');
+    cell.textContent = p.label;
+    cell.setAttribute('role', 'button');
+    cell.tabIndex = 0;
+    const choose = (): void => { num.handle.setValue(p.weight); apply(p.weight); refresh(p.weight); };
+    cell.addEventListener('click', choose);
+    cell.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); }
+    });
+    seg.appendChild(cell);
+    segCells.push(cell);
+  }
+
+  function refresh(v: number): void {
+    const on = xaosPresetIndex(v);
+    segCells.forEach((el, i) => el.classList.toggle('pyr3-xaos-on', i === on));
+    num.el.classList.toggle('pyr3-xaos-num-custom', on < 0);
+  }
+
+  row.append(label, seg, num.el);
+  refresh(current);
+  return row;
+}
+
 // Build the editable detail for the selected xform into `host`. `rebuildDetail`
 // re-renders just this pane (used after a kind/variation change). Regular xforms
 // show weight + affine + variations + post + color + xaos; the final omits
@@ -920,27 +996,25 @@ function buildXformDetail(
 
   // ── Xaos accordion (regular + 2+ xforms only; the final has no xaos) ─
   if (!isFinal && totalXforms > 1) {
-    host.appendChild(buildAccordion('Xaos →', 'xaos', state, (body) => {
+    host.appendChild(buildAccordion('Xaos', 'xaos', state, (body) => {
+      const caption = document.createElement('div');
+      caption.className = 'pyr3-xaos-caption';
+      caption.textContent = `After XForm ${target.index + 1} fires, jump to…`;
+      body.appendChild(caption);
+
       const xaosWrap = document.createElement('div');
       xaosWrap.className = 'pyr3-edit-xaos-row';
       for (let k = 0; k < totalXforms; k++) {
         const current = xform.xaos?.[k] ?? 1;
-        const inp = buildNumberInput({
-          value: current,
-          kind: 'weight',
-          min: 0,
-          onChange: (n) => {
-            if (!xform.xaos) {
-              xform.xaos = new Array<number>(totalXforms).fill(1);
-            }
-            // Grow if shorter than the destination index.
-            while (xform.xaos.length <= k) xform.xaos.push(1);
-            xform.xaos[k] = n;
-            onChange(`${pathPrefix}.xaos.${k}`);
-          },
-        });
-        inp.el.title = `→xf${k + 1}: how likely xform ${k + 1} is picked as the NEXT xform right after THIS one fires. 1 = neutral, 0 = forbidden, >1 = favored.`;
-        xaosWrap.appendChild(buildRow(`→xf${k + 1}`, inp.el));
+        xaosWrap.appendChild(buildXaosRow(k, current, (n) => {
+          if (!xform.xaos) {
+            xform.xaos = new Array<number>(totalXforms).fill(1);
+          }
+          // Grow if shorter than the destination index.
+          while (xform.xaos.length <= k) xform.xaos.push(1);
+          xform.xaos[k] = n;
+          onChange(`${pathPrefix}.xaos.${k}`);
+        }));
       }
       body.appendChild(xaosWrap);
     }, 'xform.xaos'));
@@ -1428,6 +1502,24 @@ const XFORM_CSS = `
 .pyr3-edit-var-header { display: flex; align-items: center; gap: 4px; }
 .pyr3-edit-var-params { display: flex; flex-wrap: wrap; gap: 4px; }
 .pyr3-edit-xaos-row { display: flex; flex-direction: column; gap: 4px; }
+/* #371 — plain-language xaos rows */
+.pyr3-xaos-caption { color: var(--text-dim, #888); font-size: 11.5px; margin: 0 0 8px; }
+.pyr3-xaos-row-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.pyr3-xaos-dst { width: 74px; flex: none; font-size: 12px; color: var(--text, #ddd); }
+.pyr3-xaos-seg {
+  display: flex; flex: 1; min-width: 0;
+  border: 1px solid var(--bar-border, #2a2a30); border-radius: 6px; overflow: hidden;
+}
+.pyr3-xaos-seg-cell {
+  flex: 1; text-align: center; font-size: 10.5px; padding: 4px 0; cursor: pointer;
+  color: var(--text-dim, #888); border-right: 1px solid var(--bar-border, #2a2a30); white-space: nowrap;
+}
+.pyr3-xaos-seg-cell:last-child { border-right: 0; }
+.pyr3-xaos-seg-cell:hover { background: var(--accent-soft, rgba(255, 140, 26, 0.18)); color: var(--text, #ddd); }
+.pyr3-xaos-seg-cell.pyr3-xaos-on { background: var(--accent, #ff8c1a); color: #1a1206; font-weight: 700; }
+.pyr3-xaos-seg-never.pyr3-xaos-on { background: #7a3a2e; color: #ffd9cc; }
+.pyr3-xaos-num { flex: 0 0 64px; width: 64px; text-align: right; }
+.pyr3-xaos-num-custom { box-shadow: inset 0 0 0 1px var(--accent, #ff8c1a); }
 .pyr3-edit-icon-btn {
   background: var(--bar-bg-2, #1a1a20);
   color: var(--text, #ddd);
