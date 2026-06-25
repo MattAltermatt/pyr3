@@ -1,7 +1,8 @@
 // pyr3 — /editor canvas pan + zoom.
 //
 // Left-drag on the flame canvas pans (cx / cy). Mouse wheel zooms (scale,
-// anchored on the cursor so the point under the cursor stays put).
+// anchored on the canvas CENTER so cx / cy never drift — the flame grows /
+// shrinks in place; #451).
 //
 // The chaos.wgsl viewport transform is:
 //   dx = world_x - cx;  dy = world_y - cy
@@ -16,7 +17,6 @@
 
 import { type EditState } from './edit-state';
 import {
-  containedRect as projContainedRect,
   worldPerCssPx as projWorldPerCssPx,
   applyViewToCamera,
   type Camera,
@@ -86,12 +86,6 @@ export function attachPanZoom(
     };
   }
 
-  /** Object-fit:contain on the canvas letterboxes the image inside the
-   *  element rect. Compute the actual contained dims (CSS px). */
-  function containedRect(): { w: number; h: number; padX: number; padY: number } {
-    return projContainedRect(viewport());
-  }
-
   /** World units per CSS pixel under the current genome + canvas display. */
   function worldPerCssPx(): number {
     return projWorldPerCssPx(camera(), viewport());
@@ -143,32 +137,19 @@ export function attachPanZoom(
 
   function onWheel(ev: WheelEvent): void {
     ev.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const { w, h, padX, padY } = containedRect();
-    if (w <= 0 || h <= 0) return;
-    // Cursor coord inside the contained region, origin top-left.
-    const localX = (ev.clientX - rect.left) - padX;
-    const localY = (ev.clientY - rect.top) - padY;
-    // World coord under cursor BEFORE the zoom — the anchor we hold fixed.
-    const wpxBefore = worldPerCssPx();
-    const beforeRotDx = (localX - w / 2) * wpxBefore;
-    const beforeRotDy = (localY - h / 2) * wpxBefore;
-    const wBefore = rotatedToWorld(beforeRotDx, beforeRotDy);
+    // Center-anchored zoom (#451): hold cx / cy fixed and only change scale, so
+    // the flame zooms around screen center and the saved position never drifts.
+    // (Replaced the earlier cursor-anchored zoom, which re-solved cx / cy every
+    // tick to pin the world point under the cursor — that moved the position
+    // whenever the cursor was off-center. User direction: "prevent movement
+    // when zooming.") The center stays mapped to (cx, cy) by the chaos.wgsl
+    // viewport transform, so leaving cx / cy alone keeps the center fixed.
     const eff = camera();
-    const anchor = { x: eff.cx + wBefore.x, y: eff.cy + wBefore.y };
-    // Apply zoom to the EFFECTIVE scale.
     const factor = Math.exp(-ev.deltaY * ZOOM_PER_DELTA_Y);
     let next = eff.scale * factor;
     if (!Number.isFinite(next) || next < MIN_SCALE) next = MIN_SCALE;
     else if (next > MAX_SCALE) next = MAX_SCALE;
-    // Apply the new scale first (cx/cy unchanged) so worldPerCssPx reflects it,
-    // then re-solve cx/cy to hold the cursor anchor fixed.
     setEffectiveCamera(eff.cx, eff.cy, next);
-    const wpxAfter = worldPerCssPx();
-    const afterRotDx = (localX - w / 2) * wpxAfter;
-    const afterRotDy = (localY - h / 2) * wpxAfter;
-    const wAfter = rotatedToWorld(afterRotDx, afterRotDy);
-    setEffectiveCamera(anchor.x - wAfter.x, anchor.y - wAfter.y, next);
     cb.onViewportChange();
   }
 
