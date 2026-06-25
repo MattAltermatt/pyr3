@@ -41,24 +41,26 @@ function shuffled<T>(rng: () => number, src: readonly T[]): T[] {
   return a;
 }
 
-/** Options for steering the pick toward a caller-supplied preferred set.
- *  - `only`: stratify over `preferred` exclusively (falls back to the broad
- *    pool when `preferred` is empty/undefined, so the wall is never empty).
- *  - `bias`: keep the broad-pool stratification but oversample `preferred`
- *    (~50% of picks substituted from it) — diversity preserved, lean toward
- *    the picks. */
+/** Options for steering the per-genome PRIMARY (lead) variation toward a
+ *  caller-supplied preferred set. Both modes force the lead from `preferred`
+ *  (stratified, so a batch spans the set); they differ only in the BLEND pool,
+ *  which the caller handles (#450):
+ *  - `only`:     whole flame restricted to `preferred`.
+ *  - `featured`: lead is `preferred`, blends/rest are broad → featured + diverse.
+ *  Both fall back to the broad pool when `preferred` is empty/undefined, so the
+ *  wall is never empty. */
 export interface PickPrimariesOptions {
   preferred?: number[];
-  preferMode?: 'bias' | 'only';
+  preferMode?: 'featured' | 'only';
 }
 
 /** Pick `n` primaries spread across the eligible pool. For n <= pool size the
  *  picks are all-distinct (a shuffle prefix), so a batch never clumps on one
  *  variation; for n > pool size it cycles reshuffled passes.
  *
- *  With `opts`, the pick can be steered toward a preferred variation set —
- *  `only` (exclusive) or `bias` (oversampled into the broad pool). Absent
- *  `opts`, behavior is the original broad-pool stratification, unchanged. */
+ *  With `opts`, the primary is steered toward a preferred variation set —
+ *  both `only` and `featured` force it from `preferred` (#450). Absent `opts`,
+ *  behavior is the original broad-pool stratification, unchanged. */
 export function pickStratifiedPrimaries(
   rng: () => number,
   n: number,
@@ -67,22 +69,12 @@ export function pickStratifiedPrimaries(
   const preferred = (opts?.preferred ?? []) as VariationIndex[];
   const mode = opts?.preferMode;
 
-  // only-mode: stratify over the preferred set instead of the broad pool.
-  // Guard: empty preferred falls back to the broad pool so the wall is never empty.
-  if (mode === 'only' && preferred.length > 0) {
+  // Both 'only' and 'featured' force the lead from the preferred set (stratified
+  // so a batch spans it); they diverge only in the blend pool, handled by the
+  // caller (#450). Guard: empty preferred falls back to the broad pool so the
+  // wall is never empty.
+  if ((mode === 'only' || mode === 'featured') && preferred.length > 0) {
     return stratify(rng, n, preferred);
-  }
-
-  // bias-mode: broad-pool stratification, but with ~50% probability each slot
-  // is substituted by a preferred pick (when any preferred indices exist).
-  if (mode === 'bias' && preferred.length > 0) {
-    const base = stratify(rng, n, PRIMARY_ELIGIBLE);
-    for (let i = 0; i < base.length; i++) {
-      if (rng() < 0.5) {
-        base[i] = preferred[Math.floor(rng() * preferred.length)]!;
-      }
-    }
-    return base;
   }
 
   // absent / fallback: original broad-pool stratification, unchanged.

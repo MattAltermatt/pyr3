@@ -59,16 +59,33 @@ export interface SurpriseSettings {
   blendPerXform: [number, number];
   /** Preferred variation indices the generator should favour. */
   preferred: number[];
-  /** 'bias' = weight toward `preferred`; 'only' = restrict to `preferred`. */
-  preferMode: 'bias' | 'only';
+  /** 'featured' = every flame features `preferred` as its lead xform but blends
+   *  + other xforms draw from the broad pool (guaranteed present + diverse);
+   *  'only' = restrict the whole flame to `preferred`. (#450 — replaced the old
+   *  'bias' mode, whose blends were also restricted, leaving no "X + variety".) */
+  preferMode: 'featured' | 'only';
 }
 
 export const SURPRISE_SETTINGS_KEY = 'pyr3.surprise.settings';
 
 export const SURPRISE_SETTINGS_DEFAULT: SurpriseSettings = {
   countMode: 'fill', setN: 24, density: 'm',
-  xformCount: [2, 4], blendPerXform: [1, 3], preferred: [], preferMode: 'bias',
+  xformCount: [2, 4], blendPerXform: [1, 3], preferred: [], preferMode: 'featured',
 };
+
+/** Apply a deep-link variation seed (`/creator?vars=…`, #448) to settings:
+ *  `preferMode: 'featured'` so every flame on the wall FEATURES the chosen
+ *  variation(s) as its lead xform, with blends + other xforms staying diverse
+ *  (#450). An empty/undefined seed leaves settings untouched (the plain Creator
+ *  default). Session-scoped — the caller does NOT persist it, so a bare
+ *  `/creator` visit keeps saved prefs. */
+export function applySeedPreferred(
+  s: SurpriseSettings,
+  seed: number[] | undefined,
+): SurpriseSettings {
+  if (!seed || seed.length === 0) return s;
+  return { ...s, preferred: [...seed], preferMode: 'featured' };
+}
 
 /** Reset only the generation knobs (count / thumbnail / xforms / blend);
  *  preserve the variation knobs. Scoped reset for the GENERATE bar (#433). */
@@ -83,7 +100,7 @@ export function resetGeneration(s: SurpriseSettings): SurpriseSettings {
   };
 }
 
-/** Reset only the variation knobs (preferred / bias-only); preserve all
+/** Reset only the variation knobs (preferred / featured-only); preserve all
  *  generation knobs. Scoped reset for the VARIATIONS bar (#433). */
 export function resetVariations(s: SurpriseSettings): SurpriseSettings {
   return {
@@ -133,7 +150,9 @@ export function loadSurpriseSettings(): SurpriseSettings {
     xformCount: coerceRange(p.xformCount, SURPRISE_SETTINGS_DEFAULT.xformCount),
     blendPerXform: coerceRange(p.blendPerXform, SURPRISE_SETTINGS_DEFAULT.blendPerXform),
     preferred,
-    preferMode: coerceEnum(p.preferMode, ['bias', 'only'] as const, SURPRISE_SETTINGS_DEFAULT.preferMode),
+    // #450 — legacy stored 'bias' isn't in the allowlist, so it coerces to the
+    // fallback ('featured'), which IS its successor. Clean one-way migration.
+    preferMode: coerceEnum(p.preferMode, ['featured', 'only'] as const, SURPRISE_SETTINGS_DEFAULT.preferMode),
   };
 }
 

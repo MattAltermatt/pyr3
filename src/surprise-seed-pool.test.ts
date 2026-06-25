@@ -48,19 +48,25 @@ describe('pickStratifiedPrimaries', () => {
   });
 });
 
-describe('preferred bias|only (#surprise-v2)', () => {
+describe('preferred featured|only (#surprise-v2, #450)', () => {
   const rng = () => 0.5;
-  it('only-mode draws exclusively from the preferred set', () => {
+  it('only-mode draws the primary exclusively from the preferred set', () => {
     const pref = [V.spherical, V.swirl];
     const got = pickStratifiedPrimaries(rng, 8, { preferred: pref, preferMode: 'only' });
     for (const idx of got) expect(pref).toContain(idx);
   });
-  it('bias-mode still spans beyond the preferred set (diversity preserved)', () => {
-    const got = pickStratifiedPrimaries(() => Math.random(), 32, { preferred: [V.spherical], preferMode: 'bias' });
-    expect(new Set(got).size).toBeGreaterThan(1);
+  it('featured-mode also forces the primary from the preferred set (lead guaranteed)', () => {
+    // #450 — featured + only share primary selection; they diverge only in the
+    // blend pool (handled in surprise-seed). The lead is always a preferred var.
+    const pref = [V.spherical, V.swirl];
+    const got = pickStratifiedPrimaries(() => Math.random(), 32, { preferred: pref, preferMode: 'featured' });
+    for (const idx of got) expect(pref).toContain(idx);
   });
   it('empty preferred + only → falls back to the broad pool (never empty)', () => {
     expect(pickStratifiedPrimaries(rng, 8, { preferred: [], preferMode: 'only' }).length).toBe(8);
+  });
+  it('empty preferred + featured → falls back to the broad pool (never empty)', () => {
+    expect(pickStratifiedPrimaries(rng, 8, { preferred: [], preferMode: 'featured' }).length).toBe(8);
   });
   it('no options → unchanged broad stratified behavior', () => {
     expect(pickStratifiedPrimaries(rng, 8).length).toBe(8);

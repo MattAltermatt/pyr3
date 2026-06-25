@@ -25,6 +25,7 @@ import {
 import {
   DEFAULT_FILTER_SPEC,
   filterSpecEquals,
+  parseFilterSpec,
   type FilterSpec,
 } from './gallery-filter';
 import { computeFacetCounts } from './gallery-facets';
@@ -482,7 +483,14 @@ async function main(): Promise<void> {
     chrome.middleSlot.appendChild(spRoot);
     setDocTitle('Creator');
     const { mountSurprisePage } = await import('./surprise-mount');
-    const handle = mountSurprisePage(spRoot, { device: spDevice, format: spFormat });
+    // #448 — `/creator?vars=name[,name…]` deep-links a variation seed: restrict
+    // the wall to that pool. Reuses the gallery's `vars` grammar (name→index).
+    const seedVars = parseFilterSpec(new URLSearchParams(window.location.search)).vars;
+    const handle = mountSurprisePage(spRoot, {
+      device: spDevice,
+      format: spFormat,
+      initialPreferred: seedVars,
+    });
     window.addEventListener('pagehide', () => { handle.destroy(); chrome.destroy(); }, { once: true });
     return;
   }

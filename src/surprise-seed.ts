@@ -15,7 +15,7 @@ export interface SurpriseGenParams {
   xformCount?: number | [number, number];
   blendPerXform?: number | [number, number];
   preferred?: number[];
-  preferMode?: 'bias' | 'only';
+  preferMode?: 'featured' | 'only';
 }
 
 // A convergent attractor frames at scale ~40..6000; a divergent one (too few
@@ -59,10 +59,14 @@ export function generateSurpriseBatch(
     preferred: params.preferred,
     preferMode: params.preferMode,
   });
+  // #450 — the preferred set drives the blend pool ONLY in 'only' mode (whole
+  // flame restricted to it). In 'featured' mode the lead xform is still forced
+  // to a preferred variation (via the stratified primaryOverride above), but
+  // blends + other xforms draw from the broad pool → featured + diverse.
   const opts = {
     xformCount: params.xformCount,
     blendPerXform: params.blendPerXform,
-    preferred: params.preferred,
+    preferred: params.preferMode === 'only' ? params.preferred : undefined,
   };
   return primaries.map((primaryOverride) => {
     let g = generateRandomGenome(rng, { primaryOverride, ...opts });

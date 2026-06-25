@@ -16,7 +16,7 @@ import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
 import { createSurpriseState } from './surprise-state';
 import {
   readWall, writeWall, loadSurpriseSettings, saveSurpriseSettings,
-  resetGeneration, resetVariations, type SurpriseSettings,
+  resetGeneration, resetVariations, applySeedPreferred, type SurpriseSettings,
 } from './surprise-prefs';
 import { computeGrid, type Viewport, type GridMode } from './surprise-grid';
 import { mountSurpriseBars, type SurpriseBarsHandle } from './surprise-bars';
@@ -24,7 +24,15 @@ import { buildInfoIcon } from './edit-tooltip';
 import { writePendingTransfer } from './edit-state';
 import { isMobile } from './mobile';
 
-export interface SurpriseMountOptions { device: GPUDevice; format: GPUTextureFormat }
+export interface SurpriseMountOptions {
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  /** #448 — deep-link variation seed from `/creator?vars=…`: variation indices
+   *  to FEATURE (preferMode 'featured' — lead forced to the variation, blends
+   *  stay diverse; #450). When present, the wall rolls fresh on that pool
+   *  instead of restoring the saved wall. */
+  initialPreferred?: number[];
+}
 export interface SurpriseMountHandle { destroy(): void }
 
 const GAP_PX = 8;
@@ -56,7 +64,11 @@ function settingsToParams(s: SurpriseSettings): SurpriseGenParams {
 
 export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions): SurpriseMountHandle {
   host.replaceChildren();
-  let settings = loadSurpriseSettings();
+  // #448 — a `/creator?vars=…` deep-link restricts the wall to that pool
+  // ('only' mode). Session-scoped: not persisted, so a bare /creator visit
+  // keeps the user's saved prefs.
+  const seeded = (opts.initialPreferred?.length ?? 0) > 0;
+  let settings = applySeedPreferred(loadSurpriseSettings(), opts.initialPreferred);
   const state = createSurpriseState(settings);
   const gpu = makeGpuRenderThumb(opts.device, opts.format);
 
@@ -422,13 +434,17 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   refreshRerollBtn();
   refreshWallHistoryButtons();
   const saved = readWall();
-  if (saved.length) {
+  if (!seeded && saved.length) {
     appliedSettings = settings;
     const batch = saved.slice(0, MAX_TILES);
     state.wallHistory.push(batch);
     fillWall(batch.length, batch);
     refreshWallHistoryButtons();
-  } else reroll();
+  } else {
+    // Fresh roll — either no saved wall, or a #448 deep-link seed that should
+    // generate on its pool rather than restore the unrelated saved wall.
+    reroll();
+  }
 
   return {
     destroy() {

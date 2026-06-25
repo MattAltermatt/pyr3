@@ -37,6 +37,13 @@ describe('mountSection', () => {
     expect(link.href).toContain('v=1');
   });
 
+  it('renders the desktop "Create with this" link deep-linking /creator?vars=<name> (#448)', () => {
+    mount(V.sinusoidal);
+    const create = host.querySelector('.pyr3-cat-section-create') as HTMLAnchorElement | null;
+    expect(create).toBeTruthy();
+    expect(create!.getAttribute('href')).toBe('/creator?vars=sinusoidal');
+  });
+
   it('mounts an SVG warp diagram for variations with warpFn', () => {
     mount(V.sinusoidal);
     expect(host.querySelector('.pyr3-cat-pane svg')).toBeTruthy();

@@ -35,6 +35,41 @@ describe('generateSurpriseBatch', () => {
   });
 });
 
+describe('preferMode featured vs only (#450)', () => {
+  function allVarIndices(g: Genome): Set<number> {
+    const s = new Set<number>();
+    for (const x of g.xforms) for (const v of x.variations) s.add(v.index);
+    return s;
+  }
+  // blendPerXform set so the shape/detail xforms use buildBlend (the broad-vs-
+  // restricted pool only matters there); the Creator always passes it.
+  const PREF = [V.spherical];
+
+  it('only-mode keeps every variation within preferred ∪ {linear duplicator}', () => {
+    const batch = generateSurpriseBatch(seededRng(7), 16, {
+      preferred: PREF, preferMode: 'only', blendPerXform: [2, 3],
+    });
+    for (const g of batch) {
+      for (const idx of allVarIndices(g)) {
+        expect(idx === V.spherical || idx === V.linear).toBe(true);
+      }
+    }
+  });
+
+  it('featured-mode guarantees the variation is present yet pulls diverse blends', () => {
+    const batch = generateSurpriseBatch(seededRng(7), 16, {
+      preferred: PREF, preferMode: 'featured', blendPerXform: [2, 3],
+    });
+    // every flame features the variation...
+    for (const g of batch) expect(allVarIndices(g).has(V.spherical)).toBe(true);
+    // ...and the batch brings in variations beyond {spherical, linear} (broad blends).
+    const union = new Set<number>();
+    for (const g of batch) for (const idx of allVarIndices(g)) union.add(idx);
+    const beyond = [...union].filter((i) => i !== V.spherical && i !== V.linear);
+    expect(beyond.length).toBeGreaterThan(0);
+  });
+});
+
 describe('collapse-to-point guard (#446)', () => {
   // A flame whose every affine shares the origin fixed point (c=f=0) and is
   // contractive collapses to a point — the #445 repro shape. Build one by

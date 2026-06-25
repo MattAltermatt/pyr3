@@ -26,7 +26,8 @@ import 'katex/dist/katex.min.css';
 import type { VariationDoc } from './variation-catalog-data';
 import { buildWarpSvg } from './variation-catalog-warp';
 import { linkToEditor } from './variation-catalog-link';
-import { V, getDisplayLabel, catalogAnchorSlug, DC_VARIATION_SET, DC_DOCS_URL } from './variations';
+import { V, VARIATION_NAMES, getDisplayLabel, catalogAnchorSlug, DC_VARIATION_SET, DC_DOCS_URL } from './variations';
+import { isMobile } from './mobile';
 
 const SOURCE_LABEL: Record<string, string> = {
   flam3: 'flam3 core',
@@ -211,16 +212,36 @@ export function mountSection(
   // Blurb
   const blurb = el('p', 'pyr3-cat-section-blurb', doc.blurb);
 
-  // Open-in-editor link. Opens in a new tab so the catalog stays put —
-  // users typically want to A/B between catalog tile and editor surface.
-  // The trailing ↗ matches the convention used elsewhere (about page,
-  // picker "explore catalog" link) for new-tab destinations.
-  const openLink = el('a', 'pyr3-cat-open-link', 'Open in editor with this variation ↗');
+  // "Try this variation" actions — both modes grouped so the editor-vs-Creator
+  // choice is unambiguous (#448). New tab on both so the catalog stays put.
+  const actions = el('div', 'pyr3-cat-section-actions');
+  actions.append(el('span', 'pyr3-cat-section-actions-label', 'Try this variation:'));
+
+  // Editor: build & tune ONE flame featuring the variation. href tracks the
+  // live-tuned controls (updated in the mountControls callback above).
+  const openLink = el('a', 'pyr3-cat-open-link', '✏️ Open in editor ↗');
   openLink.href = linkToEditor({ idx: doc.idx, weight: state.weight, params: state.params });
   openLink.target = '_blank';
   openLink.rel = 'noopener noreferrer';
+  openLink.title = 'Build & tweak one flame with this variation in the editor';
+  actions.append(openLink);
 
-  host.append(head, formula, panes, blurb, openLink);
+  // Creator: generate a WALL of examples featuring the variation (#448). Deep-
+  // links via the gallery's `vars` grammar (canonical name) → preferMode
+  // 'featured' (lead forced to the variation, blends stay diverse; #450).
+  // Desktop-only — mobile /variations is consumption-only and the Creator routes
+  // to the viewer on mobile (#66).
+  if (!isMobile()) {
+    const createLink = el('a', 'pyr3-cat-section-create', '🎨 Generate examples ↗');
+    const varName = VARIATION_NAMES[doc.idx] ?? doc.name;
+    createLink.href = `/creator?vars=${encodeURIComponent(varName)}`;
+    createLink.target = '_blank';
+    createLink.rel = 'noopener noreferrer';
+    createLink.title = `Generate a wall of flames featuring ${doc.name} in the Creator`;
+    actions.append(createLink);
+  }
+
+  host.append(head, formula, panes, blurb, actions);
 
   return {
     setIterating(on: boolean): void {

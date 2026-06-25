@@ -3,9 +3,9 @@
 // Replaces the old `⚙ Settings` popover (surprise-settings-panel.ts, retired in
 // #433). The generator knobs are surfaced onto two always-visible labelled
 // bars — GENERATE (count / thumbnail / xforms / blend) and VARIATIONS
-// (preferred picker + bias/only) — each carrying its own SCOPED reset:
+// (preferred picker + featured/only) — each carrying its own SCOPED reset:
 //   - GENERATE ↺ Reset → resetGeneration() (count/thumbnail/xforms/blend only)
-//   - VARIATIONS ↺ Reset → resetVariations() (preferred/bias-only only)
+//   - VARIATIONS ↺ Reset → resetVariations() (preferred/featured-only only)
 // The settings-history undo/redo is gone; the wall reroll undo/redo lives in
 // the ACTIONS bar (built by surprise-mount.ts). Built with createElement/
 // textContent only — NEVER innerHTML (mirrors edit-compose-menu.ts).
@@ -13,7 +13,7 @@
 // Controls (each carries a stable `data-role` for tests + the wall mount):
 //   count-fill / count-set radios · set-n number · density-s/m/l buttons ·
 //   xform-min / xform-max · blend-min / blend-max · pick-preferred ·
-//   preferred-chips · mode-bias / mode-only radios · reset-generation ·
+//   preferred-chips · mode-featured / mode-only radios · reset-generation ·
 //   reset-variations.
 
 import { openVariationPicker } from './edit-variation-picker';
@@ -237,32 +237,34 @@ export function mountSurpriseBars(
     }
   }
 
-  // preferred mode (bias / only)
-  const biasRadio = document.createElement('input');
-  biasRadio.type = 'radio'; biasRadio.name = 'pyr3-surprise-prefmode';
-  biasRadio.dataset.role = 'mode-bias';
-  const biasLabel = document.createElement('label');
-  biasLabel.className = 'pyr3-surprise-bar-radio';
-  biasLabel.append(biasRadio, document.createTextNode(' Bias'));
+  // preferred mode (featured / only) — #450
+  const featuredRadio = document.createElement('input');
+  featuredRadio.type = 'radio'; featuredRadio.name = 'pyr3-surprise-prefmode';
+  featuredRadio.dataset.role = 'mode-featured';
+  const featuredLabel = document.createElement('label');
+  featuredLabel.className = 'pyr3-surprise-bar-radio';
+  featuredLabel.title = 'Every flame features these as its lead, with other variations blended in';
+  featuredLabel.append(featuredRadio, document.createTextNode(' Featured'));
 
   const onlyRadio = document.createElement('input');
   onlyRadio.type = 'radio'; onlyRadio.name = 'pyr3-surprise-prefmode';
   onlyRadio.dataset.role = 'mode-only';
   const onlyLabel = document.createElement('label');
   onlyLabel.className = 'pyr3-surprise-bar-radio';
+  onlyLabel.title = 'Flames use only these variations';
   onlyLabel.append(onlyRadio, document.createTextNode(' Only'));
 
-  biasRadio.addEventListener('change', () => {
-    if (biasRadio.checked) cb.onChange({ ...cb.getSettings(), preferMode: 'bias' });
+  featuredRadio.addEventListener('change', () => {
+    if (featuredRadio.checked) cb.onChange({ ...cb.getSettings(), preferMode: 'featured' });
   });
   onlyRadio.addEventListener('change', () => {
     if (onlyRadio.checked) cb.onChange({ ...cb.getSettings(), preferMode: 'only' });
   });
-  varBar.append(biasLabel, onlyLabel);
+  varBar.append(featuredLabel, onlyLabel);
 
   varBar.appendChild(spacer());
   const varReset = resetButton('reset-variations',
-    'Reset variation knobs only (preferred / bias-only)');
+    'Reset variation knobs only (preferred / featured-only)');
   varReset.addEventListener('click', () => cb.onResetVariations());
   varBar.appendChild(varReset);
 
@@ -286,7 +288,7 @@ export function mountSurpriseBars(
     blendMax.value = String(s.blendPerXform[1]);
     prefCount.textContent = `(${s.preferred.length})`;
     renderChips();
-    biasRadio.checked = s.preferMode === 'bias';
+    featuredRadio.checked = s.preferMode === 'featured';
     onlyRadio.checked = s.preferMode === 'only';
   }
 

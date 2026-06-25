@@ -7,6 +7,7 @@ import {
   saveSurpriseSettings,
   resetGeneration,
   resetVariations,
+  applySeedPreferred,
   SURPRISE_SETTINGS_DEFAULT,
   SURPRISE_SETTINGS_KEY,
   type SurpriseSettings,
@@ -37,6 +38,23 @@ describe('wall persistence', () => {
   });
 });
 
+describe('applySeedPreferred (#448 — /creator?vars deep-link)', () => {
+  it('seeds the pool with preferMode "featured" (X present + diverse, #450)', () => {
+    const out = applySeedPreferred(SURPRISE_SETTINGS_DEFAULT, [12, 34]);
+    expect(out.preferred).toEqual([12, 34]);
+    expect(out.preferMode).toBe('featured');
+  });
+  it('leaves settings untouched for an empty/undefined seed', () => {
+    expect(applySeedPreferred(SURPRISE_SETTINGS_DEFAULT, [])).toBe(SURPRISE_SETTINGS_DEFAULT);
+    expect(applySeedPreferred(SURPRISE_SETTINGS_DEFAULT, undefined)).toBe(SURPRISE_SETTINGS_DEFAULT);
+  });
+  it('does not mutate the input', () => {
+    const base = { ...SURPRISE_SETTINGS_DEFAULT, preferred: [1] };
+    applySeedPreferred(base, [9]);
+    expect(base.preferred).toEqual([1]);
+  });
+});
+
 describe('SurpriseSettings (#surprise-v2)', () => {
   it('defaults', () => { expect(loadSurpriseSettings()).toEqual(SURPRISE_SETTINGS_DEFAULT); });
 
@@ -59,6 +77,15 @@ describe('SurpriseSettings (#surprise-v2)', () => {
     const l = loadSurpriseSettings();
     expect(l.setN).toBeGreaterThanOrEqual(1);
     expect(l.xformCount[0]).toBeLessThanOrEqual(l.xformCount[1]);
+  });
+
+  it('migrates a legacy stored preferMode "bias" → "featured" (#450)', () => {
+    // Write a raw legacy record (the old value isn't in the new type union).
+    localStorage.setItem(
+      SURPRISE_SETTINGS_KEY,
+      JSON.stringify({ ...SURPRISE_SETTINGS_DEFAULT, preferMode: 'bias' }),
+    );
+    expect(loadSurpriseSettings().preferMode).toBe('featured');
   });
 
   it('falls back to defaults on malformed JSON', () => {
