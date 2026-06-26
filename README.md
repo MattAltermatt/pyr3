@@ -58,7 +58,9 @@ engine modules and WGSL compute shaders — no second code path, no environment 
   flame's variation set, and prev/next navigation. Alternative **color modes** — a velocity
   **flow-map** (direction → hue, speed → brightness), **trap-distance** contours (glowing
   bands that hug a point/circle/line), and **Phase / Polar** domain-coloring (argument → hue,
-  log-modulus → contour rings) — live in the visual editor's Color lens.
+  log-modulus → contour rings) — live in the visual editor's Color lens. **Interpolated xform
+  fields** (the Scene-lens *xform blend* slider) softly morph the attractor by blending pairs
+  of transforms per iteration into a continuum of in-between shapes.
 - 💻 **Headless CLI** — Node + the `webgpu` npm package. `npm run render flame.flam3 out.png`
   renders the same flame to a PNG using the same modules and shaders as the browser.
 

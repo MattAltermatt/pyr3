@@ -111,6 +111,12 @@ export interface Genome {
   // and `cp.rotate` (rect.c:818-823). Applied to splat coordinates around (cx, cy)
   // before scale + canvas-center mapping. When undefined or 0, no rotation.
   rotate?: number;
+  // #456 — interpolated xform fields. Blend probability λ ∈ [0,1]: on a λ-fraction
+  // of chaos-game iterations the renderer blends a second xform's OUTPUT into the
+  // splat (pv = mix(pv_A, pv_B, t)), producing soft morphing attractors. Undefined
+  // or 0 = off (byte-identical to the discrete IFS). A genome field, not a viewing
+  // pref. See src/shaders/chaos.wgsl `xform_blend` + the #456 design spec.
+  xformBlend?: number;
   // Phase 9-cal-B: target samples per pixel (matches flam3's `<flame quality=N>`
   // and `cp.sample_density`). When defined, the chaos dispatch scales walker
   // count to land approximately `quality × W × H` total samples — calibrating

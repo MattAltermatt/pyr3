@@ -270,3 +270,38 @@ describe('#465 — Phase/Polar color mode (color_mode slot 15 == 3, phase slots 
     expect(f32[29]).toBe(0);
   });
 });
+
+describe('#456 — xform_blend uniform (slot 30)', () => {
+  it('defaults xform_blend to 0 and keeps UNIFORMS_BYTES at 128', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    expect(u!.data.byteLength).toBe(128);
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[30]).toBe(0);
+  });
+
+  it('writes genome.xformBlend into f32 slot 30', () => {
+    const { genome } = parseFlame(FLAME);
+    genome.xformBlend = 0.6;
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[30]).toBe(Math.fround(0.6));
+  });
+
+  it('clamps an out-of-range genome.xformBlend into [0,1]', () => {
+    const { genome } = parseFlame(FLAME);
+    genome.xformBlend = 9;
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[30]).toBe(1);
+  });
+});

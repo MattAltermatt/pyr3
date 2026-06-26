@@ -37,6 +37,9 @@ export interface Pyr3JsonV1 {
   /** Phase 9-rotate: camera rotation in degrees CCW (matches flam3 `<flame rotate="N">`).
    *  Omitted from JSON when 0 / undefined (additive, no version bump). */
   rotate?: number;
+  /** #456: interpolated-xform-field blend probability λ ∈ [0,1]. Omitted from
+   *  JSON when 0 / undefined (additive, no version bump). */
+  xformBlend?: number;
   /** Phase 9-cal-B: target samples per pixel (matches flam3 `<flame quality=N>`).
    *  Omitted from JSON when undefined (additive, no version bump). */
   quality?: number;
@@ -911,6 +914,9 @@ export function genomeToJson(g: Genome): Pyr3JsonV1 {
   if (g.rotate !== undefined && g.rotate !== 0) {
     out.rotate = g.rotate;
   }
+  if (g.xformBlend !== undefined && g.xformBlend !== 0) {
+    out.xformBlend = g.xformBlend;
+  }
   if (g.quality !== undefined) {
     out.quality = g.quality;
   }
@@ -1160,6 +1166,13 @@ export function genomeFromJson(j: unknown): Genome {
       throw new Error(`pyr3: rotate must be a finite number, got: ${r}`);
     }
     if (r !== 0) base.rotate = r;
+  }
+  if (root['xformBlend'] !== undefined) {
+    const xb = expectNumber(root['xformBlend'], 'xformBlend');
+    if (!Number.isFinite(xb) || xb < 0 || xb > 1) {
+      throw new Error(`pyr3: xformBlend must be a number in [0,1], got: ${xb}`);
+    }
+    if (xb !== 0) base.xformBlend = xb;
   }
   if (root['quality'] !== undefined) {
     const q = expectNumber(root['quality'], 'quality');

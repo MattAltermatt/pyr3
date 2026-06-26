@@ -180,6 +180,15 @@ export function interpolate(animation: Animation, time: number): Genome {
     if (r !== 0) out.rotate = r;
   }
 
+  // #456 — xform blend λ: animatable scalar, same shape as rotate (only emit when
+  // either keyframe is non-zero, drop when the blended value lands at 0).
+  const xb0 = k0.xformBlend ?? 0;
+  const xb1 = k1.xformBlend ?? 0;
+  if (xb0 !== 0 || xb1 !== 0) {
+    const xb = blend(xb0, xb1, c0, c1);
+    if (xb !== 0) out.xformBlend = xb;
+  }
+
   // Continuous render fields — flam3 INTERPs these across keyframes
   // (interpolation.c:489-501): quality, estimator radius/min/curve, spatial
   // filter radius, background, and (rounded INTERI) size + oversample. A
@@ -920,6 +929,13 @@ function interpolateCatmullRom(
   if (rots.some((r) => r !== 0)) {
     const r = blendN(rots, cmc);
     if (r !== 0) out.rotate = r;
+  }
+
+  // #456 — xform blend λ (animatable, same shape as rotate).
+  const xbs = kfs.map((k) => k.xformBlend ?? 0);
+  if (xbs.some((v) => v !== 0)) {
+    const xb = blendN(xbs, cmc);
+    if (xb !== 0) out.xformBlend = xb;
   }
 
   // Continuous fields: blend when ALL keyframes carry the field, else carry the

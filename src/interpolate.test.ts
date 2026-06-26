@@ -933,6 +933,7 @@ describe('#292 guardrail: interpolate handles every Genome field', () => {
     name: 'structural', nick: 'carry', xforms: 'structural', scale: 'blend',
     cx: 'blend', cy: 'blend', palette: 'blend', finalxform: 'blend',
     symmetry: 'bake', density: 'blend', tonemap: 'blend', rotate: 'blend',
+    xformBlend: 'blend',
     quality: 'blend', oversample: 'blend', size: 'blend', spatialFilter: 'blend',
     background: 'blend', paletteMode: 'carry', channelCurves: 'blend',
     hslAdjust: 'blend', time: 'structural',
@@ -958,7 +959,7 @@ describe('#292 guardrail: interpolate handles every Genome field', () => {
     expect(Object.keys(DISPOSITION).sort()).toEqual(
       (['background', 'channelCurves', 'cx', 'cy', 'density', 'finalxform', 'hslAdjust',
         'name', 'nick', 'oversample', 'palette', 'paletteMode', 'quality', 'rotate',
-        'scale', 'size', 'spatialFilter', 'symmetry', 'time', 'tonemap', 'xforms']),
+        'scale', 'size', 'spatialFilter', 'symmetry', 'time', 'tonemap', 'xformBlend', 'xforms']),
     );
   });
 });

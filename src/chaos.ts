@@ -122,12 +122,13 @@ export interface ChaosPass {
 }
 
 const WORKGROUP_SIZE = 64;
-// 30 scalar slots × 4 bytes = 120 bytes of named fields (slots 0..29; slot 14 =
+// 31 scalar slots × 4 bytes = 124 bytes of named fields (slots 0..30; slot 14 =
 // captureIndex #269; slots 15-17 = color_mode/flow_strength/flow_scale #459;
 // slots 18-27 = trap_kind/trap_mode/trap_cx/trap_cy/trap_radius/trap_nx/trap_ny/
 // trap_falloff/trap_freq/trap_strength #460; slots 28-29 = phase_strength/
-// phase_freq #465). WGSL rounds the uniform struct up to a 16-byte multiple →
-// 128 bytes (slots 30-31 are unwritten tail padding); UNIFORMS_BYTES matches.
+// phase_freq #465; slot 30 = xform_blend #456). WGSL rounds the uniform struct up
+// to a 16-byte multiple → 128 bytes (slot 31 is unwritten tail padding);
+// UNIFORMS_BYTES matches.
 // `Uniforms` is all 4-byte scalars, so its derived minBindingSize is 112; the
 // 112-byte buffer satisfies it exactly. Keep the buffer at 112 to match the
 // struct's named-field span.
@@ -447,6 +448,11 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // (shader skips the phase branch). phaseFreq default 1.0; 0 = pure phase field.
       f32[28] = opts?.phaseStrength ?? 1.0;                                  // phase_strength
       f32[29] = opts?.phaseFreq ?? 1.0;                                      // phase_freq
+      // #456 — interpolated xform fields (slot 30). Read off the GENOME (not
+      // DispatchOpts): this is a genome field like genome.rotate, so it rides the
+      // genome through every consumer. 0 / undefined = off → shader skips the blend
+      // branch → byte-identical. Clamp to [0,1] (the uniform has no schema check).
+      f32[30] = Math.min(1, Math.max(0, genome.xformBlend ?? 0));            // xform_blend
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

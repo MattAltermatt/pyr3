@@ -205,6 +205,13 @@ export const HELP: Record<HelpKey, InfoIconOpts> = {
       + 'rotational copies (6 = hexagonal, 2 = mirror). Dihedral adds an '
       + 'extra mirror axis on top of the rotation.',
   },
+  'global.xformBlend': {
+    title: 'Xform blend',
+    body:
+      'Soft morph between xforms (#456). 0 = off (the normal discrete IFS). '
+      + 'Higher values make more iterations blend two xforms’ outputs, smearing '
+      + 'the attractor into a continuum of in-between shapes.',
+  },
 
   // ── XFORMS section (per-xform color params) ──────────────────────────
   'xform.color': {

@@ -127,6 +127,11 @@ const TIPS = {
     'Add rotational or dihedral symmetry to the chaos game.\n'
     + 'N = number of rotational copies. 6 = hexagonal, 2 = mirror.\n'
     + 'Dihedral adds an extra mirror axis on top of the rotation.',
+  xformBlend:
+    'Xform blend (#456): soft morph between xforms.\n'
+    + '0 = off (the normal discrete IFS).\n'
+    + 'Higher = more iterations blend two xforms’ outputs, smearing the\n'
+    + 'attractor into a continuum of in-between shapes.',
 };
 
 // Augment buildRow with a class + title hook so existing tests that
@@ -471,7 +476,9 @@ export const globalTonemapSection: SectionMount = {
 
 export const globalSymmetrySection: SectionMount = {
   key: 'global-symmetry',
-  title: '🔯 Symmetry',
+  // Catch-all "Structure" header — this scene-lens section holds the structural
+  // IFS modifiers: symmetry (rotational/dihedral copies) + xform blend (#456 morph).
+  title: '🌀 Structure',
   lens: 'scene',
   build(host: HTMLElement, state: EditState, onChange: (path: string) => void): void {
     host.replaceChildren();
@@ -566,6 +573,27 @@ export const globalSymmetrySection: SectionMount = {
       const symRow = row('symmetry', ctrlWrap, TIPS.symmetry, 'global.symmetry');
       symRow.classList.add('pyr3-edit-symmetry');
       host.appendChild(symRow);
+    }
+
+    // ── #456 xform blend λ (soft morph between xforms) ───────────────────
+    {
+      const blendSlider = buildSlider({
+        value: state.genome.xformBlend ?? 0,
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+        onChange: (v) => {
+          // Drop the field when 0 so a "no morph" flame keeps clean JSON.
+          if (v === 0) state.genome.xformBlend = undefined;
+          else state.genome.xformBlend = v;
+          onChange('xformBlend');
+        },
+      });
+      blendSlider.dataset['xformBlend'] = '';
+      const blendRow = row('xform blend', blendSlider, TIPS.xformBlend, 'global.xformBlend');
+      blendRow.classList.add('pyr3-edit-xform-blend');
+      host.appendChild(blendRow);
     }
   },
 };

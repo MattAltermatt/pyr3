@@ -104,6 +104,10 @@ async function main(): Promise<void> {
   // #465 — Phase/Polar coloring params (consulted when colorMode === 'phase').
   let phaseStrength = 1.0;
   let phaseFreq = 1.0;
+  // #456 — interpolated xform fields: blend probability λ ∈ [0,1] (0 = off). A
+  // genome field — applied onto genome.xformBlend before dispatch (overrides any
+  // value the loaded flame carries).
+  let xformBlend = 0;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -295,6 +299,15 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       phaseFreq = n;
+    } else if (a === '--xform-blend') {
+      // #456 — interpolated xform fields: blend probability λ ∈ [0,1] (0 = off).
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 1) {
+        console.error('--xform-blend requires a number in [0,1]');
+        process.exit(1);
+      }
+      xformBlend = n;
     } else {
       args.push(a);
     }
@@ -312,7 +325,7 @@ async function main(): Promise<void> {
         '[--color-mode palette|flow|trap-distance|phase] [--flow-strength F] [--flow-scale F] ' +
         '[--trap-kind point|circle|line] [--trap-center X,Y] [--trap-radius R] [--trap-angle DEG] ' +
         '[--trap-mode glow|rings] [--trap-falloff F] [--trap-freq N] [--trap-strength S] ' +
-        '[--phase-strength S] [--phase-freq F] ' +
+        '[--phase-strength S] [--phase-freq F] [--xform-blend F] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);
@@ -333,6 +346,9 @@ async function main(): Promise<void> {
   const parsed = parseGenomeText(text, inputPath);
   let genome: Genome = parsed.genome;
   const { kind, dropped, ignored } = parsed;
+
+  // #456 — interpolated xform fields: --xform-blend overrides genome.xformBlend.
+  if (xformBlend > 0) genome = { ...genome, xformBlend };
 
   // Explicit-flag render sizing (#436 — the hidden `--preset {quick|4k|…}` alias
   // was removed; everything on the command line is now explicit). `--long-edge`/

@@ -133,6 +133,12 @@ struct Uniforms {
   // skip the phase branch → byte-identical output (parity rig untouched).
   phase_strength: f32,  // slot 28 (byte 112) — blend [0,1]: 0 = palette, 1 = pure phase
   phase_freq: f32,      // slot 29 (byte 116) — log-modulus ring frequency; 0 = pure phase field
+  // #456 — interpolated xform fields. Blend probability λ ∈ [0,1]; with prob λ an
+  // iteration blends a second xform's output (pv = mix(pv_A, pv_B, t)). 0 = off →
+  // the blend branch (and its RNG draws) is skipped → byte-identical to today.
+  // Slot 30 (byte 120) reuses #465's reserved tail padding → struct stays 128 B
+  // (slot 31 / byte 124 is the implicit tail pad).
+  xform_blend: f32,     // slot 30 (byte 120)
 };
 
 // Variation slots:
@@ -8179,6 +8185,64 @@ fn dc_color_for(var_idx: u32, coord: vec2f, v: vec4f, ve: vec4f) -> DcColor {
   return DcColor(vec3f(0.0), false);
 }
 
+// #456 — one xform's full apply chain (affine → pre_blur → variation sum →
+// post-affine → colour contraction), extracted VERBATIM from the main loop so it
+// can run for BOTH the primary xform A and a blend partner B. Behaviour is
+// byte-identical to the prior inline code (parity rig is the gate). The RNG draws
+// (apply_pre_blur / apply_variation) consume walker_id in the same order as before,
+// so a single A-only call is bit-for-bit what the inline chain produced.
+struct XformChainResult {
+  pv: vec2f,       // post-(post-affine) output point
+  pv_pre: vec2f,   // pre-post-affine output (trace only)
+  pa: vec2f,       // affine pre-transform point (trace only)
+  new_z: f32,      // contracted colour coord
+  dc_rgb: vec3f,   // direct-colour override rgb
+  dc_active: u32,  // 1 if a DC variation hit
+}
+
+fn apply_xform_chain(fn_idx: u32, p: vec3f, walker_id: u32) -> XformChainResult {
+  let xf = xforms[fn_idx];
+  let a0 = xf.affine0;
+  let a1 = xf.affine1;
+  // Affine pre-transform.
+  let pa = vec2f(
+    a0.x * p.x + a0.y * p.y + a0.z,
+    a1.x * p.x + a1.y * p.y + a1.z,
+  );
+  let num_vars = min(u32(a1.w), MAX_VARS_PER_XFORM);
+  let pa_mut = apply_pre_blur(pa, fn_idx, num_vars, walker_id);
+  var pv = vec2f(0.0, 0.0);
+  var dc_rgb = vec3f(0.0);
+  var dc_active = 0u;
+  for (var k = 0u; k < num_vars; k = k + 1u) {
+    let v = xforms[fn_idx].vars[k];
+    let ve = xforms[fn_idx].vars_extra[k];
+    let ve2 = xforms[fn_idx].vars_extra2[k];
+    let var_idx = u32(v.x);
+    if (var_idx != 97u) {
+      pv = pv + apply_variation(var_idx, pa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, ve2.z, ve2.w, a0, a1, walker_id);
+    }
+    if (xf.color_params.w > 0.5 && v.y > 0.0) {
+      let dc = dc_color_for(var_idx, pa_mut, v, ve);
+      if (dc.hit) {
+        dc_rgb = dc.rgb;
+        dc_active = 1u;
+      }
+    }
+  }
+  let pv_pre = pv;
+  if (xf.post0.w != 0.0) {
+    let pp = xf.post0;
+    let pq = xf.post1;
+    pv = vec2f(
+      pp.x * pv.x + pp.y * pv.y + pp.z,
+      pq.x * pv.x + pq.y * pv.y + pq.z,
+    );
+  }
+  let new_z = mix(p.z, xf.color_params.x, xf.color_params.y);
+  return XformChainResult(pv, pv_pre, pa, new_z, dc_rgb, dc_active);
+}
+
 @compute @workgroup_size(64)
 fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
   let walker_id = gid.x;
@@ -8256,78 +8320,42 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
     let pick_row = select(MAX_XFORMS_U, u32(prev_xform), prev_xform >= 0);
     let pick_table_idx = pick_row * CHOOSE_XFORM_GRAIN + (isaac_irand(walker_id) & CHOOSE_XFORM_GRAIN_M1);
     let fn_idx: u32 = xform_distrib[pick_table_idx];
+    // Primary xform A's record — kept for the splat-block reads that belong to A
+    // alone (opacity = xf.color_params.z), the same A-owns-the-splat rule as DC.
     let xf = xforms[fn_idx];
-    let a0 = xf.affine0;
-    let a1 = xf.affine1;
 
-    // Affine pre-transform.
-    let pa = vec2f(
-      a0.x * p.x + a0.y * p.y + a0.z,
-      a1.x * p.x + a1.y * p.y + a1.z,
-    );
+    // #456 — apply primary xform A's full chain (extracted; byte-identical to the
+    // prior inline code). pv / new_z are `var` so the blend branch below can mix in
+    // a partner. pa / pv_pre feed the trace block; dc_* feed the splat colour.
+    let _resA = apply_xform_chain(fn_idx, p, walker_id);
+    var pv = _resA.pv;
+    var new_z = _resA.new_z;
+    let pa = _resA.pa;
+    let pv_pre = _resA.pv_pre;
+    // `var` (not `let`): the finalxform DC chain (~:8486) can override these.
+    var dc_rgb_override = _resA.dc_rgb;
+    var dc_override_active = _resA.dc_active != 0u;
 
-    // Variation chain — pre_blur (V=97) mutates pa BEFORE the regular chain
-    // runs (flam3-canonical). 2-pass loop: pass 1 applies pre_blur deltas; pass 2
-    // runs everything else. Defensive clamp on num_vars: a NaN/Inf in `a1.w`
-    // would `u32`-cast to a huge value and stall the workgroup. Phase 9b
-    // post-mortem hardening (BACKLOG, 2026-05-12).
-    let num_vars = min(u32(a1.w), MAX_VARS_PER_XFORM);
-    let pa_mut = apply_pre_blur(pa, fn_idx, num_vars, walker_id);
-    var pv = vec2f(0.0, 0.0);
-    // #114 — DC override accumulator for THIS xform's chain. When the
-    // xform's dc_flag (color_params.w) is set, the chain has at least
-    // one DC variation; the last DC variation in the chain wins (last
-    // write to dc_rgb_override). When dc_flag = 0, this stays unused.
-    var dc_rgb_override: vec3f = vec3f(0.0);
-    var dc_override_active: bool = false;
-    for (var k = 0u; k < num_vars; k = k + 1u) {
-      let v = xforms[fn_idx].vars[k];
-      let ve = xforms[fn_idx].vars_extra[k];
-      let ve2 = xforms[fn_idx].vars_extra2[k];
-      let var_idx = u32(v.x);
-      if (var_idx != 97u) {
-        pv = pv + apply_variation(var_idx, pa_mut, v.y, v.z, v.w, ve.x, ve.y, ve.z, ve.w, ve2.x, ve2.y, ve2.z, ve2.w, a0, a1, walker_id);
-      }
-      // #114 — DC color computation. Only when this xform is flagged DC
-      // (cheap branch: 0.0 for all flam3-99-only xforms, ie almost all)
-      // AND this specific variation's weight is non-zero. The weight
-      // gate is the load-bearing part of the editor's active-toggle: the
-      // expand pass (symmetry.ts:expandGenomeForGPU) zeroes weight for
-      // any variation the user toggled off, so checking v.y > 0 here
-      // turns DC off for inactive variations alongside the normal
-      // position-contribution path (which is already implicitly gated
-      // by w being threaded through apply_variation). Without this
-      // gate, an inactive dc_perlin still recolored the xform.
-      // Last DC variation in the chain wins (sequential writes to
-      // dc_rgb_override). For dc_cylinder, color is computed from pa_mut
-      // (the input coord), NOT the post-warp coord — matches JWildfire.
-      if (xf.color_params.w > 0.5 && v.y > 0.0) {
-        let dc = dc_color_for(var_idx, pa_mut, v, ve);
-        if (dc.hit) {
-          dc_rgb_override = dc.rgb;
-          dc_override_active = true;
-        }
+    // #456 — interpolated xform fields. With probability λ (u.xform_blend) blend a
+    // SECOND xform's OUTPUT into this splat: pv = mix(pv_A, pv_B, t), z = mix(zA,zB,t).
+    // PARITY: the OUTER `u.xform_blend > 0.0` guard wraps EVERY rng draw below, so at
+    // λ=0 zero extra rand01/isaac_irand are consumed → the walker RNG stream is bit-
+    // identical → byte-identical to the discrete IFS (mirrors the finalxform opacity
+    // gate below + the color_mode==0 seam). Convex blend of two finite outputs →
+    // bounded; resB's chain keeps its own bad-value protection via the shared is_bad
+    // check below. DC stays from chain A only (resB.dc_* discarded). xaos: primary A
+    // already set prev_xform; B is xaos-invisible — drawn from the UNCONDITIONAL
+    // fallback row (MAX_XFORMS_U), a whole-set weighted draw with no xaos conditioning.
+    if (u.xform_blend > 0.0) {
+      if (rand01(walker_id) < u.xform_blend) {
+        let b_table_idx = MAX_XFORMS_U * CHOOSE_XFORM_GRAIN + (isaac_irand(walker_id) & CHOOSE_XFORM_GRAIN_M1);
+        let b_idx = xform_distrib[b_table_idx];
+        let resB = apply_xform_chain(b_idx, p, walker_id);
+        let t = rand01(walker_id);
+        pv = mix(pv, resB.pv, t);
+        new_z = mix(new_z, resB.new_z, t);
       }
     }
-
-    // PYR3-029 Phase 5b: pv_pre = variation-chain output BEFORE post-affine.
-    // Matches flam3's `pyr3_pvx_pre_for_trace` (variations.c:2433-2434).
-    let pv_pre = pv;
-
-    // Phase 9c — per-xform post-affine. flam3 variations.c:2412-2418 applies
-    // post AFTER the variation chain, before bad-value check. has_post flag
-    // (xf.post0.w) gates: 0 = identity / skip, 1 = apply.
-    if (xf.post0.w != 0.0) {
-      let pp = xf.post0;
-      let pq = xf.post1;
-      pv = vec2f(
-        pp.x * pv.x + pp.y * pv.y + pp.z,
-        pq.x * pv.x + pq.y * pv.y + pq.z,
-      );
-    }
-
-    // Color contraction.
-    let new_z = mix(p.z, xf.color_params.x, xf.color_params.y);
 
     // Bad-value detection — flam3 variations.c:2421-2424 + flam3.c:257-269.
     // On bad: reseed pv to random [-1, 1] AND increment consec_bad. While in the

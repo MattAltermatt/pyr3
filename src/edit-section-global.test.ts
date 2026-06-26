@@ -67,16 +67,30 @@ describe('globalSection — shell', () => {
     expect(globalTonemapSection.title).toMatch(/tonemap/i);
     expect(typeof globalTonemapSection.build).toBe('function');
     expect(globalSymmetrySection.key).toBe('global-symmetry');
-    expect(globalSymmetrySection.title).toMatch(/symmetry/i);
+    expect(globalSymmetrySection.title).toMatch(/structure/i);
     expect(typeof globalSymmetrySection.build).toBe('function');
   });
 
   it('renders all six core rows (brightness/gamma/highlightPower/gammaThreshold/vibrancy/background) + symmetry', () => {
     const { host } = setup();
-    const expected = ['brightness', 'gamma', 'highlightPower', 'gammaThreshold', 'vibrancy', 'background', 'symmetry'];
+    const expected = ['brightness', 'gamma', 'highlightPower', 'gammaThreshold', 'vibrancy', 'background', 'symmetry', 'xform blend'];
     for (const label of expected) {
       expect(() => rowByLabel(host, label)).not.toThrow();
     }
+  });
+
+  it('#456 xform-blend slider mounts with buildSlider chrome + reflects genome.xformBlend', () => {
+    const genome = generateRandomGenome(seededRng(1));
+    genome.xformBlend = 0.3;
+    const state = createEditState(genome, 1);
+    const host = document.createElement('div');
+    globalSymmetrySection.build(host, state, vi.fn());
+    const slider = host.querySelector('[data-xform-blend]') as HTMLElement;
+    expect(slider).not.toBeNull();
+    expect(slider.querySelector('.pyr3-slider-rail')).not.toBeNull();
+    expect(slider.querySelector('.pyr3-slider-handle')).not.toBeNull();
+    const valueCell = slider.querySelector('.pyr3-slider-value') as HTMLElement;
+    expect(parseFloat(valueCell.textContent ?? '')).toBeCloseTo(0.3, 5);
   });
 
   it('initial values reflect DEFAULT_TONEMAP when genome.tonemap is undefined', () => {
@@ -199,8 +213,8 @@ describe('globalSection — row primitive adoption (task 7.8)', () => {
   it('every row uses the shared buildRow grid (.pyr3-row + 96px label column)', () => {
     const { host } = setup();
     const rows = host.querySelectorAll('.pyr3-row');
-    // 7 rows expected: brightness/gamma/highlightPower/gammaThreshold/vibrancy/background/symmetry
-    expect(rows.length).toBe(7);
+    // 8 rows: brightness/gamma/highlightPower/gammaThreshold/vibrancy/background/symmetry/xform-blend
+    expect(rows.length).toBe(8);
     for (const r of rows) {
       const el = r as HTMLElement;
       expect(el.style.gridTemplateColumns).toBe('96px 1fr');

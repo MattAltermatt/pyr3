@@ -68,6 +68,13 @@ describe('genomeToJson', () => {
     const identityJson = genomeToJson(identityGenome);
     expect(identityJson.hslAdjust).toBeUndefined();
   });
+
+  it('#456 serializes xformBlend and omits when 0/undefined', () => {
+    const json = genomeToJson({ ...SPIRAL_GALAXY, xformBlend: 0.4 });
+    expect(json.xformBlend).toBe(0.4);
+    expect(genomeToJson({ ...SPIRAL_GALAXY, xformBlend: 0 }).xformBlend).toBeUndefined();
+    expect(genomeToJson(SPIRAL_GALAXY).xformBlend).toBeUndefined();
+  });
 });
 
 describe('genomeFromJson', () => {
@@ -75,6 +82,13 @@ describe('genomeFromJson', () => {
     const json = genomeToJson(SPIRAL_GALAXY);
     const reparsed = genomeFromJson(json);
     expect(reparsed).toEqual(SPIRAL_GALAXY);
+  });
+
+  it('#456 round-trips xformBlend and rejects out-of-range', () => {
+    const json = genomeToJson({ ...SPIRAL_GALAXY, xformBlend: 0.4 });
+    expect(genomeFromJson(json).xformBlend).toBe(0.4);
+    expect(() => genomeFromJson({ ...json, xformBlend: 1.5 })).toThrow(/xformBlend/);
+    expect(() => genomeFromJson({ ...json, xformBlend: -0.1 })).toThrow(/xformBlend/);
   });
 
   it('throws on version mismatch', () => {
