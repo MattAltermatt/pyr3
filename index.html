@@ -1177,6 +1177,19 @@
       .pyr3-surprise-status-shown { color: var(--text); font-weight: 700; }
       .pyr3-surprise-status-culled { color: var(--accent); }
       .pyr3-surprise-status-help { display: inline-flex; vertical-align: middle; }
+      /* #466/#467 — middle-of-Actions-bar notice for sparse single-map attractor
+         walls (known high skip rate). Its own margin-left:auto + the status's
+         splits the free space, centring it; [hidden] leaves the bar unchanged. */
+      .pyr3-surprise-sparse-notice {
+        margin-left: auto;
+        font-family: ui-monospace, monospace;
+        font-size: 0.74rem;
+        letter-spacing: 0.02em;
+        color: var(--accent, #c97);
+        opacity: 0.92;
+        white-space: nowrap;
+      }
+      .pyr3-surprise-sparse-notice[hidden] { display: none; }
       .pyr3-surprise-wall {
         grid-area: wall;
         display: grid;

@@ -10,7 +10,7 @@
 
 import { type Genome } from './genome';
 import { VARIATION_NAMES } from './variations';
-import { generateSurpriseBatch, attractorPoolFor, type SurpriseGenParams } from './surprise-seed';
+import { generateSurpriseBatch, attractorPoolFor, isAttractorVariation, type SurpriseGenParams } from './surprise-seed';
 import { createSurpriseQueue } from './surprise-queue';
 import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
 import { createSurpriseState } from './surprise-state';
@@ -108,12 +108,22 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   cullHelp.classList.add('pyr3-surprise-status-help');
   status.append(statusShown, document.createTextNode(' shown · '), statusCulled,
     document.createTextNode(' '), cullHelp);
+
+  // #466/#467 — middle-of-bar notice when the wall is focused on a single-map
+  // strange attractor (sprott/hopalong/gm). These render sparse (mostly-empty
+  // frames), so the wall's degeneracy filter skips most candidates and the wall
+  // fills slowly — this tells the user that's expected, not broken. Hidden for
+  // every normal variation; toggled in updateStatus from appliedSettings.
+  const sparseNotice = document.createElement('span');
+  sparseNotice.className = 'pyr3-surprise-sparse-notice';
+  sparseNotice.textContent = '⏳ sparse attractor — slower to fill';
+  sparseNotice.hidden = true;
   // #66 — mobile is consumption-only: the wall reduces to "shuffle → tap → view".
   // Drop the GENERATE/VARIATIONS steering bars, the undo/redo reroll history, and
   // the "Actions" label — keep just 🎲 Reroll + the shown/culled status.
   const mobile = isMobile();
-  if (mobile) controls.append(rerollBtn, status);
-  else controls.append(controlsLabel, rerollBtn, wallUndo, wallRedo, status);
+  if (mobile) controls.append(rerollBtn, sparseNotice, status);
+  else controls.append(controlsLabel, rerollBtn, wallUndo, wallRedo, sparseNotice, status);
 
   const wall = document.createElement('div'); wall.className = 'pyr3-surprise-wall';
   wall.style.display = 'grid'; wall.style.gap = `${GAP_PX}px`;
@@ -372,6 +382,11 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   function updateStatus(): void {
     statusShown.textContent = String(wallGenomes.length);
     statusCulled.textContent = `${culled} culled`;
+    // Show the sparse-attractor notice only when the wall is focused on exactly
+    // one single-map attractor (the focused-pool case, where the high skip rate
+    // is expected). Any normal/mixed filter hides it.
+    const pref = appliedSettings.preferred;
+    sparseNotice.hidden = !(pref?.length === 1 && isAttractorVariation(pref[0]!));
     refreshRerollBtn();
   }
 
