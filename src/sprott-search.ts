@@ -4,9 +4,14 @@
 // Mirrors the var_sprott_poly map math (Slice 1); pure CPU, no GPU in the gate.
 // Rolls random 12-coeff maps, keeps the chaotic-but-bounded + non-sparse ones,
 // and builds a single-xform Sprott genome for the Creator wall.
+//
+// The Lyapunov / coverage / viewport / genome machinery lives in the map-agnostic
+// `attractor-search.ts` core (shared with #466 Hopalong + #467 Gumowski-Mira).
+// This module is the Sprott-specific config: the 12-coeff quadratic step + its
+// Jacobian, the roll range, and the 12-coeff → 10-param + post-affine packing.
 import type { Genome, Xform } from './genome';
 import { V, type Variation } from './variations';
-import { generateRandomGenome } from './edit-seed';
+import * as core from './attractor-search';
 
 /** 🎚️ Sacrosanct chaos-band tuning — probe-validated (2026-06-26, 99.2% f32
  *  survival; COV_MIN 8000 → ~33% of LE-vetted pass). Changing any value is a
@@ -27,76 +32,52 @@ export const SPROTT_SEARCH = {
   MAX_VET_ROLLS: 600,
 } as const;
 
+/** Sprott's attractor-search config — reproduces the original numerics exactly
+ *  (cloud warmup 300, minPts 500, percentile-bbox framing) so the core gives
+ *  byte-identical results to the pre-refactor module. */
+const SPROTT_CFG: core.AttractorConfig = {
+  lyapWarmup: SPROTT_SEARCH.WARMUP,
+  lyapIter: SPROTT_SEARCH.ITER,
+  escape: SPROTT_SEARCH.ESCAPE,
+  cloudWarmup: 300,
+  covIters: SPROTT_SEARCH.COV_ITERS,
+  covGrid: SPROTT_SEARCH.COV_GRID,
+  minPts: 500,
+  fitMargin: 0.85,
+  fitPctLo: 0.01,
+  fitPctHi: 0.99,
+  fitMinRange: 1e-3,
+};
+
 // One map step. c[0]=const x, c[1..5]=x-row (x,x²,xy,y,y²), c[6]=const y, c[7..11]=y-row.
-function step(c: number[], x: number, y: number): [number, number] {
-  return [
+function sprottStep(c: number[]): core.StepFn {
+  return (x, y) => [
     c[0]! + c[1]! * x + c[2]! * x * x + c[3]! * x * y + c[4]! * y + c[5]! * y * y,
     c[6]! + c[7]! * x + c[8]! * x * x + c[9]! * x * y + c[10]! * y + c[11]! * y * y,
+  ];
+}
+function sprottJac(c: number[]): core.JacobianFn {
+  return (x, y) => [
+    c[1]! + 2 * c[2]! * x + c[3]! * y,
+    c[3]! * x + c[4]! + 2 * c[5]! * y,
+    c[7]! + 2 * c[8]! * x + c[9]! * y,
+    c[9]! * x + c[10]! + 2 * c[11]! * y,
   ];
 }
 
 /** Largest Lyapunov exponent via tangent-vector growth. -Infinity if it escapes. */
 export function lyapunov(c: number[]): number {
-  let x = 0.05, y = 0.05, dx = 1e-6, dy = 0, lsum = 0, n = 0;
-  const { WARMUP, ITER, ESCAPE } = SPROTT_SEARCH;
-  for (let i = 0; i < WARMUP + ITER; i++) {
-    const j00 = c[1]! + 2 * c[2]! * x + c[3]! * y;
-    const j01 = c[3]! * x + c[4]! + 2 * c[5]! * y;
-    const j10 = c[7]! + 2 * c[8]! * x + c[9]! * y;
-    const j11 = c[9]! * x + c[10]! + 2 * c[11]! * y;
-    const ndx = j00 * dx + j01 * dy, ndy = j10 * dx + j11 * dy;
-    const norm = Math.hypot(ndx, ndy);
-    if (!Number.isFinite(norm) || norm === 0) return -Infinity;
-    if (i >= WARMUP) { lsum += Math.log(norm); n++; }
-    dx = ndx / norm; dy = ndy / norm;
-    [x, y] = step(c, x, y);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x) > ESCAPE || Math.abs(y) > ESCAPE) return -Infinity;
-  }
-  return lsum / n;
-}
-
-/** Post-warmup point cloud of the attractor (shared by coverage + viewport). */
-function sampleCloud(c: number[]): [number, number][] {
-  const { COV_ITERS, ESCAPE } = SPROTT_SEARCH;
-  let x = 0.05, y = 0.05;
-  const pts: [number, number][] = [];
-  for (let i = 0; i < COV_ITERS; i++) {
-    [x, y] = step(c, x, y);
-    if (!Number.isFinite(x) || Math.abs(x) > ESCAPE) break;
-    if (i > 300) pts.push([x, y]);
-  }
-  return pts;
+  return core.lyapunov(sprottStep(c), sprottJac(c), SPROTT_CFG);
 }
 
 /** Distinct grid cells the attractor fills (richness proxy). */
 export function coverage(c: number[]): number {
-  const pts = sampleCloud(c);
-  const G = SPROTT_SEARCH.COV_GRID;
-  if (pts.length < 500) return 0;
-  let a = Infinity, b = -Infinity, d = Infinity, e = -Infinity;
-  for (const [px, py] of pts) { a = Math.min(a, px); b = Math.max(b, px); d = Math.min(d, py); e = Math.max(e, py); }
-  const sx = (G - 1) / (b - a || 1), sy = (G - 1) / (e - d || 1), cells = new Set<number>();
-  for (const [px, py] of pts) cells.add(Math.floor((px - a) * sx) * G + Math.floor((py - d) * sy));
-  return cells.size;
+  return core.coverage(sprottStep(c), SPROTT_CFG);
 }
 
-const SPROTT_FIT_MARGIN = 0.85;
-
-/** Viewport framing the attractor's dense core (1–99 percentile bbox). Self-
- *  contained on purpose: `computeFitViewport`'s no-jitter CPU sampler COLLAPSES
- *  ~40% of vetted Sprott attractors (#443) → null → fallback, diluting the
- *  feature. This percentile bbox framed all 3 Slice-1 fixtures correctly. */
+/** Viewport framing the attractor's dense core (1–99 percentile bbox). */
 export function sprottViewport(c: number[], fitW: number, fitH: number): { scale: number; cx: number; cy: number } | null {
-  const pts = sampleCloud(c);
-  if (pts.length < 500) return null;
-  const xs = pts.map((p) => p[0]).sort((m, n) => m - n);
-  const ys = pts.map((p) => p[1]).sort((m, n) => m - n);
-  const lo = (s: number[]) => s[Math.floor(s.length * 0.01)]!;
-  const hi = (s: number[]) => s[Math.floor(s.length * 0.99)]!;
-  const x0 = lo(xs), x1 = hi(xs), y0 = lo(ys), y1 = hi(ys);
-  const range = Math.max(x1 - x0, y1 - y0);
-  if (!Number.isFinite(range) || range < 1e-3) return null;
-  return { scale: (SPROTT_FIT_MARGIN * Math.min(fitW, fitH)) / range, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+  return core.attractorViewport(sprottStep(c), SPROTT_CFG, fitW, fitH);
 }
 
 /** Roll random 12-coeff maps until one passes both gates, or give up (null). */
@@ -129,11 +110,5 @@ export function sprottXform(c: number[], color: number): Xform {
 export function generateSprottGenome(rng: () => number, fitW = 1024, fitH = 1024): Genome | null {
   const coeffs = vetSprottCoeffs(rng);
   if (!coeffs) return null;
-  const vp = sprottViewport(coeffs, fitW, fitH);
-  if (!vp) return null;                     // coverage gate makes this ~never fire
-  const g = generateRandomGenome(rng);     // inherit vibrant palette / tonemap / density
-  g.symmetry = undefined;                  // single deterministic map — no symmetry expansion
-  g.xforms = [sprottXform(coeffs, rng())];
-  g.scale = vp.scale; g.cx = vp.cx; g.cy = vp.cy;
-  return g;
+  return core.buildAttractorGenome(rng, (color) => sprottXform(coeffs, color), sprottStep(coeffs), SPROTT_CFG, fitW, fitH);
 }
