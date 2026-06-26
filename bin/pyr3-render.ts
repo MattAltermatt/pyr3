@@ -53,6 +53,7 @@ function chunkedIterate(
   walkers: number,
   totalIters: number,
   walkerJitter: number,
+  flow?: { colorMode: 'palette' | 'flow'; flowStrength: number; flowScale: number },
 ): number {
   const chunks = Math.max(1, Math.ceil(totalIters / MAX_ITERS_PER_SUBMIT));
   const itersPerChunk = Math.ceil(totalIters / chunks);
@@ -64,6 +65,9 @@ function chunkedIterate(
       walkers,
       itersPerWalker: itersPerChunk,
       walkerJitter,
+      colorMode: flow?.colorMode,
+      flowStrength: flow?.flowStrength,
+      flowScale: flow?.flowScale,
     });
     total += walkers * itersPerChunk;
   }
@@ -86,6 +90,11 @@ async function main(): Promise<void> {
   let walkersOverride: number | null = null;
   let outFormat: 'png8' | 'png16' | 'exr' | 'exr-linear' = 'png8';
   let transparent = false;
+  // #459 — flow-map color mode. Standalone-bundled CLI keeps the flow-scale
+  // default as a literal mirroring DEFAULT_FLOW_SCALE in src/chaos.ts.
+  let colorMode: 'palette' | 'flow' = 'palette';
+  let flowStrength = 1.0;
+  let flowScale = 2.0;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -160,6 +169,34 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       sampleInflate = n;
+    } else if (a === '--color-mode') {
+      // #459 — flow-map ("velocity") color mode. 'palette' (default) = normal
+      // palette/DC color; 'flow' = color each splat by its per-iteration
+      // displacement (direction → hue, log-saturated magnitude → value).
+      const v = rawArgs[++i];
+      if (v !== 'palette' && v !== 'flow') {
+        console.error('--color-mode requires one of: palette, flow');
+        process.exit(1);
+      }
+      colorMode = v;
+    } else if (a === '--flow-strength') {
+      // #459 — flow-map blend [0,1]: 0 = palette, 1 = pure flow.
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 1) {
+        console.error('--flow-strength requires a number in [0,1]');
+        process.exit(1);
+      }
+      flowStrength = n;
+    } else if (a === '--flow-scale') {
+      // #459 — flow-map magnitude log-saturation factor (positive).
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error('--flow-scale requires a positive number');
+        process.exit(1);
+      }
+      flowScale = n;
     } else {
       args.push(a);
     }
@@ -174,6 +211,7 @@ async function main(): Promise<void> {
       'usage: npm run render [--no-de] ' +
         '[--long-edge N --quality N] [--max-dim N] [--oversample N] [--sample-inflate=F] ' +
         '[--format png8|png16|exr|exr-linear] [--transparent] ' +
+        '[--color-mode palette|flow] [--flow-strength F] [--flow-scale F] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);
@@ -271,6 +309,7 @@ async function main(): Promise<void> {
     renderer.reset(genome);
     const totalSamples = chunkedIterate(
       renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter,
+      { colorMode, flowStrength, flowScale },
     );
     renderer.present({ genome, outputView: texture.createView(), totalSamples, forceDeOff, transparent });
   } else {
@@ -288,7 +327,7 @@ async function main(): Promise<void> {
       console.log(`[pyr3-render] probe: walkers=${dispatchWalkers} iters=${dispatchIters} (--walkers override)`);
     }
     renderer.reset(genome);
-    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter);
+    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter, { colorMode, flowStrength, flowScale });
     renderer.present({
       genome,
       outputView: texture.createView(),

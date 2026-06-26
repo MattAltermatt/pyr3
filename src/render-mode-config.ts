@@ -61,6 +61,70 @@ export function saveExportConfig(cfg: ExportConfig): void {
   }
 }
 
+// #459 — flow-map color mode. Sticky per-browser preference selecting how the
+// editor/viewer colors the attractor: `palette` (the genome's gradient, the
+// classic flame look) or `flow` (velocity-flow coloring derived from the
+// walker's direction of travel). Not part of the genome — a presentation pref,
+// like the export + preview configs above.
+export type ColorMode = 'palette' | 'flow';
+
+export interface ColorModeConfig {
+  mode: ColorMode;
+  flowStrength: number; // blend of flow color over palette; clamped to [0, 1]
+  flowScale: number;    // flow-field spatial scale; must be > 0
+}
+
+export const DEFAULT_COLOR_MODE_CONFIG: ColorModeConfig = {
+  mode: 'palette',
+  flowStrength: 1.0,
+  flowScale: 2.0,
+};
+
+const COLOR_MODE_STORAGE_KEY = 'pyr3-color-mode-config';
+const VALID_COLOR_MODES: ReadonlyArray<ColorMode> = ['palette', 'flow'];
+
+/** Read ColorModeConfig from localStorage; DEFAULT on any failure (missing key,
+ *  malformed JSON, schema-version mismatch). `flowStrength` is clamped to
+ *  [0,1]; `flowScale` falls back to the default when non-finite or ≤ 0. */
+export function loadColorModeConfig(): ColorModeConfig {
+  try {
+    const raw = globalThis.localStorage?.getItem(COLOR_MODE_STORAGE_KEY);
+    if (raw === null || raw === undefined) return { ...DEFAULT_COLOR_MODE_CONFIG };
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return { ...DEFAULT_COLOR_MODE_CONFIG };
+    const obj = parsed as Record<string, unknown>;
+    if (obj._v !== SCHEMA_VERSION) return { ...DEFAULT_COLOR_MODE_CONFIG };
+    const mode = VALID_COLOR_MODES.includes(obj.mode as ColorMode)
+      ? (obj.mode as ColorMode)
+      : DEFAULT_COLOR_MODE_CONFIG.mode;
+    const flowStrength = Number.isFinite(obj.flowStrength)
+      ? Math.min(1, Math.max(0, obj.flowStrength as number))
+      : DEFAULT_COLOR_MODE_CONFIG.flowStrength;
+    const flowScale = Number.isFinite(obj.flowScale) && (obj.flowScale as number) > 0
+      ? (obj.flowScale as number)
+      : DEFAULT_COLOR_MODE_CONFIG.flowScale;
+    return { mode, flowStrength, flowScale };
+  } catch (err) {
+    console.warn('pyr3: loadColorModeConfig failed; falling back to defaults', err);
+    return { ...DEFAULT_COLOR_MODE_CONFIG };
+  }
+}
+
+/** Persist ColorModeConfig to localStorage. Silent on quota failure. */
+export function saveColorModeConfig(cfg: ColorModeConfig): void {
+  try {
+    const payload = {
+      mode: cfg.mode,
+      flowStrength: cfg.flowStrength,
+      flowScale: cfg.flowScale,
+      _v: SCHEMA_VERSION,
+    };
+    globalThis.localStorage?.setItem(COLOR_MODE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('pyr3: saveColorModeConfig failed (localStorage quota?)', err);
+  }
+}
+
 export interface PreviewRenderConfig {
   tier: PreviewTier;
   quality: number; // iter density target; clamped to [10, 50]

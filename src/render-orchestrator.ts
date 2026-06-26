@@ -57,6 +57,13 @@ export interface OrchestratorOpts {
   walkerJitter?: number;
   /** #334 — transparent-background export, forwarded to present(). */
   transparent?: boolean;
+  /** #459 — flow-map color mode, forwarded to renderer.iterate. 'palette'
+   *  (default) | 'flow' (color each splat by its per-iteration displacement). */
+  colorMode?: 'palette' | 'flow';
+  /** #459 — flow-map blend [0,1], forwarded to renderer.iterate. */
+  flowStrength?: number;
+  /** #459 — flow-map magnitude log-saturation, forwarded to renderer.iterate. */
+  flowScale?: number;
 }
 
 export interface ProgressInfo {
@@ -101,6 +108,12 @@ export interface DecoupledOpts {
   /** #65 Tier 1 — walker-jitter forwarded to renderer.iterate. Default
    *  DEFAULT_WALKER_JITTER (a scale-relative proportional factor since #43). */
   walkerJitter?: number;
+  /** #459 — flow-map color mode, forwarded to renderer.iterate. */
+  colorMode?: 'palette' | 'flow';
+  /** #459 — flow-map blend [0,1], forwarded to renderer.iterate. */
+  flowStrength?: number;
+  /** #459 — flow-map magnitude log-saturation, forwarded to renderer.iterate. */
+  flowScale?: number;
 }
 
 /** Default samples per iterate dispatch in the decoupled orchestrator.
@@ -172,6 +185,9 @@ export function startDecoupledRender(opts: DecoupledOpts): RunHandle {
         walkers: walkersPerDispatch,
         itersPerWalker: ITERS_PER_CHUNK,
         walkerJitter: opts.walkerJitter,
+        colorMode: opts.colorMode,
+        flowStrength: opts.flowStrength,
+        flowScale: opts.flowScale,
       });
       samplesAccumulated += samplesPerDispatch;
       const elapsed = (performance.now() - startTime) / 1000;
@@ -233,6 +249,9 @@ export function startChunkedRender(opts: OrchestratorOpts): RunHandle {
         walkers: walkersPerChunk,
         itersPerWalker: ITERS_PER_CHUNK,
         walkerJitter: opts.walkerJitter,
+        colorMode: opts.colorMode,
+        flowStrength: opts.flowStrength,
+        flowScale: opts.flowScale,
       });
       samplesAccumulated += samplesPerChunk;
       if (presentEach) {

@@ -100,6 +100,12 @@ export interface RenderRequest {
    *  DEFAULT_WALKER_JITTER (`src/chaos.ts`); since #43 a scale-relative
    *  proportional factor, not an absolute amplitude. */
   walkerJitter?: number;
+  /** #459 — flow-map color mode; 'palette' (default) | 'flow'. */
+  colorMode?: 'palette' | 'flow';
+  /** #459 — flow-map blend [0,1]; default 1.0. */
+  flowStrength?: number;
+  /** #459 — flow-map magnitude log-saturation; default DEFAULT_FLOW_SCALE. */
+  flowScale?: number;
 }
 
 export interface IterateRequest {
@@ -109,6 +115,12 @@ export interface IterateRequest {
   itersPerWalker: number;
   /** #65 Tier 1 — same as RenderRequest.walkerJitter; defaults to DEFAULT_WALKER_JITTER. */
   walkerJitter?: number;
+  /** #459 — flow-map color mode; 'palette' (default) | 'flow'. */
+  colorMode?: 'palette' | 'flow';
+  /** #459 — flow-map blend [0,1]; default 1.0. */
+  flowStrength?: number;
+  /** #459 — flow-map magnitude log-saturation; default DEFAULT_FLOW_SCALE. */
+  flowScale?: number;
 }
 
 export interface PresentRequest {
@@ -205,6 +217,9 @@ export function createRenderer(
         walkers: req.walkers,
         itersPerWalker: req.itersPerWalker,
         walkerJitter: req.walkerJitter,
+        colorMode: req.colorMode,
+        flowStrength: req.flowStrength,
+        flowScale: req.flowScale,
       });
     },
 
@@ -243,7 +258,7 @@ export function createRenderer(
       );
 
       renderer.reset(genome);
-      renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter: req.walkerJitter });
+      renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter: req.walkerJitter, colorMode: req.colorMode, flowStrength: req.flowStrength, flowScale: req.flowScale });
       renderer.present({ genome, outputView: req.outputView, totalSamples: actualSamples, forceDeOff: req.forceDeOff, transparent: req.transparent });
     },
 

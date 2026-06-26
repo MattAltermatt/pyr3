@@ -56,6 +56,11 @@ export interface EditRendererOpts {
    *  histogram is unchanged — only the visualize epilogue is bypassed.
    *  See `src/edit-section-curves.ts`. */
   getPreviewOff?: () => boolean;
+  /** #459 — flow-map color mode for the live preview. When it returns 'flow',
+   *  the iterate dispatch colors each splat by its per-iteration displacement.
+   *  Read at reseed time (color is baked during iteration). Independent of the
+   *  genome — a render-bar pref, not a flame property. */
+  getColorMode?: () => { mode: 'palette' | 'flow'; flowStrength: number; flowScale: number };
 }
 
 export function createEditRenderer(
@@ -75,11 +80,15 @@ export function createEditRenderer(
       superW,
       superH,
     );
+    const cm = opts.getColorMode?.();
     renderer.iterate({
       genome,
       seed,
       walkers: dispatchWalkers,
       itersPerWalker: dispatchIters,
+      colorMode: cm?.mode,
+      flowStrength: cm?.flowStrength,
+      flowScale: cm?.flowScale,
     });
     return actualSamples;
   }

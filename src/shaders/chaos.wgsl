@@ -99,6 +99,16 @@ struct Uniforms {
   // reads idx_sum, so the 4-channel histogram output is byte-identical
   // regardless of this flag. Buffer stays 64 bytes (slot 14 = byte 56).
   capture_index: u32,   // slot 14 (byte 56)
+  // #459 — flow-map ("velocity") coloring. color_mode 0 = palette (default; every
+  // existing render path unchanged), 1 = flow-map: color each splat by this
+  // iteration's net displacement (direction → hue, log-saturated magnitude →
+  // value), blended over the palette/DC rgb by flow_strength. flow_scale tunes
+  // the magnitude saturation. When color_mode == 0 the splat block skips all of
+  // it, so the 4-channel histogram output is byte-identical. Struct grows to 18
+  // named slots (72 bytes) → rounds to 80 (slot 17 = byte 68).
+  color_mode: u32,      // slot 15 (byte 60)
+  flow_strength: f32,   // slot 16 (byte 64) — blend [0,1]: 0 = palette, 1 = pure flow
+  flow_scale: f32,      // slot 17 (byte 68) — magnitude log-saturation factor
 };
 
 // Variation slots:
@@ -1616,6 +1626,13 @@ fn var_wedge_julia(p: vec2f, w: f32, angle: f32, count: f32, power: f32, dist: f
   let c = floor((count * a + PI) / PI * 0.5);
   a = a * cf + c * angle;
   return vec2f(r * safe_cos(a), r * safe_sin(a));
+}
+
+// #459 — compact branch-free HSV→RGB for flow-map coloring. h, s, v in [0,1].
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> vec3f {
+  let k = vec3f(1.0, 2.0 / 3.0, 1.0 / 3.0);
+  let p = abs(fract(vec3f(h) + k) * 6.0 - 3.0);
+  return v * mix(vec3f(1.0), clamp(p - 1.0, vec3f(0.0), vec3f(1.0)), s);
 }
 
 // ---------------------------------------------------------------------
@@ -8175,6 +8192,11 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
 
   let total_iters = u.iters_per_walker + u.fuse;
   for (var i = 0u; i < total_iters; i = i + 1u) {
+    // #459 — snapshot the walker position BEFORE the xform chain runs, so the
+    // splat block can compute this iteration's net displacement for flow-map
+    // color. `p` is reassigned to the post-chain (jittered) point at the bottom
+    // of the loop, so it must be captured here. One vec2 copy; free at runtime.
+    let p_start = p.xy;
     // PYR3-029 Phase 5c: flam3-canonical xform-pick via precomputed
     // distribution table. Mirrors flam3.c:291-293:
     //   fn = xform_distrib[lastxf*GRAIN + (irand & GRAIN_M1)]
@@ -8503,6 +8525,29 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
         // path is unchanged.
         if (dc_override_active) {
           pal = vec4f(dc_rgb_override, pal.w);
+        }
+        // #459 — flow-map color override. This iteration's net displacement
+        // (splat point minus the pre-chain position) gives a direction → hue and
+        // a log-saturated magnitude → value; the result is blended over the
+        // palette/DC rgb by flow_strength. atan2's output is angle-bounded
+        // [-PI,PI] (no safe_* needed) and exp(-x) for x>=0 stays in (0,1].
+        // Gated on color_mode == 1 → color_mode == 0 is a no-op (byte-identical).
+        if (u.color_mode == 1u) {
+          let disp = splat_p.xy - p_start;
+          let mag = length(disp);
+          // Skip zero-displacement splats: atan2(0,0) is spec-indeterminate
+          // (NaN on some backends), and a pure-identity xform makes disp==0
+          // systematically — a NaN here casts to a bogus u32 and corrupts the
+          // bucket. mag≈0 carries no flow direction, so keep the palette color.
+          if (mag > 1e-20) {
+            let hue = (atan2(disp.y, disp.x) + PI) / (2.0 * PI);
+            // clamps harden the non-CLI dispatch paths: DispatchOpts has no
+            // range check, so a negative flow_scale would overflow exp() and an
+            // out-of-[0,1] flow_strength would extrapolate mix() out of gamut.
+            let val = clamp(1.0 - exp(-max(u.flow_scale, 0.0) * mag), 0.0, 1.0);
+            let flow_rgb = hsv_to_rgb(hue, 1.0, val);
+            pal = vec4f(mix(pal.xyz, flow_rgb, clamp(u.flow_strength, 0.0, 1.0)), pal.w);
+          }
         }
         // PYR3-015 alpha-scaling: rgb AND count (alpha) channels scaled by
         // xform opacity. Scaling count too is load-bearing — at opacity=0,

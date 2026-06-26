@@ -56,6 +56,14 @@ export interface DispatchOpts {
    *  0 disables jitter (f32-collapse cliff returns). See chaos.wgsl
    *  `walker_jitter` for the full rationale. */
   walkerJitter?: number;
+  /** #459 — flow-map color mode. 'palette' (default) = normal palette/DC color;
+   *  'flow' = color each splat by its per-iteration displacement (velocity). */
+  colorMode?: 'palette' | 'flow';
+  /** #459 — flow-map blend in [0,1]; default 1.0. 0 = palette, 1 = pure flow.
+   *  Only consulted when colorMode === 'flow'. */
+  flowStrength?: number;
+  /** #459 — flow-map magnitude log-saturation factor; default DEFAULT_FLOW_SCALE. */
+  flowScale?: number;
 }
 
 /** Default walker-jitter proportional factor.
@@ -105,11 +113,17 @@ export interface ChaosPass {
 }
 
 const WORKGROUP_SIZE = 64;
-// 15 scalar slots × 4 bytes = 60 bytes of named fields (slots 0..14; slot 14 =
-// captureIndex #269), rounded up to the 16-byte uniform-binding granularity → 64.
-// The trailing 4 bytes are unused padding; `layout:'auto'` derives the same
-// 64-byte minBindingSize from the WGSL struct, so the buffer must stay 64.
-const UNIFORMS_BYTES = 64;
+// 18 scalar slots × 4 bytes = 72 bytes of named fields (slots 0..17; slot 14 =
+// captureIndex #269; slots 15-17 = color_mode/flow_strength/flow_scale #459),
+// rounded up to the 16-byte convention → 80 (the trailing 8 bytes are padding).
+// `Uniforms` is all 4-byte scalars, so its derived minBindingSize is 72; the
+// 80-byte buffer satisfies that (80 ≥ 72). Keep the buffer at 80 to match the
+// struct's named-field span + convention.
+const UNIFORMS_BYTES = 80;
+
+/** #459 — default flow-map magnitude log-saturation factor (used when
+ *  colorMode === 'flow' and no flowScale override is supplied). */
+export const DEFAULT_FLOW_SCALE = 2.0;
 
 // 4 channels (R, G, B, count) of u32 per pixel.
 export const HIST_CHANNELS = 4;
@@ -392,6 +406,11 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // #269 Phase 2 — capture gate (slot 14). Off for every non-gradient
       // consumer → idx_sum untouched → histogram output byte-identical.
       u32[14] = captureIndex ? 1 : 0;
+      // #459 — flow-map color (slots 15-17). color_mode 0 = palette (default) →
+      // splat block skips the flow override → histogram output byte-identical.
+      u32[15] = opts?.colorMode === 'flow' ? 1 : 0;
+      f32[16] = opts?.flowStrength ?? 1.0;
+      f32[17] = opts?.flowScale ?? DEFAULT_FLOW_SCALE;
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

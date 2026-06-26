@@ -68,7 +68,9 @@ import {
   PREVIEW_TIER_LONGEST_EDGE,
   loadPreviewConfig,
   savePreviewConfig,
+  loadColorModeConfig,
   type PreviewRenderConfig,
+  type ColorModeConfig,
 } from './render-mode-config';
 import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
 import { openRenderProgressModal } from './render-progress-modal';
@@ -878,6 +880,9 @@ async function main(): Promise<void> {
   // through saveRenderToPng (src/render-save.ts) with a progress modal +
   // AbortSignal (parallel to the editor's Save Render flow).
   let viewerPreviewCfg: PreviewRenderConfig = loadPreviewConfig();
+  // #459 — flow-map color mode (render-bar pref, independent of the genome).
+  // Updated on bar change; spread into the orchestrator opts on every rerender.
+  let viewerColorModeCfg: ColorModeConfig = loadColorModeConfig();
 
   // #176 — viewer's RENDER config is workstation-pref-shaped: independent
   // of activeGenome (loaded flames do NOT reset / override it). Persists to
@@ -1201,6 +1206,13 @@ async function main(): Promise<void> {
     onSaveRender: (exp) => viewerSaveRender(exp),
     canSave: () => !viewerRenderInFlight,
     showToast: (msg) => bar.showToast(msg),
+    // #459 — flow-map color mode change re-iterates the preview (color is baked
+    // at splat time, so this is a slow-lane full re-render). Pref is independent
+    // of the genome — a flame load does not reset it.
+    onColorModeChange: (cfg) => {
+      viewerColorModeCfg = cfg;
+      void rerender();
+    },
   });
 
   let runHandle: RunHandle | null = null;
@@ -1323,6 +1335,9 @@ async function main(): Promise<void> {
         });
       },
       walkerJitter: currentWalkerJitter,
+      colorMode: viewerColorModeCfg.mode,
+      flowStrength: viewerColorModeCfg.flowStrength,
+      flowScale: viewerColorModeCfg.flowScale,
     });
     runHandle = handle;
     if (import.meta.env.DEV) {
@@ -1457,6 +1472,9 @@ async function main(): Promise<void> {
         });
       },
       walkerJitter: currentWalkerJitter,
+      colorMode: viewerColorModeCfg.mode,
+      flowStrength: viewerColorModeCfg.flowStrength,
+      flowScale: viewerColorModeCfg.flowScale,
     });
     runHandle = handle;
     lastRenderInfo = { genome: renderGenome, totalSamples: targetSamples };

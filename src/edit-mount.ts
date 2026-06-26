@@ -39,9 +39,11 @@ import { saveRenderToPng, type ExportFormat } from './render-save';
 import { mountEditUi, type SectionMount, type EditUiHandle } from './edit-ui';
 import {
   type PreviewRenderConfig,
+  type ColorModeConfig,
   computePreviewDims,
   loadPreviewConfig,
   savePreviewConfig,
+  loadColorModeConfig,
 } from './render-mode-config';
 import { mountRenderModeBar, type RenderModeBarHandle } from './render-mode-bar';
 import { openRenderProgressModal } from './render-progress-modal';
@@ -367,6 +369,10 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   // genome.size + genome.quality stay as the RENDER output config — only fire
   // at Save Render time.
   let previewCfg: PreviewRenderConfig = loadPreviewConfig();
+  // #459 — flow-map color mode (render-bar pref, independent of the genome).
+  // Read by the editRenderer on each reseed; updated by the bar's
+  // onColorModeChange, which schedules a slow-lane re-iterate.
+  let editorColorModeCfg: ColorModeConfig = loadColorModeConfig();
   let renderModeBarHandle: RenderModeBarHandle | null = null;
 
   // #192 + #194 — save-only metadata overrides. Sticky across reroll / file
@@ -499,6 +505,8 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     // sets `state.colorCurvesPreviewOff`; the renderer strips channelCurves
     // for that frame so the user sees the un-graded "before" image.
     getPreviewOff: () => !!state.colorCurvesPreviewOff,
+    // #459 — flow-map color mode for the live preview (baked at iterate time).
+    getColorMode: () => editorColorModeCfg,
   });
 
   // Apophysis-style live/settled split. While the user is actively editing
@@ -1751,6 +1759,12 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     onSaveRender: (exp) => handleRenderPng(exp),
     canSave: () => !renderInFlight,
     showToast: (msg) => showToast(panelHost, msg),
+    // #459 — flow-map color mode change re-iterates the preview (color is baked
+    // at splat time → slow lane). Pref is independent of the genome.
+    onColorModeChange: (cfg) => {
+      editorColorModeCfg = cfg;
+      scheduler.schedule({ lane: 'slow', path: 'color-mode' });
+    },
   });
 
   return {

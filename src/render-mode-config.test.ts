@@ -9,10 +9,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  DEFAULT_COLOR_MODE_CONFIG,
   DEFAULT_PREVIEW_CONFIG,
   PREVIEW_TIER_LONGEST_EDGE,
   computePreviewDims,
+  loadColorModeConfig,
   loadPreviewConfig,
+  saveColorModeConfig,
   savePreviewConfig,
 } from './render-mode-config';
 
@@ -198,5 +201,29 @@ describe('savePreviewConfig', () => {
     savePreviewConfig({ tier: 'fast', quality: 10 });
     savePreviewConfig({ tier: 'sharp', quality: 50 });
     expect(loadPreviewConfig()).toEqual({ tier: 'sharp', quality: 50 });
+  });
+});
+
+// #459 — flow-map color mode config (palette vs velocity-flow coloring).
+describe('color-mode config (#459)', () => {
+  beforeEach(() => globalThis.localStorage?.clear());
+  afterEach(() => globalThis.localStorage?.clear());
+
+  it('#459 round-trips color-mode config', () => {
+    saveColorModeConfig({ mode: 'flow', flowStrength: 0.5, flowScale: 3 });
+    expect(loadColorModeConfig()).toEqual({ mode: 'flow', flowStrength: 0.5, flowScale: 3 });
+  });
+
+  it('#459 returns defaults when storage empty', () => {
+    globalThis.localStorage?.clear();
+    expect(loadColorModeConfig()).toEqual(DEFAULT_COLOR_MODE_CONFIG);
+  });
+
+  it('#459 clamps out-of-range values to defaults/bounds', () => {
+    globalThis.localStorage?.setItem('pyr3-color-mode-config', JSON.stringify({ mode: 'bogus', flowStrength: 99, flowScale: -1, _v: 1 }));
+    const c = loadColorModeConfig();
+    expect(c.mode).toBe('palette');
+    expect(c.flowStrength).toBeLessThanOrEqual(1);
+    expect(c.flowScale).toBeGreaterThan(0);
   });
 });
