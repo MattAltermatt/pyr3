@@ -43,9 +43,11 @@ export const colorModeSection: SectionMount = {
     let flowStrength = cfg.flowStrength;
     let flowScale = cfg.flowScale;
     const trap: TrapConfig = { ...cfg.trap };
+    let phaseStrength = cfg.phaseStrength;
+    let phaseFreq = cfg.phaseFreq;
 
     function emit(): void {
-      saveColorModeConfig({ mode, flowStrength, flowScale, trap: { ...trap } });
+      saveColorModeConfig({ mode, flowStrength, flowScale, trap: { ...trap }, phaseStrength, phaseFreq });
       paint();
       onChange(COLOR_MODE_CHANGE_PATH);
     }
@@ -57,6 +59,7 @@ export const colorModeSection: SectionMount = {
         { value: 'palette', label: 'Palette' },
         { value: 'flow', label: 'Flow' },
         { value: 'trap-distance', label: 'Trap' },
+        { value: 'phase', label: 'Phase / Polar' },
       ],
       onChange: (v) => { mode = v; emit(); },
     });
@@ -129,6 +132,25 @@ export const colorModeSection: SectionMount = {
     trapGroup.append(shapeRow, falloffModeRow, centerRow, radiusRow, angleRow, falloffRow, freqRow, strengthRow);
     host.appendChild(trapGroup);
 
+    // ── phase / polar controls (#465) ──────────────────────────────────────
+    const phaseGroup = document.createElement('div');
+    phaseGroup.dataset['phaseControls'] = '';
+    const phaseStrengthSlider = buildSlider({
+      value: phaseStrength, min: 0, max: 1, step: 0.05,
+      format: (v) => v.toFixed(2),
+      onChange: (v) => { phaseStrength = v; emit(); },
+    });
+    phaseStrengthSlider.dataset['phaseStrength'] = '';
+    // Frequency 0 = pure phase field (no rings); >0 adds log-modulus contour rings.
+    const phaseFreqSlider = buildSlider({
+      value: phaseFreq, min: 0, max: 8, step: 0.25,
+      format: (v) => v.toFixed(2),
+      onChange: (v) => { phaseFreq = v; emit(); },
+    });
+    phaseFreqSlider.dataset['phaseFreq'] = '';
+    phaseGroup.append(buildRow('Strength', phaseStrengthSlider), buildRow('Ring freq', phaseFreqSlider));
+    host.appendChild(phaseGroup);
+
     // buildRow sets an INLINE `display:grid`, which beats the `[hidden]` UA
     // rule — so toggle the per-row display directly (grid|none). The group divs
     // have no inline display, so `.hidden` works for those.
@@ -138,6 +160,7 @@ export const colorModeSection: SectionMount = {
     function paint(): void {
       flowGroup.hidden = mode !== 'flow';
       trapGroup.hidden = mode !== 'trap-distance';
+      phaseGroup.hidden = mode !== 'phase';
       const isCircle = trap.kind === 'circle';
       const isLine = trap.kind === 'line';
       const isRings = trap.mode === 'rings';

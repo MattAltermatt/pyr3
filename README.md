@@ -56,8 +56,9 @@ engine modules and WGSL compute shaders — no second code path, no environment 
   variations are flagged in an import report), browse the corpus by share-link, and render
   from a fast preview up to 4K in the flame's palette. The top bar shows the version, the
   flame's variation set, and prev/next navigation. Alternative **color modes** — a velocity
-  **flow-map** (direction → hue, speed → brightness) and **trap-distance** contours (glowing
-  bands that hug a point/circle/line) — live in the visual editor's Color lens.
+  **flow-map** (direction → hue, speed → brightness), **trap-distance** contours (glowing
+  bands that hug a point/circle/line), and **Phase / Polar** domain-coloring (argument → hue,
+  log-modulus → contour rings) — live in the visual editor's Color lens.
 - 💻 **Headless CLI** — Node + the `webgpu` npm package. `npm run render flame.flam3 out.png`
   renders the same flame to a PNG using the same modules and shaders as the browser.
 

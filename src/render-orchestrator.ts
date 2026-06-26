@@ -59,13 +59,17 @@ export interface OrchestratorOpts {
   transparent?: boolean;
   /** #459 — flow-map color mode, forwarded to renderer.iterate. 'palette'
    *  (default) | 'flow' (color each splat by its per-iteration displacement). */
-  colorMode?: 'palette' | 'flow' | 'trap-distance';
+  colorMode?: 'palette' | 'flow' | 'trap-distance' | 'phase';
   /** #459 — flow-map blend [0,1], forwarded to renderer.iterate. */
   flowStrength?: number;
   /** #459 — flow-map magnitude log-saturation, forwarded to renderer.iterate. */
   flowScale?: number;
   /** #460 — trap-distance params, forwarded to renderer.iterate. */
   trap?: import('./trap-config').TrapConfig;
+  /** #465 — Phase/Polar blend [0,1], forwarded to renderer.iterate. */
+  phaseStrength?: number;
+  /** #465 — Phase/Polar log-modulus ring frequency, forwarded to renderer.iterate. */
+  phaseFreq?: number;
 }
 
 export interface ProgressInfo {
@@ -111,13 +115,17 @@ export interface DecoupledOpts {
    *  DEFAULT_WALKER_JITTER (a scale-relative proportional factor since #43). */
   walkerJitter?: number;
   /** #459 — flow-map color mode, forwarded to renderer.iterate. */
-  colorMode?: 'palette' | 'flow' | 'trap-distance';
+  colorMode?: 'palette' | 'flow' | 'trap-distance' | 'phase';
   /** #459 — flow-map blend [0,1], forwarded to renderer.iterate. */
   flowStrength?: number;
   /** #459 — flow-map magnitude log-saturation, forwarded to renderer.iterate. */
   flowScale?: number;
   /** #460 — trap-distance params, forwarded to renderer.iterate. */
   trap?: import('./trap-config').TrapConfig;
+  /** #465 — Phase/Polar blend [0,1], forwarded to renderer.iterate. */
+  phaseStrength?: number;
+  /** #465 — Phase/Polar log-modulus ring frequency, forwarded to renderer.iterate. */
+  phaseFreq?: number;
 }
 
 /** Default samples per iterate dispatch in the decoupled orchestrator.
@@ -193,6 +201,8 @@ export function startDecoupledRender(opts: DecoupledOpts): RunHandle {
         flowStrength: opts.flowStrength,
         flowScale: opts.flowScale,
         trap: opts.trap,
+        phaseStrength: opts.phaseStrength,
+        phaseFreq: opts.phaseFreq,
       });
       samplesAccumulated += samplesPerDispatch;
       const elapsed = (performance.now() - startTime) / 1000;
@@ -258,6 +268,8 @@ export function startChunkedRender(opts: OrchestratorOpts): RunHandle {
         flowStrength: opts.flowStrength,
         flowScale: opts.flowScale,
         trap: opts.trap,
+        phaseStrength: opts.phaseStrength,
+        phaseFreq: opts.phaseFreq,
       });
       samplesAccumulated += samplesPerChunk;
       if (presentEach) {

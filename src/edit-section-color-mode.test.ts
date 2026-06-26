@@ -47,17 +47,18 @@ describe('edit-section-color-mode (#460)', () => {
     expect(colorModeSection.key).toBe('color-mode');
   });
 
-  it('mounts a mode selector with palette/flow/trap-distance', () => {
+  it('mounts a mode selector with palette/flow/trap-distance/phase', () => {
     const { host } = mount();
     const sel = host.querySelector('[data-render-color-mode]') as HTMLSelectElement;
     expect(sel).toBeTruthy();
-    expect([...sel.options].map((o) => o.value)).toEqual(['palette', 'flow', 'trap-distance']);
+    expect([...sel.options].map((o) => o.value)).toEqual(['palette', 'flow', 'trap-distance', 'phase']);
   });
 
-  it('flow + trap groups are hidden in palette mode', () => {
+  it('flow + trap + phase groups are hidden in palette mode', () => {
     const { host } = mount();
     expect((host.querySelector('[data-flow-controls]') as HTMLElement).hidden).toBe(true);
     expect((host.querySelector('[data-trap-controls]') as HTMLElement).hidden).toBe(true);
+    expect((host.querySelector('[data-phase-controls]') as HTMLElement).hidden).toBe(true);
   });
 
   it('selecting flow shows flow controls + persists + signals color-mode', () => {
@@ -95,6 +96,20 @@ describe('edit-section-color-mode (#460)', () => {
     expect(rowHidden(falloff)).toBe(true);
     kind.value = 'line'; kind.dispatchEvent(new Event('change'));
     expect(rowHidden(angle)).toBe(false);
+  });
+
+  it('#465 selecting phase shows phase controls + persists + signals color-mode', () => {
+    const { host, onChange } = mount();
+    const sel = host.querySelector('[data-render-color-mode]') as HTMLSelectElement;
+    sel.value = 'phase';
+    sel.dispatchEvent(new Event('change'));
+    expect((host.querySelector('[data-phase-controls]') as HTMLElement).hidden).toBe(false);
+    expect((host.querySelector('[data-flow-controls]') as HTMLElement).hidden).toBe(true);
+    expect((host.querySelector('[data-trap-controls]') as HTMLElement).hidden).toBe(true);
+    expect(host.querySelector('[data-phase-strength]')).toBeTruthy();
+    expect(host.querySelector('[data-phase-freq]')).toBeTruthy();
+    expect(loadColorModeConfig().mode).toBe('phase');
+    expect(onChange).toHaveBeenCalledWith(COLOR_MODE_CHANGE_PATH);
   });
 
   it('trap kind select persists into ColorModeConfig + signals color-mode', () => {

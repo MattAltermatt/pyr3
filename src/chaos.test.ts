@@ -219,3 +219,54 @@ describe('#269 Phase 2 — idx_sum capture buffer + capture_index uniform (slot 
     expect(u32[14]).toBe(1);
   });
 });
+
+describe('#465 — Phase/Polar color mode (color_mode slot 15 == 3, phase slots 28/29)', () => {
+  it('writes color_mode 0 + the uniform buffer is the grown 128-byte (32-slot) layout by default', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    expect(u).toBeDefined();
+    // Buffer must be 128 bytes after #465 (was 112); WGSL rounds the struct up to
+    // a 16-byte multiple → slots 30-31 are tail padding. color_mode default 0.
+    expect(u!.data.byteLength).toBe(128);
+    const u32 = new Uint32Array(u!.data as ArrayBuffer);
+    expect(u32[15]).toBe(0);
+  });
+
+  it("writes color_mode 3 + phase params into slots 15/28/29 for colorMode 'phase'", () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8, colorMode: 'phase', phaseStrength: 0.4, phaseFreq: 2.5 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    expect(u).toBeDefined();
+    const u32 = new Uint32Array(u!.data as ArrayBuffer);
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(u32[15]).toBe(3);                       // color_mode = phase
+    expect(f32[28]).toBe(Math.fround(0.4));        // phase_strength
+    expect(f32[29]).toBe(Math.fround(2.5));        // phase_freq
+  });
+
+  it('defaults phase params to 1.0 (slots 28/29) when omitted', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8, colorMode: 'phase' });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[28]).toBe(1.0);
+    expect(f32[29]).toBe(1.0);
+  });
+
+  it('preserves phaseFreq: 0 (pure phase field — not coerced by ??)', () => {
+    const { genome } = parseFlame(FLAME);
+    const writes: CapturedWrite[] = [];
+    const pass = createChaosPass(makeMockDevice(writes), baseConfig(1));
+    pass.dispatch(genome, 7, { walkers: 4, itersPerWalker: 8, colorMode: 'phase', phaseFreq: 0 });
+    const u = writes.find((w) => w.label === 'pyr3.chaos.uniforms');
+    const f32 = new Float32Array(u!.data as ArrayBuffer);
+    expect(f32[29]).toBe(0);
+  });
+});

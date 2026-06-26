@@ -56,10 +56,10 @@ export interface DispatchOpts {
    *  0 disables jitter (f32-collapse cliff returns). See chaos.wgsl
    *  `walker_jitter` for the full rationale. */
   walkerJitter?: number;
-  /** #459/#460 — color mode. 'palette' (default) = normal palette/DC color;
+  /** #459/#460/#465 — color mode. 'palette' (default) = normal palette/DC color;
    *  'flow' = per-iteration displacement (velocity); 'trap-distance' = distance
-   *  to a trap shape. */
-  colorMode?: 'palette' | 'flow' | 'trap-distance';
+   *  to a trap shape; 'phase' = complex-domain coloring (arg(z)→hue, log|z|→rings). */
+  colorMode?: 'palette' | 'flow' | 'trap-distance' | 'phase';
   /** #459 — flow-map blend in [0,1]; default 1.0. 0 = palette, 1 = pure flow.
    *  Only consulted when colorMode === 'flow'. */
   flowStrength?: number;
@@ -67,6 +67,12 @@ export interface DispatchOpts {
   flowScale?: number;
   /** #460 — trap-distance params; consulted when colorMode === 'trap-distance'. */
   trap?: import('./trap-config').TrapConfig;
+  /** #465 — Phase/Polar blend in [0,1]; default 1.0. 0 = palette, 1 = pure phase.
+   *  Only consulted when colorMode === 'phase'. */
+  phaseStrength?: number;
+  /** #465 — Phase/Polar log-modulus ring frequency; default 1.0. 0 = pure phase
+   *  field (no rings). Only consulted when colorMode === 'phase'. */
+  phaseFreq?: number;
 }
 
 /** Default walker-jitter proportional factor.
@@ -116,14 +122,16 @@ export interface ChaosPass {
 }
 
 const WORKGROUP_SIZE = 64;
-// 28 scalar slots × 4 bytes = 112 bytes of named fields (slots 0..27; slot 14 =
+// 30 scalar slots × 4 bytes = 120 bytes of named fields (slots 0..29; slot 14 =
 // captureIndex #269; slots 15-17 = color_mode/flow_strength/flow_scale #459;
 // slots 18-27 = trap_kind/trap_mode/trap_cx/trap_cy/trap_radius/trap_nx/trap_ny/
-// trap_falloff/trap_freq/trap_strength #460), already a 16-byte multiple → 112.
+// trap_falloff/trap_freq/trap_strength #460; slots 28-29 = phase_strength/
+// phase_freq #465). WGSL rounds the uniform struct up to a 16-byte multiple →
+// 128 bytes (slots 30-31 are unwritten tail padding); UNIFORMS_BYTES matches.
 // `Uniforms` is all 4-byte scalars, so its derived minBindingSize is 112; the
 // 112-byte buffer satisfies it exactly. Keep the buffer at 112 to match the
 // struct's named-field span.
-const UNIFORMS_BYTES = 112;
+const UNIFORMS_BYTES = 128;
 
 /** #459 — default flow-map magnitude log-saturation factor (used when
  *  colorMode === 'flow' and no flowScale override is supplied). */
@@ -410,11 +418,13 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // #269 Phase 2 — capture gate (slot 14). Off for every non-gradient
       // consumer → idx_sum untouched → histogram output byte-identical.
       u32[14] = captureIndex ? 1 : 0;
-      // #459/#460 — color mode (slot 15). 0 = palette (default) → splat block
-      // skips every override → histogram output byte-identical. 1 = flow, 2 = trap.
+      // #459/#460/#465 — color mode (slot 15). 0 = palette (default) → splat block
+      // skips every override → histogram output byte-identical. 1 = flow, 2 = trap,
+      // 3 = phase.
       u32[15] =
         opts?.colorMode === 'flow' ? 1 :
-        opts?.colorMode === 'trap-distance' ? 2 : 0;
+        opts?.colorMode === 'trap-distance' ? 2 :
+        opts?.colorMode === 'phase' ? 3 : 0;
       f32[16] = opts?.flowStrength ?? 1.0;
       f32[17] = opts?.flowScale ?? DEFAULT_FLOW_SCALE;
       // #460 — trap-distance params (slots 18-27). Defaults match
@@ -433,6 +443,10 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       f32[25] = trap?.falloff ?? 2.0;                                        // trap_falloff
       f32[26] = trap?.freq ?? 4.0;                                           // trap_freq
       f32[27] = trap?.strength ?? 1.0;                                       // trap_strength
+      // #465 — Phase/Polar params (slots 28-29). color_mode 0/1/2 ignores these
+      // (shader skips the phase branch). phaseFreq default 1.0; 0 = pure phase field.
+      f32[28] = opts?.phaseStrength ?? 1.0;                                  // phase_strength
+      f32[29] = opts?.phaseFreq ?? 1.0;                                      // phase_freq
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

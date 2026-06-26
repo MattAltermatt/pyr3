@@ -211,8 +211,8 @@ describe('color-mode config (#459)', () => {
   afterEach(() => globalThis.localStorage?.clear());
 
   it('#459 round-trips color-mode config', () => {
-    saveColorModeConfig({ mode: 'flow', flowStrength: 0.5, flowScale: 3, trap: DEFAULT_TRAP_CONFIG });
-    expect(loadColorModeConfig()).toEqual({ mode: 'flow', flowStrength: 0.5, flowScale: 3, trap: DEFAULT_TRAP_CONFIG });
+    saveColorModeConfig({ mode: 'flow', flowStrength: 0.5, flowScale: 3, trap: DEFAULT_TRAP_CONFIG, phaseStrength: 1, phaseFreq: 1 });
+    expect(loadColorModeConfig()).toEqual({ mode: 'flow', flowStrength: 0.5, flowScale: 3, trap: DEFAULT_TRAP_CONFIG, phaseStrength: 1, phaseFreq: 1 });
   });
 
   it('#459 returns defaults when storage empty', () => {
@@ -276,5 +276,46 @@ describe('trap-distance config (#460)', () => {
     const trap = { kind: 'circle' as const, mode: 'rings' as const, cx: 0.2, cy: -0.3, radius: 0.8, angle: 45, falloff: 3, freq: 6, strength: 0.5 };
     saveColorModeConfig({ ...DEFAULT_COLOR_MODE_CONFIG, mode: 'trap-distance', trap });
     expect(loadColorModeConfig().trap).toEqual(trap);
+  });
+});
+
+describe('Phase / Polar config (#465)', () => {
+  beforeEach(() => globalThis.localStorage?.clear());
+  afterEach(() => globalThis.localStorage?.clear());
+
+  it('defaults carry phaseStrength=1, phaseFreq=1', () => {
+    expect(DEFAULT_COLOR_MODE_CONFIG.phaseStrength).toBe(1);
+    expect(DEFAULT_COLOR_MODE_CONFIG.phaseFreq).toBe(1);
+  });
+
+  it('accepts phase as a valid mode and round-trips its params', () => {
+    saveColorModeConfig({ ...DEFAULT_COLOR_MODE_CONFIG, mode: 'phase', phaseStrength: 0.4, phaseFreq: 3.5 });
+    const c = loadColorModeConfig();
+    expect(c.mode).toBe('phase');
+    expect(c.phaseStrength).toBe(0.4);
+    expect(c.phaseFreq).toBe(3.5);
+  });
+
+  it('clamps phaseStrength to [0,1] and rejects negative phaseFreq', () => {
+    globalThis.localStorage?.setItem(
+      'pyr3-color-mode-config',
+      JSON.stringify({ ...DEFAULT_COLOR_MODE_CONFIG, mode: 'phase', phaseStrength: 99, phaseFreq: -2, _v: 1 }),
+    );
+    const c = loadColorModeConfig();
+    expect(c.phaseStrength).toBeLessThanOrEqual(1);
+    expect(c.phaseStrength).toBeGreaterThanOrEqual(0);
+    expect(c.phaseFreq).toBe(DEFAULT_COLOR_MODE_CONFIG.phaseFreq); // negative → default
+  });
+
+  it('phaseFreq=0 is a valid value (pure phase field, not rejected as falsy)', () => {
+    saveColorModeConfig({ ...DEFAULT_COLOR_MODE_CONFIG, mode: 'phase', phaseFreq: 0 });
+    expect(loadColorModeConfig().phaseFreq).toBe(0);
+  });
+
+  it('a pre-#465 blob (no phase fields) loads with defaulted phase params', () => {
+    globalThis.localStorage?.setItem('pyr3-color-mode-config', JSON.stringify({ mode: 'flow', flowStrength: 0.5, flowScale: 3, _v: 1 }));
+    const c = loadColorModeConfig();
+    expect(c.phaseStrength).toBe(DEFAULT_COLOR_MODE_CONFIG.phaseStrength);
+    expect(c.phaseFreq).toBe(DEFAULT_COLOR_MODE_CONFIG.phaseFreq);
   });
 });

@@ -100,14 +100,18 @@ export interface RenderRequest {
    *  DEFAULT_WALKER_JITTER (`src/chaos.ts`); since #43 a scale-relative
    *  proportional factor, not an absolute amplitude. */
   walkerJitter?: number;
-  /** #459/#460 — color mode; 'palette' (default) | 'flow' | 'trap-distance'. */
-  colorMode?: 'palette' | 'flow' | 'trap-distance';
+  /** #459/#460/#465 — color mode; 'palette' (default) | 'flow' | 'trap-distance' | 'phase'. */
+  colorMode?: 'palette' | 'flow' | 'trap-distance' | 'phase';
   /** #459 — flow-map blend [0,1]; default 1.0. */
   flowStrength?: number;
   /** #459 — flow-map magnitude log-saturation; default DEFAULT_FLOW_SCALE. */
   flowScale?: number;
   /** #460 — trap-distance params; consulted when colorMode === 'trap-distance'. */
   trap?: import('./trap-config').TrapConfig;
+  /** #465 — Phase/Polar blend [0,1]; default 1.0. */
+  phaseStrength?: number;
+  /** #465 — Phase/Polar log-modulus ring frequency; default 1.0 (0 = pure phase field). */
+  phaseFreq?: number;
 }
 
 export interface IterateRequest {
@@ -117,14 +121,18 @@ export interface IterateRequest {
   itersPerWalker: number;
   /** #65 Tier 1 — same as RenderRequest.walkerJitter; defaults to DEFAULT_WALKER_JITTER. */
   walkerJitter?: number;
-  /** #459/#460 — color mode; 'palette' (default) | 'flow' | 'trap-distance'. */
-  colorMode?: 'palette' | 'flow' | 'trap-distance';
+  /** #459/#460/#465 — color mode; 'palette' (default) | 'flow' | 'trap-distance' | 'phase'. */
+  colorMode?: 'palette' | 'flow' | 'trap-distance' | 'phase';
   /** #459 — flow-map blend [0,1]; default 1.0. */
   flowStrength?: number;
   /** #459 — flow-map magnitude log-saturation; default DEFAULT_FLOW_SCALE. */
   flowScale?: number;
   /** #460 — trap-distance params; consulted when colorMode === 'trap-distance'. */
   trap?: import('./trap-config').TrapConfig;
+  /** #465 — Phase/Polar blend [0,1]; default 1.0. */
+  phaseStrength?: number;
+  /** #465 — Phase/Polar log-modulus ring frequency; default 1.0 (0 = pure phase field). */
+  phaseFreq?: number;
 }
 
 export interface PresentRequest {
@@ -225,6 +233,8 @@ export function createRenderer(
         flowStrength: req.flowStrength,
         flowScale: req.flowScale,
         trap: req.trap,
+        phaseStrength: req.phaseStrength,
+        phaseFreq: req.phaseFreq,
       });
     },
 
@@ -263,7 +273,7 @@ export function createRenderer(
       );
 
       renderer.reset(genome);
-      renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter: req.walkerJitter, colorMode: req.colorMode, flowStrength: req.flowStrength, flowScale: req.flowScale, trap: req.trap });
+      renderer.iterate({ genome, seed, walkers: dispatchWalkers, itersPerWalker: dispatchIters, walkerJitter: req.walkerJitter, colorMode: req.colorMode, flowStrength: req.flowStrength, flowScale: req.flowScale, trap: req.trap, phaseStrength: req.phaseStrength, phaseFreq: req.phaseFreq });
       renderer.present({ genome, outputView: req.outputView, totalSamples: actualSamples, forceDeOff: req.forceDeOff, transparent: req.transparent });
     },
 

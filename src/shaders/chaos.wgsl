@@ -106,7 +106,7 @@ struct Uniforms {
   // the magnitude saturation. When color_mode == 0 the splat block skips all of
   // it, so the 4-channel histogram output is byte-identical. (#460 later grew the
   // struct to 28 slots / 112 bytes — see the trap fields + UNIFORMS_BYTES below.)
-  color_mode: u32,      // slot 15 (byte 60) — 0=palette, 1=flow (#459), 2=trap (#460)
+  color_mode: u32,      // slot 15 (byte 60) — 0=palette, 1=flow (#459), 2=trap (#460), 3=phase (#465)
   flow_strength: f32,   // slot 16 (byte 64) — blend [0,1]: 0 = palette, 1 = pure flow
   flow_scale: f32,      // slot 17 (byte 68) — magnitude log-saturation factor
   // #460 — trap-distance coloring (color_mode == 2). Color each splat by its
@@ -126,6 +126,13 @@ struct Uniforms {
   trap_falloff: f32,    // slot 25 — glow exp falloff
   trap_freq: f32,       // slot 26 — rings frequency
   trap_strength: f32,   // slot 27 — blend [0,1]
+  // #465 — Phase / Polar domain-coloring (color_mode == 3). Read the splat point
+  // as a complex number z: arg(z) → hue, log|z| → brightness contour rings. Slots
+  // 28-29 (bytes 112-116); WGSL rounds the struct up to a 16-byte multiple → 128
+  // bytes (slots 30-31 are implicit tail padding, never written). color_mode 0/1/2
+  // skip the phase branch → byte-identical output (parity rig untouched).
+  phase_strength: f32,  // slot 28 (byte 112) — blend [0,1]: 0 = palette, 1 = pure phase
+  phase_freq: f32,      // slot 29 (byte 116) — log-modulus ring frequency; 0 = pure phase field
 };
 
 // Variation slots:
@@ -8613,6 +8620,29 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
           let trap_idx = min(u32(trap_t * f32(PALETTE_LAST_U)), PALETTE_LAST_U);
           let trap_rgb = palette[trap_idx].xyz;
           pal = vec4f(mix(pal.xyz, trap_rgb, clamp(u.trap_strength, 0.0, 1.0)), pal.w);
+        }
+        // #465 — Phase / Polar domain-coloring override. Read the splat point as a
+        // complex number z = (x, y): the argument arg(z) → hue, and log|z| through a
+        // sawtooth → brightness contour rings (the classic complex-domain-coloring
+        // look). atan2 is angle-bounded [-PI,PI] (no safe_* / no Dawn trig cliff #72)
+        // and log is fed mag > 1e-20 > 0 (always in-domain → no NaN). phase_freq == 0
+        // collapses the rings to a constant → a pure phase field at full brightness.
+        // Gated on color_mode == 3 → modes 0/1/2 are byte-identical no-ops.
+        if (u.color_mode == 3u) {
+          let z = splat_p.xy;
+          let mag = length(z);
+          // mag≈0 has no well-defined argument (atan2(0,0) is spec-indeterminate →
+          // NaN on some backends, which corrupts the bucket); keep the palette color.
+          if (mag > 1e-20) {
+            let hue = (atan2(z.y, z.x) + PI) / (2.0 * PI);
+            // log-modulus contour rings. fract handles negative log|z| (mag<1). freq=0
+            // ⇒ ring=0 everywhere ⇒ val=1 ⇒ pure phase field. max() guards a negative
+            // freq from the unchecked DispatchOpts path.
+            let ring = fract(log(mag) * max(u.phase_freq, 0.0));
+            let val = mix(1.0, 0.5, ring);
+            let phase_rgb = hsv_to_rgb(hue, 1.0, val);
+            pal = vec4f(mix(pal.xyz, phase_rgb, clamp(u.phase_strength, 0.0, 1.0)), pal.w);
+          }
         }
         // PYR3-015 alpha-scaling: rgb AND count (alpha) channels scaled by
         // xform opacity. Scaling count too is load-bearing — at opacity=0,

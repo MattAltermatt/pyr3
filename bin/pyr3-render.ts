@@ -54,7 +54,7 @@ function chunkedIterate(
   walkers: number,
   totalIters: number,
   walkerJitter: number,
-  color?: { colorMode: 'palette' | 'flow' | 'trap-distance'; flowStrength: number; flowScale: number; trap?: TrapConfig },
+  color?: { colorMode: 'palette' | 'flow' | 'trap-distance' | 'phase'; flowStrength: number; flowScale: number; trap?: TrapConfig; phaseStrength: number; phaseFreq: number },
 ): number {
   const chunks = Math.max(1, Math.ceil(totalIters / MAX_ITERS_PER_SUBMIT));
   const itersPerChunk = Math.ceil(totalIters / chunks);
@@ -70,6 +70,8 @@ function chunkedIterate(
       flowStrength: color?.flowStrength,
       flowScale: color?.flowScale,
       trap: color?.trap,
+      phaseStrength: color?.phaseStrength,
+      phaseFreq: color?.phaseFreq,
     });
     total += walkers * itersPerChunk;
   }
@@ -94,11 +96,14 @@ async function main(): Promise<void> {
   let transparent = false;
   // #459 — flow-map color mode. Standalone-bundled CLI keeps the flow-scale
   // default as a literal mirroring DEFAULT_FLOW_SCALE in src/chaos.ts.
-  let colorMode: 'palette' | 'flow' | 'trap-distance' = 'palette';
+  let colorMode: 'palette' | 'flow' | 'trap-distance' | 'phase' = 'palette';
   let flowStrength = 1.0;
   let flowScale = 2.0;
   // #460 — trap-distance coloring params (consulted when colorMode === 'trap-distance').
   const trap: TrapConfig = { ...DEFAULT_TRAP_CONFIG };
+  // #465 — Phase/Polar coloring params (consulted when colorMode === 'phase').
+  let phaseStrength = 1.0;
+  let phaseFreq = 1.0;
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -178,8 +183,8 @@ async function main(): Promise<void> {
       // palette/DC color; 'flow' = color each splat by its per-iteration
       // displacement (direction → hue, log-saturated magnitude → value).
       const v = rawArgs[++i];
-      if (v !== 'palette' && v !== 'flow' && v !== 'trap-distance') {
-        console.error('--color-mode requires one of: palette, flow, trap-distance');
+      if (v !== 'palette' && v !== 'flow' && v !== 'trap-distance' && v !== 'phase') {
+        console.error('--color-mode requires one of: palette, flow, trap-distance, phase');
         process.exit(1);
       }
       colorMode = v;
@@ -272,6 +277,24 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       trap.strength = n;
+    } else if (a === '--phase-strength') {
+      // #465 — Phase/Polar blend over palette [0,1]: 0 = palette, 1 = pure phase.
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 1) {
+        console.error('--phase-strength requires a number in [0,1]');
+        process.exit(1);
+      }
+      phaseStrength = n;
+    } else if (a === '--phase-freq') {
+      // #465 — Phase/Polar log-modulus ring frequency (>= 0; 0 = pure phase field).
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        console.error('--phase-freq requires a number >= 0');
+        process.exit(1);
+      }
+      phaseFreq = n;
     } else {
       args.push(a);
     }
@@ -286,9 +309,10 @@ async function main(): Promise<void> {
       'usage: npm run render [--no-de] ' +
         '[--long-edge N --quality N] [--max-dim N] [--oversample N] [--sample-inflate=F] ' +
         '[--format png8|png16|exr|exr-linear] [--transparent] ' +
-        '[--color-mode palette|flow|trap-distance] [--flow-strength F] [--flow-scale F] ' +
+        '[--color-mode palette|flow|trap-distance|phase] [--flow-strength F] [--flow-scale F] ' +
         '[--trap-kind point|circle|line] [--trap-center X,Y] [--trap-radius R] [--trap-angle DEG] ' +
         '[--trap-mode glow|rings] [--trap-falloff F] [--trap-freq N] [--trap-strength S] ' +
+        '[--phase-strength S] [--phase-freq F] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);
@@ -386,7 +410,7 @@ async function main(): Promise<void> {
     renderer.reset(genome);
     const totalSamples = chunkedIterate(
       renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter,
-      { colorMode, flowStrength, flowScale, trap },
+      { colorMode, flowStrength, flowScale, trap, phaseStrength, phaseFreq },
     );
     renderer.present({ genome, outputView: texture.createView(), totalSamples, forceDeOff, transparent });
   } else {
@@ -404,7 +428,7 @@ async function main(): Promise<void> {
       console.log(`[pyr3-render] probe: walkers=${dispatchWalkers} iters=${dispatchIters} (--walkers override)`);
     }
     renderer.reset(genome);
-    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter, { colorMode, flowStrength, flowScale, trap });
+    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter, { colorMode, flowStrength, flowScale, trap, phaseStrength, phaseFreq });
     renderer.present({
       genome,
       outputView: texture.createView(),
