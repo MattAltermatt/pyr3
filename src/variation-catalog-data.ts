@@ -4072,7 +4072,7 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
     idx: V.boarders2,
     name: 'boarders2',
     source: sourceForIdx(V.boarders2),
-    formula: "V_{210}:\\; \\text{see kernel} - \\text{4 RNG calls per iter (precompute branch reset under review, see #163 followups).}\\; \\text{Cell offset scaled by }|c|;\\; \\text{edge-shift distance scaled by }|c|\\cdot|\\mathrm{left}|.",
+    formula: "V_{210}:\\; \\text{offset} \\propto |c|,\\;\\; \\text{edge-shift} \\propto |c|\\cdot|\\mathrm{left}|",
     blurb: "Xyrus02's boarders2 — Apophysis boarders plugin with 3 tunable parameters. RNG splits each iter between center-pull and edge-shift behavior. Inner-cell offset scales by |c|; edge-shift distance scales by |c|·|left|. Produces sharp grid-tile patterns with controllable border thickness.",
     params: [
       { name: 'c',     default: 0.4,  min: 0, max: 1, step: 0.05 },

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import katex from 'katex';
 import {
   CATALOG_DATA,
   getCatalogDoc,
@@ -110,6 +111,21 @@ describe('CATALOG_DATA shape invariants', () => {
       expect(doc, `V${idx} missing`).toBeDefined();
       expect(doc!.formula, `V${idx} formula empty`).toBeTruthy();
       expect(doc!.blurb, `V${idx} blurb empty`).toBeTruthy();
+    }
+  });
+
+  // #452 — every formula must be valid LaTeX. The catalog section renders with
+  // `{ throwOnError: false }`, so a malformed formula silently degrades to
+  // KaTeX's red raw-source error rendering instead of failing loudly. This
+  // guard renders each formula with `throwOnError: true` so a leaked dev-note
+  // or any TeX-breaking character (e.g. a bare `#`, as in the V210 boarders2
+  // regression) fails the build instead of shipping a red error on the page.
+  it('renders every catalog formula as valid KaTeX (#452)', () => {
+    for (const doc of CATALOG_DATA) {
+      expect(
+        () => katex.renderToString(doc.formula, { throwOnError: true }),
+        `V${doc.idx} (${doc.name}) formula is invalid LaTeX: ${doc.formula}`,
+      ).not.toThrow();
     }
   });
 });
