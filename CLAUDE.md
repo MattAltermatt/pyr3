@@ -127,8 +127,11 @@ The old `ROADMAP.md` / `BACKLOG.md` / `CHANGELOG.md` triad was retired; do not r
   issues by `#N`. The legacy `[PYR3-NNN]` IDs are preserved in each migrated issue body and in
   git history, but new work uses `#N` — do not invent new `PYR3-` IDs.
 - **Roadmap → [Milestones](https://github.com/MattAltermatt/pyr3/milestones).** Each `vX.Y`
-  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.11
-  have all shipped** (latest: `v1.11.0` on 2026-06-19 — the **Editor IA rework** milestone (#27)
+  milestone IS a ship gate: when every issue in it closes, tag the release. **v1.0 → v1.12
+  have all shipped** (latest: `v1.12.0` on 2026-06-24 — the **Mobile rework** milestone (#13)
+  closed: the #66 consumption-only mobile overhaul — viewport-gated nav, creation surfaces
+  routed to lightweight interstitials, per-page chrome stripping, responsive gallery;
+  `v1.11.0` on 2026-06-19 — the **Editor IA rework** milestone (#27)
   closed: the 4-lens editor redesign (XForm · Scene · Color · Output), xform reorder (#335),
   one consolidated Color lens (#358), in-lens gradient editor retiring `/gradient` (#372), and the
   6-tier affordance/control-consistency pass (#373); `v1.10.0` on 2026-06-14 was the **More
