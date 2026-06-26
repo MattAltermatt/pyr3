@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateSurpriseBatch, isCollapsed } from './surprise-seed';
+import { generateSurpriseBatch, isCollapsed, ATTRACTOR_POOL } from './surprise-seed';
+import { generateSprottGenome } from './sprott-search';
 import { generateRandomGenome } from './edit-seed';
 import { PRIMARY_ELIGIBLE } from './surprise-seed-pool';
 import { V } from './variations';
@@ -18,6 +19,26 @@ describe('generateSurpriseBatch', () => {
   });
   it('is deterministic for the same rng seed', () => {
     expect(generateSurpriseBatch(seededRng(5), 8)).toEqual(generateSurpriseBatch(seededRng(5), 8));
+  });
+  it('the default (empty) pool emits zero single-map attractors', () => {
+    // #466/#467 — non-wall callers stay pure-flame: no slot should be a one-xform
+    // sprott/hopalong/gm attractor.
+    const attractorIdxs = new Set<number>([V.sprott_poly, V.hopalong, V.gumowski_mira]);
+    for (const g of generateSurpriseBatch(seededRng(8), 16)) {
+      const single = g.xforms.length === 1 ? g.xforms[0]!.variations[0]?.index : undefined;
+      expect(single === undefined || !attractorIdxs.has(single)).toBe(true);
+    }
+  });
+  it('a forced attractor pool (total 1) emits ≥2 of the 3 map types', () => {
+    // #466/#467 — force every slot to an attractor and assert the 3-way even split
+    // surfaces at least two distinct types over 30 draws.
+    const batch = generateSurpriseBatch(seededRng(11), 30, {}, { ...ATTRACTOR_POOL, total: 1 });
+    const kinds = new Set<number>();
+    for (const g of batch) {
+      const single = g.xforms.length === 1 ? g.xforms[0]!.variations[0]?.index : undefined;
+      if (single === V.sprott_poly || single === V.hopalong || single === V.gumowski_mira) kinds.add(single);
+    }
+    expect(kinds.size).toBeGreaterThanOrEqual(2);
   });
   it('each genome has 4 xforms and a non-empty palette', () => {
     for (const g of generateSurpriseBatch(seededRng(2), 8)) {
@@ -128,11 +149,11 @@ describe('Sprott auto-search mix (#470)', () => {
   it('sprottFraction=1 → (almost) every slot is a vetted single-xform Sprott genome', () => {
     // Every slot ATTEMPTS Sprott; a ~3.6%/slot give-up (200-roll cap) falls back
     // to a flame by design, so assert the vast majority are Sprott (≥ n-1).
-    const batch = generateSurpriseBatch(seededRng(123), 6, {}, 1);
+    const batch = generateSurpriseBatch(seededRng(123), 6, {}, { total: 1, gens: [generateSprottGenome] });
     expect(batch.filter(isSprott).length).toBeGreaterThanOrEqual(batch.length - 1);
   });
-  it('sprottFraction=0 → no Sprott genomes', () => {
-    expect(generateSurpriseBatch(seededRng(123), 8, {}, 0).some(isSprott)).toBe(false);
+  it('empty pool → no Sprott genomes', () => {
+    expect(generateSurpriseBatch(seededRng(123), 8, {}, { total: 0, gens: [] }).some(isSprott)).toBe(false);
   });
   it('default batch stays pure-flame (Sprott is opt-in)', () => {
     expect(generateSurpriseBatch(seededRng(7), 8).some(isSprott)).toBe(false);

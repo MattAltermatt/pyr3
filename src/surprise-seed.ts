@@ -9,6 +9,22 @@ import { generateRandomGenome } from './edit-seed';
 import { isAttractorCollapsed } from './edit-fit-viewport';
 import { pickStratifiedPrimaries } from './surprise-seed-pool';
 import { generateSprottGenome } from './sprott-search';
+import { generateHopalongGenome } from './hopalong-search';
+import { generateGmGenome } from './gm-search';
+
+/** Creator-wall attractor pool: with probability `total`, a wall slot becomes a
+ *  single-map strange attractor instead of a flame; the type is picked evenly
+ *  from `gens`. Default total 0 (empty gens) → non-wall callers + the flame
+ *  tests stay pure-flame. The wall passes ATTRACTOR_POOL. (#466/#467; was the
+ *  single #470 SPROTT_FRACTION number.) */
+export interface AttractorPool {
+  total: number;
+  gens: Array<(rng: () => number) => Genome | null>;
+}
+export const ATTRACTOR_POOL: AttractorPool = {
+  total: 0.3,
+  gens: [generateSprottGenome, generateHopalongGenome, generateGmGenome],
+};
 
 /** Steering params for the Surprise Wall (#surprise-v2). All optional — an empty
  *  object reproduces the original diverse-default batch. */
@@ -55,9 +71,10 @@ export function generateSurpriseBatch(
   rng: () => number = Math.random,
   n = 16,
   params: SurpriseGenParams = {},
-  // #470 — opt-in: 0 by default so non-wall callers (and the flame-generation
-  // tests) stay pure-flame. The Creator wall passes SPROTT_SEARCH.SPROTT_FRACTION.
-  sprottFraction = 0,
+  // #466/#467 — opt-in attractor pool: empty by default so non-wall callers (and
+  // the flame-generation tests) stay pure-flame. The Creator wall passes
+  // ATTRACTOR_POOL (sprott + hopalong + gm, ~0.3 split 3 ways).
+  pool: AttractorPool = { total: 0, gens: [] },
 ): Genome[] {
   const primaries = pickStratifiedPrimaries(rng, n, {
     preferred: params.preferred,
@@ -73,10 +90,15 @@ export function generateSurpriseBatch(
     preferred: params.preferMode === 'only' ? params.preferred : undefined,
   };
   return primaries.map((primaryOverride) => {
-    // #470 — with prob sprottFraction, emit a Lyapunov-vetted Sprott attractor.
-    // A give-up (null, ~3.6%/slot) or unfittable result falls through to a flame.
-    if (rng() < sprottFraction) {
-      const s = generateSprottGenome(rng);
+    // #466/#467 — with prob pool.total, emit a single-map strange attractor of an
+    // evenly-picked type. The gate rng() is ALWAYS drawn (matching the old #470
+    // single-fraction cadence) so the empty-pool default path's rng stream — and
+    // therefore every non-wall flame — is byte-identical to before. A give-up
+    // (null) or unfittable result falls through to a flame.
+    const gate = rng();
+    if (pool.gens.length > 0 && gate < pool.total) {
+      const pick = pool.gens[Math.min(pool.gens.length - 1, Math.floor(rng() * pool.gens.length))]!;
+      const s = pick(rng);
       if (s) return s;
     }
     let g = generateRandomGenome(rng, { primaryOverride, ...opts });
