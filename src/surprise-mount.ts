@@ -10,7 +10,7 @@
 
 import { type Genome } from './genome';
 import { VARIATION_NAMES } from './variations';
-import { generateSurpriseBatch, ATTRACTOR_POOL, type SurpriseGenParams } from './surprise-seed';
+import { generateSurpriseBatch, attractorPoolFor, type SurpriseGenParams } from './surprise-seed';
 import { createSurpriseQueue } from './surprise-queue';
 import { makeGpuRenderThumb, THUMB_DIM } from './surprise-render';
 import { createSurpriseState } from './surprise-state';
@@ -222,7 +222,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
   function refillSlot(slot: number): void {
     if (!slots[slot]) return;
     slots[slot]!.classList.add('pending');
-    const [genome] = generateSurpriseBatch(Math.random, 1, settingsToParams(appliedSettings), ATTRACTOR_POOL);
+    const [genome] = generateSurpriseBatch(Math.random, 1, settingsToParams(appliedSettings), attractorPoolFor(appliedSettings.preferred));
     generated++; wallGenomes[slot] = genome!; persistWall();
     pendingGenomes.push({ genome: genome!, slot });
     queue.enqueue([genome!]);
@@ -275,7 +275,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
       const end = Math.min(count, i + GEN_CHUNK);
       const chunk = provided
         ? provided.slice(i, end)
-        : generateSurpriseBatch(Math.random, end - i, settingsToParams(appliedSettings), ATTRACTOR_POOL);
+        : generateSurpriseBatch(Math.random, end - i, settingsToParams(appliedSettings), attractorPoolFor(appliedSettings.preferred));
       for (let k = 0; k < chunk.length; k++, i++) {
         wallGenomes[i] = chunk[k]!;
         generated++;
@@ -334,7 +334,7 @@ export function mountSurprisePage(host: HTMLElement, opts: SurpriseMountOptions)
     const step = (): void => {
       if (myEpoch !== genEpoch) return;
       const end = Math.min(to, i + GEN_CHUNK);
-      const chunk = generateSurpriseBatch(Math.random, end - i, settingsToParams(appliedSettings), ATTRACTOR_POOL);
+      const chunk = generateSurpriseBatch(Math.random, end - i, settingsToParams(appliedSettings), attractorPoolFor(appliedSettings.preferred));
       for (let k = 0; k < chunk.length; k++, i++) {
         wallGenomes[i] = chunk[k]!; generated++;
         pendingGenomes.push({ genome: chunk[k]!, slot: i });

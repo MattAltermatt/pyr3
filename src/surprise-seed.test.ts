@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateSurpriseBatch, isCollapsed, ATTRACTOR_POOL } from './surprise-seed';
+import { generateSurpriseBatch, isCollapsed, ATTRACTOR_POOL, attractorPoolFor, isAttractorVariation } from './surprise-seed';
 import { generateSprottGenome } from './sprott-search';
 import { generateRandomGenome } from './edit-seed';
 import { PRIMARY_ELIGIBLE } from './surprise-seed-pool';
@@ -28,6 +28,33 @@ describe('generateSurpriseBatch', () => {
       const single = g.xforms.length === 1 ? g.xforms[0]!.variations[0]?.index : undefined;
       expect(single === undefined || !attractorIdxs.has(single)).toBe(true);
     }
+  });
+  it('attractorPoolFor: no filter → the full 0.3 mixed pool', () => {
+    expect(attractorPoolFor(undefined)).toBe(ATTRACTOR_POOL);
+    expect(attractorPoolFor([])).toBe(ATTRACTOR_POOL);
+  });
+  it('attractorPoolFor: a single attractor → a focused 100% pool of that one', () => {
+    const p = attractorPoolFor([V.hopalong]);
+    expect(p.total).toBe(1);
+    expect(p.gens).toHaveLength(1);
+    // the focused pool emits only Hopalong
+    const g = p.gens[0]!(seededRng(2));
+    expect(g!.xforms[0]!.variations[0]!.index).toBe(V.hopalong);
+  });
+  it('attractorPoolFor: a non-attractor filter → attractors suppressed (#472)', () => {
+    const p = attractorPoolFor([V.swirl]);
+    expect(p.total).toBe(0);
+    expect(p.gens).toHaveLength(0);
+  });
+  it('attractorPoolFor: a mixed filter → attractors suppressed', () => {
+    expect(attractorPoolFor([V.hopalong, V.swirl]).total).toBe(0);
+  });
+  it('isAttractorVariation flags only the single-map attractors', () => {
+    expect(isAttractorVariation(V.sprott_poly)).toBe(true);
+    expect(isAttractorVariation(V.hopalong)).toBe(true);
+    expect(isAttractorVariation(V.gumowski_mira)).toBe(true);
+    expect(isAttractorVariation(V.swirl)).toBe(false);
+    expect(isAttractorVariation(V.linear)).toBe(false);
   });
   it('a forced attractor pool (total 1) emits ≥2 of the 3 map types', () => {
     // #466/#467 — force every slot to an attractor and assert the 3-way even split

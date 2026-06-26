@@ -8,6 +8,7 @@ import { type Genome } from './genome';
 import { generateRandomGenome } from './edit-seed';
 import { isAttractorCollapsed } from './edit-fit-viewport';
 import { pickStratifiedPrimaries } from './surprise-seed-pool';
+import { V } from './variations';
 import { generateSprottGenome } from './sprott-search';
 import { generateHopalongGenome } from './hopalong-search';
 import { generateGmGenome } from './gm-search';
@@ -25,6 +26,36 @@ export const ATTRACTOR_POOL: AttractorPool = {
   total: 0.3,
   gens: [generateSprottGenome, generateHopalongGenome, generateGmGenome],
 };
+
+/** Single-map attractor variations → their single-xform generator. These cannot
+ *  be ordinary multi-xform-flame primaries (they only show their look ALONE on an
+ *  identity-affine weight-1 xform), so a `?vars=…` filter routes them to the pool
+ *  rather than featuring them as a warp. */
+const ATTRACTOR_GENS: Record<number, (rng: () => number) => Genome | null> = {
+  [V.sprott_poly]: generateSprottGenome,
+  [V.hopalong]: generateHopalongGenome,
+  [V.gumowski_mira]: generateGmGenome,
+};
+
+/** True if `idx` is a single-map strange-attractor variation. */
+export function isAttractorVariation(idx: number): boolean {
+  return Object.prototype.hasOwnProperty.call(ATTRACTOR_GENS, idx);
+}
+
+/** Resolve the wall's attractor pool from a `/creator?vars=…` deep-link seed:
+ *  - no seed (default wall) → the full 0.3 mixed pool.
+ *  - exactly one single-map attractor → a focused 100% pool of that attractor, so
+ *    `/creator?vars=hopalong` is a wall of fresh auto-searched Hopalong attractors
+ *    (NOT hopalong featured as a multi-xform warp).
+ *  - any other filter (a normal variation, or a mix) → attractors SUPPRESSED so the
+ *    filter is respected and sprott/etc. no longer leak into it (#472). */
+export function attractorPoolFor(preferred: number[] | undefined): AttractorPool {
+  if (!preferred || preferred.length === 0) return ATTRACTOR_POOL;
+  if (preferred.length === 1 && isAttractorVariation(preferred[0]!)) {
+    return { total: 1, gens: [ATTRACTOR_GENS[preferred[0]!]!] };
+  }
+  return { total: 0, gens: [] };
+}
 
 /** Steering params for the Surprise Wall (#surprise-v2). All optional — an empty
  *  object reproduces the original diverse-default batch. */
