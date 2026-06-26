@@ -24,7 +24,7 @@ GPU. Nothing to install: open a flame, render it in 4K, and arrow-key through th
   corpus and press **← / →** (or the `‹ prev` / `next ›` buttons) to roam 52,000+ flames.
 - 🖼 **[Browse the gallery](https://pyr3.app/showcase)** — a wall of rendered flames to scroll.
 - 🎛 **[Edit a flame](https://pyr3.app/editor)** — visual editor: xforms (decomposed
-  scale / rotation / position), affine + post-affine, the full **323-variation catalog** — the
+  scale / rotation / position), affine + post-affine, the full **326-variation catalog** — the
   99 flam3 core variations, **JWildfire / Apophysis expansions** (folds, attractors,
   cartographic warps), and pyr3's own **direct-color (DC) family** (`dc_linear` · `dc_perlin` ·
   `dc_gridout` · `dc_cylinder`) — plus palette picker, undo/redo, name templates, save to
