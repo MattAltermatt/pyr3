@@ -55,6 +55,7 @@ export interface StateChange {
 
 export type SectionKey =
   | 'palette'
+  | 'color-mode'
   | 'curves'
   | 'scopes'
   | 'hsl'
@@ -187,6 +188,7 @@ export function createEditState(genome: Genome, seed: number): EditState {
       // #27 — subpanels start EXPANDED on first load (collapse=false); the
       // user's per-section open/closed choices then persist between sessions.
       palette: false,
+      'color-mode': false,
       curves: false,
       scopes: false,
       hsl: false,
@@ -518,6 +520,7 @@ export function restorePanelWidth(): number {
 // per-section choices win on subsequent sessions (restoreSectionCollapse).
 const DEFAULT_SECTION_COLLAPSE: Record<SectionKey, boolean> = {
   palette: false,
+  'color-mode': false,
   curves: false,
   scopes: false,
   hsl: false,

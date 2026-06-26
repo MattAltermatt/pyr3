@@ -89,6 +89,7 @@ const SEAM_EXEMPT = new Set<string>([
   'edit-section-curves.ts',   // /editor Color Curves section — DOM-mounting (#116)
   'edit-section-scopes.ts',   // /editor Scopes section — DOM-mounting (#174)
   'edit-section-hsl.ts',      // /editor HSL Adjust section — DOM-mounting (#172)
+  'edit-section-color-mode.ts', // /editor Color-mode section — DOM-mounting (#460)
   'edit-canvas-nav.ts',   // /editor pan + zoom — owns mouse/wheel listeners on window
   'edit-xform-viz.ts',    // /editor affine viz — owns a 2D canvas
   'edit-xform-gizmo.ts',       // /editor on-canvas affine gizmo overlay — owns a 2D canvas + listeners (#350)

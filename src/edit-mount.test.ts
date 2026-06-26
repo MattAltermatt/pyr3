@@ -287,14 +287,14 @@ describe('resolveColdStartCollapse (Task 6.5)', () => {
   it('returns the default all-EXPANDED map when nothing persisted (#27)', () => {
     const map = resolveColdStartCollapse();
     expect(map).toEqual({
-      palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
+      palette: false, 'color-mode': false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
       'global-symmetry': false, 'global-tonemap': false, density: false, render: false,
     });
   });
 
   it('returns the persisted map when present', () => {
     const stored = {
-      palette: false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false, final: true,
+      palette: false, 'color-mode': false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false, final: true,
       'global-symmetry': false, 'global-tonemap': false, density: false, render: true,
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(stored));

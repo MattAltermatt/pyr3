@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_COLOR_MODE_CONFIG,
+  DEFAULT_TRAP_CONFIG,
   DEFAULT_PREVIEW_CONFIG,
   PREVIEW_TIER_LONGEST_EDGE,
   computePreviewDims,
@@ -210,8 +211,8 @@ describe('color-mode config (#459)', () => {
   afterEach(() => globalThis.localStorage?.clear());
 
   it('#459 round-trips color-mode config', () => {
-    saveColorModeConfig({ mode: 'flow', flowStrength: 0.5, flowScale: 3 });
-    expect(loadColorModeConfig()).toEqual({ mode: 'flow', flowStrength: 0.5, flowScale: 3 });
+    saveColorModeConfig({ mode: 'flow', flowStrength: 0.5, flowScale: 3, trap: DEFAULT_TRAP_CONFIG });
+    expect(loadColorModeConfig()).toEqual({ mode: 'flow', flowStrength: 0.5, flowScale: 3, trap: DEFAULT_TRAP_CONFIG });
   });
 
   it('#459 returns defaults when storage empty', () => {
@@ -225,5 +226,55 @@ describe('color-mode config (#459)', () => {
     expect(c.mode).toBe('palette');
     expect(c.flowStrength).toBeLessThanOrEqual(1);
     expect(c.flowScale).toBeGreaterThan(0);
+  });
+});
+
+describe('trap-distance config (#460)', () => {
+  beforeEach(() => globalThis.localStorage?.clear());
+  afterEach(() => globalThis.localStorage?.clear());
+
+  it('defaults carry a full TrapConfig', () => {
+    expect(DEFAULT_COLOR_MODE_CONFIG.trap).toEqual(DEFAULT_TRAP_CONFIG);
+    expect(DEFAULT_TRAP_CONFIG.kind).toBe('point');
+    expect(DEFAULT_TRAP_CONFIG.mode).toBe('glow');
+  });
+
+  it('accepts trap-distance as a valid mode', () => {
+    saveColorModeConfig({ ...DEFAULT_COLOR_MODE_CONFIG, mode: 'trap-distance' });
+    expect(loadColorModeConfig().mode).toBe('trap-distance');
+  });
+
+  it('a pre-#460 blob (no trap field) loads with defaulted trap — no version bump', () => {
+    globalThis.localStorage?.setItem('pyr3-color-mode-config', JSON.stringify({ mode: 'flow', flowStrength: 0.5, flowScale: 3, _v: 1 }));
+    const c = loadColorModeConfig();
+    expect(c.mode).toBe('flow');           // old fields preserved
+    expect(c.trap).toEqual(DEFAULT_TRAP_CONFIG); // missing trap → default, not a reset
+  });
+
+  it('clamps/repairs a garbage trap blob to valid values', () => {
+    globalThis.localStorage?.setItem(
+      'pyr3-color-mode-config',
+      JSON.stringify({
+        ...DEFAULT_COLOR_MODE_CONFIG, mode: 'trap-distance',
+        trap: { kind: 'bogus', mode: 'nope', cx: NaN, cy: 1, radius: -2, angle: 'x', falloff: -1, freq: 0, strength: 5 },
+        _v: 1,
+      }),
+    );
+    const t = loadColorModeConfig().trap;
+    expect(t.kind).toBe('point');          // invalid enum → default
+    expect(t.mode).toBe('glow');           // invalid enum → default
+    expect(t.cx).toBe(DEFAULT_TRAP_CONFIG.cx);     // NaN → default
+    expect(t.cy).toBe(1);                  // valid kept
+    expect(t.radius).toBe(DEFAULT_TRAP_CONFIG.radius); // non-positive → default
+    expect(t.angle).toBe(DEFAULT_TRAP_CONFIG.angle);   // non-finite → default
+    expect(t.falloff).toBe(DEFAULT_TRAP_CONFIG.falloff); // negative → default
+    expect(t.freq).toBe(DEFAULT_TRAP_CONFIG.freq);   // non-positive → default
+    expect(t.strength).toBe(1);            // clamped to [0,1]
+  });
+
+  it('round-trips a valid trap config', () => {
+    const trap = { kind: 'circle' as const, mode: 'rings' as const, cx: 0.2, cy: -0.3, radius: 0.8, angle: 45, falloff: 3, freq: 6, strength: 0.5 };
+    saveColorModeConfig({ ...DEFAULT_COLOR_MODE_CONFIG, mode: 'trap-distance', trap });
+    expect(loadColorModeConfig().trap).toEqual(trap);
   });
 });

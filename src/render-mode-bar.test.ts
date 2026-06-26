@@ -15,9 +15,7 @@ import { mountRenderModeBar, type RenderModeBarOpts } from './render-mode-bar';
 import {
   DEFAULT_PREVIEW_CONFIG,
   loadPreviewConfig,
-  loadColorModeConfig,
   type PreviewRenderConfig,
-  type ColorModeConfig,
 } from './render-mode-config';
 
 // Map-backed localStorage stub — Storage.prototype spies trip CI per the
@@ -385,57 +383,6 @@ describe('render-mode-bar — Save Render button', () => {
     expect((h.host.querySelector('[data-render-h]') as HTMLInputElement).value).toBe('1080');
     const q75 = h.host.querySelector('[data-render-q="75"]') as HTMLElement;
     expect(q75.classList.contains('on')).toBe(true);
-  });
-});
-
-describe('render-mode-bar — color mode (#459)', () => {
-  it('#459 mounts a color-mode toggle and emits config on change', () => {
-    const changes: ColorModeConfig[] = [];
-    const h = makeHarness();
-    mountRenderModeBar({ ...h.opts, onColorModeChange: (c) => changes.push(c) });
-    const sel = h.host.querySelector('[data-render-color-mode]') as HTMLSelectElement;
-    expect(sel).toBeTruthy();
-    sel.value = 'flow';
-    sel.dispatchEvent(new Event('change'));
-    expect(changes.at(-1)?.mode).toBe('flow');
-    expect(h.host.querySelector('[data-flow-strength]')).toBeTruthy();
-  });
-
-  it('#459 flow sliders are hidden in palette mode, shown in flow mode', () => {
-    const h = makeHarness();
-    mountRenderModeBar(h.opts);
-    const sel = h.host.querySelector('[data-render-color-mode]') as HTMLSelectElement;
-    const strength = h.host.querySelector('[data-flow-strength]') as HTMLInputElement;
-    const scale = h.host.querySelector('[data-flow-scale]') as HTMLInputElement;
-    // Default mode is palette → sliders hidden.
-    expect(sel.value).toBe('palette');
-    const container = strength.closest('[data-flow-sliders]') as HTMLElement;
-    expect(container.hidden).toBe(true);
-    expect(scale).toBeTruthy();
-    // Toggle to flow → sliders shown.
-    sel.value = 'flow';
-    sel.dispatchEvent(new Event('change'));
-    expect(container.hidden).toBe(false);
-  });
-
-  it('#459 slider edits persist + fire onColorModeChange + onChange', () => {
-    const changes: ColorModeConfig[] = [];
-    const h = makeHarness();
-    mountRenderModeBar({ ...h.opts, onColorModeChange: (c) => changes.push(c) });
-    const sel = h.host.querySelector('[data-render-color-mode]') as HTMLSelectElement;
-    sel.value = 'flow';
-    sel.dispatchEvent(new Event('change'));
-    const strength = h.host.querySelector('[data-flow-strength]') as HTMLInputElement;
-    strength.value = '0.5';
-    strength.dispatchEvent(new Event('input'));
-    expect(changes.at(-1)?.flowStrength).toBe(0.5);
-    expect(loadColorModeConfig().flowStrength).toBe(0.5);
-    const scale = h.host.querySelector('[data-flow-scale]') as HTMLInputElement;
-    scale.value = '8';
-    scale.dispatchEvent(new Event('input'));
-    expect(changes.at(-1)?.flowScale).toBe(8);
-    expect(loadColorModeConfig().flowScale).toBe(8);
-    expect(h.changeCalls).toBeGreaterThanOrEqual(1);
   });
 });
 

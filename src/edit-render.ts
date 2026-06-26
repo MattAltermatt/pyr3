@@ -60,7 +60,7 @@ export interface EditRendererOpts {
    *  the iterate dispatch colors each splat by its per-iteration displacement.
    *  Read at reseed time (color is baked during iteration). Independent of the
    *  genome — a render-bar pref, not a flame property. */
-  getColorMode?: () => { mode: 'palette' | 'flow'; flowStrength: number; flowScale: number };
+  getColorMode?: () => { mode: 'palette' | 'flow' | 'trap-distance'; flowStrength: number; flowScale: number; trap: import('./trap-config').TrapConfig };
 }
 
 export function createEditRenderer(
@@ -89,6 +89,7 @@ export function createEditRenderer(
       colorMode: cm?.mode,
       flowStrength: cm?.flowStrength,
       flowScale: cm?.flowScale,
+      trap: cm?.trap,
     });
     return actualSamples;
   }

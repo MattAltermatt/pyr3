@@ -104,11 +104,28 @@ struct Uniforms {
   // iteration's net displacement (direction → hue, log-saturated magnitude →
   // value), blended over the palette/DC rgb by flow_strength. flow_scale tunes
   // the magnitude saturation. When color_mode == 0 the splat block skips all of
-  // it, so the 4-channel histogram output is byte-identical. Struct grows to 18
-  // named slots (72 bytes) → rounds to 80 (slot 17 = byte 68).
-  color_mode: u32,      // slot 15 (byte 60)
+  // it, so the 4-channel histogram output is byte-identical. (#460 later grew the
+  // struct to 28 slots / 112 bytes — see the trap fields + UNIFORMS_BYTES below.)
+  color_mode: u32,      // slot 15 (byte 60) — 0=palette, 1=flow (#459), 2=trap (#460)
   flow_strength: f32,   // slot 16 (byte 64) — blend [0,1]: 0 = palette, 1 = pure flow
   flow_scale: f32,      // slot 17 (byte 68) — magnitude log-saturation factor
+  // #460 — trap-distance coloring (color_mode == 2). Color each splat by its
+  // INSTANTANEOUS distance to a trap shape, mapped through the gradient, blended
+  // over palette/DC rgb by trap_strength. Slots 18-27 (bytes 72-108) → struct is
+  // 112 bytes. color_mode 0/1 skip the trap branch → byte-identical output.
+  // DO NOT reformulate as min-over-orbit (spec 2026-06-25 / issue #460): the
+  // running-min smears across the space-filling attractor and the histogram mean
+  // decorrelates it from bin position. Instantaneous distance is correct here.
+  trap_kind: u32,       // slot 18 — 0=point, 1=circle, 2=line
+  trap_mode: u32,       // slot 19 — 0=glow, 1=rings
+  trap_cx: f32,         // slot 20
+  trap_cy: f32,         // slot 21
+  trap_radius: f32,     // slot 22 — circle
+  trap_nx: f32,         // slot 23 — line normal x (-sinθ)
+  trap_ny: f32,         // slot 24 — line normal y ( cosθ)
+  trap_falloff: f32,    // slot 25 — glow exp falloff
+  trap_freq: f32,       // slot 26 — rings frequency
+  trap_strength: f32,   // slot 27 — blend [0,1]
 };
 
 // Variation slots:
@@ -8548,6 +8565,34 @@ fn chaos_main(@builtin(global_invocation_id) gid: vec3u) {
             let flow_rgb = hsv_to_rgb(hue, 1.0, val);
             pal = vec4f(mix(pal.xyz, flow_rgb, clamp(u.flow_strength, 0.0, 1.0)), pal.w);
           }
+        }
+        // #460 — trap-distance color override. Color this splat by its distance
+        // to the trap shape, mapped to a gradient coord then blended over pal.
+        // length/abs/exp/fract are Dawn-safe here; the line normal is precomputed
+        // host-side (-sinθ, cosθ) so the kernel does no trig (no f32 trig cliff).
+        // Gated on color_mode == 2 → modes 0/1 are byte-identical no-ops.
+        if (u.color_mode == 2u) {
+          let q = splat_p.xy - vec2f(u.trap_cx, u.trap_cy);
+          var trap_dist: f32;
+          if (u.trap_kind == 0u) {
+            trap_dist = length(q);                                  // point
+          } else if (u.trap_kind == 1u) {
+            trap_dist = abs(length(q) - u.trap_radius);             // circle
+          } else {
+            trap_dist = abs(q.x * u.trap_nx + q.y * u.trap_ny);     // line
+          }
+          var trap_t: f32;
+          if (u.trap_mode == 0u) {
+            // glow: bright at dist≈0, decays. max() guards a negative falloff
+            // (DispatchOpts has no range check) from overflowing exp().
+            trap_t = clamp(exp(-max(u.trap_falloff, 0.0) * trap_dist), 0.0, 1.0);
+          } else {
+            // rings: repeating bands. max() guards a non-positive freq.
+            trap_t = fract(trap_dist * max(u.trap_freq, 0.0));
+          }
+          let trap_idx = min(u32(trap_t * f32(PALETTE_LAST_U)), PALETTE_LAST_U);
+          let trap_rgb = palette[trap_idx].xyz;
+          pal = vec4f(mix(pal.xyz, trap_rgb, clamp(u.trap_strength, 0.0, 1.0)), pal.w);
         }
         // PYR3-015 alpha-scaling: rgb AND count (alpha) channels scaled by
         // xform opacity. Scaling count too is load-bearing — at opacity=0,

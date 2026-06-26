@@ -66,22 +66,32 @@ export function saveExportConfig(cfg: ExportConfig): void {
 // classic flame look) or `flow` (velocity-flow coloring derived from the
 // walker's direction of travel). Not part of the genome — a presentation pref,
 // like the export + preview configs above.
-export type ColorMode = 'palette' | 'flow';
+export type ColorMode = 'palette' | 'flow' | 'trap-distance';
+
+// #460 — trap-distance coloring. The pure data types + sanitizer live in the
+// engine-safe `trap-config.ts` (so the no-DOM kernel can import them without
+// dragging in this module's localStorage code — the FE/BE seam, #15). Re-export
+// the shape + default here for FE consumers that already import from this module.
+import { type TrapConfig, DEFAULT_TRAP_CONFIG, sanitizeTrap } from './trap-config';
+export type { TrapKind, TrapFalloffMode, TrapConfig } from './trap-config';
+export { DEFAULT_TRAP_CONFIG } from './trap-config';
 
 export interface ColorModeConfig {
   mode: ColorMode;
   flowStrength: number; // blend of flow color over palette; clamped to [0, 1]
   flowScale: number;    // flow-field spatial scale; must be > 0
+  trap: TrapConfig;     // #460 — trap-distance params (consulted when mode === 'trap-distance')
 }
 
 export const DEFAULT_COLOR_MODE_CONFIG: ColorModeConfig = {
   mode: 'palette',
   flowStrength: 1.0,
   flowScale: 2.0,
+  trap: DEFAULT_TRAP_CONFIG,
 };
 
 const COLOR_MODE_STORAGE_KEY = 'pyr3-color-mode-config';
-const VALID_COLOR_MODES: ReadonlyArray<ColorMode> = ['palette', 'flow'];
+const VALID_COLOR_MODES: ReadonlyArray<ColorMode> = ['palette', 'flow', 'trap-distance'];
 
 /** Read ColorModeConfig from localStorage; DEFAULT on any failure (missing key,
  *  malformed JSON, schema-version mismatch). `flowStrength` is clamped to
@@ -103,7 +113,8 @@ export function loadColorModeConfig(): ColorModeConfig {
     const flowScale = Number.isFinite(obj.flowScale) && (obj.flowScale as number) > 0
       ? (obj.flowScale as number)
       : DEFAULT_COLOR_MODE_CONFIG.flowScale;
-    return { mode, flowStrength, flowScale };
+    const trap = sanitizeTrap(obj.trap);
+    return { mode, flowStrength, flowScale, trap };
   } catch (err) {
     console.warn('pyr3: loadColorModeConfig failed; falling back to defaults', err);
     return { ...DEFAULT_COLOR_MODE_CONFIG };
@@ -117,6 +128,7 @@ export function saveColorModeConfig(cfg: ColorModeConfig): void {
       mode: cfg.mode,
       flowStrength: cfg.flowStrength,
       flowScale: cfg.flowScale,
+      trap: cfg.trap,
       _v: SCHEMA_VERSION,
     };
     globalThis.localStorage?.setItem(COLOR_MODE_STORAGE_KEY, JSON.stringify(payload));

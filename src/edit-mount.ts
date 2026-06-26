@@ -829,6 +829,15 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
   });
 
   function onPathChange(path: string): void {
+    // #460 — color-mode is a VIEWING pref (ColorModeConfig in localStorage),
+    // not a genome edit. The Color-lens "Color mode" section persists the cfg
+    // then signals here; reload it and slow-lane re-iterate (color is baked at
+    // splat time). Skip all genome logic below (no persist / history / gizmo).
+    if (path === 'color-mode') {
+      editorColorModeCfg = loadColorModeConfig();
+      scheduler.schedule({ lane: 'slow', path: 'color-mode' });
+      return;
+    }
     // #118 — record this as user-edit activity for the slow-render nudge
     // (pan/zoom does NOT route through onPathChange and so does NOT
     // count as "actively editing").
@@ -1759,12 +1768,9 @@ export function mountEditPage(opts: MountEditPageOpts): EditPageHandle {
     onSaveRender: (exp) => handleRenderPng(exp),
     canSave: () => !renderInFlight,
     showToast: (msg) => showToast(panelHost, msg),
-    // #459 — flow-map color mode change re-iterates the preview (color is baked
-    // at splat time → slow lane). Pref is independent of the genome.
-    onColorModeChange: (cfg) => {
-      editorColorModeCfg = cfg;
-      scheduler.schedule({ lane: 'slow', path: 'color-mode' });
-    },
+    // #460 — color-mode controls moved out of the bar into the Color-lens
+    // "Color mode" section; it persists ColorModeConfig + signals via
+    // onPathChange('color-mode') (handled above). The bar no longer owns it.
   });
 
   return {

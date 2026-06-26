@@ -29,12 +29,9 @@ import {
   type PreviewRenderConfig,
   type PreviewTier,
   type ExportFormat,
-  type ColorModeConfig,
   savePreviewConfig,
   loadExportConfig,
   saveExportConfig,
-  loadColorModeConfig,
-  saveColorModeConfig,
 } from './render-mode-config';
 import { getCapability } from './capability';
 import { renderSectionHelpIcon, previewSectionHelpIcon } from './help-text';
@@ -76,9 +73,8 @@ export interface RenderModeBarOpts {
   canSave(): boolean;
   showToast?(message: string): void;
   onChange?(): void;
-  /** #459 — invoked with the bar's current color-mode selection (palette vs
-   *  flow + flow sliders). The host uses it to re-render the preview. */
-  onColorModeChange?(cfg: ColorModeConfig): void;
+  // #460 — color-mode (palette/flow/trap) moved to the editor's Color-lens
+  // "Color mode" section; the bar no longer owns it (viewer is palette-only).
 }
 
 export interface RenderModeBarHandle {
@@ -394,93 +390,6 @@ export function mountRenderModeBar(opts: RenderModeBarOpts): RenderModeBarHandle
     saveExportConfig({ format: formatSelect.value as ExportFormat, transparent: transparentCb.checked });
     opts.onChange?.();
   });
-
-  // #459 — color-mode selector (palette vs velocity-flow coloring) + the two
-  // flow sliders, which only show in flow mode. Sticky per-browser via
-  // saveColorModeConfig; the host re-renders the preview on onColorModeChange.
-  const colorCfg = loadColorModeConfig();
-
-  const colorModeSelect = document.createElement('select');
-  colorModeSelect.dataset['renderColorMode'] = '';
-  colorModeSelect.className = 'pyr3-render-mode-bar-color-mode';
-  colorModeSelect.title = 'Color mode: the genome palette, or velocity-flow coloring';
-  const COLOR_MODE_OPTIONS: ReadonlyArray<{ value: 'palette' | 'flow'; label: string }> = [
-    { value: 'palette', label: 'Palette' },
-    { value: 'flow', label: 'Flow' },
-  ];
-  for (const o of COLOR_MODE_OPTIONS) {
-    const opt = document.createElement('option');
-    opt.value = o.value;
-    opt.textContent = o.label;
-    if (o.value === colorCfg.mode) opt.selected = true;
-    colorModeSelect.appendChild(opt);
-  }
-  renderSide.appendChild(colorModeSelect);
-
-  // Flow sliders live inside a PERSISTENT spacer that always occupies its
-  // width — so toggling Flow on/off never shifts Save Render (project "no-jump
-  // UI" rule). The spacer stays in layout; only the inner `flowSliders` content
-  // toggles via `hidden`. Using `hidden` on the sliders directly would set
-  // display:none and collapse the box, defeating the reservation.
-  const flowSpacer = document.createElement('div');
-  flowSpacer.className = 'pyr3-render-mode-bar-flow-spacer';
-  flowSpacer.style.minWidth = '220px';
-  const flowSliders = document.createElement('div');
-  flowSliders.dataset['flowSliders'] = '';
-  flowSliders.className = 'pyr3-render-mode-bar-flow-sliders';
-
-  const flowStrengthLabel = document.createElement('label');
-  flowStrengthLabel.className = 'pyr3-render-mode-bar-flow-strength';
-  const flowStrengthText = document.createElement('span');
-  flowStrengthText.textContent = 'Flow';
-  const flowStrength = document.createElement('input');
-  flowStrength.type = 'range';
-  flowStrength.dataset['flowStrength'] = '';
-  flowStrength.min = '0';
-  flowStrength.max = '1';
-  flowStrength.step = '0.05';
-  flowStrength.value = String(colorCfg.flowStrength);
-  flowStrengthLabel.append(flowStrengthText, flowStrength);
-  flowSliders.appendChild(flowStrengthLabel);
-
-  const flowScaleLabel = document.createElement('label');
-  flowScaleLabel.className = 'pyr3-render-mode-bar-flow-scale';
-  const flowScaleText = document.createElement('span');
-  flowScaleText.textContent = 'Scale';
-  const flowScale = document.createElement('input');
-  flowScale.type = 'range';
-  flowScale.dataset['flowScale'] = '';
-  flowScale.min = '0.5';
-  flowScale.max = '32';
-  flowScale.step = '0.5';
-  flowScale.value = String(colorCfg.flowScale);
-  flowScaleLabel.append(flowScaleText, flowScale);
-  flowSliders.appendChild(flowScaleLabel);
-
-  flowSpacer.appendChild(flowSliders);
-  renderSide.appendChild(flowSpacer);
-
-  function paintColorMode(): void {
-    // Toggle the INNER content; the spacer keeps its reserved width so adjacent
-    // controls (Save Render) never shift between modes.
-    flowSliders.hidden = colorModeSelect.value !== 'flow';
-  }
-  paintColorMode();
-
-  function emitColorMode(): void {
-    const cfg: ColorModeConfig = {
-      mode: colorModeSelect.value === 'flow' ? 'flow' : 'palette',
-      flowStrength: Number(flowStrength.value),
-      flowScale: Number(flowScale.value),
-    };
-    saveColorModeConfig(cfg);
-    paintColorMode();
-    opts.onColorModeChange?.(cfg);
-    opts.onChange?.();
-  }
-  colorModeSelect.addEventListener('change', emitColorMode);
-  flowStrength.addEventListener('input', emitColorMode);
-  flowScale.addEventListener('input', emitColorMode);
 
   // Save Render button
   const saveBtn = document.createElement('button');

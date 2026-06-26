@@ -56,14 +56,17 @@ export interface DispatchOpts {
    *  0 disables jitter (f32-collapse cliff returns). See chaos.wgsl
    *  `walker_jitter` for the full rationale. */
   walkerJitter?: number;
-  /** #459 — flow-map color mode. 'palette' (default) = normal palette/DC color;
-   *  'flow' = color each splat by its per-iteration displacement (velocity). */
-  colorMode?: 'palette' | 'flow';
+  /** #459/#460 — color mode. 'palette' (default) = normal palette/DC color;
+   *  'flow' = per-iteration displacement (velocity); 'trap-distance' = distance
+   *  to a trap shape. */
+  colorMode?: 'palette' | 'flow' | 'trap-distance';
   /** #459 — flow-map blend in [0,1]; default 1.0. 0 = palette, 1 = pure flow.
    *  Only consulted when colorMode === 'flow'. */
   flowStrength?: number;
   /** #459 — flow-map magnitude log-saturation factor; default DEFAULT_FLOW_SCALE. */
   flowScale?: number;
+  /** #460 — trap-distance params; consulted when colorMode === 'trap-distance'. */
+  trap?: import('./trap-config').TrapConfig;
 }
 
 /** Default walker-jitter proportional factor.
@@ -113,13 +116,14 @@ export interface ChaosPass {
 }
 
 const WORKGROUP_SIZE = 64;
-// 18 scalar slots × 4 bytes = 72 bytes of named fields (slots 0..17; slot 14 =
-// captureIndex #269; slots 15-17 = color_mode/flow_strength/flow_scale #459),
-// rounded up to the 16-byte convention → 80 (the trailing 8 bytes are padding).
-// `Uniforms` is all 4-byte scalars, so its derived minBindingSize is 72; the
-// 80-byte buffer satisfies that (80 ≥ 72). Keep the buffer at 80 to match the
-// struct's named-field span + convention.
-const UNIFORMS_BYTES = 80;
+// 28 scalar slots × 4 bytes = 112 bytes of named fields (slots 0..27; slot 14 =
+// captureIndex #269; slots 15-17 = color_mode/flow_strength/flow_scale #459;
+// slots 18-27 = trap_kind/trap_mode/trap_cx/trap_cy/trap_radius/trap_nx/trap_ny/
+// trap_falloff/trap_freq/trap_strength #460), already a 16-byte multiple → 112.
+// `Uniforms` is all 4-byte scalars, so its derived minBindingSize is 112; the
+// 112-byte buffer satisfies it exactly. Keep the buffer at 112 to match the
+// struct's named-field span.
+const UNIFORMS_BYTES = 112;
 
 /** #459 — default flow-map magnitude log-saturation factor (used when
  *  colorMode === 'flow' and no flowScale override is supplied). */
@@ -406,11 +410,29 @@ export function createChaosPass(device: GPUDevice, config: ChaosConfig): ChaosPa
       // #269 Phase 2 — capture gate (slot 14). Off for every non-gradient
       // consumer → idx_sum untouched → histogram output byte-identical.
       u32[14] = captureIndex ? 1 : 0;
-      // #459 — flow-map color (slots 15-17). color_mode 0 = palette (default) →
-      // splat block skips the flow override → histogram output byte-identical.
-      u32[15] = opts?.colorMode === 'flow' ? 1 : 0;
+      // #459/#460 — color mode (slot 15). 0 = palette (default) → splat block
+      // skips every override → histogram output byte-identical. 1 = flow, 2 = trap.
+      u32[15] =
+        opts?.colorMode === 'flow' ? 1 :
+        opts?.colorMode === 'trap-distance' ? 2 : 0;
       f32[16] = opts?.flowStrength ?? 1.0;
       f32[17] = opts?.flowScale ?? DEFAULT_FLOW_SCALE;
+      // #460 — trap-distance params (slots 18-27). Defaults match
+      // DEFAULT_TRAP_CONFIG so an undefined trap under color_mode 2 still renders
+      // sanely; color_mode 0/1 ignores these (shader skips the trap branch). The
+      // line normal is precomputed here (-sinθ, cosθ) so the kernel does no trig.
+      const trap = opts?.trap;
+      const trapAngleRad = ((trap?.angle ?? 0) * Math.PI) / 180;
+      u32[18] = trap?.kind === 'circle' ? 1 : trap?.kind === 'line' ? 2 : 0; // trap_kind
+      u32[19] = trap?.mode === 'rings' ? 1 : 0;                              // trap_mode
+      f32[20] = trap?.cx ?? 0;                                               // trap_cx
+      f32[21] = trap?.cy ?? 0;                                               // trap_cy
+      f32[22] = trap?.radius ?? 0.5;                                         // trap_radius
+      f32[23] = -Math.sin(trapAngleRad);                                     // trap_nx = -sinθ
+      f32[24] = Math.cos(trapAngleRad);                                      // trap_ny =  cosθ
+      f32[25] = trap?.falloff ?? 2.0;                                        // trap_falloff
+      f32[26] = trap?.freq ?? 4.0;                                           // trap_freq
+      f32[27] = trap?.strength ?? 1.0;                                       // trap_strength
       device.queue.writeBuffer(uniforms, 0, u);
 
       const encoder = device.createCommandEncoder({ label: 'pyr3.chaos.encoder' });

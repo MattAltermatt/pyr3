@@ -16,6 +16,7 @@ import { createRenderer, DEFAULT_FILTER_RADIUS, computeDispatch, DEFAULT_SPP, ty
 import { deriveCalibration } from '../src/calibration';
 import { type Genome } from '../src/genome';
 import { DEFAULT_WALKER_JITTER } from '../src/chaos';
+import { type TrapConfig, DEFAULT_TRAP_CONFIG } from '../src/trap-config';
 import { genomeToJson } from '../src/serialize';
 import { injectPngTextChunk } from '../src/png-text-chunk';
 import { encodeExr } from '../src/exr-encode';
@@ -53,7 +54,7 @@ function chunkedIterate(
   walkers: number,
   totalIters: number,
   walkerJitter: number,
-  flow?: { colorMode: 'palette' | 'flow'; flowStrength: number; flowScale: number },
+  color?: { colorMode: 'palette' | 'flow' | 'trap-distance'; flowStrength: number; flowScale: number; trap?: TrapConfig },
 ): number {
   const chunks = Math.max(1, Math.ceil(totalIters / MAX_ITERS_PER_SUBMIT));
   const itersPerChunk = Math.ceil(totalIters / chunks);
@@ -65,9 +66,10 @@ function chunkedIterate(
       walkers,
       itersPerWalker: itersPerChunk,
       walkerJitter,
-      colorMode: flow?.colorMode,
-      flowStrength: flow?.flowStrength,
-      flowScale: flow?.flowScale,
+      colorMode: color?.colorMode,
+      flowStrength: color?.flowStrength,
+      flowScale: color?.flowScale,
+      trap: color?.trap,
     });
     total += walkers * itersPerChunk;
   }
@@ -92,9 +94,11 @@ async function main(): Promise<void> {
   let transparent = false;
   // #459 — flow-map color mode. Standalone-bundled CLI keeps the flow-scale
   // default as a literal mirroring DEFAULT_FLOW_SCALE in src/chaos.ts.
-  let colorMode: 'palette' | 'flow' = 'palette';
+  let colorMode: 'palette' | 'flow' | 'trap-distance' = 'palette';
   let flowStrength = 1.0;
   let flowScale = 2.0;
+  // #460 — trap-distance coloring params (consulted when colorMode === 'trap-distance').
+  const trap: TrapConfig = { ...DEFAULT_TRAP_CONFIG };
   for (let i = 0; i < rawArgs.length; i++) {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
@@ -174,8 +178,8 @@ async function main(): Promise<void> {
       // palette/DC color; 'flow' = color each splat by its per-iteration
       // displacement (direction → hue, log-saturated magnitude → value).
       const v = rawArgs[++i];
-      if (v !== 'palette' && v !== 'flow') {
-        console.error('--color-mode requires one of: palette, flow');
+      if (v !== 'palette' && v !== 'flow' && v !== 'trap-distance') {
+        console.error('--color-mode requires one of: palette, flow, trap-distance');
         process.exit(1);
       }
       colorMode = v;
@@ -197,6 +201,77 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       flowScale = n;
+    } else if (a === '--trap-kind') {
+      // #460 — trap shape: point | circle | line.
+      const v = rawArgs[++i];
+      if (v !== 'point' && v !== 'circle' && v !== 'line') {
+        console.error('--trap-kind requires one of: point, circle, line');
+        process.exit(1);
+      }
+      trap.kind = v;
+    } else if (a === '--trap-mode') {
+      // #460 — falloff mode: glow (single contour) | rings (repeating bands).
+      const v = rawArgs[++i];
+      if (v !== 'glow' && v !== 'rings') {
+        console.error('--trap-mode requires one of: glow, rings');
+        process.exit(1);
+      }
+      trap.mode = v;
+    } else if (a === '--trap-center') {
+      // #460 — trap center "X,Y" in genome space.
+      const v = rawArgs[++i];
+      const parts = (v ?? '').split(',').map(Number);
+      if (parts.length !== 2 || !parts.every((n) => Number.isFinite(n))) {
+        console.error('--trap-center requires X,Y');
+        process.exit(1);
+      }
+      trap.cx = parts[0]!;
+      trap.cy = parts[1]!;
+    } else if (a === '--trap-radius') {
+      // #460 — circle radius (positive).
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error('--trap-radius requires a positive number');
+        process.exit(1);
+      }
+      trap.radius = n;
+    } else if (a === '--trap-angle') {
+      // #460 — line orientation in degrees.
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n)) {
+        console.error('--trap-angle requires a number (degrees)');
+        process.exit(1);
+      }
+      trap.angle = n;
+    } else if (a === '--trap-falloff') {
+      // #460 — glow exp falloff (>= 0).
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0) {
+        console.error('--trap-falloff requires a number >= 0');
+        process.exit(1);
+      }
+      trap.falloff = n;
+    } else if (a === '--trap-freq') {
+      // #460 — rings frequency (positive).
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n <= 0) {
+        console.error('--trap-freq requires a positive number');
+        process.exit(1);
+      }
+      trap.freq = n;
+    } else if (a === '--trap-strength') {
+      // #460 — blend over palette [0,1].
+      const v = rawArgs[++i];
+      const n = v === undefined ? NaN : Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 1) {
+        console.error('--trap-strength requires a number in [0,1]');
+        process.exit(1);
+      }
+      trap.strength = n;
     } else {
       args.push(a);
     }
@@ -211,7 +286,9 @@ async function main(): Promise<void> {
       'usage: npm run render [--no-de] ' +
         '[--long-edge N --quality N] [--max-dim N] [--oversample N] [--sample-inflate=F] ' +
         '[--format png8|png16|exr|exr-linear] [--transparent] ' +
-        '[--color-mode palette|flow] [--flow-strength F] [--flow-scale F] ' +
+        '[--color-mode palette|flow|trap-distance] [--flow-strength F] [--flow-scale F] ' +
+        '[--trap-kind point|circle|line] [--trap-center X,Y] [--trap-radius R] [--trap-angle DEG] ' +
+        '[--trap-mode glow|rings] [--trap-falloff F] [--trap-freq N] [--trap-strength S] ' +
         '<input.flam3 | input.pyr3.json> [output.png]',
     );
     process.exit(1);
@@ -309,7 +386,7 @@ async function main(): Promise<void> {
     renderer.reset(genome);
     const totalSamples = chunkedIterate(
       renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter,
-      { colorMode, flowStrength, flowScale },
+      { colorMode, flowStrength, flowScale, trap },
     );
     renderer.present({ genome, outputView: texture.createView(), totalSamples, forceDeOff, transparent });
   } else {
@@ -327,7 +404,7 @@ async function main(): Promise<void> {
       console.log(`[pyr3-render] probe: walkers=${dispatchWalkers} iters=${dispatchIters} (--walkers override)`);
     }
     renderer.reset(genome);
-    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter, { colorMode, flowStrength, flowScale });
+    chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter, { colorMode, flowStrength, flowScale, trap });
     renderer.present({
       genome,
       outputView: texture.createView(),

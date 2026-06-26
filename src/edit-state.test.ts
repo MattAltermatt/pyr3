@@ -447,7 +447,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('persistSectionCollapse writes JSON under pyr3.editor.sectionCollapse', () => {
     expect(SECTION_COLLAPSE_KEY).toBe('pyr3.editor.sectionCollapse');
     const map = {
-      palette: false, curves: true, scopes: true, hsl: false, viewport: true, xforms: false,
+      palette: false, 'color-mode': false, curves: true, scopes: true, hsl: false, viewport: true, xforms: false,
       'global-symmetry': false, 'global-tonemap': false, density: true, render: true,
     };
     persistSectionCollapse(map);
@@ -457,13 +457,13 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   });
 
     it('leaves localStorage empty when writing defaults', () => {
-      persistSectionCollapse({ palette: true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, 'global-symmetry': true, 'global-tonemap': true, density: true, render: true });
+      persistSectionCollapse({ palette: true, 'color-mode': true, curves: true, scopes: true, hsl: true, viewport: true, xforms: true, 'global-symmetry': true, 'global-tonemap': true, density: true, render: true });
       expect(localStorage.getItem('pyr3.edit.sectionCollapse')).toBeNull();
     });
 
   it('restoreSectionCollapse returns the persisted map', () => {
     const map = {
-      palette: false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false,
+      palette: false, 'color-mode': false, curves: true, scopes: true, hsl: true, viewport: true, xforms: false,
       'global-symmetry': false, 'global-tonemap': false, density: true, render: true,
     };
     localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(map));
@@ -473,7 +473,7 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
   it('restoreSectionCollapse returns default all-EXPANDED when absent (#27)', () => {
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
+      palette: false, 'color-mode': false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
       'global-symmetry': false, 'global-tonemap': false, density: false, render: false,
     });
   });
@@ -482,13 +482,13 @@ describe('persistSectionCollapse / restoreSectionCollapse', () => {
     localStorage.setItem(SECTION_COLLAPSE_KEY, '{not valid');
     const restored = restoreSectionCollapse();
     expect(restored).toEqual({
-      palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
+      palette: false, 'color-mode': false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false,
       'global-symmetry': false, 'global-tonemap': false, density: false, render: false,
     });
   });
 
   it('round-trip integrity preserves all keys', () => {
-      const oldSections = { palette: false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false, 'global-symmetry': false, 'global-tonemap': false, density: false, render: false };
+      const oldSections = { palette: false, 'color-mode': false, curves: false, scopes: false, hsl: false, viewport: false, xforms: false, 'global-symmetry': false, 'global-tonemap': false, density: false, render: false };
       persistSectionCollapse(oldSections);
       expect(restoreSectionCollapse()).toEqual(oldSections);
   });
