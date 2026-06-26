@@ -83,7 +83,7 @@ importer-default parity sweep (#17) shipped 2026-06-08.
   interpolation modes.
 - **Affine + nonlinear variation chain** per xform, with optional per-xform post-affine +
   finalxform lens.
-- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail + pyr3's own novel families (323 entries total, V0..V322).
+- **The flam3 variation library** — all 99 numbered VAR_* constants ported (V0..V98), plus the DC family + Apophysis + JWildfire 2D long tail + pyr3's own novel families (324 entries total, V0..V323 — V323 `sprott_poly` is the #470 Sprott quadratic strange-attractor variation + Creator auto-search).
 - **Genome-level features Electric Sheep relies on** — palette-by-index lookup, `<flame hue>`
   rotation, multi-value `color="V S"` attributes, the HSV-highpow desaturation branch of the
   tone-map, per-xform post-affine.

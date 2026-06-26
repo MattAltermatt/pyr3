@@ -7137,6 +7137,25 @@ fn var_digamma(p: vec2f, w: f32, scale_in: f32, shift_in: f32) -> vec2f {
   return w * (psi_shifted - sum);
 }
 
+// #470 V323 sprott_poly — 2D quadratic Sprott map (linear+quadratic terms only;
+// the 2 constant terms ride the xform post-affine translate). Pure +/-/* — no
+// RNG, no trig, so no Dawn trig/tanh cliff to wrap; divergence is caught by the
+// chaos kernel's bad-value retry. Keep in lockstep with ts_var_sprott_poly in
+// variations.ts (sprott-poly.gpu.test.ts asserts CPU≈GPU). Do NOT "restore
+// parity" by reverting — there is no flam3-C reference for this variation.
+// p0..p9 = [a1,a2,a3,a4,a5,b1,b2,b3,b4,b5].
+fn var_sprott_poly(p: vec2f, w: f32, p0: f32, p1: f32, p2: f32, p3: f32, p4: f32,
+                   p5: f32, p6: f32, p7: f32, p8: f32, p9: f32) -> vec2f {
+  let x = p.x;
+  let y = p.y;
+  let x2 = x * x;
+  let xy = x * y;
+  let y2 = y * y;
+  let vx = p0 * x + p1 * x2 + p2 * xy + p3 * y + p4 * y2;
+  let vy = p5 * x + p6 * x2 + p7 * xy + p8 * y + p9 * y2;
+  return w * vec2f(vx, vy);
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -8047,6 +8066,7 @@ fn apply_variation(
     case 320u: { return var_penrose(p, w, p0, p1); }            // #143 aperiodic (pentagrid)
     case 321u: { return var_collatz(p, w, p0, p1); }            // #142 number-theoretic (3n+1)
     case 322u: { return var_digamma(p, w, p0, p1); }            // #142 number-theoretic (ψ)
+    case 323u: { return var_sprott_poly(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9); }  // #470 Sprott quadratic attractor
     default:  { return vec2f(0.0, 0.0); }
   }
 }

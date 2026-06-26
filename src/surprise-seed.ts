@@ -8,6 +8,7 @@ import { type Genome } from './genome';
 import { generateRandomGenome } from './edit-seed';
 import { isAttractorCollapsed } from './edit-fit-viewport';
 import { pickStratifiedPrimaries } from './surprise-seed-pool';
+import { generateSprottGenome } from './sprott-search';
 
 /** Steering params for the Surprise Wall (#surprise-v2). All optional — an empty
  *  object reproduces the original diverse-default batch. */
@@ -54,6 +55,9 @@ export function generateSurpriseBatch(
   rng: () => number = Math.random,
   n = 16,
   params: SurpriseGenParams = {},
+  // #470 — opt-in: 0 by default so non-wall callers (and the flame-generation
+  // tests) stay pure-flame. The Creator wall passes SPROTT_SEARCH.SPROTT_FRACTION.
+  sprottFraction = 0,
 ): Genome[] {
   const primaries = pickStratifiedPrimaries(rng, n, {
     preferred: params.preferred,
@@ -69,6 +73,12 @@ export function generateSurpriseBatch(
     preferred: params.preferMode === 'only' ? params.preferred : undefined,
   };
   return primaries.map((primaryOverride) => {
+    // #470 — with prob sprottFraction, emit a Lyapunov-vetted Sprott attractor.
+    // A give-up (null, ~3.6%/slot) or unfittable result falls through to a flame.
+    if (rng() < sprottFraction) {
+      const s = generateSprottGenome(rng);
+      if (s) return s;
+    }
     let g = generateRandomGenome(rng, { primaryOverride, ...opts });
     for (let r = 0; r < MAX_REROLLS && (!isRenderable(g) || isCollapsed(g)); r++) {
       g = generateRandomGenome(rng, { primaryOverride, ...opts });

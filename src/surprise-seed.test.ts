@@ -120,3 +120,21 @@ describe('generateSurpriseBatch params (#surprise-v2 T3)', () => {
     for (const g of batch) expect(g.xforms).toHaveLength(4);
   });
 });
+
+describe('Sprott auto-search mix (#470)', () => {
+  const isSprott = (g: Genome) =>
+    g.xforms.length === 1 && g.xforms[0]!.variations[0]?.index === V.sprott_poly;
+
+  it('sprottFraction=1 → (almost) every slot is a vetted single-xform Sprott genome', () => {
+    // Every slot ATTEMPTS Sprott; a ~3.6%/slot give-up (200-roll cap) falls back
+    // to a flame by design, so assert the vast majority are Sprott (≥ n-1).
+    const batch = generateSurpriseBatch(seededRng(123), 6, {}, 1);
+    expect(batch.filter(isSprott).length).toBeGreaterThanOrEqual(batch.length - 1);
+  });
+  it('sprottFraction=0 → no Sprott genomes', () => {
+    expect(generateSurpriseBatch(seededRng(123), 8, {}, 0).some(isSprott)).toBe(false);
+  });
+  it('default batch stays pure-flame (Sprott is opt-in)', () => {
+    expect(generateSurpriseBatch(seededRng(7), 8).some(isSprott)).toBe(false);
+  });
+});

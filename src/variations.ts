@@ -631,6 +631,9 @@ export const V = {
   // #142 — number-theoretic dynamics (smooth Collatz & digamma)
   collatz: 321,               // smooth complex 3n+1 map (parity interpolation)
   digamma: 322,               // digamma ψ(z) (asymptotic series + recurrence)
+  // #470 — Sprott 2D quadratic map as a single-xform deterministic attractor.
+  // Holds the 10 linear+quadratic coeffs; the 2 constants ride the post-affine.
+  sprott_poly: 323,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -2243,6 +2246,27 @@ export function ts_var_wedge_julia(i: VarInput): VarOutput {
   const c = Math.floor((count * a + Math.PI) / Math.PI * 0.5);
   a = a * cf + c * angle;
   return { x: r * Math.cos(a), y: r * Math.sin(a) };
+}
+
+// #470 V323 sprott_poly — 2D quadratic Sprott map (linear+quadratic terms only;
+// the 2 constants ride the xform post-affine translate). DELIBERATE exception to
+// the post-V130 WGSL-only convention (variations.ts:16-21): the editor fit oracle
+// CPU-re-sims via ts_var_*, and a standalone attractor mis-frames without it; this
+// fn is also the core of #470 Slice 2's Lyapunov iterator. Keep in lockstep with
+// var_sprott_poly in chaos.wgsl — guarded by sprott-poly.gpu.test.ts.
+// params p0..p9 = [a1,a2,a3,a4,a5,b1,b2,b3,b4,b5]. Weight applied inside (matches
+// ts_var_linear; dispatchVariation uses the return directly). Do NOT restore
+// "parity" by reverting — there is no flam3-C reference for this variation.
+export function ts_var_sprott_poly(i: VarInput): VarOutput {
+  const a1 = i.params?.['a1'] ?? 0, a2 = i.params?.['a2'] ?? 0, a3 = i.params?.['a3'] ?? 0;
+  const a4 = i.params?.['a4'] ?? 0, a5 = i.params?.['a5'] ?? 0;
+  const b1 = i.params?.['b1'] ?? 0, b2 = i.params?.['b2'] ?? 0, b3 = i.params?.['b3'] ?? 0;
+  const b4 = i.params?.['b4'] ?? 0, b5 = i.params?.['b5'] ?? 0;
+  const x = i.tx, y = i.ty, x2 = x * x, xy = x * y, y2 = y * y;
+  return {
+    x: i.weight * (a1 * x + a2 * x2 + a3 * xy + a4 * y + a5 * y2),
+    y: i.weight * (b1 * x + b2 * x2 + b3 * xy + b4 * y + b5 * y2),
+  };
 }
 
 // Batch J builder.

@@ -74,6 +74,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx === V.schwarz_christoffel || idx === V.doyle) return 'novel'; // #154 — conformal pair (P97/P98)
   if (idx === V.quasicrystal || idx === V.penrose) return 'novel'; // #143 — aperiodic-tiling pair (P99/P100)
   if (idx === V.collatz || idx === V.digamma) return 'novel'; // #142 — number-theoretic pair (P101/P102)
+  if (idx === V.sprott_poly) return 'novel';                  // #470 — Sprott quadratic attractor (P103)
   return 'jwf';
 }
 
@@ -5464,6 +5465,32 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       const px = lz[0] - 0.5 * zi[0] - (1 / 12) * zi2[0] + (1 / 120) * zi4[0] - sx;
       const py = lz[1] - 0.5 * zi[1] - (1 / 12) * zi2[1] + (1 / 120) * zi4[1] - sy;
       return [px, py];
+    },
+  },
+  {
+    idx: V.sprott_poly,
+    name: 'sprott_poly',
+    source: 'novel',
+    formula: "x' = a_1x + a_2x^2 + a_3xy + a_4y + a_5y^2,\\quad y' = b_1x + b_2x^2 + b_3xy + b_4y + b_5y^2",
+    blurb: 'A 2D quadratic (Sprott) map iterated as a single-xform deterministic strange attractor — the classic “automatic attractor” family. Use it alone on one xform with an identity pre-affine and weight 1; the two constant terms of the map ride the xform’s post-affine translate, so the ten sliders here are the linear and quadratic coefficients (x-row a₁..a₅, y-row b₁..b₅). Most coefficient sets settle to a point or diverge; the chaotic-but-bounded ones trace filaments, ribbons, and folded sheets unlike anything the affine-IFS variations produce. (#470)',
+    params: [
+      { name: 'a1', default: 0.53529, min: -2, max: 2, step: 0.01 },
+      { name: 'a2', default: 0.92536, min: -2, max: 2, step: 0.01 },
+      { name: 'a3', default: -0.11898, min: -2, max: 2, step: 0.01 },
+      { name: 'a4', default: 1.06441, min: -2, max: 2, step: 0.01 },
+      { name: 'a5', default: 1.10974, min: -2, max: 2, step: 0.01 },
+      { name: 'b1', default: 0.89531, min: -2, max: 2, step: 0.01 },
+      { name: 'b2', default: -0.09822, min: -2, max: 2, step: 0.01 },
+      { name: 'b3', default: -0.48153, min: -2, max: 2, step: 0.01 },
+      { name: 'b4', default: -0.88715, min: -2, max: 2, step: 0.01 },
+      { name: 'b5', default: -0.86533, min: -2, max: 2, step: 0.01 },
+    ],
+    defaultWeight: 1,
+    warpFn: (x, y) => {
+      const a1 = 0.53529, a2 = 0.92536, a3 = -0.11898, a4 = 1.06441, a5 = 1.10974;
+      const b1 = 0.89531, b2 = -0.09822, b3 = -0.48153, b4 = -0.88715, b5 = -0.86533;
+      const x2 = x * x, xy = x * y, y2 = y * y;
+      return [a1 * x + a2 * x2 + a3 * xy + a4 * y + a5 * y2, b1 * x + b2 * x2 + b3 * xy + b4 * y + b5 * y2];
     },
   },
   // #137 — Special-function radial profiles
