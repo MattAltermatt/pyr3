@@ -51,10 +51,10 @@ not the default.
 
 FE and BE don't need to match byte-for-byte; the "similar but not the
 same" contract holds across engines too. Both gates went green for v1.0,
-and the v1.0 → v1.11 line has shipped — the viewer is live at
+and the v1.0 → v1.12 line has shipped — the viewer is live at
 [pyr3.app](https://pyr3.app/), tagged releases are published through
-**v1.11.0** (2026-06-19, the Editor IA rework milestone #27 — the 4-lens
-editor redesign), and the
+**v1.12.0** (2026-06-24, the Mobile rework milestone #13 — the #66
+consumption-only mobile overhaul), and the
 [milestone ladder](https://github.com/MattAltermatt/pyr3/milestones)
 tracks themed follow-on work. The **Apophysis and JWildfire** plugin
 pack (#114 / #117 / #120 / #121 / #170, plus the gradient editor #115)
@@ -69,8 +69,9 @@ interpolation, per-xform motion, temporal-sampling motion blur, a
 timeline sequencer + playback scrubber, the `/animate` editor + headless
 `/api/animate`) closed as **v1.9.0**. Remaining themed slots cover
 **Binary distribution** (Windows `.exe` #287, cross-platform verify
-#126), **Viewer / editor UX & presets**, **Color grading & scopes**,
-**evolving flame creation**, and the **Mobile rework** arc (#66). The
+#126), **Viewer / editor UX & presets**, **Color grading & scopes**, and
+**evolving flame creation**. The **Mobile rework** arc (#66) closed as
+**v1.12.0** (2026-06-24). The
 importer-default parity sweep (#17) shipped 2026-06-08.
 
 ## 🔥 Keep (the soul)
