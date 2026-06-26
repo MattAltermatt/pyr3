@@ -54,8 +54,9 @@ engine modules and WGSL compute shaders — no second code path, no environment 
 - 🌐 **Browser viewer** — Vite + WebGPU, deployed to GitHub Pages at
   [pyr3.app](https://pyr3.app). Open any Electric Sheep / flam3 `.flame` file (unsupported
   variations are flagged in an import report), browse the corpus by share-link, and render
-  from a fast preview up to 4K. The top bar shows the version, the flame's variation set, and
-  prev/next navigation.
+  from a fast preview up to 4K — in the normal palette or a **velocity flow-map** color mode
+  that paints each point by its per-iteration motion (direction → hue, speed → brightness). The
+  top bar shows the version, the flame's variation set, and prev/next navigation.
 - 💻 **Headless CLI** — Node + the `webgpu` npm package. `npm run render flame.flam3 out.png`
   renders the same flame to a PNG using the same modules and shaders as the browser.
 
@@ -133,7 +134,7 @@ renders the whole timeline to a PNG frame sequence through the same backend (#22
 `nsteps=N` to opt into motion blur (ESF/timeline genomes carry up to 1000, which
 would sub-render each frame that many times — #294).
 
-**Platform status (as of v1.11):**
+**Platform status (as of v1.12):**
 
 ```text
 darwin-arm64    verified end-to-end
@@ -187,9 +188,9 @@ Open work and ship history live on GitHub (since the 2026-05-30 pivot):
 - [**Issues**](https://github.com/MattAltermatt/pyr3/issues) — the task registry, labelled by
   type (`feat` · `bug` · `parity` · `chore` · `infra` · `docs` · `test` · `cli` · `perf`)
 - [**Milestones**](https://github.com/MattAltermatt/pyr3/milestones) — themed arcs; the
-  `v1.0` → `v1.11` line shipped (latest `v1.11.0`, the Editor IA rework milestone — the 4-lens
-  editor redesign, xform reorder, a consolidated Color lens, an in-lens gradient editor, and a
-  control-consistency pass). Active themed work groups around **Binary distribution**
+  `v1.0` → `v1.12` line shipped (latest `v1.12.0`, the Mobile rework milestone — the #66
+  consumption-only mobile overhaul: viewport-gated nav, creation surfaces routed to lightweight
+  interstitials, per-page chrome stripping, and a responsive gallery). Active themed work groups around **Binary distribution**
   (cross-platform verify #126, Windows `.exe` #287), **Viewer / editor UX & presets**, **Color
   grading & scopes**, **evolving flame creation**, and **Mobile rework** (#66)
 - [**Releases**](https://github.com/MattAltermatt/pyr3/releases) — ship notes, v1.0 onward
