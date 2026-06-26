@@ -75,6 +75,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx === V.quasicrystal || idx === V.penrose) return 'novel'; // #143 — aperiodic-tiling pair (P99/P100)
   if (idx === V.collatz || idx === V.digamma) return 'novel'; // #142 — number-theoretic pair (P101/P102)
   if (idx === V.sprott_poly) return 'novel';                  // #470 — Sprott quadratic attractor (P103)
+  if (idx === V.hopalong) return 'novel';                     // #466 — Barry Martin Hopalong (P104)
   return 'jwf';
 }
 
@@ -5491,6 +5492,24 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       const b1 = 0.89531, b2 = -0.09822, b3 = -0.48153, b4 = -0.88715, b5 = -0.86533;
       const x2 = x * x, xy = x * y, y2 = y * y;
       return [a1 * x + a2 * x2 + a3 * xy + a4 * y + a5 * y2, b1 * x + b2 * x2 + b3 * xy + b4 * y + b5 * y2];
+    },
+  },
+  {
+    idx: V.hopalong,
+    name: 'hopalong',
+    source: 'novel',
+    formula: "x' = y - \\operatorname{sgn}(x)\\sqrt{|bx-c|},\\quad y' = a - x",
+    blurb: 'The Barry Martin “Hopalong” map iterated as a single-xform deterministic strange attractor — banded parabolic arcs with an architectural, woven look. Use it alone on one xform with an identity pre-affine and weight 1. The map is bounded for essentially all parameters, so the auto-searched coefficient sets reliably trace the arc lattice rather than diverging. (#466)',
+    params: [
+      { name: 'a', default: 1.0, min: -5, max: 5, step: 0.05 },
+      { name: 'b', default: 2.0, min: -5, max: 5, step: 0.05 },
+      { name: 'c', default: 0.5, min: -5, max: 5, step: 0.05 },
+    ],
+    defaultWeight: 1,
+    warpFn: (x, y) => {
+      const a = 1.0, b = 2.0, c = 0.5;
+      const sx = x > 0 ? 1 : (x < 0 ? -1 : 0);
+      return [y - sx * Math.sqrt(Math.abs(b * x - c)), a - x];
     },
   },
   // #137 — Special-function radial profiles

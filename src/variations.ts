@@ -1,13 +1,14 @@
 // Variation registry for pyr3.
 //
 // Each variation has a stable numeric INDEX matching the WGSL switch
-// dispatcher in `src/shaders/chaos.wgsl`. The catalog holds V0..V322
-// (323 entries) — flam3 originals + DC family + Apophysis plugin pack +
+// dispatcher in `src/shaders/chaos.wgsl`. The catalog holds V0..V324
+// (325 entries) — flam3 originals + DC family + Apophysis plugin pack +
 // JWildfire 2D long tail (V152..V213 from #121, V214..V219 from #170
 // sibling-pair completions) + Pyre originals (V220.., e.g. chaotic-billiards
 // V258..V261 from #150, modular V266..V270 from #131, the More Variations
 // Marathon V271..V303 from #16, and the v1.10.0 novel warp families
-// V304..V322 — also #16).
+// V304..V322 — also #16) + single-map strange attractors (V323 sprott_poly
+// from #470, V324 hopalong from #466).
 //
 // Adding a variation = (1) add an entry to V, (2) add a `var_X` kernel
 // in chaos.wgsl, (3) add a switch case in `apply_variation`. The genome
@@ -634,6 +635,8 @@ export const V = {
   // #470 — Sprott 2D quadratic map as a single-xform deterministic attractor.
   // Holds the 10 linear+quadratic coeffs; the 2 constants ride the post-affine.
   sprott_poly: 323,
+  // #466 — Barry Martin "Hopalong" map as a single-xform deterministic attractor.
+  hopalong: 324,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -2266,6 +2269,22 @@ export function ts_var_sprott_poly(i: VarInput): VarOutput {
   return {
     x: i.weight * (a1 * x + a2 * x2 + a3 * xy + a4 * y + a5 * y2),
     y: i.weight * (b1 * x + b2 * x2 + b3 * xy + b4 * y + b5 * y2),
+  };
+}
+
+// #466 V324 hopalong — Barry Martin "Hopalong" map. Stateless function of the
+// current walker point (no x0/y0 history); the chaos game carries p. DELIBERATE
+// dual impl (like sprott_poly): the editor fit oracle CPU-re-sims via ts_var_*.
+// Keep in lockstep with var_hopalong in chaos.wgsl — guarded by hopalong.gpu.test.ts.
+// sqrt(abs(...)) is always in-domain → no NaN. WGSL sign(0)=0 matches the x===0
+// branch. Weight applied inside. Do NOT restore "parity" — no flam3-C reference.
+export function ts_var_hopalong(i: VarInput): VarOutput {
+  const a = i.params?.['a'] ?? 0, b = i.params?.['b'] ?? 0, c = i.params?.['c'] ?? 0;
+  const x = i.tx, y = i.ty;
+  const sx = x > 0 ? 1 : (x < 0 ? -1 : 0);
+  return {
+    x: i.weight * (y - sx * Math.sqrt(Math.abs(b * x - c))),
+    y: i.weight * (a - x),
   };
 }
 

@@ -7169,6 +7169,15 @@ fn var_sprott_poly(p: vec2f, w: f32, p0: f32, p1: f32, p2: f32, p3: f32, p4: f32
   return w * vec2f(vx, vy);
 }
 
+// #466 V324 hopalong — Barry Martin "Hopalong" map. Stateless fn of p; sqrt(abs)
+// is always in-domain (no NaN), no trig (no safe_* needed). sign(0)=0 matches the
+// CPU oracle. Keep in lockstep with ts_var_hopalong (hopalong.gpu.test.ts).
+fn var_hopalong(p: vec2f, w: f32, a: f32, b: f32, c: f32) -> vec2f {
+  let xp = p.y - sign(p.x) * sqrt(abs(b * p.x - c));
+  let yp = a - p.x;
+  return w * vec2f(xp, yp);
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -8080,6 +8089,7 @@ fn apply_variation(
     case 321u: { return var_collatz(p, w, p0, p1); }            // #142 number-theoretic (3n+1)
     case 322u: { return var_digamma(p, w, p0, p1); }            // #142 number-theoretic (ψ)
     case 323u: { return var_sprott_poly(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9); }  // #470 Sprott quadratic attractor
+    case 324u: { return var_hopalong(p, w, p0, p1, p2); }       // #466 Barry Martin Hopalong attractor
     default:  { return vec2f(0.0, 0.0); }
   }
 }
