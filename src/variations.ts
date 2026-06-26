@@ -1,14 +1,14 @@
 // Variation registry for pyr3.
 //
 // Each variation has a stable numeric INDEX matching the WGSL switch
-// dispatcher in `src/shaders/chaos.wgsl`. The catalog holds V0..V324
-// (325 entries) — flam3 originals + DC family + Apophysis plugin pack +
+// dispatcher in `src/shaders/chaos.wgsl`. The catalog holds V0..V325
+// (326 entries) — flam3 originals + DC family + Apophysis plugin pack +
 // JWildfire 2D long tail (V152..V213 from #121, V214..V219 from #170
 // sibling-pair completions) + Pyre originals (V220.., e.g. chaotic-billiards
 // V258..V261 from #150, modular V266..V270 from #131, the More Variations
 // Marathon V271..V303 from #16, and the v1.10.0 novel warp families
 // V304..V322 — also #16) + single-map strange attractors (V323 sprott_poly
-// from #470, V324 hopalong from #466).
+// from #470, V324 hopalong from #466, V325 gumowski_mira from #467).
 //
 // Adding a variation = (1) add an entry to V, (2) add a `var_X` kernel
 // in chaos.wgsl, (3) add a switch case in `apply_variation`. The genome
@@ -637,6 +637,8 @@ export const V = {
   sprott_poly: 323,
   // #466 — Barry Martin "Hopalong" map as a single-xform deterministic attractor.
   hopalong: 324,
+  // #467 — Gumowski-Mira recursive rational map as a single-xform attractor.
+  gumowski_mira: 325,
 } as const;
 
 export type VariationIndex = (typeof V)[keyof typeof V];
@@ -2286,6 +2288,18 @@ export function ts_var_hopalong(i: VarInput): VarOutput {
     x: i.weight * (y - sx * Math.sqrt(Math.abs(b * x - c))),
     y: i.weight * (a - x),
   };
+}
+
+// #467 V325 gumowski_mira — recursive rational map. Stateless: y' consumes the
+// freshly computed x' inline (de Jong pattern), so it is a pure fn of p. G's
+// denominator 1+x² ≥ 1 → no domain NaN, no trig. Keep in lockstep with
+// var_gumowski_mira in chaos.wgsl — guarded by gumowski-mira.gpu.test.ts.
+export function ts_var_gumowski_mira(i: VarInput): VarOutput {
+  const a = i.params?.['a'] ?? 0, b = i.params?.['b'] ?? 0;
+  const G = (x: number): number => a * x + 2 * (1 - a) * x * x / (1 + x * x);
+  const xp = b * i.ty + G(i.tx);
+  const yp = -i.tx + G(xp);
+  return { x: i.weight * xp, y: i.weight * yp };
 }
 
 // Batch J builder.

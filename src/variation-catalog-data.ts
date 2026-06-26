@@ -76,6 +76,7 @@ export function sourceForIdx(idx: number): CatalogSource {
   if (idx === V.collatz || idx === V.digamma) return 'novel'; // #142 — number-theoretic pair (P101/P102)
   if (idx === V.sprott_poly) return 'novel';                  // #470 — Sprott quadratic attractor (P103)
   if (idx === V.hopalong) return 'novel';                     // #466 — Barry Martin Hopalong (P104)
+  if (idx === V.gumowski_mira) return 'novel';                // #467 — Gumowski-Mira (P105)
   return 'jwf';
 }
 
@@ -5510,6 +5511,24 @@ export const CATALOG_DATA: readonly VariationDoc[] = [
       const a = 1.0, b = 2.0, c = 0.5;
       const sx = x > 0 ? 1 : (x < 0 ? -1 : 0);
       return [y - sx * Math.sqrt(Math.abs(b * x - c)), a - x];
+    },
+  },
+  {
+    idx: V.gumowski_mira,
+    name: 'gumowski_mira',
+    source: 'novel',
+    formula: "G(x)=ax+\\tfrac{2(1-a)x^2}{1+x^2},\\quad x'=by+G(x),\\ y'=-x+G(x')",
+    blurb: 'The Gumowski-Mira recursive rational map iterated as a single-xform deterministic strange attractor — biological concentric-ring and butterfly motifs. Use it alone on one xform with an identity pre-affine and weight 1. G grows roughly linearly for large |x|, so most parameter sets diverge; the auto-search keeps only the Lyapunov-positive, bounded ones. (#467)',
+    params: [
+      { name: 'a', default: -0.79, min: -1, max: 1, step: 0.01 },
+      { name: 'b', default: 0.98, min: 0.9, max: 1.05, step: 0.001 },
+    ],
+    defaultWeight: 1,
+    warpFn: (x, y) => {
+      const a = -0.79, b = 0.98;
+      const G = (t: number): number => a * t + 2 * (1 - a) * t * t / (1 + t * t);
+      const xp = b * y + G(x);
+      return [xp, -x + G(xp)];
     },
   },
   // #137 — Special-function radial profiles

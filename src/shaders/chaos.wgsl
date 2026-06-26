@@ -7178,6 +7178,18 @@ fn var_hopalong(p: vec2f, w: f32, a: f32, b: f32, c: f32) -> vec2f {
   return w * vec2f(xp, yp);
 }
 
+// #467 V325 gumowski_mira — recursive rational map. G's denom 1+x² ≥ 1 → no NaN,
+// no trig (no safe_* needed). y' consumes the fresh x' inline (stateless de Jong
+// pattern). Keep in lockstep with ts_var_gumowski_mira (gumowski-mira.gpu.test.ts).
+fn gm_G(x: f32, a: f32) -> f32 {
+  return a * x + 2.0 * (1.0 - a) * x * x / (1.0 + x * x);
+}
+fn var_gumowski_mira(p: vec2f, w: f32, a: f32, b: f32) -> vec2f {
+  let xp = b * p.y + gm_G(p.x, a);
+  let yp = -p.x + gm_G(xp, a);
+  return w * vec2f(xp, yp);
+}
+
 // --- #144 orthogonal-polynomial & harmonic warps ---
 // V280 — chebyshev. Per-axis T_n via cheb_T; input clamped to [-1,1] so
 // |T_n|<=1 → bounded. order params rounded + clamped to [0,12].
@@ -8090,6 +8102,7 @@ fn apply_variation(
     case 322u: { return var_digamma(p, w, p0, p1); }            // #142 number-theoretic (ψ)
     case 323u: { return var_sprott_poly(p, w, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9); }  // #470 Sprott quadratic attractor
     case 324u: { return var_hopalong(p, w, p0, p1, p2); }       // #466 Barry Martin Hopalong attractor
+    case 325u: { return var_gumowski_mira(p, w, p0, p1); }      // #467 Gumowski-Mira attractor
     default:  { return vec2f(0.0, 0.0); }
   }
 }

@@ -408,6 +408,7 @@ export const VARIATION_PARAMS: Record<string, string[]> = {
   // the 2 constants ride the xform post-affine, not the params.
   sprott_poly: ['a1', 'a2', 'a3', 'a4', 'a5', 'b1', 'b2', 'b3', 'b4', 'b5'],
   hopalong: ['a', 'b', 'c'],          // #466 Barry Martin Hopalong attractor
+  gumowski_mira: ['a', 'b'],          // #467 Gumowski-Mira attractor
   // #137 — Special-function radial profiles
   bessel_j0: ['freq'],
   airy_radial: ['scale', 'shift'],
@@ -761,6 +762,9 @@ export const VARIATION_DEFAULTS: Record<string, readonly number[]> = {
   sprott_poly: [0.53529, 0.92536, -0.11898, 1.06441, 1.10974, 0.89531, -0.09822, -0.48153, -0.88715, -0.86533],
   // #466 V324 — provisional bounded Hopalong; viewport-fit frames it. Tunable.
   hopalong: [1.0, 2.0, 0.5],
+  // #467 V325 — GM strange-attractor regime (negative a, b near 1; origin unstable
+  // so the attractor is global + seed-independent). Probe-validated ~17k cells.
+  gumowski_mira: [-0.79, 0.98],
   // #137 — Special-function radial profiles
   bessel_j0: [8.1],
   airy_radial: [5.3, 0.85],
