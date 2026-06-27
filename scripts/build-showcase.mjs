@@ -144,8 +144,9 @@ for (const fx of fixtures) {
   const byHtml = nick ? `By <b>${htmlEscape(nick)}</b>` : `<span class="anon">artist unknown</span>`;
 
   // #44 — the flame NAME is the link to the live viewer for this exact sheep,
-  // via the corpus share-URL (/esf/gen/{gen}/id/{id} since #264; the old
-  // /v1/gen/... still redirects at boot). Supersedes the
+  // via the corpus share-URL (/browse/gen/{gen}/id/{id} since #449 flattened
+  // the old /esf/* prefix; both /esf/* and /v1/gen/* still redirect at boot
+  // via src/route-redirects.ts). Supersedes the
   // PYR3-045 separate "▶ Open in viewer" pill + the "#" permalink bookmark:
   // the name itself now carries the affordance. The fixture id is
   // "electricsheep.{gen}.{id}"; the route is relative to the showcase dir
@@ -157,7 +158,7 @@ for (const fx of fixtures) {
   // hits; the plain-text fallback covers any future non-corpus fixture.
   const corpusMatch = id.match(/\.(\d+)\.(\d+)$/);
   const viewerHref = corpusMatch
-    ? `../esf/gen/${Number(corpusMatch[1])}/id/${Number(corpusMatch[2])}`
+    ? `../browse/gen/${Number(corpusMatch[1])}/id/${Number(corpusMatch[2])}`
     : null;
   const idHtml = viewerHref
     ? `<a class="idlink" href="${viewerHref}" title="Open this flame in the live pyr3 viewer">${id}</a>`
