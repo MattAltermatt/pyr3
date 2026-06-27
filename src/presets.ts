@@ -1,4 +1,35 @@
-import type { Genome } from './genome';
+import type { Genome, SpatialFilter } from './genome';
+import type { Density } from './density';
+
+/** #477 — DE/spatial-filter radii are in OUTPUT-PIXEL units, so on a resolution
+ *  rescale they must scale by `sizeScale` alongside `genome.scale` — otherwise a
+ *  fixed-pixel kernel covers a different IMAGE FRACTION at a different resolution
+ *  and the same genome renders with different effective blur (the #352 symptom,
+ *  which `scalePreviewGenome` already handles for the editor preview lane).
+ *  `density.curve` is a dimensionless falloff exponent (not px) and is left
+ *  untouched. Returns only the fields that need overriding; callers spread it and
+ *  must guard `sizeScale === 1` to keep native-dim renders byte-identical (so the
+ *  BE↔flam3-C parity rig is unaffected). Pure — never mutates `genome`. */
+export function scaleOutputPixelRadii(
+  genome: Genome,
+  sizeScale: number,
+): { density?: Density; spatialFilter?: SpatialFilter } {
+  const out: { density?: Density; spatialFilter?: SpatialFilter } = {};
+  if (genome.density) {
+    out.density = {
+      ...genome.density,
+      maxRad: genome.density.maxRad * sizeScale,
+      minRad: genome.density.minRad * sizeScale,
+    };
+  }
+  if (genome.spatialFilter) {
+    out.spatialFilter = {
+      ...genome.spatialFilter,
+      radius: genome.spatialFilter.radius * sizeScale,
+    };
+  }
+  return out;
+}
 
 export interface PresetSpec {
   maxDim: number;
@@ -39,6 +70,9 @@ export function applyPreset(genome: Genome, preset: PresetSpec): Genome {
     ...genome,
     size: { width: newW, height: newH },
     scale: genome.scale * sizeScale,
+    // #477 — keep DE/spatial-filter blur resolution-invariant. Guard sizeScale===1
+    // (force mode at native long-edge) so those renders stay byte-identical.
+    ...(sizeScale !== 1 ? scaleOutputPixelRadii(genome, sizeScale) : {}),
     oversample: preset.oversample,
     quality: cappedQuality,
   };

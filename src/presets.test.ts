@@ -192,6 +192,86 @@ describe('QUALITY_TIERS ladder (PYR3-050)', () => {
   });
 });
 
+describe('applyPreset — output-pixel radii scale with resolution (#477)', () => {
+  // DE/spatial-filter radii are in OUTPUT-PIXEL units, so on a force-rescale they
+  // must scale by sizeScale alongside `scale` (same image fraction at any
+  // resolution), mirroring scalePreviewGenome (#352). `density.curve` is
+  // dimensionless and stays put. Native-dim renders (sizeScale === 1) are
+  // byte-identical so the BE↔flam3-C parity rig is unaffected.
+
+  it('force-rescale scales density.maxRad/minRad and spatialFilter.radius by sizeScale, leaving curve untouched', () => {
+    const g = makeGenome({
+      size: { width: 1280, height: 720 },
+      scale: 100,
+      density: { maxRad: 9, minRad: 1.5, curve: 0.4 },
+      spatialFilter: { radius: 2, shape: 'gaussian' },
+    });
+    const out = applyPreset(g, FOURK_SPEC);
+    // 3840 / 1280 = 3.0
+    expect(out.scale).toBeCloseTo(300, 6);
+    expect(out.density!.maxRad).toBeCloseTo(27, 6);
+    expect(out.density!.minRad).toBeCloseTo(4.5, 6);
+    expect(out.density!.curve).toBe(0.4); // dimensionless — untouched
+    expect(out.spatialFilter!.radius).toBeCloseTo(6, 6);
+    expect(out.spatialFilter!.shape).toBe('gaussian');
+  });
+
+  it('cap-mode that DOES rescale (genome larger than cap) scales radii too', () => {
+    const g = makeGenome({
+      size: { width: 1280, height: 720 },
+      scale: 100,
+      density: { maxRad: 9, minRad: 1.5, curve: 0.4 },
+      spatialFilter: { radius: 2, shape: 'gaussian' },
+    });
+    const out = applyPreset(g, QUICK_SPEC); // 1280 > 1024 → cap-mode rescale, ss = 0.8
+    expect(out.scale).toBeCloseTo(80, 6);
+    expect(out.density!.maxRad).toBeCloseTo(7.2, 6);
+    expect(out.density!.minRad).toBeCloseTo(1.2, 6);
+    expect(out.density!.curve).toBe(0.4);
+    expect(out.spatialFilter!.radius).toBeCloseTo(1.6, 6);
+  });
+
+  it('cap-mode no-op (no rescale) leaves density/spatialFilter byte-identical', () => {
+    const density = { maxRad: 9, minRad: 1.5, curve: 0.4 };
+    const spatialFilter = { radius: 2, shape: 'gaussian' as const };
+    const g = makeGenome({ size: { width: 800, height: 592 }, scale: 100, density, spatialFilter });
+    const out = applyPreset(g, QUICK_SPEC); // 800 ≤ 1024 → no-op
+    expect(out.density).toBe(density); // same reference — untouched
+    expect(out.spatialFilter).toBe(spatialFilter);
+  });
+
+  it('force-mode at sizeScale === 1 (long-edge already == maxDim) leaves radii untouched', () => {
+    const density = { maxRad: 9, minRad: 1.5, curve: 0.4 };
+    const spatialFilter = { radius: 2, shape: 'gaussian' as const };
+    const spec: PresetSpec = { maxDim: 1280, maxSpp: 200, oversample: 1, shortEdgeRound: 'floor', mode: 'force' };
+    const g = makeGenome({ size: { width: 1280, height: 720 }, scale: 100, density, spatialFilter });
+    const out = applyPreset(g, spec);
+    expect(out.scale).toBe(100); // sizeScale === 1
+    expect(out.density).toBe(density); // same reference — byte-identical
+    expect(out.spatialFilter).toBe(spatialFilter);
+  });
+
+  it('undefined density/spatialFilter is safe on a force-rescale', () => {
+    const g = makeGenome({ size: { width: 1280, height: 720 }, scale: 100 });
+    expect(() => applyPreset(g, FOURK_SPEC)).not.toThrow();
+    const out = applyPreset(g, FOURK_SPEC);
+    expect(out.density).toBeUndefined();
+    expect(out.spatialFilter).toBeUndefined();
+  });
+
+  it('does not mutate input genome density/spatialFilter on rescale', () => {
+    const g = makeGenome({
+      size: { width: 1280, height: 720 },
+      scale: 100,
+      density: { maxRad: 9, minRad: 1.5, curve: 0.4 },
+      spatialFilter: { radius: 2, shape: 'gaussian' },
+    });
+    const before = JSON.stringify(g);
+    applyPreset(g, FOURK_SPEC);
+    expect(JSON.stringify(g)).toBe(before);
+  });
+});
+
 describe('customSpec — explicit --long-edge/--quality render spec (#25)', () => {
   it('customSpec builds a force-rescale spec at oversample 1', () => {
     expect(customSpec(1920, 50)).toEqual({

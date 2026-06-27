@@ -34,6 +34,7 @@ import { deflateSync } from 'node:zlib';
 import {
   applyPreset,
   customSpec,
+  scaleOutputPixelRadii,
 } from '../src/presets';
 import {
   installWebGPUHost,
@@ -384,7 +385,7 @@ async function main(): Promise<void> {
     const declH = genome.size?.height ?? 1024;
     const maxDecl = Math.max(declW, declH);
     if (maxDecl > maxDim) {
-      const sizeScale = maxDim / maxDecl;
+      const sizeScale = maxDim / maxDecl; // < 1 (entered only when maxDecl > maxDim)
       genome = {
         ...genome,
         size: {
@@ -392,6 +393,9 @@ async function main(): Promise<void> {
           height: Math.max(1, Math.round(declH * sizeScale)),
         },
         scale: genome.scale * sizeScale,
+        // #477 — DE/spatial-filter radii are output-pixel units; scale with the
+        // resolution so the cap keeps the same effective blur as the native render.
+        ...scaleOutputPixelRadii(genome, sizeScale),
       };
     }
   }
