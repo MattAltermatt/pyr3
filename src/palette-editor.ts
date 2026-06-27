@@ -198,7 +198,10 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
     });
     if (deleteBtn) {
       const on = canDelete();
-      deleteBtn.style.opacity = on ? '1' : '0.4';
+      // #473 — disabled stays at 0.6 (not 0.4): legible as present-but-disabled
+      // rather than reading as absent. The persistent hint below the button (and
+      // its tooltip) tells the user the gesture, so the dim never has to.
+      deleteBtn.style.opacity = on ? '1' : '0.6';
       deleteBtn.style.pointerEvents = on ? 'auto' : 'none';
       deleteBtn.title = on
         ? 'remove the selected stop'
@@ -308,6 +311,18 @@ export function mountPaletteEditor(host: HTMLElement, opts: PaletteEditorOpts): 
   deleteBtn.dataset['role'] = 'delete-stop';
   deleteBtn.style.alignSelf = 'flex-start';
   controls.appendChild(deleteBtn);
+
+  // #473 — persistent discoverability hint. The delete button dims when no
+  // interior stop is selected and previously read as absent; this always-visible
+  // caption explains the gesture (select a middle stop first; endpoints are
+  // permanent) so the affordance is never a mystery.
+  const deleteHint = document.createElement('div');
+  deleteHint.dataset['role'] = 'delete-hint';
+  deleteHint.textContent = 'select a middle stop to delete it (endpoints stay)';
+  Object.assign(deleteHint.style, {
+    fontSize: '11px', color: COLORS.text.muted, marginTop: '-2px',
+  });
+  controls.appendChild(deleteHint);
 
   // ── Task 7: handle click → HSV color picker ────────────────────────────
   let picker: ColorPickerHandle | null = null;

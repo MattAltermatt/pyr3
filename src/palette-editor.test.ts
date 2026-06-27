@@ -112,6 +112,33 @@ describe('palette-editor core (#115)', () => {
     h.destroy();
   });
 
+  it('#473: a persistent delete hint is always visible (discoverability)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const h = mountPaletteEditor(host, { initial: { name: 'x', stops: [
+      { t: 0, r: 0, g: 0, b: 0 }, { t: 0.5, r: 0.5, g: 0.5, b: 0.5 }, { t: 1, r: 1, g: 1, b: 1 },
+    ] }, onChange: () => {} });
+    const hint = host.querySelector('[data-role="delete-hint"]') as HTMLElement;
+    expect(hint).toBeTruthy(); // present even when nothing is selected
+    expect(hint.textContent).toMatch(/middle stop/i);
+    h.destroy();
+  });
+
+  it('#473: disabled delete button reads as present-but-disabled (opacity 0.6, not 0.4)', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const h = mountPaletteEditor(host, { initial: { name: 'x', stops: [
+      { t: 0, r: 0, g: 0, b: 0 }, { t: 0.5, r: 0.5, g: 0.5, b: 0.5 }, { t: 1, r: 1, g: 1, b: 1 },
+    ] }, onChange: () => {} });
+    const strip = host.querySelector('[data-role="strip"]') as HTMLElement;
+    mockRect(strip);
+    const del = host.querySelector('[data-role="delete-stop"]') as HTMLElement;
+    expect(del.style.opacity).toBe('0.6'); // nothing selected → dimmed but legible
+    strip.dispatchEvent(new MouseEvent('mousedown', { clientX: 100, clientY: 12, bubbles: true }));
+    expect(del.style.opacity).toBe('1'); // interior stop selected → fully enabled
+    h.destroy();
+  });
+
   it('the delete-stop button removes the selected interior stop', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
