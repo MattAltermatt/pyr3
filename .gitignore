@@ -23,6 +23,7 @@ coverage/
 # Internal scaffolding — not part of the public repo
 docs/superpowers/
 docs/flam3-local-build.md
+docs/research/
 .claude/agents/wgsl-parity-reviewer.md
 .claude/agents/flame-fixture-investigator.md
 
