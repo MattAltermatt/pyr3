@@ -48,7 +48,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   return out;
 }
 
-describe('var_hopalong V324', () => {
+describe.skipIf(!device)('var_hopalong V324', () => {
   it('GPU matches CPU oracle on runtime args', async () => {
     const a = 1.0, b = 2.0, c = 0.5;
     const fnBody = extractWgslFn(CHAOS_WGSL, 'var_hopalong');

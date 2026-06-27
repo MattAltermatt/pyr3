@@ -49,7 +49,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   return out;
 }
 
-describe('var_gumowski_mira V325', () => {
+describe.skipIf(!device)('var_gumowski_mira V325', () => {
   it('GPU matches CPU oracle on runtime args', async () => {
     const a = 0.31, b = 0.99;
     const fnBody = extractWgslFn(CHAOS_WGSL, 'gm_G') + '\n' + extractWgslFn(CHAOS_WGSL, 'var_gumowski_mira');
