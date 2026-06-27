@@ -66,6 +66,9 @@ describe('BE parity — pyr3 render vs flam3-C golden', () => {
             '--import',
             './bin/wgsl-loader-register.mjs',
             'bin/pyr3-render.ts',
+            // #475 — auto-exposure is a view-time transform; the BE-vs-flam3-C
+            // parity contract must measure the raw flam3-faithful render.
+            '--no-auto-exposure',
             fixture.flam3Path,
             outputPath,
           ],

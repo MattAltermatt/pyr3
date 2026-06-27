@@ -24,6 +24,12 @@ import { encodePng16 } from '../src/png16-encode';
 import { histogramToLinearRgba } from '../src/export-linear';
 import { readTextureTight, displayHalfToLinearExr, displayHalfToPng16 } from '../src/gpu-readback';
 import { DEFAULT_TONEMAP } from '../src/tonemap';
+import {
+  measureProbeLuminance,
+  fitBrightnessToTarget,
+  computeMeanLuminance,
+  computeMeanLuminanceHalf,
+} from '../src/auto-exposure';
 import { deflateSync } from 'node:zlib';
 import {
   applyPreset,
@@ -94,6 +100,12 @@ async function main(): Promise<void> {
   let walkersOverride: number | null = null;
   let outFormat: 'png8' | 'png16' | 'exr' | 'exr-linear' = 'png8';
   let transparent = false;
+  // #475 — render-time auto-exposure: match HQ exposure to the genome's
+  // preview-resolution appearance (fixes near-black thin-attractor masters).
+  // Default ON for display-referred output; `--no-auto-exposure` opts out (the
+  // parity rig passes it to stay flam3-C-faithful). Never applies to exr-linear
+  // (raw scene-linear histogram, not the display texture).
+  let autoExposure = true;
   // #459 — flow-map color mode. Standalone-bundled CLI keeps the flow-scale
   // default as a literal mirroring DEFAULT_FLOW_SCALE in src/chaos.ts.
   let colorMode: 'palette' | 'flow' | 'trap-distance' | 'phase' = 'palette';
@@ -112,6 +124,8 @@ async function main(): Promise<void> {
     const a = rawArgs[i]!;
     if (a === '--no-de') {
       forceDeOff = true;
+    } else if (a === '--no-auto-exposure') {
+      autoExposure = false;
     } else if (a === '--long-edge') {
       customLongEdge = parsePositiveInt(rawArgs[++i], '--long-edge');
     } else if (a === '--quality') {
@@ -319,7 +333,7 @@ async function main(): Promise<void> {
   }
   if (args.length < 1) {
     console.error(
-      'usage: npm run render [--no-de] ' +
+      'usage: npm run render [--no-de] [--no-auto-exposure] ' +
         '[--long-edge N --quality N] [--max-dim N] [--oversample N] [--sample-inflate=F] ' +
         '[--format png8|png16|exr|exr-linear] [--transparent] ' +
         '[--color-mode palette|flow|trap-distance|phase] [--flow-strength F] [--flow-scale F] ' +
@@ -415,6 +429,9 @@ async function main(): Promise<void> {
 
   // 4. Render.
   const t0 = Date.now();
+  // Captured for the #475 auto-exposure re-present pass (re-runs only the cheap
+  // visualize/tonemap pass against this same accumulated histogram).
+  let renderTotalSamples = 0;
   // Chaos work is run host-orchestrated (reset → chunked iterate → present)
   // rather than via the renderer.render() convenience, so the dispatch can be
   // split into TDR-safe submits on Windows (see chunkedIterate). Off-win32 this
@@ -428,6 +445,7 @@ async function main(): Promise<void> {
       renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter,
       { colorMode, flowStrength, flowScale, trap, phaseStrength, phaseFreq },
     );
+    renderTotalSamples = totalSamples;
     renderer.present({ genome, outputView: texture.createView(), totalSamples, forceDeOff, transparent });
   } else {
     // Probe path: manual walker-sizing for #43 re-fuse probe (--walkers) and/or
@@ -445,13 +463,49 @@ async function main(): Promise<void> {
     }
     renderer.reset(genome);
     chunkedIterate(renderer, genome, seed, dispatchWalkers, dispatchIters, walkerJitter, { colorMode, flowStrength, flowScale, trap, phaseStrength, phaseFreq });
+    renderTotalSamples = actualSamples * sampleInflate;
     renderer.present({
       genome,
       outputView: texture.createView(),
-      totalSamples: actualSamples * sampleInflate,
+      totalSamples: renderTotalSamples,
       forceDeOff,
       transparent,
     });
+  }
+
+  // 4b. #475 — render-time auto-exposure. Match the HQ exposure to the genome's
+  // preview-resolution appearance for display-referred output. The probe target
+  // is content-aware (≈1× for well-exposed flames → deadband no-op; large only
+  // for thin attractors). Re-presents the same accumulated histogram at the
+  // fitted brightness (cheap DE+viz, no re-iterate); the embedded `pyr3` genome
+  // stays canonical (auto-exposure is a render-time transform, not a mutation).
+  // Skipped for exr-linear (raw histogram path — no display texture to measure).
+  if (autoExposure && outFormat !== 'exr-linear') {
+    const baseTonemap = genome.tonemap ?? DEFAULT_TONEMAP;
+    const baseBrightness = baseTonemap.brightness;
+    const isHalf = gpuFormat === 'rgba16float';
+    const bpp = isHalf ? 8 : 4;
+    const measure = (buf: Uint8Array): number =>
+      isHalf ? computeMeanLuminanceHalf(buf) : computeMeanLuminance(buf);
+
+    const targetMean = await measureProbeLuminance(device, genome);
+    await device.queue.onSubmittedWorkDone();
+    const initialMean = measure(await readTextureTight(device, texture, width, height, bpp));
+
+    const fit = await fitBrightnessToTarget(baseBrightness, targetMean, initialMean, async (b) => {
+      const adj: Genome = { ...genome, tonemap: { ...baseTonemap, brightness: b } };
+      renderer.present({ genome: adj, outputView: texture.createView(), totalSamples: renderTotalSamples, forceDeOff, transparent });
+      await device.queue.onSubmittedWorkDone();
+      return measure(await readTextureTight(device, texture, width, height, bpp));
+    });
+
+    if (fit.corrected) {
+      console.log(
+        `[pyr3-render] auto-exposure: brightness ${baseBrightness.toFixed(3)} → ` +
+          `${fit.brightness.toFixed(3)} (target ${targetMean.toFixed(2)}, ` +
+          `was ${initialMean.toFixed(2)}, now ${fit.finalMean.toFixed(2)}, ${fit.iters} pass${fit.iters === 1 ? '' : 'es'})`,
+      );
+    }
   }
 
   // 5–7. Read back + encode per format (#334). The source genome rides along

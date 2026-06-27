@@ -234,6 +234,9 @@ describe('FE↔BE parity — pyr3 browser vs CLI at quick-mode dims', () => {
             '--import',
             './bin/wgsl-loader-register.mjs',
             'bin/pyr3-render.ts',
+            // #475 — FE has no auto-exposure; keep the BE side raw so the
+            // FE↔BE comparison measures the same un-corrected render.
+            '--no-auto-exposure',
             '--preset', 'quick',
             '--seed', String(seed),
             fixture.flam3Path,

@@ -87,6 +87,9 @@ function renderPyr3(flamePath, outPath) {
       '--import', 'tsx/esm',
       '--import', './bin/wgsl-loader-register.mjs',
       'bin/pyr3-render.ts',
+      // #475 — measure the raw flam3-faithful render (auto-exposure is a
+      // view-time transform, off for the parity-calibration baseline).
+      '--no-auto-exposure',
       flamePath,
       outPath,
     ],
